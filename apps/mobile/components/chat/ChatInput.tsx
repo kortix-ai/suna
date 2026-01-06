@@ -1,7 +1,8 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useLanguage } from '@/contexts';
-import { AudioLines, CornerDownLeft, Paperclip, X, Loader2 } from 'lucide-react-native';
+import { AudioLines, CornerDownLeft, Paperclip, X } from 'lucide-react-native';
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
@@ -636,9 +637,7 @@ const NormalMode = React.memo(({
           activeOpacity={0.7}
         >
           {isSendingMessage || isTranscribing ? (
-            <AnimatedView style={rotationAnimatedStyle}>
-              <Icon as={Loader2} size={16} className="text-primary-foreground" strokeWidth={2} />
-            </AnimatedView>
+            <KortixLoader size="small" customSize={16} forceTheme="dark" />
           ) : (
             ButtonIcon === StopIcon ? (
               <StopIcon size={buttonIconSize} className={buttonIconClass} />

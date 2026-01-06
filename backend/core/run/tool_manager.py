@@ -1,102 +1,130 @@
 import time
-from typing import Optional, List
+from typing import Optional, List, Set
 from core.tools.message_tool import MessageTool
 from core.tools.web_search_tool import SandboxWebSearchTool
 from core.tools.image_search_tool import SandboxImageSearchTool
 from core.tools.expand_msg_tool import ExpandMessageTool
 from core.tools.task_list_tool import TaskListTool
-from core.tools.people_search_tool import PeopleSearchTool
-from core.tools.company_search_tool import CompanySearchTool
-from core.tools.paper_search_tool import PaperSearchTool
-from core.tools.vapi_voice_tool import VapiVoiceTool
 from core.agentpress.thread_manager import ThreadManager
-from core.utils.config import config, EnvMode
+from core.utils.config import config
 from core.utils.logger import logger
 
+
+# Default core tools - can be overridden by agent config
+DEFAULT_CORE_TOOLS = [
+    'expand_msg_tool',      # Always needed for tool loading
+    'message_tool',         # Always needed for user communication
+    'task_list_tool',       # Task management
+    'web_search_tool',      # Web search
+    'image_search_tool',    # Image search
+    'browser_tool',         # Web browsing
+    'sb_shell_tool',        # Shell commands
+    'sb_git_sync',          # Git operations
+    'sb_files_tool',        # File operations
+    'sb_file_reader_tool',  # File reading
+    'sb_vision_tool',       # Image understanding
+    'sb_image_edit_tool',   # Image generation
+    'sb_upload_file_tool',  # File uploads
+    'sb_expose_tool',       # Port exposure
+]
+
+
 class ToolManager:
+    """
+    Manages tool registration for agent threads.
+    
+    Tools are registered based on agent config:
+    - Core tools (preloaded): Registered at startup if enabled in config
+    - On-demand tools: Loaded via initialize_tools() when needed
+    
+    Agent config structure:
+    {
+        "agentpress_tools": {
+            "web_search_tool": true,           # enabled
+            "sb_presentation_tool": false,     # disabled
+            "browser_tool": {"enabled": true}  # enabled with config
+        }
+    }
+    """
+    
     def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None):
         self.thread_manager = thread_manager
         self.project_id = project_id
         self.thread_id = thread_id
         self.agent_config = agent_config
-        self.account_id = agent_config.get('account_id') if agent_config else None
+        self.disabled_tools = self._get_disabled_tools()
     
-    def register_all_tools(self, agent_id: Optional[str] = None, disabled_tools: Optional[List[str]] = None, use_spark: bool = True):
+    def _get_disabled_tools(self) -> Set[str]:
+        """Get set of disabled tools from agent config."""
+        if not self.agent_config or 'agentpress_tools' not in self.agent_config:
+            return set()
+        
+        raw_tools = self.agent_config.get('agentpress_tools', {})
+        if not isinstance(raw_tools, dict):
+            return set()
+        
+        # For default Suna agent with no explicit config, enable all
+        if self.agent_config.get('is_suna_default', False) and not raw_tools:
+            return set()
+        
+        disabled = set()
+        for tool_name, tool_config in raw_tools.items():
+            if isinstance(tool_config, bool) and not tool_config:
+                disabled.add(tool_name)
+            elif isinstance(tool_config, dict) and not tool_config.get('enabled', True):
+                disabled.add(tool_name)
+        
+        if disabled:
+            logger.info(f"Tools disabled by config: {disabled}")
+        return disabled
+    
+    def _is_tool_enabled(self, tool_name: str) -> bool:
+        """Check if a tool is enabled based on agent config."""
+        return tool_name not in self.disabled_tools
+    
+    def register_core_tools(self):
+        """Register core tools that are enabled in agent config."""
         start = time.time()
-        timings = {}
         
-        disabled_tools = disabled_tools or []
-        
-        t = time.time()
         self.migrated_tools = self._get_migrated_tools_config()
-        timings['migrate_config'] = (time.time() - t) * 1000
         
-        if use_spark:
-            logger.info("⚡ [SPARK] Registering CORE TOOLS ONLY (JIT loading enabled)")
-            t = time.time()
-            self._register_core_tools()
-            timings['core_tools'] = (time.time() - t) * 1000
-            
-            total = (time.time() - start) * 1000
-            logger.info(f"⚡ [SPARK] Core tool registration complete in {total:.1f}ms")
-            logger.info(f"⚡ [SPARK] {len(self.thread_manager.tool_registry.tools)} core functions registered")
-            logger.info(f"⚡ [JIT] Other tools will be activated on-demand via initialize_tools()")
-        else:
-            logger.info("⚠️  [LEGACY] Registering ALL TOOLS at startup")
-            
-            t = time.time()
-            self._register_core_tools()
-            timings['core_tools'] = (time.time() - t) * 1000
-            
-            t = time.time()
-            self._register_sandbox_tools(disabled_tools)
-            timings['sandbox_tools'] = (time.time() - t) * 1000
-            
-            t = time.time()
-            self._register_utility_tools(disabled_tools)
-            timings['utility_tools'] = (time.time() - t) * 1000
-            
-            if agent_id:
-                t = time.time()
-                self._register_agent_builder_tools(agent_id, disabled_tools)
-                timings['agent_builder_tools'] = (time.time() - t) * 1000
-            
-            if self.account_id:
-                t = time.time()
-                self._register_suna_specific_tools(disabled_tools)
-                timings['suna_tools'] = (time.time() - t) * 1000
-            
-            total = (time.time() - start) * 1000
-            timing_str = " | ".join([f"{k}: {v:.1f}ms" for k, v in timings.items()])
-            logger.info(f"⏱️ [TIMING] Tool registration breakdown: {timing_str}")
-            logger.info(f"⚠️  [LEGACY] Tool registration complete. {len(self.thread_manager.tool_registry.tools)} functions in {total:.1f}ms")
+        self._register_enabled_core_tools()
+        
+        total = (time.time() - start) * 1000
+        tool_count = len(self.thread_manager.tool_registry.tools)
+        logger.info(f"✅ Registered {tool_count} core tool functions in {total:.1f}ms")
     
-    def _register_core_tools(self):
-        from core.jit.loader import JITLoader
+    def _register_enabled_core_tools(self):
+        """Register core tools that are enabled."""
         from core.tools.tool_registry import get_tool_info, get_tool_class
         
+        # These are ALWAYS loaded (required for agent operation)
         self.thread_manager.add_tool(ExpandMessageTool, thread_id=self.thread_id, thread_manager=self.thread_manager)
         self.thread_manager.add_tool(MessageTool)
         self.thread_manager.add_tool(TaskListTool, project_id=self.project_id, thread_manager=self.thread_manager, thread_id=self.thread_id)
         
-        if config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY:
+        # Search tools (if API keys configured AND enabled in config)
+        if (config.TAVILY_API_KEY or config.FIRECRAWL_API_KEY) and self._is_tool_enabled('web_search_tool'):
             enabled_methods = self._get_enabled_methods_for_tool('web_search_tool')
             self.thread_manager.add_tool(SandboxWebSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
         
-        if config.SERPER_API_KEY:
+        if config.SERPER_API_KEY and self._is_tool_enabled('image_search_tool'):
             enabled_methods = self._get_enabled_methods_for_tool('image_search_tool')
             self.thread_manager.add_tool(SandboxImageSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
         
-        from core.tools.browser_tool import BrowserTool
-        enabled_methods = self._get_enabled_methods_for_tool('browser_tool')
-        self.thread_manager.add_tool(
-            BrowserTool, 
-            function_names=enabled_methods, 
-            project_id=self.project_id, 
-            thread_id=self.thread_id, 
-            thread_manager=self.thread_manager
-        )
+        # Browser tool
+        if self._is_tool_enabled('browser_tool'):
+            from core.tools.browser_tool import BrowserTool
+            enabled_methods = self._get_enabled_methods_for_tool('browser_tool')
+            self.thread_manager.add_tool(
+                BrowserTool, 
+                function_names=enabled_methods, 
+                project_id=self.project_id, 
+                thread_id=self.thread_id, 
+                thread_manager=self.thread_manager
+            )
         
+        # Core sandbox tools - only register if enabled
         core_sandbox_tools = [
             'sb_shell_tool', 
             'sb_git_sync', 
@@ -110,6 +138,10 @@ class ToolManager:
         tools_needing_thread_id = {'sb_vision_tool', 'sb_image_edit_tool', 'sb_design_tool'}
         
         for tool_name in core_sandbox_tools:
+            if not self._is_tool_enabled(tool_name):
+                logger.debug(f"Skipping disabled tool: {tool_name}")
+                continue
+                
             tool_info = get_tool_info(tool_name)
             if tool_info:
                 _, module_path, class_name = tool_info
@@ -125,140 +157,10 @@ class ToolManager:
                     enabled_methods = self._get_enabled_methods_for_tool(tool_name)
                     self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
                 except (ImportError, AttributeError) as e:
-                    logger.warning(f"❌ Failed to load core tool {tool_name} ({class_name}): {e}")
-    
-    def _register_sandbox_tools(self, disabled_tools: List[str]):
-        core_tools_already_loaded = [
-            'sb_shell_tool', 
-            'sb_git_sync', 
-            'sb_files_tool', 
-            'sb_file_reader_tool',
-            'web_search_tool',
-            'image_search_tool',
-            'sb_vision_tool',
-            'sb_image_edit_tool',
-            'sb_upload_file_tool',
-            'sb_expose_tool'
-        ]
-        
-        from core.tools.tool_registry import SANDBOX_TOOLS, get_tool_class
-        
-        tools_needing_thread_id = {'sb_vision_tool', 'sb_image_edit_tool', 'sb_design_tool'}
-        
-        sandbox_tools = []
-        for tool_name, module_path, class_name in SANDBOX_TOOLS:
-            if tool_name in core_tools_already_loaded:
-                continue
-            
-            try:
-                tool_class = get_tool_class(module_path, class_name)
-                kwargs = {
-                    'project_id': self.project_id,
-                    'thread_manager': self.thread_manager
-                }
-                if tool_name in tools_needing_thread_id:
-                    kwargs['thread_id'] = self.thread_id
-                sandbox_tools.append((tool_name, tool_class, kwargs))
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"❌ Failed to load tool {tool_name} ({class_name}): {e}")
-        
-        for tool_name, tool_class, kwargs in sandbox_tools:
-            if tool_name not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool(tool_name)
-                self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
-    
-    def _register_utility_tools(self, disabled_tools: List[str]):
-        if config.SEMANTIC_SCHOLAR_API_KEY and 'paper_search_tool' not in disabled_tools:
-            if 'paper_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('paper_search_tool')
-                self.thread_manager.add_tool(PaperSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-        
-        if config.EXA_API_KEY:
-            if 'people_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('people_search_tool')
-                self.thread_manager.add_tool(PeopleSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-            
-            if 'company_search_tool' not in disabled_tools:
-                enabled_methods = self._get_enabled_methods_for_tool('company_search_tool')
-                self.thread_manager.add_tool(CompanySearchTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-        
-        if config.ENV_MODE != EnvMode.PRODUCTION and config.VAPI_PRIVATE_KEY and 'vapi_voice_tool' not in disabled_tools:
-            enabled_methods = self._get_enabled_methods_for_tool('vapi_voice_tool')
-            self.thread_manager.add_tool(VapiVoiceTool, function_names=enabled_methods, thread_manager=self.thread_manager)
-        
-        if config.REALITY_DEFENDER_API_KEY and 'reality_defender_tool' not in disabled_tools:
-            from core.tools.reality_defender_tool import RealityDefenderTool
-            enabled_methods = self._get_enabled_methods_for_tool('reality_defender_tool')
-            self.thread_manager.add_tool(RealityDefenderTool, function_names=enabled_methods, project_id=self.project_id, thread_manager=self.thread_manager)
-            
-        if config.APIFY_API_TOKEN and 'apify_tool' not in disabled_tools:
-            from core.tools.apify_tool import ApifyTool
-            enabled_methods = self._get_enabled_methods_for_tool('apify_tool')
-            self.thread_manager.add_tool(ApifyTool, function_names=enabled_methods, project_id=self.project_id, thread_manager=self.thread_manager)
-            
-    def _register_agent_builder_tools(self, agent_id: str, disabled_tools: List[str]):
-        from core.tools.tool_registry import AGENT_BUILDER_TOOLS, get_tool_class
-
-        for tool_name, module_path, class_name in AGENT_BUILDER_TOOLS:
-            if tool_name == 'agent_creation_tool':
-                continue
-            
-            try:
-                tool_class = get_tool_class(module_path, class_name)
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"❌ Failed to load tool {tool_name} ({class_name}): {e}")
-                continue
-            
-            if tool_name not in disabled_tools:
-                try:
-                    enabled_methods = self._get_enabled_methods_for_tool(tool_name)
-                    self.thread_manager.add_tool(
-                        tool_class, 
-                        function_names=enabled_methods, 
-                        thread_manager=self.thread_manager, 
-                        db_connection=self.thread_manager.db, 
-                        agent_id=agent_id
-                    )
-                except Exception as e:
-                    logger.warning(f"❌ Failed to register {tool_name}: {e}")
-    
-    def _register_suna_specific_tools(self, disabled_tools: List[str]):
-        if 'agent_creation_tool' not in disabled_tools and self.account_id:
-            from core.tools.tool_registry import get_tool_info, get_tool_class
-            
-            try:
-                tool_info = get_tool_info('agent_creation_tool')
-                if tool_info:
-                    _, module_path, class_name = tool_info
-                    AgentCreationTool = get_tool_class(module_path, class_name)
-                else:
-                    from core.tools.agent_creation_tool import AgentCreationTool
-                
-                enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
-                self.thread_manager.add_tool(
-                    AgentCreationTool, 
-                    function_names=enabled_methods, 
-                    thread_manager=self.thread_manager, 
-                    db_connection=self.thread_manager.db, 
-                    account_id=self.account_id
-                )
-            except (ImportError, AttributeError) as e:
-                logger.warning(f"❌ Failed to load agent_creation_tool: {e}")
-    
-    def _register_browser_tool(self, disabled_tools: List[str]):
-        if 'browser_tool' not in disabled_tools:
-            from core.tools.browser_tool import BrowserTool
-            
-            enabled_methods = self._get_enabled_methods_for_tool('browser_tool')
-            self.thread_manager.add_tool(
-                BrowserTool, 
-                function_names=enabled_methods, 
-                project_id=self.project_id, 
-                thread_id=self.thread_id, 
-                thread_manager=self.thread_manager
-            )
+                    logger.warning(f"Failed to load core tool {tool_name}: {e}")
     
     def _get_migrated_tools_config(self) -> dict:
+        """Get migrated tool configuration from agent config."""
         if not self.agent_config or 'agentpress_tools' not in self.agent_config:
             return {}
         
@@ -272,68 +174,10 @@ class ToolManager:
         return migrate_legacy_tool_config(raw_tools)
     
     def _get_enabled_methods_for_tool(self, tool_name: str) -> Optional[List[str]]:
+        """Get list of enabled methods for a tool based on agent config."""
         if not hasattr(self, 'migrated_tools') or not self.migrated_tools:
             return None
         
         from core.utils.tool_discovery import get_enabled_methods_for_tool
         
         return get_enabled_methods_for_tool(tool_name, self.migrated_tools)
-    
-    def get_disabled_tools_from_config(self) -> List[str]:
-        """Get list of disabled tools from agent config."""
-        disabled_tools = []
-        
-        if not self.agent_config or 'agentpress_tools' not in self.agent_config:
-            return disabled_tools
-        
-        raw_tools = self.agent_config['agentpress_tools']
-        
-        if not isinstance(raw_tools, dict):
-            return disabled_tools
-        
-        if self.agent_config.get('is_suna_default', False) and not raw_tools:
-            return disabled_tools
-        
-        def is_tool_enabled(tool_name: str) -> bool:
-            try:
-                tool_config = raw_tools.get(tool_name, True)
-                if isinstance(tool_config, bool):
-                    return tool_config
-                elif isinstance(tool_config, dict):
-                    return tool_config.get('enabled', True)
-                else:
-                    return True
-            except Exception:
-                return True
-        
-        all_tools = [
-            'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
-            'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
-            'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
-            'browser_tool', 'people_search_tool', 'company_search_tool', 
-            'apify_tool', 'reality_defender_tool', 'vapi_voice_tool', 'paper_search_tool',
-            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
-            'agent_creation_tool'
-        ]
-        
-        for tool_name in all_tools:
-            if not is_tool_enabled(tool_name):
-                disabled_tools.append(tool_name)
-                
-        logger.debug(f"Disabled tools from config: {disabled_tools}")
-        return disabled_tools
-    
-    def register_suna_specific_tools(self, disabled_tools: List[str], account_id: Optional[str] = None):
-        """Register Suna-specific tools like agent_creation_tool."""
-        if 'agent_creation_tool' not in disabled_tools:
-            from core.tools.agent_creation_tool import AgentCreationTool
-            
-            if account_id:
-                enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
-                if enabled_methods is not None:
-                    self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=self.thread_manager.db, account_id=account_id)
-                else:
-                    self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=self.thread_manager.db, account_id=account_id)
-            else:
-                logger.warning("Could not register agent_creation_tool: account_id not available")
-                

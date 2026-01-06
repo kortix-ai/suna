@@ -13,13 +13,13 @@ import {
   FileText,
   LogOut,
   Image as ImageIcon,
-  Loader2,
   Globe,
   FolderOpen,
   Zap,
   CheckCircle2,
   Database,
 } from 'lucide-react-native';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import * as Haptics from 'expo-haptics';
 import Animated, {
@@ -947,25 +947,7 @@ const styles = StyleSheet.create({
 });
 
 function SpinningLoader() {
-  const rotation = useSharedValue(0);
-
-  React.useEffect(() => {
-    rotation.value = withRepeat(
-      withTiming(360, { duration: 1000, easing: Easing.linear }),
-      -1,
-      false
-    );
-  }, []);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ rotate: `${rotation.value}deg` }],
-  }));
-
-  return (
-    <AnimatedView style={animatedStyle}>
-      <Icon as={Loader2} size={16} className="text-primary" />
-    </AnimatedView>
-  );
+  return <KortixLoader size="small" customSize={16} />;
 }
 
 interface PaginationDotProps {

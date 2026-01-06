@@ -31,10 +31,10 @@ import {
     Users,
     Key,
     Camera,
-    Loader2,
     Upload,
     Brain,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import {
     Tooltip,
@@ -519,7 +519,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                             >
                                 {isUploadingAvatar ? (
-                                    <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                    <KortixLoader size="small" variant="white" />
                                 ) : (
                                     <Camera className="h-5 w-5 text-white" />
                                 )}

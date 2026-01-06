@@ -84,6 +84,7 @@ import { ExpandMessageToolView } from '../expand-message-tool/ExpandMessageToolV
 import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefenderToolView';
 import { ApifyToolView } from '../apify-tool/ToolView';
 import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
+import { InitializeToolsToolView } from '../initialize-tools/InitializeToolsToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -91,6 +92,10 @@ export type ToolViewComponent = React.ComponentType<ToolViewProps>;
 type ToolViewRegistryType = Record<string, ToolViewComponent>;
 
 const defaultRegistry: ToolViewRegistryType = {
+  // Initialization tools
+  'initialize-tools': InitializeToolsToolView,
+  'initialize_tools': InitializeToolsToolView,
+
   'browser-navigate-to': BrowserToolView,
   'browser-act': BrowserToolView,
   'browser-extract-content': BrowserToolView,

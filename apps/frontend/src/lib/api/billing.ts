@@ -313,6 +313,20 @@ export interface TrialCheckoutResponse {
   session_id: string;
 }
 
+export interface CheckoutSessionDetails {
+  session_id: string;
+  amount_total: number;           // Final amount in cents (after discounts and tax)
+  amount_subtotal: number;        // Amount before discounts/tax in cents
+  amount_discount: number;        // Discount amount in cents
+  amount_tax: number;             // Tax amount in cents
+  currency: string;
+  coupon_id: string | null;       // Internal Stripe coupon ID
+  coupon_name: string | null;     // Coupon display name
+  promotion_code: string | null;  // Customer-facing code (e.g., "HEHE2020")
+  status: string;
+  payment_status: string;
+}
+
 // =============================================================================
 // BILLING API
 // =============================================================================
@@ -558,6 +572,27 @@ export const billingApi = {
     );
     if (response.error) throw response.error;
     return response.data!;
+  },
+
+  /**
+   * Get checkout session details from Stripe.
+   * Used to retrieve actual transaction amounts (after discounts) for analytics tracking.
+   */
+  async getCheckoutSession(sessionId: string): Promise<CheckoutSessionDetails | null> {
+    try {
+      const response = await backendApi.get<CheckoutSessionDetails>(
+        `/billing/checkout-session/${sessionId}`,
+        { showErrors: false }
+      );
+      if (response.error) {
+        console.warn('[Billing] Could not fetch checkout session:', response.error);
+        return null;
+      }
+      return response.data!;
+    } catch (error) {
+      console.warn('[Billing] Error fetching checkout session:', error);
+      return null;
+    }
   }
 };
 
@@ -588,3 +623,4 @@ export const scheduleDowngrade = (request: ScheduleDowngradeRequest) =>
   billingApi.scheduleDowngrade(request);
 export const cancelScheduledChange = () => billingApi.cancelScheduledChange();
 export const syncSubscription = () => billingApi.syncSubscription();
+export const getCheckoutSession = (sessionId: string) => billingApi.getCheckoutSession(sessionId);

@@ -11,7 +11,8 @@ import { cn } from '@/lib/utils';
 import { useTheme } from 'next-themes';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Check, Loader2, AlertCircle, Save, RotateCcw } from 'lucide-react';
+import { Check, AlertCircle, Save, RotateCcw } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   Tooltip,
   TooltipContent,
@@ -528,7 +529,7 @@ export function CodeEditor({
             disabled
             className="gap-1.5 h-7 px-2 text-xs"
           >
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <KortixLoader size="small" />
             <span className="hidden sm:inline">Saving</span>
           </Button>
         );

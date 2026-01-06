@@ -1,11 +1,8 @@
 import React, { useState } from 'react';
 import {
-  CheckCircle,
   AlertTriangle,
   Upload,
   ExternalLink,
-  Clock,
-  Shield,
   File,
   FileImage,
   FileCode,
@@ -14,25 +11,21 @@ import {
   FileVideo,
   FileAudio,
   FileArchive,
-  FolderOpen,
   Copy,
   Check,
-  Lock,
-  Database,
   Table,
-  RefreshCw,
+  CheckCircle2,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from './types';
-import { formatTimestamp, getToolTitle } from './utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { getToolTitle } from './utils';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { LoadingState } from './shared/LoadingState';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
-import { backendApi } from '@/lib/api-client';
+import { ToolViewHeader } from './shared/ToolViewHeader';
+import { ToolViewFooter } from './shared/ToolViewFooter';
 
 interface UploadResult {
   message?: string;
@@ -52,13 +45,8 @@ export function UploadFileToolView({
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  const [isCopyingUrl, setIsCopyingUrl] = useState(false);
-  const [isCopyingPath, setIsCopyingPath] = useState(false);
-  const [isRegenerating, setIsRegenerating] = useState(false);
-  const [regeneratedUrl, setRegeneratedUrl] = useState<string | null>(null);
-  const [regeneratedExpiry, setRegeneratedExpiry] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
     console.warn('UploadFileToolView: toolCall is undefined. Tool views should use structured props.');
     return null;
@@ -66,28 +54,23 @@ export function UploadFileToolView({
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
 
-  // Extract data directly from structured props
   const uploadData = {
     file_path: toolCall.arguments?.file_path || null,
     bucket_name: toolCall.arguments?.bucket_name || 'file-uploads',
     custom_filename: toolCall.arguments?.custom_filename || null,
   };
 
-  // Extract result from toolResult
   let uploadResult: UploadResult | null = null;
-  let rawContent: string | null = null;
 
   if (toolResult?.output) {
     const output = toolResult.output;
     
     if (typeof output === 'string') {
-      rawContent = output;
       uploadResult = {
         message: output,
         success: toolResult?.success !== undefined ? toolResult.success : true,
       };
 
-      // Extract structured data from the output message
       const storageMatch = output.match(/📁 Storage: ([^\n]+)/);
       const sizeMatch = output.match(/📏 Size: ([^\n]+)/);
       const urlMatch = output.match(/🔗 Secure Access URL: ([^\n]+)/);
@@ -104,7 +87,7 @@ export function UploadFileToolView({
         message: (output as any).message || JSON.stringify(output),
         storage_path: (output as any).storage_path,
         file_size: (output as any).file_size,
-        secure_url: (output as any).secure_url || (output as any).secure_url,
+        secure_url: (output as any).secure_url,
         expires_at: (output as any).expires_at,
         success: toolResult?.success !== undefined ? toolResult.success : true,
       };
@@ -114,275 +97,167 @@ export function UploadFileToolView({
   const toolTitle = getToolTitle(name);
   const actualIsSuccess = uploadResult?.success !== undefined ? uploadResult.success : isSuccess;
 
-  const copyToClipboard = async (text: string, type: 'url' | 'path') => {
+  const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      
-      if (type === 'url') {
-        setIsCopyingUrl(true);
-        setTimeout(() => setIsCopyingUrl(false), 2000);
-      } else {
-        setIsCopyingPath(true);
-        setTimeout(() => setIsCopyingPath(false), 2000);
-      }
-      
-      toast.success(`${type === 'url' ? 'Secure URL' : 'Storage path'} copied to clipboard!`);
-    } catch (err) {
-      toast.error('Failed to copy to clipboard');
-    }
-  };
-
-  const extractStoragePathFromUrl = (url: string): { storage_path: string; bucket_name: string } | null => {
-    try {
-      const match = url.match(/\/storage\/v1\/object\/sign\/([\w-]+)\/(.+?)\?/);
-      if (match) {
-        return {
-          bucket_name: match[1],
-          storage_path: decodeURIComponent(match[2]),
-        };
-      }
-    } catch (e) {
-      console.error('Failed to extract storage path from URL:', e);
-    }
-    return null;
-  };
-
-  const regenerateLink = async () => {
-    try {
-      setIsRegenerating(true);
-      
-      const body: any = {};
-      
-      if (uploadResult?.file_id) {
-        body.file_upload_id = uploadResult.file_id;
-      } else if (uploadResult?.secure_url) {
-        const pathInfo = extractStoragePathFromUrl(uploadResult.secure_url);
-        if (pathInfo) {
-          body.storage_path = pathInfo.storage_path;
-          body.bucket_name = pathInfo.bucket_name;
-        } else {
-          toast.error('Could not extract file information from URL');
-          return;
-        }
-      } else {
-        toast.error('No file information available');
-        return;
-      }
-      
-      const response = await backendApi.post('/file-uploads/regenerate-link', body);
-
-      if (!response.success || !response.data) {
-        throw new Error('Failed to regenerate link');
-      }
-
-      setRegeneratedUrl(response.data.signed_url);
-      setRegeneratedExpiry(response.data.expires_at);
-      toast.success('Link regenerated successfully!');
-    } catch (error) {
-      toast.error('Failed to regenerate link');
-      console.error('Error regenerating link:', error);
-    } finally {
-      setIsRegenerating(false);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast.success('Copied to clipboard');
+    } catch {
+      toast.error('Failed to copy');
     }
   };
 
   const getFileName = (filePath: string | null) => {
     if (!filePath) return 'Unknown file';
-    return filePath.split('/').pop() || filePath;
+    const fileName = filePath.split('/').pop() || filePath;
+    // Trim whitespace, newlines, and other control characters
+    return fileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'Unknown file';
   };
 
   const getFileExtension = (filename: string) => {
-    const ext = filename.split('.').pop()?.toLowerCase() || '';
-    return ext;
+    const trimmed = filename.trim();
+    return trimmed.split('.').pop()?.toLowerCase() || '';
   };
 
   const getFileIcon = (filename: string) => {
     const ext = getFileExtension(filename);
     
-    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return FileImage;
-    if (['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'json'].includes(ext)) return FileCode;
-    if (['txt', 'md', 'doc', 'docx', 'pdf'].includes(ext)) return FileText;
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'ico'].includes(ext)) return FileImage;
+    if (['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'scss', 'vue', 'go', 'rs', 'rb', 'php', 'java', 'c', 'cpp', 'h'].includes(ext)) return FileCode;
+    if (['txt', 'md', 'doc', 'docx', 'pdf', 'rtf'].includes(ext)) return FileText;
     if (['csv', 'xlsx', 'xls'].includes(ext)) return Table;
-    if (['mp4', 'mov', 'avi', 'webm'].includes(ext)) return FileVideo;
-    if (['mp3', 'wav', 'ogg', 'flac'].includes(ext)) return FileAudio;
-    if (['zip', 'rar', 'tar', 'gz'].includes(ext)) return FileArchive;
+    if (['mp4', 'mov', 'avi', 'webm', 'mkv'].includes(ext)) return FileVideo;
+    if (['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'].includes(ext)) return FileAudio;
+    if (['zip', 'rar', 'tar', 'gz', '7z', 'bz2'].includes(ext)) return FileArchive;
     if (ext === 'json') return FileJson;
     
     return File;
   };
 
-  const formatFileSize = (sizeStr: string | undefined) => {
-    if (!sizeStr) return 'Unknown size';
-    return sizeStr;
-  };
-
-  const formatExpiryTime = (expiryStr: string | undefined) => {
-    if (!expiryStr) return 'Unknown expiry';
-    try {
-      const date = new Date(expiryStr);
-      const now = new Date();
-      const diffHours = Math.round((date.getTime() - now.getTime()) / (1000 * 60 * 60));
-      return `${expiryStr} (${diffHours}h remaining)`;
-    } catch {
-      return expiryStr;
-    }
-  };
-
   const fileName = getFileName(uploadData.file_path);
   const FileIcon = getFileIcon(fileName);
+  const fileExt = getFileExtension(fileName).toUpperCase();
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
-              <Upload className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {toolTitle}
-              </CardTitle>
-            </div>
-          </div>
-
-        </div>
-      </CardHeader>
+      <ToolViewHeader icon={Upload} title={toolTitle} />
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
         {isStreaming ? (
-          <LoadingState
-            icon={Upload}
-            iconColor="text-emerald-500 dark:text-emerald-400"
-            bgColor="bg-gradient-to-b from-emerald-100 to-emerald-50 shadow-inner dark:from-emerald-800/40 dark:to-emerald-900/60 dark:shadow-emerald-950/20"
-            title="Uploading File"
-            filePath={uploadData.file_path || 'Preparing upload...'}
-            showProgress={true}
-            progressText="Uploading to secure storage..."
-          />
-        ) : (
-          <ScrollArea className="h-full w-full">
-            <div className="p-4">
-              {actualIsSuccess && uploadResult ? (
-                <div className="space-y-4">
-                  <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm">
-                    <div className="p-3">
-                      <div className="grid grid-cols-2 gap-3 text-sm">
-                        <div className="flex items-center gap-2">
-                          <Database className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-                          <span className="text-zinc-700 dark:text-zinc-300">
-                            {uploadData.bucket_name || 'file-uploads'}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <File className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-                          <span className="text-zinc-700 dark:text-zinc-300">
-                            {formatFileSize(uploadResult.file_size)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                  {uploadResult.secure_url && (
-                    <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm">
-                      <div className="p-3">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-6 h-6 rounded bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center">
-                            <ExternalLink className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
-                          </div>
-                          <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
-                            Secure Access URL
-                          </span>
-                          <Badge variant="outline" className="text-xs h-5 px-1.5 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800">
-                            Private
-                          </Badge>
-                        </div>
-
-                        <div className="bg-zinc-50 dark:bg-zinc-800 rounded p-2 mb-3">
-                          <code className="text-xs font-mono text-zinc-700 dark:text-zinc-300 break-all">
-                            {regeneratedUrl || uploadResult.secure_url}
-                          </code>
-                        </div>
-
-                        <div className="flex items-center justify-between mb-3">
-                          <span className="text-xs text-zinc-500 dark:text-zinc-400">
-                            {regeneratedExpiry ? `⏰ Expires: ${regeneratedExpiry}` : uploadResult.expires_at ? `⏰ Expires: ${uploadResult.expires_at}` : '🔐 Private'}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => copyToClipboard(regeneratedUrl || uploadResult.secure_url!, 'url')}
-                            className="h-6 px-2 text-xs"
-                          >
-                            {isCopyingUrl ? (
-                              <Check className="h-3 w-3 text-emerald-600" />
-                            ) : (
-                              <Copy className="h-3 w-3" />
-                            )}
-                            <span>{isCopyingUrl ? 'Copied!' : 'Copy'}</span>
-                          </Button>
-                        </div>
-
-                        <div className="flex gap-2">
-                          <Button
-                            onClick={() => window.open(regeneratedUrl || uploadResult.secure_url, '_blank')}
-                            size="sm"
-                            className="flex-1"
-                          >
-                            <ExternalLink className="h-3.5 w-3.5" />
-                            Open File
-                          </Button>
-                          {(uploadResult.file_id || uploadResult.secure_url) && (
-                            <Button
-                              onClick={regenerateLink}
-                              size="sm"
-                              variant="outline"
-                              disabled={isRegenerating}
-                              className="flex-1"
-                            >
-                              {isRegenerating ? <KortixLoader customSize={14} /> : <RefreshCw className="h-3.5 w-3.5" />}
-                              {isRegenerating ? 'Regenerating...' : 'Regenerate Link'}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <AlertTriangle className="h-5 w-5 text-red-600" />
-                      <h3 className="font-medium text-red-900 dark:text-red-100">
-                        Upload Failed
-                      </h3>
-                    </div>
-                    <p className="text-sm text-red-700 dark:text-red-300">
-                      {uploadResult?.message || 'The file upload encountered an error.'}
-                    </p>
-                  </div>
-                  {rawContent && (
-                    <div className="bg-zinc-100 dark:bg-neutral-900 rounded-lg overflow-hidden border border-zinc-200/20">
-                      <div className="bg-accent px-4 py-2 flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
-                        <span className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                          Error Details
-                        </span>
-                      </div>
-                      <div className="p-4 max-h-96 overflow-auto scrollbar-hide">
-                        <pre className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap break-all">
-                          {rawContent}
-                        </pre>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )}
+          <div className="flex items-center gap-4 p-4">
+            <div className="relative">
+              <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                <FileIcon className="h-5 w-5 text-zinc-400" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-700">
+                <KortixLoader customSize={12} />
+              </div>
             </div>
-          </ScrollArea>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                {fileName}
+              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                Uploading...
+              </p>
+            </div>
+          </div>
+        ) : actualIsSuccess && uploadResult ? (
+          <div className="h-full flex flex-col p-4">
+            <div className="flex items-start gap-4 flex-shrink-0">
+              {/* File Icon with Success Badge */}
+              <div className="relative flex-shrink-0">
+                <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50">
+                  <FileIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
+                  <Check className="h-3 w-3 text-white" />
+                </div>
+              </div>
+              
+              {/* File Info */}
+              <div className="flex-1 min-w-0 space-y-2">
+                <div>
+                  <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                    {fileName}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {fileExt && (
+                      <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                        {fileExt}
+                      </Badge>
+                    )}
+                    {uploadResult.file_size && (
+                      <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                        {uploadResult.file_size}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                
+                {/* URL Actions */}
+                {uploadResult.secure_url && (
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => window.open(uploadResult.secure_url!, '_blank')}
+                      className="h-8 text-xs"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
+                      Open
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => copyToClipboard(uploadResult.secure_url!)}
+                      className={cn(
+                        "h-8 text-xs transition-colors",
+                        copied && "text-emerald-600 dark:text-emerald-400"
+                      )}
+                    >
+                      {copied ? (
+                        <>
+                          <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                          Copied
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5 mr-1.5" />
+                          Copy URL
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center gap-4 p-4">
+            <div className="relative flex-shrink-0">
+              <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center border border-red-100 dark:border-red-900/50">
+                <AlertTriangle className="h-5 w-5 text-red-500 dark:text-red-400" />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                Upload failed
+              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 line-clamp-2">
+                {uploadResult?.message || 'The file upload encountered an error.'}
+              </p>
+            </div>
+          </div>
         )}
       </CardContent>
+
+      <ToolViewFooter
+        assistantTimestamp={assistantTimestamp}
+        toolTimestamp={toolTimestamp}
+        isStreaming={isStreaming}
+      />
     </Card>
   );
-} 
+}

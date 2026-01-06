@@ -2,7 +2,8 @@
 
 import { memo } from 'react';
 import { motion } from 'framer-motion';
-import { Cpu, HardDrive, MemoryStick, MapPin, Loader2 } from 'lucide-react';
+import { Cpu, HardDrive, MemoryStick, MapPin } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { SandboxDetails } from '@/hooks/files/use-sandbox-details';
@@ -60,7 +61,7 @@ export const SandboxInfoCard = memo(function SandboxInfoCard({
         className="absolute inset-0 flex items-center justify-center pointer-events-none"
       >
         <Card variant="glass" className="p-8 rounded-3xl gap-0">
-          <Loader2 className="w-8 h-8 text-muted-foreground animate-spin" />
+          <KortixLoader size="medium" />
         </Card>
       </motion.div>
     );

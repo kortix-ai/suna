@@ -1,31 +1,27 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import {
   Globe,
   CheckCircle,
   AlertTriangle,
-  FileText,
+  ExternalLink,
+  FileJson,
   Copy,
-  Calendar,
   Check,
-  ArrowUpRight,
-  Zap
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
-import {
-  formatTimestamp,
-  getToolTitle,
-} from '../utils';
+import { getToolTitle } from '../utils';
 import { extractWebScrapeData } from './_utils';
 import { cn, truncateString } from '@/lib/utils';
-import { useTheme } from 'next-themes';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
+import { toast } from '@/lib/toast';
 
 export function WebScrapeToolView({
   toolCall,
@@ -35,15 +31,12 @@ export function WebScrapeToolView({
   isSuccess = true,
   isStreaming = false,
 }: ToolViewProps) {
-  // All hooks must be called unconditionally at the top
-  const { resolvedTheme } = useTheme();
-  const [progress, setProgress] = useState(0);
   const [copiedFile, setCopiedFile] = useState<string | null>(null);
 
-  // Prepare raw arguments for hooks - must be done before hooks are called
+  // Prepare raw arguments for hooks
   const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
 
-  // Apply smooth text streaming for URL field - MUST be called unconditionally
+  // Apply smooth text streaming for URL field
   const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
     rawArguments,
     'url',
@@ -51,26 +44,8 @@ export function WebScrapeToolView({
     isStreaming && !toolResult && !!toolCall
   );
 
-  useEffect(() => {
-    if (isStreaming) {
-      const timer = setInterval(() => {
-        setProgress((prevProgress) => {
-          if (prevProgress >= 95) {
-            clearInterval(timer);
-            return prevProgress;
-          }
-          return prevProgress + 5;
-        });
-      }, 300);
-      return () => clearInterval(timer);
-    } else {
-      setProgress(100);
-    }
-  }, [isStreaming]);
-
-  // Defensive check - handle cases where toolCall might be undefined
   if (!toolCall) {
-    console.warn('WebScrapeToolView: toolCall is undefined. Tool views should use structured props.');
+    console.warn('WebScrapeToolView: toolCall is undefined.');
     return null;
   }
 
@@ -78,6 +53,7 @@ export function WebScrapeToolView({
 
   const {
     url,
+    urls,
     files,
     actualIsSuccess,
     actualToolTimestamp,
@@ -92,255 +68,335 @@ export function WebScrapeToolView({
 
   // Use smooth URL when streaming
   const displayUrl = isStreaming && smoothUrl ? smoothUrl : url;
+  const displayUrls = urls || (displayUrl ? [displayUrl] : []);
 
   const toolTitle = getToolTitle(name);
+
   const formatDomain = (url: string): string => {
     try {
       const urlObj = new URL(url);
       return urlObj.hostname.replace('www.', '');
-    } catch (e) {
+    } catch {
       return url;
     }
   };
-
-  const domain = displayUrl ? formatDomain(displayUrl) : 'Unknown';
 
   const getFavicon = (url: string) => {
     try {
       const domain = new URL(url).hostname;
       return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
-    } catch (e) {
+    } catch {
       return null;
     }
   };
-
-  const favicon = displayUrl || url ? getFavicon(displayUrl || url) : null;
 
   const copyFilePath = async (filePath: string) => {
     try {
       await navigator.clipboard.writeText(filePath);
       setCopiedFile(filePath);
       setTimeout(() => setCopiedFile(null), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+      toast.success('Path copied to clipboard');
+    } catch {
+      toast.error('Failed to copy');
     }
   };
 
-  const formatFileInfo = (filePath: string) => {
-    const timestampMatch = filePath.match(/(\d{8}_\d{6})/);
-    const domainMatch = filePath.match(/(\w+)_com\.json$/);
-    const fileName = filePath.split('/').pop() || filePath;
+  const getFileName = (filePath: string) => {
+    const rawFileName = filePath.split('/').pop() || filePath;
+    return rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
+  };
 
-    return {
-      timestamp: timestampMatch ? timestampMatch[1] : '',
-      domain: domainMatch ? domainMatch[1] : 'unknown',
-      fileName,
-      fullPath: filePath
-    };
+  // Loading state component matching WebSearchLoadingState style
+  const LoadingState = () => {
+    const urlsToShow = displayUrls.length > 0 ? displayUrls : ['Scraping...'];
+    const reversedUrls = [...urlsToShow].reverse();
+
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-8 px-6 overflow-auto">
+        <div className="w-full max-w-md flex flex-col items-center">
+          {/* Animated Globe Icon */}
+          <motion.div
+            initial={{ scale: 0.8, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className="relative mb-6"
+          >
+            <div className="w-16 h-16 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700">
+              <motion.div
+                animate={{ rotate: [0, 10, -10, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              >
+                <Globe className="w-7 h-7 text-zinc-600 dark:text-zinc-400" />
+              </motion.div>
+            </div>
+            {/* Pulse ring */}
+            <motion.div
+              className="absolute inset-0 rounded-full border-2 border-zinc-300 dark:border-zinc-600"
+              animate={{ scale: [1, 1.3, 1.3], opacity: [0.6, 0, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeOut' }}
+            />
+          </motion.div>
+
+          {/* Title */}
+          <motion.h3
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, delay: 0.1, ease: [0.16, 1, 0.3, 1] }}
+            className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-6"
+          >
+            Scraping webpage{displayUrls.length > 1 ? 's' : ''}
+          </motion.h3>
+
+          {/* URL List */}
+          <div className="w-full">
+            <div className="flex flex-col-reverse gap-2">
+              {reversedUrls.map((urlItem, index) => {
+                const originalIndex = urlsToShow.length - 1 - index;
+                const delay = originalIndex * 0.08;
+                const domain = urlItem !== 'Scraping...' ? formatDomain(urlItem) : urlItem;
+                const favicon = urlItem !== 'Scraping...' ? getFavicon(urlItem) : null;
+
+                return (
+                  <motion.div
+                    key={`${urlItem}-${index}`}
+                    initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{
+                      duration: 0.4,
+                      delay,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
+                    className={cn(
+                      'group flex items-center gap-3 px-4 py-3 rounded-xl',
+                      'bg-white/80 dark:bg-zinc-800/60',
+                      'border border-zinc-200/80 dark:border-zinc-700/50',
+                      'shadow-sm',
+                      'backdrop-blur-sm'
+                    )}
+                  >
+                    {/* Favicon */}
+                    <div className="flex-shrink-0">
+                      <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center border border-zinc-200 dark:border-zinc-700 overflow-hidden">
+                        {favicon ? (
+                          <img
+                            src={favicon}
+                            alt=""
+                            className="w-4 h-4"
+                            onError={(e) => {
+                              (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                          />
+                        ) : (
+                          <Globe className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Domain text */}
+                    <span className="flex-1 text-sm font-medium text-zinc-700 dark:text-zinc-300 truncate">
+                      {domain}
+                      {isUrlAnimating && index === 0 && (
+                        <span className="animate-pulse text-muted-foreground ml-1">▌</span>
+                      )}
+                    </span>
+
+                    {/* Kortix loading animation */}
+                    <KortixLoader customSize={16} />
+                  </motion.div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
-              <Globe className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-            </div>
-
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {toolTitle}
-              </CardTitle>
-            </div>
-          </div>
-
+          <ToolViewIconTitle icon={Globe} title={toolTitle} />
         </div>
       </CardHeader>
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-        {isStreaming ? (
-          <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
-            <div className="text-center w-full max-w-xs">
-              <div className="w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center bg-gradient-to-br from-primary/20 to-primary/10 border border-primary/20">
-                <KortixLoader customSize={32} />
-              </div>
-              <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100 mb-2">
-                Extracting Content
-              </h3>
-              <p className="text-sm text-zinc-500 dark:text-zinc-400 mb-6">
-                Analyzing and processing <span className="font-mono text-xs break-all">{displayUrl || domain}</span>
-                {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
-              </p>
-              <Progress value={progress} className="w-full h-1" />
-              <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2">{progress}% complete</p>
-            </div>
-          </div>
-        ) : displayUrl || url ? (
-          // Results State
+        {isStreaming && files.length === 0 ? (
+          <LoadingState />
+        ) : displayUrl || url || files.length > 0 ? (
           <ScrollArea className="h-full w-full">
-            <div className="p-4 py-0 my-4">
-              {/* Target URL Section */}
-              <div className="space-y-3 mb-6">
-                <div className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                  <Globe className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-                  Source URL
-                </div>
-                <div className="group relative">
-                  <div className="flex items-center gap-3 p-4 bg-zinc-50 dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors rounded-xl border border-zinc-200 dark:border-zinc-800">
-                    {favicon && (
-                      <img
-                        src={favicon}
-                        alt=""
-                        className="w-6 h-6 rounded-md flex-shrink-0"
-                        onError={(e) => {
-                          (e.target as HTMLImageElement).style.display = 'none';
-                        }}
-                      />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100 truncate">{truncateString(displayUrl || '', 70)}</p>
-                      <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-1">{domain}</p>
-                      {isUrlAnimating && <span className="animate-pulse text-muted-foreground ml-1">▌</span>}
+            <div className="p-4 py-0 my-4 space-y-4">
+              {/* Scraped URLs */}
+              {displayUrls.length > 0 && (
+                <>
+                  {displayUrls.length > 1 && (
+                    <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200 mb-3 flex items-center justify-between">
+                      <span>Scraped URLs ({displayUrls.length})</span>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="opacity-70 group-hover:opacity-100 transition-opacity"
-                      asChild
-                    >
-                      <a href={displayUrl || url} target="_blank" rel="noopener noreferrer">
-                        <ArrowUpRight className="w-4 h-4" />
-                      </a>
-                    </Button>
-                  </div>
-                </div>
-              </div>
+                  )}
 
-              {/* Results Section */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                    <Zap className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
-                    Generated Files
-                  </div>
-                  <Badge variant="outline" className="gap-1">
-                    {files.length} file{files.length !== 1 ? 's' : ''}
-                  </Badge>
-                </div>
-
-                {/* File List */}
-                {files.length > 0 ? (
-                  <div className="space-y-3">
-                    {files.map((filePath, idx) => {
-                      const fileInfo = formatFileInfo(filePath);
-                      const isCopied = copiedFile === filePath;
+                  <div className="space-y-2.5">
+                    {displayUrls.map((urlItem, idx) => {
+                      const domain = formatDomain(urlItem);
+                      const favicon = getFavicon(urlItem);
 
                       return (
                         <div
                           key={idx}
-                          className="group relative bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 hover:border-zinc-300 dark:hover:border-zinc-700 transition-all duration-200 hover:shadow-sm"
+                          className="bg-card border rounded-lg shadow-sm hover:shadow transition-shadow"
                         >
-                          <div className="flex items-start gap-3">
-                            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/10 flex items-center justify-center border border-green-500/20 flex-shrink-0">
-                              <FileText className="w-5 h-5 text-green-600 dark:text-green-400" />
-                            </div>
-
-                            <div className="flex-1 min-w-0 space-y-2">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <Badge variant="outline" className="text-xs font-normal">
-                                  JSON
-                                </Badge>
-                                {fileInfo.timestamp && (
-                                  <Badge variant="outline" className="text-xs font-normal">
-                                    <Calendar className="w-3 h-3 mr-1" />
-                                    {fileInfo.timestamp.replace('_', ' ')}
+                          <div className="p-4">
+                            <div className="flex items-start gap-3">
+                              {favicon && (
+                                <img
+                                  src={favicon}
+                                  alt=""
+                                  className="w-5 h-5 mt-0.5 rounded flex-shrink-0"
+                                  onError={(e) => {
+                                    (e.target as HTMLImageElement).style.display = 'none';
+                                  }}
+                                />
+                              )}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Badge variant="outline" className="text-xs px-2 py-0 h-5 font-normal bg-zinc-50 dark:bg-zinc-800">
+                                    <Globe className="h-3 w-3 mr-1 opacity-70" />
+                                    Website
                                   </Badge>
-                                )}
+                                  {actualIsSuccess && !isStreaming && (
+                                    <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                  )}
+                                </div>
+                                <a
+                                  href={urlItem}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-md font-medium text-blue-600 dark:text-blue-400 hover:underline line-clamp-1 mb-1"
+                                >
+                                  {truncateString(urlItem, 60)}
+                                </a>
+                                <div className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center">
+                                  <Globe className="h-3 w-3 mr-1.5 flex-shrink-0 opacity-70" />
+                                  {domain}
+                                </div>
                               </div>
-
-                              <div className="space-y-1">
-                                <p className="font-mono text-sm text-zinc-900 dark:text-zinc-100 font-medium">
-                                  {fileInfo.fileName}
-                                </p>
-                                <p className="font-mono text-xs text-zinc-500 dark:text-zinc-400 truncate">
-                                  {fileInfo.fullPath}
-                                </p>
-                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="h-8 w-8 p-0 flex-shrink-0"
+                                asChild
+                              >
+                                <a href={urlItem} target="_blank" rel="noopener noreferrer">
+                                  <ExternalLink className="h-4 w-4" />
+                                </a>
+                              </Button>
                             </div>
-
-                            <TooltipProvider>
-                              <Tooltip>
-                                <TooltipTrigger asChild>
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    className={cn(
-                                      "opacity-0 group-hover:opacity-100 transition-all duration-200",
-                                      isCopied && "opacity-100"
-                                    )}
-                                    onClick={() => copyFilePath(filePath)}
-                                  >
-                                    {isCopied ? (
-                                      <Check className="w-4 h-4 text-green-600" />
-                                    ) : (
-                                      <Copy className="w-4 h-4" />
-                                    )}
-                                  </Button>
-                                </TooltipTrigger>
-                                <TooltipContent>
-                                  <p>{isCopied ? 'Copied!' : 'Copy file path'}</p>
-                                </TooltipContent>
-                              </Tooltip>
-                            </TooltipProvider>
                           </div>
                         </div>
                       );
                     })}
                   </div>
-                ) : (
-                  <div className="text-center py-8 text-zinc-500 dark:text-zinc-400">
-                    <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">No files generated</p>
+                </>
+              )}
+
+              {/* Generated Files Section */}
+              {files.length > 0 && (
+                <div className="space-y-3">
+                  <div className="text-sm font-medium text-zinc-800 dark:text-zinc-200 flex items-center justify-between">
+                    <span>Generated Files</span>
+                    <Badge variant="outline" className="text-xs font-normal">
+                      {files.length} {files.length === 1 ? 'file' : 'files'}
+                    </Badge>
                   </div>
-                )}
-              </div>
+
+                  <div className="space-y-2">
+                    {files.map((filePath, idx) => {
+                      const fileName = getFileName(filePath);
+                      const isCopied = copiedFile === filePath;
+
+                      return (
+                        <div
+                          key={idx}
+                          className="group bg-card border rounded-lg shadow-sm hover:shadow transition-shadow"
+                        >
+                          <div className="p-3.5 flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center flex-shrink-0 border border-zinc-200 dark:border-zinc-700">
+                              <FileJson className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                                {fileName}
+                              </p>
+                              <p className="text-xs text-zinc-500 dark:text-zinc-400 truncate">
+                                {filePath}
+                              </p>
+                            </div>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => copyFilePath(filePath)}
+                              className={cn(
+                                "h-8 text-xs opacity-0 group-hover:opacity-100 transition-opacity",
+                                isCopied && "opacity-100 text-emerald-600 dark:text-emerald-400"
+                              )}
+                            >
+                              {isCopied ? (
+                                <>
+                                  <Check className="h-3.5 w-3.5 mr-1.5" />
+                                  Copied
+                                </>
+                              ) : (
+                                <>
+                                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                                  Copy
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           </ScrollArea>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
-              <Globe className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
+              <AlertTriangle className="h-10 w-10 text-zinc-400 dark:text-zinc-600" />
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               No URL Detected
             </h3>
-            <p className="text-zinc-500 dark:text-zinc-400 text-center max-w-sm">
-              Unable to extract a valid URL from the scraping request
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
+              Unable to extract a valid URL from the request
             </p>
           </div>
         )}
       </CardContent>
 
-      {/* Footer */}
-      <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
-        <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          {!isStreaming && files.length > 0 && (
-            <Badge className="h-6 py-0.5">
-              <div className="w-2 h-2 rounded-full bg-green-500 mr-1.5" />
-              {files.length} file{files.length !== 1 ? 's' : ''} saved
-            </Badge>
-          )}
-        </div>
-
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">
-          {actualToolTimestamp && !isStreaming
-            ? formatTimestamp(actualToolTimestamp)
-            : actualAssistantTimestamp
-              ? formatTimestamp(actualAssistantTimestamp)
-              : ''}
-        </div>
-      </div>
+      <ToolViewFooter
+        assistantTimestamp={actualAssistantTimestamp}
+        toolTimestamp={actualToolTimestamp}
+        isStreaming={isStreaming}
+      >
+        {!isStreaming && (
+          <>
+            {files.length > 0 ? (
+              <Badge variant="outline" className="h-6 py-0.5">
+                <FileJson className="h-3 w-3 mr-1" />
+                {files.length} {files.length === 1 ? 'file' : 'files'}
+              </Badge>
+            ) : displayUrls.length > 0 && actualIsSuccess && (
+              <Badge variant="outline" className="h-6 py-0.5">
+                <Globe className="h-3 w-3 mr-1" />
+                {displayUrls.length} {displayUrls.length === 1 ? 'URL' : 'URLs'} scraped
+              </Badge>
+            )}
+          </>
+        )}
+      </ToolViewFooter>
     </Card>
   );
 }

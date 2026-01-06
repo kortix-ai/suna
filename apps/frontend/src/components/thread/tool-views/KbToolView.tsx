@@ -21,6 +21,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from '@/components/ui/button';
 import { LoadingState } from './shared/LoadingState';
+import { ToolViewIconTitle } from './shared/ToolViewIconTitle';
+import { ToolViewFooter } from './shared/ToolViewFooter';
 import { toast } from '@/lib/toast';
 
 interface KbOperation {
@@ -324,7 +326,9 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
           const size = parseInt(parts[1]);
           const date = parts[2];
           const path = parts.slice(4).join(' ');
-          const filename = path.split('/').pop() || path;
+          const rawFilename = path.split('/').pop() || path;
+          // Trim whitespace, newlines, and other control characters
+          const filename = rawFilename.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
           return { status, size, date, path, filename };
         }
         return null;
@@ -595,33 +599,20 @@ export function KbToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={isGlobal
-              ? "relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20"
-              : "relative p-2 rounded-lg bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20"
-            }>
-              <Icon className={isGlobal
-                ? "w-5 h-5 text-zinc-500 dark:text-zinc-400"
-                : "w-5 h-5 text-green-500 dark:text-green-400"
-              } />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {operation.type === 'init' ? 'Initialize KB' :
-                  operation.type === 'search' ? 'Search Files' :
-                    operation.type === 'sync' ? 'Sync KB' :
-                      operation.type === 'list' ? 'List Contents' :
-                        operation.type === 'create' ? 'Create Folder' :
-                          operation.type === 'upload' ? 'Upload File' :
-                            operation.type === 'delete' ? 'Delete Item' :
-                              operation.type === 'enable' ? 'Toggle Item' :
-                                operation.type === 'cleanup' ? 'Cleanup KB' :
-                                  (operation.type as string).charAt(0).toUpperCase() + (operation.type as string).slice(1)
-                } • {scopeLabel}
-              </CardTitle>
-            </div>
-          </div>
-
+          <ToolViewIconTitle 
+            icon={Icon} 
+            title={`${operation.type === 'init' ? 'Initialize KB' :
+              operation.type === 'search' ? 'Search Files' :
+                operation.type === 'sync' ? 'Sync KB' :
+                  operation.type === 'list' ? 'List Contents' :
+                    operation.type === 'create' ? 'Create Folder' :
+                      operation.type === 'upload' ? 'Upload File' :
+                        operation.type === 'delete' ? 'Delete Item' :
+                          operation.type === 'enable' ? 'Toggle Item' :
+                            operation.type === 'cleanup' ? 'Cleanup KB' :
+                              (operation.type as string).charAt(0).toUpperCase() + (operation.type as string).slice(1)
+            } • ${scopeLabel}`}
+          />
           {!isStreaming && toolResult?.output && (
             <Button
               variant="ghost"

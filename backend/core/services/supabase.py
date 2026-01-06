@@ -12,20 +12,10 @@ import time
 import asyncio
 
 # =============================================================================
-# Connection Pool Configuration
+# Connection Pool Configuration for High Traffic
 # =============================================================================
-# Tuned for Supabase 2XL tier:
-#   - Max client connections: 1500
-#   - Pool size: 250 (per user+db combination)
-#
-# With 12 workers x 48 concurrency = 576 max concurrent operations
-# We allocate ~120 connections per worker (12 * 120 = 1440, within 1500 limit)
-#
-# Key considerations:
-# - Each worker has its own connection pool (singleton per process)
-# - HTTP/2 multiplexes many requests over fewer TCP connections
-# - Pool timeout should be generous to avoid failures during traffic spikes
-# - Keepalive prevents connection churn under sustained load
+# Tuned for Supabase with high concurrency workloads.
+# Each service (PostgREST, Storage) gets its own client to avoid base_url conflicts.
 # =============================================================================
 
 # Connection limits (per worker process)
@@ -45,11 +35,8 @@ SUPABASE_WRITE_TIMEOUT = 60.0     # Request write - increased for large payloads
 SUPABASE_POOL_TIMEOUT = 15.0      # Wait for pool slot - increased for high concurrency
 
 # HTTP transport settings
-# HTTP/2 provides multiplexing (many requests over 1 connection) but has 100 stream limit
-# With high concurrency, we hit this limit, so we disable HTTP/2 for now
-# HTTP/1.1 uses separate connections which is more compatible with our workload
-SUPABASE_HTTP2_ENABLED = False  # Disabled to avoid "Max outbound streams" errors
-SUPABASE_RETRIES = 3  # Increased retries for transient failures
+SUPABASE_HTTP2_ENABLED = True
+SUPABASE_RETRIES = 3  # Retries for transient connection failures
 
 
 class DBConnection:
@@ -64,7 +51,6 @@ class DBConnection:
                     cls._instance = super().__new__(cls)
                     cls._instance._initialized = False
                     cls._instance._client = None
-                    cls._instance._http_client = None
                     cls._instance._last_reset_time = 0
                     cls._instance._consecutive_errors = 0
         return cls._instance
@@ -110,41 +96,49 @@ class DBConnection:
         await self.initialize()
         logger.info("✅ Supabase connection re-established")
 
-    def _create_http_client(self) -> httpx.AsyncClient:
-        """
-        Create an HTTP client with optimized settings for high-concurrency workloads.
-        
-        Features:
-        - Connection pooling with keepalive
-        - Transport-level retries for transient failures
-        - HTTP/2 multiplexing (configurable)
-        - Generous timeouts for stability under load
-        """
+    def _create_optimized_transport(self) -> httpx.AsyncHTTPTransport:
+        """Create an optimized HTTP transport for high-traffic workloads."""
         limits = httpx.Limits(
             max_connections=SUPABASE_MAX_CONNECTIONS,
             max_keepalive_connections=SUPABASE_MAX_KEEPALIVE,
             keepalive_expiry=SUPABASE_KEEPALIVE_EXPIRY,
         )
+        return httpx.AsyncHTTPTransport(
+            http2=SUPABASE_HTTP2_ENABLED,
+            limits=limits,
+            retries=SUPABASE_RETRIES,
+        )
+
+    def _configure_service_clients(self):
+        """
+        Configure each service's httpx client with optimized connection pool settings.
         
-        timeout = httpx.Timeout(
+        This is called AFTER the SDK creates separate clients for each service,
+        so we can optimize without causing the shared client base_url bug.
+        """
+        optimized_timeout = httpx.Timeout(
             connect=SUPABASE_CONNECT_TIMEOUT,
             read=SUPABASE_READ_TIMEOUT,
             write=SUPABASE_WRITE_TIMEOUT,
             pool=SUPABASE_POOL_TIMEOUT,
         )
         
-        # Create transport with retries for connection-level failures
-        # This handles TCP connect failures, TLS handshake failures, etc.
-        transport = httpx.AsyncHTTPTransport(
-            retries=SUPABASE_RETRIES,
-            http2=SUPABASE_HTTP2_ENABLED,
-        )
-        
-        return httpx.AsyncClient(
-            limits=limits,
-            timeout=timeout,
-            transport=transport,
-        )
+        # Configure PostgREST client
+        if self._client:
+            pg = self._client.postgrest
+            pg.session.timeout = optimized_timeout
+            # Replace transport with optimized one (old transport has 0 connections at this point)
+            old_pg_transport = pg.session._transport
+            pg.session._transport = self._create_optimized_transport()
+            # Close old transport to prevent any potential resource leak
+            asyncio.create_task(old_pg_transport.aclose())
+            
+            # Configure Storage client  
+            storage = self._client.storage
+            storage._client.timeout = optimized_timeout
+            old_storage_transport = storage._client._transport
+            storage._client._transport = self._create_optimized_transport()
+            asyncio.create_task(old_storage_transport.aclose())
 
     async def initialize(self):
         if self._initialized:
@@ -160,13 +154,16 @@ class DBConnection:
 
             from supabase.lib.client_options import AsyncClientOptions
             
-            # Create our custom HTTP client with optimized settings
-            self._http_client = self._create_http_client()
-            
-            # Pass the custom httpx client directly to the Supabase SDK
-            # This ensures ALL Supabase operations use our pooled/optimized client
+            # NOTE: We intentionally do NOT pass a shared httpx_client here.
+            # The Supabase SDK has a bug where postgrest and storage3 both mutate
+            # the shared client's base_url, causing a race condition:
+            # - PostgREST sets base_url to /rest/v1
+            # - Storage sets base_url to /storage/v1
+            # - Whichever runs last "wins", corrupting requests for the other service
+            # This caused production errors like "Route POST:/projects not found" 
+            # when REST requests were incorrectly routed to the Storage service.
+            # Let each service create its own httpx client with correct base_url.
             options = AsyncClientOptions(
-                httpx_client=self._http_client,  # <-- KEY FIX: Use our custom client
                 postgrest_client_timeout=SUPABASE_READ_TIMEOUT,
                 storage_client_timeout=SUPABASE_READ_TIMEOUT,
                 function_client_timeout=SUPABASE_READ_TIMEOUT,
@@ -177,6 +174,11 @@ class DBConnection:
                 supabase_key,
                 options=options
             )
+            
+            # Configure each service's httpx client with optimized connection pool settings.
+            # We do this AFTER creation to avoid the shared client bug while still getting
+            # optimal connection pooling for high traffic.
+            self._configure_service_clients()
             
             self._initialized = True
             key_type = "SERVICE_ROLE_KEY" if config.SUPABASE_SERVICE_ROLE_KEY else "ANON_KEY"
@@ -195,8 +197,6 @@ class DBConnection:
     async def disconnect(cls):
         if cls._instance:
             try:
-                if cls._instance._http_client:
-                    await cls._instance._http_client.aclose()
                 if cls._instance._client and hasattr(cls._instance._client, 'close'):
                     await cls._instance._client.close()
             except Exception as e:
@@ -204,13 +204,10 @@ class DBConnection:
             finally:
                 cls._instance._initialized = False
                 cls._instance._client = None
-                cls._instance._http_client = None
                 logger.info("Database disconnected successfully")
 
     async def reset_connection(self):
         try:
-            if self._http_client:
-                await self._http_client.aclose()
             if self._client and hasattr(self._client, 'close'):
                 await self._client.close()
         except Exception as e:
@@ -218,7 +215,6 @@ class DBConnection:
         
         self._initialized = False
         self._client = None
-        self._http_client = None
         logger.debug("Database connection reset")
 
     @property

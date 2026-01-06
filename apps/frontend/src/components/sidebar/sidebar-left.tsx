@@ -2,7 +2,7 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Bot, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search } from 'lucide-react';
+import { Library, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
@@ -306,7 +306,7 @@ export function SidebarLeft({
               <div className="w-full flex flex-col items-center space-y-3">
                 {[
                   { view: 'chats' as const, icon: MessageCircle },
-                  { view: 'agents' as const, icon: Bot },
+                  { view: 'agents' as const, icon: Library },
                   { view: 'starred' as const, icon: Zap },
                 ].map(({ view, icon: Icon }) => (
                   <Button
@@ -371,7 +371,7 @@ export function SidebarLeft({
                 <div className="flex justify-between items-center gap-2">
                   {[
                     { view: 'chats' as const, icon: MessageCircle, label: t('chats') },
-                    { view: 'agents' as const, icon: Bot, label: t('workers') },
+                    { view: 'agents' as const, icon: Library, label: t('agents') },
                     { view: 'starred' as const, icon: Zap, label: t('triggers') }
                   ].map(({ view, icon: Icon, label }) => (
                     <button

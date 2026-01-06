@@ -17,7 +17,6 @@ import {
   Clock,
   ChevronDown,
   X,
-  Loader2,
   Pencil,
 } from 'lucide-react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
@@ -559,12 +558,16 @@ export function FileViewerView({
                       disabled={!hasUnsavedChanges || saveStatus === 'saving'}
                       className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${!hasUnsavedChanges ? 'opacity-50' : ''}`}
                     >
-                      <Icon
-                        as={saveStatus === 'saving' ? Loader2 : saveStatus === 'saved' ? Check : saveStatus === 'error' ? AlertCircle : Save}
-                        size={17}
-                        className="text-primary"
-                        strokeWidth={2}
-                      />
+                      {saveStatus === 'saving' ? (
+                        <KortixLoader size="small" customSize={17} />
+                      ) : (
+                        <Icon
+                          as={saveStatus === 'saved' ? Check : saveStatus === 'error' ? AlertCircle : Save}
+                          size={17}
+                          className="text-primary"
+                          strokeWidth={2}
+                        />
+                      )}
                     </Pressable>
                   </>
                 ) : (
@@ -867,7 +870,7 @@ export function FileViewerView({
               >
                 {isReverting ? (
                   <View className="flex-row items-center gap-2">
-                    <Icon as={Loader2} size={14} className="text-background" />
+                    <KortixLoader size="small" customSize={14} forceTheme="dark" />
                     <Text className="text-sm font-roobert-medium text-background">Restoring...</Text>
                   </View>
                 ) : (

@@ -67,6 +67,8 @@ import {
 } from './_utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { toast } from '@/lib/toast';
 import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
@@ -974,12 +976,7 @@ export function FileOperationToolView({
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2 mb-0 max-w-full min-w-0">
           <div className="flex flex-row items-center justify-between gap-3 max-w-full min-w-0">
             <div className="flex items-center gap-3 min-w-0 flex-1 max-w-full">
-              <div className={cn("relative p-2 rounded-lg border flex-shrink-0", `bg-gradient-to-br ${headerGradientBg}`, headerBorderColor)}>
-                <HeaderIcon className={cn("h-5 w-5", headerIconColor)} />
-              </div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
-                {displayTitle}
-              </CardTitle>
+              <ToolViewIconTitle icon={HeaderIcon} title={displayTitle} />
               <TabsList className="h-8 bg-muted/50 border border-border/50 p-0.5 gap-0.5 flex-shrink-0">
                 {hasDiffData && (
                   <TabsTrigger
@@ -1248,27 +1245,22 @@ export function FileOperationToolView({
           )}
         </CardContent>
 
-        <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
-          <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-            <Badge variant="outline" className="py-0.5 h-6">
-              <FileIcon className="h-3 w-3 mr-1" />
-              {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
-            </Badge>
-            {hasDiffData && diffStats.additions + diffStats.deletions > 0 && (
-              <div className="flex items-center gap-2 text-xs">
-                <span className="text-emerald-600 dark:text-emerald-400">+{diffStats.additions}</span>
-                <span className="text-red-600 dark:text-red-400">-{diffStats.deletions}</span>
-              </div>
-            )}
-          </div>
-          <div className="text-xs text-zinc-500 dark:text-zinc-400">
-            {toolTimestamp && !isStreaming
-              ? formatTimestamp(toolTimestamp)
-              : assistantTimestamp
-                ? formatTimestamp(assistantTimestamp)
-                : ''}
-          </div>
-        </div>
+        <ToolViewFooter
+          assistantTimestamp={assistantTimestamp}
+          toolTimestamp={toolTimestamp}
+          isStreaming={isStreaming}
+        >
+          <Badge variant="outline" className="py-0.5 h-6">
+            <FileIcon className="h-3 w-3 mr-1" />
+            {hasHighlighting ? language.toUpperCase() : fileExtension.toUpperCase() || 'TEXT'}
+          </Badge>
+          {hasDiffData && diffStats.additions + diffStats.deletions > 0 && (
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-zinc-600 dark:text-zinc-400">+{diffStats.additions}</span>
+              <span className="text-zinc-600 dark:text-zinc-400">-{diffStats.deletions}</span>
+            </div>
+          )}
+        </ToolViewFooter>
       </Tabs>
     </Card>
   );

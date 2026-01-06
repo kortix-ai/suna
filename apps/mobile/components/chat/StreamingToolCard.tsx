@@ -2,7 +2,8 @@ import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react'
 import { View, ScrollView, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CircleDashed, CheckCircle2 } from 'lucide-react-native';
+import { CheckCircle2, CircleDashed } from 'lucide-react-native';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { getUserFriendlyToolName } from '@agentpress/shared';
 import { getToolIcon } from '@/lib/icons/tool-icons';
 
@@ -215,7 +216,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
         {fallbackIsCompleted ? (
           <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
         ) : (
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <KortixLoader size="small" />
         )}
       </View>
     );
@@ -249,7 +250,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
         {isCompleted ? (
           <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
         ) : (
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <KortixLoader size="small" />
         )}
       </View>
     );
@@ -274,7 +275,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
         {isCompleted ? (
           <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
         ) : (
-          <Icon as={CircleDashed} size={16} className="text-primary animate-spin" />
+          <KortixLoader size="small" />
         )}
       </View>
 

@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button"
 import { Palette, Sparkles, CheckCircle, AlertTriangle, ArrowLeft, X } from "lucide-react"
 import { KortixLoader } from "@/components/ui/kortix-loader"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { ToolViewIconTitle } from "../shared/ToolViewIconTitle"
+import { ToolViewFooter } from "../shared/ToolViewFooter"
 import type { ToolViewProps } from "../types"
 import { getToolTitle, formatTimestamp } from "../utils"
 import { LoadingState } from "../shared/LoadingState"
@@ -93,16 +95,10 @@ export function ListPresentationTemplatesToolView({
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
           <div className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="relative p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-600/10 border border-orange-500/20">
-                <Palette className="w-5 h-5 text-orange-500 dark:text-orange-400" />
-              </div>
-              <div>
-                <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                  {template?.name.replace(/_/g, " ") || selectedTemplate.replace(/_/g, " ") || "Template Preview"}
-                </CardTitle>
-              </div>
-            </div>
+            <ToolViewIconTitle 
+              icon={Palette} 
+              title={template?.name.replace(/_/g, " ") || selectedTemplate.replace(/_/g, " ") || "Template Preview"} 
+            />
             {showBackButton && (
               <Button
                 variant="ghost"
@@ -148,17 +144,7 @@ export function ListPresentationTemplatesToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-600/10 border border-orange-500/20">
-              <Palette className="w-5 h-5 text-orange-500 dark:text-orange-400" />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {toolTitle}
-              </CardTitle>
-            </div>
-          </div>
-
+          <ToolViewIconTitle icon={Palette} title={toolTitle} />
         </div>
       </CardHeader>
 

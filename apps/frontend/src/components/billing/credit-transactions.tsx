@@ -28,7 +28,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Loader2,
   AlertCircle,
   TrendingUp,
   TrendingDown,

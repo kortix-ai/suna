@@ -11,14 +11,9 @@ export function useSmoothText(
   charsPerSecond: number = 120,
   enabled: boolean = true
 ): SmoothTextResult {
-  const previousContentRef = useRef<string>('');
-  const wasFullyDisplayedRef = useRef<boolean>(false);
   const contentPrefixRef = useRef<string>('');
   
-  const [displayedLength, setDisplayedLength] = useState(() => {
-    if (!enabled) return targetText.length;
-    return 0;
-  });
+  const [displayedLength, setDisplayedLength] = useState(0);
   
   const animationConfig: SmoothAnimationConfig = useMemo(() => ({
     charsPerSecond,
@@ -28,6 +23,7 @@ export function useSmoothText(
   
   const { animate, stop, reset, didTargetShrink, stateRef } = useSmoothAnimation(animationConfig);
 
+  // Detect content reset (new message, different content)
   useEffect(() => {
     const currentPrefix = targetText.slice(0, 50);
     const previousPrefix = contentPrefixRef.current;
@@ -38,45 +34,37 @@ export function useSmoothText(
     if (isNewContent) {
       reset();
       setDisplayedLength(0);
-      previousContentRef.current = '';
-      wasFullyDisplayedRef.current = false;
     }
     
     contentPrefixRef.current = currentPrefix;
   }, [targetText, didTargetShrink, reset]);
 
+  // Main animation effect - just update target, let the loop handle it
   useEffect(() => {
-    if (displayedLength >= targetText.length && targetText.length > 0) {
-      wasFullyDisplayedRef.current = true;
-      previousContentRef.current = targetText;
-    }
-  }, [displayedLength, targetText]);
-
-  useEffect(() => {
-    if (!enabled || !targetText) {
+    if (!enabled) {
       setDisplayedLength(targetText.length);
       stateRef.current.displayedLength = targetText.length;
       return;
     }
 
-    if (previousContentRef.current === targetText && wasFullyDisplayedRef.current) {
-      setDisplayedLength(targetText.length);
-      stateRef.current.displayedLength = targetText.length;
+    if (!targetText) {
       return;
     }
 
-    if (stateRef.current.displayedLength >= targetText.length) {
-      return;
-    }
-
+    // Always call animate - it will update the target and keep the loop running
+    // The loop never stops, so there's no stutter between updates
     animate(
       targetText.length,
       (newLength) => setDisplayedLength(newLength)
     );
-
+  }, [targetText, enabled, animate, stateRef]);
+  
+  // Cleanup only on unmount
+  useEffect(() => {
     return () => stop();
-  }, [targetText, enabled, animate, stop, stateRef]);
+  }, [stop]);
 
+  // Sync state ref with displayed length
   useEffect(() => {
     stateRef.current.displayedLength = displayedLength;
   }, [displayedLength, stateRef]);

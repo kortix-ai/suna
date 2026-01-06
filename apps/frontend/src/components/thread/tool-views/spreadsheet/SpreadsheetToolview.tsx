@@ -81,7 +81,9 @@ export function SpreadsheetToolView({
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name);
-  const fileName = filePath?.split('/').pop() || 'spreadsheet.xlsx';
+  const rawFileName = filePath?.split('/').pop() || 'spreadsheet.xlsx';
+  // Trim whitespace, newlines, and other control characters
+  const fileName = rawFileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'spreadsheet.xlsx';
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">

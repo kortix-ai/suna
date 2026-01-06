@@ -224,7 +224,10 @@ export function SheetsToolView({
                   <div className="space-y-3">
                     <SpreadsheetViewer
                       filePath={primaryXlsx}
-                      fileName={(primaryXlsx.split('/').pop() || 'sheet.xlsx')}
+                      fileName={(() => {
+                        const raw = primaryXlsx.split('/').pop() || 'sheet.xlsx';
+                        return raw.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || 'sheet.xlsx';
+                      })()}
                       project={project}
                       className="w-full h-[60vh]"
                     />

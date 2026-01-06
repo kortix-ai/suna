@@ -54,7 +54,6 @@ import {
   Minus,
   ListTodo,
   Check,
-  Loader2,
   AlertCircle,
   Save,
   Type,
@@ -74,6 +73,7 @@ import {
   Columns,
   Rows,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { useEditorState, type Editor } from '@tiptap/react';
 import { exportDocument, type ExportFormat } from '@/lib/utils/document-export';
@@ -481,7 +481,7 @@ export function MarkdownToolbar({
       case 'saving':
         return (
           <Button variant="ghost" size="sm" disabled className="gap-1.5 h-8 px-2">
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <KortixLoader size="small" />
             <span className="text-xs">Saving</span>
           </Button>
         );
@@ -819,7 +819,7 @@ export function MarkdownToolbar({
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="sm" className="h-8 w-8 p-0" disabled={isExporting}>
                   {isExporting ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <KortixLoader size="small" />
                   ) : (
                     <Download className="h-4 w-4" />
                   )}
@@ -947,7 +947,7 @@ export function MarkdownToolbar({
           <Button onClick={insertImage} disabled={(!imageUrl && !imagePreview) || isUploading}>
             {isUploading ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                <KortixLoader size="small" className="mr-2" />
                 Uploading...
               </>
             ) : (

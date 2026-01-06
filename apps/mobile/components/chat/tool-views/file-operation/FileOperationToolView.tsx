@@ -3,13 +3,13 @@ import { View, ScrollView, Pressable, NativeScrollEvent, NativeSyntheticEvent } 
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   Code,
   Eye,
   FileText,
   Presentation,
   Pencil,
-  Loader2,
   Copy,
   Check,
   FileDiff,
@@ -461,7 +461,7 @@ export function FileOperationToolView({
               {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
             </Text>
             <View className="flex-row items-center gap-2">
-              <Icon as={Loader2} size={16} className="text-primary" />
+              <KortixLoader size="small" customSize={16} />
               <Text className="text-sm text-primary">Writing slide content...</Text>
             </View>
           </View>
