@@ -320,6 +320,7 @@ class ThreadManager:
         """
         logger.debug(f"Getting messages for thread {thread_id} (lightweight={lightweight})")
         
+        
         # Check cache first (only for non-lightweight mode)
         if not lightweight:
             from core.cache.runtime_cache import get_cached_message_history
