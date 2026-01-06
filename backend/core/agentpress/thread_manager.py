@@ -338,6 +338,7 @@ class ThreadManager:
         
         from core.services.supabase import execute_with_reconnect
         import asyncio
+        import time as _time
         
         # Timeout for message queries (seconds) - fail fast on connection issues
         MESSAGE_QUERY_TIMEOUT = 10.0
@@ -346,6 +347,8 @@ class ThreadManager:
             all_messages = []
             
             if lightweight:
+                logger.info(f"📊 Starting lightweight message fetch for thread {thread_id}")
+                t0 = _time.time()
                 result = await asyncio.wait_for(
                     execute_with_reconnect(
                         self.db,
@@ -353,6 +356,8 @@ class ThreadManager:
                     ),
                     timeout=MESSAGE_QUERY_TIMEOUT
                 )
+                elapsed = (_time.time() - t0) * 1000
+                logger.info(f"📊 Lightweight message fetch completed: {elapsed:.0f}ms, {len(result.data) if result.data else 0} messages")
                 
                 if result.data:
                     all_messages = result.data
@@ -361,6 +366,8 @@ class ThreadManager:
                 offset = 0
                 
                 while True:
+                    logger.info(f"📊 Starting message fetch (offset={offset}) for thread {thread_id}")
+                    t0 = _time.time()
                     # Capture offset in lambda default arg to avoid closure issues
                     result = await asyncio.wait_for(
                         execute_with_reconnect(
@@ -369,6 +376,8 @@ class ThreadManager:
                         ),
                         timeout=MESSAGE_QUERY_TIMEOUT
                     )
+                    elapsed = (_time.time() - t0) * 1000
+                    logger.info(f"📊 Message fetch (offset={offset}) completed: {elapsed:.0f}ms, {len(result.data) if result.data else 0} messages")
                     
                     if not result.data:
                         break
