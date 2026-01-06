@@ -42,7 +42,7 @@ uv run api.py
 **2. Launching the frontend**
 
 ```bash
-cd frontend
+cd apps/frontend
 pnpm install
 pnpm run dev
 ```

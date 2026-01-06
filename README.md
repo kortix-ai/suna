@@ -6,7 +6,7 @@
 
 Build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf.
 
-[![Discord Follow](https://dcbadge.limes.pink/api/server/Py6pCBUUPw?style=flat)](https://discord.gg/RvFhXUdZ9H)
+[![Discord Follow](https://dcbadge.limes.pink/api/server/RvFhXUdZ9H?style=flat)](https://discord.com/invite/RvFhXUdZ9H)
 [![Twitter Follow](https://img.shields.io/twitter/follow/kortix)](https://x.com/korti)
 [![GitHub Repo stars](https://img.shields.io/github/stars/kortix-ai/suna)](https://github.com/kortix-ai/suna)
 [![Issues](https://img.shields.io/github/issues/kortix-ai/suna)](https://github.com/kortix-ai/suna/labels/bug)
@@ -21,7 +21,7 @@ Build, manage, and train sophisticated AI agents for any use case. Create powerf
 [Русский](https://www.readme-i18n.com/kortix-ai/suna?lang=ru) | 
 [中文](https://www.readme-i18n.com/kortix-ai/suna?lang=zh)
 
-![Kortix Screenshot](frontend/public/banner.png)
+![Kortix Screenshot](apps/frontend/public/banner.png)
 </div>
 
 
@@ -177,6 +177,6 @@ Just use "setup.py". Ty mate.
 
 **Ready to build your first AI agent?** 
 
-[Get Started](./docs/SELF-HOSTING.md) • [Join Discord](https://discord.gg/RvFhXUdZ9H) • [Follow on Twitter](https://x.com/kortix)
+[Get Started](./docs/SELF-HOSTING.md) • [Join Discord](https://discord.com/invite/RvFhXUdZ9H) • [Follow on Twitter](https://x.com/kortix)
 
 </div>
