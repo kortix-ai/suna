@@ -31,7 +31,7 @@ export const siteConfig = {
       title: 'Resources',
       links: [
         { id: 5, title: 'Documentation', url: 'https://github.com/kortix-ai/suna' },
-        { id: 6, title: 'Discord', url: 'https://discord.gg/Py6pCBUUPw' },
+        { id: 6, title: 'Discord', url: 'https://discord.com/invite/RvFhXUdZ9H' },
         { id: 7, title: 'GitHub', url: 'https://github.com/kortix-ai/suna' },
       ],
     },

@@ -44,7 +44,7 @@ export function SimpleFooter() {
                 </span>
               </a>
               <a
-                href="https://discord.gg/Py6pCBUUPw"
+                href="https://discord.com/invite/RvFhXUdZ9H"
                 target="_blank"
                 rel="noopener noreferrer"
                 aria-label="Discord"
