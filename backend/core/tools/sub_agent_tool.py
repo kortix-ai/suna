@@ -349,10 +349,22 @@ Respond in this EXACT JSON format:
                 "created_at": datetime.now(timezone.utc).isoformat()
             }).execute()
             
-            # Compose the sub-agent's instruction message
-            instruction = task
+            # Compose the sub-agent's instruction message with result format requirement
+            result_format_instruction = """
+
+---
+⚠️ REQUIRED OUTPUT FORMAT:
+When you complete this task, you MUST end your final message with a clear summary in this format:
+
+## TASK RESULT
+**Status:** [Completed/Failed]
+**Files Created:** [List any files you created with full paths]
+**Summary:** [2-3 sentence summary of what you accomplished]
+"""
+            
+            instruction = task + result_format_instruction
             if context:
-                instruction = f"{task}\n\n---\nContext:\n{context}"
+                instruction = f"{task}\n\n---\nContext:\n{context}{result_format_instruction}"
             
             # Add instruction as user message
             await client.table('messages').insert({
@@ -587,10 +599,13 @@ Respond in this EXACT JSON format:
             # Get the last few assistant messages from the sub-agent thread
             messages_result = await client.table('messages').select(
                 'content, metadata, type, created_at'
-            ).eq('thread_id', thread_id).eq('type', 'assistant').order('created_at', desc=True).limit(3).execute()
+            ).eq('thread_id', thread_id).eq('type', 'assistant').order('created_at', desc=True).limit(5).execute()
             
-            # Extract text content from messages
-            result_content = []
+            # Extract text content and attachments, looking for structured TASK RESULT
+            all_text = []
+            attachments = []
+            task_result_section = None
+            
             for msg in reversed(messages_result.data or []):
                 content = msg.get('content', {})
                 if isinstance(content, dict):
@@ -600,7 +615,7 @@ Respond in this EXACT JSON format:
                 else:
                     text = str(content)
                 
-                # Also check metadata for text_content
+                # Also check metadata for text_content and attachments
                 metadata = msg.get('metadata', {}) or {}
                 if isinstance(metadata, str):
                     try:
@@ -609,12 +624,63 @@ Respond in this EXACT JSON format:
                         metadata = {}
                 
                 text_content = metadata.get('text_content', '')
-                if text_content:
-                    result_content.append(text_content)
-                elif text:
-                    result_content.append(text)
+                full_text = (text_content or text).strip()
+                
+                if full_text:
+                    all_text.append(full_text)
+                    
+                    # Look for structured TASK RESULT section
+                    if '## TASK RESULT' in full_text or '**Status:**' in full_text:
+                        # Extract the task result section
+                        if '## TASK RESULT' in full_text:
+                            idx = full_text.find('## TASK RESULT')
+                            task_result_section = full_text[idx:].strip()
+                        elif '**Status:**' in full_text:
+                            # Try to extract from Status onwards
+                            lines = full_text.split('\n')
+                            result_lines = []
+                            capturing = False
+                            for line in lines:
+                                if '**Status:**' in line or capturing:
+                                    capturing = True
+                                    result_lines.append(line)
+                            if result_lines:
+                                task_result_section = '\n'.join(result_lines).strip()
+                
+                # Collect any attachments mentioned
+                msg_attachments = metadata.get('attachments', [])
+                if msg_attachments:
+                    if isinstance(msg_attachments, str):
+                        try:
+                            msg_attachments = json.loads(msg_attachments)
+                        except:
+                            pass
+                    if isinstance(msg_attachments, list):
+                        attachments.extend(msg_attachments)
             
             task_description = (run.get('metadata') or {}).get('task_description', 'Unknown task')
+            
+            # Use structured TASK RESULT if found, otherwise fall back
+            if task_result_section:
+                result_text = task_result_section
+            elif all_text:
+                # Use only the last meaningful message (not all of them)
+                result_text = all_text[-1] if all_text else ""
+                # Truncate if too long (keep last 500 chars)
+                if len(result_text) > 500:
+                    result_text = "..." + result_text[-500:]
+            else:
+                result_text = ""
+            
+            # If no text but we have attachments, mention them
+            if not result_text and attachments:
+                result_text = f"Task completed. Created {len(attachments)} file(s): {', '.join(attachments)}"
+            elif not result_text:
+                result_text = "Task completed successfully (no detailed output captured)"
+            
+            # Append file paths if available and not already in result
+            if attachments and 'Files Created:' not in result_text:
+                result_text += f"\n\n📁 Files: {', '.join(attachments)}"
             
             return ToolResult(
                 success=True,
@@ -624,7 +690,8 @@ Respond in this EXACT JSON format:
                     "task": task_description,
                     "status": status,
                     "error": run.get('error'),
-                    "result": "\n\n".join(result_content) if result_content else "(No output captured)",
+                    "result": result_text,
+                    "attachments": attachments if attachments else None,
                     "completed_at": run.get('completed_at')
                 }, indent=2)
             )
