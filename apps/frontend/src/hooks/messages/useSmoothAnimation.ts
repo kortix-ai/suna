@@ -69,67 +69,71 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
     return newTargetLength < stateRef.current.lastTargetLength;
   }, []);
 
+  // Store the onFrame callback ref so the animation loop can use the latest one
+  const onFrameRef = useRef<((displayedLength: number) => void) | null>(null);
+
   const animate = useCallback((
     targetLength: number,
     onFrame: (displayedLength: number) => void,
-    onComplete?: () => void
+    _onComplete?: () => void
   ) => {
+    // Always update target and callback - the loop will pick it up
     stateRef.current.lastTargetLength = targetLength;
+    onFrameRef.current = onFrame;
 
-    if (stateRef.current.displayedLength >= targetLength) {
+    // If animation loop is already running, don't start another
+    if (stateRef.current.rafId !== null) {
       return;
     }
 
-    if (stateRef.current.lastUpdateTime === null) {
-      stateRef.current.lastUpdateTime = performance.now();
-    }
-
+    // Start the continuous animation loop
     const animateFrame = (currentTime: number) => {
       const state = stateRef.current;
       
+      // Initialize timing
       if (state.lastUpdateTime === null) {
         state.lastUpdateTime = currentTime;
-        scheduleNextFrame();
-        return;
       }
 
       let deltaTime = (currentTime - state.lastUpdateTime) / 1000;
       
+      // Clamp very large deltas (e.g., after tab switch)
       if (deltaTime > 0.5) {
         deltaTime = 0.016;
       }
       
       state.lastUpdateTime = currentTime;
 
-      const charsBehind = targetLength - state.displayedLength;
+      // Use current target from state for live updates
+      const currentTarget = state.lastTargetLength;
+      const charsBehind = currentTarget - state.displayedLength;
       
-      let effectiveSpeed: number;
-      if (charsBehind > 500) {
-        effectiveSpeed = charsPerSecond * 10;
-      } else if (charsBehind > catchUpThreshold) {
-        effectiveSpeed = charsPerSecond * catchUpMultiplier;
-      } else {
-        effectiveSpeed = charsPerSecond;
-      }
-      
-      const charsToAdd = deltaTime * effectiveSpeed;
-      const newLength = Math.min(
-        state.displayedLength + charsToAdd,
-        targetLength
-      );
+      // If we have content to animate, do it
+      if (charsBehind > 0) {
+        let effectiveSpeed: number;
+        if (charsBehind > 500) {
+          effectiveSpeed = charsPerSecond * 10;
+        } else if (charsBehind > catchUpThreshold) {
+          effectiveSpeed = charsPerSecond * catchUpMultiplier;
+        } else {
+          effectiveSpeed = charsPerSecond;
+        }
+        
+        const charsToAdd = Math.max(deltaTime * effectiveSpeed, 0.5); // At least half a char
+        const newLength = Math.min(
+          state.displayedLength + charsToAdd,
+          currentTarget
+        );
 
-      if (newLength > state.displayedLength) {
-        state.displayedLength = Math.floor(newLength);
-        onFrame(state.displayedLength);
+        if (Math.floor(newLength) > state.displayedLength) {
+          state.displayedLength = Math.floor(newLength);
+          onFrameRef.current?.(state.displayedLength);
+        }
       }
 
-      if (state.displayedLength < targetLength) {
-        scheduleNextFrame();
-      } else {
-        state.rafId = null;
-        state.lastUpdateTime = null;
-        onComplete?.();
-      }
+      // NEVER STOP - always schedule next frame
+      // The loop will be stopped externally via stop() on unmount
+      scheduleNextFrame();
     };
 
     const scheduleNextFrame = () => {
@@ -142,9 +146,8 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
       }
     };
 
-    if (stateRef.current.rafId === null) {
-      scheduleNextFrame();
-    }
+    // Start the loop
+    scheduleNextFrame();
   }, [charsPerSecond, catchUpThreshold, catchUpMultiplier]);
 
   return {

@@ -186,33 +186,13 @@ class AgentRunner:
         return disabled_tools
     
     def setup_tools(self):
+        """Register core tools. Other tools are loaded on-demand via initialize_tools()."""
         start = time.time()
         
         tool_manager = ToolManager(self.thread_manager, self.config.project_id, self.config.thread_id, self.config.agent_config)
+        tool_manager.register_core_tools()
         
-        agent_id = None
-        if self.config.agent_config:
-            agent_id = self.config.agent_config.get('agent_id')
-        
-        disabled_tools = tool_manager.get_disabled_tools_from_config()
-        
-        register_start = time.time()
-        use_spark = True
-        tool_manager.register_all_tools(agent_id=agent_id, disabled_tools=disabled_tools, use_spark=use_spark)
-        logger.info(f"⏱️ [TIMING] register_all_tools() with SPARK={use_spark}: {(time.time() - register_start) * 1000:.1f}ms")
-        
-        is_suna_agent = (self.config.agent_config and self.config.agent_config.get('is_suna_default', False)) or (self.config.agent_config is None)
-        logger.debug(f"Agent config check: agent_config={self.config.agent_config is not None}, is_suna_default={is_suna_agent}")
-        
-        if is_suna_agent:
-            suna_start = time.time()
-            logger.debug("Registering Suna-specific tools...")
-            tool_manager.register_suna_specific_tools(disabled_tools, account_id=self.account_id)
-            logger.debug(f"⏱️ [TIMING] Suna-specific tools: {(time.time() - suna_start) * 1000:.1f}ms")
-        else:
-            logger.debug("Not a Suna agent, skipping Suna-specific tool registration")
-        
-        logger.info(f"⏱️ [TIMING] setup_tools() total: {(time.time() - start) * 1000:.1f}ms")
+        logger.info(f"⏱️ [TIMING] setup_tools(): {(time.time() - start) * 1000:.1f}ms")
     
     async def _setup_tools_async(self):
         loop = asyncio.get_event_loop()
@@ -542,11 +522,8 @@ class AgentRunner:
         """
         Restore dynamically loaded tools from previous turns.
         
-        SIMPLIFIED: Tools are now loaded on-demand via JIT when actually called.
-        This method just pre-warms the tool registry with tool names so the LLM
-        knows they're available, but doesn't do expensive activation.
-        
-        This reduced 34-41 second hangs to <100ms.
+        Uses JIT parallel activation to efficiently restore tools that were
+        previously activated via initialize_tools().
         """
         restore_start = time.time()
         
@@ -573,17 +550,28 @@ class AgentRunner:
                 logger.debug("📦 [DYNAMIC TOOLS] No previously loaded tools to restore")
                 return
             
-            # Just log what tools were previously used - they'll be JIT-loaded when needed
-            # This avoids the 34-41 second activation delays
-            logger.info(f"📦 [DYNAMIC TOOLS] {len(dynamic_tools)} tools from previous session (JIT-loaded on demand): {dynamic_tools}")
+            logger.info(f"📦 [DYNAMIC TOOLS] Restoring {len(dynamic_tools)} tools from previous session: {dynamic_tools}")
             
-            # Store in thread_manager for reference (no actual activation)
+            # Store in thread_manager for reference
             if hasattr(self.thread_manager, 'jit_config') and self.thread_manager.jit_config:
-                # Mark these tools as "previously used" for prioritization
                 self.thread_manager.jit_config.previously_used_tools = set(dynamic_tools)
             
+            # Actually activate the tools using JIT parallel activation
+            from core.jit import JITLoader
+            
+            activation_result = await JITLoader.activate_multiple(
+                dynamic_tools,
+                self.thread_manager,
+                self.config.project_id,
+                jit_config=self.thread_manager.jit_config if hasattr(self.thread_manager, 'jit_config') else None
+            )
+            
             elapsed_ms = (time.time() - restore_start) * 1000
-            logger.info(f"✅ [DYNAMIC TOOLS] Metadata check completed in {elapsed_ms:.1f}ms")
+            logger.info(f"✅ [DYNAMIC TOOLS] Restored {len(activation_result.successful)}/{len(dynamic_tools)} tools in {elapsed_ms:.1f}ms")
+            
+            if activation_result.failed:
+                failed_names = [f.tool_name for f in activation_result.failed]
+                logger.warning(f"⚠️ [DYNAMIC TOOLS] Failed to restore: {failed_names}")
         
         except Exception as e:
             # Non-fatal - just log and continue

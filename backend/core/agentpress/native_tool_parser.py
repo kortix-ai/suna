@@ -85,7 +85,8 @@ def _normalize_json_string_values(value: Any) -> Any:
     For example: {"query": "[\"a\", \"b\"]"} instead of {"query": ["a", "b"]}
     
     This function recursively traverses dicts/lists and parses any string
-    that looks like a JSON array or object.
+    that looks like a JSON array or object. It also attempts to repair
+    malformed JSON that LLMs sometimes produce (e.g., missing closing brackets).
     
     Args:
         value: Any value to normalize
@@ -93,6 +94,8 @@ def _normalize_json_string_values(value: Any) -> Any:
     Returns:
         Normalized value with JSON strings parsed into native types
     """
+    from core.utils.json_helpers import repair_json
+    
     if isinstance(value, dict):
         return {k: _normalize_json_string_values(v) for k, v in value.items()}
     
@@ -109,7 +112,15 @@ def _normalize_json_string_values(value: Any) -> Any:
                 # Recursively normalize the parsed result too
                 return _normalize_json_string_values(parsed)
             except (json.JSONDecodeError, ValueError):
-                # Not valid JSON, return original string
+                # Try to repair malformed JSON
+                repaired, was_repaired = repair_json(stripped)
+                if was_repaired:
+                    try:
+                        parsed = json.loads(repaired)
+                        return _normalize_json_string_values(parsed)
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+                # Not valid JSON even after repair, return original string
                 pass
     
     return value
@@ -119,6 +130,7 @@ def parse_native_tool_call_arguments(arguments: Any) -> Dict[str, Any]:
     """
     Parse native tool call arguments, handling both string and dict formats.
     Also normalizes nested JSON strings (e.g. arrays passed as strings).
+    Includes automatic repair of malformed JSON from LLMs.
     
     Args:
         arguments: Arguments as string (JSON) or dict
@@ -126,25 +138,22 @@ def parse_native_tool_call_arguments(arguments: Any) -> Dict[str, Any]:
     Returns:
         Parsed arguments as dict, or original value if parsing fails
     """
-    from core.utils.json_helpers import safe_json_parse
+    from core.utils.json_helpers import safe_json_parse_with_repair
     
     if isinstance(arguments, dict):
         # Normalize any JSON string values within the dict
         return _normalize_json_string_values(arguments)
     
     if isinstance(arguments, str):
-        parsed = safe_json_parse(arguments)
+        # Use the repair-enabled parser
+        parsed = safe_json_parse_with_repair(arguments)
         if isinstance(parsed, dict):
             # Normalize any JSON string values within the parsed dict
             return _normalize_json_string_values(parsed)
-        # Try direct JSON parse as fallback
-        try:
-            result = json.loads(arguments)
-            if isinstance(result, dict):
-                return _normalize_json_string_values(result)
-            return result
-        except (json.JSONDecodeError, ValueError):
-            return arguments
+        # If we got back a string (not parsed), return it
+        if isinstance(parsed, str):
+            return parsed
+        return arguments
     
     return arguments
 
@@ -195,6 +204,12 @@ def convert_to_exec_tool_call(
 
 
 def convert_buffer_to_complete_tool_calls(tool_calls_buffer: Dict[int, Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Convert buffered tool calls to complete tool call format.
+    Includes automatic repair of malformed JSON from LLMs.
+    """
+    from core.utils.json_helpers import repair_json
+    
     complete_tool_calls = []
     
     for idx, tc_buf in tool_calls_buffer.items():
@@ -214,7 +229,25 @@ def convert_buffer_to_complete_tool_calls(tool_calls_buffer: Dict[int, Dict[str,
                     }
                 })
             except (json.JSONDecodeError, TypeError) as e:
-                logger.warning(f"Tool call {tc_buf.get('id')} has invalid JSON arguments, skipping: {str(e)[:100]}")
+                # Try to repair the JSON
+                repaired, was_repaired = repair_json(arguments_str)
+                if was_repaired:
+                    try:
+                        parsed = json.loads(repaired)
+                        if isinstance(parsed, dict):
+                            logger.info(f"🔧 Tool call {tc_buf.get('id')} repaired successfully")
+                            complete_tool_calls.append({
+                                "id": tc_buf['id'],
+                                "type": "function",
+                                "function": {
+                                    "name": tc_buf['function']['name'],
+                                    "arguments": repaired  # Use repaired JSON
+                                }
+                            })
+                            continue
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                logger.warning(f"Tool call {tc_buf.get('id')} has invalid JSON arguments (repair failed), skipping: {str(e)[:100]}")
                 continue
     
     return complete_tool_calls

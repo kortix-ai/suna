@@ -173,6 +173,52 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     true
   );
 
+  // Extract ask/complete text from streaming tool call for smooth animation
+  const rawAskCompleteText = useMemo(() => {
+    if (!streamingToolCall) return "";
+    const parsedMetadata = safeJsonParse<ParsedMetadata>(streamingToolCall.metadata, {});
+    const toolCalls = parsedMetadata.tool_calls || [];
+    const askOrCompleteTool = toolCalls.find((tc: any) => {
+      const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
+      return toolName === "ask" || toolName === "complete";
+    });
+    if (!askOrCompleteTool) return "";
+    
+    const toolArgs: any = askOrCompleteTool.arguments;
+    if (!toolArgs) return "";
+    
+    let extractedText = "";
+    if (typeof toolArgs === "string") {
+      try {
+        const parsed = JSON.parse(toolArgs);
+        extractedText = parsed?.text || "";
+      } catch {
+        extractedText = extractTextFromPartialJson(toolArgs);
+      }
+    } else if (typeof toolArgs === "object" && toolArgs !== null) {
+      extractedText = toolArgs?.text || "";
+    }
+    
+    // Debug logging for streaming ask/complete text
+    if (extractedText) {
+      console.log("[ThreadContent] Streaming ask/complete text:", {
+        toolName: askOrCompleteTool.function_name,
+        rawArgsType: typeof toolArgs,
+        extractedText: extractedText.slice(0, 100) + (extractedText.length > 100 ? "..." : ""),
+        textLength: extractedText.length,
+      });
+    }
+    
+    return extractedText;
+  }, [streamingToolCall]);
+
+  // Apply smooth text animation to ask/complete streaming content
+  const { text: smoothAskCompleteText, isAnimating: isAskCompleteAnimating } = useSmoothText(
+    rawAskCompleteText,
+    120,
+    true
+  );
+
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
     group.messages.forEach((msg) => {
@@ -460,16 +506,25 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     // Don't show streaming tool call if not streaming or agent is not running
     if (!isLastGroup || readOnly || !streamingToolCall) return null;
     
-    // Don't show if agent is not in a streaming state
+    // Don't show if agent is not in a streaming state (unless animation is still playing)
     const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
-    if (!isActivelyStreaming && !isAgentRunning) return null;
+    if (!isActivelyStreaming && !isAgentRunning && !isAskCompleteAnimating) return null;
 
     const parsedMetadata = safeJsonParse<ParsedMetadata>(
       streamingToolCall.metadata,
       {},
     );
     const toolCalls = parsedMetadata.tool_calls || [];
+
+    // Debug logging for streaming tool calls
+    console.log("[ThreadContent] streamingToolCallContent:", {
+      toolCallCount: toolCalls.length,
+      toolNames: toolCalls.map((tc: any) => tc.function_name),
+      rawAskCompleteText: rawAskCompleteText?.slice(0, 50),
+      smoothAskCompleteText: smoothAskCompleteText?.slice(0, 50),
+      isAskCompleteAnimating,
+    });
 
     const askOrCompleteTool = toolCalls.find((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
@@ -504,34 +559,38 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         }
       }
 
-      const toolArgs: any = askOrCompleteTool.arguments;
-      let askCompleteText = "";
-      if (toolArgs) {
-        if (typeof toolArgs === "string") {
-          try {
-            const parsed = JSON.parse(toolArgs);
-            askCompleteText = parsed?.text || "";
-          } catch {
-            askCompleteText = extractTextFromPartialJson(toolArgs);
-          }
-        } else if (typeof toolArgs === "object" && toolArgs !== null) {
-          askCompleteText = toolArgs?.text || "";
-        }
+      // Use smooth animated text for display
+      const isCurrentlyStreaming =
+        streamHookStatus === "streaming" || streamHookStatus === "connecting" || isAskCompleteAnimating;
+
+      // If we have smooth text to show, render it with animation
+      if (smoothAskCompleteText) {
+        return (
+          <div className="mt-1.5">
+            <ComposioUrlDetector
+              content={smoothAskCompleteText}
+              isStreaming={isCurrentlyStreaming}
+            />
+          </div>
+        );
       }
 
-      const toolName =
-        askOrCompleteTool.function_name?.replace(/_/g, "-").toLowerCase() || "";
-      const textToShow =
-        askCompleteText || (toolName === "ask" ? "Asking..." : "Completing...");
-      const isCurrentlyStreaming =
-        streamHookStatus === "streaming" || streamHookStatus === "connecting";
+      // No text yet - show the raw text if available, otherwise show loader
+      if (rawAskCompleteText) {
+        return (
+          <div className="mt-1.5">
+            <ComposioUrlDetector
+              content={rawAskCompleteText}
+              isStreaming={isCurrentlyStreaming}
+            />
+          </div>
+        );
+      }
 
+      // No text at all yet - show loader
       return (
         <div className="mt-1.5">
-          <ComposioUrlDetector
-            content={textToShow}
-            isStreaming={isCurrentlyStreaming}
-          />
+          <AgentLoader />
         </div>
       );
     }
@@ -618,12 +677,17 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamHookStatus,
     agentStatus,
     handleToolClick,
+    smoothAskCompleteText,
+    rawAskCompleteText,
+    isAskCompleteAnimating,
   ]);
 
   const showLoader = useMemo(() => {
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
     if (streamingTextContent || streamingToolCall) return false;
+    // Don't show loader if we're animating ask/complete text
+    if (smoothAskCompleteText || isAskCompleteAnimating) return false;
     if (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
       return false;
 
@@ -649,6 +713,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamingToolCall,
     streamHookStatus,
     group.messages,
+    smoothAskCompleteText,
+    isAskCompleteAnimating,
   ]);
 
   return (
