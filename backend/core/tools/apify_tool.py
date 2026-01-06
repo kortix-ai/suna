@@ -6,6 +6,7 @@ from decimal import Decimal
 from datetime import datetime, timedelta, timezone
 from apify_client import ApifyClient
 import requests
+import aiohttp
 import uuid
 
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
@@ -369,22 +370,24 @@ class ApifyTool(SandboxToolsBase):
                 try:
                     api_token = config.APIFY_API_TOKEN
                     if api_token:
-                        # Get dataset info directly
+                        # Get dataset info directly (async to avoid blocking)
                         dataset_url = f"https://api.apify.com/v2/datasets/{dataset_id}?token={api_token}"
                         logger.debug(f"Fetching dataset info directly from API for run {run_id}")
-                        response = requests.get(dataset_url, timeout=10)
-                        if response.status_code == 200:
-                            dataset_data = response.json()
-                            dataset_info = dataset_data.get("data", dataset_data)
-                            item_count = dataset_info.get("itemCount", 0)
-                            
-                            price_per_unit = pricing_info.get("pricePerUnitUsd")
-                            pricing_model = pricing_info.get("pricingModel")
-                            
-                            if price_per_unit and item_count and pricing_model == "PRICE_PER_DATASET_ITEM":
-                                calculated_cost = Decimal(str(price_per_unit)) * Decimal(str(item_count))
-                                logger.info(f"✅ Calculated cost via direct API: ${price_per_unit} * {item_count} = ${calculated_cost}")
-                                return calculated_cost
+                        timeout = aiohttp.ClientTimeout(total=10)
+                        async with aiohttp.ClientSession(timeout=timeout) as session:
+                            async with session.get(dataset_url) as response:
+                                if response.status == 200:
+                                    dataset_data = await response.json()
+                                    dataset_info = dataset_data.get("data", dataset_data)
+                                    item_count = dataset_info.get("itemCount", 0)
+                                    
+                                    price_per_unit = pricing_info.get("pricePerUnitUsd")
+                                    pricing_model = pricing_info.get("pricingModel")
+                                    
+                                    if price_per_unit and item_count and pricing_model == "PRICE_PER_DATASET_ITEM":
+                                        calculated_cost = Decimal(str(price_per_unit)) * Decimal(str(item_count))
+                                        logger.info(f"✅ Calculated cost via direct API: ${price_per_unit} * {item_count} = ${calculated_cost}")
+                                        return calculated_cost
                 except Exception as e:
                     logger.debug(f"Could not calculate cost via direct API for run {run_id}: {e}")
             
@@ -1142,24 +1145,25 @@ class ApifyTool(SandboxToolsBase):
                             logger.info(f"Trying to get actor info: {actor_url}")
                             
                             try:
-                                actor_response = requests.get(actor_url, timeout=10)
-                                
-                                if actor_response.status_code == 200:
-                                    actor_data = actor_response.json()
-                                    # Extract build ID from data.taggedBuilds.latest.buildId
-                                    if isinstance(actor_data, dict) and actor_data.get("data"):
-                                        tagged_builds = actor_data.get("data", {}).get("taggedBuilds", {})
-                                        if tagged_builds and tagged_builds.get("latest"):
-                                            build_id = tagged_builds.get("latest", {}).get("buildId")
-                                            if build_id:
-                                                logger.info(f"✅ Found latest build ID: {build_id} for actor: {actor_id_attempt}")
-                                                break
-                                
-                                elif actor_response.status_code == 404:
-                                    logger.debug(f"Actor endpoint returned 404 for {actor_id_attempt}, trying next format")
-                                    continue
-                                else:
-                                    logger.warning(f"Actor endpoint returned HTTP {actor_response.status_code} for {actor_id_attempt}")
+                                timeout = aiohttp.ClientTimeout(total=10)
+                                async with aiohttp.ClientSession(timeout=timeout) as session:
+                                    async with session.get(actor_url) as actor_response:
+                                        if actor_response.status == 200:
+                                            actor_data = await actor_response.json()
+                                            # Extract build ID from data.taggedBuilds.latest.buildId
+                                            if isinstance(actor_data, dict) and actor_data.get("data"):
+                                                tagged_builds = actor_data.get("data", {}).get("taggedBuilds", {})
+                                                if tagged_builds and tagged_builds.get("latest"):
+                                                    build_id = tagged_builds.get("latest", {}).get("buildId")
+                                                    if build_id:
+                                                        logger.info(f"✅ Found latest build ID: {build_id} for actor: {actor_id_attempt}")
+                                                        break
+                                        
+                                        elif actor_response.status == 404:
+                                            logger.debug(f"Actor endpoint returned 404 for {actor_id_attempt}, trying next format")
+                                            continue
+                                        else:
+                                            logger.warning(f"Actor endpoint returned HTTP {actor_response.status} for {actor_id_attempt}")
                             except Exception as e:
                                 logger.debug(f"Error fetching actor info for {actor_id_attempt}: {e}")
                                 continue
@@ -1170,32 +1174,32 @@ class ApifyTool(SandboxToolsBase):
                             logger.info(f"Fetching input schema from build: {build_url}")
                             
                             try:
-                                build_response = requests.get(build_url, timeout=10)
-                                
-                                if build_response.status_code == 200:
-                                    build_data = build_response.json()
-                                    # Extract inputSchema from data.inputSchema (it's a JSON string)
-                                    if isinstance(build_data, dict) and build_data.get("data"):
-                                        input_schema_str = build_data.get("data", {}).get("inputSchema")
-                                        if input_schema_str:
-                                            try:
-                                                # Parse the JSON string to get the actual schema object
-                                                if isinstance(input_schema_str, str):
-                                                    input_schema = _json_module.loads(input_schema_str)
-                                                else:
-                                                    input_schema = input_schema_str
-                                                logger.info(f"✅ Successfully fetched and parsed input schema from build {build_id}")
-                                            except ValueError as e:
-                                                # json.JSONDecodeError is a subclass of ValueError
-                                                logger.warning(f"Failed to parse inputSchema JSON string: {e}")
+                                timeout = aiohttp.ClientTimeout(total=10)
+                                async with aiohttp.ClientSession(timeout=timeout) as session:
+                                    async with session.get(build_url) as build_response:
+                                        if build_response.status == 200:
+                                            build_data = await build_response.json()
+                                            # Extract inputSchema from data.inputSchema (it's a JSON string)
+                                            if isinstance(build_data, dict) and build_data.get("data"):
+                                                input_schema_str = build_data.get("data", {}).get("inputSchema")
+                                                if input_schema_str:
+                                                    try:
+                                                        # Parse the JSON string to get the actual schema object
+                                                        if isinstance(input_schema_str, str):
+                                                            input_schema = _json_module.loads(input_schema_str)
+                                                        else:
+                                                            input_schema = input_schema_str
+                                                        logger.info(f"✅ Successfully fetched and parsed input schema from build {build_id}")
+                                                    except ValueError as e:
+                                                        # json.JSONDecodeError is a subclass of ValueError
+                                                        logger.warning(f"Failed to parse inputSchema JSON string: {e}")
+                                            else:
+                                                logger.debug(f"Build {build_id} does not have inputSchema field")
+                                        elif build_response.status == 404:
+                                            logger.warning(f"Build endpoint returned 404 for build ID: {build_id}")
                                         else:
-                                            logger.debug(f"Build {build_id} does not have inputSchema field")
-                                    else:
-                                        logger.warning(f"Unexpected build response structure: {build_response.text[:200]}")
-                                elif build_response.status_code == 404:
-                                    logger.warning(f"Build endpoint returned 404 for build ID: {build_id}")
-                                else:
-                                    logger.warning(f"Build endpoint returned HTTP {build_response.status_code} - Response: {build_response.text[:200]}")
+                                            response_text = await build_response.text()
+                                            logger.warning(f"Build endpoint returned HTTP {build_response.status} - Response: {response_text[:200]}")
                             except Exception as e:
                                 logger.warning(f"Error fetching build info: {e}")
                         else:

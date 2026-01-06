@@ -7,6 +7,7 @@ reaching the context window limitations of LLM models.
 
 import json
 import os
+import asyncio
 from typing import List, Dict, Any, Optional, Union
 
 from litellm.utils import token_counter
@@ -293,11 +294,11 @@ class ContextManager:
             except Exception as e:
                 logger.debug(f"Bedrock token counting failed, falling back to LiteLLM: {e}")
         
-        # Fallback to LiteLLM token_counter
+        # Fallback to LiteLLM token_counter (wrap in thread pool - CPU-heavy tiktoken operation)
         if system_to_count:
-            return token_counter(model=model, messages=[system_to_count] + messages_to_count)
+            return await asyncio.to_thread(token_counter, model=model, messages=[system_to_count] + messages_to_count)
         else:
-            return token_counter(model=model, messages=messages_to_count)
+            return await asyncio.to_thread(token_counter, model=model, messages=messages_to_count)
 
     async def estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], completion_content: str, model: str) -> Dict[str, Any]:
         """
@@ -319,10 +320,10 @@ class ContextManager:
             # Count prompt tokens using accurate provider APIs
             prompt_tokens = await self.count_tokens(model, prompt_messages, apply_caching=False)
             
-            # Count completion tokens (just the text)
+            # Count completion tokens (just the text) - wrap in thread pool (CPU-heavy tiktoken operation)
             completion_tokens = 0
             if completion_content:
-                completion_tokens = token_counter(model=model, text=completion_content)
+                completion_tokens = await asyncio.to_thread(token_counter, model=model, text=completion_content)
             
             total_tokens = prompt_tokens + completion_tokens
             

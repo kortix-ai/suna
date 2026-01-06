@@ -16,6 +16,7 @@ from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPM
 import tempfile
 import requests
+import aiohttp
 from core.utils.config import config
 from core.utils.logger import logger
 # Add common image MIME types if mimetypes module is limited
@@ -282,36 +283,40 @@ class SandboxVisionTool(SandboxToolsBase):
         parsed_url = urlparse(file_path)
         return parsed_url.scheme in ('http', 'https')
     
-    def download_image_from_url(self, url: str) -> Tuple[bytes, str]:
-        """Download image from a URL"""
+    async def download_image_from_url(self, url: str) -> Tuple[bytes, str]:
+        """Download image from a URL (async using aiohttp to avoid blocking event loop)"""
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0"  # Some servers block default Python
             }
+            timeout = aiohttp.ClientTimeout(total=10)
 
-            # HEAD request to get the image size
-            head_response = requests.head(url, timeout=10, headers=headers, stream=True)
-            head_response.raise_for_status()
-            
-            # Check content length
-            content_length = int(head_response.headers.get('Content-Length'))
-            if content_length and content_length > MAX_IMAGE_SIZE:
-                raise Exception(f"Image is too large ({(content_length)/(1024*1024):.2f}MB) for the maximum allowed size of {MAX_IMAGE_SIZE/(1024*1024):.2f}MB")
-            
-            # Download the image
-            response = requests.get(url, timeout=10, headers=headers, stream=True)
-            response.raise_for_status()
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # HEAD request to get the image size
+                async with session.head(url, headers=headers) as head_response:
+                    head_response.raise_for_status()
+                    
+                    # Check content length
+                    content_length = head_response.headers.get('Content-Length')
+                    if content_length:
+                        content_length = int(content_length)
+                        if content_length > MAX_IMAGE_SIZE:
+                            raise Exception(f"Image is too large ({(content_length)/(1024*1024):.2f}MB) for the maximum allowed size of {MAX_IMAGE_SIZE/(1024*1024):.2f}MB")
+                
+                # Download the image
+                async with session.get(url, headers=headers) as response:
+                    response.raise_for_status()
 
-            image_bytes = response.content
-            if len(image_bytes) > MAX_IMAGE_SIZE:
-                raise Exception(f"Downloaded image is too large ({(len(image_bytes))/(1024*1024):.2f}MB). Maximum allowed size of {MAX_IMAGE_SIZE/(1024*1024):.2f}MB")
+                    image_bytes = await response.read()
+                    if len(image_bytes) > MAX_IMAGE_SIZE:
+                        raise Exception(f"Downloaded image is too large ({(len(image_bytes))/(1024*1024):.2f}MB). Maximum allowed size of {MAX_IMAGE_SIZE/(1024*1024):.2f}MB")
 
-            # Get MIME type
-            mime_type = response.headers.get('Content-Type')
-            if not mime_type or not mime_type.startswith('image/'):
-                raise Exception(f"URL does not point to an image (Content-Type: {mime_type}): {url}")
-            
-            return image_bytes, mime_type
+                    # Get MIME type
+                    mime_type = response.headers.get('Content-Type')
+                    if not mime_type or not mime_type.startswith('image/'):
+                        raise Exception(f"URL does not point to an image (Content-Type: {mime_type}): {url}")
+                    
+                    return image_bytes, mime_type
         except Exception as e:
             return self.fail_response(f"Failed to download image from URL: {str(e)}")
     
@@ -343,7 +348,7 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
             is_url = self.is_url(file_path)
             if is_url:
                 try:
-                    image_bytes, mime_type = self.download_image_from_url(file_path)
+                    image_bytes, mime_type = await self.download_image_from_url(file_path)
                     original_size = len(image_bytes)
                     cleaned_path = file_path
                 except Exception as e:

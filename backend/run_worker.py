@@ -3,7 +3,11 @@
 Redis Streams worker entry point.
 
 Usage:
-    uv run python run_worker.py --concurrency 48
+    uv run python run_worker.py --concurrency 24
+    
+NOTE: Concurrency should match CPU allocation. Rule of thumb: 12 tasks per vCPU.
+- 1 vCPU container: 8-12 concurrent tasks
+- 2 vCPU container: 16-24 concurrent tasks (current ECS config)
 """
 
 import dotenv
@@ -20,11 +24,14 @@ from core.worker import StreamWorker
 from core.worker.handlers import get_handlers
 
 
-async def main(concurrency: int = 48):
+async def main(concurrency: int = 24): 
     """Main entry point."""
     logger.info("=" * 60)
-    logger.info("🚀 Starting Redis Streams Worker")
+    logger.info(f"🚀 Starting Redis Streams Worker (concurrency={concurrency})")
     logger.info("=" * 60)
+    
+    if concurrency > 30:
+        logger.warning(f"⚠️ HIGH CONCURRENCY WARNING: concurrency={concurrency} may cause CPU saturation (rule: 12 tasks per vCPU)")
     
     worker = None
     try:
@@ -63,7 +70,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--concurrency", "-c",
         type=int,
-        default=int(os.getenv("STREAM_WORKER_CONCURRENCY", "48"))
+        default=int(os.getenv("STREAM_WORKER_CONCURRENCY", "24"))  # 24 tasks for 2 vCPU container
     )
     args = parser.parse_args()
     
