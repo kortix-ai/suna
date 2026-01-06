@@ -369,9 +369,10 @@ async def make_llm_api_call(
         import psutil
         cpu_at_start = psutil.cpu_percent(interval=None)
         mem_at_start = psutil.Process().memory_info().rss / 1024 / 1024
-    except Exception:
+    except Exception as e:
         cpu_at_start = None
         mem_at_start = None
+        logger.warning(f"[LLM] psutil failed: {e}")
     
     try:
         _save_debug_input(params)
@@ -380,8 +381,8 @@ async def make_llm_api_call(
         msg_count = len(params.get("messages", []))
         tool_count = len(params.get("tools", []) or [])
         
-        if LLM_DEBUG and cpu_at_start is not None:
-            logger.debug(f"[LLM] Starting call: model={model_name} cpu={cpu_at_start}% mem={mem_at_start:.0f}MB")
+        if cpu_at_start is not None:
+            logger.info(f"[LLM] Starting: model={model_name} cpu={cpu_at_start}% mem={mem_at_start:.0f}MB")
         
         logger.info(f"[LLM] 🎯 BEFORE Router.acompletion: {actual_model}")
         logger.info(f"[LLM] 📋 Router state: num_retries={provider_router.num_retries}, timeout={provider_router.timeout}, stream_timeout={getattr(provider_router, 'stream_timeout', 'N/A')}")
@@ -401,21 +402,22 @@ async def make_llm_api_call(
             # Check what type of response we got
             logger.info(f"[LLM] 📦 Response type: {type(response).__name__}, hasattr(__aiter__)={hasattr(response, '__aiter__')}")
             
+            try:
+                import psutil
+                cpu_now = psutil.cpu_percent(interval=None)
+                mem_now = psutil.Process().memory_info().rss / 1024 / 1024
+                cpu_info = f"cpu_start={cpu_at_start}% cpu_now={cpu_now}% mem={mem_now:.0f}MB"
+            except Exception:
+                cpu_info = ""
+            
             if ttft > 30.0:
-                try:
-                    import psutil
-                    cpu_now = psutil.cpu_percent(interval=None)
-                    mem_now = psutil.Process().memory_info().rss / 1024 / 1024
-                    logger.error(
-                        f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} (router_time={router_time:.2f}s) "
-                        f"cpu_start={cpu_at_start}% cpu_now={cpu_now}% mem_start={mem_at_start:.0f}MB mem_now={mem_now:.0f}MB"
-                    )
-                except Exception:
-                    logger.error(f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} (router_time={router_time:.2f}s)")
+                logger.error(
+                    f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} {cpu_info}"
+                )
             elif ttft > 10.0:
-                logger.warning(f"[LLM] ⚠️ SLOW TTFT: {ttft:.2f}s for {model_name} (router_time={router_time:.2f}s)")
-            elif LLM_DEBUG:
-                logger.info(f"[LLM] TTFT: {ttft:.2f}s for {model_name} (router_time={router_time:.2f}s)")
+                logger.warning(f"[LLM] ⚠️ SLOW: TTFT={ttft:.2f}s model={model_name} {cpu_info}")
+            else:
+                logger.info(f"[LLM] ✅ TTFT={ttft:.2f}s model={model_name} {cpu_info}")
             
             if hasattr(response, '__aiter__'):
                 logger.info(f"[LLM] 🎁 Wrapping streaming response")
