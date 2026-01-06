@@ -49,6 +49,16 @@ class ModelRegistry:
         # Register Haiku Bedrock ARN pricing for billing resolution
         self._litellm_id_to_pricing[HAIKU_BEDROCK_ARN] = HAIKU_PRICING
         
+        # MiniMax M2.1 pricing (LiteLLM may return model ID without openrouter/ prefix)
+        minimax_m2_pricing = ModelPricing(
+            input_cost_per_million_tokens=0.30,
+            output_cost_per_million_tokens=1.20,
+            cached_read_cost_per_million_tokens=0.03,
+            cache_write_5m_cost_per_million_tokens=0.375,
+        )
+        self._litellm_id_to_pricing["minimax/minimax-m2.1"] = minimax_m2_pricing
+        self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = minimax_m2_pricing
+        
         # Kortix Basic - using MiniMax M2.1
         # basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
         basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
@@ -140,25 +150,26 @@ class ModelRegistry:
             )
         ))
         
-        # Kortix Test - uses MiniMax M2 via Bedrock (only in LOCAL and STAGING, not PRODUCTION)
+        # Kortix Test - uses MiniMax M2.1 via direct API (only in LOCAL and STAGING, not PRODUCTION)
         if config.ENV_MODE != EnvMode.PRODUCTION:
+            # MiniMax direct API - requires MINIMAX_API_KEY env var
+            # Docs: https://docs.litellm.ai/docs/providers/minimax
+            # test_litellm_id = "minimax/MiniMax-M2.1"  # 204,800 context $0.30/M input $1.20/M output
+            test_litellm_id = "openai/gpt-5-mini-2025-08-07" 
+            # test_litellm_id = "minimax/MiniMax-M2.1-lightning"  # Faster ~100 tps, $2.40/M output
+            # test_litellm_id = "minimax/MiniMax-M2"  # Agentic capabilities
             # test_litellm_id = build_bedrock_profile_arn(MINIMAX_M2_PROFILE_ID)
-            # test_litellm_id ="openrouter/minimax/minimax-m2" #  205K context $0.255/M input tokens $1.02/M output tokens
-            test_litellm_id ="openrouter/z-ai/glm-4.6v" #  204,800 context $0.30/M input tokens $1.20/M output tokens 
-            # test_litellm_id = "openrouter/z-ai/glm-4.7" # 203K context $0.44/M input tokens $1.74/M output tokens
-            # test_litellm_id = "openrouter/z-ai/glm-4.6v" # 131K context $0.30/M input tokens $0.90/M output tokens 
-            # test_litellm_id = "openrouter/google/gemini-3-flash-preview" #  1.05M context $0.50/M input tokens $3/M output tokens $1/M audio tokens
-            # test_litellm_id = "openrouter/x-ai/grok-4.1-fast" #2M context $0.20/M input tokens $0.50/M output tokens
-            # test_litellm_id = "openrouter/deepseek/deepseek-v3.2-speciale" 164K context $0.27/M input tokens $0.41/M output tokens
-            # test_litellm_id = "openrouter/deepseek/deepseek-v3.2" 164K context $0.26/M input tokens $0.38/M output tokens
-
+            # test_litellm_id ="openrouter/minimax/minimax-m2" #  205K context $0.255/M input $1.02/M output
+            # test_litellm_id ="openrouter/z-ai/glm-4.6v" #  204,800 context $0.30/M input $1.20/M output
+            # test_litellm_id = "openrouter/google/gemini-3-flash-preview"
+            # test_litellm_id = "openrouter/x-ai/grok-4.1-fast"
             # test_litellm_id ="groq/moonshotai/kimi-k2-instruct" 
 
             self.register(Model(
                 id="kortix/test",
                 name="Kortix Test",
                 litellm_model_id=test_litellm_id,
-                provider=ModelProvider.OPENROUTER,
+                provider=ModelProvider.MINIMAX,
                 aliases=["kortix-test", "Kortix Test"],
                 context_window=200_000,
                 capabilities=[
@@ -279,7 +290,7 @@ class ModelRegistry:
             return model_id
         
         # Common provider prefixes that LiteLLM might strip
-        provider_prefixes = ['openrouter/', 'anthropic/', 'bedrock/', 'openai/']
+        provider_prefixes = ['openrouter/', 'anthropic/', 'bedrock/', 'openai/', 'minimax/']
         
         # If ID already has a known prefix, return as-is
         for prefix in provider_prefixes:

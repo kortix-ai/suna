@@ -833,6 +833,14 @@ class SandboxPresentationTool(SandboxToolsBase):
             if not presentation_name:
                 return self.fail_response("Presentation name is required.")
             
+            if slide_number is None:
+                return self.fail_response("Slide number is required.")
+            
+            try:
+                slide_number = int(slide_number)
+            except (TypeError, ValueError):
+                return self.fail_response(f"Slide number must be an integer, got: {type(slide_number).__name__}")
+            
             if slide_number < 1:
                 return self.fail_response("Slide number must be 1 or greater.")
             

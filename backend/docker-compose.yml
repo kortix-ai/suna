@@ -42,7 +42,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
+    command: uv run python run_worker.py --concurrency 48
     env_file:
       - .env
     volumes:
@@ -66,7 +66,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "uv", "run", "worker_health.py"]
+      test: ["CMD", "uv", "run", "python", "core/utils/scripts/worker_health.py"]
       timeout: 30s
       interval: 30s
       retries: 3

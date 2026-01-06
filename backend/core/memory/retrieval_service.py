@@ -3,6 +3,7 @@ from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.services.supabase import DBConnection
 from core.billing.shared.config import get_memory_config, is_memory_enabled
+from core.utils.config import config
 from .embedding_service import EmbeddingService
 from .models import MemoryItem, MemoryType
 
@@ -20,6 +21,11 @@ class MemoryRetrievalService:
         similarity_threshold: float = 0.1
     ) -> List[MemoryItem]:
         try:
+            # Check global memory flag first
+            if not config.ENABLE_MEMORY:
+                logger.debug("Memory retrieval skipped: ENABLE_MEMORY is False")
+                return []
+            
             if not is_memory_enabled(tier_name):
                 logger.debug(f"Memory disabled for tier: {tier_name}")
                 return []
@@ -94,6 +100,11 @@ class MemoryRetrievalService:
         memory_type: Optional[MemoryType] = None
     ) -> Dict[str, Any]:
         try:
+            # Check global memory flag first
+            if not config.ENABLE_MEMORY:
+                logger.debug("get_all_memories skipped: ENABLE_MEMORY is False")
+                return {"memories": [], "total": 0}
+            
             if not is_memory_enabled(tier_name):
                 return {"memories": [], "total": 0}
             
@@ -134,6 +145,16 @@ class MemoryRetrievalService:
     
     async def get_memory_stats(self, account_id: str) -> Dict[str, Any]:
         try:
+            # Check global memory flag first
+            if not config.ENABLE_MEMORY:
+                logger.debug("get_memory_stats skipped: ENABLE_MEMORY is False")
+                return {
+                    "total_memories": 0,
+                    "memories_by_type": {},
+                    "oldest_memory": None,
+                    "newest_memory": None
+                }
+            
             client = await self.db.client
             
             result = await client.rpc(
@@ -168,6 +189,11 @@ class MemoryRetrievalService:
     
     async def delete_memory(self, account_id: str, memory_id: str) -> bool:
         try:
+            # Check global memory flag first
+            if not config.ENABLE_MEMORY:
+                logger.debug("delete_memory skipped: ENABLE_MEMORY is False")
+                return False
+            
             client = await self.db.client
             
             result = await client.table('user_memories').delete().eq('memory_id', memory_id).eq('account_id', account_id).execute()
@@ -185,6 +211,11 @@ class MemoryRetrievalService:
     
     async def delete_all_memories(self, account_id: str) -> int:
         try:
+            # Check global memory flag first
+            if not config.ENABLE_MEMORY:
+                logger.debug("delete_all_memories skipped: ENABLE_MEMORY is False")
+                return 0
+            
             client = await self.db.client
             
             result = await client.table('user_memories').delete().eq('account_id', account_id).execute()

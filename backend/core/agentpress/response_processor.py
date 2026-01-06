@@ -26,7 +26,7 @@ from core.agentpress.xml_tool_parser import (
     extract_xml_chunks,
     parse_xml_tool_calls_with_ids
 )
-from core.tool_output_streaming_context import set_current_tool_call_id
+from core.worker.tool_output_streaming_context import set_current_tool_call_id
 from core.agentpress.native_tool_parser import (
     extract_tool_call_chunk_data,
     is_tool_call_complete,

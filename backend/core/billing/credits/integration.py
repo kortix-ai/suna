@@ -30,7 +30,7 @@ class BillingIntegration:
             if cached_check:
                 logger.debug(f"⚡ [CREDIT_CACHE] Daily refresh already checked for {account_id} today (cached)")
             else:
-                from core.credits import credit_service
+                from core.services.credits import credit_service
                 refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
                 if refreshed and amount > 0:
                     logger.info(f"✅ [DAILY_REFRESH] Granted ${amount} to {account_id}")

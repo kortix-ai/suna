@@ -2,10 +2,22 @@
  * API Type Definitions
  *
  * Centralized TypeScript types for all API models and responses
+ * Re-exports shared types for convenience
  */
 
+// Re-export core message types from shared package
+export type {
+  UnifiedMessage,
+  ParsedContent,
+  ParsedMetadata,
+  MessageGroup,
+  AgentStatus,
+  StreamingToolCall,
+  StreamingMetadata,
+} from '@agentpress/shared';
+
 // ============================================================================
-// Chat & Messages
+// Chat & Messages (API-specific)
 // ============================================================================
 
 export interface Message {
@@ -17,30 +29,6 @@ export interface Message {
   metadata: Record<string, any>;
   created_at: string;
   updated_at: string;
-}
-
-// Core unified message type matching backend (used for streaming)
-export interface UnifiedMessage {
-  message_id: string | null; // null for transient stream chunks
-  thread_id: string;
-  type:
-    | 'user'
-    | 'assistant'
-    | 'tool'
-    | 'system'
-    | 'status'
-    | 'browser_state'
-    | 'image_context'
-    | 'llm_response_end'
-    | 'llm_response_start';
-  is_llm_message: boolean;
-  content: string; // JSON string from backend
-  metadata: string; // JSON string from backend
-  created_at: string;
-  updated_at: string;
-  agent_id?: string;
-  sequence?: number;
-  sandbox_id?: string;
 }
 
 export interface Thread {
@@ -69,45 +57,7 @@ export interface AgentRun {
   metadata?: Record<string, any>;
 }
 
-// Parsed content structure (from message.content JSON string)
-export interface ParsedContent {
-  role?: 'user' | 'assistant' | 'tool' | 'system';
-  content?: string; // The actual text content
-  status_type?: string; // For status messages: 'tool_started', 'tool_completed', 'thread_run_end', etc.
-  function_name?: string; // For tool calls
-  xml_tag_name?: string; // XML tag for tool
-  arguments?: any; // Tool arguments
-  tool_index?: number; // Index of tool in sequence
-  result?: any; // For tool results
-  is_error?: boolean; // Tool execution error
-  message?: string; // Error/status messages
-  name?: string; // Tool name
-  [key: string]: any;
-}
-
-// Parsed metadata structure (from message.metadata JSON string)
-export interface ParsedMetadata {
-  stream_status?: 'chunk' | 'complete' | 'tool_call_chunk'; // Streaming status for assistant messages
-  thread_run_id?: string;
-  llm_response_id?: string;
-  tool_calls?: Array<{
-    tool_call_id: string;
-    function_name: string;
-    arguments: Record<string, any> | string; // String when partial JSON, object when complete
-    source: 'native' | 'xml';
-  }>;
-  // Tool message metadata fields
-  function_name?: string; // Tool function name
-  tool_call_id?: string; // Tool call ID
-  result?: {
-    output: any;
-    success: boolean;
-    error?: string | null;
-  };
-  return_format?: 'native' | 'xml';
-  assistant_message_id?: string; // Link tool result back to assistant message
-  [key: string]: any;
-}
+// Note: ParsedContent, ParsedMetadata now re-exported from @agentpress/shared/types
 
 export interface StreamEvent {
   event: string;

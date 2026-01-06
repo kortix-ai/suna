@@ -5,7 +5,7 @@ on:
     branches:
       - main      # Staging environment → main EAS branch/channel
       - staging   # Staging environment → main EAS branch/channel
-      - PRODUCTION # Production environment → production EAS branch/channel
+      # PRODUCTION requires manual trigger via workflow_dispatch
     paths:
       - 'apps/mobile/**'
       - '.github/workflows/mobile-eas-update.yml'
@@ -53,8 +53,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: apps/mobile/package-lock.json
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
 
       - name: Setup EAS CLI
         uses: expo/expo-github-action@v8
@@ -64,8 +67,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: apps/mobile
-        run: |
-          npm install --package-lock-only || npm install
+        run: pnpm install
 
       - name: Get branch name
         id: branch

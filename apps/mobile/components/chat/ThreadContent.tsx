@@ -13,23 +13,27 @@ if (Platform.OS !== 'web') {
 }
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@/api/types';
-import { safeJsonParse } from '@/lib/utils/message-grouping';
+import type { UnifiedMessage, ParsedContent, ParsedMetadata } from '@agentpress/shared';
 import {
-  parseXmlToolCalls,
-  isNewXmlFormat,
-  parseToolMessage,
-  formatToolOutput,
-  HIDE_STREAMING_XML_TAGS,
-} from '@/lib/utils/tool-parser';
-import { getToolIcon, getUserFriendlyToolName } from '@/lib/utils/tool-display';
-import {
+  safeJsonParse,
+  getUserFriendlyToolName,
   extractTextFromPartialJson,
   extractTextFromArguments,
   isAskOrCompleteTool,
   findAskOrCompleteTool,
   shouldSkipStreamingRender,
-} from '@/lib/utils/streaming-utils';
+} from '@agentpress/shared';
+import {
+  parseXmlToolCalls,
+  isNewXmlFormat,
+  parseToolMessage,
+  formatToolOutput,
+  isHiddenTool,
+} from '@agentpress/shared/tools';
+import { HIDE_STREAMING_XML_TAGS } from '@agentpress/shared/tools';
+import { groupMessagesWithStreaming } from '@agentpress/shared/utils';
+import { preprocessTextOnlyTools } from '@agentpress/shared/tools';
+import { getToolIcon } from '@/lib/icons/tool-icons';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
@@ -78,66 +82,8 @@ function renderStandaloneAttachments(
   );
 }
 
-function preprocessTextOnlyToolsLocal(content: string): string {
-  if (!content || typeof content !== 'string') {
-    return content || '';
-  }
-
-  content = content.replace(
-    /<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi,
-    (match) => {
-      if (match.includes('<parameter name="attachments"')) return match;
-      return match.replace(
-        /<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi,
-        '$1'
-      );
-    }
-  );
-
-  content = content.replace(
-    /<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi,
-    (match) => {
-      if (match.includes('<parameter name="attachments"')) return match;
-      return match.replace(
-        /<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)<\/parameter>\s*<\/invoke>\s*<\/function_calls>/gi,
-        '$1'
-      );
-    }
-  );
-
-  content = content.replace(
-    /<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi,
-    (match) => {
-      if (match.includes('<parameter name="attachments"')) return match;
-      return match.replace(
-        /<function_calls>\s*<invoke name="ask">\s*<parameter name="text">([\s\S]*?)$/gi,
-        '$1'
-      );
-    }
-  );
-
-  content = content.replace(
-    /<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi,
-    (match) => {
-      if (match.includes('<parameter name="attachments"')) return match;
-      return match.replace(
-        /<function_calls>\s*<invoke name="complete">\s*<parameter name="text">([\s\S]*?)$/gi,
-        '$1'
-      );
-    }
-  );
-
-  content = content.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, (match) => {
-    if (match.match(/<ask[^>]*attachments=/i)) return match;
-    return match.replace(/<ask[^>]*>([\s\S]*?)<\/ask>/gi, '$1');
-  });
-
-  content = content.replace(/<complete[^>]*>([\s\S]*?)<\/complete>/gi, (match) => {
-    if (match.match(/<complete[^>]*attachments=/i)) return match;
-    return match.replace(/<complete[^>]*>([\s\S]*?)<\/complete>/gi, '$1');
-  });
-  return content;
-}
+// Use shared preprocessTextOnlyTools function (imported above)
+const preprocessTextOnlyToolsLocal = preprocessTextOnlyTools;
 
 interface MarkdownContentProps {
   content: string;
@@ -786,150 +732,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     }, [messages]);
 
     const groupedMessages = useMemo(() => {
-      const groups: MessageGroup[] = [];
-      let currentGroup: MessageGroup | null = null;
-      let assistantGroupCounter = 0;
-
-      displayMessages.forEach((message, index) => {
-        const messageType = message.type;
-        const key = message.message_id || `msg-${index}`;
-
-        if (messageType === 'user') {
-          if (currentGroup) {
-            groups.push(currentGroup);
-            currentGroup = null;
-          }
-          groups.push({ type: 'user', messages: [message], key });
-        } else if (
-          messageType === 'assistant' ||
-          messageType === 'tool' ||
-          messageType === 'browser_state'
-        ) {
-          const canAddToExistingGroup =
-            currentGroup &&
-            currentGroup.type === 'assistant_group' &&
-            (() => {
-              if (messageType === 'assistant') {
-                const lastAssistantMsg = currentGroup.messages.findLast(
-                  (m) => m.type === 'assistant'
-                );
-                if (!lastAssistantMsg) return true;
-
-                const currentAgentId = message.agent_id;
-                const lastAgentId = lastAssistantMsg.agent_id;
-                return currentAgentId === lastAgentId;
-              }
-              return true;
-            })();
-
-          if (canAddToExistingGroup) {
-            currentGroup?.messages.push(message);
-          } else {
-            if (currentGroup) {
-              groups.push(currentGroup);
-            }
-            assistantGroupCounter++;
-            currentGroup = {
-              type: 'assistant_group',
-              messages: [message],
-              key: `assistant-group-${assistantGroupCounter}`,
-            };
-          }
-        } else if (messageType !== 'status') {
-          if (currentGroup) {
-            groups.push(currentGroup);
-            currentGroup = null;
-          }
-        }
+      return groupMessagesWithStreaming(displayMessages, {
+        streamingTextContent,
+        streamingToolCall,
+        readOnly: false,
+        streamingText: undefined,
+        isStreamingText: false,
       });
-
-      if (currentGroup) {
-        groups.push(currentGroup);
-      }
-
-      const mergedGroups: MessageGroup[] = [];
-      let currentMergedGroup: MessageGroup | null = null;
-
-      groups.forEach((group) => {
-        if (group.type === 'assistant_group') {
-          if (currentMergedGroup && currentMergedGroup.type === 'assistant_group') {
-            currentMergedGroup.messages.push(...group.messages);
-          } else {
-            if (currentMergedGroup) {
-              mergedGroups.push(currentMergedGroup);
-            }
-            currentMergedGroup = { ...group };
-          }
-        } else {
-          if (currentMergedGroup) {
-            mergedGroups.push(currentMergedGroup);
-            currentMergedGroup = null;
-          }
-          mergedGroups.push(group);
-        }
-      });
-
-      if (currentMergedGroup) {
-        mergedGroups.push(currentMergedGroup);
-      }
-
-      const finalGroupedMessages = mergedGroups;
-
-      if (streamingTextContent) {
-        const lastGroup = finalGroupedMessages.at(-1);
-        if (!lastGroup || lastGroup.type === 'user') {
-          assistantGroupCounter++;
-          finalGroupedMessages.push({
-            type: 'assistant_group',
-            messages: [
-              {
-                content: streamingTextContent,
-                type: 'assistant',
-                message_id: 'streamingTextContent',
-                metadata: 'streamingTextContent',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString(),
-                is_llm_message: true,
-                thread_id: 'streamingTextContent',
-                sequence: Infinity,
-              },
-            ],
-            key: `assistant-group-${assistantGroupCounter}-streaming`,
-          });
-        } else if (lastGroup.type === 'assistant_group') {
-          const lastMessage = lastGroup.messages[lastGroup.messages.length - 1];
-          if (lastMessage.message_id !== 'streamingTextContent') {
-            lastGroup.messages.push({
-              content: streamingTextContent,
-              type: 'assistant',
-              message_id: 'streamingTextContent',
-              metadata: 'streamingTextContent',
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-              is_llm_message: true,
-              thread_id: 'streamingTextContent',
-              sequence: Infinity,
-            });
-          }
-        }
-      }
-
-      // Handle streaming tool call (e.g., ask/complete) - ensure there's a group to render in
-      // This is needed because native tool calls have no text content, only metadata
-      if (streamingToolCall && !streamingTextContent) {
-        const lastGroup = finalGroupedMessages.at(-1);
-        if (!lastGroup || lastGroup.type === 'user') {
-          // Create new empty assistant group so streaming tool call can render
-          assistantGroupCounter++;
-          finalGroupedMessages.push({
-            type: 'assistant_group',
-            messages: [],
-            key: `assistant-group-${assistantGroupCounter}-streaming-tool`,
-          });
-        }
-      }
-
-      return finalGroupedMessages;
     }, [displayMessages, streamingTextContent, streamingToolCall]);
 
     if (
@@ -1556,7 +1365,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       // For other tools, render tool call indicators with spinning icon
                       // Render ALL tool calls (streaming + completed) - don't filter out completed ones
                       // The StreamingToolCallIndicator component handles completed state correctly
-                      if (toolCalls.length > 0) {
+                      
+                      // Filter out hidden tools (internal/initialization tools)
+                      const visibleToolCalls = toolCalls.filter((tc: any) => {
+                        const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                        return !isHiddenTool(toolName);
+                      });
+
+                      // If all tools were hidden, don't render anything
+                      if (visibleToolCalls.length === 0 && toolCalls.length > 0) {
+                        return null;
+                      }
+
+                      if (visibleToolCalls.length > 0) {
                         // Get assistant message ID from streamingToolCall or find from group
                         const assistantMsgId = streamingToolCall?.message_id || 
                           group.messages.find(m => m.type === 'assistant')?.message_id || 
@@ -1564,7 +1385,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         
                         return (
                           <View className="flex-col gap-2">
-                            {toolCalls.map((tc: any, tcIndex: number) => {
+                            {visibleToolCalls.map((tc: any, tcIndex: number) => {
                               const toolName = tc.function_name?.replace(/_/g, '-') || '';
                               const isCompleted = tc.completed === true || 
                                 (tc.tool_result !== undefined && 

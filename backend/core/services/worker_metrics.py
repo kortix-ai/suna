@@ -1,10 +1,10 @@
 """
-Worker metrics service for tracking active Dramatiq workers and thread utilization.
+Worker metrics service for tracking active Redis Streams workers and task utilization.
 
 Provides:
-- Active worker count from Redis (Dramatiq worker registry)
-- Worker thread utilization (busy vs idle threads)
-- Worker health/heartbeat tracking
+- Active consumer count from Redis Streams consumer groups
+- Task utilization (busy vs idle concurrent tasks)
+- Consumer health tracking via pending messages
 - CloudWatch publishing for monitoring
 """
 import asyncio
@@ -39,111 +39,104 @@ def _get_cloudwatch_client():
 
 async def get_worker_metrics() -> dict:
     """
-    Get active worker count and thread utilization from Dramatiq worker registry in Redis.
+    Get active consumer count and task utilization from Redis Streams consumer groups.
     
-    Dramatiq stores:
-    - Worker heartbeats: dramatiq:__heartbeats__ (sorted set: score=timestamp, member=worker_id)
-    - In-progress tasks: dramatiq:__acks__.{worker_id}.{queue_name} (sets of message IDs)
+    Redis Streams stores:
+    - Consumer groups: one per stream (suna-workers)
+    - Consumers: each worker container registers as a consumer
+    - Pending messages: unacknowledged messages per consumer
     
     Returns:
-        dict with active_workers, busy_threads, idle_threads, utilization, etc.
+        dict with active_workers (consumers), busy_tasks, idle_tasks, utilization, etc.
     """
-    from core.services import redis
-    import time
+    from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+    from core.worker.tasks import StreamName
     
     try:
-        # Configuration: threads per Dramatiq worker process
-        # Each ECS task runs: `dramatiq --processes 8 --threads 12`
-        # Dramatiq registers each PROCESS as a worker in Redis (not each ECS task)
-        # So each "worker" in Redis corresponds to one process with 12 threads
-        WORKER_THREADS = int(os.getenv("WORKER_THREADS", "12"))
-        THREADS_PER_DRAMATIQ_PROCESS = WORKER_THREADS  # 12 threads per process
+        # Configuration: concurrency per worker container
+        # Each ECS task runs: `python run_worker.py --concurrency 48`
+        # Each container is a consumer in the consumer group
+        WORKER_CONCURRENCY = int(os.getenv("STREAM_WORKER_CONCURRENCY", "48"))
         
-        # Dramatiq uses a sorted set for worker heartbeats
-        # Key: dramatiq:__heartbeats__
-        # Format: sorted set where score = timestamp (ms), member = worker_id (broker_id)
-        heartbeat_key = "dramatiq:__heartbeats__"
+        stream_info = await get_stream_info()
         
-        # Get current timestamp in milliseconds
-        current_time_ms = int(time.time() * 1000)
+        # Collect all unique consumers across all streams
+        all_consumers = {}  # consumer_name -> {pending, idle_ms, streams}
+        total_pending = 0
+        total_length = 0
         
-        # Dramatiq default heartbeat timeout is 60 seconds (60000 ms)
-        # Workers are considered active if heartbeat is within last 60 seconds
-        heartbeat_timeout_ms = 60000
-        min_timestamp = current_time_ms - heartbeat_timeout_ms
-        
-        # Get all workers with heartbeats within the timeout window
-        # ZRANGEBYSCORE returns members with scores >= min_timestamp
-        active_worker_ids = await redis.zrangebyscore(
-            heartbeat_key,
-            min=min_timestamp,
-            max="+inf"
-        )
-        
-        # Decode bytes to strings if needed
-        if active_worker_ids and isinstance(active_worker_ids[0], bytes):
-            active_worker_ids = [wid.decode('utf-8') if isinstance(wid, bytes) else wid for wid in active_worker_ids]
-        
-        active_worker_count = len(active_worker_ids)
-        
-        # Count in-progress tasks (busy threads)
-        # Dramatiq stores in-progress messages in sets: dramatiq:__acks__.{worker_id}.{queue_name}
-        total_in_progress_tasks = 0
-        worker_task_counts = {}
-        
-        for worker_id in active_worker_ids:
-            # Find all ack sets for this worker
-            # Use scan_keys instead of direct client access
-            ack_pattern = f"dramatiq:__acks__.{worker_id}.*"
-            ack_keys = await redis.scan_keys(ack_pattern)
+        for stream_name in StreamName:
+            stream_data = stream_info.get("streams", {}).get(stream_name.value, {})
+            total_length += stream_data.get("length", 0)
             
-            worker_tasks = 0
-            for ack_key in ack_keys:
-                if isinstance(ack_key, bytes):
-                    ack_key = ack_key.decode('utf-8')
-                # Count messages in this ack set (these are in-progress)
-                task_count = await redis.scard(ack_key)
-                worker_tasks += task_count
-            
-            worker_task_counts[worker_id] = worker_tasks
-            total_in_progress_tasks += worker_tasks
+            # Get consumers for this stream
+            consumers = stream_data.get("consumers", [])
+            for consumer in consumers:
+                consumer_name = consumer.get("name", "unknown")
+                pending = consumer.get("pending", 0)
+                idle_ms = consumer.get("idle_ms", 0)
+                
+                if consumer_name not in all_consumers:
+                    all_consumers[consumer_name] = {
+                        "pending": 0,
+                        "max_idle_ms": 0,
+                        "streams": []
+                    }
+                
+                all_consumers[consumer_name]["pending"] += pending
+                all_consumers[consumer_name]["max_idle_ms"] = max(
+                    all_consumers[consumer_name]["max_idle_ms"],
+                    idle_ms
+                )
+                all_consumers[consumer_name]["streams"].append(stream_name.value)
+                total_pending += pending
         
-        # Calculate thread utilization
-        # active_worker_count = number of Dramatiq processes (not ECS tasks)
-        total_threads = active_worker_count * THREADS_PER_DRAMATIQ_PROCESS
-        busy_threads = total_in_progress_tasks
-        idle_threads = max(0, total_threads - busy_threads)
-        utilization_percent = (busy_threads / total_threads * 100) if total_threads > 0 else 0
+        active_worker_count = len(all_consumers)
         
-        # Get worker details for all active workers
+        # Calculate task utilization
+        # Each worker has WORKER_CONCURRENCY concurrent task slots
+        total_task_slots = active_worker_count * WORKER_CONCURRENCY
+        
+        # Calculate busy_tasks per consumer (capped at concurrency limit)
+        # A consumer can't have more busy tasks than its concurrency limit
+        busy_tasks = 0
         worker_details = []
-        for worker_id in active_worker_ids:
-            try:
-                # Get heartbeat timestamp for this worker
-                score = await redis.zscore(heartbeat_key, worker_id)
-                if score is not None:
-                    heartbeat_age_ms = current_time_ms - int(score)
-                    worker_details.append({
-                        "worker_id": worker_id[:16] + "...",  # Truncate for readability
-                        "last_heartbeat_ms": int(score),
-                        "heartbeat_age_seconds": round(heartbeat_age_ms / 1000, 2),
-                        "busy_threads": worker_task_counts.get(worker_id, 0),
-                        "idle_threads": max(0, THREADS_PER_DRAMATIQ_PROCESS - worker_task_counts.get(worker_id, 0))
-                    })
-            except Exception as e:
-                logger.debug(f"Failed to get details for worker {worker_id}: {e}")
+        for consumer_name, data in all_consumers.items():
+            # Cap busy tasks at concurrency - pending may exceed this if tasks are stuck
+            consumer_busy = min(data["pending"], WORKER_CONCURRENCY)
+            consumer_idle = max(0, WORKER_CONCURRENCY - consumer_busy)
+            busy_tasks += consumer_busy
+            
+            worker_details.append({
+                "consumer_name": consumer_name[:32] + "..." if len(consumer_name) > 32 else consumer_name,
+                "pending_messages": data["pending"],
+                "idle_ms": data["max_idle_ms"],
+                "idle_seconds": round(data["max_idle_ms"] / 1000, 2),
+                "busy_tasks": consumer_busy,
+                "idle_tasks": consumer_idle,
+                "stuck_tasks": max(0, data["pending"] - WORKER_CONCURRENCY),  # Tasks beyond capacity
+                "streams": data["streams"]
+            })
+        
+        idle_tasks = max(0, total_task_slots - busy_tasks)
+        utilization_percent = (busy_tasks / total_task_slots * 100) if total_task_slots > 0 else 0
         
         return {
             "active_workers": active_worker_count,
             "worker_count": active_worker_count,  # Alias for consistency
-            "total_threads": total_threads,
-            "busy_threads": busy_threads,
-            "idle_threads": idle_threads,
+            "total_task_slots": total_task_slots,
+            "busy_tasks": busy_tasks,
+            "idle_tasks": idle_tasks,
+            "busy_threads": busy_tasks,  # Alias for backward compatibility
+            "idle_threads": idle_tasks,  # Alias for backward compatibility
             "utilization_percent": round(utilization_percent, 2),
-            "in_progress_tasks": total_in_progress_tasks,
-            "threads_per_dramatiq_process": THREADS_PER_DRAMATIQ_PROCESS,
+            "in_progress_tasks": busy_tasks,  # Alias for backward compatibility
+            "tasks_per_worker": WORKER_CONCURRENCY,
+            "total_pending_messages": total_pending,  # Total unacknowledged (includes stuck)
+            "total_stream_length": total_length,
+            "stuck_tasks": max(0, total_pending - busy_tasks),  # Tasks beyond capacity
             "worker_details": worker_details,
-            "heartbeat_timeout_seconds": heartbeat_timeout_ms / 1000,
+            "consumer_group": CONSUMER_GROUP,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:

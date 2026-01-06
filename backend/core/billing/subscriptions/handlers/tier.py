@@ -7,9 +7,22 @@ from core.billing.shared.config import TIERS, TRIAL_TIER
 class TierHandler:
     @staticmethod
     async def get_user_subscription_tier(account_id: str, skip_cache: bool = False) -> Dict:
-        cache_key = f"subscription_tier:{account_id}"
+        import time
+        t_start = time.time()
         
         if not skip_cache:
+            # Try Redis cache first (5 min TTL - faster)
+            try:
+                from core.cache.runtime_cache import get_cached_tier_info
+                redis_cached = await get_cached_tier_info(account_id)
+                if redis_cached:
+                    logger.debug(f"⚡ [TIER] Redis cache hit for {account_id} ({(time.time() - t_start) * 1000:.1f}ms)")
+                    return redis_cached
+            except Exception:
+                pass  # Fall through to legacy cache
+            
+            # Fallback to legacy Cache
+            cache_key = f"subscription_tier:{account_id}"
             cached = await Cache.get(cache_key)
             if cached:
                 return cached
@@ -50,6 +63,14 @@ class TierHandler:
             'is_trial': trial_status == 'active'
         }
         
+        # Cache in both Redis (5 min) and legacy cache (60s)
+        try:
+            from core.cache.runtime_cache import set_cached_tier_info
+            await set_cached_tier_info(account_id, tier_info)
+        except Exception:
+            pass
+        
+        cache_key = f"subscription_tier:{account_id}"
         await Cache.set(cache_key, tier_info, ttl=60)
         return tier_info
 

@@ -24,7 +24,7 @@ from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.ai_models import model_manager
-from core.credits import credit_service
+from core.services.credits import credit_service
 from ..shared.config import (
     CREDITS_PER_DOLLAR,
     get_tier_by_name,

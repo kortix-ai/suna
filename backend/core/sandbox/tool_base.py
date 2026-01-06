@@ -1,9 +1,11 @@
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 import uuid
 import asyncio
 
-from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.tool import Tool
+
+if TYPE_CHECKING:
+    from core.agentpress.thread_manager import ThreadManager
 from daytona_sdk import AsyncSandbox
 from core.sandbox.sandbox import get_or_start_sandbox, create_sandbox, delete_sandbox
 from core.utils.logger import logger
@@ -17,7 +19,7 @@ class SandboxToolsBase(Tool):
     # Class variable to track if sandbox URLs have been printed
     _urls_printed = False
     
-    def __init__(self, project_id: str, thread_manager: Optional[ThreadManager] = None):
+    def __init__(self, project_id: str, thread_manager: Optional['ThreadManager'] = None):
         super().__init__()
         self.project_id = project_id
         self.thread_manager = thread_manager
@@ -125,7 +127,7 @@ class SandboxToolsBase(Tool):
 
                     # Update project metadata cache with sandbox data (instead of invalidate)
                     try:
-                        from core.runtime_cache import set_cached_project_metadata
+                        from core.cache.runtime_cache import set_cached_project_metadata
                         sandbox_cache_data = {
                             'id': sandbox_id,
                             'pass': sandbox_pass,

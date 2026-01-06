@@ -6,7 +6,7 @@
  */
 
 import type { UnifiedMessage, ParsedMetadata } from '@/api/types';
-import { safeJsonParse } from './message-grouping';
+import { safeJsonParse } from '@agentpress/shared/utils';
 
 /**
  * Structured tool call data from metadata

@@ -5,6 +5,7 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt, require_agent
 from core.services.supabase import DBConnection
 from .file_processor import FileProcessor
 from core.utils.logger import logger
+from core.utils.config import config
 from .validation import FileNameValidator, ValidationError, validate_folder_name_unique, validate_file_name_unique_in_folder
 
 # Constants
@@ -97,6 +98,9 @@ file_processor = FileProcessor()
 @router.get("/folders", response_model=List[FolderResponse])
 async def get_folders(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Get all knowledge base folders for user."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        return []
+    
     try:
         client = await db.client
         account_id = user_id
@@ -132,6 +136,9 @@ async def create_folder(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Create a new knowledge base folder."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     try:
         client = await db.client
         account_id = user_id
@@ -179,6 +186,9 @@ async def update_folder(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Update a knowledge base folder."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     try:
         client = await db.client
         account_id = user_id
@@ -254,6 +264,9 @@ async def delete_folder(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Delete a knowledge base folder and all its entries."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     try:
         client = await db.client
         account_id = user_id
@@ -300,6 +313,9 @@ async def upload_file(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Upload a file to a knowledge base folder."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     import time
     start_time = time.time()
     logger.info(f"[UPLOAD] Starting upload for file: {file.filename}")
@@ -382,6 +398,9 @@ async def get_folder_entries(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Get all entries in a folder."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        return []
+    
     try:
         client = await db.client
         account_id = user_id
@@ -421,6 +440,9 @@ async def delete_entry(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Delete a knowledge base entry."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     try:
         client = await db.client
         account_id = user_id
@@ -444,6 +466,19 @@ async def delete_entry(
         # Delete from database
         await client.table('knowledge_base_entries').delete().eq('entry_id', entry_id).execute()
         
+        # Invalidate KB context cache for all agents that had this entry assigned
+        try:
+            from core.cache.runtime_cache import invalidate_kb_context_cache
+            assignments_result = await client.table('agent_knowledge_entry_assignments') \
+                .select('agent_id').eq('entry_id', entry_id).execute()
+            
+            agent_ids = set(row['agent_id'] for row in assignments_result.data) if assignments_result.data else set()
+            for agent_id in agent_ids:
+                await invalidate_kb_context_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated KB cache for {len(agent_ids)} agents after entry deletion")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate KB cache after entry deletion: {e}")
+        
         return {"success": True}
         
     except HTTPException:
@@ -459,6 +494,9 @@ async def update_entry(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Update a knowledge base entry summary."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     try:
         client = await db.client
         account_id = user_id
@@ -478,6 +516,19 @@ async def update_entry(
         
         if not update_result.data:
             raise HTTPException(status_code=500, detail="Failed to update entry")
+        
+        # Invalidate KB context cache for all agents that have this entry assigned
+        try:
+            from core.cache.runtime_cache import invalidate_kb_context_cache
+            assignments_result = await client.table('agent_knowledge_entry_assignments') \
+                .select('agent_id').eq('entry_id', entry_id).execute()
+            
+            agent_ids = set(row['agent_id'] for row in assignments_result.data) if assignments_result.data else set()
+            for agent_id in agent_ids:
+                await invalidate_kb_context_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated KB cache for {len(agent_ids)} agents after entry update")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate KB cache after entry update: {e}")
         
         # Return the updated entry
         updated_entry = update_result.data[0]
@@ -502,6 +553,9 @@ async def get_agent_assignments(
     auth: AuthorizedAgentAccess = Depends(require_agent_access)
 ):
     """Get entry assignments for an agent."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        return {}
+    
     try:
         client = await DBConnection().client
         
@@ -523,6 +577,9 @@ async def update_agent_assignments(
     auth: AuthorizedAgentAccess = Depends(require_agent_access)
 ):
     """Update agent entry assignments."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     try:
         client = await db.client
         account_id = auth.user_id
@@ -540,10 +597,11 @@ async def update_agent_assignments(
                 'enabled': True
             }).execute()
         
-        # Invalidate agent config cache (knowledge base assignments changed)
+        # Invalidate agent config cache and KB context cache (knowledge base assignments changed)
         try:
-            from core.runtime_cache import invalidate_agent_config_cache
+            from core.cache.runtime_cache import invalidate_agent_config_cache, invalidate_kb_context_cache
             await invalidate_agent_config_cache(agent_id)
+            await invalidate_kb_context_cache(agent_id)
             logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after knowledge base update")
         except Exception as e:
             logger.warning(f"Failed to invalidate cache for agent {agent_id}: {e}")
@@ -565,6 +623,9 @@ async def move_file(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Move a file to a different folder."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+    
     try:
         client = await db.client
         account_id = user_id

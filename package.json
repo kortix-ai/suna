@@ -1,0 +1,15 @@
+{
+  "name": "agentpress",
+  "private": true,
+  "scripts": {
+    "dev:frontend": "pnpm --filter Kortix dev",
+    "dev:mobile": "pnpm --filter kortix dev",
+    "build:frontend": "pnpm --filter Kortix build"
+  },
+  "pnpm": {
+    "overrides": {
+      "@types/react": "^19.2.7",
+      "@types/react-dom": "^19.1.7"
+    }
+  }
+}

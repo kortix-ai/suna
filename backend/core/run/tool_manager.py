@@ -390,3 +390,64 @@ class ToolManager:
         from core.utils.tool_discovery import get_enabled_methods_for_tool
         
         return get_enabled_methods_for_tool(tool_name, self.migrated_tools)
+    
+    def get_disabled_tools_from_config(self) -> List[str]:
+        """Get list of disabled tools from agent config."""
+        disabled_tools = []
+        
+        if not self.agent_config or 'agentpress_tools' not in self.agent_config:
+            return disabled_tools
+        
+        raw_tools = self.agent_config['agentpress_tools']
+        
+        if not isinstance(raw_tools, dict):
+            return disabled_tools
+        
+        if self.agent_config.get('is_suna_default', False) and not raw_tools:
+            return disabled_tools
+        
+        def is_tool_enabled(tool_name: str) -> bool:
+            try:
+                tool_config = raw_tools.get(tool_name, True)
+                if isinstance(tool_config, bool):
+                    return tool_config
+                elif isinstance(tool_config, dict):
+                    return tool_config.get('enabled', True)
+                else:
+                    return True
+            except Exception:
+                return True
+        
+        all_tools = [
+            'sb_shell_tool', 'sb_files_tool', 'sb_expose_tool',
+            'web_search_tool', 'image_search_tool', 'sb_vision_tool', 'sb_presentation_tool', 'sb_image_edit_tool',
+            'sb_kb_tool', 'sb_design_tool', 'sb_upload_file_tool',
+            'browser_tool', 'people_search_tool', 'company_search_tool', 
+            'apify_tool', 'reality_defender_tool', 'vapi_voice_tool', 'paper_search_tool',
+            'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool',
+            'agent_creation_tool'
+        ]
+        
+        for tool_name in all_tools:
+            if not is_tool_enabled(tool_name):
+                disabled_tools.append(tool_name)
+                
+        logger.debug(f"Disabled tools from config: {disabled_tools}")
+        return disabled_tools
+    
+    def register_suna_specific_tools(self, disabled_tools: List[str], account_id: Optional[str] = None):
+        """Register Suna-specific tools like agent_creation_tool."""
+        if 'agent_creation_tool' not in disabled_tools:
+            from core.tools.agent_creation_tool import AgentCreationTool
+            from core.services.supabase import DBConnection
+            
+            db = DBConnection()
+            
+            if account_id:
+                enabled_methods = self._get_enabled_methods_for_tool('agent_creation_tool')
+                if enabled_methods is not None:
+                    self.thread_manager.add_tool(AgentCreationTool, function_names=enabled_methods, thread_manager=self.thread_manager, db_connection=db, account_id=account_id)
+                else:
+                    self.thread_manager.add_tool(AgentCreationTool, thread_manager=self.thread_manager, db_connection=db, account_id=account_id)
+            else:
+                logger.warning("Could not register agent_creation_tool: account_id not available")

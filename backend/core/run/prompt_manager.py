@@ -2,6 +2,7 @@ import os
 import json
 import asyncio
 import datetime
+import time
 from typing import Optional, Tuple
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
@@ -17,140 +18,18 @@ ORCHESTRATOR_MODELS = ['kortix/power', 'kortix-power', 'kortix power', 'kortix a
 
 class PromptManager:
     @staticmethod
-    async def _is_orchestrator_mode(model_name: Optional[str], thread_id: Optional[str], client) -> bool:
+    def _is_orchestrator_mode(model_name: Optional[str], thread_depth: int = 0) -> bool:
         """Check if this should be orchestrator mode (kortix/power at depth 0)."""
         if not model_name:
             return False
         
+        # Sub-agents (depth > 0) are never orchestrators
+        if thread_depth > 0:
+            return False
+        
         # Check if model is an orchestrator model
         model_lower = model_name.lower()
-        is_orchestrator_model = any(m in model_lower for m in ORCHESTRATOR_MODELS)
-        
-        if not is_orchestrator_model:
-            return False
-        
-        # Check thread depth (must be 0 for orchestrator mode)
-        if not (thread_id and client):
-            return False
-        
-        try:
-            result = await client.table('threads').select('depth_level').eq(
-                'thread_id', thread_id
-            ).maybe_single().execute()
-            
-            if result.data:
-                depth = result.data.get('depth_level', 0) or 0
-                return depth == 0
-            return True  # New thread, assume depth 0
-        except Exception as e:
-            logger.warning(f"Failed to check thread depth for orchestrator mode: {e}")
-            return False
-    
-    @staticmethod
-    async def build_minimal_prompt(agent_config: Optional[dict], tool_registry=None, mcp_loader=None, 
-                                   user_id: Optional[str] = None, thread_id: Optional[str] = None, 
-                                   client=None, model_name: Optional[str] = None) -> Tuple[dict, Optional[dict]]:
-        # Check for orchestrator mode
-        is_orchestrator = await PromptManager._is_orchestrator_mode(model_name, thread_id, client)
-        
-        if is_orchestrator:
-            # Use orchestrator prompt for advanced mode main threads
-            from core.prompts.orchestrator_prompt import get_orchestrator_system_prompt
-            content = get_orchestrator_system_prompt()
-            logger.info("🎯 [ORCHESTRATOR PROMPT] Using orchestrator system prompt for advanced mode")
-        elif agent_config and agent_config.get('system_prompt'):
-            content = agent_config['system_prompt'].strip()
-        else:
-            from core.prompts.core_prompt import get_core_system_prompt
-            content = get_core_system_prompt()
-        
-        content = PromptManager._append_datetime_info(content)
-        
-        # Add different bootstrap info for orchestrator vs worker mode
-        if is_orchestrator:
-            content += """
-
-🎯 ORCHESTRATOR MODE ACTIVE:
-You are the orchestrator. Your ONLY job is to DELEGATE work to sub-agents.
-
-✅ YOUR TOOLS (orchestration only):
-   • spawn_sub_agent - Delegate ALL work here
-   • wait_for_sub_agents - Wait for sub-agents to complete
-   • list_sub_agents - Check status (use sparingly)
-   • get_sub_agent_result - Collect results
-   • continue_sub_agent - Send follow-ups
-   • ask - Communicate with user
-   • complete - Present final output
-   • read_file, search_file - View sub-agent outputs (read-only)
-
-❌ FORBIDDEN (sub-agents do this):
-   • web_search, image_search, browser
-   • create_file, edit_file
-   • execute_command (for content)
-   • All content creation
-
-WORKFLOW: Spawn multiple sub-agents → Wait once → Collect results → Present to user
-
-"""
-        else:
-            content += """
-
-⚠️ BOOTSTRAP MODE - FAST START:
-You are currently in fast-start mode with all core tools preloaded and ready NOW:
-
-✅ Ready immediately (no initialize_tools needed):
-   • Files & Shell: sb_files_tool, sb_shell_tool, sb_git_sync
-   • Search: web_search_tool, image_search_tool
-   • Images: sb_vision_tool (view/analyze), sb_image_edit_tool (generate/edit)
-   • Web: browser_tool (interactive browsing)
-   • Deployment: sb_upload_file_tool, sb_expose_tool
-   • Communication: message_tool, task_list_tool, expand_msg_tool
-
-⏳ Advanced tools available via initialize_tools():
-   • Content: sb_presentation_tool, sb_canvas_tool
-   • Research: people_search_tool, company_search_tool, paper_search_tool
-   • Data: apify_tool, sb_kb_tool
-
-If you need specialized tools, use initialize_tools() to load them.
-If relevant context seems missing, ask a clarifying question.
-
-"""
-        
-        # Skip preloaded guides for orchestrator (they don't need worker tool guides)
-        if not is_orchestrator:
-            preloaded_guides = PromptManager._get_preloaded_tool_guides()
-            if preloaded_guides:
-                content += preloaded_guides
-        
-        # Get agent_id for fresh config loading
-        agent_id = agent_config.get('agent_id') if agent_config else None
-        
-        content = await PromptManager._append_jit_mcp_info(content, mcp_loader, agent_id, user_id)
-        
-        # Fetch user context (locale, username), memory, and file context in parallel
-        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
-        memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
-        file_task = PromptManager._fetch_file_context(thread_id)
-        
-        user_context_data, memory_data, file_data = await asyncio.gather(
-            user_context_task, memory_task, file_task
-        )
-        
-        if user_context_data:
-            content += user_context_data
-        
-        system_message = {"role": "system", "content": content}
-        
-        context_parts = []
-        if memory_data:
-            context_parts.append(f"[CONTEXT - User Memory]\n{memory_data}\n[END CONTEXT]")
-        if file_data:
-            context_parts.append(f"[CONTEXT - Attached Files]\n{file_data}\n[END CONTEXT]")
-        
-        if context_parts:
-            return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
-        
-        return system_message, None
+        return any(m in model_lower for m in ORCHESTRATOR_MODELS)
     
     @staticmethod
     async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
@@ -161,27 +40,43 @@ If relevant context seems missing, ask a clarifying question.
                                   xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None,
                                   use_dynamic_tools: bool = True,
-                                  mcp_loader=None) -> Tuple[dict, Optional[dict]]:
+                                  mcp_loader=None,
+                                  thread_depth: int = 0) -> Tuple[dict, Optional[dict]]:
+        
+        build_start = time.time()
         
         # Check for orchestrator mode
-        is_orchestrator = await PromptManager._is_orchestrator_mode(model_name, thread_id, client)
+        is_orchestrator = PromptManager._is_orchestrator_mode(model_name, thread_depth)
         
         if is_orchestrator:
             # Use orchestrator prompt for advanced mode main threads
             from core.prompts.orchestrator_prompt import get_orchestrator_system_prompt
             system_content = get_orchestrator_system_prompt()
-            logger.info("🎯 [ORCHESTRATOR PROMPT] Using orchestrator system prompt for build_system_prompt")
-            # Skip dynamic tools and tool guides for orchestrator - they don't need them
+            logger.info("🎯 [ORCHESTRATOR PROMPT] Using orchestrator system prompt")
+            # Skip dynamic tools and tool guides for orchestrator - they only delegate
         elif agent_config and agent_config.get('system_prompt'):
             system_content = agent_config['system_prompt'].strip()
+            
+            t1 = time.time()
             system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
+            logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
+            
+            t2 = time.time()
             system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+            logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
+            
+            t1 = time.time()
             system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
+            logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
+            
+            t2 = time.time()
             system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
+            logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
         
+        # Start parallel fetch tasks
         kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
         user_context_task = PromptManager._fetch_user_context_data(user_id, client)
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
@@ -190,12 +85,25 @@ If relevant context seems missing, ask a clarifying question.
         # Get agent_id for fresh config loading
         agent_id = agent_config.get('agent_id') if agent_config else None
         
-        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, agent_id, user_id)
-        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, agent_id, user_id)
-        system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
+        # Skip MCP tools for orchestrator (they only delegate)
+        if not is_orchestrator:
+            t3 = time.time()
+            system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, agent_id, user_id)
+            logger.debug(f"⏱️ [PROMPT TIMING] _append_mcp_tools_info: {(time.time() - t3) * 1000:.1f}ms")
+            
+            t4 = time.time()
+            system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, agent_id, user_id)
+            logger.debug(f"⏱️ [PROMPT TIMING] _append_jit_mcp_info: {(time.time() - t4) * 1000:.1f}ms")
+            
+            system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
+        
         system_content = PromptManager._append_datetime_info(system_content)
         
+        t5 = time.time()
         kb_data, user_context_data, memory_data, file_data = await asyncio.gather(kb_task, user_context_task, memory_task, file_task)
+        logger.debug(f"⏱️ [PROMPT TIMING] parallel fetches (kb/user_context/memory/file): {(time.time() - t5) * 1000:.1f}ms")
+        
+        logger.info(f"⏱️ [PROMPT TIMING] Total build_system_prompt: {(time.time() - build_start) * 1000:.1f}ms")
         
         if kb_data:
             system_content += kb_data
@@ -295,21 +203,62 @@ If relevant context seems missing, ask a clarifying question.
         if not (agent_config and client and 'agent_id' in agent_config):
             return None
         
+        agent_id = agent_config['agent_id']
+        fetch_start = time.time()
+        
         try:
-            logger.debug(f"Retrieving agent knowledge base context for agent {agent_config['agent_id']}")
+            # Check cache first
+            from core.cache.runtime_cache import get_cached_kb_context, set_cached_kb_context
+            cached = await get_cached_kb_context(agent_id)
+            if cached is not None:  # None = miss, empty string = no entries (cached)
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: hit)")
+                if cached:
+                    kb_section = f"""
+
+                === AGENT KNOWLEDGE BASE ===
+                NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+
+                {cached}
+
+                === END AGENT KNOWLEDGE BASE ===
+
+                IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                    return kb_section
+                return None
+            
+            # Quick EXISTS check before expensive RPC
+            logger.debug(f"Checking if agent {agent_id} has knowledge base entries...")
+            exists_result = await client.table('agent_knowledge_entry_assignments') \
+                .select('agent_id', count='exact', head=True) \
+                .eq('agent_id', agent_id).execute()
+            
+            if not exists_result.count or exists_result.count == 0:
+                # Cache empty result to avoid future EXISTS checks
+                await set_cached_kb_context(agent_id, "")
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, no entries)")
+                return None
+            
+            # Only call RPC if entries exist
+            logger.debug(f"Retrieving agent knowledge base context for agent {agent_id}")
             kb_result = await client.rpc('get_agent_knowledge_base_context', {
-                'p_agent_id': agent_config['agent_id']
+                'p_agent_id': agent_id
             }).execute()
             
-            if kb_result and kb_result.data and kb_result.data.strip():
-                logger.debug(f"Found agent knowledge base context, adding to system prompt (length: {len(kb_result.data)} chars)")
+            kb_data = kb_result.data if kb_result and kb_result.data else None
+            if kb_data and kb_data.strip():
+                # Cache the result
+                await set_cached_kb_context(agent_id, kb_data)
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, found {len(kb_data)} chars)")
                 
                 kb_section = f"""
 
                 === AGENT KNOWLEDGE BASE ===
                 NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
 
-                {kb_result.data}
+                {kb_data}
 
                 === END AGENT KNOWLEDGE BASE ===
 
@@ -317,9 +266,14 @@ If relevant context seems missing, ask a clarifying question.
                 
                 return kb_section
             else:
-                logger.debug("No knowledge base context found for this agent")
+                # Cache empty result
+                await set_cached_kb_context(agent_id, "")
+                elapsed = (time.time() - fetch_start) * 1000
+                logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, no context)")
                 return None
         except Exception as e:
+            elapsed = (time.time() - fetch_start) * 1000
+            logger.error(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (error: {e})")
             logger.error(f"Error retrieving knowledge base context for agent {agent_config.get('agent_id', 'unknown')}: {e}")
             return None
     
@@ -590,6 +544,16 @@ Example of correct tool call format (multiple invokes in one block):
         if not (user_id and client):
             return None
         
+        fetch_start = time.time()
+        
+        # Check cache first
+        from core.cache.runtime_cache import get_cached_user_context, set_cached_user_context
+        cached = await get_cached_user_context(user_id)
+        if cached is not None:  # None = miss, empty string = no context (cached)
+            elapsed = (time.time() - fetch_start) * 1000
+            logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: hit)")
+            return cached if cached else None
+        
         # Fetch locale and username in parallel
         async def fetch_locale():
             try:
@@ -635,10 +599,23 @@ Example of correct tool call format (multiple invokes in one block):
             context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
         
-        return ''.join(context_parts) if context_parts else None
+        context = ''.join(context_parts) if context_parts else None
+        context_str = context if context else ""
+        
+        # Cache the result (even if empty)
+        await set_cached_user_context(user_id, context_str)
+        elapsed = (time.time() - fetch_start) * 1000
+        logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: miss)")
+        
+        return context
     
     @staticmethod
     async def _fetch_user_memories(user_id: Optional[str], thread_id: str, client) -> Optional[str]:
+        from core.utils.config import config
+        if not config.ENABLE_MEMORY:
+            logger.debug("Memory fetch skipped: ENABLE_MEMORY=False")
+            return None
+        
         if not (user_id and client):
             logger.debug(f"Memory fetch skipped: user_id={user_id}, client={'yes' if client else 'no'}")
             return None
@@ -717,7 +694,7 @@ Example of correct tool call format (multiple invokes in one block):
             return None
         
         try:
-            from core.agent_runs import get_cached_file_context, format_file_context_for_agent
+            from core.agents.runs import get_cached_file_context, format_file_context_for_agent
             
             files = await get_cached_file_context(thread_id)
             if files:

@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { View, ScrollView, Linking, Pressable, Image as RNImage, ActivityIndicator } from 'react-native';
+import { View, ScrollView, Linking, Pressable, Image as RNImage } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Search, ExternalLink, Globe, CheckCircle2, AlertCircle, ImageIcon, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
-import { extractWebSearchData, cleanUrl, getFavicon } from './_utils';
+import { extractWebSearchData, cleanUrl, getFavicon, extractQueriesFromToolCall } from './_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
+import { DeepSearchLoadingState } from './DeepSearchLoadingState';
 import * as Haptics from 'expo-haptics';
 
 // Utility functions
@@ -22,8 +23,22 @@ function formatTimestamp(isoString?: string): string {
 
 export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isStreaming, assistantTimestamp, toolTimestamp }: ToolViewProps) {
   const { query, results, images, success, isBatch, batchResults } = extractWebSearchData(toolCall, toolResult, isSuccess);
+  const queriesArray = extractQueriesFromToolCall(toolCall);
   const isLoading = isStreaming && results.length === 0 && images.length === 0;
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
+  
+  // Log for debugging
+  console.log('[WebSearchToolView] Data:', {
+    query,
+    queryType: typeof query,
+    queriesArray,
+    queriesArrayLength: queriesArray.length,
+    isBatch,
+    batchResultsLength: batchResults?.length,
+    isLoading,
+    isStreaming,
+    toolCallArgs: toolCall?.arguments,
+  });
 
   if (!toolCall) {
     return null;
@@ -56,6 +71,26 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
     : query;
 
   if (isLoading) {
+    // Check for batch queries - either from queriesArray or from query being a JSON array
+    let effectiveQueries = queriesArray;
+    
+    // Also check if query itself is a JSON array string
+    if (effectiveQueries.length <= 1 && query && typeof query === 'string') {
+      const trimmed = query.trim();
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed) && parsed.length > 1) {
+            effectiveQueries = parsed.filter((q: any) => typeof q === 'string' && q.trim().length > 0);
+          }
+        } catch {
+          // Not valid JSON
+        }
+      }
+    }
+    
+    const hasBatchQueries = effectiveQueries.length > 1;
+    
     return (
       <ToolViewCard
         header={{
@@ -63,21 +98,30 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
           iconColor: toolMetadata.iconColor,
           iconBgColor: toolMetadata.iconBgColor,
           subtitle: toolMetadata.subtitle.toUpperCase(),
-          title: toolMetadata.title,
+          title: hasBatchQueries ? 'Deep Research' : toolMetadata.title,
           isSuccess: actualIsSuccess,
           isStreaming: true,
-          rightContent: <StatusBadge variant="streaming" label="Searching" />,
+          rightContent: (
+            <StatusBadge 
+              variant="streaming" 
+              label={hasBatchQueries ? `${effectiveQueries.length} queries` : 'Searching'} 
+            />
+          ),
         }}
       >
         <View className="flex-1 w-full">
-          <LoadingState
-            icon={toolMetadata.icon}
-            iconColor={toolMetadata.iconColor}
-            bgColor={toolMetadata.iconBgColor}
-            title={name === 'image-search' ? 'Searching for images' : 'Searching the web'}
-            filePath={currentQuery || 'Processing search...'}
-            showProgress={true}
-          />
+          {hasBatchQueries ? (
+            <DeepSearchLoadingState queries={effectiveQueries} />
+          ) : (
+            <LoadingState
+              icon={toolMetadata.icon}
+              iconColor={toolMetadata.iconColor}
+              bgColor={toolMetadata.iconBgColor}
+              title={name === 'image-search' ? 'Searching for images' : 'Searching the web'}
+              filePath={currentQuery || 'Processing search...'}
+              showProgress={true}
+            />
+          )}
         </View>
       </ToolViewCard>
     );
