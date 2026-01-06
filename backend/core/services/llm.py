@@ -13,217 +13,122 @@ from datetime import datetime, timezone
 
 litellm.modify_params = True
 litellm.drop_params = True
-
-if os.environ.get("LITELLM_NUM_RETRIES") is None:
-    litellm.num_retries = 3
-
 litellm.set_verbose = False
-litellm.request_timeout = 600
 
-if os.environ.get("LITELLM_NUM_RETRIES") is None:
-    litellm.num_retries = 3
+# Retries: Keep low to fail fast. Each retry waits stream_timeout (60s)
+# 1 retry = max 120s delay, 2 retries = max 180s delay
+litellm.num_retries = int(os.environ.get("LITELLM_NUM_RETRIES", 1))
+
+# Timeout for complete request (high for long streams)
+litellm.request_timeout = 1800  # 30 min - matches Router timeout
+
+# ============================================================================
+# HIGH-PERFORMANCE HTTP CONNECTION POOL FOR PRODUCTION
+# ============================================================================
+# Default LiteLLM connection pool is too small for high concurrency.
+# This caused 100+ second delays when pool was exhausted.
+# ============================================================================
+def _setup_high_performance_http_handler():
+    """Configure LiteLLM with unlimited connection pool for production."""
+    try:
+        import aiohttp
+        from litellm.llms.custom_httpx.aiohttp_handler import BaseLLMAIOHTTPHandler
+        
+        # Create session with NO connection limits
+        connector = aiohttp.TCPConnector(
+            limit=0,                # 0 = UNLIMITED connections
+            limit_per_host=0,       # 0 = UNLIMITED per host
+            ttl_dns_cache=600,      # Cache DNS for 10 minutes
+            keepalive_timeout=60,   # Keep connections alive for reuse
+            enable_cleanup_closed=True,
+        )
+        
+        session = aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=120),  # Match litellm.request_timeout
+            connector=connector,
+        )
+        
+        litellm.base_llm_aiohttp_handler = BaseLLMAIOHTTPHandler(client_session=session)
+        logger.info(f"[LLM] ✅ HTTP handler configured: UNLIMITED connections, keepalive=60s")
+        
+    except Exception as e:
+        logger.warning(f"[LLM] ⚠️ Failed to configure custom HTTP handler, using defaults: {e}")
+
+# Initialize on module load
+_setup_high_performance_http_handler()
+
+# Custom callback to track LiteLLM retries and timing
+from litellm.integrations.custom_logger import CustomLogger
+
+class LLMTimingCallback(CustomLogger):
+    """Callback to log LiteLLM call timing and retry behavior."""
+    
+    def log_pre_api_call(self, model, messages, kwargs):
+        """Called before each API call attempt (including retries)."""
+        # Check retry information from litellm_params
+        litellm_params = kwargs.get("litellm_params", {})
+        metadata = litellm_params.get("metadata", {})
+        
+        # Log model and message count
+        msg_count = len(messages) if messages else 0
+        logger.debug(f"[LLM] 🚀 pre-call: model={model}, messages={msg_count}")
+    
+    def log_post_api_call(self, kwargs, response_obj, start_time, end_time):
+        """Called after each API call attempt (success or retry pending)."""
+        model = kwargs.get("model", "unknown")
+        # Calculate duration - start_time and end_time are datetime objects
+        try:
+            duration = (end_time - start_time).total_seconds()
+        except:
+            duration = 0
+        
+        if duration > 5.0:
+            logger.info(f"[LLM] ⏱️ post-call: {model} took {duration:.2f}s")
+    
+    def log_success_event(self, kwargs, response_obj, start_time, end_time):
+        """Called when an API call succeeds (synchronous handler)."""
+        model = kwargs.get("model", "unknown")
+        try:
+            duration = (end_time - start_time).total_seconds()
+        except:
+            duration = 0
+        
+        if duration > 10.0:
+            logger.warning(f"[LLM] ⚠️ SLOW SUCCESS: {model} took {duration:.2f}s")
+        elif LLM_DEBUG:
+            logger.debug(f"[LLM] ✅ success: {model} in {duration:.2f}s")
+    
+    def log_failure_event(self, kwargs, response_obj, start_time, end_time):
+        """Called when an API call fails (including before retries)."""
+        model = kwargs.get("model", "unknown")
+        try:
+            duration = (end_time - start_time).total_seconds()
+        except:
+            duration = 0
+        
+        # Get exception details
+        exception = kwargs.get("exception", response_obj)
+        error_str = str(exception)[:300] if exception else "unknown error"
+        
+        # This is CRITICAL - log every failure as it indicates a retry is happening
+        logger.error(f"[LLM] ❌ FAILURE (will retry if retries remain): {model} after {duration:.2f}s - {error_str}")
+        
+        # Log litellm_params for debugging
+        litellm_params = kwargs.get("litellm_params", {})
+        api_base = litellm_params.get("api_base", "default")
+        custom_provider = litellm_params.get("custom_llm_provider", "unknown")
+        logger.error(f"[LLM]    ↳ Provider: {custom_provider}, API base: {api_base}")
+
+# Register timing callback
+_timing_callback = LLMTimingCallback()
 
 if os.getenv("BRAINTRUST_API_KEY"):
-    litellm.callbacks = ["braintrust"]
+    litellm.callbacks = ["braintrust", _timing_callback]
+else:
+    litellm.callbacks = [_timing_callback]
 
 provider_router = None
-
-LLM_INFLIGHT_LIMIT = 32
-LLM_GLOBAL_LIMIT = 100
-USE_REDIS_LIMITER = True
 LLM_DEBUG = True
-
-_llm_semaphore: Optional[asyncio.Semaphore] = None
-_llm_stats = {
-    "total_calls": 0,
-    "active_calls": 0,
-    "total_wait_time": 0.0,
-    "total_call_time": 0.0,
-    "rejected_calls": 0,
-}
-_stats_lock = asyncio.Lock()
-
-def _get_llm_semaphore() -> asyncio.Semaphore:
-    global _llm_semaphore
-    if _llm_semaphore is None:
-        _llm_semaphore = asyncio.Semaphore(LLM_INFLIGHT_LIMIT)
-    return _llm_semaphore
-
-async def get_llm_stats() -> dict:
-    async with _stats_lock:
-        total = _llm_stats["total_calls"]
-        avg_wait = _llm_stats["total_wait_time"] / total if total > 0 else 0
-        avg_call = _llm_stats["total_call_time"] / total if total > 0 else 0
-        return {
-            **_llm_stats,
-            "avg_wait_time": round(avg_wait, 3),
-            "avg_call_time": round(avg_call, 3),
-            "semaphore_available": _llm_semaphore._value if _llm_semaphore else LLM_INFLIGHT_LIMIT,
-            "semaphore_limit": LLM_INFLIGHT_LIMIT,
-            "redis_enabled": USE_REDIS_LIMITER,
-            "redis_limit": LLM_GLOBAL_LIMIT if USE_REDIS_LIMITER else None,
-        }
-
-async def log_llm_stats():
-    stats = await get_llm_stats()
-    logger.info(
-        f"LLM Stats: active={stats['active_calls']}/{stats['semaphore_limit']} "
-        f"total={stats['total_calls']} rejected={stats['rejected_calls']} "
-        f"avg_wait={stats['avg_wait_time']:.3f}s avg_call={stats['avg_call_time']:.2f}s"
-    )
-
-async def reset_llm_stats():
-    async with _stats_lock:
-        _llm_stats["total_calls"] = 0
-        _llm_stats["active_calls"] = 0
-        _llm_stats["total_wait_time"] = 0.0
-        _llm_stats["total_call_time"] = 0.0
-        _llm_stats["rejected_calls"] = 0
-
-
-class RedisLLMLimiter:
-    REDIS_KEY = "llm:inflight:count"
-    TTL_SECONDS = 300
-    
-    _redis_client = None
-    _init_lock = None
-    
-    def __init__(self, limit: int = LLM_GLOBAL_LIMIT):
-        self.limit = limit
-        self._slot_acquired = False
-    
-    @classmethod
-    async def _get_redis(cls):
-        if cls._redis_client is not None:
-            return cls._redis_client
-        
-        if cls._init_lock is None:
-            cls._init_lock = asyncio.Lock()
-        
-        async with cls._init_lock:
-            if cls._redis_client is not None:
-                return cls._redis_client
-            
-            import redis.asyncio as aioredis
-            from dotenv import load_dotenv
-            load_dotenv()
-            
-            redis_host = os.environ.get("REDIS_HOST", "localhost")
-            redis_port = int(os.environ.get("REDIS_PORT", 6379))
-            redis_password = os.environ.get("REDIS_PASSWORD", "")
-            
-            cls._redis_client = aioredis.Redis(
-                host=redis_host,
-                port=redis_port,
-                password=redis_password if redis_password else None,
-                decode_responses=True,
-                socket_timeout=5.0,
-                socket_connect_timeout=2.0,
-            )
-            
-            await cls._redis_client.ping()
-            logger.info(f"Redis LLM limiter connected to {redis_host}:{redis_port}")
-            
-            return cls._redis_client
-    
-    async def acquire(self, timeout: float = 5.0) -> bool:
-        try:
-            redis = await self._get_redis()
-        except Exception as e:
-            logger.warning(f"Redis limiter connection failed, falling back to allow: {e}")
-            return True
-        
-        start = asyncio.get_event_loop().time()
-        
-        while True:
-            try:
-                current = await redis.incr(self.REDIS_KEY)
-                
-                if current <= self.limit:
-                    await redis.expire(self.REDIS_KEY, self.TTL_SECONDS)
-                    self._slot_acquired = True
-                    return True
-                
-                await redis.decr(self.REDIS_KEY)
-                
-            except Exception as e:
-                logger.warning(f"Redis limiter error, falling back to allow: {e}")
-                return True
-            
-            elapsed = asyncio.get_event_loop().time() - start
-            if elapsed >= timeout:
-                return False
-            
-            await asyncio.sleep(0.05)
-    
-    async def release(self):
-        if not self._slot_acquired:
-            return
-        
-        try:
-            redis = await self._get_redis()
-            await redis.decr(self.REDIS_KEY)
-        except Exception as e:
-            logger.warning(f"Redis limiter release error: {e}")
-        finally:
-            self._slot_acquired = False
-    
-    async def __aenter__(self):
-        acquired = await self.acquire()
-        if not acquired:
-            raise LLMError("LLM capacity saturated globally, please retry")
-        return self
-    
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.release()
-        return False
-
-
-async def _acquire_llm_slot(timeout: float = 5.0):
-    import time
-    start = time.monotonic()
-    
-    if USE_REDIS_LIMITER:
-        limiter = RedisLLMLimiter(LLM_GLOBAL_LIMIT)
-        acquired = await limiter.acquire(timeout)
-        wait_time = time.monotonic() - start
-        
-        if not acquired:
-            async with _stats_lock:
-                _llm_stats["rejected_calls"] += 1
-            logger.warning(f"LLM slot acquisition failed after {wait_time:.2f}s (Redis limit: {LLM_GLOBAL_LIMIT})")
-            raise LLMError("LLM capacity saturated globally, please retry")
-        
-        if LLM_DEBUG:
-            logger.debug(f"LLM slot acquired (Redis) in {wait_time:.3f}s")
-        
-        async with _stats_lock:
-            _llm_stats["total_calls"] += 1
-            _llm_stats["active_calls"] += 1
-            _llm_stats["total_wait_time"] += wait_time
-        
-        return limiter
-    else:
-        semaphore = _get_llm_semaphore()
-        try:
-            await asyncio.wait_for(semaphore.acquire(), timeout=timeout)
-            wait_time = time.monotonic() - start
-            
-            if LLM_DEBUG:
-                logger.debug(f"LLM slot acquired (semaphore) in {wait_time:.3f}s, available: {semaphore._value}/{LLM_INFLIGHT_LIMIT}")
-            
-            async with _stats_lock:
-                _llm_stats["total_calls"] += 1
-                _llm_stats["active_calls"] += 1
-                _llm_stats["total_wait_time"] += wait_time
-            
-            return semaphore
-        except asyncio.TimeoutError:
-            wait_time = time.monotonic() - start
-            async with _stats_lock:
-                _llm_stats["rejected_calls"] += 1
-            logger.warning(f"LLM slot acquisition timeout after {wait_time:.2f}s (limit: {LLM_INFLIGHT_LIMIT})")
-            raise LLMError("LLM capacity saturated, please retry")
 
 class LLMError(Exception):
     pass
@@ -296,37 +201,39 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    HAIKU_4_5_PROFILE_ARN = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
-    HAIKU_3_PROFILE_ARN = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
-    
+    # Fallbacks for MiniMax models only (no Haiku fallbacks - let it fail fast)
     fallbacks = [
         {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2.1": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2.1-lightning": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2": ["openrouter/z-ai/glm-4.6v"]},
-        {HAIKU_4_5_PROFILE_ARN: [
-            "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
-            HAIKU_3_PROFILE_ARN,
-        ]},
+        # NO Haiku 4.5 fallbacks - if Bedrock fails, fail immediately rather than
+        # trying fallback models which adds 60+ seconds of latency
     ]
     
     num_retries = getattr(litellm, 'num_retries', 1)
+    
+    # Router timeouts:
+    # - timeout: Total time for COMPLETE response (needs to be high for long streams)
+    # - stream_timeout: Time to get FIRST token (this is what we want to limit)
+    ROUTER_TIMEOUT = 1800         # 30 min total for complete response (long streams)
+    STREAM_TIMEOUT = 60          # 60s to get first token (fail fast if no response)
     
     provider_router = Router(
         model_list=model_list,
         num_retries=num_retries,
         fallbacks=fallbacks,
-        timeout=300,
+        timeout=ROUTER_TIMEOUT,
+        stream_timeout=STREAM_TIMEOUT,  # THIS is for first token
         allowed_fails=3,
-        cooldown_time=30,
+        cooldown_time=10,  # Reduced from 30s to 10s for faster recovery
+        retry_after=1,  # Wait 1 second between retries
     )
 
     logger.info(
-        f"LiteLLM Router configured with fallbacks: minimax -> glm-4.6v, haiku-4.5 -> 3.5 -> 3, "
-        f"inflight_limit={LLM_INFLIGHT_LIMIT}, timeout=300s, retries={num_retries}"
+        f"[LLM] Router configured: timeout={ROUTER_TIMEOUT}s, stream_timeout={STREAM_TIMEOUT}s, "
+        f"retries={num_retries}, cooldown=10s"
     )
-    
-    logger.info("LiteLLM Router configured with fallbacks: minimax -> glm-4.6v, haiku-4.5 -> 3.5 -> 3")
 
 def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     if not model_name.startswith("openai-compatible/"):
@@ -356,9 +263,9 @@ def _save_debug_input(params: Dict[str, Any]) -> None:
         
         with open(debug_file, 'w', encoding='utf-8') as f:
             json.dump(debug_data, f, indent=2, ensure_ascii=False)
-        logger.info(f"📁 Saved LLM input to: {debug_file}")
+        logger.info(f"[LLM] 📁 Saved input to: {debug_file}")
     except Exception as e:
-        logger.warning(f"⚠️ Error saving debug input: {e}")
+        logger.warning(f"[LLM] ⚠️ Error saving debug input: {e}")
 
 _INTERNAL_MESSAGE_PROPERTIES = {"message_id"}
 
@@ -373,30 +280,6 @@ def _strip_internal_properties(messages: List[Dict[str, Any]]) -> List[Dict[str,
         cleaned_messages.append(cleaned_msg)
     
     return cleaned_messages
-
-def _has_image_content(messages: List[Dict[str, Any]]) -> bool:
-    for msg in messages:
-        if not isinstance(msg, dict):
-            continue
-        
-        content = msg.get("content", "")
-        
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict):
-                    if item.get("type") == "image_url" or "image_url" in item:
-                        return True
-        
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict) and item.get("type") == "image":
-                    return True
-        
-        if isinstance(content, str):
-            if "data:image" in content or "base64" in content.lower():
-                return True
-    
-    return False
 
 async def make_llm_api_call(
     messages: List[Dict[str, Any]],
@@ -417,9 +300,8 @@ async def make_llm_api_call(
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     messages = _strip_internal_properties(messages)
     
-    logger.info(f"LLM API call: {model_name} ({len(messages)} messages)")
     if model_name == "mock-ai":
-        logger.info(f"🎭 Using mock LLM provider for testing")
+        logger.info(f"[LLM] 🎭 Using mock provider for testing")
         from core.test_harness.mock_llm import get_mock_provider
         mock_provider = get_mock_provider(delay_ms=20)
         return mock_provider.acompletion(
@@ -431,7 +313,7 @@ async def make_llm_api_call(
             max_tokens=max_tokens
         )
     
-    logger.info(f"Making LLM API call to model: {model_name} with {len(messages)} messages")
+    logger.info(f"[LLM] call: {model_name} ({len(messages)} msgs)")
     _configure_openai_compatible(model_name, api_key, api_base)
     
     from core.ai_models import model_manager
@@ -460,7 +342,7 @@ async def make_llm_api_call(
         if "extra_body" not in params:
             params["extra_body"] = {}
         params["extra_body"]["app"] = "Kortix.com"
-        logger.debug(f"Added OpenRouter app parameter: Kortix.com for model {actual_litellm_model_id}")
+        logger.debug(f"[LLM] OpenRouter app param added for {actual_litellm_model_id}")
     
     if tools:
         params["tools"] = tools
@@ -476,15 +358,6 @@ async def make_llm_api_call(
     if is_minimax:
         params["reasoning"] = {"enabled": True}
         params["reasoning_split"] = True
-        
-        if _has_image_content(messages):
-
-            if "fallbacks" not in params:
-                params["fallbacks"] = []
-
-            if "openrouter/z-ai/glm-4.6v" not in params["fallbacks"]:
-                params["fallbacks"].append("openrouter/z-ai/glm-4.6v")
-            logger.info(f"Added fallback to glm-4.6v for minimax model with image input")
     
     import time as time_module
     call_start = time_module.monotonic()
@@ -492,67 +365,41 @@ async def make_llm_api_call(
     try:
         _save_debug_input(params)
         
-        slot = await _acquire_llm_slot(timeout=5.0)
-        provider_start = time_module.monotonic()
+        actual_model = params.get("model", model_name)
+        msg_count = len(params.get("messages", []))
+        tool_count = len(params.get("tools", []) or [])
         
         if stream:
-            try:
-                response = await provider_router.acompletion(**params)
-                ttft = time_module.monotonic() - provider_start
-                if LLM_DEBUG:
-                    logger.info(f"LLM TTFT: {ttft:.2f}s for {model_name}")
-                if hasattr(response, '__aiter__'):
-                    return _wrap_streaming_response_with_slot(response, slot, provider_start)
-                else:
-                    call_duration = time_module.monotonic() - provider_start
-                    await _release_slot(slot, call_duration)
-                    if LLM_DEBUG:
-                        logger.info(f"LLM call completed: {call_duration:.2f}s for {model_name}")
-                    return response
-            except Exception:
-                call_duration = time_module.monotonic() - provider_start
-                await _release_slot(slot, call_duration)
-                raise
+            response = await provider_router.acompletion(**params)
+            ttft = time_module.monotonic() - call_start
+            
+            # Log TTFT with warning threshold
+            if ttft > 30.0:
+                logger.error(f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name}")
+            elif ttft > 10.0:
+                logger.warning(f"[LLM] ⚠️ SLOW TTFT: {ttft:.2f}s for {model_name}")
+            elif LLM_DEBUG:
+                logger.info(f"[LLM] TTFT: {ttft:.2f}s for {model_name}")
+            
+            if hasattr(response, '__aiter__'):
+                return _wrap_streaming_response(response, call_start, model_name)
+            return response
         else:
-            try:
-                response = await provider_router.acompletion(**params)
-                call_duration = time_module.monotonic() - provider_start
-                if LLM_DEBUG:
-                    logger.info(f"LLM call completed: {call_duration:.2f}s for {model_name}")
-                return response
-            finally:
-                call_duration = time_module.monotonic() - provider_start
-                await _release_slot(slot, call_duration)
+            response = await provider_router.acompletion(**params)
+            call_duration = time_module.monotonic() - call_start
+            if LLM_DEBUG:
+                logger.info(f"[LLM] completed: {call_duration:.2f}s for {model_name}")
+            return response
         
-    except LLMError:
-        total_time = time_module.monotonic() - call_start
-        logger.warning(f"LLM call failed after {total_time:.2f}s for {model_name}")
-        raise
     except Exception as e:
         total_time = time_module.monotonic() - call_start
-        logger.error(f"LLM call error after {total_time:.2f}s for {model_name}: {str(e)[:100]}")
+        logger.error(f"[LLM] call error after {total_time:.2f}s for {model_name}: {str(e)[:100]}")
         processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
         ErrorProcessor.log_error(processed_error)
         raise LLMError(processed_error.message)
 
 
-async def _release_slot(slot, call_duration: float = 0.0):
-    async with _stats_lock:
-        _llm_stats["active_calls"] = max(0, _llm_stats["active_calls"] - 1)
-        if call_duration > 0:
-            _llm_stats["total_call_time"] += call_duration
-    
-    if isinstance(slot, asyncio.Semaphore):
-        slot.release()
-        if LLM_DEBUG:
-            logger.debug(f"LLM slot released (semaphore), available: {slot._value}/{LLM_INFLIGHT_LIMIT}")
-    elif hasattr(slot, 'release'):
-        await slot.release()
-        if LLM_DEBUG:
-            logger.debug(f"LLM slot released (Redis)")
-
-
-async def _wrap_streaming_response_with_slot(response, slot, start_time: float = 0.0) -> AsyncGenerator:
+async def _wrap_streaming_response(response, start_time: float, model_name: str) -> AsyncGenerator:
     import time as time_module
     chunk_count = 0
     try:
@@ -565,17 +412,15 @@ async def _wrap_streaming_response_with_slot(response, slot, start_time: float =
         raise LLMError(processed_error.message)
     finally:
         call_duration = time_module.monotonic() - start_time if start_time else 0.0
-        await _release_slot(slot, call_duration)
         if LLM_DEBUG and call_duration > 0:
-            logger.info(f"LLM stream completed: {call_duration:.2f}s, {chunk_count} chunks")
+            logger.info(f"[LLM] stream completed: {call_duration:.2f}s, {chunk_count} chunks for {model_name}")
 
 setup_api_keys()
 setup_provider_router()
-logger.info(
-    f"[LLM] Module initialized: inflight_limit={LLM_INFLIGHT_LIMIT}, "
-    f"redis_limiter={USE_REDIS_LIMITER}, global_limit={LLM_GLOBAL_LIMIT}, "
-    f"debug={LLM_DEBUG}, retries={litellm.num_retries}"
-)
+logger.info(f"[LLM] Module initialized: debug={LLM_DEBUG}, retries={litellm.num_retries}")
+
+
+
 
 if __name__ == "__main__":
     from litellm import completion
