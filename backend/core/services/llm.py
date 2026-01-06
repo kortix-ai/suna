@@ -18,7 +18,7 @@ litellm.set_verbose = False
 litellm.request_timeout = 600
 
 if os.environ.get("LITELLM_NUM_RETRIES") is None:
-    litellm.num_retries = 1
+    litellm.num_retries = 3
 
 if os.getenv("BRAINTRUST_API_KEY"):
     litellm.callbacks = ["braintrust"]
@@ -293,11 +293,18 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
+    HAIKU_4_5_PROFILE_ARN = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
+    HAIKU_3_PROFILE_ARN = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
+    
     fallbacks = [
         {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2.1": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2.1-lightning": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2": ["openrouter/z-ai/glm-4.6v"]},
+        {HAIKU_4_5_PROFILE_ARN: [
+            "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+            HAIKU_3_PROFILE_ARN,
+        ]},
     ]
     
     num_retries = getattr(litellm, 'num_retries', 1)
@@ -312,7 +319,7 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
     )
 
     logger.info(
-        f"LiteLLM Router configured: routing_strategy=simple-shuffle, "
+        f"LiteLLM Router configured with fallbacks: minimax -> glm-4.6v, haiku-4.5 -> 3.5 -> 3, "
         f"inflight_limit={LLM_INFLIGHT_LIMIT}, timeout=300s, retries={num_retries}"
     )
 
