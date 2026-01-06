@@ -335,13 +335,16 @@ class ThreadManager:
                     validated_cached.append(msg)
                 return validated_cached
         
-        client = await self.db.client
-
+        from core.services.supabase import execute_with_reconnect
+        
         try:
             all_messages = []
             
             if lightweight:
-                result = await client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
+                result = await execute_with_reconnect(
+                    self.db,
+                    lambda client: client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
+                )
                 
                 if result.data:
                     all_messages = result.data
@@ -350,7 +353,11 @@ class ThreadManager:
                 offset = 0
                 
                 while True:
-                    result = await client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
+                    # Capture offset in lambda default arg to avoid closure issues
+                    result = await execute_with_reconnect(
+                        self.db,
+                        lambda client, _offset=offset: client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(_offset, _offset + batch_size - 1).execute()
+                    )
                     
                     if not result.data:
                         break
