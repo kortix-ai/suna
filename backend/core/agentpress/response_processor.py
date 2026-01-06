@@ -3320,6 +3320,10 @@ class ResponseProcessor:
                 logger.warning("_image_context_data missing message_content, skipping")
                 return
             
+            # Set has_images flag on thread metadata
+            from core.agentpress.thread_manager import set_thread_has_images
+            await set_thread_has_images(thread_id)
+            
             # Save the image_context message AFTER the tool result
             await self.add_message(
                 thread_id=thread_id,
