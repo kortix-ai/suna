@@ -125,6 +125,7 @@
   "devDependencies": {
     "@babel/core": "^7.26.0",
     "@babel/plugin-transform-class-properties": "^7.26.0",
+    "@babel/plugin-transform-classes": "^7.28.4",
     "@babel/plugin-transform-react-jsx": "^7.26.0",
     "@types/react": "~19.1.10",
     "@types/react-syntax-highlighter": "^15.5.13",
