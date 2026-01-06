@@ -1,6 +1,6 @@
 {
   "setup-worktree": [
-    "cd frontend && npm install",
+    "cd apps/frontend && npm install",
     "cd apps/mobile && npm install",
     "cd backend && uv venv && uv sync"
   ]
