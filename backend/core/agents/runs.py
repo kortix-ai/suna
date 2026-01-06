@@ -825,6 +825,10 @@ async def start_agent_run(
     # Insert image context messages in background (don't block)
     if image_contexts_to_inject:
         async def insert_image_contexts():
+            # Set has_images flag on thread metadata (once, before inserting messages)
+            from core.agentpress.thread_manager import set_thread_has_images
+            await set_thread_has_images(thread_id, client)
+            
             for img_info in image_contexts_to_inject:
                 try:
                     await client.table('messages').insert({
