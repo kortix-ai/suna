@@ -19,10 +19,13 @@ import asyncio
 # =============================================================================
 
 # Connection limits (per worker process)
-# With 12 workers x 60 = 720 max connections (well within 1500 limit for 2XL tier)
-# Worker concurrency is 48, so we need at least 48+ connections per worker
-SUPABASE_MAX_CONNECTIONS = 60
-SUPABASE_MAX_KEEPALIVE = 40
+# HTTP/2 has a hard limit of 100 concurrent streams per connection
+# To avoid "Max outbound streams" errors, we either need:
+# - More connections (spread load across multiple HTTP/2 connections)
+# - Or disable HTTP/2 (use HTTP/1.1 with separate connections)
+# With worker concurrency of 48, we need enough connections to avoid stream exhaustion
+SUPABASE_MAX_CONNECTIONS = 120  # Increased from 60 to avoid HTTP/2 stream exhaustion
+SUPABASE_MAX_KEEPALIVE = 80     # Increased proportionally
 SUPABASE_KEEPALIVE_EXPIRY = 60.0  # 60s keepalive
 
 # Timeout settings (in seconds) - increased for stability under load
