@@ -7,6 +7,9 @@
 @plugin 'tailwind-scrollbar';
 @plugin 'tailwind-scrollbar-hide';
 
+/* Streamdown source for Tailwind CSS v4 */
+@source "../node_modules/streamdown/dist/*.js";
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {

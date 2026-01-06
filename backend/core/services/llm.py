@@ -404,7 +404,7 @@ async def make_llm_api_call(
                 return _wrap_streaming_response(response, call_start, model_name)
             return response
         else:
-            response = await provider_router.acompletion(**params)
+            response = await provider_router.acompletion(**params)  
             call_duration = time_module.monotonic() - call_start
             if LLM_DEBUG:
                 logger.info(f"[LLM] completed: {call_duration:.2f}s for {model_name}")

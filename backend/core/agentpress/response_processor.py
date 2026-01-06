@@ -521,6 +521,7 @@ class ResponseProcessor:
         # Don't carry over accumulated_content when auto-continuing after tool_calls
         # Each assistant message should be separate
         accumulated_content = ""
+        accumulated_reasoning_content = ""  # Accumulate reasoning content separately
         tool_calls_buffer = {}
         current_xml_content = ""
         xml_chunks_buffer = []
@@ -785,6 +786,7 @@ class ResponseProcessor:
                     
                     # Check for and log Anthropic thinking content (MiniMax reasoning m2.1 with reasoning_split=True, we avoid yielding such chunks)
                     # NOTE: With reasoning_split=True, reasoning comes separately and should NOT be included in content
+                    reasoning_chunk = None
                     if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                         if not has_printed_thinking_prefix:
                             # print("[THINKING]: ", end='', flush=True)
@@ -796,6 +798,9 @@ class ResponseProcessor:
                         # logger.debug(f"Processing reasoning_content: type={type(reasoning_content)}, value={reasoning_content}")
                         if isinstance(reasoning_content, list):
                             reasoning_content = ''.join(str(item) for item in reasoning_content)
+                        # Accumulate reasoning content separately from text content
+                        accumulated_reasoning_content += reasoning_content
+                        reasoning_chunk = reasoning_content
                         # logger.debug(f"Reasoning content received (not included in final message): {reasoning_content[:100]}...")
                         # DO NOT add reasoning_content to accumulated_content - only actual text content should be saved
 
@@ -809,17 +814,41 @@ class ResponseProcessor:
 
                         # Yield content chunk IMMEDIATELY - no datetime call, use pre-built metadata
                         # This is the hot path - every microsecond counts!
+                        # Build metadata dynamically if we have reasoning_content (otherwise use cached)
+                        if reasoning_chunk:
+                            # Include reasoning_content in metadata when present
+                            chunk_metadata = {"stream_status": "chunk", "thread_run_id": thread_run_id, "reasoning_content": reasoning_chunk}
+                            chunk_metadata_str = to_json_string_fast(chunk_metadata)
+                        else:
+                            chunk_metadata_str = _chunk_metadata_cached
+                        
                         content_chunk_message = {
                             "sequence": __sequence,
                             "message_id": None, "thread_id": thread_id, "type": "assistant",
                             "is_llm_message": True,
                             "content": to_json_string_fast({"role": "assistant", "content": chunk_content}),
-                            "metadata": _chunk_metadata_cached,  # Pre-built, no serialization per chunk
+                            "metadata": chunk_metadata_str,
                             "created_at": _stream_start_time,  # Reuse start time, no datetime.now() per chunk
                             "updated_at": _stream_start_time
                         }
                         self._log_frontend_message(content_chunk_message, frontend_debug_file)
                         yield content_chunk_message
+                        __sequence += 1
+                    elif reasoning_chunk:
+                        # Yield reasoning chunk separately if there's no content chunk
+                        # This handles cases where reasoning comes without text content
+                        reasoning_metadata = {"stream_status": "chunk", "thread_run_id": thread_run_id, "reasoning_content": reasoning_chunk}
+                        reasoning_chunk_message = {
+                            "sequence": __sequence,
+                            "message_id": None, "thread_id": thread_id, "type": "assistant",
+                            "is_llm_message": True,
+                            "content": to_json_string_fast({"role": "assistant", "content": ""}),  # Empty content, reasoning in metadata
+                            "metadata": to_json_string_fast(reasoning_metadata),
+                            "created_at": _stream_start_time,
+                            "updated_at": _stream_start_time
+                        }
+                        self._log_frontend_message(reasoning_chunk_message, frontend_debug_file)
+                        yield reasoning_chunk_message
                         __sequence += 1
 
                         # --- Process XML Tool Calls (if enabled) ---
