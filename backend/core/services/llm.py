@@ -20,9 +20,9 @@ from datetime import datetime, timezone
 # Configure LiteLLM
 litellm.modify_params = True
 litellm.drop_params = True
-# Set num_retries to 1 if not already set via environment variable
+# Set num_retries to 3 if not already set via environment variable
 if os.environ.get("LITELLM_NUM_RETRIES") is None:
-    litellm.num_retries = 1
+    litellm.num_retries = 3
 
 # Configure Braintrust callback for tracing if API key is set
 if os.getenv("BRAINTRUST_API_KEY"):
@@ -106,15 +106,26 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
                 "model": "openrouter/z-ai/glm-4.6v",
             },
         },
+        # Catch-all: handles Bedrock models and fallbacks via AWS_BEARER_TOKEN_BEDROCK env var
         {"model_name": "*", "litellm_params": {"model": "*"}},
     ]
     
-    # Configure fallbacks: minimax models fall back to glm-4.6v for image input
+    # Bedrock inference profile ARNs
+    HAIKU_4_5_PROFILE_ARN = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:application-inference-profile/heol2zyy5v48"
+    HAIKU_3_PROFILE_ARN = "bedrock/converse/arn:aws:bedrock:us-west-2:935064898258:inference-profile/us.anthropic.claude-3-haiku-20240307-v1:0"
+    
+    # Configure fallbacks
     fallbacks = [
+        # MiniMax models fall back to glm-4.6v for image input
         {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2.1": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2.1-lightning": ["openrouter/z-ai/glm-4.6v"]},
         {"minimax/MiniMax-M2": ["openrouter/z-ai/glm-4.6v"]},
+        # Haiku 4.5 (Bedrock profile) falls back to 3.5 Haiku, then 3 Haiku (via inference profile)
+        {HAIKU_4_5_PROFILE_ARN: [
+            "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+            HAIKU_3_PROFILE_ARN,
+        ]},
     ]
     
     # Use configured num_retries or default to 1
@@ -126,7 +137,7 @@ def setup_provider_router(openai_compatible_api_key: str = None, openai_compatib
         fallbacks=fallbacks,
     )
     
-    logger.info("LiteLLM Router configured with fallbacks: minimax -> glm-4.6v")
+    logger.info("LiteLLM Router configured with fallbacks: minimax -> glm-4.6v, haiku-4.5 -> 3.5 -> 3")
 
 def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     """Configure OpenAI-compatible provider if needed."""
