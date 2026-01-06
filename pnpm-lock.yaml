@@ -1027,6 +1027,9 @@ importers:
       '@babel/plugin-transform-class-properties':
         specifier: ^7.26.0
         version: 7.27.1(@babel/core@7.28.5)
+      '@babel/plugin-transform-classes':
+        specifier: ^7.28.4
+        version: 7.28.4(@babel/core@7.28.5)
       '@babel/plugin-transform-react-jsx':
         specifier: ^7.26.0
         version: 7.27.1(@babel/core@7.28.5)
