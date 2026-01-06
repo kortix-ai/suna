@@ -24,15 +24,16 @@ import asyncio
 # - More connections (spread load across multiple HTTP/2 connections)
 # - Or disable HTTP/2 (use HTTP/1.1 with separate connections)
 # With worker concurrency of 48, we need enough connections to avoid stream exhaustion
-SUPABASE_MAX_CONNECTIONS = 120  # Increased from 60 to avoid HTTP/2 stream exhaustion
-SUPABASE_MAX_KEEPALIVE = 80     # Increased proportionally
+# Each agent run makes ~10+ concurrent DB calls, so 48 * 10 = 480 potential concurrent requests
+SUPABASE_MAX_CONNECTIONS = 250  # Increased from 120 to handle high concurrency bursts
+SUPABASE_MAX_KEEPALIVE = 150    # Increased proportionally
 SUPABASE_KEEPALIVE_EXPIRY = 60.0  # 60s keepalive
 
 # Timeout settings (in seconds) - increased for stability under load
 SUPABASE_CONNECT_TIMEOUT = 10.0   # TCP connect
 SUPABASE_READ_TIMEOUT = 60.0      # Response read - increased for complex queries
 SUPABASE_WRITE_TIMEOUT = 60.0     # Request write - increased for large payloads
-SUPABASE_POOL_TIMEOUT = 15.0      # Wait for pool slot - increased for high concurrency
+SUPABASE_POOL_TIMEOUT = 30.0      # Wait for pool slot - increased from 15s for high concurrency bursts
 
 # HTTP transport settings
 SUPABASE_HTTP2_ENABLED = True
