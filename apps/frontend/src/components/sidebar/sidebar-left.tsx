@@ -101,7 +101,7 @@ export function SidebarLeft({
   const isMobile = useIsMobile();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  const [activeView, setActiveView] = useState<'chats' | 'agents' | 'starred'>('chats');
+  const [activeView, setActiveView] = useState<'chats' | 'library' | 'starred'>('chats');
   const [showEnterpriseCard, setShowEnterpriseCard] = useState(true);
   const [user, setUser] = useState<{
     name: string;
@@ -307,7 +307,7 @@ export function SidebarLeft({
               <div className="w-full flex flex-col items-center space-y-3">
                 {[
                   { view: 'chats' as const, icon: MessageCircle },
-                  { view: 'agents' as const, icon: Library },
+                  { view: 'library' as const, icon: Library },
                   { view: 'starred' as const, icon: Zap },
                 ].map(({ view, icon: Icon }) => (
                   <Button
@@ -372,7 +372,7 @@ export function SidebarLeft({
                 <div className="flex justify-between items-center gap-2">
                   {[
                     { view: 'chats' as const, icon: MessageCircle, label: t('chats') },
-                    { view: 'agents' as const, icon: Library, label: t('agents') },
+                    { view: 'library' as const, icon: Library, label: t('library') },
                     { view: 'starred' as const, icon: Zap, label: t('triggers') }
                   ].map(({ view, icon: Icon, label }) => (
                     <button
@@ -396,7 +396,7 @@ export function SidebarLeft({
               {/* Content area */}
               <div className="px-6 flex-1 overflow-hidden">
                 {activeView === 'chats' && <NavAgents />}
-                {activeView === 'agents' && <NavAgentsView />}
+                {activeView === 'library' && <NavAgentsView />}
                 {activeView === 'starred' && (
                   <>
                     <NavGlobalConfig />

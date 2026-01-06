@@ -1,10 +1,10 @@
 import * as React from 'react';
 import { View } from 'react-native';
 import { useLanguage } from '@/contexts';
-import { formatMonthYear } from '@/lib/utils/date';
 import { Text } from '@/components/ui/text';
 import { EntityList } from '@/components/shared/EntityList';
 import { ConversationItem } from './ConversationItem';
+import { getTimePeriodLabel } from '@/lib/utils/thread-utils';
 import type { ConversationSection as ConversationSectionType, Conversation } from './types';
 
 interface ConversationSectionProps {
@@ -26,11 +26,18 @@ export function ConversationSection({
 }: ConversationSectionProps) {
   const { currentLanguage, t } = useLanguage();
   
-  // Format section title based on current locale
-  const sectionTitle = React.useMemo(
-    () => formatMonthYear(section.timestamp, currentLanguage),
-    [section.timestamp, currentLanguage]
-  );
+  // Use period label if available (for relative time grouping), otherwise use the period key
+  const sectionTitle = React.useMemo(() => {
+    if (section.periodLabel) {
+      return getTimePeriodLabel(section.periodLabel as any, currentLanguage);
+    }
+    // Fallback: use the section id which might be a period key
+    const periodKeys = ['today', 'yesterday', 'thisWeek', 'thisMonth', 'older'];
+    if (periodKeys.includes(section.id)) {
+      return getTimePeriodLabel(section.id as any, currentLanguage);
+    }
+    return section.id;
+  }, [section.periodLabel, section.id, currentLanguage]);
   
   return (
     <View className="gap-3 w-full">

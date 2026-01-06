@@ -69,6 +69,7 @@ import { useToolStreamStore } from '@/stores/tool-stream-store';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
 import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
+import { useClearNavigation } from '@/stores/thread-navigation-store';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -83,9 +84,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const clearNavigation = useClearNavigation();
 
   const { user } = useAuth();
   const isAuthenticated = !!user;
+  
+  // Clear optimistic navigation state immediately when thread component mounts
+  // This makes the navigation feel instant - skeleton shows immediately, then real content
+  useEffect(() => {
+    clearNavigation();
+  }, [threadId, clearNavigation]);
   
   const isNewThread = searchParams?.get('new') === 'true';
 

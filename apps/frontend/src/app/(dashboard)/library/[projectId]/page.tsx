@@ -4,9 +4,6 @@ import React, { useCallback, useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   ArrowLeft, 
-  Folder, 
-  Home, 
-  ChevronRight, 
   Download, 
   MessageSquare,
   Presentation,
@@ -17,12 +14,15 @@ import {
   FileSpreadsheet,
   FileArchive,
   Film,
-  Music
+  Music,
+  MoreHorizontal,
+  Star,
+  SlidersHorizontal,
+  ChevronDown
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { KortixLoader } from '@/components/ui/kortix-loader';
-import { cn } from '@/lib/utils';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useThreads } from '@/hooks/threads/use-threads';
 import { useDirectoryQuery } from '@/hooks/files/use-file-queries';
@@ -32,7 +32,17 @@ import { toast } from '@/lib/toast';
 import JSZip from 'jszip';
 import { listSandboxFiles, type FileInfo } from '@/lib/api/sandbox';
 import { usePresentationViewerStore, PresentationViewerWrapper } from '@/stores/presentation-viewer-store';
+import { useFileViewerStore, FileViewerWrapper } from '@/stores/file-viewer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+} from '@/components/ui/dropdown-menu';
 
 interface PresentationThumbnail {
   firstSlideUrl: string;
@@ -91,33 +101,24 @@ function getFileIcon(fileName: string) {
   return File;
 }
 
-// Thumbnail component with proper dynamic scaling
-const ThumbnailContainer = React.memo(function ThumbnailContainer({
-  isPresentation,
-  isImage,
+// Large preview card for presentations with title header
+const PresentationCard = React.memo(function PresentationCard({
   thumbnailUrl,
   thumbnailTitle,
-  imageUrl,
-  fileName,
-  isDir,
-  hasPresentationMetadata,
+  onClick,
+  onDownload,
 }: {
-  isPresentation: boolean;
-  isImage: boolean;
-  thumbnailUrl?: string | null;
-  thumbnailTitle?: string;
-  imageUrl?: string | null;
-  fileName: string;
-  isDir: boolean;
-  hasPresentationMetadata: boolean;
+  thumbnailUrl: string;
+  thumbnailTitle: string;
+  onClick: () => void;
+  onDownload?: (format: 'zip' | 'pptx' | 'pdf') => void;
 }) {
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [scale, setScale] = React.useState(0.1);
-  const [imageError, setImageError] = React.useState(false);
   const [iframeError, setIframeError] = React.useState(false);
 
   React.useEffect(() => {
-    if (!containerRef.current || !isPresentation) return;
+    if (!containerRef.current) return;
     
     const updateScale = () => {
       if (containerRef.current) {
@@ -132,48 +133,236 @@ const ThumbnailContainer = React.memo(function ThumbnailContainer({
     resizeObserver.observe(containerRef.current);
     
     return () => resizeObserver.disconnect();
-  }, [isPresentation]);
+  }, []);
 
+  return (
+    <div 
+      className="bg-card rounded-2xl border border-border overflow-hidden cursor-pointer group hover:border-border/80 transition-colors"
+      onClick={onClick}
+    >
+      {/* Header with icon, title and menu */}
+      <div className="flex items-center gap-3 p-4 border-b border-border/50">
+        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50">
+          <Presentation className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <span className="flex-1 font-medium truncate text-sm">{thumbnailTitle}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button 
+              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
+              Open
+            </DropdownMenuItem>
+            {onDownload && (
+              <DropdownMenuSub>
+                <DropdownMenuSubTrigger onClick={(e) => e.stopPropagation()}>
+                  Download
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="w-44">
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownload('zip'); }}>
+                    Download as ZIP
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownload('pptx'); }}>
+                    Download as PPTX
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onDownload('pdf'); }}>
+                    Download as PDF
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      
+      {/* Large preview */}
+      <div 
+        ref={containerRef}
+        className="w-full aspect-video relative overflow-hidden"
+      >
+        {thumbnailUrl && !iframeError ? (
+          <iframe
+            src={thumbnailUrl}
+            className="pointer-events-none border-0 absolute top-0 left-0"
+            style={{ 
+              width: '1920px', 
+              height: '1080px',
+              transform: `scale(${scale})`,
+              transformOrigin: 'top left',
+            }}
+            title={thumbnailTitle || 'Presentation'}
+            loading="lazy"
+            onError={() => setIframeError(true)}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center bg-muted/20">
+            <Presentation className="h-16 w-16 text-muted-foreground/40" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// Image card with preview - fetches image with auth and creates blob URL
+const ImageCard = React.memo(function ImageCard({
+  imageUrl,
+  displayName,
+  accessToken,
+  onClick,
+}: {
+  imageUrl: string;
+  displayName: string;
+  accessToken?: string;
+  onClick: () => void;
+}) {
+  const [imageBlobUrl, setImageBlobUrl] = React.useState<string | null>(null);
+  const [imageError, setImageError] = React.useState(false);
+  const [isLoading, setIsLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!imageUrl || !accessToken) {
+      setIsLoading(false);
+      return;
+    }
+
+    let isMounted = true;
+    let blobUrl: string | null = null;
+    
+    const fetchImage = async () => {
+      try {
+        const response = await fetch(imageUrl, {
+          headers: { 'Authorization': `Bearer ${accessToken}` }
+        });
+        
+        if (!response.ok) throw new Error('Failed to fetch image');
+        
+        const blob = await response.blob();
+        if (isMounted) {
+          blobUrl = URL.createObjectURL(blob);
+          setImageBlobUrl(blobUrl);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setImageError(true);
+          setIsLoading(false);
+        }
+      }
+    };
+
+    fetchImage();
+
+    return () => {
+      isMounted = false;
+      if (blobUrl) {
+        URL.revokeObjectURL(blobUrl);
+      }
+    };
+  }, [imageUrl, accessToken]);
+
+  return (
+    <div 
+      className="bg-card rounded-2xl border border-border overflow-hidden cursor-pointer group hover:border-border/80 transition-colors"
+      onClick={onClick}
+    >
+      {/* Header */}
+      <div className="flex items-center gap-3 p-4 border-b border-border/50">
+        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50">
+          <Image className="h-4 w-4 text-muted-foreground" />
+        </div>
+        <span className="flex-1 font-medium truncate text-sm">{displayName}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button 
+              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
+              Open image
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      
+      {/* Preview */}
+      <div className="w-full aspect-[16/10] relative overflow-hidden bg-muted/10">
+        {isLoading ? (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="w-8 h-8 border-2 border-muted-foreground/20 border-t-muted-foreground/60 rounded-full animate-spin" />
+          </div>
+        ) : imageBlobUrl && !imageError ? (
+          <img
+            src={imageBlobUrl}
+            alt={displayName}
+            className="absolute inset-0 w-full h-full object-cover"
+            loading="lazy"
+            onError={() => setImageError(true)}
+          />
+        ) : (
+          <div className="absolute inset-0 flex items-center justify-center">
+            <Image className="h-16 w-16 text-muted-foreground/40" />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// Generic file card
+const FileCard = React.memo(function FileCard({
+  fileName,
+  displayName,
+  onClick,
+}: {
+  fileName: string;
+  displayName: string;
+  onClick: () => void;
+}) {
   const IconComponent = getFileIcon(fileName);
 
   return (
     <div 
-      ref={containerRef}
-      className="w-full aspect-video flex items-center justify-center mb-2 rounded-lg overflow-hidden border border-border/20 bg-muted/5 relative"
+      className="bg-card rounded-2xl border border-border overflow-hidden cursor-pointer group hover:border-border/80 transition-colors"
+      onClick={onClick}
     >
-      {isPresentation && thumbnailUrl && !iframeError ? (
-        <iframe
-          src={thumbnailUrl}
-          className="pointer-events-none border-0 absolute top-0 left-0"
-          style={{ 
-            width: '1920px', 
-            height: '1080px',
-            transform: `scale(${scale})`,
-            transformOrigin: 'top left',
-          }}
-          title={thumbnailTitle || 'Presentation'}
-          loading="lazy"
-          onError={() => setIframeError(true)}
-        />
-      ) : isImage && imageUrl && !imageError ? (
-        <img
-          src={imageUrl}
-          alt={fileName}
-          className="absolute inset-0 w-full h-full object-cover"
-          loading="lazy"
-          onError={() => setImageError(true)}
-        />
-      ) : (
-        <div className="grayscale opacity-60 group-hover:opacity-80 transition-opacity">
-          {hasPresentationMetadata ? (
-            <Presentation className="h-10 w-10" />
-          ) : isDir ? (
-            <Folder className="h-10 w-10" />
-          ) : (
-            <IconComponent className="h-10 w-10" />
-          )}
+      {/* Header */}
+      <div className="flex items-center gap-3 p-4 border-b border-border/50">
+        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-muted/50">
+          <IconComponent className="h-4 w-4 text-muted-foreground" />
         </div>
-      )}
+        <span className="flex-1 font-medium truncate text-sm">{displayName}</span>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button 
+              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="h-4 w-4" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); onClick(); }}>
+              Open file
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      
+      {/* Preview placeholder */}
+      <div className="w-full aspect-[16/10] relative overflow-hidden bg-muted/10 flex items-center justify-center">
+        <IconComponent className="h-16 w-16 text-muted-foreground/30" />
+      </div>
     </div>
   );
 });
@@ -190,27 +379,29 @@ export default function LibraryBrowserPage({
   const router = useRouter();
   const { session } = useAuth();
 
-  const [currentPath, setCurrentPath] = useState('/workspace');
   const [isDownloading, setIsDownloading] = useState(false);
   const [presentationThumbnails, setPresentationThumbnails] = useState<Record<string, PresentationThumbnail>>({});
 
-  // Fetch project data - try multiple sources to find sandbox ID
-  const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId);
+  // Fetch project data - force refetch to ensure we have sandbox data
+  const { data: project, isLoading: isProjectLoading } = useProjectQuery(projectId, {
+    refetchOnMount: 'always',
+    staleTime: 0,
+  });
   
-  // Also fetch threads list as fallback source for sandbox data
+  // Also fetch threads list as fallback source for sandbox data (increased limit)
   const { data: threadsResponse, isLoading: isThreadsLoading } = useThreads({
     page: 1,
-    limit: 50,
+    limit: 200,
   });
 
   // Find sandbox ID from project or threads
   const sandboxId = useMemo(() => {
-    // First try project query
+    // First try project query - this is the primary source
     if (project?.sandbox?.id) {
       return project.sandbox.id;
     }
     
-    // Fallback: find thread with this project_id
+    // Fallback: find thread with this project_id in the threads list
     const thread = threadsResponse?.threads?.find(t => t.project_id === projectId);
     if (thread?.project?.sandbox?.id) {
       return thread.project.sandbox.id;
@@ -241,6 +432,9 @@ export default function LibraryBrowserPage({
 
   // Presentation viewer store
   const { openPresentation } = usePresentationViewerStore();
+  
+  // File viewer store
+  const { openFile } = useFileViewerStore();
 
   // Check if a folder is a presentation folder
   const isPresentationFolder = useCallback((file: FileInfo): boolean => {
@@ -260,14 +454,38 @@ export default function LibraryBrowserPage({
     return false;
   }, []);
 
-  // Fetch files from the sandbox
+  // Fetch files from the root workspace
   const {
-    data: files = [],
-    isLoading: isFilesLoading,
-  } = useDirectoryQuery(sandboxId || '', currentPath, {
+    data: rootFiles = [],
+    isLoading: isRootFilesLoading,
+    isError: isRootFilesError,
+  } = useDirectoryQuery(sandboxId || '', '/workspace', {
     enabled: !!sandboxId && sandboxId.trim() !== '',
     staleTime: 0,
   });
+
+  // Fetch files from the presentations folder (non-blocking - may not exist)
+  const {
+    data: presentationFiles = [],
+    isLoading: isPresentationsLoading,
+    isError: isPresentationsError,
+  } = useDirectoryQuery(sandboxId || '', '/workspace/presentations', {
+    enabled: !!sandboxId && sandboxId.trim() !== '',
+    staleTime: 0,
+  });
+
+  // Combine all files - include presentation files only if successfully loaded
+  const files = useMemo(() => {
+    const allFiles = [...rootFiles];
+    // Only add presentation files if they loaded successfully (folder exists)
+    if (!isPresentationsError && presentationFiles.length > 0) {
+      allFiles.push(...presentationFiles);
+    }
+    return allFiles;
+  }, [rootFiles, presentationFiles, isPresentationsError]);
+
+  // Only wait for root files - presentations folder may not exist
+  const isFilesLoading = isRootFilesLoading;
 
   // Helper to sanitize filename (matching backend logic)
   const sanitizeFilename = useCallback((name: string): string => {
@@ -326,35 +544,44 @@ export default function LibraryBrowserPage({
     });
   }, [files, sandboxUrl, isPresentationFolder, presentationThumbnails, sanitizeFilename]);
 
-  // Sort files: folders first, then by name
-  const sortedFiles = useMemo(() => {
-    return [...files].sort((a, b) => {
-      if (a.is_dir && !b.is_dir) return -1;
-      if (!a.is_dir && b.is_dir) return 1;
-      return a.name.localeCompare(b.name);
-    });
-  }, [files]);
+  // Filter to show only relevant outputs: presentations, images, documents (no regular folders)
+  const relevantOutputs = useMemo(() => {
+    const outputs: Array<{
+      type: 'presentation' | 'image' | 'file';
+      file: FileInfo;
+      thumbnail?: PresentationThumbnail;
+    }> = [];
 
-  // Calculate file stats
-  const fileStats = useMemo(() => {
-    let fileCount = 0;
     files.forEach(file => {
-      if (!file.is_dir) {
-        fileCount++;
+      // Check if it's a presentation folder
+      if (file.is_dir && isPresentationFolder(file)) {
+        const thumbnail = presentationThumbnails[file.path];
+        // Show presentation even if metadata hasn't loaded yet (will show placeholder)
+        // Only skip if we've confirmed there's no metadata
+        outputs.push({ type: 'presentation', file, thumbnail });
+        return;
       }
+      
+      // Skip other directories
+      if (file.is_dir) return;
+      
+      // Check if it's an image
+      if (isImageFile(file.name)) {
+        outputs.push({ type: 'image', file });
+        return;
+      }
+      
+      // Include other files (documents, etc.)
+      outputs.push({ type: 'file', file });
     });
-    return { files: fileCount };
-  }, [files]);
 
-  // Navigate to a path
-  const navigateToPath = useCallback((path: string) => {
-    setCurrentPath(path);
-  }, []);
+    return outputs;
+  }, [files, presentationThumbnails, isPresentationFolder]);
 
   // Handle file/folder click
   const handleItemClick = useCallback(async (file: FileInfo) => {
     if (file.is_dir) {
-      // Check if it's a presentation with valid metadata (already fetched)
+      // Check if it's a presentation with valid metadata
       const thumbnail = presentationThumbnails[file.path];
       if (thumbnail?.hasMetadata && sandboxUrl) {
         const presentationName = file.path.split('/').filter(Boolean).pop() || '';
@@ -377,37 +604,23 @@ export default function LibraryBrowserPage({
           console.error('Failed to check presentation folder:', error);
         }
       }
-      
-      // Not a presentation or no metadata - navigate into folder
-      navigateToPath(file.path);
     } else {
-      // Open file in new tab
-      if (sandboxId) {
-        const fileUrl = getFileUrl(sandboxId, file.path);
-        window.open(fileUrl, '_blank');
+      // Open file in file viewer
+      if (sandboxId && session?.access_token) {
+        // Get display name based on project name
+        const ext = file.name.split('.').pop() || '';
+        const displayName = ext ? `${projectName}.${ext}` : projectName;
+        
+        openFile({
+          sandboxId,
+          filePath: file.path,
+          fileName: file.name,
+          displayName,
+          accessToken: session.access_token,
+        });
       }
     }
-  }, [navigateToPath, sandboxId, sandboxUrl, isPresentationFolder, openPresentation, presentationThumbnails]);
-
-  // Generate breadcrumb segments
-  const getBreadcrumbSegments = useCallback((path: string) => {
-    const cleanPath = path.replace(/^\/workspace\/?/, '');
-    if (!cleanPath) return [];
-
-    const parts = cleanPath.split('/').filter(Boolean);
-    let currentBreadcrumbPath = '/workspace';
-
-    return parts.map((part, index) => {
-      currentBreadcrumbPath = `${currentBreadcrumbPath}/${part}`;
-      return {
-        name: part,
-        path: currentBreadcrumbPath,
-        isLast: index === parts.length - 1,
-      };
-    });
-  }, []);
-
-  const breadcrumbs = getBreadcrumbSegments(currentPath);
+  }, [sandboxId, sandboxUrl, isPresentationFolder, openPresentation, presentationThumbnails, openFile, session?.access_token, projectName]);
 
   // Download all files as zip
   const handleDownloadAll = useCallback(async () => {
@@ -439,7 +652,7 @@ export default function LibraryBrowserPage({
         }
       };
 
-      await exploreDirectory(currentPath);
+      await exploreDirectory('/workspace');
 
       if (allFiles.length === 0) {
         toast.error('No files found to download');
@@ -447,7 +660,7 @@ export default function LibraryBrowserPage({
       }
 
       const zip = new JSZip();
-      const basePath = currentPath.endsWith('/') ? currentPath : currentPath + '/';
+      const basePath = '/workspace/';
 
       for (const file of allFiles) {
         const relativePath = file.path.startsWith(basePath)
@@ -488,19 +701,139 @@ export default function LibraryBrowserPage({
     } finally {
       setIsDownloading(false);
     }
-  }, [sandboxId, session?.access_token, currentPath, projectName, isDownloading]);
+  }, [sandboxId, session?.access_token, projectName, isDownloading]);
+
+  // Download a single presentation folder in specified format
+  const handleDownloadPresentation = useCallback(async (
+    folderPath: string, 
+    presentationTitle: string,
+    format: 'zip' | 'pptx' | 'pdf'
+  ) => {
+    if (!sandboxId || !session?.access_token || isDownloading) return;
+
+    try {
+      setIsDownloading(true);
+      
+      // For PPTX and PDF, we need to call a backend conversion endpoint
+      if (format === 'pptx' || format === 'pdf') {
+        toast.info(`Preparing ${format.toUpperCase()} download...`);
+        
+        try {
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/presentations/export?path=${encodeURIComponent(folderPath)}&format=${format}`,
+            {
+              headers: { 'Authorization': `Bearer ${session.access_token}` }
+            }
+          );
+
+          if (response.ok) {
+            const blob = await response.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${presentationTitle || 'presentation'}.${format}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            toast.success(`Downloaded as ${format.toUpperCase()}`);
+          } else {
+            toast.error(`${format.toUpperCase()} export not available yet`);
+          }
+        } catch (error) {
+          console.error(`${format} export failed:`, error);
+          toast.error(`${format.toUpperCase()} export not available yet`);
+        }
+        return;
+      }
+
+      // ZIP download - collect all files
+      toast.info('Preparing ZIP download...');
+
+      // Recursively collect all files in the presentation folder
+      const allFiles: FileInfo[] = [];
+      const visited = new Set<string>();
+
+      const exploreDirectory = async (dirPath: string) => {
+        if (visited.has(dirPath)) return;
+        visited.add(dirPath);
+
+        try {
+          const dirFiles = await listSandboxFiles(sandboxId, dirPath);
+          for (const file of dirFiles) {
+            if (file.is_dir) {
+              await exploreDirectory(file.path);
+            } else {
+              allFiles.push(file);
+            }
+          }
+        } catch (error) {
+          console.error(`Failed to read directory: ${dirPath}`, error);
+        }
+      };
+
+      await exploreDirectory(folderPath);
+
+      if (allFiles.length === 0) {
+        toast.error('No files found in presentation');
+        return;
+      }
+
+      const zip = new JSZip();
+
+      for (const file of allFiles) {
+        // Get relative path from the presentation folder
+        const relativePath = file.path.startsWith(folderPath)
+          ? file.path.slice(folderPath.length + 1)
+          : file.name;
+
+        try {
+          const response = await fetch(
+            `${process.env.NEXT_PUBLIC_BACKEND_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(file.path)}`,
+            {
+              headers: { 'Authorization': `Bearer ${session.access_token}` }
+            }
+          );
+
+          if (response.ok) {
+            const blob = await response.blob();
+            zip.file(relativePath, blob);
+          }
+        } catch (error) {
+          console.error(`Failed to download file: ${file.path}`, error);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${presentationTitle || 'presentation'}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success(`Downloaded as ZIP`);
+    } catch (error) {
+      console.error('Presentation download failed:', error);
+      toast.error('Failed to download presentation');
+    } finally {
+      setIsDownloading(false);
+    }
+  }, [sandboxId, session?.access_token, isDownloading]);
 
   const isLoading = isProjectLoading || isThreadsLoading || isFilesLoading;
   const hasSandbox = !!sandboxId && sandboxId.trim() !== '';
-  const isAtRoot = currentPath === '/workspace';
 
   return (
     <>
     <PresentationViewerWrapper />
-    <div className="flex flex-col h-full bg-background">
+    <FileViewerWrapper />
+    <div className="flex flex-col h-screen bg-background">
       {/* Header */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
-        <div className="flex items-center gap-4">
+      <div className="px-8 pt-8 pb-6">
+        <div className="flex items-center gap-4 mb-6">
           <Button
             variant="ghost"
             size="icon"
@@ -510,143 +843,156 @@ export default function LibraryBrowserPage({
             <ArrowLeft className="h-4 w-4" />
           </Button>
           
-          <div>
-            <h1 className="text-base font-medium">
-              {projectName}
-            </h1>
-            {fileStats.files > 0 && (
-              <p className="text-xs text-muted-foreground">
-                {fileStats.files} file{fileStats.files !== 1 ? 's' : ''}
-              </p>
-            )}
-          </div>
-        </div>
+          <h1 className="text-2xl font-semibold">Library</h1>
 
-        <div className="flex items-center gap-2">
-          {threadId && (
+          <div className="flex-1" />
+
+          <div className="flex items-center gap-2">
+            {threadId && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => router.push(`/projects/${projectId}/thread/${threadId}`)}
+                className="text-muted-foreground"
+              >
+                <MessageSquare className="h-4 w-4" />
+              </Button>
+            )}
+
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push(`/projects/${projectId}/thread/${threadId}`)}
+              onClick={handleDownloadAll}
+              disabled={isDownloading || !hasSandbox || files.length === 0}
               className="text-muted-foreground"
             >
-              <MessageSquare className="h-4 w-4" />
+              {isDownloading ? (
+                <KortixLoader size="small" />
+              ) : (
+                <Download className="h-4 w-4" />
+              )}
             </Button>
-          )}
+          </div>
+        </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDownloadAll}
-            disabled={isDownloading || !hasSandbox || files.length === 0}
-            className="text-muted-foreground"
-          >
-            {isDownloading ? (
-              <KortixLoader size="small" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
+        {/* Filter buttons */}
+        <div className="flex items-center gap-3">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="rounded-full gap-2">
+                <SlidersHorizontal className="h-3.5 w-3.5" />
+                All
+                <ChevronDown className="h-3 w-3 opacity-50" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem>All</DropdownMenuItem>
+              <DropdownMenuItem>Presentations</DropdownMenuItem>
+              <DropdownMenuItem>Images</DropdownMenuItem>
+              <DropdownMenuItem>Documents</DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          <Button variant="outline" size="sm" className="rounded-full gap-2">
+            <Star className="h-3.5 w-3.5" />
+            My favorites
           </Button>
         </div>
       </div>
 
-      {/* Breadcrumb - only show when not at root */}
-      {!isAtRoot && (
-        <div className="px-6 py-2 border-b border-border/30">
-          <div className="flex items-center gap-1 text-sm">
-            <button
-              onClick={() => navigateToPath('/workspace')}
-              className="text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Home className="h-3.5 w-3.5" />
-            </button>
-            
-            {breadcrumbs.map((segment) => (
-              <React.Fragment key={segment.path}>
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
-                <button
-                  onClick={() => navigateToPath(segment.path)}
-                  className={cn(
-                    "transition-colors truncate max-w-[150px]",
-                    segment.isLast 
-                      ? "text-foreground" 
-                      : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {segment.name}
-                </button>
-              </React.Fragment>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* File Browser Content */}
-      <div className="flex-1 overflow-hidden relative">
+      {/* Content */}
+      <div className="flex-1 flex flex-col overflow-hidden">
         {isLoading ? (
-          <div className="absolute inset-0 flex items-center justify-center">
+          <div className="flex-1 flex items-center justify-center">
             <KortixLoader size="medium" />
           </div>
-        ) : !hasSandbox ? (
-          <div className="absolute inset-0 flex items-center justify-center p-8">
-            <div className="flex flex-col items-center space-y-4 text-center">
-              <div className="w-16 h-16 flex items-center justify-center grayscale opacity-40">
-                <Folder className="h-12 w-12" />
+        ) : !hasSandbox || relevantOutputs.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+              <div className="w-14 h-14 flex items-center justify-center rounded-xl bg-muted/50">
+                <Presentation className="h-6 w-6 text-muted-foreground" />
               </div>
-              <div className="space-y-1">
-                <h3 className="text-lg font-medium">No files yet</h3>
+              <div className="space-y-1.5">
+                <h3 className="text-lg font-semibold">No files yet</h3>
                 <p className="text-sm text-muted-foreground">
-                  Start a task to create files.
+                  Start a conversation to create presentations, documents, and more.
                 </p>
               </div>
-            </div>
-          </div>
-        ) : sortedFiles.length === 0 ? (
-          <div className="absolute inset-0 flex items-center justify-center p-8">
-            <div className="flex flex-col items-center space-y-6 max-w-md text-center">
-              <div className="w-16 h-16 flex items-center justify-center grayscale opacity-40">
-                <Folder className="h-12 w-12" />
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium">Empty folder</h3>
-                <p className="text-sm text-muted-foreground">
-                  This folder doesn't contain any files yet.
-                </p>
-              </div>
+              {threadId ? (
+                <Button 
+                  onClick={() => router.push(`/projects/${projectId}/thread/${threadId}`)}
+                  size="sm"
+                  className="mt-2"
+                >
+                  Create your first file
+                </Button>
+              ) : (
+                <Button 
+                  onClick={() => router.push('/dashboard')}
+                  size="sm"
+                  className="mt-2"
+                >
+                  Start a new chat
+                </Button>
+              )}
             </div>
           </div>
         ) : (
           <ScrollArea className="h-full">
-            <div className="p-8">
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6">
-                {sortedFiles.map((file) => {
-                  const isPresentation = isPresentationFolder(file);
-                  const thumbnail = presentationThumbnails[file.path];
-                  const isImage = !file.is_dir && isImageFile(file.name);
-                  const imageUrl = isImage && sandboxId ? getFileUrl(sandboxId, file.path) : null;
-                  
-                  return (
-                    <button
-                      key={file.path}
-                      onClick={() => handleItemClick(file)}
-                      className="group flex flex-col items-center p-3 rounded-xl hover:bg-muted/40 transition-colors"
-                    >
-                      <ThumbnailContainer
-                        isPresentation={!!(isPresentation && thumbnail?.firstSlideUrl)}
-                        isImage={!!(isImage && imageUrl)}
-                        thumbnailUrl={thumbnail?.firstSlideUrl}
-                        thumbnailTitle={thumbnail?.title}
-                        imageUrl={imageUrl}
+            <div className="px-8 pb-8">
+              {/* Project section */}
+              <div className="mb-8">
+                <h2 className="text-lg font-semibold mb-4">{projectName}</h2>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {relevantOutputs.map((output) => {
+                    const { type, file, thumbnail } = output;
+                    
+                    if (type === 'presentation') {
+                      // Get presentation name from path for fallback title
+                      const presentationName = file.path.split('/').filter(Boolean).pop() || 'Presentation';
+                      const displayTitle = thumbnail?.title || presentationName;
+                      
+                      return (
+                        <PresentationCard
+                          key={file.path}
+                          thumbnailUrl={thumbnail?.firstSlideUrl || ''}
+                          thumbnailTitle={displayTitle}
+                          onClick={() => handleItemClick(file)}
+                          onDownload={(format) => handleDownloadPresentation(file.path, displayTitle, format)}
+                        />
+                      );
+                    }
+                    
+                    if (type === 'image') {
+                      const imageUrl = sandboxId ? getFileUrl(sandboxId, file.path) : '';
+                      // Use project name as display name, with file extension
+                      const ext = file.name.split('.').pop() || '';
+                      const displayName = ext ? `${projectName}.${ext}` : projectName;
+                      return (
+                        <ImageCard
+                          key={file.path}
+                          imageUrl={imageUrl}
+                          displayName={displayName}
+                          accessToken={session?.access_token}
+                          onClick={() => handleItemClick(file)}
+                        />
+                      );
+                    }
+                    
+                    // Use project name as display name, with file extension
+                    const ext = file.name.split('.').pop() || '';
+                    const displayName = ext ? `${projectName}.${ext}` : projectName;
+                    return (
+                      <FileCard
+                        key={file.path}
                         fileName={file.name}
-                        isDir={file.is_dir}
-                        hasPresentationMetadata={!!(isPresentation && thumbnail?.hasMetadata)}
+                        displayName={displayName}
+                        onClick={() => handleItemClick(file)}
                       />
-                      <span className="text-xs text-center text-muted-foreground group-hover:text-foreground truncate w-full transition-colors">
-                        {file.name}
-                      </span>
-                    </button>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </ScrollArea>
