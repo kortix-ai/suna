@@ -402,9 +402,9 @@ async def process_agent_responses(
                 if status_val in ['failed', 'error']:
                     error_message = response.get('message', f"Run ended: {status_val}")
                     logger.error(f"Agent run failed: {error_message}")
-                elif status_val == 'stopped':
-                    # 'stopped' is a normal state (agent awaiting user input, or task complete)
-                    logger.debug(f"Agent run stopped: {response.get('message', 'Normal stop')}")
+                elif status_val in ['completed', 'stopped']:
+                    # 'completed' = normal success; 'stopped' = awaiting user input
+                    logger.debug(f"Agent run finished successfully: {response.get('message', 'Success')}")
                 break
     
     return final_status, error_message, complete_tool_called, total_responses

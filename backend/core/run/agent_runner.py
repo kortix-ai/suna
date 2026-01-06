@@ -500,10 +500,10 @@ class AgentRunner:
             if agent_should_terminate or last_tool_call in ['ask', 'complete']:
                 logger.debug(f"Agent termination signal: terminate={agent_should_terminate}, tool_call={last_tool_call}")
                 if generation:
-                    generation.end(status_message="agent_stopped")
+                    generation.end(status_message="agent_completed")
                 yield {
                     "type": "status",
-                    "status": "stopped",
+                    "status": "completed",
                     "message": f"Agent completed (tool_call={last_tool_call})"
                 }
 

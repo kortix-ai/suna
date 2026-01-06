@@ -750,7 +750,7 @@ Respond in this EXACT JSON format:
                     })
                 
                 if all_complete:
-                    # 'stopped' is the normal completion status from agent_runner.py
+                    # 'completed' is the normal success status; 'stopped' for legacy/awaiting input
                     successful = sum(1 for r in results if r['status'] in ('completed', 'stopped'))
                     failed = sum(1 for r in results if r['status'] == 'failed')
                     
