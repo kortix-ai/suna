@@ -26,6 +26,7 @@ import {
 import { AppIcon } from "../tool-views/shared/AppIcon";
 import { useSmoothText } from "@/hooks/messages/useSmoothText";
 import { isHiddenTool } from "@agentpress/shared/tools";
+import { ReasoningSection } from "./ReasoningSection";
 
 export function renderAttachments(
   attachments: string[],
@@ -150,6 +151,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   sandboxId,
   project,
   streamingTextContent,
+  streamingReasoningContent,
   streamingToolCall,
   streamHookStatus,
   agentStatus,
@@ -175,6 +177,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   sandboxId?: string;
   project?: Project;
   streamingTextContent?: string;
+  streamingReasoningContent?: string;
   streamingToolCall?: any;
   streamHookStatus?: string;
   agentStatus: string;
@@ -743,6 +746,29 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     isAskCompleteAnimating,
   ]);
 
+  // Display reasoning section ONLY when reasoning chunks actually arrive
+  const reasoningSection = useMemo(() => {
+    if (!isLastGroup || readOnly) return null;
+    
+    // Only show if we have actual reasoning content - don't show if no reasoning chunks arrive
+    const hasReasoningContent = streamingReasoningContent && streamingReasoningContent.trim().length > 0;
+    
+    // Don't show section at all if no reasoning content
+    if (!hasReasoningContent) return null;
+    
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting" || 
+                        agentStatus === "running" || agentStatus === "connecting";
+    
+    return (
+      <div className="mb-2">
+        <ReasoningSection 
+          content={streamingReasoningContent} 
+          isStreaming={isStreaming}
+        />
+      </div>
+    );
+  }, [streamingReasoningContent, isLastGroup, readOnly, streamHookStatus, agentStatus]);
+
   return (
     <div key={group.key} ref={isLastGroup ? latestMessageRef : null}>
       <div className="flex flex-col gap-2">
@@ -751,6 +777,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         </div>
         <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">
+            {reasoningSection}
             {renderedMessages}
             {streamingContent}
             {playbackStreamingContent}
@@ -769,6 +796,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
 export interface ThreadContentProps {
   messages: UnifiedMessage[];
+  streamingReasoningContent?: string;
   streamingTextContent?: string;
   streamingToolCall?: any;
   agentStatus: "idle" | "running" | "connecting" | "error";
@@ -800,6 +828,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
   function ThreadContent({
     messages,
     streamingTextContent = "",
+    streamingReasoningContent = "",
     streamingToolCall,
     agentStatus,
     handleToolClick,
@@ -1166,6 +1195,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             sandboxId={sandboxId}
             project={project}
             streamingTextContent={streamingTextContent}
+            streamingReasoningContent={streamingReasoningContent}
             streamingToolCall={streamingToolCall}
             streamHookStatus={streamHookStatus}
             agentStatus={agentStatus}

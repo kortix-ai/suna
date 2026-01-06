@@ -18,7 +18,7 @@ export const StreamingText: React.FC<StreamingTextProps> = ({
 
   return (
     <div className="break-words overflow-hidden">
-      <ComposioUrlDetector content={smoothContent.text} />
+      <ComposioUrlDetector content={smoothContent.text} isStreaming={smoothContent.isAnimating} />
     </div>
   );
 };

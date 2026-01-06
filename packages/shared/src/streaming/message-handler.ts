@@ -85,6 +85,31 @@ export function handleAssistantChunk(
 }
 
 /**
+ * Extract reasoning content from streaming message
+ * Returns reasoning content string if present
+ */
+export function extractReasoningContent(
+  parsedContent: ParsedContent,
+  parsedMetadata: ParsedMetadata
+): string | null {
+  // Check metadata first (where backend might put it)
+  if (parsedMetadata.reasoning_content) {
+    return typeof parsedMetadata.reasoning_content === 'string'
+      ? parsedMetadata.reasoning_content
+      : String(parsedMetadata.reasoning_content);
+  }
+  
+  // Check content as fallback
+  if (parsedContent.reasoning_content) {
+    return typeof parsedContent.reasoning_content === 'string'
+      ? parsedContent.reasoning_content
+      : String(parsedContent.reasoning_content);
+  }
+  
+  return null;
+}
+
+/**
  * Handle tool call chunk message
  * Updates accumulator and returns reconstructed tool calls
  */
