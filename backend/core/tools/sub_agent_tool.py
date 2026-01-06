@@ -384,9 +384,9 @@ Respond in this EXACT JSON format:
                 "metadata": run_metadata
             }).execute()
             
-            # Queue the sub-agent execution via Dramatiq
+            # Queue the sub-agent execution via Redis Streams
             try:
-                from run_agent_background import run_agent_background
+                from core.worker.dispatcher import dispatch_agent_run
                 from core.ai_models import model_manager
                 
                 # Generate a unique instance_id for this sub-agent run
@@ -397,7 +397,7 @@ Respond in this EXACT JSON format:
                 effective_model = await model_manager.get_default_model_for_user(client, account_id)
                 logger.info(f"Sub-agent will use model: {effective_model}")
                 
-                run_agent_background.send(
+                await dispatch_agent_run(
                     agent_run_id=agent_run_id,
                     thread_id=sub_thread_id,
                     instance_id=sub_instance_id,
@@ -750,8 +750,9 @@ Respond in this EXACT JSON format:
                     })
                 
                 if all_complete:
-                    successful = sum(1 for r in results if r['status'] == 'completed')
-                    failed = sum(1 for r in results if r['status'] in ('failed', 'stopped'))
+                    # 'stopped' is the normal completion status from agent_runner.py
+                    successful = sum(1 for r in results if r['status'] in ('completed', 'stopped'))
+                    failed = sum(1 for r in results if r['status'] == 'failed')
                     
                     return ToolResult(
                         success=True,
@@ -858,13 +859,13 @@ Respond in this EXACT JSON format:
             
             # Queue the execution
             try:
-                from run_agent_background import run_agent_background
+                from core.worker.dispatcher import dispatch_agent_run
                 from core.ai_models import model_manager
                 
                 sub_instance_id = f"sub-cont-{str(uuid.uuid4())[:8]}"
                 effective_model = await model_manager.get_default_model_for_user(client, account_id)
                 
-                run_agent_background.send(
+                await dispatch_agent_run(
                     agent_run_id=new_run_id,
                     thread_id=sub_thread_id,
                     instance_id=sub_instance_id,
