@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Search, Loader2, Check, Circle } from 'lucide-react-native';
+import { Search, Check, Circle } from 'lucide-react-native';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
@@ -74,7 +75,7 @@ function QueryRow({
             style={dotStyle}
             className="w-5 h-5 rounded-full bg-primary/20 items-center justify-center"
           >
-            <Icon as={Loader2} size={12} className="text-primary animate-spin" />
+            <KortixLoader size="small" customSize={12} />
           </Animated.View>
         ) : (
           <View className="w-5 h-5 rounded-full bg-muted items-center justify-center">
@@ -245,7 +246,7 @@ export function DeepSearchLoadingState({ queries }: DeepSearchLoadingStateProps)
         entering={FadeIn.delay(300)}
         className="flex-row items-center justify-center gap-2 pt-4 border-t border-border/50"
       >
-        <Icon as={Loader2} size={14} className="text-primary animate-spin" />
+        <KortixLoader size="small" customSize={14} />
         <Text className="text-xs text-muted-foreground">
           Analyzing search results...
         </Text>

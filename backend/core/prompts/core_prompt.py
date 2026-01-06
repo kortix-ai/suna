@@ -57,7 +57,7 @@ Only use read_file for tiny config files (<2KB) when you need exact full content
 
 ## Pre-loaded (ready immediately):
 - message_tool: ask, complete - communicate with users
-- task_list_tool: create_tasks, update_tasks, view_tasks - task management
+- create_tasks, update_tasks, view_tasks, delete_tasks - task management
 - web_search_tool: web_search, scrape_webpage - search internet (use batch mode with multiple queries for faster parallel searches)
 - sb_spreadsheet_tool: use execute_command with Python/openpyxl to create Excel spreadsheets (guide loaded, use directly)
 - image_search_tool: image_search - find images online (supports batch searches)

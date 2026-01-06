@@ -251,7 +251,8 @@ function PricingTier({
       const response: CreateCheckoutSessionResponse =
         await createCheckoutSession({
           tier_key: tierKey,
-          success_url: `${window.location.origin}/dashboard?subscription=success`,
+          // Include {CHECKOUT_SESSION_ID} placeholder - Stripe replaces this with actual session ID
+          success_url: `${window.location.origin}/dashboard?subscription=success&session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: returnUrl,
           commitment_type: commitmentType,
           locale: locale, // Pass locale for Stripe adaptive pricing
@@ -266,13 +267,18 @@ function PricingTier({
         case 'commitment_created':
           if (checkoutUrl) {
             // Store checkout data for GTM purchase tracking after Stripe redirect
-            // Use actual price (e.g., 2040 for yearly), not monthly equivalent
+            // item_id and item_name must match add_to_cart format
+            const actualPrice = getActualPrice();
+            const billingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
+            const previousTier = currentSubscription?.subscription.tier_key || currentSubscription?.tier?.name || 'none';
             storeCheckoutData({
-              tier_key: tierKey,
-              tier_name: tier.name,
-              price: getActualPrice(),
+              item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
+              item_name: `${tier.name} ${billingLabel}`,
+              price: actualPrice,
+              value: actualPrice, // Same as price unless discount applied (Stripe handles this)
               currency: currency,
               billing_period: effectiveBillingPeriod,
+              previous_tier: previousTier, // To determine customer_type (new vs returning)
             });
             posthog.capture('plan_purchase_attempted');
             window.location.href = checkoutUrl;
@@ -286,13 +292,18 @@ function PricingTier({
         case 'upgraded':
         case 'updated':
           // Store checkout data for GTM purchase tracking
-          // Use actual price (e.g., 2040 for yearly), not monthly equivalent
+          // item_id and item_name must match add_to_cart format
+          const upgradedActualPrice = getActualPrice();
+          const upgradedBillingLabel = effectiveBillingPeriod === 'monthly' ? 'Monthly' : 'Yearly';
+          const upgradedPreviousTier = currentSubscription?.subscription.tier_key || currentSubscription?.tier?.name || 'none';
           storeCheckoutData({
-            tier_key: tierKey,
-            tier_name: tier.name,
-            price: getActualPrice(),
+            item_id: `${tier.tierKey}_${effectiveBillingPeriod}`,
+            item_name: `${tier.name} ${upgradedBillingLabel}`,
+            price: upgradedActualPrice,
+            value: upgradedActualPrice, // Same as price unless discount applied
             currency: currency,
             billing_period: effectiveBillingPeriod,
+            previous_tier: upgradedPreviousTier, // To determine customer_type (new vs returning)
           });
           posthog.capture('plan_upgraded');
           if (onSubscriptionUpdate) onSubscriptionUpdate();
@@ -1101,7 +1112,7 @@ export function PricingSection({
 
   // Find the index of the user's current tier to pre-select it
   const getCurrentTierIndex = () => {
-    if (!isAuthenticated || !currentSubscription) return 1; // Default to Pro plan (index 1)
+    if (!isAuthenticated || !currentSubscription?.subscription) return 1; // Default to Pro plan (index 1)
     const currentTierKey = currentSubscription.subscription.tier_key || currentSubscription.tier?.name;
     const index = paidTiers.findIndex(tier => tier.tierKey === currentTierKey);
     return index >= 0 ? index : 1; // Default to Pro plan (index 1) if tier not found
@@ -1112,7 +1123,7 @@ export function PricingSection({
 
   // Update selected tier when subscription data loads
   React.useEffect(() => {
-    if (isAuthenticated && currentSubscription) {
+    if (isAuthenticated && currentSubscription?.subscription) {
       const currentTierKey = currentSubscription.subscription.tier_key || currentSubscription.tier?.name;
       const index = paidTiers.findIndex(tier => tier.tierKey === currentTierKey);
       if (index >= 0) {
@@ -1120,7 +1131,7 @@ export function PricingSection({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, currentSubscription?.subscription.tier_key, currentSubscription?.tier?.name]);
+  }, [isAuthenticated, currentSubscription?.subscription?.tier_key, currentSubscription?.tier?.name]);
 
   const handlePlanSelect = (planId: string) => {
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
@@ -1295,7 +1306,7 @@ export function PricingSection({
 
         {(() => {
           // Only show holiday promo for FREE tier users (not authenticated or on free tier)
-          const isFreeTier = !isAuthenticated || !accountState || 
+          const isFreeTier = !isAuthenticated || !accountState?.subscription || 
             accountState.subscription.tier_key === 'free' || 
             accountState.subscription.tier_key === 'none' ||
             (accountState.tier?.monthly_credits ?? 0) === 0;

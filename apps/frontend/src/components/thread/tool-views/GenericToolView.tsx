@@ -19,6 +19,7 @@ import { LoadingState } from './shared/LoadingState';
 import { toast } from '@/lib/toast';
 import { AppIcon } from './shared/AppIcon';
 import { SmartJsonViewer } from './shared/SmartJsonViewer';
+import { ToolViewIconTitle } from './shared/ToolViewIconTitle';
 import { useSmoothText } from '@/hooks/messages/useSmoothText';
 
 export function GenericToolView({
@@ -179,17 +180,16 @@ export function GenericToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg border bg-muted/10">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="relative p-2 rounded-lg border bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 flex-shrink-0">
               <AppIcon toolCall={toolCall} size={20} className="w-5 h-5" />
             </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+            <div className="min-w-0 flex-1">
+              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate">
                 {toolTitle}
               </CardTitle>
             </div>
           </div>
-
         </div>
       </CardHeader>
 

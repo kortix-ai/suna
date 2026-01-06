@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Plus, FolderOpen, ChevronRight, Loader2 } from 'lucide-react';
+import { Plus, FolderOpen, ChevronRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useProjects } from '@/hooks/sidebar/use-sidebar';

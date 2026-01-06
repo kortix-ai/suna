@@ -10,7 +10,6 @@ import {
   Home,
   FileText,
   Presentation,
-  Loader2,
   Clock,
   ChevronDown,
   RotateCcw,
@@ -375,12 +374,16 @@ export function FileBrowserView({
               disabled={isUploading || !!selectedVersion}
               className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${selectedVersion ? 'opacity-50' : ''}`}
             >
-              <Icon
-                as={isUploading ? Loader2 : Upload}
-                size={17}
-                className="text-primary"
-                strokeWidth={2}
-              />
+              {isUploading ? (
+                <KortixLoader size="small" customSize={17} />
+              ) : (
+                <Icon
+                  as={Upload}
+                  size={17}
+                  className="text-primary"
+                  strokeWidth={2}
+                />
+              )}
             </Pressable>
 
             {/* History Button */}
@@ -656,7 +659,7 @@ export function FileBrowserView({
               >
                 {isReverting ? (
                   <View className="flex-row items-center gap-2">
-                    <Icon as={Loader2} size={14} color="#ffffff" />
+                    <KortixLoader size="small" customSize={14} forceTheme="dark" />
                     <Text className="text-sm font-roobert-medium" style={{ color: '#ffffff' }}>Restoring...</Text>
                   </View>
                 ) : (

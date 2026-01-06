@@ -90,7 +90,8 @@ class MemoryExtractionService:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
-                max_tokens=2000
+                max_tokens=2000,
+                timeout=60, 
             )
             
             logger.debug(f"Got response from LLM")

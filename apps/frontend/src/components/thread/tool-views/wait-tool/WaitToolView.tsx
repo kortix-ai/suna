@@ -7,6 +7,8 @@ import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { cn } from '@/lib/utils';
 
 interface WaitToolViewProps extends ToolViewProps {
@@ -116,17 +118,7 @@ export function WaitToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-orange-500/20 to-orange-600/10 border border-orange-500/20">
-              <Clock className="w-5 h-5 text-orange-500 dark:text-orange-400" />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {toolTitle}
-              </CardTitle>
-            </div>
-          </div>
-
+          <ToolViewIconTitle icon={Clock} title={toolTitle} />
         </div>
       </CardHeader>
 
@@ -175,19 +167,16 @@ export function WaitToolView({
         </div>
       </CardContent>
 
-      {/* Footer */}
-      <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
-        <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          <Badge className="h-6 py-0.5" variant="outline">
-            <Clock className="h-3 w-3 mr-1" />
-            Timing Control
-          </Badge>
-        </div>
-
-        <div className="text-xs text-zinc-500 dark:text-zinc-400">
-          {toolTimestamp ? formatTimestamp(toolTimestamp) : assistantTimestamp ? formatTimestamp(assistantTimestamp) : ''}
-        </div>
-      </div>
+      <ToolViewFooter
+        assistantTimestamp={assistantTimestamp}
+        toolTimestamp={toolTimestamp}
+        isStreaming={isStreaming}
+      >
+        <Badge className="h-6 py-0.5" variant="outline">
+          <Clock className="h-3 w-3 mr-1" />
+          Timing Control
+        </Badge>
+      </ToolViewFooter>
     </Card>
   );
 }

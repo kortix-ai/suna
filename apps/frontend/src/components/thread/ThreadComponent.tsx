@@ -69,6 +69,7 @@ import { useToolStreamStore } from '@/stores/tool-stream-store';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
 import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
+import { useClearNavigation } from '@/stores/thread-navigation-store';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -83,9 +84,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const isMobile = useIsMobile();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const clearNavigation = useClearNavigation();
 
   const { user } = useAuth();
   const isAuthenticated = !!user;
+  
+  // Clear optimistic navigation state immediately when thread component mounts
+  // This makes the navigation feel instant - skeleton shows immediately, then real content
+  useEffect(() => {
+    clearNavigation();
+  }, [threadId, clearNavigation]);
   
   const isNewThread = searchParams?.get('new') === 'true';
 
@@ -240,13 +248,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     ? (agentRunId && initialLoadCompleted)
     : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
   
+  // Track if we've already handled the optimistic -> real transition to prevent flicker
+  const optimisticTransitionHandledRef = useRef(false);
+  
   useEffect(() => {
-    if (shouldHideOptimisticUI && showOptimisticUI) {
+    if (shouldHideOptimisticUI && showOptimisticUI && !optimisticTransitionHandledRef.current) {
+      optimisticTransitionHandledRef.current = true;
+      // IMPORTANT: Ensure isSidePanelOpen is true BEFORE clearing showOptimisticUI
+      // This prevents a flicker where effectivePanelOpen briefly becomes false
+      // during the transition from optimistic UI to real data
+      if (!isMobile && !compact) {
+        setIsSidePanelOpen(true);
+      }
       setShowOptimisticUI(false);
     }
   }, [shouldHideOptimisticUI, showOptimisticUI]);
   
-  const effectivePanelOpen = isSidePanelOpen || (isNewThread && showOptimisticUI);
+  // Use showOptimisticUI directly (not isNewThread && showOptimisticUI) because
+  // isNewThread becomes false when URL is updated before showOptimisticUI becomes false
+  const effectivePanelOpen = isSidePanelOpen || showOptimisticUI;
 
   const handleSidePanelClose = useCallback(() => {
     setIsSidePanelOpen(false);
@@ -350,11 +370,26 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     agentName: derivedAgentName,
   }), [derivedAgentId, derivedAgentName]);
 
+  // Track the thread ID that was opened via optimistic start - we should NEVER reset for this thread
+  const optimisticThreadIdRef = useRef<string | null>(null);
+  
+  // Mark this thread as optimistic when we enter optimistic mode
+  useEffect(() => {
+    if (showOptimisticUI && isNewThread) {
+      optimisticThreadIdRef.current = threadId;
+    }
+  }, [showOptimisticUI, isNewThread, threadId]);
+  
   useEffect(() => {
     if (!isShared) {
       queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
-      resetKortixComputerStore();
+      // Skip reset if this is the thread we opened via optimistic start
+      // This prevents the panel from flickering closed during the transition
+      const isOptimisticThread = optimisticThreadIdRef.current === threadId;
+      if (!isOptimisticThread) {
+        resetKortixComputerStore();
+      }
     }
   }, [threadId, queryClient, isShared, resetKortixComputerStore]);
 

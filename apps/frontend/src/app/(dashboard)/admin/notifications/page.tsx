@@ -8,7 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Loader2, Send, Users, User, ChevronDown, Sparkles } from "lucide-react";
+import { Send, Users, User, ChevronDown, Sparkles } from "lucide-react";
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   Collapsible,
   CollapsibleContent,
@@ -121,7 +122,7 @@ export default function NotificationManagementPage() {
             >
               {triggerWorkflowMutation.isPending ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <KortixLoader size="small" />
                   Sending...
                 </>
               ) : (
@@ -176,7 +177,7 @@ export default function NotificationManagementPage() {
                     {loadingWorkflows ? (
                       <SelectItem value="loading" disabled>
                         <div className="flex items-center gap-2">
-                          <Loader2 className="h-3 w-3 animate-spin" />
+                          <KortixLoader size="small" />
                           Loading workflows...
                         </div>
                       </SelectItem>

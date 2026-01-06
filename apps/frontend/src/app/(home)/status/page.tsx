@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, CheckCircle, Clock, Wrench, Activity, Shield, Database, Globe, Zap } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTechnicalIssueQuery } from '@/hooks/edge-flags';
 import { AnimatedBg } from '@/components/ui/animated-bg';
@@ -225,7 +226,7 @@ export default function StatusPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary"></div>
+          <KortixLoader size="large" />
         </div>
       }
     >

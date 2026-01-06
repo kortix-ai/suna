@@ -1,5 +1,6 @@
 import React from 'react';
-import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
+import { CheckCircle, AlertCircle } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useDeleteOperation } from '@/stores/delete-operation-store';
 
 export function StatusOverlay() {
@@ -11,7 +12,7 @@ export function StatusOverlay() {
     <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-background/90 backdrop-blur p-3 rounded-2xl shadow-lg border border-border">
       {state.operation === 'pending' && (
         <>
-          <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+          <KortixLoader size="small" />
           <span className="text-sm">Processing...</span>
         </>
       )}

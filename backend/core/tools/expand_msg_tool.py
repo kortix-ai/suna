@@ -13,8 +13,8 @@ import json
     usage_guide="""
 ### INTERNAL UTILITIES
 
-**initialize_tools - JIT Tool Activation:**
-- Activates tools on-demand using SPARK algorithm
+**initialize_tools - Tool Activation:**
+- Activates tools on-demand
 - Loads detailed usage documentation
 - Supports batch loading multiple tools at once (e.g., tool1, tool2, tool3)
 

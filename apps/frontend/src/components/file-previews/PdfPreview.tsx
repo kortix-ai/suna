@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { Loader2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { PdfRenderer } from '@/components/file-renderers';
 import { useFileContentQuery } from '@/hooks/files/use-file-queries';
 import { cn } from '@/lib/utils';
@@ -95,7 +95,7 @@ export function PdfPreview({
                 "flex flex-col items-center justify-center h-full w-full bg-muted/20",
                 className
             )}>
-                <Loader2 className="h-6 w-6 text-muted-foreground animate-spin" />
+                <KortixLoader size="medium" />
                 {retryCount > 0 && (
                     <div className="text-xs text-muted-foreground mt-2">
                         Loading... (attempt {retryCount + 1})

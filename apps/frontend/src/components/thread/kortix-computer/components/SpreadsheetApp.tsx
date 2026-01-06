@@ -10,13 +10,13 @@ import {
   Clock, 
   FileSpreadsheet,
   Search,
-  Loader2,
   Save,
   X,
   RefreshCw,
   Home,
   Download
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import { useDirectoryQuery } from '@/hooks/files/use-file-queries';
 import { backendApi } from '@/lib/api-client';
@@ -485,7 +485,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
             className="flex items-center justify-center w-10 h-10 text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors disabled:opacity-50 shrink-0"
             title="Refresh spreadsheet"
           >
-            <RefreshCw className={cn("w-4 h-4", activeEditorHandle?.isSyncing && "animate-spin")} />
+            {activeEditorHandle?.isSyncing ? <KortixLoader size="small" /> : <RefreshCw className="w-4 h-4" />}
           </button>
         )}
         <button
@@ -522,7 +522,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
           size="lg"
         >
           {isCreating ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
+            <KortixLoader size="small" />
           ) : (
             <Plus className="w-4 h-4" />
           )}
@@ -593,7 +593,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
                   disabled={isCreating}
                   className="mt-4 text-emerald-500 hover:text-emerald-600 text-sm font-medium disabled:opacity-50 flex items-center gap-2"
                 >
-                  {isCreating && <Loader2 className="w-3 h-3 animate-spin" />}
+                  {isCreating && <KortixLoader size="small" />}
                   {isCreating ? 'Creating...' : 'Create New'}
                 </button>
               </div>

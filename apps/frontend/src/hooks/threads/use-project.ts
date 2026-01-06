@@ -53,21 +53,16 @@ export const useProjectQuery = (projectId: string | undefined, options?) => {
   return useQuery<Project>({
     queryKey: threadKeys.project(projectId || ""),
     queryFn: async () => {
-      // Use cached data if available and has sandbox data (indicates full project data)
-      // Note: Optimized list view excludes sandbox/description, so we fetch full project if missing
-      if (project && project.sandbox && typeof project.sandbox === 'object' && project.sandbox.id) {
-        return project;
-      }
-      
-      // Fetch full project data (includes sandbox, description, etc.)
+      // Always fetch full project data to ensure we have sandbox info
+      // The backend /projects/:id endpoint returns complete project data including sandbox
       return await getProject(projectId!);
     },
     enabled: !!projectId && (options?.enabled !== false),
     retry: 1,
-    initialData: project, // Use cached data immediately if available
+    initialData: project?.sandbox?.id ? project : undefined, // Only use cached data if it has sandbox info
     refetchOnWindowFocus: false,
-    refetchOnMount: false,
-    staleTime: 60 * 1000, // Consider fresh for 60 seconds
+    refetchOnMount: options?.refetchOnMount ?? false,
+    staleTime: options?.staleTime ?? 60 * 1000, // Consider fresh for 60 seconds
     ...options,
   });
 };

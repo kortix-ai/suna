@@ -31,10 +31,10 @@ import {
     Users,
     Key,
     Camera,
-    Loader2,
     Upload,
     Brain,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
 import {
     Tooltip,
@@ -519,7 +519,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                             >
                                 {isUploadingAvatar ? (
-                                    <Loader2 className="h-5 w-5 text-white animate-spin" />
+                                    <KortixLoader size="small" variant="white" />
                                 ) : (
                                     <Camera className="h-5 w-5 text-white" />
                                 )}
@@ -1018,11 +1018,12 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         );
     }
 
-    const subStatus = accountState?.subscription.status;
+    const subscription = accountState?.subscription;
+    const subStatus = subscription?.status;
     const isSubscribed = subStatus === 'active' || subStatus === 'trialing';
-    const isFreeTier = accountState?.subscription.tier_key === 'free' || accountState?.subscription.tier_key === 'none';
-    const isCancelled = accountState?.subscription.is_cancelled || accountState?.subscription.cancel_at_period_end;
-    const canPurchaseCredits = accountState?.subscription.can_purchase_credits || false;
+    const isFreeTier = subscription?.tier_key === 'free' || subscription?.tier_key === 'none';
+    const isCancelled = subscription?.is_cancelled || subscription?.cancel_at_period_end;
+    const canPurchaseCredits = subscription?.can_purchase_credits || false;
 
     return (
         <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 min-w-0 max-w-full overflow-x-hidden">

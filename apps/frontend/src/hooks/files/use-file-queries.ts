@@ -304,21 +304,18 @@ export function useDirectoryQuery(
     enabled: Boolean(sandboxId && normalizedPath && (options.enabled !== false)),
     staleTime: options.staleTime !== undefined ? options.staleTime : 0, // Always refetch when path changes
     gcTime: 5 * 60 * 1000, // 5 minutes
-    // Smart retry with exponential backoff and reasonable limits to prevent server overload
+    // Smart retry with exponential backoff - but don't retry on 404 (directory not found)
     retry: (failureCount, error: any) => {
-      // Don't retry on auth errors
-      if (error?.message?.includes('401') || error?.message?.includes('403')) {
+      // Don't retry on auth errors or 404 (directory doesn't exist)
+      if (error?.message?.includes('401') || error?.message?.includes('403') || error?.message?.includes('404')) {
         return false;
       }
-      // Retry up to 15 times (~8-10 minutes total with exponential backoff)
-      // This prevents DDoS while still handling slow sandbox startups
-      return failureCount < 15;
+      // Retry up to 3 times for other errors (quick failure for better UX)
+      return failureCount < 3;
     },
     retryDelay: (attemptIndex) => {
-      // Progressive exponential backoff to reduce server load:
-      // Attempt 1: 1s, 2: 2s, 3: 4s, 4: 8s, 5: 16s, 6+: 30s
-      // Total wait time for 15 retries: ~8-10 minutes
-      const delay = Math.min(1000 * Math.pow(2, attemptIndex), 30000); // Cap at 30s
+      // Quick exponential backoff: 1s, 2s, 4s
+      const delay = Math.min(1000 * Math.pow(2, attemptIndex), 4000);
       return delay;
     },
     refetchOnMount: true, // Always refetch when component mounts with new path

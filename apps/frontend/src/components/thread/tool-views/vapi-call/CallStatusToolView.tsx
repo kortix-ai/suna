@@ -3,6 +3,8 @@ import { Phone, Clock, MessageSquare, DollarSign, CheckCircle, AlertTriangle, Bo
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { cn } from '@/lib/utils';
 import { extractCallStatusData, formatPhoneNumber, formatDuration, statusConfig } from './_utils';
 import { getToolTitle } from '../utils';
@@ -36,16 +38,7 @@ export function CallStatusToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20">
-              <Phone className="w-5 h-5 text-green-500" />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-foreground">
-                {toolTitle}
-              </CardTitle>
-            </div>
-          </div>
+          <ToolViewIconTitle icon={Phone} title={toolTitle} />
         </div>
       </CardHeader>
 

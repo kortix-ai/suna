@@ -323,11 +323,8 @@ class SandboxKbTool(SandboxToolsBase):
             if not agent_id:
                 return self.fail_response("No agent ID found for knowledge base sync")
             
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            
             # Get agent's knowledge base entries
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             result = await client.from_("agent_knowledge_entry_assignments").select("""
                 entry_id,
@@ -466,10 +463,8 @@ Agent ID: {agent_id}
             if not agent_id:
                 return self.fail_response("No agent ID found for knowledge base operations")
             
-            from core.services.supabase import DBConnection
             from core.knowledge_base.validation import validate_folder_name_unique
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
@@ -559,8 +554,7 @@ Agent ID: {agent_id}
             import os
             import mimetypes
             
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
@@ -680,9 +674,7 @@ Agent ID: {agent_id}
             if not agent_id:
                 return self.fail_response("No agent ID found for knowledge base operations")
             
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
@@ -769,9 +761,7 @@ Agent ID: {agent_id}
             if item_type != "file":
                 return self.fail_response("Only 'file' type is supported for enable/disable operations")
             
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
@@ -842,9 +832,7 @@ Agent ID: {agent_id}
             if not agent_id:
                 return self.fail_response("No agent ID found for knowledge base operations")
             
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            client = await self.thread_manager.db.client
             
             # Get agent's account ID
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()

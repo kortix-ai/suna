@@ -488,66 +488,72 @@ class VersionService:
         return new_version
     
     async def get_current_mcp_config(self, agent_id: str, user_id: str = "system") -> Optional[Dict[str, Any]]:
+        import time
+        start_time = time.time()
+        
         from core.cache.runtime_cache import (
             get_cached_mcp_version_config,
             set_cached_mcp_version_config
         )
         
+        t1 = time.time()
         cached = await get_cached_mcp_version_config(agent_id)
+        cache_time = (time.time() - t1) * 1000
+        
         if cached:
+            logger.debug(f"⚡ [MCP CONFIG] Cache HIT for {agent_id} in {cache_time:.1f}ms")
             cached['account_id'] = user_id
             return cached
         
+        logger.debug(f"⏱️ [MCP CONFIG] Cache MISS for {agent_id}, fetching from DB (cache check: {cache_time:.1f}ms)")
+        
         try:
-            async with asyncio.timeout(MCP_CONFIG_QUERY_TIMEOUT):
-                client = await self._get_client()
-                
-                agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).execute()
-                
-                if not agent_result.data or not agent_result.data[0].get('current_version_id'):
-                    logger.error(f"❌ No current_version_id found for agent {agent_id}")
-                    empty_config = {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
-                    await set_cached_mcp_version_config(agent_id, {'custom_mcp': [], 'configured_mcps': []})
-                    return empty_config
-                
-                current_version_id = agent_result.data[0]['current_version_id']
-                
-                version_result = await client.table('agent_versions').select('config').eq(
-                    'version_id', current_version_id
-                ).eq('agent_id', agent_id).execute()
-                
-                if not version_result.data:
-                    logger.error(f"❌ Version {current_version_id} not found for agent {agent_id}")
-                    empty_config = {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
-                    await set_cached_mcp_version_config(agent_id, {'custom_mcp': [], 'configured_mcps': []})
-                    return empty_config
-                
-                config = version_result.data[0].get('config', {})
-                tools = config.get('tools', {})
-                
-                configured_mcps = tools.get('mcp', [])
-                custom_mcps = tools.get('custom_mcp', [])
-                
-                cache_data = {
-                    'custom_mcp': custom_mcps,
-                    'configured_mcps': configured_mcps,
-                }
-                await set_cached_mcp_version_config(agent_id, cache_data)
-                
-                final_config = {
-                    'custom_mcp': custom_mcps,
-                    'configured_mcps': configured_mcps,
-                    'account_id': user_id
-                }
-                
-                return final_config
+            t2 = time.time()
+            client = await self._get_client()
+            client_time = (time.time() - t2) * 1000
+            logger.debug(f"⏱️ [MCP CONFIG] DB client acquired in {client_time:.1f}ms")
             
-        except asyncio.TimeoutError:
-            logger.error(f"❌ TIMEOUT ({MCP_CONFIG_QUERY_TIMEOUT}s) loading MCP config for agent {agent_id}")
-            return {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
+            t3 = time.time()
+            rpc_result = await client.rpc('get_agent_mcp_config', {'p_agent_id': agent_id}).execute()
+            rpc_time = (time.time() - t3) * 1000
+            logger.debug(f"⏱️ [MCP CONFIG] RPC query: {rpc_time:.1f}ms")
+            
+            if not rpc_result.data:
+                logger.warning(f"⚠️ [MCP CONFIG] No config found for agent {agent_id}, using empty")
+                empty_config = {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
+                await set_cached_mcp_version_config(agent_id, {'custom_mcp': [], 'configured_mcps': []})
+                return empty_config
+            
+            result_data = rpc_result.data
+            if isinstance(result_data, list) and len(result_data) > 0:
+                result_data = result_data[0]
+            
+            custom_mcps = result_data.get('custom_mcp', []) if result_data else []
+            configured_mcps = result_data.get('configured_mcps', []) if result_data else []
+            
+            cache_data = {
+                'custom_mcp': custom_mcps,
+                'configured_mcps': configured_mcps,
+            }
+            
+            t4 = time.time()
+            await set_cached_mcp_version_config(agent_id, cache_data)
+            cache_set_time = (time.time() - t4) * 1000
+            
+            total_time = (time.time() - start_time) * 1000
+            logger.info(f"✅ [MCP CONFIG] Loaded for {agent_id} in {total_time:.1f}ms (client:{client_time:.0f}ms, rpc:{rpc_time:.0f}ms, cache_set:{cache_set_time:.0f}ms)")
+            
+            final_config = {
+                'custom_mcp': custom_mcps,
+                'configured_mcps': configured_mcps,
+                'account_id': user_id
+            }
+            
+            return final_config
             
         except Exception as e:
-            logger.error(f"❌ Error loading current MCP config for agent {agent_id}: {e}", exc_info=True)
+            total_time = (time.time() - start_time) * 1000
+            logger.error(f"❌ [MCP CONFIG] Error loading for agent {agent_id} after {total_time:.1f}ms: {e}", exc_info=True)
             return {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
 
     async def update_version_details(

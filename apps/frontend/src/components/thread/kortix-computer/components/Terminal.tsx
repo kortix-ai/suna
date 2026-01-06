@@ -4,7 +4,7 @@ import { memo, useState, useRef, useEffect, useCallback, KeyboardEvent } from 'r
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { backendApi } from '@/lib/api-client';
-import { Loader2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
 
 interface TerminalLine {
@@ -222,7 +222,7 @@ export const Terminal = memo(function Terminal({ sandboxId, className }: Termina
       <div className="flex items-center h-7 px-3 bg-zinc-200/80 dark:bg-[#24283b] border-b border-zinc-300 dark:border-[#414868] gap-2 flex-shrink-0">
         <span className="text-zinc-500 dark:text-[#565f89] text-xs">{getPromptDisplay(cwd)} — bash</span>
         {isExecuting && (
-          <Loader2 className="w-3 h-3 animate-spin text-blue-500 dark:text-[#7aa2f7] ml-auto" />
+          <KortixLoader size="small" className="ml-auto" />
         )}
       </div>
 

@@ -5,8 +5,8 @@
 
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   // Initialization
-  ['initialize-tools', 'Initializing Tools'],
-  ['initialize_tools', 'Initializing Tools'],
+  ['initialize-tools', 'Mode Activated'],
+  ['initialize_tools', 'Mode Activated'],
 
   // Command execution
   ['execute-command', 'Executing Command'],
@@ -226,8 +226,7 @@ export const HIDE_STREAMING_XML_TAGS: ReadonlySet<string> = new Set([
  * These are internal/initialization tools that don't provide meaningful user feedback
  */
 export const HIDDEN_TOOLS: ReadonlySet<string> = new Set([
-  'initialize-tools',
-  'initialize_tools',
+  // initialize_tools is now shown with a friendly message via InitializeToolsToolView
 ]);
 
 /**

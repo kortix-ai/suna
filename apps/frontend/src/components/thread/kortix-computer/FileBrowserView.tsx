@@ -8,13 +8,13 @@ import {
   Download,
   ChevronRight,
   Home,
-  Loader,
   ChevronDown,
   AlertTriangle,
   File,
   FileText,
   Presentation,
 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -664,7 +664,7 @@ export function FileBrowserView({
           {/* Download progress */}
           {downloadProgress && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground px-2">
-              <Loader className="h-3 w-3 animate-spin" />
+              <KortixLoader size="small" />
               <span>
                 {downloadProgress.total > 0
                   ? `${downloadProgress.current}/${downloadProgress.total}`
@@ -683,7 +683,7 @@ export function FileBrowserView({
             title="Download folder"
           >
             {isDownloadingAll ? (
-              <Loader className="h-4 w-4 animate-spin" />
+              <KortixLoader size="small" />
             ) : (
               <Download className="h-4 w-4" />
             )}
@@ -698,7 +698,7 @@ export function FileBrowserView({
             title={selectedVersion ? 'Cannot upload while viewing historical version' : 'Upload file'}
           >
             {isUploading ? (
-              <Loader className="h-4 w-4 animate-spin" />
+              <KortixLoader size="small" />
             ) : (
               <Upload className="h-4 w-4" />
             )}
@@ -716,7 +716,7 @@ export function FileBrowserView({
                 className="h-8 px-3 gap-1.5 text-xs bg-transparent border border-border rounded-xl text-muted-foreground hover:text-foreground hover:bg-accent/50"
               >
                 {isLoadingVersions ? (
-                  <Loader className="h-3.5 w-3.5 animate-spin" />
+                  <KortixLoader size="small" />
                 ) : (
                   <svg className="h-3.5 w-3.5 text-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -738,7 +738,7 @@ export function FileBrowserView({
             <DropdownMenuContent align="end" className="max-h-[400px] overflow-y-auto w-[320px]">
               {isLoadingVersions ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader className="h-5 w-5 animate-spin text-muted-foreground" />
+                  <KortixLoader size="small" />
                   <span className="ml-2 text-sm text-muted-foreground">Loading history...</span>
                 </div>
               ) : workspaceVersions.length === 0 ? (
@@ -833,7 +833,7 @@ export function FileBrowserView({
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
         {(isLoadingFiles || isLoadingVersionFiles) ? (
           <div className="h-full w-full max-w-full flex flex-col items-center justify-center gap-2 min-w-0">
-            <Loader className="h-6 w-6 animate-spin text-primary" />
+            <KortixLoader size="medium" />
             <p className="text-xs text-muted-foreground">
               {isLoadingVersionFiles ? 'Loading version...' : 'Loading files...'}
             </p>
@@ -945,7 +945,7 @@ export function FileBrowserView({
 
           {revertLoadingInfo ? (
             <div className="py-6 flex items-center justify-center">
-              <Loader className="h-6 w-6 animate-spin" />
+              <KortixLoader size="medium" />
             </div>
           ) : revertCommitInfo ? (
             <div className="mt-2">
@@ -994,7 +994,7 @@ export function FileBrowserView({
           <DialogFooter>
             <Button variant="ghost" onClick={() => setRevertModalOpen(false)} disabled={revertInProgress}>Cancel</Button>
             <Button onClick={performRevert} disabled={revertInProgress}>
-              {revertInProgress ? (<><Loader className="h-4 w-4 animate-spin mr-2" />Restoring...</>) : 'Restore'}
+              {revertInProgress ? (<><KortixLoader size="small" className="mr-2" />Restoring...</>) : 'Restore'}
             </Button>
           </DialogFooter>
 

@@ -26,6 +26,58 @@ import litellm
 
 ToolChoice = Literal["auto", "required", "none"]
 
+
+async def set_thread_has_images(thread_id: str, client=None) -> bool:
+    """
+    Set has_images=True in thread metadata and Redis cache.
+    
+    Called when an image is added to a thread (user upload or agent load_image).
+    This flag is read by thread_has_images() to determine if vision model is needed.
+    
+    Args:
+        thread_id: The thread ID
+        client: Optional Supabase client (fetched if not provided)
+        
+    Returns:
+        True if successfully set, False otherwise
+    """
+    from core.services import redis
+    
+    cache_key = f"thread_has_images:{thread_id}"
+    
+    try:
+        # Check Redis first - if already set, skip DB write
+        cached = await redis.get(cache_key)
+        if cached == "1":
+            return True
+        
+        if client is None:
+            db = DBConnection()
+            client = await db.client
+        
+        # Get current metadata
+        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
+        if not result.data:
+            logger.warning(f"Thread {thread_id} not found when setting has_images flag")
+            return False
+        
+        metadata = result.data.get('metadata') or {}
+        
+        # Skip DB write if already set
+        if not metadata.get('has_images'):
+            metadata['has_images'] = True
+            await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
+        
+        # Set in Redis with 2 hour TTL (refreshed on each access)
+        await redis.set(cache_key, "1", ex=7200)
+        
+        logger.info(f"🖼️ Set has_images=True for thread {thread_id}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to set has_images flag for thread {thread_id}: {e}")
+        return False
+
+
 class ThreadManager:
     def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, 
                  project_id: Optional[str] = None, thread_id: Optional[str] = None, account_id: Optional[str] = None,
@@ -170,9 +222,7 @@ class ThreadManager:
             usage_type = "FALLBACK ESTIMATE" if is_fallback else ("ESTIMATED" if is_estimated else "EXACT")
             logger.debug(f"💰 Usage type: {usage_type} - prompt={prompt_tokens}, completion={completion_tokens}, cache_read={cache_read_tokens}, cache_creation={cache_creation_tokens}")
             
-            client = await self.db.client
-            thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
-            user_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
+            user_id = self.account_id
             
             if user_id and (prompt_tokens > 0 or completion_tokens > 0):
 
@@ -270,6 +320,7 @@ class ThreadManager:
         """
         logger.debug(f"Getting messages for thread {thread_id} (lightweight={lightweight})")
         
+        
         # Check cache first (only for non-lightweight mode)
         if not lightweight:
             from core.cache.runtime_cache import get_cached_message_history
@@ -285,13 +336,23 @@ class ThreadManager:
                     validated_cached.append(msg)
                 return validated_cached
         
-        client = await self.db.client
-
+        from core.services.supabase import execute_with_reconnect
+        import asyncio
+        
+        # Timeout for message queries (seconds) - fail fast on connection issues
+        MESSAGE_QUERY_TIMEOUT = 10.0
+        
         try:
             all_messages = []
             
             if lightweight:
-                result = await client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
+                result = await asyncio.wait_for(
+                    execute_with_reconnect(
+                        self.db,
+                        lambda client: client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
+                    ),
+                    timeout=MESSAGE_QUERY_TIMEOUT
+                )
                 
                 if result.data:
                     all_messages = result.data
@@ -300,7 +361,14 @@ class ThreadManager:
                 offset = 0
                 
                 while True:
-                    result = await client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(offset, offset + batch_size - 1).execute()
+                    # Capture offset in lambda default arg to avoid closure issues
+                    result = await asyncio.wait_for(
+                        execute_with_reconnect(
+                            self.db,
+                            lambda client, _offset=offset: client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(_offset, _offset + batch_size - 1).execute()
+                        ),
+                        timeout=MESSAGE_QUERY_TIMEOUT
+                    )
                     
                     if not result.data:
                         break
@@ -381,13 +449,16 @@ class ThreadManager:
 
             return messages
 
+        except asyncio.TimeoutError:
+            logger.error(f"⏱️ Timeout getting messages for thread {thread_id} after {MESSAGE_QUERY_TIMEOUT}s - connection pool likely exhausted")
+            raise
         except Exception as e:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
-            return []
+            raise
     
     async def thread_has_images(self, thread_id: str) -> bool:
         """
-        Check if a thread has any image_context messages.
+        Check if a thread has images. First checks Redis cache, falls back to DB.
         
         Used to determine if the LLM model should be switched to one that supports
         image input (e.g., Bedrock) instead of the default (e.g., MiniMax).
@@ -396,16 +467,62 @@ class ThreadManager:
             thread_id: The thread ID to check
             
         Returns:
-            True if the thread has at least one image_context message, False otherwise
+            True if the thread has images, False otherwise
         """
+        import asyncio
+        import time
+        from core.services import redis
+        
+        start = time.time()
+        cache_key = f"thread_has_images:{thread_id}"
+        
         try:
-            client = await self.db.client
-            result = await client.table('messages').select('message_id').eq('thread_id', thread_id).eq('type', 'image_context').limit(1).execute()
-            has_images = bool(result.data and len(result.data) > 0)
-            logger.info(f"🖼️ Thread {thread_id} has_images check: {has_images}")
+            # Check Redis first (fast path)
+            try:
+                cached = await asyncio.wait_for(redis.get(cache_key), timeout=0.5)
+                if cached == "1":
+                    elapsed = (time.time() - start) * 1000
+                    logger.info(f"🖼️ Thread {thread_id} has_images: True (from Redis, {elapsed:.1f}ms)")
+                    return True
+            except Exception:
+                pass  # Redis miss or error, fall through to DB
+            
+            # Fall back to DB
+            try:
+                client = await asyncio.wait_for(self.db.client, timeout=3.0)
+            except asyncio.TimeoutError:
+                elapsed = (time.time() - start) * 1000
+                logger.warning(f"⚠️ thread_has_images CLIENT timeout after {elapsed:.1f}ms for {thread_id} - assuming no images")
+                return False
+            
+            try:
+                result = await asyncio.wait_for(
+                    client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute(),
+                    timeout=2.0
+                )
+            except asyncio.TimeoutError:
+                elapsed = (time.time() - start) * 1000
+                logger.warning(f"⚠️ thread_has_images QUERY timeout after {elapsed:.1f}ms for {thread_id} - assuming no images")
+                return False
+            
+            has_images = False
+            if result.data:
+                metadata = result.data.get('metadata') or {}
+                has_images = metadata.get('has_images', False)
+            
+            # Cache in Redis if True (2 hour TTL, refreshed on each access)
+            if has_images:
+                try:
+                    await redis.set(cache_key, "1", ex=7200)
+                except Exception:
+                    pass  # Best effort caching
+            
+            elapsed = (time.time() - start) * 1000
+            logger.info(f"🖼️ Thread {thread_id} has_images: {has_images} (from DB, {elapsed:.1f}ms)")
             return has_images
         except Exception as e:
-            logger.error(f"Error checking thread for images: {str(e)}")
+            elapsed = (time.time() - start) * 1000
+            logger.error(f"Error checking thread for images after {elapsed:.1f}ms: {str(e)}")
             return False
     
     async def run_thread(
@@ -516,17 +633,30 @@ class ThreadManager:
                 try:
                     from core.ai_models import model_manager
                     from litellm.utils import token_counter
-                    client = await self.db.client
+                    import time as _time
+                    
+                    _t1 = _time.time()
+                    client = await asyncio.wait_for(self.db.client, timeout=3.0)
+                    _client_time = (_time.time() - _t1) * 1000
+                    if _client_time > 100:
+                        logger.warning(f"⚠️ [SLOW] DB client acquired in {_client_time:.1f}ms for fast path check")
                     
                     # Query last llm_response_end message from messages table (already stored there!)
-                    last_usage_result = await client.table('messages')\
-                        .select('content')\
-                        .eq('thread_id', thread_id)\
-                        .eq('type', 'llm_response_end')\
-                        .order('created_at', desc=True)\
-                        .limit(1)\
-                        .maybe_single()\
-                        .execute()
+                    _t2 = _time.time()
+                    last_usage_result = await asyncio.wait_for(
+                        client.table('messages')\
+                            .select('content')\
+                            .eq('thread_id', thread_id)\
+                            .eq('type', 'llm_response_end')\
+                            .order('created_at', desc=True)\
+                            .limit(1)\
+                            .maybe_single()\
+                            .execute(),
+                        timeout=5.0
+                    )
+                    _query_time = (_time.time() - _t2) * 1000
+                    if _query_time > 500:
+                        logger.warning(f"⚠️ [SLOW] llm_response_end query took {_query_time:.1f}ms")
                     
                     if last_usage_result and last_usage_result.data:
                         llm_end_content = last_usage_result.data.get('content', {})
@@ -572,14 +702,21 @@ class ThreadManager:
                                 logger.debug(f"First turn: counting {new_msg_tokens} tokens from latest_user_message_content")
                             else:
                                 # First turn fallback: Query DB if content not provided
-                                latest_msg_result = await client.table('messages')\
-                                    .select('content')\
-                                    .eq('thread_id', thread_id)\
-                                    .eq('type', 'user')\
-                                    .order('created_at', desc=True)\
-                                    .limit(1)\
-                                    .single()\
-                                    .execute()
+                                _t3 = _time.time()
+                                latest_msg_result = await asyncio.wait_for(
+                                    client.table('messages')\
+                                        .select('content')\
+                                        .eq('thread_id', thread_id)\
+                                        .eq('type', 'user')\
+                                        .order('created_at', desc=True)\
+                                        .limit(1)\
+                                        .single()\
+                                        .execute(),
+                                    timeout=5.0
+                                )
+                                _user_msg_time = (_time.time() - _t3) * 1000
+                                if _user_msg_time > 500:
+                                    logger.warning(f"⚠️ [SLOW] latest user message query took {_user_msg_time:.1f}ms")
                                 
                                 if latest_msg_result and latest_msg_result.data:
                                     # DB stores content as {"role": "user", "content": "actual text"}
@@ -663,7 +800,7 @@ class ThreadManager:
                     # We know we're over threshold, compress now
                     compress_start = time.time()
                     logger.debug(f"Applying context compression on {len(messages)} messages")
-                    context_manager = ContextManager()
+                    context_manager = ContextManager(db=self.db)
                     compressed_messages = await context_manager.compress_messages(
                         messages, llm_model, max_tokens=llm_max_tokens, 
                         actual_total_tokens=estimated_total_tokens,  # Use estimated from fast check!
@@ -676,7 +813,7 @@ class ThreadManager:
                     # First turn or no fast path data: Run compression check
                     compress_start = time.time()
                     logger.debug(f"Running compression check on {len(messages)} messages")
-                    context_manager = ContextManager()
+                    context_manager = ContextManager(db=self.db)
                     compressed_messages = await context_manager.compress_messages(
                         messages, llm_model, max_tokens=llm_max_tokens, 
                         actual_total_tokens=None,
@@ -710,12 +847,14 @@ class ThreadManager:
             
             cache_start = time.time()
             if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
+                client = await self.db.client
                 prepared_messages = await apply_anthropic_caching_strategy(
                     system_prompt, 
                     messages_with_context, 
                     llm_model,
                     thread_id=thread_id,
-                    force_recalc=force_rebuild
+                    force_recalc=force_rebuild,
+                    client=client
                 )
                 prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 logger.debug(f"⏱️ [TIMING] Prompt caching: {(time.time() - cache_start) * 1000:.1f}ms")
@@ -759,7 +898,7 @@ class ThreadManager:
             
             # Ensure we have a ContextManager instance for validation (may not exist if compression was skipped)
             if 'context_manager' not in locals():
-                context_manager = ContextManager()
+                context_manager = ContextManager(db=self.db)
             
             is_valid, orphaned_ids, unanswered_ids = context_manager.validate_tool_call_pairing(prepared_messages)
             if not is_valid:
@@ -805,7 +944,7 @@ class ThreadManager:
                 logger.warning(f"⚠️ PRE-SEND OVER THRESHOLD: actual={actual_tokens} >= threshold={safety_threshold}. Compressing now!")
                 # Compress messages (use raw messages, not prepared_messages which has cache markers)
                 if 'context_manager' not in locals():
-                    context_manager = ContextManager()
+                    context_manager = ContextManager(db=self.db)
                 compressed_messages = await context_manager.compress_messages(
                     messages, llm_model, max_tokens=llm_max_tokens,
                     actual_total_tokens=actual_tokens,
@@ -818,9 +957,10 @@ class ThreadManager:
                     messages_with_context = [self._memory_context] + compressed_messages
                 # Rebuild prepared_messages with caching
                 if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
+                    client = await self.db.client
                     prepared_messages = await apply_anthropic_caching_strategy(
                         system_prompt, messages_with_context, llm_model,
-                        thread_id=thread_id, force_recalc=True
+                        thread_id=thread_id, force_recalc=True, client=client
                     )
                     prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 else:
@@ -898,14 +1038,7 @@ class ThreadManager:
             logger.error(f"Invalid config type in auto-continue: {type(config)}, creating new one")
             config = ProcessorConfig()
         
-        # Get account_id once for billing checks
-        account_id = None
-        try:
-            client = await self.db.client
-            thread_row = await client.table('threads').select('account_id').eq('thread_id', thread_id).limit(1).execute()
-            account_id = thread_row.data[0]['account_id'] if thread_row.data and len(thread_row.data) > 0 else None
-        except Exception as e:
-            logger.warning(f"Failed to get account_id for thread {thread_id}: {e}")
+        account_id = self.account_id
         
         while auto_continue_state['active'] and auto_continue_state['count'] < native_max_auto_continues:
             auto_continue_state['active'] = False  # Reset for this iteration

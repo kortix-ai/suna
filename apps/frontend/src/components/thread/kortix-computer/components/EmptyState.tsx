@@ -33,7 +33,7 @@ export const EmptyState = memo(function EmptyState({ t }: EmptyStateProps) {
             alt="Kortix Computer"
             width={240}
             height={27}
-            className="block dark:hidden relative z-10 opacity-40"
+            className="block dark:hidden relative z-10"
             priority
           />
         </div>

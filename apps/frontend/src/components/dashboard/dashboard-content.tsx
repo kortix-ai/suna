@@ -29,6 +29,7 @@ import { useWelcomeBannerStore } from '@/stores/welcome-banner-store';
 import { cn } from '@/lib/utils';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 import { trackPurchase, getStoredCheckoutData, clearCheckoutData } from '@/lib/analytics/gtm';
+import { getCheckoutSession } from '@/lib/api/billing';
 
 // Lazy load heavy components that aren't immediately visible
 // Note: PlanSelectionModal is rendered globally in layout.tsx
@@ -218,21 +219,87 @@ export function DashboardContent() {
       celebrationTriggeredRef.current = true;
       
       // Track purchase event for GTM/GA4
-      const checkoutData = getStoredCheckoutData();
-      if (checkoutData) {
+      // Fetch actual transaction amounts from Stripe for accurate tracking
+      const trackPurchaseEvent = async () => {
+        const checkoutData = getStoredCheckoutData();
+        if (!checkoutData) return;
+        
+        // Default values from stored checkout data
+        let transactionValue = checkoutData.value;
+        let discountAmount = checkoutData.discount || 0;
+        let taxAmount = 0;
+        let couponId = checkoutData.coupon || '';
+        let currency = checkoutData.currency;
+        
+        // If we have a session_id, fetch actual amounts from Stripe
+        // This also validates that the payment was actually successful
+        if (sessionId) {
+          try {
+            const stripeSession = await getCheckoutSession(sessionId);
+            if (stripeSession) {
+              // IMPORTANT: Only track purchase if payment was actually successful
+              // This prevents false positives from failed payments or manual URL navigation
+              if (stripeSession.payment_status !== 'paid' && stripeSession.status !== 'complete') {
+                console.warn('[GTM] Purchase NOT tracked - payment not confirmed:', {
+                  payment_status: stripeSession.payment_status,
+                  status: stripeSession.status
+                });
+                return; // Don't track purchase for failed/incomplete payments
+              }
+              
+              // Use actual amounts from Stripe (convert from cents to dollars)
+              transactionValue = stripeSession.amount_total / 100;
+              discountAmount = stripeSession.amount_discount / 100;
+              taxAmount = stripeSession.amount_tax / 100;
+              // Prefer promotion_code (customer-facing like "HEHE2020") over coupon_id
+              couponId = stripeSession.promotion_code || stripeSession.coupon_name || stripeSession.coupon_id || '';
+              currency = stripeSession.currency.toUpperCase();
+              console.log('[GTM] Using Stripe session data:', {
+                amount_total: stripeSession.amount_total,
+                amount_discount: stripeSession.amount_discount,
+                amount_tax: stripeSession.amount_tax,
+                promotion_code: stripeSession.promotion_code,
+                coupon_name: stripeSession.coupon_name,
+                coupon_id: stripeSession.coupon_id,
+                payment_status: stripeSession.payment_status
+              });
+            } else {
+              console.warn('[GTM] Stripe session returned null - purchase NOT tracked to avoid false positives');
+              return; // Don't track without verified session
+            }
+          } catch (error) {
+            console.warn('[GTM] Could not fetch Stripe session - purchase NOT tracked:', error);
+            return; // Don't track without verified session
+          }
+        } else {
+          console.warn('[GTM] No session_id available - purchase NOT tracked to avoid false positives');
+          return; // Don't track without session_id
+        }
+        
+        // Determine customer_type based on previous tier
+        // 'new' = first time subscriber (was free/none)
+        // 'returning' = upgrading/changing from a paid plan
+        const previousTier = checkoutData.previous_tier || 'none';
+        const isReturningCustomer = previousTier !== 'none' && previousTier !== 'free';
+        const customerType = isReturningCustomer ? 'returning' : 'new';
+        
         trackPurchase({
           transaction_id: sessionId || `txn_${Date.now()}`,
-          value: checkoutData.price,
-          currency: checkoutData.currency,
-          customer_type: 'new', // Could be enhanced to detect returning customers
+          value: transactionValue, // Actual transaction value after discounts (from Stripe)
+          tax: taxAmount, // Tax amount from Stripe
+          currency: currency,
+          coupon: couponId,
+          customer_type: customerType,
           items: [{
-            item_id: checkoutData.tier_key,
-            item_name: checkoutData.tier_name,
+            item_id: checkoutData.item_id,       // e.g., "pro_yearly" - matches add_to_cart
+            item_name: checkoutData.item_name,   // e.g., "Pro Yearly" - matches add_to_cart
+            coupon: couponId,
+            discount: discountAmount,
             item_brand: 'Kortix AI',
             item_category: 'Plans',
             item_list_id: 'plans_listing',
             item_list_name: 'Plans Listing',
-            price: checkoutData.price,
+            price: checkoutData.price, // Product price (before discounts)
             quantity: 1,
           }],
           customer: {
@@ -241,7 +308,10 @@ export function DashboardContent() {
           },
         });
         clearCheckoutData();
-      }
+      };
+      
+      // Execute purchase tracking
+      trackPurchaseEvent();
       
       // Invalidate and force refetch billing queries to refresh data immediately
       // This ensures fresh data after checkout, bypassing staleTime
@@ -264,7 +334,7 @@ export function DashboardContent() {
         router.replace(url.pathname + url.search, { scroll: false });
       }, 100);
     }
-  }, [searchParams, queryClient, router, setSidebarOpen]);
+  }, [searchParams, queryClient, router, setSidebarOpen, user]);
 
   // Handle expired link notification for logged-in users
   React.useEffect(() => {

@@ -1314,9 +1314,7 @@ class ResponseProcessor:
                     # Store placeholder message_id for cleanup if update fails
                     placeholder_message_id = last_assistant_message_object['message_id']
                     # Update the existing placeholder message with final content and metadata
-                    from core.services.supabase import DBConnection
-                    db = DBConnection()
-                    client = await db.client
+                    client = await self.thread_manager.db.client
                     try:
                         await client.table('messages').update({
                             'content': message_data,
@@ -1874,7 +1872,7 @@ class ResponseProcessor:
                     else:
                         logger.warning("💰 No LLM response with usage - ESTIMATING token usage for billing")
                         from core.agentpress.context_manager import ContextManager
-                        context_mgr = ContextManager()
+                        context_mgr = ContextManager(db=self.thread_manager.db if self.thread_manager else None)
                         estimated_usage = await context_mgr.estimate_token_usage(prompt_messages, accumulated_content, llm_model)
                         llm_end_content = {
                             "model": llm_model,
@@ -1958,9 +1956,7 @@ class ResponseProcessor:
                             # Update in database (protected by lock to prevent race conditions)
                             thread_lock = await self._get_thread_lock(thread_id)
                             async with thread_lock:
-                                from core.services.supabase import DBConnection
-                                db = DBConnection()
-                                client = await db.client
+                                client = await self.thread_manager.db.client
                                 await client.table('messages').update({
                                     'content': updated_content
                                 }).eq('message_id', last_assistant_message_object['message_id']).execute()
@@ -3323,6 +3319,10 @@ class ResponseProcessor:
             if not message_content:
                 logger.warning("_image_context_data missing message_content, skipping")
                 return
+            
+            # Set has_images flag on thread metadata
+            from core.agentpress.thread_manager import set_thread_has_images
+            await set_thread_has_images(thread_id)
             
             # Save the image_context message AFTER the tool result
             await self.add_message(

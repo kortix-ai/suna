@@ -96,10 +96,11 @@ def is_safe_url(url: str) -> tuple[bool, str]:
 
 
 class MCPToolExecutor:
-    def __init__(self, custom_tools: Dict[str, Dict[str, Any]], tool_wrapper=None):
+    def __init__(self, custom_tools: Dict[str, Dict[str, Any]], tool_wrapper=None, db=None):
         self.mcp_manager = mcp_service
         self.custom_tools = custom_tools
         self.tool_wrapper = tool_wrapper
+        self.db = db
     
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any]) -> ToolResult:
         logger.debug(f"Executing MCP tool {tool_name} with arguments {arguments}")
@@ -136,9 +137,12 @@ class MCPToolExecutor:
             
             try:
                 from core.composio_integration.composio_profile_service import ComposioProfileService
-                from core.services.supabase import DBConnection
                 
-                db = DBConnection()
+                if self.db is None:
+                    from core.services.supabase import DBConnection
+                    db = DBConnection()
+                else:
+                    db = self.db
                 profile_service = ComposioProfileService(db)
                 mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id)
                 modified_tool_info = tool_info.copy()
@@ -239,10 +243,13 @@ class MCPToolExecutor:
             return external_user_id
         
         try:
-            from core.services.supabase import DBConnection
             from core.utils.encryption import decrypt_data
             
-            db = DBConnection()
+            if self.db is None:
+                from core.services.supabase import DBConnection
+                db = DBConnection()
+            else:
+                db = self.db
             supabase = await db.client
             
             result = await supabase.table('user_mcp_credential_profiles').select(

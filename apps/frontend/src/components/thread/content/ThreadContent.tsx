@@ -1,8 +1,5 @@
 import React, { useRef, useState, useEffect, memo, useMemo } from "react";
-import { CircleDashed as CircleDashedIcon } from "lucide-react";
-
-// Cast to fix React types version conflict in monorepo
-const CircleDashed = CircleDashedIcon as React.FC<React.SVGProps<SVGSVGElement>>;
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useTranslations } from "next-intl";
 import {
   UnifiedMessage,
@@ -29,7 +26,6 @@ import {
 import { AppIcon } from "../tool-views/shared/AppIcon";
 import { useSmoothText } from "@/hooks/messages/useSmoothText";
 import { isHiddenTool } from "@agentpress/shared/tools";
-import { MeshGradientLoader } from "./MeshGradientLoader";
 
 export function renderAttachments(
   attachments: string[],
@@ -63,6 +59,28 @@ interface AgentInfo {
   name: string;
   avatar: React.ReactNode;
 }
+
+// Reusable agent header - shows Kortix logo for Kortix, avatar+name for others
+const AgentHeader = memo(function AgentHeader({ agentInfo }: { agentInfo: AgentInfo }) {
+  if (agentInfo.name === "Kortix") {
+    return (
+      <img
+        src="/kortix-logomark-white.svg"
+        alt="Kortix"
+        className="dark:invert-0 invert flex-shrink-0"
+        style={{ height: '12px', width: 'auto' }}
+      />
+    );
+  }
+  return (
+    <>
+      <div className="rounded-md flex items-center justify-center">
+        {agentInfo.avatar}
+      </div>
+      <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
+    </>
+  );
+});
 
 const UserMessageRow = memo(function UserMessageRow({
   message,
@@ -169,14 +187,84 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
-  const hasToolCall = !!streamingToolCall;
+  // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
+  // Returns { text, isAnimating } - we continue rendering while animation is in progress
   const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
     streamingTextContent || "",
     120,
-    !hasToolCall
+    true
   );
-  
-  const displayText = hasToolCall ? (streamingTextContent || "") : smoothStreamingText;
+
+  // Extract ask/complete text from streaming tool call for smooth animation
+  // Handles both raw streaming format AND accumulated format from useToolCallAccumulator
+  const rawAskCompleteText = useMemo(() => {
+    if (!streamingToolCall) return "";
+    
+    const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
+    const parsedContent = safeJsonParse<any>(streamingToolCall.content, {});
+    
+    // Try accumulated format first (from useToolCallAccumulator)
+    // Structure: metadata.function_name, content.arguments (accumulated)
+    if (parsedMetadata.function_name) {
+      const toolName = parsedMetadata.function_name.replace(/_/g, "-").toLowerCase();
+      if (toolName === "ask" || toolName === "complete") {
+        const toolArgs = parsedContent.arguments;
+        if (toolArgs) {
+          let extractedText = "";
+          if (typeof toolArgs === "string") {
+            try {
+              const parsed = JSON.parse(toolArgs);
+              extractedText = parsed?.text || "";
+            } catch {
+              extractedText = extractTextFromPartialJson(toolArgs);
+            }
+          } else if (typeof toolArgs === "object" && toolArgs !== null) {
+            extractedText = toolArgs?.text || "";
+          }
+          if (extractedText) return extractedText;
+        }
+      }
+    }
+    
+    // Fall back to raw streaming format
+    // Structure: metadata.tool_calls[].arguments_delta
+    const toolCalls = parsedMetadata.tool_calls || [];
+    const askOrCompleteTool = toolCalls.find((tc: any) => {
+      const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
+      return toolName === "ask" || toolName === "complete";
+    });
+    if (!askOrCompleteTool) return "";
+    
+    // Try arguments first (accumulated), then arguments_delta (streaming)
+    let toolArgs: any = askOrCompleteTool.arguments;
+    if (!toolArgs || (typeof toolArgs === "object" && Object.keys(toolArgs).length === 0)) {
+      toolArgs = askOrCompleteTool.arguments_delta;
+    }
+    
+    if (!toolArgs) return "";
+    
+    let extractedText = "";
+    if (typeof toolArgs === "string") {
+      try {
+        const parsed = JSON.parse(toolArgs);
+        extractedText = parsed?.text || "";
+      } catch {
+        // Partial JSON during streaming - extract text field
+        extractedText = extractTextFromPartialJson(toolArgs);
+      }
+    } else if (typeof toolArgs === "object" && toolArgs !== null) {
+      extractedText = toolArgs?.text || "";
+    }
+    
+    return extractedText;
+  }, [streamingToolCall]);
+
+  // Apply smooth text animation to ask/complete streaming content
+  const { text: smoothAskCompleteText, isAnimating: isAskCompleteAnimating } = useSmoothText(
+    rawAskCompleteText,
+    120,
+    true
+  );
 
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
@@ -254,10 +342,19 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
+    // Continue rendering if:
+    // 1. Currently streaming, OR
+    // 2. Animation is still in progress (let it finish even after stream ends)
+    // But immediately stop if agent is not running (user stopped)
     const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
     
-    const shouldRender = isLastGroup && !readOnly && displayText && (isStreaming || isSmoothAnimating || isAgentRunning);
+    // If agent is not running and not streaming, immediately hide
+    if (!isAgentRunning && !isStreaming) {
+      return null;
+    }
+    
+    const shouldRender = isLastGroup && !readOnly && smoothStreamingText && (isStreaming || isSmoothAnimating);
     
     if (!shouldRender) {
       return null;
@@ -266,8 +363,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
 
-    const askIndex = displayText.indexOf("<ask");
-    const completeIndex = displayText.indexOf("<complete");
+    const askIndex = smoothStreamingText.indexOf("<ask");
+    const completeIndex = smoothStreamingText.indexOf("<complete");
     if (askIndex !== -1 && (completeIndex === -1 || askIndex < completeIndex)) {
       detectedTag = "ask";
       tagStartIndex = askIndex;
@@ -276,10 +373,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       tagStartIndex = completeIndex;
     } else {
       const functionCallsIndex =
-        displayText.indexOf("<function_calls>");
+        smoothStreamingText.indexOf("<function_calls>");
       if (functionCallsIndex !== -1) {
         const functionCallsContent =
-          displayText.substring(functionCallsIndex);
+          smoothStreamingText.substring(functionCallsIndex);
         if (
           functionCallsContent.includes('<invoke name="ask"') ||
           functionCallsContent.includes("<invoke name='ask'")
@@ -300,7 +397,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         for (const tag of HIDE_STREAMING_XML_TAGS) {
           if (tag === "ask" || tag === "complete") continue;
           const openingTagPattern = `<${tag}`;
-          const index = displayText.indexOf(openingTagPattern);
+          const index = smoothStreamingText.indexOf(openingTagPattern);
           if (index !== -1) {
             detectedTag = tag;
             tagStartIndex = index;
@@ -310,7 +407,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       }
     }
 
-    const textToRender = displayText;
+    const textToRender = smoothStreamingText;
     const textBeforeTag = detectedTag
       ? textToRender.substring(0, tagStartIndex)
       : textToRender;
@@ -359,7 +456,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [
     isLastGroup,
     readOnly,
-    displayText,
+    smoothStreamingText,
     isSmoothAnimating,
     streamHookStatus,
     agentStatus,
@@ -456,23 +553,26 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     // Don't show streaming tool call if not streaming or agent is not running
     if (!isLastGroup || readOnly || !streamingToolCall) return null;
     
-    // Don't show if agent is not in a streaming state
+    // Don't show if agent is not in a streaming state (unless animation is still playing)
     const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
-    if (!isActivelyStreaming && !isAgentRunning) return null;
+    if (!isActivelyStreaming && !isAgentRunning && !isAskCompleteAnimating) return null;
 
-    const parsedMetadata = safeJsonParse<ParsedMetadata>(
-      streamingToolCall.metadata,
-      {},
-    );
+    const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const toolCalls = parsedMetadata.tool_calls || [];
 
+    // Check for ask/complete in both formats:
+    // 1. Accumulated format: metadata.function_name
+    // 2. Raw streaming format: metadata.tool_calls[].function_name
+    const isAccumulatedAskComplete = parsedMetadata.function_name && 
+      ["ask", "complete"].includes(parsedMetadata.function_name.replace(/_/g, "-").toLowerCase());
+    
     const askOrCompleteTool = toolCalls.find((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
       return toolName === "ask" || toolName === "complete";
     });
 
-    if (askOrCompleteTool) {
+    if (isAccumulatedAskComplete || askOrCompleteTool) {
       const currentGroupAssistantMessages = group.messages.filter(
         (m) => m.type === "assistant",
       );
@@ -500,31 +600,25 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         }
       }
 
-      const toolArgs: any = askOrCompleteTool.arguments;
-      let askCompleteText = "";
-      if (toolArgs) {
-        if (typeof toolArgs === "string") {
-          try {
-            const parsed = JSON.parse(toolArgs);
-            askCompleteText = parsed?.text || "";
-          } catch {
-            askCompleteText = extractTextFromPartialJson(toolArgs);
-          }
-        } else if (typeof toolArgs === "object" && toolArgs !== null) {
-          askCompleteText = toolArgs?.text || "";
-        }
+      // Use smooth animated text for display - render like regular streaming text
+      const isCurrentlyStreaming =
+        streamHookStatus === "streaming" || streamHookStatus === "connecting" || isAskCompleteAnimating;
+
+      // Prefer smooth animated text, fall back to raw text
+      const textToRender = smoothAskCompleteText || rawAskCompleteText;
+      
+      if (textToRender) {
+        return (
+          <ComposioUrlDetector
+            content={textToRender}
+            isStreaming={isCurrentlyStreaming}
+          />
+        );
       }
 
-      const toolName =
-        askOrCompleteTool.function_name?.replace(/_/g, "-").toLowerCase() || "";
-
-      return (
-        <div className="mt-1.5">
-          <MeshGradientLoader variant={toolName === "complete" ? "complete" : "ask"} />
-        </div>
-      );
+      // No text at all yet - return null, the showLoader will handle it
+      return null;
     }
-    
 
     const isAskOrComplete = toolCalls.some((tc: any) => {
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
@@ -533,10 +627,28 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     if (isAskOrComplete) return null;
 
-    // Filter out hidden tools (internal/initialization tools)
+    // Get all tool call IDs that are already rendered in completed messages
+    const completedToolCallIds = new Set<string>();
+    group.messages.forEach((msg) => {
+      if (msg.type === "assistant") {
+        const msgMeta = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+        if (msgMeta.stream_status === "complete" && msgMeta.tool_calls) {
+          msgMeta.tool_calls.forEach((tc: any) => {
+            if (tc.tool_call_id) {
+              completedToolCallIds.add(tc.tool_call_id);
+            }
+          });
+        }
+      }
+    });
+
+    // Filter out hidden tools, ask/complete tools, AND tools that are already in completed messages
     const visibleToolCalls = toolCalls.filter((tc: any) => {
-      const toolName = tc.function_name?.replace(/_/g, "-") || "";
-      return !isHiddenTool(toolName);
+      const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
+      const isHidden = isHiddenTool(toolName);
+      const isAskComplete = toolName === "ask" || toolName === "complete";
+      const isAlreadyCompleted = tc.tool_call_id && completedToolCallIds.has(tc.tool_call_id);
+      return !isHidden && !isAskComplete && !isAlreadyCompleted;
     });
 
     // If all tools were hidden, don't render anything
@@ -574,7 +686,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               }
               className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
             >
-              <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000" />
+              <KortixLoader size="small" />
               <span className="font-mono text-xs text-foreground truncate">
                 Using Tool
               </span>
@@ -591,12 +703,17 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamHookStatus,
     agentStatus,
     handleToolClick,
+    smoothAskCompleteText,
+    rawAskCompleteText,
+    isAskCompleteAnimating,
   ]);
 
   const showLoader = useMemo(() => {
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
     if (streamingTextContent || streamingToolCall) return false;
+    // Don't show loader if we're animating ask/complete text
+    if (smoothAskCompleteText || isAskCompleteAnimating) return false;
     if (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
       return false;
 
@@ -622,27 +739,15 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamingToolCall,
     streamHookStatus,
     group.messages,
+    smoothAskCompleteText,
+    isAskCompleteAnimating,
   ]);
 
   return (
     <div key={group.key} ref={isLastGroup ? latestMessageRef : null}>
       <div className="flex flex-col gap-2">
         <div className="flex items-center">
-          {agentInfo.name === "Kortix" ? (
-            <img
-              src="/kortix-logomark-white.svg"
-              alt="Kortix"
-              className="dark:invert-0 invert flex-shrink-0"
-              style={{ height: '12px', width: 'auto' }}
-            />
-          ) : (
-            <>
-              <div className="rounded-md flex items-center justify-center relative">
-                {agentInfo.avatar}
-              </div>
-              <p className="ml-2 text-sm text-muted-foreground">{agentInfo.name}</p>
-            </>
-          )}
+          <AgentHeader agentInfo={agentInfo} />
         </div>
         <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">
@@ -1096,12 +1201,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             <div ref={latestMessageRef} className="w-full h-22 rounded mt-6">
               <div className="flex flex-col gap-2">
                 <div className="flex items-center">
-                  <div className="rounded-md flex items-center justify-center">
-                    {agentInfo.avatar}
-                  </div>
-                  <p className="ml-2 text-sm text-muted-foreground">
-                    {agentInfo.name}
-                  </p>
+                  <AgentHeader agentInfo={agentInfo} />
                 </div>
                 <div className="space-y-2 w-full h-12">
                   <AgentLoader />
@@ -1113,13 +1213,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           {readOnly && currentToolCall && (
             <div ref={latestMessageRef} className="mt-6">
               <div className="flex flex-col gap-2">
-                <div className="flex justify-start">
-                  <div className="rounded-md flex items-center justify-center">
-                    {agentInfo.avatar}
-                  </div>
-                  <p className="ml-2 text-sm text-muted-foreground">
-                    {agentInfo.name}
-                  </p>
+                <div className="flex items-center">
+                  <AgentHeader agentInfo={agentInfo} />
                 </div>
                 <div className="space-y-2">
                   <div className="animate-shimmer inline-flex items-center gap-1.5 py-1.5 px-3 text-xs font-medium text-primary bg-primary/10 rounded-md border border-primary/20">
@@ -1131,7 +1226,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
                     <span className="font-mono text-xs text-primary">
                       {currentToolCall.name || "Using Tool"}
                     </span>
-                    <CircleDashed className="h-3.5 w-3.5 text-primary flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                    <KortixLoader size="small" className="ml-auto" />
                   </div>
                 </div>
               </div>
@@ -1144,13 +1239,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             isStreamingText && (
               <div ref={latestMessageRef} className="mt-6">
                 <div className="flex flex-col gap-2">
-                  <div className="flex justify-start">
-                    <div className="rounded-md flex items-center justify-center">
-                      {agentInfo.avatar}
-                    </div>
-                    <p className="ml-2 text-sm text-muted-foreground">
-                      {agentInfo.name}
-                    </p>
+                  <div className="flex items-center">
+                    <AgentHeader agentInfo={agentInfo} />
                   </div>
                   <div className="max-w-[90%] px-4 py-3 text-sm">
                     <div className="flex items-center gap-1.5 py-1">

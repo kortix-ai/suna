@@ -3,8 +3,18 @@ import asyncio
 import structlog
 import json
 from decimal import Decimal
-from exa_py import Exa
-from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
+
+# exa-py removed due to openai 2.x incompatibility - tool disabled
+try:
+    from exa_py import Exa
+    from exa_py.websets.types import CreateWebsetParameters, CreateEnrichmentParameters
+    EXA_AVAILABLE = True
+except ImportError:
+    EXA_AVAILABLE = False
+    Exa = None
+    CreateWebsetParameters = None
+    CreateEnrichmentParameters = None
+
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
@@ -59,10 +69,9 @@ from core.services.supabase import DBConnection
 )
 class PeopleSearchTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
-        super().__init__()
         self.thread_manager = thread_manager
         self.api_key = config.EXA_API_KEY
-        self.db = DBConnection()
+        self.db = thread_manager.db if thread_manager else DBConnection()
         self.credit_manager = CreditManager()
         self.exa_client = None
         

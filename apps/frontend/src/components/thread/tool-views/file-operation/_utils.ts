@@ -314,58 +314,58 @@ export const getOperationConfigs = (): Record<FileOperation, OperationConfig> =>
   return {
   create: {
     icon: FilePen,
-      color: 'text-green-600',
+      color: 'text-zinc-700 dark:text-zinc-300',
     successMessage: 'File created successfully',
     progressMessage: 'Creating file...',
-      bgColor: 'bg-green-50',
-      gradientBg: 'from-green-50 to-green-100',
-      borderColor: 'border-green-200',
-      badgeColor: 'bg-green-100 text-green-700 border-green-200',
-      hoverColor: 'hover:bg-green-100',
+      bgColor: 'bg-zinc-50 dark:bg-zinc-900',
+      gradientBg: 'from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-800',
+      borderColor: 'border-zinc-200 dark:border-zinc-700',
+      badgeColor: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
+      hoverColor: 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
     },
     edit: {
       icon: Replace,
-      color: 'text-blue-600',
+      color: 'text-zinc-700 dark:text-zinc-300',
       successMessage: 'File edited successfully',
       progressMessage: 'Editing file...',
-      bgColor: 'bg-blue-50',
-      gradientBg: 'from-blue-50 to-blue-100',
-      borderColor: 'border-blue-200',
-      badgeColor: 'bg-blue-100 text-blue-700 border-blue-200',
-      hoverColor: 'hover:bg-blue-100',
+      bgColor: 'bg-zinc-50 dark:bg-zinc-900',
+      gradientBg: 'from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-800',
+      borderColor: 'border-zinc-200 dark:border-zinc-700',
+      badgeColor: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
+      hoverColor: 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
   },
   rewrite: {
     icon: Replace,
-      color: 'text-amber-600',
+      color: 'text-zinc-700 dark:text-zinc-300',
     successMessage: 'File rewritten successfully',
     progressMessage: 'Rewriting file...',
-      bgColor: 'bg-amber-50',
-      gradientBg: 'from-amber-50 to-amber-100',
-      borderColor: 'border-amber-200',
-      badgeColor: 'bg-amber-100 text-amber-700 border-amber-200',
-      hoverColor: 'hover:bg-amber-100',
+      bgColor: 'bg-zinc-50 dark:bg-zinc-900',
+      gradientBg: 'from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-800',
+      borderColor: 'border-zinc-200 dark:border-zinc-700',
+      badgeColor: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
+      hoverColor: 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
   },
   delete: {
     icon: Trash2,
-      color: 'text-red-600',
+      color: 'text-zinc-700 dark:text-zinc-300',
     successMessage: 'File deleted successfully',
     progressMessage: 'Deleting file...',
-      bgColor: 'bg-red-50',
-      gradientBg: 'from-red-50 to-red-100',
-      borderColor: 'border-red-200',
-      badgeColor: 'bg-red-100 text-red-700 border-red-200',
-      hoverColor: 'hover:bg-red-100',
+      bgColor: 'bg-zinc-50 dark:bg-zinc-900',
+      gradientBg: 'from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-800',
+      borderColor: 'border-zinc-200 dark:border-zinc-700',
+      badgeColor: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
+      hoverColor: 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
   },
   'str-replace': {
     icon: Replace,
-    color: 'text-blue-600',
+    color: 'text-zinc-700 dark:text-zinc-300',
     successMessage: 'String replaced successfully',
     progressMessage: 'Replacing string...',
-    bgColor: 'bg-blue-50',
-    gradientBg: 'from-blue-50 to-blue-100',
-    borderColor: 'border-blue-200',
-    badgeColor: 'bg-blue-100 text-blue-700 border-blue-200',
-    hoverColor: 'hover:bg-blue-100',
+    bgColor: 'bg-zinc-50 dark:bg-zinc-900',
+    gradientBg: 'from-zinc-50 to-zinc-100 dark:from-zinc-900 dark:to-zinc-800',
+    borderColor: 'border-zinc-200 dark:border-zinc-700',
+    badgeColor: 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700',
+    hoverColor: 'hover:bg-zinc-100 dark:hover:bg-zinc-800',
   },
   };
 };
@@ -378,19 +378,23 @@ export const getFileIcon = (fileName: string): LucideIcon => {
 };
 
 export const processFilePath = (filePath: string | null): string | null => {
-  return filePath
-    ? filePath.trim().replace(/\\n/g, '\n').split('\n')[0]
-    : null;
+  if (!filePath) return null;
+  // Trim whitespace, remove escaped newlines, split by actual newlines and take first line
+  // Then trim again to ensure no trailing whitespace
+  const processed = filePath.trim().replace(/\\n/g, '\n').split('\n')[0].trim();
+  return processed || null;
 };
 
 export const getFileName = (processedFilePath: string | null): string => {
-  return processedFilePath
-    ? processedFilePath.split('/').pop() || processedFilePath
-    : '';
+  if (!processedFilePath) return '';
+  const fileName = processedFilePath.split('/').pop() || processedFilePath;
+  // Trim whitespace, newlines, and other control characters
+  return fileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
 };
 
 export const getFileExtension = (fileName: string): string => {
-  return fileName.split('.').pop()?.toLowerCase() || '';
+  const trimmed = fileName.trim();
+  return trimmed.split('.').pop()?.toLowerCase() || '';
 };
 
 export const isFileType = {

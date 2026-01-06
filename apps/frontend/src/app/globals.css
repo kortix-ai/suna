@@ -329,12 +329,12 @@
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    font-feature-settings: 'salt' on, 'ss10' on, 'ss09' on, 'ss01' on, 'ss02' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
+    font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
   }
   body {
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply bg-background text-foreground;
-    font-feature-settings: 'salt' on, 'ss10' on, 'ss09' on, 'ss01' on, 'ss02' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
+    font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
   }
 
   /* Add font fallbacks for CJK characters */

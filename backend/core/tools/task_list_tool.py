@@ -402,9 +402,21 @@ class TaskListTool(SandboxToolsBase):
                         sections = json.loads(sections)
                         logger.debug(f"✅ Parsed sections from JSON string: {len(sections) if isinstance(sections, list) else 'not a list'} items")
                     except json.JSONDecodeError as e:
-                        logger.error(f"❌ Failed to parse sections JSON: {e}")
-                        logger.error(f"❌ Raw value (first 500 chars): {repr(sections[:500])}")
-                        return ToolResult(success=False, output=f"❌ Invalid JSON in sections parameter: {str(e)}")
+                        # Try to repair malformed JSON from LLM
+                        from core.utils.json_helpers import repair_json
+                        repaired, was_repaired = repair_json(sections)
+                        if was_repaired:
+                            try:
+                                sections = json.loads(repaired)
+                                logger.info(f"🔧 Repaired sections JSON successfully: {len(sections) if isinstance(sections, list) else 'not a list'} items")
+                            except json.JSONDecodeError as e2:
+                                logger.error(f"❌ Failed to parse sections JSON even after repair: {e2}")
+                                logger.error(f"❌ Raw value (first 500 chars): {repr(sections[:500])}")
+                                return ToolResult(success=False, output=f"❌ Invalid JSON in sections parameter: {str(e)}. Repair also failed: {str(e2)}")
+                        else:
+                            logger.error(f"❌ Failed to parse sections JSON: {e}")
+                            logger.error(f"❌ Raw value (first 500 chars): {repr(sections[:500])}")
+                            return ToolResult(success=False, output=f"❌ Invalid JSON in sections parameter: {str(e)}")
                 
                 # Validate that sections is a list after parsing
                 if not isinstance(sections, list):
@@ -426,7 +438,17 @@ class TaskListTool(SandboxToolsBase):
                 try:
                     task_contents = json.loads(task_contents)
                 except json.JSONDecodeError as e:
-                    return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents parameter: {str(e)}")
+                    # Try to repair malformed JSON
+                    from core.utils.json_helpers import repair_json
+                    repaired, was_repaired = repair_json(task_contents)
+                    if was_repaired:
+                        try:
+                            task_contents = json.loads(repaired)
+                            logger.info(f"🔧 Repaired task_contents JSON successfully")
+                        except json.JSONDecodeError as e2:
+                            return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents parameter: {str(e)}. Repair also failed.")
+                    else:
+                        return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents parameter: {str(e)}")
                 
                 # Validate that task_contents is a list after parsing
                 if not isinstance(task_contents, list):

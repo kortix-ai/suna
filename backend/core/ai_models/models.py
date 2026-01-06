@@ -162,9 +162,12 @@ class Model:
     def get_litellm_params(self, **override_params) -> Dict[str, Any]:
         """Get complete LiteLLM parameters for this model, including all configuration."""
         # Start with intelligent defaults
+        # Note: Keep num_retries low for streaming - retries are expensive for LLM calls
+        # and can cause massive delays if the provider is slow/unresponsive
         params = {
             "model": self.litellm_model_id,
-            "num_retries": 5,
+            "num_retries": 1,  # Reduced from 5 to prevent 5x delay on failures
+            "timeout": 120,   # 2 minute timeout to fail fast instead of hanging
         }
         
         # Apply model-specific configuration if available

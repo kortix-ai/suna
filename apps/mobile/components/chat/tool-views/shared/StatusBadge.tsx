@@ -2,7 +2,8 @@ import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { CheckCircle2, AlertCircle, Loader2, LucideIcon, AlertTriangle } from 'lucide-react-native';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { CheckCircle2, AlertCircle, LucideIcon, AlertTriangle } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 
 interface StatusBadgeProps {
@@ -44,7 +45,8 @@ export function StatusBadge({
           bg: isDark ? 'bg-blue-900/60' : 'bg-blue-100',
           text: isDark ? 'text-blue-300' : 'text-blue-700',
           border: isDark ? 'border-blue-800/50' : 'border-blue-200',
-          defaultIcon: Loader2,
+          defaultIcon: null, // Uses KortixLoader for streaming
+          isStreaming: true,
         };
       case 'warning':
         return {
@@ -82,12 +84,8 @@ export function StatusBadge({
           borderRadius: 12,
         }}
       >
-        {IconComponent === Loader2 ? (
-          <Icon
-            as={Loader2}
-            size={14}
-            className={`${styles.text} animate-spin`}
-          />
+        {(styles as any).isStreaming ? (
+          <KortixLoader size="small" customSize={14} />
         ) : IconComponent ? (
           <Icon
             as={IconComponent}
@@ -103,12 +101,8 @@ export function StatusBadge({
     <View
       className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full border ${styles.bg} ${styles.border} ${className}`}
     >
-      {IconComponent === Loader2 ? (
-        <Icon
-          as={Loader2}
-          size={14}
-          className={`${styles.text} animate-spin`}
-        />
+      {(styles as any).isStreaming ? (
+        <KortixLoader size="small" customSize={14} />
       ) : IconComponent ? (
         <Icon
           as={IconComponent}

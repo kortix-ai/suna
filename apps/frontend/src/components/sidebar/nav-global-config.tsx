@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Zap, BookOpen, ChevronRight, Plus, Clock, PlugZap, Loader2 } from 'lucide-react';
+import { Zap, BookOpen, ChevronRight, Plus, Clock, PlugZap } from 'lucide-react';
 import { useSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 import { SpotlightCard } from '@/components/ui/spotlight-card';

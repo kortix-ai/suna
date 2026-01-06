@@ -7,11 +7,9 @@ export const siteConfig = {
   url: process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000',
   nav: {
     links: [
-      { id: 1, name: 'Home', href: '#hero' },
-      { id: 2, name: 'Process', href: '#process' },
-      { id: 4, name: 'Open Source', href: '#open-source' },
-      { id: 5, name: 'Pricing', href: '#pricing' },
-      { id: 6, name: 'Enterprise', href: '/enterprise' },
+      { id: 1, name: 'Home', href: '/' },
+      { id: 2, name: 'About', href: '/about' },
+      { id: 3, name: 'Careers', href: '/careers' },
     ],
   },
   hero: {
@@ -23,41 +21,26 @@ export const siteConfig = {
     {
       title: 'Kortix',
       links: [
-        { id: 1, title: 'About', url: 'https://www.kortix.com' },
-        { id: 3, title: 'Contact', url: 'mailto:hey@kortix.com' },
-        { id: 4, title: 'Careers', url: 'https://www.kortix.com/careers' },
+        { id: 1, title: 'About', url: '/about' },
+        { id: 2, title: 'Careers', url: '/careers' },
+        { id: 3, title: 'Support', url: '/support' },
+        { id: 4, title: 'Contact', url: 'mailto:hey@kortix.com' },
       ],
     },
     {
       title: 'Resources',
       links: [
-        {
-          id: 5,
-          title: 'Documentation',
-          url: 'https://github.com/kortix-ai/suna',
-        },
-        { id: 7, title: 'Discord', url: 'https://discord.gg/Py6pCBUUPw' },
-        { id: 8, title: 'GitHub', url: 'https://github.com/kortix-ai/suna' },
+        { id: 5, title: 'Documentation', url: 'https://github.com/kortix-ai/suna' },
+        { id: 6, title: 'Discord', url: 'https://discord.gg/Py6pCBUUPw' },
+        { id: 7, title: 'GitHub', url: 'https://github.com/kortix-ai/suna' },
       ],
     },
     {
       title: 'Legal',
       links: [
-        {
-          id: 9,
-          title: 'Privacy Policy',
-          url: 'https://www.kortix.com/legal?tab=privacy',
-        },
-        {
-          id: 10,
-          title: 'Terms of Service',
-          url: 'https://www.kortix.com/legal?tab=terms',
-        },
-        {
-          id: 11,
-          title: 'License',
-          url: 'https://github.com/kortix-ai/suna/blob/main/LICENSE',
-        },
+        { id: 8, title: 'Privacy Policy', url: '/legal?tab=privacy' },
+        { id: 9, title: 'Terms of Service', url: '/legal?tab=terms' },
+        { id: 10, title: 'License', url: 'https://github.com/kortix-ai/suna/blob/main/LICENSE' },
       ],
     },
   ],

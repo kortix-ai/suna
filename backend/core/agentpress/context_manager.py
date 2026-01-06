@@ -51,13 +51,14 @@ def _get_bedrock_client_singleton():
 class ContextManager:
     """Manages thread context including token counting and summarization."""
     
-    def __init__(self, token_threshold: int = DEFAULT_TOKEN_THRESHOLD):
+    def __init__(self, token_threshold: int = DEFAULT_TOKEN_THRESHOLD, db=None):
         """Initialize the ContextManager.
         
         Args:
             token_threshold: Token count threshold to trigger summarization
+            db: Optional DBConnection instance to reuse (avoids creating new ones)
         """
-        self.db = DBConnection()
+        self.db = db if db is not None else DBConnection()
         self.token_threshold = token_threshold
         # Tool output management
         self.keep_recent_tool_outputs = 5  # Number of recent tool outputs to preserve

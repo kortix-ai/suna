@@ -1,7 +1,8 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import { CircleDashed, Minimize2, Maximize2, Wifi, Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging } from 'lucide-react';
+import { Minimize2, Maximize2, Wifi, Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
 import { DrawerTitle } from '@/components/ui/drawer';
 import { ViewType } from '@/stores/kortix-computer-store';
@@ -204,7 +205,7 @@ export const PanelHeader = memo(function PanelHeader({
       <div className="flex items-center justify-end gap-2">
         {isStreaming && (
           <div className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-primary/10 text-primary flex items-center gap-1">
-            <CircleDashed className="h-2.5 w-2.5 animate-spin" />
+            <KortixLoader size="small" />
             <span>Running</span>
           </div>
         )}

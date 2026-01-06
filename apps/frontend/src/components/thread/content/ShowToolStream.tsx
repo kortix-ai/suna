@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from 'react';
-import { CircleDashed } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
@@ -559,7 +559,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                     <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
                     <span className="font-mono text-xs text-foreground truncate">Generate Media</span>
                     {!isCompleted && (
-                        <CircleDashed className="h-3.5 w-3.5 text-muted-foreground shrink-0 animate-spin ml-1" />
+                        <KortixLoader size="small" className="ml-1" />
                     )}
                 </button>
 
@@ -617,7 +617,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                         <span className="font-mono text-xs text-foreground flex-1">{displayName}</span>
                         {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                         {!isCompleted && (
-                            <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-auto" />
+                            <KortixLoader size="small" className="ml-auto" />
                         )}
                     </button>
 
@@ -720,7 +720,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 <span className="font-mono text-xs text-foreground truncate">{displayName}</span>
                 {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
                 {!isCompleted && (
-                    <CircleDashed className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0 animate-spin animation-duration-2000 ml-1" />
+                    <KortixLoader size="small" className="ml-1" />
                 )}
             </button>
         </div>

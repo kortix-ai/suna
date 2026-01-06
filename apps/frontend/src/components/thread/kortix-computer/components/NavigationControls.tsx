@@ -35,8 +35,8 @@ export const NavigationControls = memo(function NavigationControls({
   isMobile = false,
 }: NavigationControlsProps) {
   const renderStatusButton = useCallback(() => {
-    const baseClasses = "flex items-center justify-center gap-1.5 px-2 py-0.5 rounded-full w-[116px]";
-    const dotClasses = "w-1.5 h-1.5 rounded-full";
+    const baseClasses = "flex items-center justify-center gap-1.5 px-2.5 py-0.5 rounded-full whitespace-nowrap";
+    const dotClasses = "w-1.5 h-1.5 rounded-full flex-shrink-0";
     const textClasses = "text-xs font-medium";
 
     if (isLiveMode) {
@@ -72,11 +72,11 @@ export const NavigationControls = memo(function NavigationControls({
       } else {
         return (
           <div
-            className={`${baseClasses} bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer`}
+            className={`${baseClasses} bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors cursor-pointer`}
             onClick={onJumpToLatest}
           >
-            <div className={`${dotClasses} bg-blue-500`} />
-            <span className={`${textClasses} text-blue-700 dark:text-blue-400`}>Jump to Latest</span>
+            <div className={`${dotClasses} bg-zinc-500`} />
+            <span className={`${textClasses} text-zinc-700 dark:text-zinc-300`}>Jump to Latest</span>
           </div>
         );
       }

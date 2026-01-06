@@ -2,7 +2,8 @@
 
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Check, Plus, Download, CheckCircle, Loader2, Globe, GlobeLock, GitBranch, Trash2, MoreVertical, User, ArrowRight } from 'lucide-react';
+import { Check, Plus, Download, CheckCircle, Globe, GlobeLock, GitBranch, Trash2, MoreVertical, User, ArrowRight } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -599,7 +600,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
             >
               {isActioning ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  <KortixLoader size="small" className="mr-2" />
                   Installing...
                 </>
               ) : (
@@ -647,7 +648,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
             >
               {isActioning ? (
                 <>
-                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <KortixLoader size="small" />
                   {data.is_public ? 'Unpublishing...' : 'Publishing...'}
                 </>
               ) : (
@@ -724,7 +725,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
               >
                 {isActioning ? (
                   <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <KortixLoader size="small" />
                     Deleting...
                   </>
                 ) : (

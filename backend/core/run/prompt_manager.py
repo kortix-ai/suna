@@ -77,12 +77,11 @@ class PromptManager:
             logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
         
         # Start parallel fetch tasks
-        kb_task = PromptManager._fetch_knowledge_base(agent_config, client)
-        user_context_task = PromptManager._fetch_user_context_data(user_id, client)
+        kb_task = PromptManager._with_timeout(PromptManager._fetch_knowledge_base(agent_config, client), 2.0, "KB fetch")
+        user_context_task = PromptManager._with_timeout(PromptManager._fetch_user_context_data(user_id, client), 2.0, "User context")
         memory_task = PromptManager._fetch_user_memories(user_id, thread_id, client)
         file_task = PromptManager._fetch_file_context(thread_id)
         
-        # Get agent_id for fresh config loading
         agent_id = agent_config.get('agent_id') if agent_config else None
         
         # Skip MCP tools for orchestrator (they only delegate)
@@ -97,6 +96,27 @@ class PromptManager:
             
             system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         
+        t_mcp = time.time()
+        fresh_mcp_config = None
+        if agent_config and (agent_config.get('custom_mcps') or agent_config.get('configured_mcps')):
+            fresh_mcp_config = {
+                'custom_mcp': agent_config.get('custom_mcps', []),
+                'configured_mcps': agent_config.get('configured_mcps', []),
+                'account_id': user_id
+            }
+            logger.debug(f"⏱️ [PROMPT TIMING] MCP config from agent_config (no re-fetch): 0.0ms")
+        else:
+            logger.debug(f"⏱️ [PROMPT TIMING] No MCP config in agent_config: 0.0ms")
+        
+        t3 = time.time()
+        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, fresh_mcp_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_mcp_tools_info: {(time.time() - t3) * 1000:.1f}ms")
+        
+        t4 = time.time()
+        system_content = await PromptManager._append_jit_mcp_info(system_content, mcp_loader, fresh_mcp_config)
+        logger.debug(f"⏱️ [PROMPT TIMING] _append_jit_mcp_info: {(time.time() - t4) * 1000:.1f}ms")
+        
+        system_content = PromptManager._append_xml_tool_calling_instructions(system_content, xml_tool_calling, tool_registry)
         system_content = PromptManager._append_datetime_info(system_content)
         
         t5 = time.time()
@@ -125,6 +145,27 @@ class PromptManager:
             return system_message, {"role": "user", "content": "\n\n".join(context_parts)}
         
         return system_message, None
+    
+    @staticmethod
+    async def _with_timeout(coro, timeout_s: float, label: str):
+        try:
+            return await asyncio.wait_for(coro, timeout_s)
+        except asyncio.TimeoutError:
+            logger.warning(f"[TIMEOUT] {label} timed out after {timeout_s}s")
+            return None
+        except Exception as e:
+            logger.warning(f"[TIMEOUT] {label} failed: {e}")
+            return None
+    
+    @staticmethod
+    async def _fetch_mcp_config(agent_id: str, user_id: str) -> Optional[dict]:
+        try:
+            from core.versioning.version_service import get_version_service
+            version_service = await get_version_service()
+            return await version_service.get_current_mcp_config(agent_id, user_id)
+        except Exception as e:
+            logger.warning(f"Failed to fetch MCP config: {e}")
+            return None
     
     @staticmethod
     def _build_base_prompt(system_content: str, use_dynamic_tools: bool) -> str:
@@ -279,24 +320,13 @@ class PromptManager:
     
     @staticmethod
     async def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper], 
-                                     agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
-        fresh_mcp_config = None
-        if agent_id and user_id:
-            try:
-                # Get standardized config directly from version service - no mapping needed
-                from core.versioning.version_service import get_version_service
-                version_service = await get_version_service()
-                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
-                
-                if fresh_mcp_config:
-                    logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config from current version: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
-                    # Map to the format this method expects (custom_mcps vs custom_mcp)
-                    agent_config = {
-                        'configured_mcps': fresh_mcp_config.get('configured_mcps', []),
-                        'custom_mcps': fresh_mcp_config.get('custom_mcp', [])  # Map custom_mcp to custom_mcps for this method
-                    }
-            except Exception as e:
-                logger.warning(f"Failed to load fresh MCP config, using provided config: {e}")
+                                     fresh_mcp_config: Optional[dict] = None) -> str:
+        if fresh_mcp_config:
+            logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
+            agent_config = {
+                'configured_mcps': fresh_mcp_config.get('configured_mcps', []),
+                'custom_mcps': fresh_mcp_config.get('custom_mcp', [])
+            }
         
         if not (agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized):
             return system_content
@@ -346,68 +376,51 @@ class PromptManager:
         return system_content + mcp_info
     
     @staticmethod
-    async def _append_jit_mcp_info(system_content: str, mcp_loader, agent_id: Optional[str] = None, user_id: Optional[str] = None) -> str:
+    async def _append_jit_mcp_info(system_content: str, mcp_loader, fresh_mcp_config: Optional[dict] = None) -> str:
         toolkit_tools = {}
         
-        if agent_id and user_id:
-            try:
-                from core.versioning.version_service import get_version_service
-                version_service = await get_version_service()
-                fresh_mcp_config = await version_service.get_current_mcp_config(agent_id, user_id)
+        if fresh_mcp_config:
+            custom_mcps = fresh_mcp_config.get('custom_mcp', [])
+            configured_mcps = fresh_mcp_config.get('configured_mcps', [])
+            
+            for mcp in custom_mcps:
+                mcp_name = mcp.get('name', 'unknown')
+                toolkit_slug = mcp.get('toolkit_slug', '')
+                enabled_tools = mcp.get('enabledTools', [])
+                mcp_type = mcp.get('type') or mcp.get('customType', '')
                 
-                if fresh_mcp_config:
-                    custom_mcps = fresh_mcp_config.get('custom_mcp', [])
-                    configured_mcps = fresh_mcp_config.get('configured_mcps', [])
+                if enabled_tools:
+                    if mcp_type in ('sse', 'http', 'json'):
+                        display_name = mcp_name.upper().replace(' ', '_')
+                    else:
+                        display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
                     
-                    for mcp in custom_mcps:
-                        mcp_name = mcp.get('name', 'unknown')
-                        toolkit_slug = mcp.get('toolkit_slug', '')
-                        enabled_tools = mcp.get('enabledTools', [])
-                        mcp_type = mcp.get('type') or mcp.get('customType', '')
-                        
-                        if enabled_tools:
-                            if mcp_type in ('sse', 'http', 'json'):
-                                display_name = mcp_name.upper().replace(' ', '_')
-                            else:
-                                display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
-                            
-                            if display_name not in toolkit_tools:
-                                toolkit_tools[display_name] = []
-                            
-                            for tool in enabled_tools:
-                                if tool not in toolkit_tools[display_name]:
-                                    toolkit_tools[display_name].append(tool)
+                    if display_name not in toolkit_tools:
+                        toolkit_tools[display_name] = []
                     
-                    for mcp in configured_mcps:
-                        mcp_name = mcp.get('name', 'unknown')
-                        toolkit_slug = mcp.get('toolkit_slug', '')
-                        enabled_tools = mcp.get('enabledTools', [])
-                        qualified_name = mcp.get('qualifiedName', '')
-                        
-                        if not toolkit_slug and qualified_name:
-                            toolkit_slug = qualified_name.split('.')[-1]
-                        
-                        if enabled_tools:
-                            display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
-                            
-                            if display_name not in toolkit_tools:
-                                toolkit_tools[display_name] = []
-                            
-                            for tool in enabled_tools:
-                                if tool not in toolkit_tools[display_name]:
-                                    toolkit_tools[display_name].append(tool)
+                    for tool in enabled_tools:
+                        if tool not in toolkit_tools[display_name]:
+                            toolkit_tools[display_name].append(tool)
+            
+            for mcp in configured_mcps:
+                mcp_name = mcp.get('name', 'unknown')
+                toolkit_slug = mcp.get('toolkit_slug', '')
+                enabled_tools = mcp.get('enabledTools', [])
+                qualified_name = mcp.get('qualifiedName', '')
+                
+                if not toolkit_slug and qualified_name:
+                    toolkit_slug = qualified_name.split('.')[-1]
+                
+                if enabled_tools:
+                    display_name = toolkit_slug.upper() if toolkit_slug else mcp_name.upper().replace(' ', '_')
                     
-                    if mcp_loader:
-                        try:
-                            await mcp_loader.rebuild_tool_map(fresh_mcp_config)
-                            logger.debug(f"🔄 [MCP JIT] Updated loader with current version config")
-                        except Exception as e:
-                            logger.warning(f"Failed to update mcp_loader (non-critical): {e}")
-                else:
-                    logger.warning(f"🔍 [MCP-PROMPT-DIRECT] ❌ No fresh config returned from version service")
-            except Exception as e:
-                logger.warning(f"Failed to load MCP config from version service: {e}")
-        
+                    if display_name not in toolkit_tools:
+                        toolkit_tools[display_name] = []
+                    
+                    for tool in enabled_tools:
+                        if tool not in toolkit_tools[display_name]:
+                            toolkit_tools[display_name].append(tool)
+            
         if not toolkit_tools:
             logger.debug("⚡ [MCP PROMPT] No toolkit tools found, skipping JIT MCP info")
             return system_content

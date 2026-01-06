@@ -445,8 +445,8 @@ export const AppDock = memo(function AppDock({
                   className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium whitespace-nowrap text-white"
                 >
                   <div className={cn(
-                    "w-1.5 h-1.5 rounded-full",
-                    agentStatus === 'running' ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]" : "bg-sky-400 shadow-[0_0_8px_rgba(56,189,248,0.6)]"
+                    "w-1.5 h-1.5 rounded-full flex-shrink-0",
+                    agentStatus === 'running' ? "bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.6)]" : "bg-zinc-400 shadow-[0_0_8px_rgba(161,161,170,0.6)]"
                   )} />
                   <span>{agentStatus === 'running' ? 'Jump to Live' : 'Jump to Latest'}</span>
                 </button>

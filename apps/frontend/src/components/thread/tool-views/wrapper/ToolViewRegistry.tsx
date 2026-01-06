@@ -85,6 +85,7 @@ import { RealityDefenderToolView } from '../reality-defender-tool/RealityDefende
 import { ApifyToolView } from '../apify-tool/ToolView';
 import { FileReaderToolView } from '../file-reader-tool/FileReaderToolView';
 import { SubAgentToolView } from '../sub-agent/SubAgentToolView';
+import { InitializeToolsToolView } from '../initialize-tools/InitializeToolsToolView';
 
 
 export type ToolViewComponent = React.ComponentType<ToolViewProps>;
@@ -92,6 +93,10 @@ export type ToolViewComponent = React.ComponentType<ToolViewProps>;
 type ToolViewRegistryType = Record<string, ToolViewComponent>;
 
 const defaultRegistry: ToolViewRegistryType = {
+  // Initialization tools
+  'initialize-tools': InitializeToolsToolView,
+  'initialize_tools': InitializeToolsToolView,
+
   'browser-navigate-to': BrowserToolView,
   'browser-act': BrowserToolView,
   'browser-extract-content': BrowserToolView,
@@ -116,7 +121,7 @@ const defaultRegistry: ToolViewRegistryType = {
 
   'str-replace': FileOperationToolView,
 
-  
+
   'people-search': PeopleSearchToolView,
   'company-search': CompanySearchToolView,
   'crawl-webpage': WebCrawlToolView,
@@ -354,15 +359,15 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
 
   // Get file path directly from tool call arguments (from metadata)
   const filePath = toolCall?.arguments?.file_path || toolCall?.arguments?.target_file || toolCall?.arguments?.canvas_path;
-  
+
   // Emit canvas refresh for ANY tool with canvas_path that completes successfully
   const canvasPath = toolCall?.arguments?.canvas_path;
   const toolCallId = (toolCall as any)?.tool_call_id;
-  
+
   useEffect(() => {
     // Only emit once per tool call
     if (!toolCallId || canvasRefreshedToolCalls.has(toolCallId)) return;
-    
+
     // Only emit if there's a canvas_path and tool completed successfully
     if (canvasPath && toolResult?.success) {
       console.log('[CANVAS_LIVE_DEBUG] ToolView emitting canvas refresh for:', {
@@ -371,13 +376,13 @@ export function ToolView({ toolCall, toolResult, ...props }: ToolViewProps) {
         toolCallId,
       });
       canvasRefreshedToolCalls.add(toolCallId);
-      
+
       // Store in pending events queue for canvas-renderer to pick up
       const pendingEvents = (window as any).__pendingCanvasRefreshEvents as Map<string, number> | undefined;
       if (pendingEvents) {
         pendingEvents.set(canvasPath, Date.now());
       }
-      
+
       // Small delay to ensure file is written
       setTimeout(() => {
         window.dispatchEvent(new CustomEvent('canvas-tool-updated', {

@@ -52,8 +52,8 @@ export function getToolTitle(toolName: string): string {
     'load-image': 'Load Image',
 
 
-    'initialize-tools': 'Initializing Tools',
-    'initialize_tools': 'Initializing Tools',
+    'initialize-tools': 'Mode Activated',
+    'initialize_tools': 'Mode Activated',
 
     
     'ask': 'Ask',

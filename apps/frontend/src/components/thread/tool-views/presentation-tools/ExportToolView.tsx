@@ -15,6 +15,8 @@ import { toast } from '@/lib/toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { useAuth } from '@/components/AuthProvider';
 import { useDownloadRestriction } from '@/hooks/billing';
 import { cn } from '@/lib/utils';
@@ -159,7 +161,9 @@ export function ExportToolView({
       setDownloadingFormat(format);
       
       const config = formatConfigs[format];
-      const filename = exportData.download_url.split('/').pop() || `presentation${config.defaultExtension}`;
+      const rawFilename = exportData.download_url.split('/').pop() || `presentation${config.defaultExtension}`;
+      // Trim whitespace, newlines, and other control characters
+      const filename = rawFilename.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '') || `presentation${config.defaultExtension}`;
       
       const headers: Record<string, string> = {};
       if (session?.access_token) {
@@ -238,15 +242,8 @@ export function ExportToolView({
       <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col overflow-hidden bg-card">
         <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
           <div className="flex flex-row items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
-                <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-              </div>
-              <CardTitle className="text-base font-medium">
-                {presentationName || 'Export Presentation'}
-              </CardTitle>
-            </div>
-            <Badge className="h-6 bg-gradient-to-b from-blue-200 to-blue-100 text-blue-700 dark:from-blue-800/50 dark:to-blue-900/60 dark:text-blue-300 border-0">
+            <ToolViewIconTitle icon={Presentation} title={presentationName || 'Export Presentation'} />
+            <Badge className="h-6 bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 border-0">
               <KortixLoader customSize={12} className="mr-1" />
               Exporting
             </Badge>
@@ -268,14 +265,7 @@ export function ExportToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="relative p-2 rounded-lg bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
-              <Presentation className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
-            </div>
-            <CardTitle className="text-base font-medium">
-              {presentationName || 'Export Presentation'}
-            </CardTitle>
-          </div>
+          <ToolViewIconTitle icon={Presentation} title={presentationName || 'Export Presentation'} />
         </div>
       </CardHeader>
 

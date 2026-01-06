@@ -548,7 +548,7 @@ export const KortixComputer = memo(function KortixComputer({
             <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
               <div className="relative">
                 <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                  <CircleDashed className="h-8 w-8 text-blue-500 dark:text-blue-400 animate-spin" />
+                  <KortixLoader size="medium" />
                 </div>
               </div>
               <div className="space-y-2">

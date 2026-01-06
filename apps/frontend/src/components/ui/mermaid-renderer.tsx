@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Maximize2, X, ZoomIn, ZoomOut, RotateCcw } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 
 // Global cache for rendered Mermaid diagrams
 const mermaidCache = new Map<string, string>();
@@ -491,7 +492,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
       )}>
         <div className="text-center">
           <div className="text-sm text-muted-foreground mb-2">🎨 Rendering Mermaid diagram...</div>
-          <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary mx-auto"></div>
+          <KortixLoader size="medium" />
         </div>
       </div>
     );
@@ -717,7 +718,7 @@ export const MermaidRenderer: React.FC<MermaidRendererProps> = React.memo(({
                 <div className="flex items-center justify-center h-full w-full">
                   <div className="text-center">
                     <div className="text-sm text-muted-foreground mb-2">🎨 Loading fullscreen diagram...</div>
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+                    <KortixLoader size="medium" />
                   </div>
                 </div>
               )}

@@ -1,189 +1,330 @@
 import React, { useState } from 'react';
 import {
   FileText,
-  CheckCircle,
   AlertTriangle,
   Copy,
-  ChevronDown,
-  ChevronRight,
-  FileType,
   Files,
-  Check,
+  CheckCircle2,
   Search,
+  FileCode,
+  FileImage,
+  FileSpreadsheet,
+  File,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
-import { formatTimestamp } from '../utils';
-import { truncateString, cn } from '@/lib/utils';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { LoadingState } from '../shared/LoadingState';
+import { KortixLoader } from '@/components/ui/kortix-loader';
+import { ToolViewHeader } from '../shared/ToolViewHeader';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
+import { getToolTitle } from '../utils';
 import { extractFileReaderData, FileReadResult, SearchHit } from './_utils';
+import { toast } from '@/lib/toast';
 
-function getFileIcon(fileType?: string, isSearch?: boolean) {
-  const colorClass = isSearch ? "text-blue-500" : "text-emerald-500";
-  switch (fileType) {
-    case 'pdf':
-      return <FileType className={cn("w-4 h-4", colorClass)} />;
-    case 'doc':
-    case 'docx':
-      return <FileType className={cn("w-4 h-4", colorClass)} />;
-    default:
-      return <FileText className={cn("w-4 h-4", colorClass)} />;
-  }
-}
+const getFileIcon = (fileName: string) => {
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
+  if (['pdf'].includes(ext)) return FileText;
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg'].includes(ext)) return FileImage;
+  if (['csv', 'xlsx', 'xls'].includes(ext)) return FileSpreadsheet;
+  if (['js', 'ts', 'jsx', 'tsx', 'py', 'html', 'css', 'json'].includes(ext)) return FileCode;
+  return File;
+};
 
-interface UnifiedCardProps {
-  filename: string;
-  content?: string;
-  success?: boolean;
-  error?: string;
-  fileType?: string;
-  contentLength?: number;
-  truncated?: boolean;
-  isSearch?: boolean;
-  defaultExpanded?: boolean;
-  metadata?: string;
-}
+const getFileExtension = (filename: string) => {
+  const trimmed = filename.trim();
+  return trimmed.split('.').pop()?.toUpperCase() || '';
+};
 
-function UnifiedResultCard({
-  filename,
-  content,
-  success = true,
-  error,
-  fileType,
-  contentLength,
-  truncated,
-  isSearch = false,
-  defaultExpanded = true,
-  metadata,
-}: UnifiedCardProps) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+function SingleFileView({ result }: { result: FileReadResult }) {
   const [copied, setCopied] = useState(false);
-
-  const hasContent = success && content;
+  const rawFilename = result.file_path.split('/').pop() || result.file_path;
+  const filename = rawFilename.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
+  const fileExt = getFileExtension(filename);
+  const FileIcon = getFileIcon(filename);
 
   const copyToClipboard = async () => {
-    if (!content) return;
+    if (!result.content) return;
     try {
-      await navigator.clipboard.writeText(content);
+      await navigator.clipboard.writeText(result.content);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy:', err);
+      toast.success('Copied to clipboard');
+    } catch {
+      toast.error('Failed to copy');
+    }
+  };
+
+  if (!result.success) {
+    return (
+      <div className="flex items-center gap-4 p-4">
+        <div className="relative flex-shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-red-50 dark:bg-red-950/30 flex items-center justify-center border border-red-100 dark:border-red-900/50">
+            <AlertTriangle className="h-5 w-5 text-red-500 dark:text-red-400" />
+          </div>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+            {filename}
+          </p>
+          <p className="text-xs text-red-500 dark:text-red-400 mt-0.5 line-clamp-2">
+            {result.error || 'Failed to read file'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-full flex flex-col p-4 space-y-4">
+      {/* File Header */}
+      <div className="flex items-start gap-4 flex-shrink-0">
+        <div className="relative flex-shrink-0">
+          <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50">
+            <FileIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          </div>
+          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
+            <CheckCircle2 className="h-3 w-3 text-white" />
+          </div>
+        </div>
+        
+        <div className="flex-1 min-w-0 space-y-2">
+          <div>
+            <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+              {filename}
+            </p>
+            <div className="flex items-center gap-2 mt-1">
+              {fileExt && (
+                <Badge variant="secondary" className="h-5 px-1.5 text-[10px] font-medium bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                  {fileExt}
+                </Badge>
+              )}
+              {result.content_length !== undefined && (
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                  {result.content_length.toLocaleString()} chars
+                </span>
+              )}
+              {result.truncated && (
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+                  Truncated
+                </Badge>
+              )}
+            </div>
+          </div>
+          
+          {result.content && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={copyToClipboard}
+              className={cn(
+                "h-8 text-xs transition-colors",
+                copied && "text-emerald-600 dark:text-emerald-400"
+              )}
+            >
+              {copied ? (
+                <>
+                  <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                  Copied
+                </>
+              ) : (
+                <>
+                  <Copy className="h-3.5 w-3.5 mr-1.5" />
+                  Copy Content
+                </>
+              )}
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* File Content - Takes remaining space */}
+      {result.content && (
+        <div className="bg-zinc-50 dark:bg-zinc-900 rounded-lg border border-zinc-200 dark:border-zinc-800 overflow-hidden flex-1 min-h-0">
+          <ScrollArea className="h-full w-full">
+            <pre className="px-4 py-3 text-sm whitespace-pre-wrap break-words text-zinc-700 dark:text-zinc-300 font-mono">
+              {result.content}
+            </pre>
+          </ScrollArea>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function BatchFileView({ results }: { results: FileReadResult[] }) {
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(results.length === 1 ? 0 : null);
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const copyToClipboard = async (content: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000);
+      toast.success('Copied to clipboard');
+    } catch {
+      toast.error('Failed to copy');
     }
   };
 
   return (
-    <Card className="overflow-hidden transition-all duration-200 hover:bg-muted/20">
-      <div
-        className={cn(
-          "flex items-center gap-3 px-4 transition-colors",
-          hasContent ? "cursor-pointer" : ""
-        )}
-        onClick={() => hasContent && setExpanded(!expanded)}
-      >
-        <div className="flex items-center gap-2 flex-1 min-w-0">
-          {hasContent ? (
-            expanded
-              ? <ChevronDown className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-              : <ChevronRight className="w-4 h-4 text-zinc-400 flex-shrink-0" />
-          ) : (
-            <div className="w-4" />
-          )}
-          {getFileIcon(fileType, isSearch)}
-          <span className="font-medium text-sm truncate text-zinc-900 dark:text-zinc-100">
-            {filename}
-          </span>
-          {metadata && (
-            <span className="text-xs text-zinc-400 dark:text-zinc-500 hidden sm:inline">
-              {metadata}
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
-          {!success && (
-            <span className="text-xs text-red-500 dark:text-red-400 max-w-[150px] truncate">
-              {error || 'Failed'}
-            </span>
-          )}
-          {truncated && (
-            <Badge variant="outline" className="text-xs text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
-              Truncated
-            </Badge>
-          )}
-          {hasContent && (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    className="h-7 px-2" 
-                    onClick={(e) => { e.stopPropagation(); copyToClipboard(); }}
+    <div className="p-4 space-y-2">
+      {results.map((result, idx) => {
+        const rawFilename = result.file_path.split('/').pop() || result.file_path;
+        const filename = rawFilename.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
+        const FileIcon = getFileIcon(filename);
+        const isExpanded = expandedIndex === idx;
+
+        return (
+          <div
+            key={result.file_path + idx}
+            className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
+          >
+            <div
+              className="flex items-center gap-3 px-4 py-3 cursor-pointer"
+              onClick={() => setExpandedIndex(isExpanded ? null : idx)}
+            >
+              <FileIcon className="h-4 w-4 text-zinc-500 dark:text-zinc-400 flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                  {filename}
+                </p>
+                {result.success && result.content_length !== undefined && (
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                    {result.content_length.toLocaleString()} chars
+                  </p>
+                )}
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {result.success ? (
+                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                ) : (
+                  <AlertTriangle className="h-4 w-4 text-red-500" />
+                )}
+              </div>
+            </div>
+            
+            {isExpanded && result.content && (
+              <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900">
+                <div className="p-4 flex items-center justify-between border-b border-zinc-200 dark:border-zinc-800">
+                  <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wide">
+                    Content
+                  </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      copyToClipboard(result.content!, idx);
+                    }}
+                    className={cn(
+                      "h-7 text-xs",
+                      copiedIndex === idx && "text-emerald-600 dark:text-emerald-400"
+                    )}
                   >
-                    {copied ? <Check className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+                    {copiedIndex === idx ? (
+                      <>
+                        <CheckCircle2 className="h-3 w-3 mr-1.5" />
+                        Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="h-3 w-3 mr-1.5" />
+                        Copy
+                      </>
+                    )}
                   </Button>
-                </TooltipTrigger>
-                <TooltipContent>Copy content</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-          {success ? (
-            <CheckCircle className="w-4 h-4 text-emerald-500" />
-          ) : (
-            <AlertTriangle className="w-4 h-4 text-red-500" />
-          )}
-        </div>
-      </div>
-      {expanded && hasContent && (
-        <div className="border-t border-zinc-100 dark:border-zinc-800">
-          <div className="max-h-[400px] overflow-auto">
-            <pre className="px-4 py-3 text-sm whitespace-pre-wrap break-words text-muted-foreground">
-              {content}
-            </pre>
+                </div>
+                <ScrollArea className="h-[400px] w-full">
+                  <pre className="px-4 py-3 text-sm whitespace-pre-wrap break-words text-zinc-700 dark:text-zinc-300 font-mono">
+                    {result.content}
+                  </pre>
+                </ScrollArea>
+              </div>
+            )}
           </div>
-        </div>
-      )}
-    </Card>
+        );
+      })}
+    </div>
   );
 }
 
-function SearchResultCard({ hit, index }: { hit: SearchHit; index: number }) {
-  const filename = hit.file.split('/').pop() || hit.file;
+function SearchResultsView({ hits }: { hits: SearchHit[] }) {
+  const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+  const copyToClipboard = async (content: string, index: number) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000);
+      toast.success('Copied to clipboard');
+    } catch {
+      toast.error('Failed to copy');
+    }
+  };
 
   return (
-    <UnifiedResultCard
-      filename={filename}
-      content={hit.content}
-      isSearch={true}
-      defaultExpanded={true}
-    />
-  );
-}
+    <div className="p-4 space-y-3">
+      {hits.map((hit, idx) => {
+        const rawFilename = hit.file.split('/').pop() || hit.file;
+        const filename = rawFilename.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
+        const FileIcon = getFileIcon(filename);
 
-function FileResultCard({ result, defaultExpanded = false }: { result: FileReadResult; defaultExpanded?: boolean }) {
-  const filename = result.file_path.split('/').pop() || result.file_path;
-  
-  const metadata = result.success && result.content_length !== undefined
-    ? `${result.content_length.toLocaleString()} chars`
-    : undefined;
-
-  return (
-    <UnifiedResultCard
-      filename={filename}
-      content={result.content}
-      success={result.success}
-      error={result.error}
-      fileType={result.file_type}
-      contentLength={result.content_length}
-      truncated={result.truncated}
-      isSearch={false}
-      defaultExpanded={defaultExpanded}
-      metadata={metadata}
-    />
+        return (
+          <div
+            key={`${hit.file}-${idx}`}
+            className="border border-zinc-200 dark:border-zinc-800 rounded-lg overflow-hidden bg-white dark:bg-zinc-950 hover:bg-zinc-50 dark:hover:bg-zinc-900 transition-colors"
+          >
+            <div className="p-4 space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50 flex-shrink-0">
+                  <FileIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate flex-1">
+                  {filename}
+                </p>
+                {hit.score > 0 && (
+                  <Badge variant="outline" className="text-xs bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+                    {hit.score.toFixed(2)}
+                  </Badge>
+                )}
+              </div>
+              
+              <div className="bg-zinc-50 dark:bg-zinc-900 rounded border border-zinc-200 dark:border-zinc-800 p-3">
+                <p className="text-sm text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words">
+                  {hit.content}
+                </p>
+              </div>
+              
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => copyToClipboard(hit.content, idx)}
+                className={cn(
+                  "h-8 text-xs w-full transition-colors",
+                  copiedIndex === idx && "text-emerald-600 dark:text-emerald-400"
+                )}
+              >
+                {copiedIndex === idx ? (
+                  <>
+                    <CheckCircle2 className="h-3.5 w-3.5 mr-1.5" />
+                    Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy className="h-3.5 w-3.5 mr-1.5" />
+                    Copy Content
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
 
@@ -217,125 +358,127 @@ export function FileReaderToolView({
     assistantTimestamp
   );
 
-  const successCount = results.filter(r => r.success).length;
-  const failCount = results.filter(r => !r.success).length;
-  
-  const displayTitle = isSearch
-    ? `Search: "${truncateString(searchData?.query || '', 25)}"`
-    : isBatch
-      ? `Reading ${filePaths.length} files`
-      : truncateString(filePaths[0]?.split('/').pop() || 'File', 30);
+  const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
+  const toolTitle = getToolTitle(name);
 
-  const iconBgClass = isSearch ? "bg-blue-500/20 border-blue-500/20" : "bg-emerald-500/20 border-emerald-500/20";
-  const iconTextClass = isSearch ? "text-blue-600 dark:text-blue-400" : "text-emerald-600 dark:text-emerald-400";
+  const getCleanFileName = (filePath: string) => {
+    const raw = filePath.split('/').pop() || filePath;
+    return raw.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
+  };
+
+  const displayTitle = isSearch
+    ? searchData?.query || 'File Search'
+    : isBatch
+      ? `${filePaths.length} files`
+      : getCleanFileName(filePaths[0] || 'File');
+
+  const HeaderIcon = isSearch ? Search : isBatch ? Files : FileText;
+  const successCount = results.filter(r => r.success).length;
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
-      <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
-        <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className={cn("relative p-2 rounded-xl border", iconBgClass)}>
-              {isSearch ? (
-                <Search className={cn("w-5 h-5", iconTextClass)} />
-              ) : isBatch ? (
-                <Files className={cn("w-5 h-5", iconTextClass)} />
-              ) : (
-                <FileText className={cn("w-5 h-5", iconTextClass)} />
-              )}
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {displayTitle}
-              </CardTitle>
-            </div>
-          </div>
-
-          {!isStreaming && isSearch && searchData && (
-            <Badge variant="secondary" className="bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-              <Search className="h-3 w-3 mr-1" />
-              {searchData.totalHits} results
-            </Badge>
-          )}
-        </div>
-      </CardHeader>
+      <ToolViewHeader icon={HeaderIcon} title={toolTitle}>
+        {!isStreaming && isSearch && searchData && (
+          <Badge variant="outline" className="text-xs font-normal bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
+            <Search className="h-3 w-3 mr-1" />
+            {searchData.totalHits} {searchData.totalHits === 1 ? 'result' : 'results'}
+          </Badge>
+        )}
+        {!isStreaming && isBatch && results.length > 0 && (
+          <Badge variant="outline" className="text-xs font-normal">
+            {successCount}/{results.length} successful
+          </Badge>
+        )}
+      </ToolViewHeader>
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
         {isStreaming ? (
-          <LoadingState
-            icon={isSearch ? Search : FileText}
-            iconColor={isSearch ? "text-blue-500 dark:text-blue-400" : "text-emerald-500 dark:text-emerald-400"}
-            bgColor={isSearch ? "bg-blue-500/10" : "bg-emerald-500/10"}
-            title={isSearch ? 'Searching files...' : isBatch ? `Reading ${filePaths.length} files...` : 'Reading file...'}
-            filePath={isSearch ? searchData?.query : isBatch ? `${filePaths.length} files` : filePaths[0]}
-            showProgress={true}
-          />
+          <div className="flex items-center gap-4 p-4">
+            <div className="relative">
+              <div className="w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center">
+                <HeaderIcon className="h-5 w-5 text-zinc-400" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-700">
+                <KortixLoader customSize={12} />
+              </div>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate">
+                {displayTitle}
+              </p>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">
+                {isSearch ? 'Searching...' : isBatch ? `Reading ${filePaths.length} files...` : 'Reading file...'}
+              </p>
+            </div>
+          </div>
         ) : isSearch && searchData ? (
-          <ScrollArea className="h-full w-full">
-            <div className="p-4 space-y-3">
-              {searchData.results.length > 0 ? (
-                searchData.results.map((hit, idx) => (
-                  <SearchResultCard key={`${hit.file}-${idx}`} hit={hit} index={idx} />
-                ))
-              ) : (
-                <div className="text-center py-8 text-zinc-500">
-                  No matching content found
-                </div>
-              )}
+          searchData.results.length > 0 ? (
+            <ScrollArea className="h-full w-full">
+              <SearchResultsView hits={searchData.results} />
+            </ScrollArea>
+          ) : (
+            <div className="flex flex-col items-center justify-center h-full py-12 px-6">
+              <div className="w-16 h-16 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
+                <Search className="h-8 w-8 text-zinc-400" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
+                No results found
+              </h3>
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
+                No matching content found for "{searchData.query}"
+              </p>
             </div>
-          </ScrollArea>
+          )
         ) : results.length > 0 ? (
-          <ScrollArea className="h-full w-full">
-            <div className="p-4 space-y-3">
-              {results.map((result, idx) => (
-                <FileResultCard
-                  key={result.file_path + idx}
-                  result={result}
-                  defaultExpanded={results.length === 1}
-                />
-              ))}
+          results.length === 1 ? (
+            <div className="h-full flex flex-col">
+              <SingleFileView result={results[0]} />
             </div>
-          </ScrollArea>
+          ) : (
+            <ScrollArea className="h-full w-full">
+              <BatchFileView results={results} />
+            </ScrollArea>
+          )
         ) : (
-          <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-muted/20">
-            <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center mb-4">
-              <FileText className="h-8 w-8 text-muted-foreground" />
+          <div className="flex flex-col items-center justify-center h-full py-12 px-6">
+            <div className="w-16 h-16 rounded-xl bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4">
+              <FileText className="h-8 w-8 text-zinc-400" />
             </div>
-            <h3 className="text-lg font-semibold mb-2">No Results</h3>
-            <p className="text-sm text-muted-foreground text-center">
+            <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
+              No results
+            </h3>
+            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
               {filePaths.length > 0
-                ? `Waiting to process: ${filePaths.join(', ')}`
+                ? `Waiting to process: ${filePaths.map(getCleanFileName).join(', ')}`
                 : 'No file path specified'}
             </p>
           </div>
         )}
       </CardContent>
 
-      <div className="px-4 py-2 h-10 bg-muted/30 backdrop-blur-sm border-t flex justify-between items-center gap-4">
-        <div className="flex items-center gap-2">
-          <Badge variant="outline" className={cn(
-            "text-xs",
-            isSearch 
-              ? "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800"
-              : "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800"
-          )}>
-            {isSearch ? <Search className="h-3 w-3 mr-1" /> : <FileText className="h-3 w-3 mr-1" />}
-            {isSearch ? 'File Search' : 'File Reader'}
+      <ToolViewFooter
+        assistantTimestamp={actualAssistantTimestamp || undefined}
+        toolTimestamp={actualToolTimestamp || undefined}
+        isStreaming={isStreaming}
+      >
+        {!isStreaming && results.length > 0 && (
+          <Badge variant="outline" className="h-6 py-0.5 bg-zinc-100 dark:bg-zinc-800">
+            {isSearch ? (
+              <>
+                <Search className="h-3 w-3 mr-1 text-zinc-600 dark:text-zinc-400" />
+                <span className="text-zinc-600 dark:text-zinc-400">Search</span>
+              </>
+            ) : (
+              <>
+                <FileText className="h-3 w-3 mr-1 text-zinc-600 dark:text-zinc-400" />
+                <span className="text-zinc-600 dark:text-zinc-400">
+                  {results.length === 1 ? 'Read' : `${results.length} files`}
+                </span>
+              </>
+            )}
           </Badge>
-          {!isSearch && isBatch && results.length > 0 && (
-            <Badge variant="outline" className="text-xs">
-              {results.length} file{results.length !== 1 ? 's' : ''}
-            </Badge>
-          )}
-        </div>
-
-        <div className="text-xs text-muted-foreground">
-          {actualToolTimestamp && !isStreaming
-            ? formatTimestamp(actualToolTimestamp)
-            : actualAssistantTimestamp
-              ? formatTimestamp(actualAssistantTimestamp)
-              : ''}
-        </div>
-      </div>
+        )}
+      </ToolViewFooter>
     </Card>
   );
 }

@@ -28,9 +28,9 @@ SUNA_CONFIG = {
         "sb_presentation_tool": True,
         "sb_kb_tool": True,
 
-        # search tools
-        "people_search_tool": True,
-        "company_search_tool": True,
+        # search tools (disabled - exa-py removed due to openai 2.x incompatibility)
+        "people_search_tool": False,
+        "company_search_tool": False,
 
         "browser_tool": True,
         

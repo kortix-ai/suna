@@ -5,6 +5,8 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { cn } from '@/lib/utils';
 import { getToolTitle } from '../utils';
 import { useVapiCallRealtime } from '@/hooks/integrations';
@@ -297,13 +299,13 @@ export function MonitorCallToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className={cn(
-              "relative p-2 rounded-xl bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 border border-indigo-500/20",
+              "relative p-2 rounded-lg border bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 flex-shrink-0",
               isActive && "animate-pulse"
             )}>
               {isActive ? (
                 <KortixLoader customSize={20} />
               ) : (
-                <StatusIcon className="w-5 h-5 text-indigo-500 dark:text-indigo-400" />
+                <StatusIcon className="w-5 h-5 text-zinc-700 dark:text-zinc-300" />
               )}
             </div>
             <div className="flex items-center gap-2">
@@ -312,8 +314,8 @@ export function MonitorCallToolView({
               </CardTitle>
               {isActive && (
                 <span className="flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-red-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                  <span className="animate-ping absolute inline-flex h-2 w-2 rounded-full bg-zinc-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-500"></span>
                 </span>
               )}
             </div>

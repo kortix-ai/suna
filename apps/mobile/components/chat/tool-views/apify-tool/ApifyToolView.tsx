@@ -7,7 +7,6 @@ import {
   Globe,
   CheckCircle,
   AlertTriangle,
-  Loader2,
   Search,
   Info,
   Play,

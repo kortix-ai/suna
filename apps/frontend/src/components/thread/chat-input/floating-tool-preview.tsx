@@ -1,5 +1,6 @@
 import React from 'react';
-import { CircleDashed, Maximize2 } from 'lucide-react';
+import { Maximize2 } from 'lucide-react';
+import { KortixLoader } from '@/components/ui/kortix-loader';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -93,7 +94,7 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
           <div className="flex-shrink-0">
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
               {isStreaming ? (
-                <CircleDashed className="h-5 w-5 text-zinc-500 dark:text-zinc-400 animate-spin" />
+                <KortixLoader size="small" />
               ) : (
                 <CurrentToolIcon className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
               )}

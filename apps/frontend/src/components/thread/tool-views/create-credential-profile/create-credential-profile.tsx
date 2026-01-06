@@ -19,6 +19,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { LoadingState } from '../shared/LoadingState';
+import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
+import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { Separator } from "@/components/ui/separator";
 import { extractCreateCredentialProfileData, CredentialProfile } from './_utils';
 
@@ -86,17 +88,7 @@ export function CreateCredentialProfileToolView({
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20">
-              <UserPlus className="w-5 h-5 text-green-500 dark:text-green-400" />
-            </div>
-            <div>
-              <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
-                {toolTitle}
-              </CardTitle>
-            </div>
-          </div>
-
+          <ToolViewIconTitle icon={UserPlus} title={toolTitle} />
           {!isStreaming && (
             <Badge
               variant="secondary"

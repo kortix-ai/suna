@@ -575,8 +575,8 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     icon: Settings,
     iconColor: 'text-purple-600',
     iconBgColor: 'bg-purple-50',
-    subtitle: 'Tools',
-    defaultTitle: 'Tools Initialized',
+    subtitle: 'Mode',
+    defaultTitle: 'Mode Activated',
   },
 
   // Agent Tool
