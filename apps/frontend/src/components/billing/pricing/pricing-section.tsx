@@ -1112,7 +1112,7 @@ export function PricingSection({
 
   // Find the index of the user's current tier to pre-select it
   const getCurrentTierIndex = () => {
-    if (!isAuthenticated || !currentSubscription) return 1; // Default to Pro plan (index 1)
+    if (!isAuthenticated || !currentSubscription?.subscription) return 1; // Default to Pro plan (index 1)
     const currentTierKey = currentSubscription.subscription.tier_key || currentSubscription.tier?.name;
     const index = paidTiers.findIndex(tier => tier.tierKey === currentTierKey);
     return index >= 0 ? index : 1; // Default to Pro plan (index 1) if tier not found
@@ -1123,7 +1123,7 @@ export function PricingSection({
 
   // Update selected tier when subscription data loads
   React.useEffect(() => {
-    if (isAuthenticated && currentSubscription) {
+    if (isAuthenticated && currentSubscription?.subscription) {
       const currentTierKey = currentSubscription.subscription.tier_key || currentSubscription.tier?.name;
       const index = paidTiers.findIndex(tier => tier.tierKey === currentTierKey);
       if (index >= 0) {
@@ -1131,7 +1131,7 @@ export function PricingSection({
       }
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isAuthenticated, currentSubscription?.subscription.tier_key, currentSubscription?.tier?.name]);
+  }, [isAuthenticated, currentSubscription?.subscription?.tier_key, currentSubscription?.tier?.name]);
 
   const handlePlanSelect = (planId: string) => {
     setPlanLoadingStates((prev) => ({ ...prev, [planId]: true }));
@@ -1306,7 +1306,7 @@ export function PricingSection({
 
         {(() => {
           // Only show holiday promo for FREE tier users (not authenticated or on free tier)
-          const isFreeTier = !isAuthenticated || !accountState || 
+          const isFreeTier = !isAuthenticated || !accountState?.subscription || 
             accountState.subscription.tier_key === 'free' || 
             accountState.subscription.tier_key === 'none' ||
             (accountState.tier?.monthly_credits ?? 0) === 0;

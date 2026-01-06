@@ -1018,11 +1018,12 @@ function BillingTab({ returnUrl, onOpenPlanModal, isActive }: { returnUrl: strin
         );
     }
 
-    const subStatus = accountState?.subscription.status;
+    const subscription = accountState?.subscription;
+    const subStatus = subscription?.status;
     const isSubscribed = subStatus === 'active' || subStatus === 'trialing';
-    const isFreeTier = accountState?.subscription.tier_key === 'free' || accountState?.subscription.tier_key === 'none';
-    const isCancelled = accountState?.subscription.is_cancelled || accountState?.subscription.cancel_at_period_end;
-    const canPurchaseCredits = accountState?.subscription.can_purchase_credits || false;
+    const isFreeTier = subscription?.tier_key === 'free' || subscription?.tier_key === 'none';
+    const isCancelled = subscription?.is_cancelled || subscription?.cancel_at_period_end;
+    const canPurchaseCredits = subscription?.can_purchase_credits || false;
 
     return (
         <div className="p-4 sm:p-6 space-y-6 sm:space-y-8 min-w-0 max-w-full overflow-x-hidden">
