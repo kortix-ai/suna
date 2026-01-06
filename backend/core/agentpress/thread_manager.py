@@ -336,14 +336,21 @@ class ThreadManager:
                 return validated_cached
         
         from core.services.supabase import execute_with_reconnect
+        import asyncio
+        
+        # Timeout for message queries (seconds) - fail fast on connection issues
+        MESSAGE_QUERY_TIMEOUT = 10.0
         
         try:
             all_messages = []
             
             if lightweight:
-                result = await execute_with_reconnect(
-                    self.db,
-                    lambda client: client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
+                result = await asyncio.wait_for(
+                    execute_with_reconnect(
+                        self.db,
+                        lambda client: client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
+                    ),
+                    timeout=MESSAGE_QUERY_TIMEOUT
                 )
                 
                 if result.data:
@@ -354,9 +361,12 @@ class ThreadManager:
                 
                 while True:
                     # Capture offset in lambda default arg to avoid closure issues
-                    result = await execute_with_reconnect(
-                        self.db,
-                        lambda client, _offset=offset: client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(_offset, _offset + batch_size - 1).execute()
+                    result = await asyncio.wait_for(
+                        execute_with_reconnect(
+                            self.db,
+                            lambda client, _offset=offset: client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(_offset, _offset + batch_size - 1).execute()
+                        ),
+                        timeout=MESSAGE_QUERY_TIMEOUT
                     )
                     
                     if not result.data:
@@ -438,9 +448,12 @@ class ThreadManager:
 
             return messages
 
+        except asyncio.TimeoutError:
+            logger.error(f"⏱️ Timeout getting messages for thread {thread_id} after {MESSAGE_QUERY_TIMEOUT}s - connection pool likely exhausted")
+            raise
         except Exception as e:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
-            return []
+            raise
     
     async def thread_has_images(self, thread_id: str) -> bool:
         """
