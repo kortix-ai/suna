@@ -363,19 +363,38 @@ async def make_llm_api_call(
     call_start = time_module.monotonic()
     
     try:
+        import psutil
+        cpu_at_start = psutil.cpu_percent(interval=None)
+        mem_at_start = psutil.Process().memory_info().rss / 1024 / 1024
+    except Exception:
+        cpu_at_start = None
+        mem_at_start = None
+    
+    try:
         _save_debug_input(params)
         
         actual_model = params.get("model", model_name)
         msg_count = len(params.get("messages", []))
         tool_count = len(params.get("tools", []) or [])
         
+        if LLM_DEBUG and cpu_at_start is not None:
+            logger.debug(f"[LLM] Starting call: model={model_name} cpu={cpu_at_start}% mem={mem_at_start:.0f}MB")
+        
         if stream:
             response = await provider_router.acompletion(**params)
             ttft = time_module.monotonic() - call_start
             
-            # Log TTFT with warning threshold
             if ttft > 30.0:
-                logger.error(f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name}")
+                try:
+                    import psutil
+                    cpu_now = psutil.cpu_percent(interval=None)
+                    mem_now = psutil.Process().memory_info().rss / 1024 / 1024
+                    logger.error(
+                        f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} "
+                        f"cpu_start={cpu_at_start}% cpu_now={cpu_now}% mem_start={mem_at_start:.0f}MB mem_now={mem_now:.0f}MB"
+                    )
+                except Exception:
+                    logger.error(f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name}")
             elif ttft > 10.0:
                 logger.warning(f"[LLM] ⚠️ SLOW TTFT: {ttft:.2f}s for {model_name}")
             elif LLM_DEBUG:
