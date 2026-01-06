@@ -321,9 +321,8 @@ async def make_llm_api_call(
     # Handle MiniMax models (both direct API and OpenRouter)
     is_minimax = "minimax" in actual_model_id.lower()
     if is_minimax:
-        params["reasoning"] = {"enabled": True}
+        params["reasoning"] = {"enabled": False}
         params["reasoning_split"] = True
-        # avoid showing reasoning tokens in plain content
         
         # Add fallback to glm-4.6v if minimax doesn't support image input
         # This handles NotFoundError for image input specifically
