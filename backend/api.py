@@ -411,7 +411,7 @@ async def debug_endpoint(
     - **worker**: Stream worker status and health check
     """
     try:
-        from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+        from core.worker.stream_info import get_stream_info, CONSUMER_GROUP
         from core.worker.tasks import StreamName
         
         if type == "worker":

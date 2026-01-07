@@ -38,7 +38,7 @@ def check_imports_directly():
         "from core.services.supabase import DBConnection",
         "from core.agents.runs import router",
         "from core.threads.api import router", 
-        "from core.worker.handlers import get_handlers",
+        "from core.worker.background_tasks import start_memory_extraction",
         "from core.agents.runs import _load_agent_config",
     ]
     

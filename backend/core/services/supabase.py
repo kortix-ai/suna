@@ -18,16 +18,49 @@ import asyncio
 # Each service (PostgREST, Storage) gets its own client to avoid base_url conflicts.
 # =============================================================================
 
-# Connection limits (per worker process)
+# Connection limits (per API instance)
 # HTTP/2 has a hard limit of 100 concurrent streams per connection
 # To avoid "Max outbound streams" errors, we either need:
 # - More connections (spread load across multiple HTTP/2 connections)
 # - Or disable HTTP/2 (use HTTP/1.1 with separate connections)
-# With worker concurrency of 48, we need enough connections to avoid stream exhaustion
-# Each agent run makes ~10+ concurrent DB calls, so 48 * 10 = 480 potential concurrent requests
-SUPABASE_MAX_CONNECTIONS = 250  # Increased from 120 to handle high concurrency bursts
-SUPABASE_MAX_KEEPALIVE = 150    # Increased proportionally
+# Each agent run makes ~10-20 concurrent DB calls
+# Auto-scale connection pool based on concurrency: (concurrent_runs * 20) + buffer
+def _calculate_db_connections() -> int:
+    """Calculate optimal DB connection pool size based on concurrency."""
+    import multiprocessing
+    
+    cpu_count = multiprocessing.cpu_count()
+    
+    # Try to detect available memory to estimate concurrency (same logic as agent runs)
+    try:
+        import psutil
+        available_memory_gb = psutil.virtual_memory().total / (1024**3)
+        memory_per_run_gb = 0.2  # 200MB per run
+        # Use 75% of memory limit (same safety factor as agent runs)
+        safety_factor = 0.75
+        estimated_concurrent = int((available_memory_gb / memory_per_run_gb) * safety_factor)
+    except:
+        # Fallback: use CPU-based estimate (conservative)
+        estimated_concurrent = int(cpu_count * 7.5)  # 75% of CPU * 10
+    
+    # Each run uses ~10-20 DB connections, add 50% buffer for bursts
+    connections_needed = int(estimated_concurrent * 20 * 1.5)
+    
+    # PostgreSQL can handle 1000+ connections, but cap at 1500 for safety
+    # With 32 vCPUs, 128GB RAM: 480 concurrent * 20 * 1.5 = 14,400 connections needed
+    # Cap at 1500 for practical reasons (connection overhead, leave headroom)
+    return min(max(connections_needed, 250), 1500)
+
+SUPABASE_MAX_CONNECTIONS = int(os.getenv('SUPABASE_MAX_CONNECTIONS', str(_calculate_db_connections())))
+SUPABASE_MAX_KEEPALIVE = int(SUPABASE_MAX_CONNECTIONS * 0.6)  # 60% of max connections
 SUPABASE_KEEPALIVE_EXPIRY = 60.0  # 60s keepalive
+
+# Log DB connection settings on module load
+if not os.getenv('SUPABASE_MAX_CONNECTIONS'):
+    import multiprocessing
+    logger.info(f"🔌 Auto-detected DB connections: {SUPABASE_MAX_CONNECTIONS} max connections (CPU count: {multiprocessing.cpu_count()})")
+else:
+    logger.info(f"🔌 Using configured DB connections: {SUPABASE_MAX_CONNECTIONS} max connections")
 
 # Timeout settings (in seconds) - increased for stability under load
 SUPABASE_CONNECT_TIMEOUT = 10.0   # TCP connect

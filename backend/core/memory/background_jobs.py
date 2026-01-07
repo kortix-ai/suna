@@ -4,30 +4,30 @@ from typing import List, Dict, Any
 
 
 async def extract_memories(thread_id: str, account_id: str, message_ids: List[str]):
-    """Dispatch memory extraction task."""
+    """Start memory extraction task."""
     from core.utils.config import config
     if not config.ENABLE_MEMORY:
         return
-    from core.worker import dispatch_memory_extraction
-    await dispatch_memory_extraction(thread_id, account_id, message_ids)
+    from core.worker.background_tasks import start_memory_extraction
+    start_memory_extraction(thread_id, account_id, message_ids)
 
 
 async def embed_memories(account_id: str, thread_id: str, memories: List[Dict[str, Any]]):
-    """Dispatch memory embedding task."""
+    """Start memory embedding task."""
     from core.utils.config import config
     if not config.ENABLE_MEMORY:
         return
-    from core.worker import dispatch_memory_embedding
-    await dispatch_memory_embedding(account_id, thread_id, memories)
+    from core.worker.background_tasks import start_memory_embedding
+    start_memory_embedding(account_id, thread_id, memories)
 
 
 async def consolidate_memories(account_id: str):
-    """Dispatch memory consolidation task."""
+    """Start memory consolidation task."""
     from core.utils.config import config
     if not config.ENABLE_MEMORY:
         return
-    from core.worker import dispatch_memory_consolidation
-    await dispatch_memory_consolidation(account_id)
+    from core.worker.background_tasks import start_memory_consolidation
+    start_memory_consolidation(account_id)
 
 
 # Backwards-compatible wrappers with .send() interface

@@ -19,14 +19,30 @@ from core.run.config import AgentConfig
 from core.run.tool_manager import ToolManager
 from core.run.mcp_manager import MCPManager
 from core.run.prompt_manager import PromptManager
-from core.worker.helpers import stream_status_message, ensure_project_metadata_cached
 
 load_dotenv()
 
 # Dedicated executor for setup_tools to prevent queue saturation
 # Production showed 1-6 minute queue waits when sharing default executor with other tasks
-# Separation is the key fix; thread count can be tuned based on monitoring
-_SETUP_TOOLS_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="setup_tools")
+# Separation is the key fix; thread count scales with CPU count
+def _calculate_thread_pool_size() -> int:
+    """Calculate optimal thread pool size based on CPU count."""
+    import multiprocessing
+    cpu_count = multiprocessing.cpu_count()
+    
+    # Thread pool for blocking I/O operations
+    # Scale with CPU count: 1-2 threads per CPU for I/O-bound work
+    # With 32 vCPUs: 32 threads
+    return max(cpu_count, 16)  # Minimum 16, scale with CPU
+
+_SETUP_TOOLS_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_calculate_thread_pool_size(), 
+    thread_name_prefix="setup_tools"
+)
+
+# Log thread pool size
+import multiprocessing
+logger.info(f"🔧 Thread pool size: {_calculate_thread_pool_size()} workers (CPU count: {multiprocessing.cpu_count()})")
 
 # Type variable for generic timeout wrapper
 T = TypeVar('T')
@@ -60,6 +76,9 @@ class AgentRunner:
     
     async def setup(self):
         """Unified setup method - single clean path, no bootstrap/enrichment split."""
+        # Lazy import to avoid circular dependency
+        from core.agents.executor import stream_status_message
+        
         setup_start = time.time()
         
         await stream_status_message("initializing", "Starting setup...")
@@ -120,6 +139,9 @@ class AgentRunner:
         
         # Ensure project metadata is cached (non-blocking if already cached)
         # TIMEOUT: Was causing 60s+ hangs due to lazy migrations - now skips migration on timeout
+        # Lazy import to avoid circular dependency
+        from core.agents.executor import ensure_project_metadata_cached
+        
         project_meta_start = time.time()
         await with_timeout(
             ensure_project_metadata_cached(self.config.project_id, self.client),
@@ -236,6 +258,9 @@ class AgentRunner:
         await self.setup()
         logger.info(f"⏱️ [TIMING] AgentRunner.setup() completed in {(time.time() - setup_start) * 1000:.1f}ms")
         
+        # Lazy import to avoid circular dependency
+        from core.agents.executor import stream_status_message
+        
         parallel_start = time.time()
         await stream_status_message("initializing", "Registering tools...")
         setup_tools_task = asyncio.create_task(self._setup_tools_async())
@@ -259,6 +284,9 @@ class AgentRunner:
         
         tools_elapsed = (time.time() - parallel_start) * 1000
         logger.info(f"⏱️ [TIMING] Tool setup total: {tools_elapsed:.1f}ms")
+        
+        # Lazy import to avoid circular dependency
+        from core.agents.executor import stream_status_message
         
         await stream_status_message("initializing", "Building system prompt...")
         prompt_start = time.time()

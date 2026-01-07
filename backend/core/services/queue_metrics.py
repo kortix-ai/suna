@@ -50,7 +50,7 @@ async def get_queue_metrics() -> dict:
         - per-stream details
     """
     from core.services import redis
-    from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+    from core.worker.stream_info import get_stream_info, CONSUMER_GROUP
     from core.worker.tasks import StreamName
     
     try:
@@ -77,7 +77,7 @@ async def get_queue_metrics() -> dict:
         return {
             "queue_backlog": total_lag,  # USE FOR SCALING - messages waiting
             "in_progress": total_pending,  # Messages being processed
-            "pending_messages": total_pending,  # Deprecated alias
+            "pending_messages": total_pending,
             "streams": stream_details,
             "consumer_group": CONSUMER_GROUP,
             "timestamp": datetime.now(timezone.utc).isoformat()
@@ -116,13 +116,6 @@ async def publish_to_cloudwatch(queue_backlog: int, in_progress: int) -> bool:
                 {
                     # Tasks currently being processed
                     'MetricName': 'RedisStreamsInProgress',
-                    'Value': in_progress,
-                    'Unit': 'Count',
-                    'Dimensions': [{'Name': 'Service', 'Value': 'worker'}]
-                },
-                {
-                    # Deprecated - keep for backward compatibility during migration
-                    'MetricName': 'RedisStreamsPendingMessages',
                     'Value': in_progress,
                     'Unit': 'Count',
                     'Dimensions': [{'Name': 'Service', 'Value': 'worker'}]

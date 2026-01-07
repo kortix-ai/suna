@@ -482,17 +482,18 @@ CRITICAL: NEVER delete files without user confirmation:
 - The tool will fail if user_confirmed is False
 
 """
+from typing import Optional
 
+
+_STATIC_CORE_PROMPT: Optional[str] = None
 
 def get_core_system_prompt() -> str:
-    try:
-        from core.worker.helpers import _STATIC_CORE_PROMPT
-        if _STATIC_CORE_PROMPT:
-            return _STATIC_CORE_PROMPT
-    except (ImportError, AttributeError):
-        pass
+    global _STATIC_CORE_PROMPT
+    if _STATIC_CORE_PROMPT:
+        return _STATIC_CORE_PROMPT
     
-    return CORE_SYSTEM_PROMPT
+    _STATIC_CORE_PROMPT = CORE_SYSTEM_PROMPT
+    return _STATIC_CORE_PROMPT
 
 
 def get_dynamic_system_prompt(minimal_tool_index: str) -> str:

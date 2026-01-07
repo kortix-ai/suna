@@ -5,6 +5,7 @@ import uuid
 import os
 from datetime import datetime, timezone
 from typing import Optional, List, Tuple, Dict, Any
+import asyncio
 from fastapi import APIRouter, HTTPException, Depends, Query, Request, Body, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_user_id_from_stream_auth, verify_and_authorize_thread_access
@@ -14,7 +15,7 @@ from core.utils.config import config, EnvMode
 from core.services import redis
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
-from core.worker import dispatch_agent_run
+from core.agents.executor import execute_agent_run_direct
 
 from core.ai_models import model_manager
 
@@ -23,8 +24,71 @@ from core.services.supabase import DBConnection
 
 db = DBConnection()
 
-# Instance ID for distributed locking - unique per process
-instance_id = str(uuid.uuid4())[:8]
+# Try to import psutil for memory detection, fallback if not available
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    _HAS_PSUTIL = False
+
+# Concurrency control - auto-detect optimal concurrency based on CPU count and memory
+# Agent runs are I/O-bound (LLM API calls, DB queries), so we can handle way more than CPU count
+def _calculate_optimal_concurrency() -> int:
+    """Calculate optimal concurrency based on CPU count and available memory."""
+    import multiprocessing
+    
+    cpu_count = multiprocessing.cpu_count()
+    
+    # Try to detect available memory
+    if _HAS_PSUTIL:
+        try:
+            available_memory_gb = psutil.virtual_memory().total / (1024**3)
+        except Exception:
+            # Fallback: assume high-memory VPS if CPU count is high
+            available_memory_gb = cpu_count * 4  # Assume 4GB per CPU as minimum
+    else:
+        # Fallback: assume high-memory VPS if CPU count is high
+        available_memory_gb = cpu_count * 4  # Assume 4GB per CPU as minimum
+    
+    # Memory-based calculation: each run uses ~50-200MB (use 200MB for safety)
+    memory_per_run_gb = 0.2  # 200MB per run
+    max_by_memory = int(available_memory_gb / memory_per_run_gb)
+    
+    # Use 75% of memory limit to leave headroom for:
+    # - OS, Redis, PostgreSQL, and other system processes
+    # - Traffic spikes and burst handling
+    # - Error recovery and retries
+    # This is a good balance between performance and stability
+    safety_factor = 0.75
+    max_concurrency = int(max_by_memory * safety_factor)
+    
+    # Cap at 1500 for safety (even with huge VPS, leave headroom)
+    max_concurrency = min(max_concurrency, 1500)
+    
+    # Minimum of 10 for small instances
+    return max(max_concurrency, 10)
+
+# Allow override via env var, otherwise auto-calculate
+MAX_CONCURRENT_RUNS = int(os.getenv('MAX_CONCURRENT_AGENT_RUNS', str(_calculate_optimal_concurrency())))
+_run_semaphore = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
+
+# Log the concurrency setting on startup
+if not os.getenv('MAX_CONCURRENT_AGENT_RUNS'):
+    import multiprocessing
+    cpu_count = multiprocessing.cpu_count()
+    if _HAS_PSUTIL:
+        try:
+            available_memory_gb = psutil.virtual_memory().total / (1024**3)
+            logger.info(f"🚀 Auto-detected concurrency: {MAX_CONCURRENT_RUNS} concurrent runs (CPU: {cpu_count}, RAM: {available_memory_gb:.1f}GB)")
+        except Exception:
+            logger.info(f"🚀 Auto-detected concurrency: {MAX_CONCURRENT_RUNS} concurrent runs (CPU count: {cpu_count})")
+    else:
+        logger.info(f"🚀 Auto-detected concurrency: {MAX_CONCURRENT_RUNS} concurrent runs (CPU count: {cpu_count})")
+else:
+    logger.info(f"🚀 Using configured concurrency: {MAX_CONCURRENT_RUNS} concurrent runs")
+
+# Store cancellation events for stop mechanism (in-memory, per instance)
+_cancellation_events: Dict[str, asyncio.Event] = {}
 
 from core.utils.run_management import stop_agent_run_with_helpers as stop_agent_run
 from core.utils.project_helpers import generate_and_update_project_name
@@ -638,7 +702,7 @@ async def start_agent_run(
     t_parallel = time.time()
     
     async def load_config():
-        from core.worker.helpers import load_agent_config
+        from core.agents.config import load_agent_config
         return await load_agent_config(agent_id, account_id, user_id=account_id, client=client, is_new_thread=is_new_thread)
     
     async def check_limits():
@@ -855,27 +919,32 @@ async def start_agent_run(
                     logger.warning(f"Failed to inject image context: {e}")
         asyncio.create_task(insert_image_contexts())
     
-    # Dispatch agent run directly (removed _trigger_agent_background wrapper)
-    t_dispatch = time.time()
-    request_id = structlog.contextvars.get_contextvars().get('request_id')
-    worker_instance_id = str(uuid.uuid4())[:8]
+    # Execute agent run directly as async background task
+    t_execute = time.time()
+    cancellation_event = asyncio.Event()
+    _cancellation_events[agent_run_id] = cancellation_event
     
-    try:
-        entry_id = await dispatch_agent_run(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            instance_id=worker_instance_id,
-            project_id=project_id,
-            model_name=effective_model,
-            agent_id=agent_id,
-            account_id=account_id,
-            request_id=request_id,
-        )
-        logger.info(f"✅ Successfully dispatched agent run {agent_run_id} via Redis Streams (entry_id: {entry_id})")
-    except Exception as e:
-        logger.error(f"❌ Failed to dispatch agent run {agent_run_id} via Redis Streams: {e}", exc_info=True)
-        raise
-    logger.debug(f"⏱️ [TIMING] Worker dispatch: {(time.time() - t_dispatch) * 1000:.1f}ms")
+    async def execute_with_semaphore():
+        """Execute agent run with concurrency control."""
+        async with _run_semaphore:
+            try:
+                await execute_agent_run_direct(
+                    agent_run_id=agent_run_id,
+                    thread_id=thread_id,
+                    project_id=project_id,
+                    model_name=effective_model,
+                    agent_config=agent_config,
+                    account_id=account_id,
+                    cancellation_event=cancellation_event
+                )
+            finally:
+                # Clean up cancellation event
+                _cancellation_events.pop(agent_run_id, None)
+    
+    # Create background task - runs independently
+    execution_task = asyncio.create_task(execute_with_semaphore())
+    logger.info(f"✅ Started agent run {agent_run_id} as background task")
+    logger.debug(f"⏱️ [TIMING] Task creation: {(time.time() - t_execute) * 1000:.1f}ms")
     
     logger.info(f"⏱️ [TIMING] start_agent_run total: {(time.time() - t_start) * 1000:.1f}ms")
     
@@ -904,8 +973,7 @@ async def unified_agent_start(
     import time
     api_request_start = time.time()
     
-    if not instance_id:
-        raise HTTPException(status_code=500, detail="Worker API not initialized with instance ID")
+    # No instance_id needed - direct execution
     
     client = await db.client
     account_id = user_id

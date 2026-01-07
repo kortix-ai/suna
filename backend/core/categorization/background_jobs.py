@@ -2,15 +2,15 @@
 
 
 async def categorize(project_id: str):
-    """Dispatch project categorization task."""
-    from core.worker import dispatch_categorization
-    await dispatch_categorization(project_id)
+    """Start project categorization task."""
+    from core.worker.background_tasks import start_categorization
+    start_categorization(project_id)
 
 
 async def process_stale():
-    """Dispatch stale projects processing task."""
-    from core.worker import dispatch_stale_projects
-    await dispatch_stale_projects()
+    """Start stale projects processing task."""
+    from core.worker.background_tasks import start_stale_projects
+    start_stale_projects()
 
 
 # Backwards-compatible wrappers with .send() interface
@@ -33,9 +33,9 @@ class _DispatchWrapper:
 
 
 categorize_project = _DispatchWrapper(
-    lambda project_id: __import__('core.worker', fromlist=['dispatch_categorization']).dispatch_categorization(project_id)
+    lambda project_id: __import__('core.worker.background_tasks', fromlist=['start_categorization']).start_categorization(project_id)
 )
 
 process_stale_projects = _DispatchWrapper(
-    lambda: __import__('core.worker', fromlist=['dispatch_stale_projects']).dispatch_stale_projects()
+    lambda: __import__('core.worker.background_tasks', fromlist=['start_stale_projects']).start_stale_projects()
 )

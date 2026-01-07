@@ -49,13 +49,12 @@ async def get_worker_metrics() -> dict:
     Returns:
         dict with active_workers (consumers), busy_tasks, idle_tasks, utilization, etc.
     """
-    from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+    from core.worker.stream_info import get_stream_info, CONSUMER_GROUP
     from core.worker.tasks import StreamName
     
     try:
-        # Configuration: concurrency per worker container
-        # Each ECS task runs: `python run_worker.py --concurrency 48`
-        # Each container is a consumer in the consumer group
+        # Configuration: concurrency per API instance
+        # Agent runs execute directly in API process with semaphore control
         WORKER_CONCURRENCY = int(os.getenv("STREAM_WORKER_CONCURRENCY", "48"))
         
         stream_info = await get_stream_info()
@@ -127,10 +126,10 @@ async def get_worker_metrics() -> dict:
             "total_task_slots": total_task_slots,
             "busy_tasks": busy_tasks,
             "idle_tasks": idle_tasks,
-            "busy_threads": busy_tasks,  # Alias for backward compatibility
-            "idle_threads": idle_tasks,  # Alias for backward compatibility
+            "busy_threads": busy_tasks,
+            "idle_threads": idle_tasks,
             "utilization_percent": round(utilization_percent, 2),
-            "in_progress_tasks": busy_tasks,  # Alias for backward compatibility
+            "in_progress_tasks": busy_tasks,
             "tasks_per_worker": WORKER_CONCURRENCY,
             "total_pending_messages": total_pending,  # Total unacknowledged (includes stuck)
             "total_stream_length": total_length,
