@@ -2,7 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { FolderOpen, Upload, PanelRightOpen, PanelRightClose, Copy, Check } from "lucide-react"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { toast } from "@/lib/toast"
 import {
   Tooltip,
@@ -20,6 +20,7 @@ import { SharePopover } from "@/components/sidebar/share-modal"
 import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys } from "@/hooks/threads/keys";
 import { threadKeys } from "@/hooks/threads/keys";
+import { ModeIndicator } from "@/components/thread/mode-indicator";
 
 interface ThreadSiteHeaderProps {
   threadId?: string;
@@ -45,6 +46,7 @@ export function SiteHeader({
   variant = 'default',
 }: ThreadSiteHeaderProps) {
   const pathname = usePathname()
+  const router = useRouter()
   const [isEditing, setIsEditing] = useState(false)
   const [editName, setEditName] = useState(projectName)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -172,6 +174,9 @@ export function SiteHeader({
 
       <div className="flex items-center gap-1 pr-4">
         <TooltipProvider>
+          {/* Mode Indicator - only show for non-shared variant */}
+          {variant !== 'shared' && <ModeIndicator />}
+
           {variant === 'shared' ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -200,12 +205,19 @@ export function SiteHeader({
             </SharePopover>
           ) : null}
 
+          {/* Hidden: View Files in Task button - functionality moved to Library
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon"
-                onClick={() => onViewFiles()}
+                onClick={() => {
+                  if (projectId) {
+                    router.push(`/library/${projectId}`);
+                  } else {
+                    onViewFiles();
+                  }
+                }}
                 className="h-9 w-9 cursor-pointer"
               >
                 <FolderOpen className="h-4 w-4" />
@@ -215,6 +227,7 @@ export function SiteHeader({
               <p>View Files in Task</p>
             </TooltipContent>
           </Tooltip>
+          */}
 
           <Tooltip>
             <TooltipTrigger asChild>

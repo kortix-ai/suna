@@ -657,7 +657,7 @@ export function PresentationViewer({
                 {metadata?.title || metadata?.presentation_name || streamingPresentationName || toolTitle}
               </CardTitle>
               {isStreaming && (
-                <span className="inline-block h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                <span className="inline-block h-3 w-3 rounded-full border border-blue-300 border-t-blue-500 animate-spin" />
               )}
             </div>
           </div>

@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/sidebar';
 import { NewAgentDialog } from '@/components/agents/new-agent-dialog';
 import { ThreadSearchModal } from '@/components/sidebar/thread-search-modal';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useTheme } from 'next-themes';
 import { useRouter } from 'next/navigation';
@@ -39,6 +39,7 @@ import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { isLocalMode } from '@/lib/config';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
+import { useThreads } from '@/hooks/threads/use-threads';
 
 import { getPlanIcon } from '@/components/billing/plan-utils';
 import { Kbd } from '../ui/kbd';
@@ -120,12 +121,67 @@ export function SidebarLeft({
   const [showSearchModal, setShowSearchModal] = useState(false);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
 
+  // Fetch threads for navigation between library and chat
+  const { data: threadsData } = useThreads({ page: 1, limit: 200 });
+
+  // Extract projectId and threadId from current pathname
+  const { currentProjectId, currentThreadId, isOnLibrary, isOnThread } = useMemo(() => {
+    if (!pathname) return { currentProjectId: null, currentThreadId: null, isOnLibrary: false, isOnThread: false };
+    
+    // Match /library/{projectId}
+    const libraryMatch = pathname.match(/^\/library\/([^\/]+)/);
+    if (libraryMatch) {
+      return { currentProjectId: libraryMatch[1], currentThreadId: null, isOnLibrary: true, isOnThread: false };
+    }
+    
+    // Match /projects/{projectId}/thread/{threadId}
+    const threadMatch = pathname.match(/^\/projects\/([^\/]+)\/thread\/([^\/]+)/);
+    if (threadMatch) {
+      return { currentProjectId: threadMatch[1], currentThreadId: threadMatch[2], isOnLibrary: false, isOnThread: true };
+    }
+    
+    return { currentProjectId: null, currentThreadId: null, isOnLibrary: false, isOnThread: false };
+  }, [pathname]);
+
+  // Find thread for current project (for navigating from library to chat)
+  const threadForCurrentProject = useMemo(() => {
+    if (!currentProjectId || !threadsData?.threads) return null;
+    return threadsData.threads.find(t => t.project_id === currentProjectId);
+  }, [currentProjectId, threadsData]);
+
   // Update active view based on pathname
   useEffect(() => {
     if (pathname?.includes('/triggers') || pathname?.includes('/knowledge')) {
       setActiveView('starred');
+    } else if (isOnLibrary) {
+      setActiveView('library');
+    } else if (isOnThread) {
+      setActiveView('chats');
     }
-  }, [pathname]);
+  }, [pathname, isOnLibrary, isOnThread]);
+
+  // Track if we're doing a library<->chat switch (to prevent sidebar collapse)
+  const [isLibraryChatSwitch, setIsLibraryChatSwitch] = useState(false);
+
+  // Handle view switching with navigation
+  const handleViewChange = (view: 'chats' | 'library' | 'starred') => {
+    // If switching to library while on a thread, navigate to that project's library
+    if (view === 'library' && isOnThread && currentProjectId) {
+      setIsLibraryChatSwitch(true);
+      router.push(`/library/${currentProjectId}`);
+      return;
+    }
+    
+    // If switching to chats while on library, navigate to that project's thread
+    if (view === 'chats' && isOnLibrary && currentProjectId && threadForCurrentProject) {
+      setIsLibraryChatSwitch(true);
+      router.push(`/projects/${currentProjectId}/thread/${threadForCurrentProject.thread_id}`);
+      return;
+    }
+    
+    // Otherwise just switch the view
+    setActiveView(view);
+  };
 
   // Logout handler
   const handleLogout = async () => {
@@ -136,9 +192,14 @@ export function SidebarLeft({
 
   useEffect(() => {
     if (isMobile) {
+      // Don't collapse sidebar when switching between library and chat
+      if (isLibraryChatSwitch) {
+        setIsLibraryChatSwitch(false);
+        return;
+      }
       setOpenMobile(false);
     }
-  }, [pathname, searchParams, isMobile, setOpenMobile]);
+  }, [pathname, searchParams, isMobile, setOpenMobile, isLibraryChatSwitch]);
 
 
   // Use React Query hook for admin role instead of direct fetch
@@ -318,7 +379,7 @@ export function SidebarLeft({
                       activeView === view ? 'bg-card border-[1.5px] border-border' : ''
                     )}
                     onClick={() => {
-                      setActiveView(view);
+                      handleViewChange(view);
                       setOpen(true); // Expand sidebar when clicking state button
                     }}
                   >
@@ -381,7 +442,7 @@ export function SidebarLeft({
                         "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
                         activeView === view ? 'bg-card border-[1.5px] border-border' : 'border-[1.5px] border-transparent'
                       )}
-                      onClick={() => setActiveView(view)}
+                      onClick={() => handleViewChange(view)}
                     >
                       <Icon className="!h-4 !w-4" />
                       <span className="text-xs text-muted-foreground whitespace-nowrap">

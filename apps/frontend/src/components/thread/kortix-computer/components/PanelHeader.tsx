@@ -1,8 +1,7 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import { Minimize2, Maximize2, Wifi, Battery, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { Minimize2, Wifi, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging, Library, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DrawerTitle } from '@/components/ui/drawer';
 import { ViewType } from '@/stores/kortix-computer-store';
@@ -98,6 +97,54 @@ function StatusBar() {
   );
 }
 
+interface ActionLibrarySwitcherProps {
+  currentView: ViewType;
+  onViewChange: (view: ViewType) => void;
+  size?: 'sm' | 'md';
+}
+
+function ActionLibrarySwitcher({ currentView, onViewChange, size = 'md' }: ActionLibrarySwitcherProps) {
+  const isAction = currentView === 'tools';
+  const isLibrary = currentView === 'files';
+  
+  const buttonClasses = size === 'sm' 
+    ? "px-2.5 py-1 text-[11px] gap-1"
+    : "px-3 py-1.5 text-xs gap-1.5";
+  
+  const iconSize = size === 'sm' ? "h-3 w-3" : "h-3.5 w-3.5";
+
+  return (
+    <div className="flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/50">
+      <button
+        onClick={() => onViewChange('tools')}
+        className={cn(
+          "flex items-center rounded-md font-medium transition-all duration-200",
+          buttonClasses,
+          isAction
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        )}
+      >
+        <Zap className={iconSize} />
+        <span>Action</span>
+      </button>
+      <button
+        onClick={() => onViewChange('files')}
+        className={cn(
+          "flex items-center rounded-md font-medium transition-all duration-200",
+          buttonClasses,
+          isLibrary
+            ? "bg-background text-foreground shadow-sm"
+            : "text-muted-foreground hover:text-foreground"
+        )}
+      >
+        <Library className={iconSize} />
+        <span>Library</span>
+      </button>
+    </div>
+  );
+}
+
 interface PanelHeaderProps {
   agentName?: string;
   onClose: () => void;
@@ -152,7 +199,11 @@ export const PanelHeader = memo(function PanelHeader({
           <DrawerTitle className="sr-only">Kortix Computer</DrawerTitle>
         </div>
         <div className="flex items-center gap-2">
-          <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
+          <ActionLibrarySwitcher 
+            currentView={currentView} 
+            onViewChange={onViewChange} 
+            size="sm"
+          />
           <Button
             variant="ghost"
             size="icon"
@@ -203,15 +254,11 @@ export const PanelHeader = memo(function PanelHeader({
       </div>
       
       <div className="flex items-center justify-end gap-2">
-        {isStreaming && (
-          <div className="px-2 py-0.5 rounded-md text-[10px] font-medium bg-primary/10 text-primary flex items-center gap-1">
-            <KortixLoader size="small" />
-            <span>Running</span>
-          </div>
-        )}
-        {!hideViewToggle && (
-          <ViewToggle currentView={currentView} onViewChange={onViewChange} showFilesTab={showFilesTab} />
-        )}
+        <ActionLibrarySwitcher 
+          currentView={currentView} 
+          onViewChange={onViewChange} 
+          size={isMaximized ? 'sm' : 'md'}
+        />
         {isMaximized && (
           <>
             <StatusBar />

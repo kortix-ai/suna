@@ -18,15 +18,11 @@ import {
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Search, Check, ChevronDown, Plus, Plug, Brain, LibraryBig, Zap, Lock, Sparkles, ChevronLeft } from 'lucide-react';
+import { Search, Check, ChevronDown, Plus, Plug, Brain, LibraryBig, Zap, Sparkles, ChevronLeft } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAgents } from '@/hooks/agents/use-agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
-import type { ModelOption } from '@/hooks/agents';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
-
-export type SubscriptionStatus = 'no_subscription' | 'active';
-
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
@@ -36,7 +32,7 @@ import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
-import { isLocalMode, isProductionMode } from '@/lib/config';
+import { isLocalMode } from '@/lib/config';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 
 
@@ -47,24 +43,12 @@ type UnifiedConfigMenuProps = {
     // Agent
     selectedAgentId?: string;
     onAgentSelect?: (agentId: string | undefined) => void;
-
-    // Model
-    selectedModel: string;
-    onModelChange: (modelId: string) => void;
-    modelOptions: ModelOption[];
-    subscriptionStatus: SubscriptionStatus;
-    canAccessModel: (modelId: string) => boolean;
-    refreshCustomModels?: () => void;
 };
 
 const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMenu({
     isLoggedIn = true,
     selectedAgentId,
     onAgentSelect,
-    selectedModel,
-    onModelChange,
-    modelOptions,
-    canAccessModel,
 }) {
     const t = useTranslations('thread');
     const [isOpen, setIsOpen] = useState(false);
@@ -349,157 +333,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         </div>
     ), [isFreeTier, openPricingModal]);
 
-    const ModeToggle = useCallback(({ compact = false }: { compact?: boolean }) => {
-        const basicModel = modelOptions.find(m => m.id === 'kortix/basic' || m.label === 'Kortix Basic');
-        const powerModel = modelOptions.find(m => m.id === 'kortix/power' || m.label === 'Kortix Advanced Mode');
-        
-        // Get additional models (not basic or power)
-        // Exclude kortix/test in PRODUCTION
-        const additionalModels = modelOptions.filter(m => 
-            m.id !== 'kortix/basic' && 
-            m.id !== 'kortix/power' && 
-            m.label !== 'Kortix Basic' && 
-            m.label !== 'Kortix Advanced Mode' &&
-            !(isProductionMode() && m.id === 'kortix/test')
-        );
-
-        const canAccessPower = powerModel ? canAccessModel(powerModel.id) : false;
-        const isPowerSelected = powerModel && selectedModel === powerModel.id;
-        const isBasicSelected = basicModel && selectedModel === basicModel.id;
-        
-        // Check if an additional model is selected
-        const selectedAdditionalModel = additionalModels.find(m => m.id === selectedModel);
-        const isAdditionalSelected = !!selectedAdditionalModel;
-
-        return (
-            <div className="flex flex-col gap-2">
-                <div className={cn(
-                    "flex items-center gap-1.5 p-1 bg-muted/50 rounded-xl",
-                    compact ? "" : ""
-                )}>
-                    {/* Basic Mode */}
-                    <button
-                        onClick={() => {
-                            if (basicModel) {
-                                onModelChange(basicModel.id);
-                            }
-                        }}
-                        className={cn(
-                            "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
-                            compact ? "px-3 py-1.5" : "px-4 py-2",
-                            isBasicSelected
-                                ? "bg-background shadow-sm text-foreground"
-                                : "text-muted-foreground hover:text-foreground"
-                        )}
-                    >
-                        <span className={cn(
-                            "font-medium",
-                            compact ? "text-xs" : "text-sm"
-                        )}>Basic</span>
-                    </button>
-
-                    {/* Advanced Mode */}
-                    <button
-                        onClick={() => {
-                            if (powerModel) {
-                                if (canAccessPower) {
-                                    onModelChange(powerModel.id);
-                                } else {
-                                    setIsOpen(false);
-                                    usePricingModalStore.getState().openPricingModal({
-                                        isAlert: true,
-                                        alertTitle: 'Upgrade to access Kortix Advanced mode'
-                                    });
-                                }
-                            }
-                        }}
-                        className={cn(
-                            "flex-1 flex items-center justify-center gap-1.5 rounded-lg transition-all",
-                            compact ? "px-3 py-1.5" : "px-4 py-2",
-                            isPowerSelected
-                                ? "bg-background shadow-sm"
-                                : canAccessPower
-                                    ? "text-muted-foreground hover:text-foreground"
-                                    : "text-muted-foreground/50"
-                        )}
-                    >
-                        <KortixLogo size={compact ? 10 : 12} variant="symbol" />
-                        <span className={cn(
-                            "font-medium",
-                            compact ? "text-xs" : "text-sm",
-                            isPowerSelected ? "text-primary" : canAccessPower ? "text-muted-foreground" : "text-muted-foreground/50"
-                        )}>Advanced</span>
-                        {!canAccessPower && (
-                            <Lock className={cn(
-                                "text-muted-foreground/50",
-                                compact ? "h-3 w-3" : "h-3.5 w-3.5"
-                            )} />
-                        )}
-                    </button>
-                </div>
-                
-                {/* Additional Models Dropdown */}
-                {additionalModels.length > 0 && (
-                    <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                            <button
-                                className={cn(
-                                    "w-full flex items-center justify-between rounded-lg transition-all border border-border",
-                                    compact ? "px-3 py-1.5" : "px-4 py-2",
-                                    isAdditionalSelected
-                                        ? "bg-muted/80 text-foreground"
-                                        : "bg-muted/30 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
-                                )}
-                            >
-                                <span className={cn(
-                                    "font-medium",
-                                    compact ? "text-xs" : "text-sm"
-                                )}>
-                                    {isAdditionalSelected ? selectedAdditionalModel?.label : 'More Models'}
-                                </span>
-                                <ChevronDown className={cn(
-                                    "transition-transform",
-                                    compact ? "h-3 w-3" : "h-4 w-4"
-                                )} />
-                            </button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="start" className="w-[200px]">
-                            {additionalModels.map((model) => {
-                                const canAccess = canAccessModel(model.id);
-                                const isSelected = selectedModel === model.id;
-                                
-                                return (
-                                    <div
-                                        key={model.id}
-                                        className={cn(
-                                            "flex items-center justify-between px-3 py-2 text-sm cursor-pointer rounded-md transition-colors",
-                                            isSelected ? "bg-muted" : "hover:bg-muted/50",
-                                            !canAccess && "opacity-50"
-                                        )}
-                                        onClick={() => {
-                                            if (canAccess) {
-                                                onModelChange(model.id);
-                                            } else {
-                                                usePricingModalStore.getState().openPricingModal({
-                                                    isAlert: true,
-                                                    alertTitle: `Upgrade to access ${model.label}`
-                                                });
-                                            }
-                                        }}
-                                    >
-                                        <span className="font-medium">{model.label}</span>
-                                        {isSelected && <Check className="h-4 w-4 text-primary" />}
-                                        {!canAccess && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
-                                    </div>
-                                );
-                            })}
-                        </DropdownMenuContent>
-                    </DropdownMenu>
-                )}
-            </div>
-        );
-    }, [modelOptions, selectedModel, canAccessModel, onModelChange]);
-
     const WorkerSettingsButtons = useCallback(({ compact = false }: { compact?: boolean }) => (
         onAgentSelect && (selectedAgentId || displayAgent?.agent_id) ? (
             <div className={compact ? "px-3" : "px-4 sm:px-3"}>
@@ -634,14 +467,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                     </>
                 )}
 
-                {/* Mode toggle */}
-                <div className="px-3 pt-2 pb-1">
-                    <span className="text-xs font-medium text-muted-foreground">Mode</span>
-                </div>
-                <div className="px-3 pb-3">
-                    <ModeToggle compact={false} />
-                </div>
-
                 {/* Worker settings */}
                 {onAgentSelect && (selectedAgentId || displayAgent?.agent_id) && (
                     <div className="py-3">
@@ -650,7 +475,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                 )}
             </div>
         );
-    }, [mobileSection, searchQuery, onAgentSelect, displayAgent, isLoading, placeholderSunaAgent, renderAgentIcon, selectedAgentId, AgentsList, CreateWorkerButton, ModeToggle, WorkerSettingsButtons, isKortixAgent]);
+    }, [mobileSection, searchQuery, onAgentSelect, displayAgent, isLoading, placeholderSunaAgent, renderAgentIcon, selectedAgentId, AgentsList, CreateWorkerButton, WorkerSettingsButtons, isKortixAgent]);
 
     // Trigger button
     const TriggerButton = (
@@ -790,14 +615,6 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                 </>
                             )}
 
-                            {/* Mode Toggle */}
-                            <div className="px-3 pt-2 pb-1">
-                                <span className="text-xs font-medium text-muted-foreground">Mode</span>
-                            </div>
-                            <div className="px-3 pb-2">
-                                <ModeToggle compact={true} />
-                            </div>
-                            <div className="h-px bg-border/50 -mx-3 my-2" />
                             <WorkerSettingsButtons compact={true} />
                         </TooltipProvider>
                     </DropdownMenuContent>
