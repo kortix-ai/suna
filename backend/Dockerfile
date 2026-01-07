@@ -30,4 +30,10 @@ COPY . .
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-CMD ["uv", "run", "uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8000"]
+# Production: Gunicorn with async workers
+# WORKERS=16 for 32 vCPU server (2 workers per core, capped at 16)
+# Each worker = separate process = separate HTTP/2 connection = 100 more concurrent streams
+ENV WORKERS=16
+ENV TIMEOUT=300
+
+CMD ["sh", "-c", "uv run gunicorn api:app -w ${WORKERS} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout ${TIMEOUT} --graceful-timeout 30 --keep-alive 65"]
