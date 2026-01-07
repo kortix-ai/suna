@@ -282,15 +282,16 @@ async def get_credit_usage_by_thread_with_dates(
         params["end_date"] = end_date
     
     # First get all usage records to calculate totals and group by thread
+    # Priority: thread_id column first, then metadata fallback (matches original logic)
     sql = f"""
     SELECT 
-        COALESCE(metadata->>'thread_id', thread_id::text) as thread_id,
+        COALESCE(thread_id::text, metadata->>'thread_id') as thread_id,
         amount,
         created_at
     FROM credit_ledger
     WHERE account_id = :account_id 
       AND type = 'usage'
-      AND (metadata->>'thread_id' IS NOT NULL OR thread_id IS NOT NULL)
+      AND (thread_id IS NOT NULL OR metadata->>'thread_id' IS NOT NULL)
       {date_filter}
     ORDER BY created_at DESC
     """
@@ -359,7 +360,7 @@ async def get_thread_details(thread_ids: List[str]) -> Dict[str, Dict[str, Any]]
         result[row["thread_id"]] = {
             "project_id": row["project_id"],
             "created_at": row["created_at"],
-            "project_name": row.get("project_name", "")
+            "project_name": row["project_name"] or ""  # Handle NULL from LEFT JOIN
         }
     
     return result

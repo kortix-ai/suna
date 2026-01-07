@@ -26,7 +26,7 @@ async def insert_admin_audit_log(
         "action": action,
         "target_account_id": target_account_id,
         "details": details
-    })
+    }, commit=True)
     return serialize_row(result) if result else {}
 
 
@@ -81,7 +81,15 @@ async def get_user_transactions_paginated(
         return [], 0
     
     total_count = rows[0]["total_count"] if rows else 0
-    return serialize_rows(rows), total_count
+    
+    # Remove the total_count from each row before returning
+    result = []
+    for row in rows:
+        row_dict = dict(row)
+        row_dict.pop("total_count", None)
+        result.append(serialize_row(row_dict))
+    
+    return result, total_count
 
 
 async def get_recent_transactions(
