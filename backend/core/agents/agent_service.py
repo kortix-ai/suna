@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional
-from core.utils.pagination import PaginationService, PaginationParams, PaginatedResponse
+from core.utils.pagination import PaginationService, PaginationParams, PaginatedResponse, PaginationMeta
 from core.utils.logger import logger
 from core.agents.agent_loader import AgentLoader
 from core.utils.query_utils import batch_query_in
@@ -75,7 +75,7 @@ class AgentService:
             )
         else:
             return await self._get_agents_database_paginated(
-                base_query, count_query, pagination_params, filters
+                base_query, count_query, pagination_params, filters, user_id=user_id
             )
 
     async def _get_user_templates_paginated(
@@ -161,8 +161,46 @@ class AgentService:
         base_query, 
         count_query, 
         pagination_params: PaginationParams,
-        filters: AgentFilters
+        filters: AgentFilters,
+        user_id: str = None
     ) -> PaginatedResponse[Dict[str, Any]]:
+        # Use direct PostgreSQL via repo if user_id provided
+        if user_id:
+            from core.agents import repo as agents_repo
+            
+            offset = (pagination_params.page - 1) * pagination_params.page_size
+            
+            agents, total_count = await agents_repo.list_agents(
+                account_id=user_id,
+                limit=pagination_params.page_size,
+                offset=offset,
+                search=filters.search,
+                has_default=filters.has_default,
+                sort_by=filters.sort_by,
+                sort_order=filters.sort_order
+            )
+            
+            # Transform to API format
+            agent_responses = [
+                await self._transform_agent_data(row, load_config=False)
+                for row in agents
+            ]
+            
+            total_pages = (total_count + pagination_params.page_size - 1) // pagination_params.page_size if total_count else 0
+            
+            return PaginatedResponse(
+                data=agent_responses,
+                pagination=PaginationMeta(
+                    current_page=pagination_params.page,
+                    page_size=pagination_params.page_size,
+                    total_items=total_count,
+                    total_pages=total_pages,
+                    has_next=pagination_params.page < total_pages,
+                    has_previous=pagination_params.page > 1
+                )
+            )
+        
+        # Fallback to Supabase query
         paginated_result = await PaginationService.paginate_database_query(
             base_query=base_query,
             params=pagination_params,
@@ -193,7 +231,7 @@ class AgentService:
         if not all_agents:
             return PaginatedResponse(
                 data=[],
-                pagination=PaginationService.PaginationMeta(
+                pagination=PaginationMeta(
                     current_page=pagination_params.page,
                     page_size=pagination_params.page_size,
                     total_items=0,

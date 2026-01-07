@@ -137,14 +137,11 @@ class AgentRunner:
             )
         logger.info(f"⏱️ [SETUP TIMING] MCP initialize_jit_loader: {(time.time() - mcp_start) * 1000:.1f}ms")
         
-        # Ensure project metadata is cached (non-blocking if already cached)
-        # TIMEOUT: Was causing 60s+ hangs due to lazy migrations - now skips migration on timeout
-        # Lazy import to avoid circular dependency
         from core.agents.executor import ensure_project_metadata_cached
         
         project_meta_start = time.time()
         await with_timeout(
-            ensure_project_metadata_cached(self.config.project_id, self.client),
+            ensure_project_metadata_cached(self.config.project_id),
             timeout_seconds=TIMEOUT_PROJECT_METADATA,
             operation_name="ensure_project_metadata_cached"
         )

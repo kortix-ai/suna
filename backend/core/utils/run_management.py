@@ -40,12 +40,10 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
         logger.error(f"Failed to set Redis stop signal for {agent_run_id}: {str(e)}")
     
     # Update database status
-    db = DBConnection()
-    client = await db.client
     final_status = "failed" if error_message else "stopped"
     
     update_success = await update_agent_run_status(
-        client, agent_run_id, final_status, error=error_message
+        agent_run_id, final_status, error=error_message
     )
 
     if not update_success:

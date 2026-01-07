@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from core.utils.logger import logger
 
-KAFKA_ENABLED = os.getenv("KAFKA_ENABLED", "false").lower() == "true"
+KAFKA_ENABLED = False
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092")
 KAFKA_TOPIC_WRITES = os.getenv("KAFKA_TOPIC_WRITES", "supabase.writes")
 KAFKA_SASL_USERNAME = os.getenv("KAFKA_SASL_USERNAME", "")

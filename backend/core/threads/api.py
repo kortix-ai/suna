@@ -24,93 +24,20 @@ async def get_user_threads(
     page: Optional[int] = Query(1, ge=1, description="Page number (1-based)"),
     limit: Optional[int] = Query(100, ge=1, le=1000, description="Number of items per page (max 1000)")
 ):
-    logger.debug(f"Fetching threads with project data for user: {user_id} (page={page}, limit={limit})")
-    client = await db.client
+    from core.threads.repo import list_user_threads as repo_list_threads
+    
+    logger.debug(f"Fetching threads for user: {user_id} (page={page}, limit={limit})")
     try:
         offset = (page - 1) * limit
-        
-        # Optimized count query - only count, don't select columns
-        count_result = await client.table('threads').select('thread_id', count='exact').eq('account_id', user_id).execute()
-        total_count = count_result.count or 0
+        threads, total_count = await repo_list_threads(user_id, limit, offset)
         
         if total_count == 0:
             logger.debug(f"No threads found for user: {user_id}")
-            return {
-                "threads": [],
-                "pagination": {
-                    "page": page,
-                    "limit": limit,
-                    "total": 0,
-                    "pages": 0
-                }
-            }
-        
-        # Optimized: Select only needed columns from threads table
-        threads_result = await client.table('threads')\
-            .select('thread_id,project_id,name,metadata,is_public,created_at,updated_at')\
-            .eq('account_id', user_id)\
-            .order('created_at', desc=True)\
-            .range(offset, offset + limit - 1)\
-            .execute()
-        
-        paginated_threads = threads_result.data
-        
-        project_ids = [
-            thread['project_id'] for thread in paginated_threads 
-            if thread.get('project_id')
-        ]
-        unique_project_ids = list(set(project_ids)) if project_ids else []
-        
-        projects_by_id = {}
-        if unique_project_ids:
-            from core.utils.query_utils import batch_query_in
-            
-            # Optimized: Select only needed columns from projects table (exclude sandbox, description - they're large and only needed when viewing specific project)
-            projects_data = await batch_query_in(
-                client=client,
-                table_name='projects',
-                select_fields='project_id,name,icon_name,is_public,created_at,updated_at',
-                in_field='project_id',
-                in_values=unique_project_ids
-            )
-            
-            projects_by_id = {
-                project['project_id']: project 
-                for project in projects_data
-            }
-        
-        mapped_threads = []
-        for thread in paginated_threads:
-            project_data = None
-            if thread.get('project_id') and thread['project_id'] in projects_by_id:
-                project = projects_by_id[thread['project_id']]
-                
-                # Optimized: Only include fields needed for list view (exclude sandbox, description - they're large and only needed when viewing specific project)
-                project_data = {
-                    "project_id": project['project_id'],
-                    "name": project.get('name', ''),
-                    "icon_name": project.get('icon_name'),
-                    "is_public": project.get('is_public', False),
-                    "created_at": project.get('created_at'),
-                    "updated_at": project['updated_at']
-                }
-
-            mapped_thread = {
-                "thread_id": thread['thread_id'],
-                "project_id": thread.get('project_id'),
-                "name": thread.get('name', 'New Chat'),
-                "metadata": thread.get('metadata', {}),
-                "is_public": thread.get('is_public', False),
-                "created_at": thread['created_at'],
-                "updated_at": thread['updated_at'],
-                "project": project_data
-            }
-            mapped_threads.append(mapped_thread)
         
         total_pages = (total_count + limit - 1) // limit if total_count else 0
         
         return {
-            "threads": mapped_threads,
+            "threads": threads,
             "pagination": {
                 "page": page,
                 "limit": limit,
@@ -310,24 +237,17 @@ async def create_thread_in_project(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Create a new thread within an existing project. Shares the project's sandbox resource."""
+    from core.threads.repo import get_project_access, create_thread as repo_create_thread
+    
     logger.debug(f"Creating new thread in project: {project_id}")
     client = await db.client
     account_id = user_id
     
     try:
-        # Verify project exists and user has access
-        project_result = await client.table('projects').select('account_id, name').eq('project_id', project_id).execute()
-        if not project_result.data or len(project_result.data) == 0:
-            raise HTTPException(status_code=404, detail="Project not found")
-        
-        project = project_result.data[0]
-        project_account_id = project.get('account_id')
-        
-        # Verify user has access to this project
-        if project_account_id != account_id:
-            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', account_id).eq('account_id', project_account_id).execute()
-            if not (account_user_result.data and len(account_user_result.data) > 0):
-                raise HTTPException(status_code=403, detail="Not authorized to create threads in this project")
+        # Verify project exists and user has access (single query with JOIN)
+        project = await get_project_access(project_id, account_id)
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found or access denied")
         
         # Check thread limit
         if config.ENV_MODE != EnvMode.LOCAL:
@@ -345,23 +265,25 @@ async def create_thread_in_project(
                 raise HTTPException(status_code=402, detail=error_detail)
         
         # Create thread linked to existing project
-        thread_data = {
-            "thread_id": str(uuid.uuid4()),
-            "project_id": project_id,
-            "account_id": account_id,
-            "name": "New Chat",  # Default name for empty threads
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
+        thread_id = str(uuid.uuid4())
         
         from core.utils.logger import structlog
         structlog.contextvars.bind_contextvars(
-            thread_id=thread_data["thread_id"],
+            thread_id=thread_id,
             project_id=project_id,
             account_id=account_id,
         )
         
-        thread = await client.table('threads').insert(thread_data).execute()
-        thread_id = thread.data[0]['thread_id']
+        thread_result = await repo_create_thread(
+            thread_id=thread_id,
+            project_id=project_id,
+            account_id=account_id,
+            name="New Chat"
+        )
+        
+        if not thread_result:
+            raise HTTPException(status_code=500, detail="Failed to create thread")
+        
         logger.debug(f"Created new thread: {thread_id} in project: {project_id}")
         
         # Increment thread count cache (fire-and-forget)
@@ -739,6 +661,8 @@ async def get_thread_messages(
     order: str = Query("desc", description="Order by created_at: 'asc' or 'desc'"),
     optimized: bool = Query(True, description="Return optimized messages (filtered types, minimal fields) or full messages (all types, all fields)"),
 ):
+    from core.threads import repo as threads_repo
+    
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
     client = await db.client
     
@@ -748,33 +672,12 @@ async def get_thread_messages(
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
         from core.utils.message_migration import migrate_thread_messages, needs_migration
-        
-        # Helper to fetch all messages (with content for migration check)
-        async def fetch_all_messages_raw():
-            batch_size = 1000
-            offset = 0
-            messages = []
-            allowed_types = ['user', 'tool', 'assistant']
-            while True:
-                if optimized:
-                    # Need content for migration check, will strip later
-                    query = client.table('messages').select(
-                        'message_id,thread_id,type,is_llm_message,content,metadata,created_at,updated_at,agent_id'
-                    ).eq('thread_id', thread_id).in_('type', allowed_types)
-                else:
-                    query = client.table('messages').select('*').eq('thread_id', thread_id)
-                
-                query = query.order('created_at', desc=(order == "desc"))
-                query = query.range(offset, offset + batch_size - 1)
-                result = await query.execute()
-                batch = result.data or []
-                messages.extend(batch)
-                if len(batch) < batch_size:
-                    break
-                offset += batch_size
-            return messages
-        
-        # Helper to optimize messages (strip content for non-user messages)
+
+        raw_messages = await threads_repo.get_thread_messages(
+            thread_id=thread_id,
+            order=order,
+            optimized=optimized
+        )
         def optimize_messages(raw_messages):
             if not optimized:
                 return raw_messages
@@ -791,31 +694,27 @@ async def get_thread_messages(
                     'updated_at': msg.get('updated_at'),
                     'agent_id': msg.get('agent_id'),
                 }
-                # Only include content for user messages
                 if msg_type == 'user':
                     optimized_msg['content'] = msg.get('content')
                 optimized_list.append(optimized_msg)
             return optimized_list
         
-        # STEP 1: Fetch messages ONCE
-        raw_messages = await fetch_all_messages_raw()
-        
-        # STEP 2: Check in-memory if any messages need migration
         migration_needed = any(
             needs_migration(msg) 
             for msg in raw_messages 
             if msg.get('type') in ['assistant', 'tool']
         )
         
-        # STEP 3: If migration needed, migrate and re-fetch fresh data
         if migration_needed:
             stats = await migrate_thread_messages(client, thread_id, save=True)
             if stats['migrated'] > 0:
                 logger.info(f"Migrated {stats['migrated']} messages for thread {thread_id}")
-                # Re-fetch to get fresh migrated data
-                raw_messages = await fetch_all_messages_raw()
+                raw_messages = await threads_repo.get_thread_messages(
+                    thread_id=thread_id,
+                    order=order,
+                    optimized=optimized
+                )
         
-        # STEP 4: Apply optimization and return
         all_messages = optimize_messages(raw_messages)
         
         return {"messages": all_messages}
@@ -830,56 +729,50 @@ async def add_message_to_thread(
     message: str = Body(..., embed=True),
     user_id: str = Depends(verify_and_get_user_id_from_jwt),
 ):
+    from core.threads import repo as threads_repo
+    
     logger.debug(f"Adding message to thread: {thread_id}")
     
-    # Validate that message is not empty
     if not message or not message.strip():
         raise HTTPException(status_code=400, detail="Message content cannot be empty")
     
-    client = await db.client
-    
-    thread_result = await client.table('threads').select('account_id').eq('thread_id', thread_id).execute()
-    if not thread_result.data:
+    thread_account_id = await threads_repo.get_thread_account_id(thread_id)
+    if not thread_account_id:
         raise HTTPException(status_code=404, detail="Thread not found")
     
-    thread_data = thread_result.data[0]
-    
-    # Verify ownership or team access
-    if thread_data['account_id'] != user_id:
+    if thread_account_id != user_id:
+        client = await db.client
         from core.utils.auth_utils import verify_and_authorize_thread_access
         await verify_and_authorize_thread_access(client, thread_id, user_id)
     
     try:
-        # Check if thread still has default name and update it
-        thread_name_result = await client.table('threads').select('name').eq('thread_id', thread_id).execute()
-        if thread_name_result.data and thread_name_result.data[0].get('name') in ('New Chat', None):
-            # Update thread name in background
+        thread_name = await threads_repo.get_thread_name(thread_id)
+        if thread_name in ('New Chat', None):
             from core.utils.thread_name_generator import generate_and_update_thread_name
             asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=message))
         
-        message_result = await client.table('messages').insert({
-            'thread_id': thread_id,
-            'type': 'user',
-            'is_llm_message': True,
-            'content': {
-              "role": "user",
-              "content": message
-            }
-        }).execute()
-        return message_result.data[0]
+        new_message = await threads_repo.create_message(
+            thread_id=thread_id,
+            message_type='user',
+            content={"role": "user", "content": message},
+            is_llm_message=True
+        )
+        
+        return new_message
     except Exception as e:
         logger.error(f"Error adding message to thread {thread_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to add message: {str(e)}")
 
 @router.post("/threads/{thread_id}/messages", summary="Create Thread Message", operation_id="create_thread_message")
-async def create_message(
+async def create_message_endpoint(
     thread_id: str,
     message_data: MessageCreateRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    from core.threads import repo as threads_repo
+    
     logger.debug(f"Creating message in thread: {thread_id}")
     
-    # Validate that user messages have content
     if message_data.type == "user" and (not message_data.content or not message_data.content.strip()):
         raise HTTPException(status_code=400, detail="Message content cannot be empty")
     
@@ -893,22 +786,18 @@ async def create_message(
             "content": message_data.content
         }
         
-        insert_data = {
-            "message_id": str(uuid.uuid4()),
-            "thread_id": thread_id,
-            "type": message_data.type,
-            "is_llm_message": message_data.is_llm_message,
-            "content": message_payload,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
+        new_message = await threads_repo.create_message(
+            thread_id=thread_id,
+            message_type=message_data.type,
+            content=message_payload,
+            is_llm_message=message_data.is_llm_message
+        )
         
-        message_result = await client.table('messages').insert(insert_data).execute()
-        
-        if not message_result.data:
+        if not new_message:
             raise HTTPException(status_code=500, detail="Failed to create message")
         
-        logger.debug(f"Created message: {message_result.data[0]['message_id']}")
-        return message_result.data[0]
+        logger.debug(f"Created message: {new_message['message_id']}")
+        return new_message
         
     except HTTPException:
         raise
@@ -917,16 +806,18 @@ async def create_message(
         raise HTTPException(status_code=500, detail=f"Failed to create message: {str(e)}")
 
 @router.delete("/threads/{thread_id}/messages/{message_id}", summary="Delete Thread Message", operation_id="delete_thread_message")
-async def delete_message(
+async def delete_message_endpoint(
     thread_id: str,
     message_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    from core.threads import repo as threads_repo
+    
     logger.debug(f"Deleting message from thread: {thread_id}")
     client = await db.client
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
-        await client.table('messages').delete().eq('message_id', message_id).eq('is_llm_message', True).eq('thread_id', thread_id).execute()
+        await threads_repo.delete_message(thread_id, message_id, is_llm_message=True)
         return {"message": "Message deleted successfully"}
     except Exception as e:
         logger.error(f"Error deleting message {message_id} from thread {thread_id}: {str(e)}")
@@ -940,6 +831,8 @@ async def update_thread(
     is_public: Optional[bool] = Body(None, embed=True),
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
 ):
+    from core.threads import repo as threads_repo
+    
     logger.debug(f"Updating thread: {thread_id}")
     client = await db.client
     
@@ -947,60 +840,45 @@ async def update_thread(
         if title is None and is_public is None:
             raise HTTPException(status_code=400, detail="No update data provided")
         
-        thread_result = await client.table('threads').select('project_id, metadata').eq('thread_id', thread_id).execute()
-        if not thread_result.data:
+        thread = await threads_repo.get_thread_with_project(thread_id)
+        if not thread:
             raise HTTPException(status_code=404, detail="Thread not found")
         
-        thread = thread_result.data[0]
         project_id = thread.get('project_id')
         
+        # Update project name if title provided
         if title is not None and project_id:
             logger.debug(f"Updating project {project_id} name to: {title}")
-            project_result = await client.table('projects').update({
-                'name': title
-            }).eq('project_id', project_id).execute()
-            
-            if not project_result.data:
-                raise HTTPException(status_code=500, detail="Failed to update project name")
+            await threads_repo.update_project_name(project_id, title)
         
-        thread_update_data = {}
-        
+        # Build thread update
+        thread_metadata = None
         if title is not None:
             current_metadata = thread.get('metadata', {}) or {}
             current_metadata['title'] = title
-            thread_update_data['metadata'] = current_metadata
+            thread_metadata = current_metadata
         
-        if is_public is not None:
-            thread_update_data['is_public'] = is_public
-            logger.debug(f"Updating thread {thread_id} is_public to: {is_public}")
-            
-            if project_id:
-                logger.debug(f"Updating project {project_id} is_public to: {is_public}")
-                await client.table('projects').update({
-                    'is_public': is_public
-                }).eq('project_id', project_id).execute()
+        # Update project visibility if is_public provided
+        if is_public is not None and project_id:
+            logger.debug(f"Updating project {project_id} is_public to: {is_public}")
+            await threads_repo.update_project_visibility(project_id, is_public)
         
-        if thread_update_data:
-            thread_update = await client.table('threads').update(thread_update_data).eq('thread_id', thread_id).execute()
-            
-            if not thread_update.data:
-                raise HTTPException(status_code=500, detail="Failed to update thread")
+        # Update thread
+        updated_thread = await threads_repo.update_thread(
+            thread_id=thread_id,
+            metadata=thread_metadata,
+            is_public=is_public
+        )
+        
+        if not updated_thread:
+            raise HTTPException(status_code=500, detail="Failed to update thread")
         
         logger.debug(f"Successfully updated thread: {thread_id}")
-        
-        updated_thread = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
-        if not updated_thread.data:
-            raise HTTPException(status_code=404, detail="Thread not found")
-        
-        thread_data = updated_thread.data[0]
-        
+
         project_data = None
         if project_id:
-            project_result = await client.table('projects').select('*').eq('project_id', project_id).execute()
-            if project_result.data:
-                project = project_result.data[0]
-                
-                # Get sandbox info from resource if it exists
+            project = await threads_repo.get_project_by_id(project_id)
+            if project:
                 sandbox_info = {}
                 sandbox_resource_id = project.get('sandbox_resource_id')
                 if sandbox_resource_id:
@@ -1020,17 +898,17 @@ async def update_thread(
                     "sandbox": sandbox_info,
                     "is_public": project.get('is_public', False),
                     "icon_name": project.get('icon_name'),
-                    "created_at": project['created_at'],
-                    "updated_at": project['updated_at']
+                    "created_at": project.get('created_at'),
+                    "updated_at": project.get('updated_at')
                 }
         
         return {
-            "thread_id": thread_data['thread_id'],
-            "project_id": thread_data.get('project_id'),
-            "metadata": thread_data.get('metadata', {}),
-            "is_public": thread_data.get('is_public', False),
-            "created_at": thread_data['created_at'],
-            "updated_at": thread_data['updated_at'],
+            "thread_id": updated_thread['thread_id'],
+            "project_id": updated_thread.get('project_id'),
+            "metadata": updated_thread.get('metadata', {}),
+            "is_public": updated_thread.get('is_public', False),
+            "created_at": updated_thread.get('created_at'),
+            "updated_at": updated_thread.get('updated_at'),
             "project": project_data,
             "message_count": 0,
             "recent_agent_runs": []
@@ -1048,30 +926,27 @@ async def delete_thread(
     auth: AuthorizedThreadAccess = Depends(require_thread_access)
 ):
     """Delete a thread. Only deletes the project if this is the last thread in the project."""
+    from core.threads.repo import (
+        get_thread_project_id,
+        delete_thread_data,
+        count_project_threads,
+        delete_project as repo_delete_project
+    )
+    
     logger.debug(f"Deleting thread: {thread_id}")
     client = await db.client
     
     try:
-        thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).execute()
-        if not thread_result.data:
+        # Get project_id before deleting
+        project_id = await get_thread_project_id(thread_id)
+        if project_id is None:
             raise HTTPException(status_code=404, detail="Thread not found")
         
-        thread = thread_result.data[0]
-        project_id = thread.get('project_id')
+        # Delete thread and related data (agent_runs, messages)
+        logger.debug(f"Deleting thread data for {thread_id}")
+        deleted = await delete_thread_data(thread_id)
         
-        # Delete agent runs for this thread
-        logger.debug(f"Deleting agent runs for thread {thread_id}")
-        await client.table('agent_runs').delete().eq('thread_id', thread_id).execute()
-        
-        # Delete messages for this thread
-        logger.debug(f"Deleting messages for thread {thread_id}")
-        await client.table('messages').delete().eq('thread_id', thread_id).execute()
-        
-        # Delete the thread
-        logger.debug(f"Deleting thread {thread_id}")
-        thread_delete_result = await client.table('threads').delete().eq('thread_id', thread_id).execute()
-        
-        if not thread_delete_result.data:
+        if not deleted:
             raise HTTPException(status_code=500, detail="Failed to delete thread")
         
         # Invalidate thread count cache for this user
@@ -1083,8 +958,7 @@ async def delete_thread(
         
         # Check if this was the last thread in the project
         if project_id:
-            remaining_threads_result = await client.table('threads').select('thread_id', count='exact').eq('project_id', project_id).execute()
-            remaining_thread_count = remaining_threads_result.count or 0
+            remaining_thread_count = await count_project_threads(project_id)
             
             # Only delete project and sandbox if this was the last thread
             if remaining_thread_count == 0:
@@ -1106,7 +980,7 @@ async def delete_thread(
                 
                 # Delete the project
                 logger.debug(f"Deleting project {project_id}")
-                await client.table('projects').delete().eq('project_id', project_id).execute()
+                await repo_delete_project(project_id)
                 
                 # Invalidate project cache
                 try:
@@ -1124,4 +998,5 @@ async def delete_thread(
         raise
     except Exception as e:
         logger.error(f"Error deleting thread {thread_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete thread: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to delete thread: {str(e)}")

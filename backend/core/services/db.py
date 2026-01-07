@@ -1,178 +1,169 @@
-from typing import Optional, AsyncIterator, Set
-from contextlib import asynccontextmanager
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
-from sqlalchemy.pool import NullPool, QueuePool
-from sqlalchemy import text
-from sqlalchemy.exc import OperationalError, InterfaceError
-from core.utils.logger import logger
 import os
-import asyncio
 import re
+import asyncio
+import uuid
+from datetime import datetime
+from typing import Optional, AsyncIterator, Set, Dict, Any, List
+from contextlib import asynccontextmanager
 
-POSTGRES_POOL_SIZE = int(os.getenv("POSTGRES_POOL_SIZE", "20"))
-POSTGRES_MAX_OVERFLOW = int(os.getenv("POSTGRES_MAX_OVERFLOW", "30"))
-POSTGRES_POOL_TIMEOUT = int(os.getenv("POSTGRES_POOL_TIMEOUT", "30"))
-POSTGRES_POOL_RECYCLE = int(os.getenv("POSTGRES_POOL_RECYCLE", "1800"))
-POSTGRES_ECHO = os.getenv("POSTGRES_ECHO", "false").lower() == "true"
-POSTGRES_USE_NULLPOOL = os.getenv("POSTGRES_USE_NULLPOOL", "auto")
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
+from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
+from sqlalchemy.exc import OperationalError, InterfaceError
 
-POSTGRES_STATEMENT_TIMEOUT = int(os.getenv("POSTGRES_STATEMENT_TIMEOUT", "30000"))  # 30s for complex queries
-POSTGRES_CONNECT_TIMEOUT = int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "10"))
+from psycopg.types.json import set_json_dumps, set_json_loads
+from core.utils.logger import logger
 
-POSTGRES_MAX_RETRIES = int(os.getenv("POSTGRES_MAX_RETRIES", "3"))
-POSTGRES_RETRY_DELAY = float(os.getenv("POSTGRES_RETRY_DELAY", "0.1"))
+try:
+    import orjson
+    _json_serialize = lambda obj: orjson.dumps(obj).decode('utf-8')
+    _json_deserialize = orjson.loads
+except ImportError:
+    import json
+    _json_serialize = json.dumps
+    _json_deserialize = json.loads
 
-_VALID_IDENTIFIER = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
-_VALID_COLUMN_LIST = re.compile(r'^(\*|[a-zA-Z_][a-zA-Z0-9_]*(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*)*)$')
+set_json_dumps(_json_serialize)
+set_json_loads(_json_deserialize)
+
+POOL_SIZE = int(os.getenv("POSTGRES_POOL_SIZE", "20"))
+MAX_OVERFLOW = int(os.getenv("POSTGRES_MAX_OVERFLOW", "30"))
+POOL_TIMEOUT = int(os.getenv("POSTGRES_POOL_TIMEOUT", "30"))
+POOL_RECYCLE = int(os.getenv("POSTGRES_POOL_RECYCLE", "1800"))
+STATEMENT_TIMEOUT = int(os.getenv("POSTGRES_STATEMENT_TIMEOUT", "30000"))
+CONNECT_TIMEOUT = int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "10"))
+MAX_RETRIES = int(os.getenv("POSTGRES_MAX_RETRIES", "3"))
+RETRY_DELAY = float(os.getenv("POSTGRES_RETRY_DELAY", "0.1"))
+USE_NULLPOOL = os.getenv("POSTGRES_USE_NULLPOOL", "auto")
+ECHO = os.getenv("POSTGRES_ECHO", "false").lower() == "true"
+
+_IDENTIFIER_RE = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+_COLUMN_LIST_RE = re.compile(r'^(\*|[a-zA-Z_][a-zA-Z0-9_]*(\s*,\s*[a-zA-Z_][a-zA-Z0-9_]*)*)$')
 
 _engine: Optional[AsyncEngine] = None
 _session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
-def _get_connection_string() -> str:
-    direct_url = os.getenv("DATABASE_URL")
-    if direct_url:
-        if direct_url.startswith("postgres://"):
-            direct_url = direct_url.replace("postgres://", "postgresql://", 1)
-        if direct_url.startswith("postgresql://") and "+asyncpg" not in direct_url:
-            return direct_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return direct_url
+TRANSIENT_ERRORS = (
+    "connection reset", "connection refused", "connection timed out",
+    "server closed the connection", "ssl connection has been closed",
+    "could not connect to server", "remaining connection slots are reserved",
+    "too many connections", "connection pool exhausted",
+    "canceling statement due to statement timeout",
+)
 
-    pooler_url = os.getenv("DATABASE_POOLER_URL")
-    if pooler_url:
-        if pooler_url.startswith("postgres://"):
-            pooler_url = pooler_url.replace("postgres://", "postgresql://", 1)
-        if pooler_url.startswith("postgresql://") and "+asyncpg" not in pooler_url:
-            return pooler_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-        return pooler_url
 
+def serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        k: str(v) if isinstance(v, uuid.UUID) else v.isoformat() if isinstance(v, datetime) else v
+        for k, v in row.items()
+    }
+
+
+def serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [serialize_row(row) for row in rows]
+
+
+def _get_dsn() -> str:
+    url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_POOLER_URL")
+    
+    if url:
+        if "@" in url:
+            masked = url.split("@")[0][:40] + "...@" + url.split("@")[-1]
+            logger.info(f"🔌 Database URL: {masked}")
+        
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+        if "+asyncpg" in url:
+            url = url.replace("+asyncpg", "+psycopg")
+        elif "+psycopg" not in url:
+            url = url.replace("postgresql://", "postgresql+psycopg://", 1)
+        return url
+    
     from core.utils.config import config
-    supabase_url = config.SUPABASE_URL
-    if not supabase_url:
+    if not config.SUPABASE_URL:
         raise RuntimeError("No database connection configured")
-
-    project_ref = supabase_url.replace("https://", "").split(".")[0]
+    
+    project_ref = config.SUPABASE_URL.replace("https://", "").split(".")[0]
     password = os.getenv("POSTGRES_PASSWORD")
     if not password:
-        raise RuntimeError(
-            "Direct Postgres connection requires DATABASE_URL, DATABASE_POOLER_URL, "
-            "or POSTGRES_PASSWORD environment variable"
-        )
-
-    return f"postgresql+asyncpg://postgres.{project_ref}:{password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+        raise RuntimeError("DATABASE_URL, DATABASE_POOLER_URL, or POSTGRES_PASSWORD required")
+    
+    return f"postgresql+psycopg://postgres.{project_ref}:{password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
 
 
-def _is_transient_error(error: Exception) -> bool:
-    error_str = str(error).lower()
-    transient_patterns = [
-        "connection reset",
-        "connection refused", 
-        "connection timed out",
-        "server closed the connection",
-        "ssl connection has been closed",
-        "could not connect to server",
-        "remaining connection slots are reserved",
-        "too many connections",
-        "connection pool exhausted",
-        "canceling statement due to statement timeout",
-    ]
-    return any(pattern in error_str for pattern in transient_patterns)
+def _is_transient(e: Exception) -> bool:
+    return any(p in str(e).lower() for p in TRANSIENT_ERRORS)
 
 
-def _validate_identifier(name: str, context: str = "identifier") -> str:
-    if not name or not _VALID_IDENTIFIER.match(name):
-        raise ValueError(f"Invalid SQL {context}: {name!r}")
+def _validate_identifier(name: str, ctx: str = "identifier") -> str:
+    if not name or not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid SQL {ctx}: {name!r}")
     return name
 
 
-def _validate_columns(columns: str) -> str:
-    columns = columns.strip()
-    if not columns or not _VALID_COLUMN_LIST.match(columns):
-        raise ValueError(f"Invalid column specification: {columns!r}")
-    return columns
+def _validate_columns(cols: str) -> str:
+    cols = cols.strip()
+    if not cols or not _COLUMN_LIST_RE.match(cols):
+        raise ValueError(f"Invalid column specification: {cols!r}")
+    return cols
 
 
 def _validate_order_by(order_by: str) -> str:
-    parts = [p.strip() for p in order_by.split(",")]
+    allowed_modifiers = {
+        "ASC", "DESC", "NULLS FIRST", "NULLS LAST",
+        "ASC NULLS FIRST", "ASC NULLS LAST", "DESC NULLS FIRST", "DESC NULLS LAST"
+    }
     validated = []
-    for part in parts:
+    for part in order_by.split(","):
         tokens = part.split()
         if not tokens:
             raise ValueError(f"Invalid ORDER BY: {order_by!r}")
-        
         col = tokens[0].strip('"')
-        if not _VALID_IDENTIFIER.match(col):
+        if not _IDENTIFIER_RE.match(col):
             raise ValueError(f"Invalid ORDER BY column: {col!r}")
-        
         result = f'"{col}"'
-        remaining = " ".join(tokens[1:]).upper()
-        
-        if remaining:
-            allowed = {"ASC", "DESC", "NULLS FIRST", "NULLS LAST", 
-                      "ASC NULLS FIRST", "ASC NULLS LAST",
-                      "DESC NULLS FIRST", "DESC NULLS LAST"}
-            if remaining not in allowed:
-                raise ValueError(f"Invalid ORDER BY modifier: {remaining!r}")
-            result += f" {remaining}"
-        
+        modifier = " ".join(tokens[1:]).upper()
+        if modifier:
+            if modifier not in allowed_modifiers:
+                raise ValueError(f"Invalid ORDER BY modifier: {modifier!r}")
+            result += f" {modifier}"
         validated.append(result)
-    
     return ", ".join(validated)
 
 
 async def init_db() -> None:
     global _engine, _session_factory
-    
     if _engine is not None:
         return
     
-    dsn = _get_connection_string()
+    dsn = _get_dsn()
     is_supavisor = "pooler.supabase.com" in dsn or ":6543" in dsn
-    
     connect_args = {
-        "timeout": POSTGRES_CONNECT_TIMEOUT,
-        "command_timeout": POSTGRES_STATEMENT_TIMEOUT / 1000,
-        "server_settings": {
-            "statement_timeout": str(POSTGRES_STATEMENT_TIMEOUT),
-            "lock_timeout": "5000",
-        }
+        "connect_timeout": CONNECT_TIMEOUT,
+        "options": f"-c statement_timeout={STATEMENT_TIMEOUT} -c lock_timeout=5000",
     }
-
-    use_nullpool = (
-        POSTGRES_USE_NULLPOOL == "true" or
-        (POSTGRES_USE_NULLPOOL == "auto" and is_supavisor)
-    )
+    
+    use_nullpool = USE_NULLPOOL == "true" or (USE_NULLPOOL == "auto" and is_supavisor)
     
     if use_nullpool:
-        _engine = create_async_engine(
-            dsn,
-            poolclass=NullPool,
-            echo=POSTGRES_ECHO,
-            connect_args=connect_args,
-        )
-        pool_info = "NullPool (Supavisor transaction mode)" if is_supavisor else "NullPool (explicit)"
+        _engine = create_async_engine(dsn, poolclass=NullPool, echo=ECHO, connect_args=connect_args)
+        pool_info = "NullPool"
     else:
         _engine = create_async_engine(
             dsn,
-            poolclass=QueuePool,
-            pool_size=POSTGRES_POOL_SIZE,
-            max_overflow=POSTGRES_MAX_OVERFLOW,
-            pool_timeout=POSTGRES_POOL_TIMEOUT,
-            pool_recycle=POSTGRES_POOL_RECYCLE,
+            poolclass=AsyncAdaptedQueuePool,
+            pool_size=POOL_SIZE,
+            max_overflow=MAX_OVERFLOW,
+            pool_timeout=POOL_TIMEOUT,
+            pool_recycle=POOL_RECYCLE,
             pool_pre_ping=True,
-            echo=POSTGRES_ECHO,
+            echo=ECHO,
             connect_args=connect_args,
         )
-        pool_info = f"QueuePool(size={POSTGRES_POOL_SIZE}, max={POSTGRES_POOL_SIZE + POSTGRES_MAX_OVERFLOW})"
-
-    _session_factory = async_sessionmaker(
-        _engine,
-        class_=AsyncSession,
-        expire_on_commit=False,
-        autoflush=False,
-    )
-
-    timeout_info = f"stmt={POSTGRES_STATEMENT_TIMEOUT}ms, conn={POSTGRES_CONNECT_TIMEOUT}s"
-    logger.info(f"✅ Database initialized | {pool_info} | {timeout_info}")
+        pool_info = f"Pool(size={POOL_SIZE}, max={POOL_SIZE + MAX_OVERFLOW})"
+    
+    _session_factory = async_sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
+    logger.info(f"✅ Database initialized | {pool_info} | timeout={STATEMENT_TIMEOUT}ms")
 
 
 async def close_db() -> None:
@@ -189,8 +180,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
     if _session_factory is None:
         await init_db()
     
-    last_error = None
-    for attempt in range(POSTGRES_MAX_RETRIES):
+    for attempt in range(MAX_RETRIES):
         try:
             async with _session_factory() as session:
                 try:
@@ -198,27 +188,18 @@ async def get_session() -> AsyncIterator[AsyncSession]:
                     return
                 except (OperationalError, InterfaceError) as e:
                     await session.rollback()
-                    if _is_transient_error(e) and attempt < POSTGRES_MAX_RETRIES - 1:
-                        last_error = e
-                        delay = POSTGRES_RETRY_DELAY * (2 ** attempt)
-                        logger.warning(f"🔄 Transient DB error (attempt {attempt + 1}/{POSTGRES_MAX_RETRIES}), retrying in {delay:.2f}s: {e}")
-                        await asyncio.sleep(delay)
+                    if _is_transient(e) and attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(RETRY_DELAY * (2 ** attempt))
                         break
                     raise
                 except Exception:
                     await session.rollback()
                     raise
         except (OperationalError, InterfaceError) as e:
-            if _is_transient_error(e) and attempt < POSTGRES_MAX_RETRIES - 1:
-                last_error = e
-                delay = POSTGRES_RETRY_DELAY * (2 ** attempt)
-                logger.warning(f"🔄 Transient connection error (attempt {attempt + 1}/{POSTGRES_MAX_RETRIES}), retrying in {delay:.2f}s: {e}")
-                await asyncio.sleep(delay)
+            if _is_transient(e) and attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY * (2 ** attempt))
                 continue
             raise
-    
-    if last_error:
-        raise last_error
 
 
 @asynccontextmanager
@@ -226,48 +207,57 @@ async def transaction() -> AsyncIterator[AsyncSession]:
     if _session_factory is None:
         await init_db()
     
-    last_error = None
-    for attempt in range(POSTGRES_MAX_RETRIES):
+    for attempt in range(MAX_RETRIES):
         try:
             async with _session_factory() as session:
                 async with session.begin():
                     yield session
                     return
         except (OperationalError, InterfaceError) as e:
-            if _is_transient_error(e) and attempt < POSTGRES_MAX_RETRIES - 1:
-                last_error = e
-                delay = POSTGRES_RETRY_DELAY * (2 ** attempt)
-                logger.warning(f"🔄 Transient transaction error (attempt {attempt + 1}/{POSTGRES_MAX_RETRIES}), retrying in {delay:.2f}s: {e}")
-                await asyncio.sleep(delay)
+            if _is_transient(e) and attempt < MAX_RETRIES - 1:
+                await asyncio.sleep(RETRY_DELAY * (2 ** attempt))
                 continue
             raise
-    
-    if last_error:
-        raise last_error
 
 
-async def execute(sql: str, params: Optional[dict] = None) -> list:
+def _prep_params(params: Optional[dict]) -> dict:
+    if not params:
+        return {}
+    result = {}
+    for k, v in params.items():
+        if isinstance(v, dict):
+            result[k] = _json_serialize(v)
+        elif isinstance(v, list) and v and isinstance(v[0], dict):
+            result[k] = _json_serialize(v)
+        else:
+            result[k] = v
+    return result
+
+
+async def execute(sql: str, params: Optional[dict] = None) -> List[dict]:
     async with get_session() as session:
-        result = await session.execute(text(sql), params or {})
+        result = await session.execute(text(sql), _prep_params(params))
         return [dict(row._mapping) for row in result.fetchall()]
 
 
-async def execute_one(sql: str, params: Optional[dict] = None) -> Optional[dict]:
+async def execute_one(sql: str, params: Optional[dict] = None, commit: bool = False) -> Optional[dict]:
     async with get_session() as session:
-        result = await session.execute(text(sql), params or {})
+        result = await session.execute(text(sql), _prep_params(params))
+        if commit:
+            await session.commit()
         row = result.fetchone()
         return dict(row._mapping) if row else None
 
 
 async def execute_scalar(sql: str, params: Optional[dict] = None):
     async with get_session() as session:
-        result = await session.execute(text(sql), params or {})
+        result = await session.execute(text(sql), _prep_params(params))
         return result.scalar()
 
 
-async def execute_mutate(sql: str, params: Optional[dict] = None) -> list:
+async def execute_mutate(sql: str, params: Optional[dict] = None) -> List[dict]:
     async with get_session() as session:
-        result = await session.execute(text(sql), params or {})
+        result = await session.execute(text(sql), _prep_params(params))
         await session.commit()
         try:
             return [dict(row._mapping) for row in result.fetchall()]
@@ -275,197 +265,123 @@ async def execute_mutate(sql: str, params: Optional[dict] = None) -> list:
             return []
 
 
-try:
-    import orjson
-    def _json_dumps(obj) -> str:
-        return orjson.dumps(obj).decode('utf-8')
-except ImportError:
-    import json as _json
-    def _json_dumps(obj) -> str:
-        return _json.dumps(obj)
-
-
 class Table:
-    def __init__(self, table_name: str):
-        self.table_name = _validate_identifier(table_name, "table name")
-        self._json_columns: Set[str] = set()
+    def __init__(self, name: str):
+        self.name = _validate_identifier(name, "table name")
+        self._json_cols: Set[str] = set()
     
-    def json_columns(self, *columns: str) -> 'Table':
-        for col in columns:
-            _validate_identifier(col, "JSON column")
-        self._json_columns = set(columns)
+    def json_columns(self, *cols: str) -> 'Table':
+        for c in cols:
+            _validate_identifier(c, "JSON column")
+        self._json_cols = set(cols)
         return self
     
-    def _validate_filter_keys(self, filters: dict) -> None:
-        for key in filters.keys():
-            _validate_identifier(key, "filter column")
+    def _check_keys(self, d: dict, ctx: str) -> None:
+        for k in d:
+            _validate_identifier(k, ctx)
     
-    def _validate_data_keys(self, data: dict) -> None:
-        for key in data.keys():
-            _validate_identifier(key, "data column")
+    def _prep_json(self, data: dict) -> dict:
+        return {
+            k: _json_serialize(v) if k in self._json_cols and isinstance(v, (dict, list)) else v
+            for k, v in data.items()
+        }
     
-    async def get(self, id_column: str, id_value, columns: str = "*") -> Optional[dict]:
-        id_column = _validate_identifier(id_column, "id column")
-        columns = _validate_columns(columns)
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'SELECT {columns} FROM "{self.table_name}" WHERE "{id_column}" = :id'),
-                {"id": id_value}
-            )
-            row = result.fetchone()
+    async def get(self, id_col: str, id_val, cols: str = "*") -> Optional[dict]:
+        id_col = _validate_identifier(id_col, "id column")
+        cols = _validate_columns(cols)
+        async with get_session() as s:
+            r = await s.execute(text(f'SELECT {cols} FROM "{self.name}" WHERE "{id_col}" = :id'), {"id": id_val})
+            row = r.fetchone()
             return dict(row._mapping) if row else None
     
-    async def get_by(self, filters: dict, columns: str = "*") -> Optional[dict]:
-        self._validate_filter_keys(filters)
-        columns = _validate_columns(columns)
-        
-        where_parts = [f'"{k}" = :f_{k}' for k in filters.keys()]
+    async def get_by(self, filters: dict, cols: str = "*") -> Optional[dict]:
+        self._check_keys(filters, "filter column")
+        cols = _validate_columns(cols)
+        where = " AND ".join(f'"{k}" = :f_{k}' for k in filters)
         params = {f"f_{k}": v for k, v in filters.items()}
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'SELECT {columns} FROM "{self.table_name}" WHERE {" AND ".join(where_parts)} LIMIT 1'),
-                params
-            )
-            row = result.fetchone()
+        async with get_session() as s:
+            r = await s.execute(text(f'SELECT {cols} FROM "{self.name}" WHERE {where} LIMIT 1'), params)
+            row = r.fetchone()
             return dict(row._mapping) if row else None
     
-    async def list(
-        self,
-        filters: Optional[dict] = None,
-        columns: str = "*",
-        order_by: Optional[str] = None,
-        limit: int = 100,
-        offset: int = 0
-    ) -> list:
-        columns = _validate_columns(columns)
+    async def list(self, filters: Optional[dict] = None, cols: str = "*", order_by: Optional[str] = None, limit: int = 100, offset: int = 0) -> List[dict]:
+        cols = _validate_columns(cols)
         params: dict = {"limit": min(limit, 1000), "offset": offset}
-        where_clause = ""
-        
+        where = ""
         if filters:
-            self._validate_filter_keys(filters)
-            where_parts = [f'"{k}" = :f_{k}' for k in filters.keys()]
+            self._check_keys(filters, "filter column")
+            where = "WHERE " + " AND ".join(f'"{k}" = :f_{k}' for k in filters)
             params.update({f"f_{k}": v for k, v in filters.items()})
-            where_clause = f"WHERE {' AND '.join(where_parts)}"
-        
-        order_clause = f"ORDER BY {_validate_order_by(order_by)}" if order_by else ""
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'SELECT {columns} FROM "{self.table_name}" {where_clause} {order_clause} LIMIT :limit OFFSET :offset'),
-                params
-            )
-            return [dict(row._mapping) for row in result.fetchall()]
+        order = f"ORDER BY {_validate_order_by(order_by)}" if order_by else ""
+        async with get_session() as s:
+            r = await s.execute(text(f'SELECT {cols} FROM "{self.name}" {where} {order} LIMIT :limit OFFSET :offset'), params)
+            return [dict(row._mapping) for row in r.fetchall()]
     
     async def count(self, filters: Optional[dict] = None) -> int:
         params: dict = {}
-        where_clause = ""
-        
+        where = ""
         if filters:
-            self._validate_filter_keys(filters)
-            where_parts = [f'"{k}" = :f_{k}' for k in filters.keys()]
+            self._check_keys(filters, "filter column")
+            where = "WHERE " + " AND ".join(f'"{k}" = :f_{k}' for k in filters)
             params.update({f"f_{k}": v for k, v in filters.items()})
-            where_clause = f"WHERE {' AND '.join(where_parts)}"
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'SELECT COUNT(*) FROM "{self.table_name}" {where_clause}'),
-                params
-            )
-            return result.scalar() or 0
+        async with get_session() as s:
+            r = await s.execute(text(f'SELECT COUNT(*) FROM "{self.name}" {where}'), params)
+            return r.scalar() or 0
     
     async def insert(self, data: dict) -> Optional[dict]:
-        self._validate_data_keys(data)
-        data = self._prepare_json_data(data)
-        columns = list(data.keys())
-        col_list = ", ".join(f'"{c}"' for c in columns)
-        placeholders = [f":{c}::jsonb" if c in self._json_columns else f":{c}" for c in columns]
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'INSERT INTO "{self.table_name}" ({col_list}) VALUES ({", ".join(placeholders)}) RETURNING *'),
-                data
-            )
-            await session.commit()
-            row = result.fetchone()
+        self._check_keys(data, "data column")
+        data = self._prep_json(data)
+        col_list = ", ".join(f'"{c}"' for c in data)
+        placeholders = ", ".join(f":{c}::jsonb" if c in self._json_cols else f":{c}" for c in data)
+        async with get_session() as s:
+            r = await s.execute(text(f'INSERT INTO "{self.name}" ({col_list}) VALUES ({placeholders}) RETURNING *'), data)
+            await s.commit()
+            row = r.fetchone()
             return dict(row._mapping) if row else None
     
-    async def update(self, id_column: str, id_value, data: dict) -> Optional[dict]:
-        id_column = _validate_identifier(id_column, "id column")
+    async def update(self, id_col: str, id_val, data: dict) -> Optional[dict]:
+        id_col = _validate_identifier(id_col, "id column")
         if not data:
-            return await self.get(id_column, id_value)
-        
-        self._validate_data_keys(data)
-        data = self._prepare_json_data(data)
-        set_parts = [f'"{k}" = :{k}::jsonb' if k in self._json_columns else f'"{k}" = :{k}' for k in data.keys()]
-        params = {**data, "id": id_value}
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'UPDATE "{self.table_name}" SET {", ".join(set_parts)} WHERE "{id_column}" = :id RETURNING *'),
-                params
-            )
-            await session.commit()
-            row = result.fetchone()
+            return await self.get(id_col, id_val)
+        self._check_keys(data, "data column")
+        data = self._prep_json(data)
+        set_clause = ", ".join(f'"{k}" = :{k}::jsonb' if k in self._json_cols else f'"{k}" = :{k}' for k in data)
+        async with get_session() as s:
+            r = await s.execute(text(f'UPDATE "{self.name}" SET {set_clause} WHERE "{id_col}" = :id RETURNING *'), {**data, "id": id_val})
+            await s.commit()
+            row = r.fetchone()
             return dict(row._mapping) if row else None
     
-    async def upsert(self, conflict_column: str, data: dict) -> Optional[dict]:
-        conflict_column = _validate_identifier(conflict_column, "conflict column")
-        self._validate_data_keys(data)
-        data = self._prepare_json_data(data)
-        columns = list(data.keys())
-        col_list = ", ".join(f'"{c}"' for c in columns)
-        placeholders = [f":{c}::jsonb" if c in self._json_columns else f":{c}" for c in columns]
-        update_cols = [c for c in columns if c != conflict_column]
-        update_parts = [f'"{c}" = EXCLUDED."{c}"' for c in update_cols]
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'''
-                    INSERT INTO "{self.table_name}" ({col_list}) 
-                    VALUES ({", ".join(placeholders)})
-                    ON CONFLICT ("{conflict_column}") DO UPDATE SET {", ".join(update_parts)}
-                    RETURNING *
-                '''),
-                data
-            )
-            await session.commit()
-            row = result.fetchone()
+    async def upsert(self, conflict_col: str, data: dict) -> Optional[dict]:
+        conflict_col = _validate_identifier(conflict_col, "conflict column")
+        self._check_keys(data, "data column")
+        data = self._prep_json(data)
+        col_list = ", ".join(f'"{c}"' for c in data)
+        placeholders = ", ".join(f":{c}::jsonb" if c in self._json_cols else f":{c}" for c in data)
+        update_cols = [c for c in data if c != conflict_col]
+        update_clause = ", ".join(f'"{c}" = EXCLUDED."{c}"' for c in update_cols)
+        sql = f'INSERT INTO "{self.name}" ({col_list}) VALUES ({placeholders}) ON CONFLICT ("{conflict_col}") DO UPDATE SET {update_clause} RETURNING *'
+        async with get_session() as s:
+            r = await s.execute(text(sql), data)
+            await s.commit()
+            row = r.fetchone()
             return dict(row._mapping) if row else None
     
-    async def delete(self, id_column: str, id_value) -> bool:
-        id_column = _validate_identifier(id_column, "id column")
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'DELETE FROM "{self.table_name}" WHERE "{id_column}" = :id RETURNING "{id_column}"'),
-                {"id": id_value}
-            )
-            await session.commit()
-            return result.fetchone() is not None
+    async def delete(self, id_col: str, id_val) -> bool:
+        id_col = _validate_identifier(id_col, "id column")
+        async with get_session() as s:
+            r = await s.execute(text(f'DELETE FROM "{self.name}" WHERE "{id_col}" = :id RETURNING "{id_col}"'), {"id": id_val})
+            await s.commit()
+            return r.fetchone() is not None
     
     async def delete_by(self, filters: dict) -> int:
-        self._validate_filter_keys(filters)
-        where_parts = [f'"{k}" = :f_{k}' for k in filters.keys()]
+        self._check_keys(filters, "filter column")
+        where = " AND ".join(f'"{k}" = :f_{k}' for k in filters)
         params = {f"f_{k}": v for k, v in filters.items()}
-        
-        async with get_session() as session:
-            result = await session.execute(
-                text(f'DELETE FROM "{self.table_name}" WHERE {" AND ".join(where_parts)}'),
-                params
-            )
-            await session.commit()
-            return result.rowcount
-    
-    def _prepare_json_data(self, data: dict) -> dict:
-        result = {}
-        for k, v in data.items():
-            if k in self._json_columns and isinstance(v, (dict, list)):
-                result[k] = _json_dumps(v)
-            else:
-                result[k] = v
-        return result
+        async with get_session() as s:
+            r = await s.execute(text(f'DELETE FROM "{self.name}" WHERE {where}'), params)
+            await s.commit()
+            return r.rowcount
 
 
 def table(name: str) -> Table:

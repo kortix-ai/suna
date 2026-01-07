@@ -74,7 +74,6 @@ async def cleanup_orphaned_agent_runs(db_client) -> int:
                 
                 # Mark as failed
                 await update_agent_run_status(
-                    db_client,
                     agent_run_id,
                     "failed",
                     error="Orphaned run - instance crashed or was restarted",

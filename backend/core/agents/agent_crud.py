@@ -386,15 +386,16 @@ async def update_agent(
 
 @router.delete("/agents/{agent_id}", summary="Delete Agent", operation_id="delete_agent")
 async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    from core.agents import repo as agents_repo
+    
     logger.debug(f"Deleting agent: {agent_id}")
-    client = await db.client
     
     try:
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-        if not agent_result.data:
+        # Get agent and verify ownership using direct SQL
+        agent = await agents_repo.get_agent_by_id(agent_id)
+        if not agent:
             raise HTTPException(status_code=404, detail="Worker not found")
         
-        agent = agent_result.data[0]
         if agent['account_id'] != user_id:
             raise HTTPException(status_code=403, detail="Access denied")
         
@@ -404,33 +405,30 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         if agent.get('metadata', {}).get('is_suna_default', False):
             raise HTTPException(status_code=400, detail="Cannot delete Suna default agent")
         
-        # Clean up triggers before deleting agent to ensure proper remote cleanup
+        # Clean up triggers before deleting agent
         try:
             from core.triggers.trigger_service import get_trigger_service
             trigger_service = get_trigger_service(db)
             
-            # Get all triggers for this agent
-            triggers_result = await client.table('agent_triggers').select('trigger_id').eq('agent_id', agent_id).execute()
+            triggers = await agents_repo.get_agent_triggers(agent_id)
             
-            if triggers_result.data:
-                logger.debug(f"Cleaning up {len(triggers_result.data)} triggers for agent {agent_id}")
+            if triggers:
+                logger.debug(f"Cleaning up {len(triggers)} triggers for agent {agent_id}")
                 
-                # Delete each trigger properly (this handles remote cleanup)
-                for trigger_record in triggers_result.data:
-                    trigger_id = trigger_record['trigger_id']
+                for trigger in triggers:
+                    trigger_id = trigger['trigger_id']
                     try:
                         await trigger_service.delete_trigger(trigger_id)
                         logger.debug(f"Successfully cleaned up trigger {trigger_id}")
                     except Exception as e:
                         logger.warning(f"Failed to clean up trigger {trigger_id}: {str(e)}")
-                        # Continue with other triggers even if one fails
         except Exception as e:
             logger.warning(f"Failed to clean up triggers for agent {agent_id}: {str(e)}")
-            # Continue with agent deletion even if trigger cleanup fails
         
-        delete_result = await client.table('agents').delete().eq('agent_id', agent_id).execute()
+        # Delete the agent using direct SQL
+        deleted = await agents_repo.delete_agent(agent_id, user_id)
         
-        if not delete_result.data:
+        if not deleted:
             logger.warning(f"No agent was deleted for agent_id: {agent_id}, user_id: {user_id}")
             raise HTTPException(status_code=403, detail="Unable to delete agent - permission denied or agent not found")
         
@@ -548,6 +546,8 @@ async def create_agent(
     agent_data: AgentCreateRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    from core.agents import repo as agents_repo
+    
     logger.debug(f"Creating new agent for user: {user_id}")
     client = await db.client
     
@@ -566,33 +566,30 @@ async def create_agent(
         raise HTTPException(status_code=402, detail=error_detail)
     
     try:
+        # Clear existing default if setting new default
         if agent_data.is_default:
-            await client.table('agents').update({"is_default": False}).eq("account_id", user_id).eq("is_default", True).execute()
-        
-        insert_data = {
-            "account_id": user_id,
-            "name": agent_data.name,
-            "icon_name": agent_data.icon_name or "bot",
-            "icon_color": agent_data.icon_color or "#000000",
-            "icon_background": agent_data.icon_background or "#F3F4F6",
-            "is_default": agent_data.is_default or False,
-            "version_count": 1
-        }
+            await agents_repo.clear_default_agent(user_id)
         
         if config.ENV_MODE == EnvMode.STAGING:
-            print(f"[DEBUG] create_agent: Creating with icon_name={insert_data.get('icon_name')}, icon_color={insert_data.get('icon_color')}, icon_background={insert_data.get('icon_background')}")
+            print(f"[DEBUG] create_agent: Creating with icon_name={agent_data.icon_name or 'bot'}, icon_color={agent_data.icon_color or '#000000'}, icon_background={agent_data.icon_background or '#F3F4F6'}")
         
-        new_agent = await client.table('agents').insert(insert_data).execute()
+        # Create agent using direct SQL
+        agent = await agents_repo.create_agent(
+            account_id=user_id,
+            name=agent_data.name,
+            icon_name=agent_data.icon_name or "bot",
+            icon_color=agent_data.icon_color or "#000000",
+            icon_background=agent_data.icon_background or "#F3F4F6",
+            is_default=agent_data.is_default or False
+        )
         
-        if not new_agent.data:
+        if not agent:
             raise HTTPException(status_code=500, detail="Failed to create agent")
-        
-        agent = new_agent.data[0]
         
         try:
             version_service = await _get_version_service()
-            from .suna_config import SUNA_CONFIG
-            from .config_helper import _get_default_agentpress_tools
+            from core.config.suna_config import SUNA_CONFIG
+            from core.config.config_helper import _get_default_agentpress_tools
             from core.ai_models import model_manager
             
             system_prompt = SUNA_CONFIG["system_prompt"]
@@ -634,7 +631,8 @@ async def create_agent(
             )
         except Exception as e:
             logger.error(f"Error creating initial version: {str(e)}")
-            await client.table('agents').delete().eq('agent_id', agent['agent_id']).execute()
+            # Rollback agent creation using direct SQL
+            await agents_repo.delete_agent(agent['agent_id'], user_id)
             raise HTTPException(status_code=500, detail="Failed to create initial version")
         
         from core.utils.cache import Cache

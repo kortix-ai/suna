@@ -84,6 +84,9 @@ async def lifespan(app: FastAPI):
     try:
         await db.initialize()
         
+        from core.services.db import init_db
+        await init_db()
+        
         # Pre-load tool classes and schemas to avoid first-request delay
         from core.utils.tool_discovery import warm_up_tools_cache
         warm_up_tools_cache()
@@ -160,12 +163,10 @@ async def lifespan(app: FastAPI):
             await asyncio.sleep(1)
             
             # Force update DB status for any runs that didn't clean up
-            shutdown_client = await db.client
             for agent_run_id in active_run_ids:
                 try:
                     # Update status to stopped with shutdown message
                     await update_agent_run_status(
-                        shutdown_client,
                         agent_run_id,
                         "stopped",
                         error=f"Instance shutdown: {instance_id}"
@@ -209,6 +210,10 @@ async def lifespan(app: FastAPI):
 
         logger.debug("Disconnecting from database")
         await db.disconnect()
+        
+        # Close direct Postgres connection pool
+        from core.services.db import close_db
+        await close_db()
     except Exception as e:
         logger.error(f"Error during application startup: {e}")
         raise

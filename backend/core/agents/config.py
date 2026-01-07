@@ -6,17 +6,18 @@ import time
 from typing import Optional, Dict, Any
 
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
 
 
 async def load_agent_config(
     agent_id: Optional[str], 
     account_id: Optional[str], 
     user_id: Optional[str] = None,
-    client = None,
+    client = None,  # Kept for backward compatibility but not used for DB queries
     is_new_thread: bool = False
 ) -> Optional[Dict[str, Any]]:
     """Load agent configuration from cache or database."""
+    from core.agents import repo as agents_repo
+    
     t = time.time()
     logger.info(f"⏱️ [AGENT CONFIG] Starting load_agent_config for agent_id={agent_id}")
     user_id = user_id or account_id
@@ -24,10 +25,6 @@ async def load_agent_config(
     try:
         # Handle default agent loading (agent_id is None)
         if not agent_id:
-            if not client:
-                logger.warning("Cannot load default agent: client not provided")
-                return None
-                
             logger.debug(f"[AGENT LOAD] Loading default agent")
             
             if is_new_thread:
@@ -37,21 +34,23 @@ async def load_agent_config(
             from core.agents.agent_loader import get_agent_loader
             loader = await get_agent_loader()
             
-            default_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
+            # Use repo for direct SQL query
+            default_agent_id = await agents_repo.get_default_agent_id(account_id)
             
-            if default_agent and default_agent.data:
-                agent_data = await loader.load_agent(default_agent.data['agent_id'], user_id, load_config=True)
+            if default_agent_id:
+                agent_data = await loader.load_agent(default_agent_id, user_id, load_config=True)
                 logger.debug(f"Using default agent: {agent_data.name} ({agent_data.agent_id}) version {agent_data.version_name}")
                 return agent_data.to_dict()
             else:
                 logger.warning(f"[AGENT LOAD] No default agent found for account {account_id}, searching for shared Suna")
-                agent_data = await _find_shared_suna_agent(client)
+                agent_data = await _find_shared_suna_agent()
                 
                 if not agent_data:
-                    any_agent = await client.table('agents').select('agent_id').eq('account_id', account_id).limit(1).maybe_single().execute()
+                    # Fallback to any agent
+                    any_agent_id = await agents_repo.get_any_agent_id(account_id)
                     
-                    if any_agent and any_agent.data:
-                        agent_data = await loader.load_agent(any_agent.data['agent_id'], user_id, load_config=True)
+                    if any_agent_id:
+                        agent_data = await loader.load_agent(any_agent_id, user_id, load_config=True)
                         logger.info(f"[AGENT LOAD] Using fallback agent: {agent_data.name} ({agent_data.agent_id})")
                         return agent_data.to_dict()
                     else:
@@ -116,32 +115,32 @@ async def load_agent_config(
         return None
 
 
-async def _find_shared_suna_agent(client):
+async def _find_shared_suna_agent():
     """Find shared Suna agent (helper for default agent loading)."""
     from core.agents.agent_loader import get_agent_loader
     from core.utils.config import config
+    from core.agents import repo as agents_repo
     
     admin_user_id = config.SYSTEM_ADMIN_USER_ID
     
-    if admin_user_id:
-        admin_suna = await client.table('agents').select('agent_id').eq('account_id', admin_user_id).eq('metadata->>is_suna_default', 'true').maybe_single().execute()
-        
-        if admin_suna and admin_suna.data:
-            loader = await get_agent_loader()
-            agent_data = await loader.load_agent(admin_suna.data['agent_id'], admin_user_id, load_config=True)
-            logger.info(f"✅ Using system Suna agent from admin user: {agent_data.name} ({agent_data.agent_id})")
-            return agent_data
-        else:
-            logger.warning(f"⚠️ SYSTEM_ADMIN_USER_ID configured but no Suna agent found for user {admin_user_id}")
+    # Use repo for direct SQL query
+    shared_agent = await agents_repo.get_shared_suna_agent(admin_user_id)
     
-    any_suna = await client.table('agents').select('agent_id, account_id').eq('metadata->>is_suna_default', 'true').limit(1).maybe_single().execute()
-    
-    if any_suna and any_suna.data:
+    if shared_agent:
         loader = await get_agent_loader()
-        agent_data = await loader.load_agent(any_suna.data['agent_id'], any_suna.data['account_id'], load_config=True)
-        logger.info(f"Using shared Suna agent: {agent_data.name} ({agent_data.agent_id})")
+        agent_data = await loader.load_agent(
+            shared_agent['agent_id'], 
+            shared_agent['account_id'], 
+            load_config=True
+        )
+        if admin_user_id and shared_agent['account_id'] == admin_user_id:
+            logger.info(f"✅ Using system Suna agent from admin user: {agent_data.name} ({agent_data.agent_id})")
+        else:
+            logger.info(f"Using shared Suna agent: {agent_data.name} ({agent_data.agent_id})")
         return agent_data
+    
+    if admin_user_id:
+        logger.warning(f"⚠️ SYSTEM_ADMIN_USER_ID configured but no Suna agent found for user {admin_user_id}")
     
     logger.error("❌ No Suna agent found! Set SYSTEM_ADMIN_USER_ID in .env")
     return None
-
