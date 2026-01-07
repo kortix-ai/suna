@@ -67,7 +67,6 @@ ip_tracker = OrderedDict()
 MAX_CONCURRENT_IPS = 25
 
 # Background task handle for CloudWatch metrics
-_queue_metrics_task = None
 _worker_metrics_task = None
 _memory_watchdog_task = None
 
@@ -77,7 +76,7 @@ _is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _queue_metrics_task, _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
+    global _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
@@ -110,12 +109,8 @@ async def lifespan(app: FastAPI):
         template_api.initialize(db)
         composio_api.initialize(db)
         
-        # Start CloudWatch queue metrics publisher (production only)
+        # Start CloudWatch worker metrics publisher (production only)
         if config.ENV_MODE == EnvMode.PRODUCTION:
-            from core.services import queue_metrics
-            _queue_metrics_task = asyncio.create_task(queue_metrics.start_cloudwatch_publisher())
-            
-            # Start CloudWatch worker metrics publisher
             from core.services import worker_metrics
             _worker_metrics_task = asyncio.create_task(worker_metrics.start_cloudwatch_publisher())
         
@@ -133,14 +128,6 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(2)
         
         logger.debug("Cleaning up resources")
-        
-        # Stop CloudWatch queue metrics task
-        if _queue_metrics_task is not None:
-            _queue_metrics_task.cancel()
-            try:
-                await _queue_metrics_task
-            except asyncio.CancelledError:
-                pass
         
         # Stop CloudWatch worker metrics task
         if _worker_metrics_task is not None:
@@ -371,31 +358,21 @@ async def health_check():
     }
 
 @api_router.get("/metrics", summary="System Metrics", operation_id="metrics", tags=["system"])
-async def metrics_endpoint(
-    type: str = Query("all", description="Metrics type: 'queue', 'workers', or 'all'")
-):
+async def metrics_endpoint():
     """
-    Get system metrics for monitoring and auto-scaling.
+    Get API instance metrics for monitoring.
     
-    - **queue**: Redis Streams pending messages (for auto-scaling)
-    - **workers**: Worker count and task utilization
-    - **all**: Combined queue and worker metrics (default)
+    Returns:
+        - concurrent_agent_runs: Current concurrent agent runs
+        - max_concurrent_runs: Maximum concurrent runs per instance
+        - utilization_percent: Current utilization
+    
+    Note: All tasks execute directly in API process (no queues).
     """
-    from core.services import queue_metrics, worker_metrics
+    from core.services import worker_metrics
     
     try:
-        if type == "queue":
-            return await queue_metrics.get_queue_metrics()
-        elif type == "workers":
-            return await worker_metrics.get_worker_metrics()
-        else:  # type == "all" or default
-            queue_data = await queue_metrics.get_queue_metrics()
-            worker_data = await worker_metrics.get_worker_metrics()
-            return {
-                "queue": queue_data,
-                "workers": worker_data,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+        return await worker_metrics.get_worker_metrics()
     except Exception as e:
         logger.error(f"Failed to get metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")

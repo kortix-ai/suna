@@ -2116,6 +2116,7 @@ dependencies = [
     { name = "uvicorn" },
     { name = "vncdotool" },
     { name = "vtracer" },
+    { name = "watchtower" },
     { name = "weasyprint" },
 ]
 
@@ -2207,6 +2208,7 @@ requires-dist = [
     { name = "uvicorn", specifier = "==0.27.1" },
     { name = "vncdotool", specifier = "==1.2.0" },
     { name = "vtracer", specifier = ">=0.6.0" },
+    { name = "watchtower", specifier = ">=3.0.0" },
     { name = "weasyprint", specifier = ">=63.0" },
 ]
 
@@ -4562,6 +4564,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/96/24/07a0a4d12d31c49513823a15deea3c735580819eb67af914676df5cb9c8e/vtracer-0.6.11-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:1f804d3b4f23b512a5bcf687944e1eb7a38069e0b2bec4edf4ae9810a13d5953", size = 1816606 },
     { url = "https://files.pythonhosted.org/packages/2e/e1/b659c9c5a3799a0755de1697d07af4ae81d8148a865e60ff0cc89c69cfe7/vtracer-0.6.11-cp312-none-win32.whl", hash = "sha256:63ae0ec7ba3db067b5e9979aa05219e79dc181b9013d2cdc4fea4dfb22818eb9", size = 770494 },
     { url = "https://files.pythonhosted.org/packages/c1/a0/49b1bdeb1df5d6a4d2ccca739a6c4ab9699082fa7ae77fa352b96113b4ea/vtracer-0.6.11-cp312-none-win_amd64.whl", hash = "sha256:5f2174a6f2da741672f3322daf0d59fc24705632a5c4ecb633cb74d5cf1c0c16", size = 789552 },
+]
+
+[[package]]
+name = "watchtower"
+version = "3.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/e1/40e6940383b7202e7c12343ab58c4a0acd5552217d829a4f0ed19cd9cf0b/watchtower-3.4.0.tar.gz", hash = "sha256:7d3c116aff72a73ce8f6fc0addd1d0daa04d3f9d53d87cedca3a5a65a264bf7d", size = 27128 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/35/ac/7caa56d4cf82e66b5cdc46d7fa6edd0d4bcd407ec33e46f28a8be83cca28/watchtower-3.4.0-py3-none-any.whl", hash = "sha256:5eac65cbf2a7350bb43c3518485230a6135ed7dec7ccb88468828d68ab9fea26", size = 18022 },
 ]
 
 [[package]]
