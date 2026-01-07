@@ -220,24 +220,11 @@ class ErrorProcessor:
     
     @staticmethod
     def safe_error_to_string(error: Exception) -> str:
-        """Safely convert an exception to a string with fallback"""
+        """Safely convert an exception to a string - return whatever we get"""
         try:
             return str(error)
-            
         except Exception:
-            try:
-                # Handle case where error.args[0] might be a list or other non-string type
-                if error.args:
-                    first_arg = error.args[0]
-                    if isinstance(first_arg, (list, tuple)):
-                        # Convert list/tuple to string safely
-                        return f"{type(error).__name__}: {str(first_arg)}"
-                    else:
-                        return f"{type(error).__name__}: {str(first_arg)}"
-                else:
-                    return f"{type(error).__name__}: Unknown error"
-            except Exception:
-                return f"Error of type {type(error).__name__}"
+            return f"{type(error).__name__}"
     
     @staticmethod
     def log_error(processed_error: ProcessedError, level: str = "error") -> None:

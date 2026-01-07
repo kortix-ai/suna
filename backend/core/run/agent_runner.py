@@ -418,6 +418,8 @@ class AgentRunner:
                 yield chunk
                         
         except Exception as e:
+            # Log full exception details for debugging (especially in production)
+            logger.error(f"Exception in _execute_single_turn for thread {self.config.thread_id}: {type(e).__name__}: {e}", exc_info=True)
             processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
             ErrorProcessor.log_error(processed_error)
             if generation:
