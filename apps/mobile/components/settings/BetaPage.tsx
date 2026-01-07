@@ -5,9 +5,10 @@ import { useLanguage } from '@/contexts';
 import { useAdvancedFeatures } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Layers, Globe, ExternalLink, AlertCircle } from 'lucide-react-native';
+import { Layers, Globe, ExternalLink, AlertCircle, Rocket, Sparkles } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
+import Constants from 'expo-constants';
 
 interface BetaPageProps {
   visible: boolean;
@@ -57,6 +58,32 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
           />
 
           <View className="px-6 pb-8 pt-2">
+            {/* OTA Update Test Banner */}
+            <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
+              <View className="flex-row items-center gap-3 mb-2">
+                <View className="h-10 w-10 rounded-full bg-purple-500/30 items-center justify-center">
+                  <Icon as={Rocket} size={20} className="text-purple-600 dark:text-purple-400" strokeWidth={2.5} />
+                </View>
+                <View className="flex-1">
+                  <View className="flex-row items-center gap-2">
+                    <Text className="text-lg font-roobert-bold text-purple-900 dark:text-purple-100">
+                      OTA Update Test v2.0
+                    </Text>
+                    <Icon as={Sparkles} size={16} className="text-purple-600 dark:text-purple-400" strokeWidth={2.5} />
+                  </View>
+                </View>
+              </View>
+              <Text className="text-sm font-roobert text-purple-800 dark:text-purple-200 leading-5">
+                If you see this banner with "v2.0", the Over-The-Air update system is working! 🎉
+              </Text>
+              <View className="mt-3 pt-3 border-t border-purple-500/30">
+                <Text className="text-xs font-roobert-medium text-purple-700 dark:text-purple-300">
+                  App Version: {Constants.expoConfig?.version || 'N/A'} • 
+                  Update ID: {Constants.expoConfig?.extra?.eas?.projectId?.slice(0, 8) || 'Local'}
+                </Text>
+              </View>
+            </View>
+
             {/* Web Support - Prominent */}
             <View className="mb-6">
               <Pressable
