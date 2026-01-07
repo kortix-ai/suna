@@ -342,6 +342,10 @@ async def get_thread_details(thread_ids: List[str]) -> Dict[str, Dict[str, Any]]
     if not thread_ids:
         return {}
     
+    # Convert string IDs to UUID objects for proper type matching
+    from uuid import UUID
+    uuid_list = [UUID(tid) for tid in thread_ids]
+    
     sql = """
     SELECT 
         t.thread_id,
@@ -353,7 +357,7 @@ async def get_thread_details(thread_ids: List[str]) -> Dict[str, Dict[str, Any]]
     WHERE t.thread_id = ANY(:thread_ids)
     """
     
-    rows = await execute(sql, {"thread_ids": thread_ids})
+    rows = await execute(sql, {"thread_ids": uuid_list})
     
     result = {}
     for row in rows or []:
@@ -364,3 +368,98 @@ async def get_thread_details(thread_ids: List[str]) -> Dict[str, Dict[str, Any]]
         }
     
     return result
+
+
+# =============================================================================
+# CREDIT ACCOUNT REPOSITORY FUNCTIONS
+# =============================================================================
+
+async def get_credit_account_by_id(account_id: str) -> Optional[Dict[str, Any]]:
+    """Get credit account by account_id only (no user_id fallback)."""
+    sql = "SELECT * FROM credit_accounts WHERE account_id = :account_id"
+    return await execute_one(sql, {"account_id": account_id})
+
+
+async def get_credit_account_subscription_info(account_id: str) -> Optional[Dict[str, Any]]:
+    """Get credit account with subscription-related fields."""
+    sql = """
+    SELECT stripe_subscription_id, trial_status, tier
+    FROM credit_accounts
+    WHERE account_id = :account_id
+    """
+    return await execute_one(sql, {"account_id": account_id})
+
+
+async def get_credit_account_subscription_details(account_id: str) -> Optional[Dict[str, Any]]:
+    """Get credit account with subscription details including commitment."""
+    sql = """
+    SELECT stripe_subscription_id, tier, commitment_type, commitment_end_date
+    FROM credit_accounts
+    WHERE account_id = :account_id
+    """
+    return await execute_one(sql, {"account_id": account_id})
+
+
+async def get_credit_account_scheduled_changes(account_id: str) -> Optional[Dict[str, Any]]:
+    """Get credit account with scheduled change fields."""
+    sql = """
+    SELECT stripe_subscription_id, tier, scheduled_tier_change, 
+           scheduled_tier_change_date, scheduled_price_id
+    FROM credit_accounts
+    WHERE account_id = :account_id
+    """
+    return await execute_one(sql, {"account_id": account_id})
+
+
+async def update_credit_account(account_id: str, update_data: Dict[str, Any]) -> bool:
+    """Update credit account fields."""
+    from core.services.db import execute_mutate
+    
+    if not update_data:
+        return True
+    
+    # Build dynamic SET clause
+    set_parts = []
+    params = {"account_id": account_id}
+    
+    for key, value in update_data.items():
+        set_parts.append(f"{key} = :{key}")
+        params[key] = value
+    
+    set_sql = ", ".join(set_parts)
+    sql = f"UPDATE credit_accounts SET {set_sql} WHERE account_id = :account_id"
+    
+    await execute_mutate(sql, params)
+    
+    # Invalidate caches if tier is being updated
+    if 'tier' in update_data or 'trial_status' in update_data:
+        try:
+            from core.cache.runtime_cache import invalidate_tier_info_cache
+            from core.utils.cache import Cache
+            await invalidate_tier_info_cache(account_id)
+            await Cache.invalidate(f"subscription_tier:{account_id}")
+        except Exception:
+            pass  # Non-critical - cache will expire naturally
+    
+    return True
+
+
+async def clear_credit_account_scheduled_changes(account_id: str) -> bool:
+    """Clear scheduled tier change fields."""
+    return await update_credit_account(account_id, {
+        'scheduled_tier_change': None,
+        'scheduled_tier_change_date': None,
+        'scheduled_price_id': None
+    })
+
+
+async def check_renewal_already_processed(account_id: str, period_start: int) -> Optional[Dict[str, Any]]:
+    """Check if a renewal has already been processed for this period."""
+    from core.services.db import execute_one
+    
+    # Call the RPC function using raw SQL
+    sql = "SELECT * FROM check_renewal_already_processed(:p_account_id, :p_period_start)"
+    return await execute_one(sql, {
+        "p_account_id": account_id,
+        "p_period_start": period_start
+    })
