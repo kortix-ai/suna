@@ -100,6 +100,7 @@ dependencies = [
   "orjson>=3.11.1", # Moved from dev - 3-5x faster JSON serialization for hot paths
   "watchtower>=3.0.0", # CloudWatch Logs handler
   "psycopg[binary]>=3.3.2",
+  "sqlalchemy>=2.0.45",
 ]
 
 [project.urls]
