@@ -1,15 +1,6 @@
-"""Clean Redis client with proper connection management.
-
-This module provides a simplified Redis client that:
-- Uses redis-py's built-in connection pooling and retry mechanisms
-- Eliminates Pub/Sub in favor of Redis Streams
-- Uses simple keys for control signals
-- Avoids event loop issues with proper threading.Lock usage
-"""
-
 import redis.asyncio as redis_lib
 from redis.asyncio import Redis, ConnectionPool
-from redis.exceptions import ConnectionError as RedisConnectionError, BusyLoadingError
+from redis.exceptions import BusyLoadingError
 from redis.backoff import ExponentialBackoff
 from redis.retry import Retry
 import os
@@ -19,17 +10,9 @@ from typing import Optional, Dict, List, Any
 from dotenv import load_dotenv
 from core.utils.logger import logger
 
-# Constants
-REDIS_KEY_TTL = 3600 * 2  # 2 hours default TTL
-
+REDIS_KEY_TTL = 3600 * 2
 
 class RedisClient:
-    """Clean Redis client with proper connection management.
-    
-    Thread-safe initialization using threading.Lock (not asyncio.Lock)
-    to avoid event loop binding issues in worker processes.
-    """
-    
     def __init__(self):
         self._pool: Optional[ConnectionPool] = None
         self._client: Optional[Redis] = None
@@ -37,10 +20,8 @@ class RedisClient:
         self._initialized = False
     
     def _get_config(self) -> Dict[str, Any]:
-        """Get Redis configuration from environment."""
         load_dotenv()
         
-        # Default to localhost for local dev, redis for Docker
         redis_host = os.getenv("REDIS_HOST", "localhost")
         redis_port = int(os.getenv("REDIS_PORT", 6379))
         redis_password = os.getenv("REDIS_PASSWORD", "")
@@ -64,44 +45,51 @@ class RedisClient:
             "url": redis_url,
         }
     
+    def get_pool_info(self) -> Dict[str, Any]:
+        if self._pool:
+            return {
+                "max_connections": getattr(self._pool, 'max_connections', 'unknown'),
+                "created_connections": len(getattr(self._pool, '_created_connections', [])),
+                "available_connections": len(getattr(self._pool, '_available_connections', [])),
+                "in_use_connections": len(getattr(self._pool, '_in_use_connections', [])),
+            }
+        return {"status": "pool_not_initialized"}
+
     async def get_client(self) -> Redis:
-        """Get or create Redis client. Thread-safe, event-loop safe."""
         if self._client is not None and self._initialized:
             return self._client
         
         with self._init_lock:
-            # Double-check after acquiring lock
             if self._client is not None and self._initialized:
                 return self._client
             
             config = self._get_config()
-            max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "50"))
+            max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "300"))
             
             logger.info(
                 f"Initializing Redis to {config['host']}:{config['port']} "
                 f"with max {max_connections} connections"
             )
             
-            # Configure explicit retry with exponential backoff for robust reconnection
-            retry = Retry(ExponentialBackoff(), 3)
+            retry = Retry(ExponentialBackoff(), 1)
             
             self._pool = ConnectionPool.from_url(
                 config["url"],
                 decode_responses=True,
-                socket_timeout=10.0,
-                socket_connect_timeout=5.0,
+                timeout=5,
+                socket_timeout=15.0,
+                socket_connect_timeout=10.0,
                 socket_keepalive=True,
-                retry_on_timeout=True,
+                retry_on_timeout=False,
                 health_check_interval=30,
                 max_connections=max_connections,
             )
             self._client = Redis(
                 connection_pool=self._pool,
                 retry=retry,
-                retry_on_error=[BusyLoadingError, RedisConnectionError]
+                retry_on_error=[BusyLoadingError]
             )
             
-            # Verify connection with timeout
             try:
                 await asyncio.wait_for(self._client.ping(), timeout=5.0)
                 self._initialized = True
@@ -116,11 +104,9 @@ class RedisClient:
             return self._client
     
     async def initialize_async(self):
-        """Initialize Redis connection (alias for get_client for compatibility)."""
         await self.get_client()
     
     async def close(self):
-        """Close Redis connection and pool."""
         with self._init_lock:
             if self._client:
                 try:
@@ -142,7 +128,6 @@ class RedisClient:
             logger.info("Redis connection and pool closed")
     
     async def verify_connection(self) -> bool:
-        """Verify Redis connection is alive."""
         try:
             client = await self.get_client()
             await client.ping()
@@ -153,7 +138,6 @@ class RedisClient:
             raise ConnectionError(f"Redis connection verification failed: {e}")
     
     async def verify_stream_writable(self, stream_key: str) -> bool:
-        """Verify a Redis stream is writable."""
         test_key = f"{stream_key}:health_check"
         try:
             client = await self.get_client()
@@ -169,45 +153,35 @@ class RedisClient:
             logger.error(f"❌ Redis stream {stream_key} write verification failed: {e}")
             raise ConnectionError(f"Redis stream {stream_key} is not writable: {e}")
     
-    # ========== Basic Key Operations ==========
-    
     async def get(self, key: str) -> Optional[str]:
-        """Get value for a key."""
         client = await self.get_client()
         return await client.get(key)
     
     async def set(self, key: str, value: str, ex: int = None, nx: bool = False) -> bool:
-        """Set value for a key with optional expiration and NX flag."""
         client = await self.get_client()
         return await client.set(key, value, ex=ex, nx=nx)
     
     async def setex(self, key: str, seconds: int, value: str) -> bool:
-        """Set value for a key with expiration."""
         client = await self.get_client()
         return await client.setex(key, seconds, value)
     
     async def delete(self, key: str) -> int:
-        """Delete a key."""
         client = await self.get_client()
         return await client.delete(key)
     
     async def incr(self, key: str) -> int:
-        """Increment a key atomically."""
         client = await self.get_client()
         return await client.incr(key)
     
     async def expire(self, key: str, seconds: int) -> bool:
-        """Set expiration on a key."""
         client = await self.get_client()
         return await client.expire(key, seconds)
     
     async def ttl(self, key: str) -> int:
-        """Get TTL for a key."""
         client = await self.get_client()
         return await client.ttl(key)
     
     async def scan_keys(self, pattern: str, count: int = 100) -> List[str]:
-        """Scan for keys matching a pattern (non-blocking alternative to keys())."""
         client = await self.get_client()
         keys = []
         async for key in client.scan_iter(match=pattern, count=count):
@@ -215,43 +189,24 @@ class RedisClient:
         return keys
     
     async def scard(self, key: str) -> int:
-        """Get the number of members in a set."""
         client = await self.get_client()
         return await client.scard(key)
     
     async def zrangebyscore(self, key: str, min: str, max: str) -> List[str]:
-        """Get members from a sorted set by score range."""
         client = await self.get_client()
         return await client.zrangebyscore(key, min=min, max=max)
     
     async def zscore(self, key: str, member: str) -> Optional[float]:
-        """Get score of a member in a sorted set."""
         client = await self.get_client()
         return await client.zscore(key, member)
     
     async def llen(self, key: str) -> int:
-        """Get the length of a list."""
         client = await self.get_client()
         return await client.llen(key)
-    
-    # ========== Stream Operations ==========
     
     async def stream_add(self, stream_key: str, fields: Dict[str, str], maxlen: int = None, 
                         approximate: bool = True, timeout: Optional[float] = None, 
                         fail_silently: bool = True) -> Optional[str]:
-        """Add entry to a Redis stream with timeout protection.
-        
-        Args:
-            stream_key: Stream key name
-            fields: Dictionary of field-value pairs
-            maxlen: Maximum length of stream (None = no limit)
-            approximate: Use approximate trimming (faster)
-            timeout: Override timeout in seconds (None = use default from env or 5s)
-            fail_silently: If True, log warning and return None on failure instead of raising
-        
-        Returns:
-            Entry ID (e.g., "1234567890-0"), or None on timeout/failure if fail_silently=True
-        """
         client = await self.get_client()
         kwargs = {}
         if maxlen is not None:
@@ -277,28 +232,14 @@ class RedisClient:
             raise
     
     async def stream_read(self, stream_key: str, last_id: str = "0", block_ms: int = None, count: int = None) -> List[tuple]:
-        """Read entries from a Redis stream.
-        
-        Args:
-            stream_key: Stream key name
-            last_id: Last read ID (use "0" for all, "$" for new only)
-            block_ms: Block for this many milliseconds (None/0 = non-blocking, >0 = block for that duration)
-            count: Maximum number of entries to return
-        
-        Returns:
-            List of (entry_id, fields_dict) tuples
-        """
         client = await self.get_client()
         streams = {stream_key: last_id}
-        # Note: In Redis, BLOCK 0 means block forever, not non-blocking
-        # We use block=None for non-blocking reads (when block_ms is 0 or None)
         block_arg = block_ms if block_ms and block_ms > 0 else None
         result = await client.xread(streams, count=count, block=block_arg)
         
         if not result:
             return []
         
-        # xread returns [(stream_key, [(id, fields), ...])]
         entries = []
         for stream_name, stream_entries in result:
             for entry_id, fields in stream_entries:
@@ -307,129 +248,79 @@ class RedisClient:
         return entries
     
     async def stream_range(self, stream_key: str, start: str = "-", end: str = "+", count: int = None) -> List[tuple]:
-        """Get range of entries from a Redis stream.
-        
-        Args:
-            stream_key: Stream key name
-            start: Start ID ("-" = beginning, "+" = end)
-            end: End ID
-            count: Maximum number of entries
-        
-        Returns:
-            List of (entry_id, fields_dict) tuples
-        """
         client = await self.get_client()
         result = await client.xrange(stream_key, start, end, count=count)
         return [(entry_id, fields) for entry_id, fields in result]
     
     async def stream_len(self, stream_key: str) -> int:
-        """Get length of a Redis stream."""
         client = await self.get_client()
         return await client.xlen(stream_key)
     
-    # Legacy aliases for compatibility
     async def xadd(self, stream_key: str, fields: Dict[str, str], maxlen: int = None, approximate: bool = True) -> str:
-        """Legacy alias for stream_add."""
         return await self.stream_add(stream_key, fields, maxlen=maxlen, approximate=approximate)
     
     async def xread(self, streams: Dict[str, str], count: int = None, block: int = None) -> List:
-        """Legacy xread interface for compatibility."""
         client = await self.get_client()
         return await client.xread(streams, count=count, block=block)
     
     async def xrange(self, stream_key: str, start: str = "-", end: str = "+", count: int = None) -> List:
-        """Legacy xrange interface for compatibility."""
         client = await self.get_client()
         return await client.xrange(stream_key, start, end, count=count)
     
     async def xlen(self, stream_key: str) -> int:
-        """Legacy alias for stream_len."""
         return await self.stream_len(stream_key)
     
     async def xtrim_minid(self, stream_key: str, minid: str, approximate: bool = True) -> int:
-        """Trim stream entries older than minid."""
         client = await self.get_client()
         return await client.xtrim(stream_key, minid=minid, approximate=approximate)
     
-    # ========== Pub/Sub Operations ==========
-    
     async def publish(self, channel: str, message: str) -> int:
-        """Publish message to Redis channel.
-        
-        Args:
-            channel: Channel name to publish to
-            message: Message string to publish
-            
-        Returns:
-            Number of subscribers that received the message
-        """
         client = await self.get_client()
         return await client.publish(channel, message)
 
     async def get_pubsub(self):
-        """Get a new PubSub instance for subscribing to channels.
-        
-        Returns:
-            Redis PubSub object
-        """
         client = await self.get_client()
         return client.pubsub()
     
-    # ========== Control Signal Helpers ==========
-    
     async def set_stop_signal(self, agent_run_id: str) -> None:
-        """Set stop signal for an agent run.
-        
-        Uses a simple Redis key: agent_run:{agent_run_id}:stop = "1"
-        """
         key = f"agent_run:{agent_run_id}:stop"
-        await self.set(key, "1", ex=300)  # 5 minute TTL
+        await self.set(key, "1", ex=300)
         logger.info(f"Set stop signal for agent run {agent_run_id}")
     
     async def check_stop_signal(self, agent_run_id: str) -> bool:
-        """Check if stop signal is set for an agent run."""
         key = f"agent_run:{agent_run_id}:stop"
         value = await self.get(key)
         return value == "1"
     
     async def clear_stop_signal(self, agent_run_id: str) -> None:
-        """Clear stop signal for an agent run."""
         key = f"agent_run:{agent_run_id}:stop"
         await self.delete(key)
         logger.debug(f"Cleared stop signal for agent run {agent_run_id}")
     
-    # ========== Timeout Protection Helpers ==========
-    
     async def _with_timeout(self, coro, timeout_seconds: float, operation_name: str, default=None):
-        """Execute coroutine with timeout, return default on timeout."""
         try:
             return await asyncio.wait_for(coro, timeout=timeout_seconds)
         except asyncio.TimeoutError:
             logger.warning(f"⚠️ [REDIS TIMEOUT] {operation_name} timed out after {timeout_seconds}s")
+            if self._pool:
+                pool_info = self.get_pool_info()
+                logger.warning(f"📊 [POOL STATUS] {pool_info}")
             return default
+        except ConnectionError as e:
+            if "Too many connections" in str(e):
+                pool_info = self.get_pool_info()
+                logger.error(f"🚨 [POOL EXHAUSTED] {operation_name} - Pool status: {pool_info}")
+            logger.error(f"⚠️ [REDIS CONNECTION ERROR] {operation_name} failed: {e}")
+            raise
         except Exception as e:
             logger.error(f"⚠️ [REDIS ERROR] {operation_name} failed: {e}")
             raise
     
     async def xreadgroup(self, groupname: str, consumername: str, streams: Dict[str, str], 
                          block: int = None, count: int = None, timeout: Optional[float] = None) -> List:
-        """XREADGROUP with automatic timeout protection.
-        
-        Args:
-            groupname: Consumer group name
-            consumername: Consumer name
-            streams: Dict mapping stream names to ">" (new messages) or last ID
-            block: Block time in milliseconds (None = non-blocking)
-            count: Maximum number of entries to return
-            timeout: Override timeout in seconds (None = auto-calculated)
-        
-        Returns:
-            List of (stream_name, [(entry_id, fields), ...]) tuples, or [] on timeout
-        """
         client = await self.get_client()
         block_ms = block or 0
         
-        # Default timeout: block_time + 2s buffer, or 30s max, or 10s for non-blocking
         if timeout is None:
             env_timeout = os.getenv("REDIS_XREADGROUP_TIMEOUT")
             if env_timeout:
@@ -442,21 +333,10 @@ class RedisClient:
                              streams=streams, block=block, count=count),
             timeout_seconds=timeout,
             operation_name=f"xreadgroup({groupname})",
-            default=[]  # Return empty on timeout - consumer loop will retry
+            default=[]
         )
     
     async def xack(self, stream: str, group: str, *ids, timeout: Optional[float] = None) -> Optional[int]:
-        """XACK with automatic timeout protection.
-        
-        Args:
-            stream: Stream name
-            group: Consumer group name
-            *ids: Entry IDs to acknowledge
-            timeout: Override timeout in seconds (None = use default from env or 10s)
-        
-        Returns:
-            Number of acknowledged entries, or None on timeout
-        """
         client = await self.get_client()
         
         if timeout is None:
@@ -467,17 +347,14 @@ class RedisClient:
             client.xack(stream, group, *ids),
             timeout_seconds=timeout,
             operation_name=f"xack({stream})",
-            default=None  # Return None on timeout - log but don't fail
+            default=None
         )
 
 
-# Global singleton instance
 redis = RedisClient()
 
 
-# Compatibility function for get_redis_config
 def get_redis_config() -> Dict[str, Any]:
-    """Get Redis configuration (for compatibility with existing code)."""
     temp_client = RedisClient()
     return temp_client._get_config()
 
@@ -487,156 +364,109 @@ def get_redis_config() -> Dict[str, Any]:
 # `await redis.get()` instead of `await redis.redis.get()`
 
 async def get_client():
-    """Get Redis client (compatibility function)."""
     return await redis.get_client()
 
 async def initialize_async():
-    """Initialize Redis connection (compatibility function)."""
     await redis.initialize_async()
 
 async def close():
-    """Close Redis connection (compatibility function)."""
     await redis.close()
 
 async def verify_connection() -> bool:
-    """Verify Redis connection (compatibility function)."""
     return await redis.verify_connection()
 
 async def verify_stream_writable(stream_key: str) -> bool:
-    """Verify stream is writable (compatibility function)."""
     return await redis.verify_stream_writable(stream_key)
 
-# Basic operations
 async def get(key: str):
-    """Get value for a key (compatibility function)."""
     return await redis.get(key)
 
 async def set(key: str, value: str, ex: int = None, nx: bool = False):
-    """Set value for a key (compatibility function)."""
     return await redis.set(key, value, ex=ex, nx=nx)
 
 async def setex(key: str, seconds: int, value: str):
-    """Set value with expiration (compatibility function)."""
     return await redis.setex(key, seconds, value)
 
 async def delete(key: str):
-    """Delete a key (compatibility function)."""
     return await redis.delete(key)
 
 async def incr(key: str) -> int:
-    """Increment a key atomically (compatibility function)."""
     return await redis.incr(key)
 
 async def expire(key: str, seconds: int):
-    """Set expiration on a key (compatibility function)."""
     return await redis.expire(key, seconds)
 
 async def ttl(key: str) -> int:
-    """Get TTL for a key (compatibility function)."""
     return await redis.ttl(key)
 
 async def scan_keys(pattern: str, count: int = 100):
-    """Scan for keys matching a pattern (compatibility function)."""
     return await redis.scan_keys(pattern, count=count)
 
 async def scard(key: str) -> int:
-    """Get the number of members in a set (compatibility function)."""
     return await redis.scard(key)
 
 async def zrangebyscore(key: str, min: str, max: str):
-    """Get members from sorted set by score (compatibility function)."""
     return await redis.zrangebyscore(key, min=min, max=max)
 
 async def zscore(key: str, member: str):
-    """Get score of member in sorted set (compatibility function)."""
     return await redis.zscore(key, member)
 
 async def llen(key: str) -> int:
-    """Get length of a list (compatibility function)."""
     return await redis.llen(key)
 
-# Stream operations
 async def stream_add(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True, 
                     timeout: Optional[float] = None, fail_silently: bool = True) -> Optional[str]:
-    """Add entry to stream with timeout protection (compatibility function)."""
     return await redis.stream_add(stream_key, fields, maxlen=maxlen, approximate=approximate, 
                                   timeout=timeout, fail_silently=fail_silently)
 
 async def stream_read(stream_key: str, last_id: str = "0", block_ms: int = None, count: int = None):
-    """Read from stream (compatibility function).
-    
-    Args:
-        stream_key: Stream key name
-        last_id: Last read ID (use "0" for all, "$" for new only)
-        block_ms: Block for this many milliseconds (None/0 = non-blocking, >0 = block for that duration)
-        count: Maximum number of entries to return
-    """
     return await redis.stream_read(stream_key, last_id, block_ms=block_ms, count=count)
 
 async def stream_range(stream_key: str, start: str = "-", end: str = "+", count: int = None):
-    """Get stream range (compatibility function)."""
     return await redis.stream_range(stream_key, start, end, count=count)
 
 async def stream_len(stream_key: str) -> int:
-    """Get stream length (compatibility function)."""
     return await redis.stream_len(stream_key)
 
-# Legacy stream aliases
 async def xadd(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True) -> str:
-    """Legacy xadd alias (compatibility function)."""
     return await redis.xadd(stream_key, fields, maxlen=maxlen, approximate=approximate)
 
 async def xread(streams: dict, count: int = None, block: int = None):
-    """Legacy xread alias (compatibility function)."""
     return await redis.xread(streams, count=count, block=block)
 
 async def xrange(stream_key: str, start: str = "-", end: str = "+", count: int = None):
-    """Legacy xrange alias (compatibility function)."""
     return await redis.xrange(stream_key, start, end, count=count)
 
 async def xlen(stream_key: str) -> int:
-    """Legacy xlen alias (compatibility function)."""
     return await redis.xlen(stream_key)
 
 async def xtrim_minid(stream_key: str, minid: str, approximate: bool = True) -> int:
-    """Trim stream entries older than minid (compatibility function)."""
     return await redis.xtrim_minid(stream_key, minid, approximate=approximate)
 
-# Control signal helpers
 async def set_stop_signal(agent_run_id: str):
-    """Set stop signal (compatibility function)."""
     await redis.set_stop_signal(agent_run_id)
 
 async def check_stop_signal(agent_run_id: str) -> bool:
-    """Check stop signal (compatibility function)."""
     return await redis.check_stop_signal(agent_run_id)
 
 async def clear_stop_signal(agent_run_id: str):
-    """Clear stop signal (compatibility function)."""
     await redis.clear_stop_signal(agent_run_id)
 
-# Pub/Sub operations
 async def publish(channel: str, message: str) -> int:
-    """Publish to channel (compatibility function)."""
     return await redis.publish(channel, message)
 
 async def get_pubsub():
-    """Get PubSub instance (compatibility function)."""
     return await redis.get_pubsub()
 
-# Stream group operations with timeout protection
 async def xreadgroup(groupname: str, consumername: str, streams: Dict[str, str], 
                      block: int = None, count: int = None, timeout: Optional[float] = None):
-    """XREADGROUP with timeout protection (compatibility function)."""
     return await redis.xreadgroup(groupname=groupname, consumername=consumername, 
                                  streams=streams, block=block, count=count, timeout=timeout)
 
 async def xack(stream: str, group: str, *ids, timeout: Optional[float] = None):
-    """XACK with timeout protection (compatibility function)."""
     return await redis.xack(stream, group, *ids, timeout=timeout)
 
 
-# Export everything for backward compatibility
 __all__ = [
     'redis',
     'RedisClient',
