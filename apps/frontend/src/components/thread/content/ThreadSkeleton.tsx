@@ -94,9 +94,7 @@ export function ThreadSkeleton({
                                     <Skeleton className="h-4 w-16" />
                                 </div>
                                 <div className="flex items-center gap-1.5 py-1">
-                                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse" />
-                                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-150" style={{ animationDelay: '150ms' }} />
-                                    <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-300" style={{ animationDelay: '300ms' }} />
+                                    <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/20 border-t-muted-foreground/50 animate-spin" />
                                 </div>
                             </div>
                         </div>
@@ -120,7 +118,7 @@ export function ThreadSkeleton({
                             {initializingMessage && (
                                 <div className="flex-1">
                                     <div className="flex items-center gap-2 text-muted-foreground">
-                                        <div className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
+                                        <div className="h-3 w-3 rounded-full border-2 border-blue-300 border-t-blue-500 animate-spin" />
                                         <span className="text-sm">{initializingMessage}</span>
                                     </div>
                                 </div>
@@ -217,9 +215,7 @@ export function ThreadSkeleton({
                                         <Skeleton className="h-4 w-16" />
                                     </div>
                                     <div className="flex items-center gap-1.5 py-1">
-                                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse" />
-                                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-150" style={{ animationDelay: '150ms' }} />
-                                        <div className="h-1.5 w-1.5 rounded-full bg-muted-foreground/30 animate-pulse delay-300" style={{ animationDelay: '300ms' }} />
+                                        <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/20 border-t-muted-foreground/50 animate-spin" />
                                     </div>
                                 </div>
                             </div>

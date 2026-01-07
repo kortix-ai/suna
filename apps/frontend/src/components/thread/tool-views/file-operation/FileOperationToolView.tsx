@@ -67,6 +67,7 @@ import {
 } from './_utils';
 import { ToolViewProps } from '../types';
 import { LoadingState } from '../shared/LoadingState';
+import { StreamingLoader } from '../shared/StreamingLoader';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { toast } from '@/lib/toast';
@@ -1105,12 +1106,7 @@ export function FileOperationToolView({
                   showProgress={false}
                 />
               ) : !fileContent && isStreaming ? (
-                <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
-                  <div className="text-center">
-                    <KortixLoader customSize={32} className="mx-auto mb-4" />
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
-                  </div>
-                </div>
+                <StreamingLoader showBranding={true} />
               ) : operation === 'delete' ? (
                 <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-white dark:bg-zinc-900">
                   <div className={cn("w-20 h-20 rounded-full flex items-center justify-center mb-6", config.bgColor)}>
@@ -1157,12 +1153,7 @@ export function FileOperationToolView({
                     showProgress={false}
                   />
                 ) : !fileContent && isStreaming ? (
-                  <div className="flex items-center justify-center h-full p-12 bg-white dark:bg-zinc-900">
-                    <div className="text-center">
-                      <KortixLoader customSize={32} className="mx-auto mb-4" />
-                      <p className="text-sm text-zinc-500 dark:text-zinc-400">Waiting for content...</p>
-                    </div>
-                  </div>
+                  <StreamingLoader showBranding={true} />
                 ) : operation === 'delete' ? (
                   renderDeleteOperation()
                 ) : (

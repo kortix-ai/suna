@@ -304,18 +304,18 @@ export function ApifyToolView({
               {viewType === 'run' && (
                 <div className="space-y-2 text-xs text-zinc-500 dark:text-zinc-400">
                   <div className="flex items-center gap-2 justify-center">
-                    <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
+                    <div className="w-3 h-3 rounded-full border border-zinc-400 border-t-zinc-600 animate-spin" />
                     <span>Initializing actor run...</span>
                   </div>
                   {elapsedTime > 5 && (
                     <div className="flex items-center gap-2 justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
+                      <div className="w-3 h-3 rounded-full border border-zinc-400 border-t-zinc-600 animate-spin" />
                       <span>Executing actor tasks...</span>
                     </div>
                   )}
                   {elapsedTime > 15 && (
                     <div className="flex items-center gap-2 justify-center">
-                      <div className="w-1.5 h-1.5 rounded-full bg-zinc-500 animate-pulse" />
+                      <div className="w-3 h-3 rounded-full border border-zinc-400 border-t-zinc-600 animate-spin" />
                       <span>Collecting results...</span>
                     </div>
                   )}

@@ -249,7 +249,7 @@ export function CanvasToolView({
                 {displayName}
               </CardTitle>
               {isStreaming && (
-                <span className="inline-block h-2 w-2 rounded-full bg-zinc-500 animate-pulse" />
+                <span className="inline-block h-3 w-3 rounded-full border border-zinc-400 border-t-zinc-600 animate-spin" />
               )}
             </div>
           </div>
