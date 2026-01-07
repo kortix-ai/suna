@@ -76,7 +76,6 @@ class RedisClient:
             self._pool = ConnectionPool.from_url(
                 config["url"],
                 decode_responses=True,
-                timeout=5,
                 socket_timeout=15.0,
                 socket_connect_timeout=10.0,
                 socket_keepalive=True,

@@ -49,6 +49,7 @@ class DBConnection:
                     cls._instance = super().__new__(cls)
                     cls._instance._initialized = False
                     cls._instance._client = None
+                    cls._instance._async_lock = None
         return cls._instance
 
     def __init__(self):
