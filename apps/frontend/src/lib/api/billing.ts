@@ -323,6 +323,7 @@ export interface CheckoutSessionDetails {
   coupon_id: string | null;       // Internal Stripe coupon ID
   coupon_name: string | null;     // Coupon display name
   promotion_code: string | null;  // Customer-facing code (e.g., "HEHE2020")
+  balance_transaction_id: string | null;  // txn_xxx for Stripe balance transaction
   status: string;
   payment_status: string;
 }
