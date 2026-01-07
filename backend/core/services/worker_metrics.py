@@ -89,10 +89,15 @@ async def get_worker_metrics() -> dict:
         
         utilization_percent = (current_instance_runs / MAX_CONCURRENT_RUNS * 100) if MAX_CONCURRENT_RUNS > 0 else 0
         
+        # Orphaned streams = Redis streams without corresponding 'running' DB record
+        # Should be 0 in healthy state - non-zero indicates cleanup issues
+        orphaned_streams = max(0, active_redis_streams - active_agent_runs)
+        
         return {
             # Real metrics - useful data
             "active_agent_runs": active_agent_runs,  # Total across all instances (DB)
             "active_redis_streams": active_redis_streams,  # Real-time Redis streams
+            "orphaned_streams": orphaned_streams,  # Streams without DB records (should be 0)
             "current_instance_runs": current_instance_runs,  # This instance only
             "max_concurrent_runs": MAX_CONCURRENT_RUNS,
             "available_slots": semaphore_available,
@@ -157,6 +162,12 @@ async def publish_to_cloudwatch(metrics: dict) -> bool:
                 'MetricName': 'AgentRunUtilization',
                 'Value': metrics.get('utilization_percent', 0),
                 'Unit': 'Percent',
+                'Dimensions': [{'Name': 'Service', 'Value': 'api'}]
+            },
+            {
+                'MetricName': 'OrphanedStreams',
+                'Value': metrics.get('orphaned_streams', 0),
+                'Unit': 'Count',
                 'Dimensions': [{'Name': 'Service', 'Value': 'api'}]
             }
         ]

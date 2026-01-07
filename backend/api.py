@@ -51,6 +51,7 @@ import sys
 from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
+from core.services.orphan_cleanup import cleanup_orphaned_agent_runs
 
 
 if sys.platform == "win32":
@@ -62,115 +63,6 @@ db = DBConnection()
 import uuid
 instance_id = str(uuid.uuid4())[:8]
 
-
-async def _cleanup_orphaned_agent_runs():
-    """
-    Clean up orphaned agent runs on startup.
-    
-    Orphaned runs are those stuck in "running" status but:
-    1. Have been running for too long (> 2 hours - likely crashed instance)
-    2. Have no active Redis stream (instance died without cleanup)
-    
-    This ensures metrics show accurate counts and users aren't stuck with "running" tasks.
-    """
-    from datetime import timedelta
-    from core.services import redis
-    from core.agents.executor import update_agent_run_status
-    import json as json_lib
-    
-    client = await db.client
-    
-    # Find runs that have been "running" for more than 2 hours
-    # These are almost certainly orphaned from crashed instances
-    cutoff_time = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
-    
-    try:
-        # Get all "running" runs started more than 2 hours ago
-        stale_runs = await client.table('agent_runs')\
-            .select('id, thread_id, started_at, metadata')\
-            .eq('status', 'running')\
-            .lt('started_at', cutoff_time)\
-            .execute()
-        
-        if not stale_runs.data:
-            logger.info("✅ No orphaned agent runs found on startup")
-            return
-        
-        total_runs = len(stale_runs.data)
-        logger.warning(f"🧹 Found {total_runs} orphaned agent runs to clean up (running in parallel batches)")
-        
-        # Process in parallel batches of 50 for efficiency
-        BATCH_SIZE = 50
-        cleaned_count = 0
-        
-        async def cleanup_single_run(run):
-            """Clean up a single orphaned run."""
-            agent_run_id = run['id']
-            
-            try:
-                # Check if Redis stream exists (indicates active run)
-                stream_key = f"agent_run:{agent_run_id}:stream"
-                try:
-                    redis_client = await redis.get_client()
-                    stream_exists = await redis_client.exists(stream_key)
-                except Exception:
-                    stream_exists = False
-                
-                # If no Redis stream and running for > 2 hours, it's orphaned
-                if not stream_exists:
-                    # Get account_id from metadata for cache invalidation
-                    metadata = run.get('metadata', {})
-                    if isinstance(metadata, str):
-                        try:
-                            metadata = json_lib.loads(metadata)
-                        except:
-                            metadata = {}
-                    account_id = metadata.get('actual_user_id')
-                    
-                    # Mark as failed
-                    await update_agent_run_status(
-                        client,
-                        agent_run_id,
-                        "failed",
-                        error="Orphaned run - instance crashed or was restarted",
-                        account_id=account_id
-                    )
-                    
-                    # Clean up any leftover Redis keys
-                    try:
-                        await redis.delete(f"stop:{agent_run_id}")
-                        await redis.delete(stream_key)
-                    except Exception:
-                        pass
-                    
-                    return True  # Cleaned
-                else:
-                    logger.debug(f"Run {agent_run_id} has active Redis stream - skipping")
-                    return False  # Skipped
-                    
-            except Exception as e:
-                logger.error(f"Failed to cleanup orphaned run {agent_run_id}: {e}")
-                return False
-        
-        # Process in batches
-        for i in range(0, total_runs, BATCH_SIZE):
-            batch = stale_runs.data[i:i + BATCH_SIZE]
-            batch_num = (i // BATCH_SIZE) + 1
-            total_batches = (total_runs + BATCH_SIZE - 1) // BATCH_SIZE
-            
-            logger.info(f"🧹 Processing batch {batch_num}/{total_batches} ({len(batch)} runs)")
-            
-            # Run batch in parallel
-            results = await asyncio.gather(*[cleanup_single_run(run) for run in batch], return_exceptions=True)
-            
-            # Count successes
-            batch_cleaned = sum(1 for r in results if r is True)
-            cleaned_count += batch_cleaned
-        
-        logger.info(f"🧹 Cleaned up {cleaned_count}/{total_runs} orphaned agent runs")
-        
-    except Exception as e:
-        logger.error(f"Failed to query orphaned agent runs: {e}")
 
 # Rate limiter state
 ip_tracker = OrderedDict()
@@ -211,11 +103,12 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize Redis connection: {e}")
             # Continue without Redis - the application will handle Redis failures gracefully
         
-        # ===== Cleanup orphaned agent runs from previous instance crashes =====
-        # Runs that are stuck in "running" status but have no active Redis stream
-        # are orphans from crashed instances that need to be marked as failed
+        # ===== Cleanup orphaned agent runs from previous instance =====
+        # On startup, ALL runs with status='running' are orphans from the previous instance
+        # Also cleans up orphaned Redis streams without matching DB records
         try:
-            await _cleanup_orphaned_agent_runs()
+            client = await db.client
+            await cleanup_orphaned_agent_runs(client)
         except Exception as e:
             logger.error(f"Failed to cleanup orphaned agent runs on startup: {e}")
         

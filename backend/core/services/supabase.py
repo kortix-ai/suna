@@ -63,10 +63,12 @@ else:
     logger.info(f"🔌 Using configured DB connections: {SUPABASE_MAX_CONNECTIONS} max connections")
 
 # Timeout settings (in seconds) - increased for stability under load
-SUPABASE_CONNECT_TIMEOUT = 10.0   # TCP connect
+# Note: ConnectTimeout issues under high concurrency are often due to HTTP/2 stream limits
+# not actual network issues. Increasing connect timeout helps when pool creates new connections.
+SUPABASE_CONNECT_TIMEOUT = 15.0   # TCP connect - increased from 10s for high concurrency
 SUPABASE_READ_TIMEOUT = 60.0      # Response read - increased for complex queries
 SUPABASE_WRITE_TIMEOUT = 60.0     # Request write - increased for large payloads
-SUPABASE_POOL_TIMEOUT = 30.0      # Wait for pool slot - increased from 15s for high concurrency bursts
+SUPABASE_POOL_TIMEOUT = 45.0      # Wait for pool slot - increased from 30s for high concurrency bursts
 
 # HTTP transport settings
 SUPABASE_HTTP2_ENABLED = True
