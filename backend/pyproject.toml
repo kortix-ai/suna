@@ -101,6 +101,7 @@ dependencies = [
   "watchtower>=3.0.0", # CloudWatch Logs handler
   "psycopg[binary]>=3.3.2",
   "sqlalchemy>=2.0.45",
+  "greenlet>=3.3.0",
 ]
 
 [project.urls]
