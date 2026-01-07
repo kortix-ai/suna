@@ -93,7 +93,6 @@ jobs:
             cd /home/ubuntu/suna/backend
             git fetch origin main
             git reset --hard origin/main
-            set -a && source .env && set +a
             
             echo "=== Pre-deployment disk usage ==="
             df -h / | tail -1
@@ -102,15 +101,14 @@ jobs:
             echo "=== Cleaning up old images ==="
             docker image prune -af --filter "until=24h" || true
             
-            # Build and deploy
-            echo "=== Building and deploying services ==="
-            docker compose build
+            # Pull pre-built image from registry and deploy
+            echo "=== Pulling and deploying services ==="
+            docker compose pull
             docker compose up -d --remove-orphans
             
             # Post cleanup
             echo "=== Post-deployment cleanup ==="
             docker image prune -af --filter "until=1h" || true
-            docker builder prune -af --keep-storage=2GB || true
             
             echo "=== Deployment complete ==="
             docker compose ps
@@ -155,7 +153,6 @@ jobs:
             cd /home/ubuntu/suna/backend
             git fetch origin PRODUCTION
             git reset --hard origin/PRODUCTION
-            set -a && source .env && set +a
             
             echo "=== Pre-deployment disk usage ==="
             df -h / | tail -1
@@ -164,15 +161,14 @@ jobs:
             echo "=== Cleaning up old images ==="
             docker image prune -af --filter "until=24h" || true
             
-            # Build and deploy
-            echo "=== Building and deploying services ==="
-            docker compose build
+            # Pull pre-built image from registry and deploy
+            echo "=== Pulling and deploying services ==="
+            docker compose pull
             docker compose up -d --remove-orphans
             
             # Post cleanup
             echo "=== Post-deployment cleanup ==="
             docker image prune -af --filter "until=1h" || true
-            docker builder prune -af --keep-storage=2GB || true
             
             echo "=== Deployment complete ==="
             docker compose ps
