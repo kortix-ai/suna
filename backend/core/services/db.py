@@ -174,11 +174,13 @@ async def init_db() -> None:
     
     dsn = _get_dsn()
     is_supavisor = "pooler.supabase.com" in dsn or ":6543" in dsn
+    
     connect_args = {
         "connect_timeout": CONNECT_TIMEOUT,
-        "options": f"-c statement_timeout={STATEMENT_TIMEOUT} -c lock_timeout=5000",
         "prepare_threshold": None,
     }
+    if not is_supavisor:
+        connect_args["options"] = f"-c statement_timeout={STATEMENT_TIMEOUT} -c lock_timeout=5000"
     
     use_nullpool = USE_NULLPOOL == "true" or (USE_NULLPOOL == "auto" and is_supavisor)
     execution_opts = {"prepared_statement_cache_size": 0}
