@@ -84,11 +84,12 @@ async def stream_status_message(
         logger.debug(f"Failed to write status message (non-critical): {e}")
 
 
-async def ensure_project_metadata_cached(project_id: str, client) -> None:
+async def ensure_project_metadata_cached(project_id: str) -> None:
     """
     Ensure project metadata (sandbox info) is cached. Non-blocking if already cached.
     """
     from core.cache.runtime_cache import get_cached_project_metadata, set_cached_project_metadata
+    from core.threads import repo as threads_repo
     
     # Check cache first (fast path)
     cached_project = await get_cached_project_metadata(project_id)
@@ -97,27 +98,22 @@ async def ensure_project_metadata_cached(project_id: str, client) -> None:
     
     try:
         # Single optimized query - fetch project with sandbox resource in one go
-        project = await client.table('projects')\
-            .select('project_id, sandbox_resource_id, resources!sandbox_resource_id(id, external_id, config)')\
-            .eq('project_id', project_id)\
-            .maybe_single()\
-            .execute()
+        project_data = await threads_repo.get_project_with_sandbox(project_id)
         
-        if not project.data:
+        if not project_data:
             # Project not found - cache empty dict to prevent repeated lookups
             logger.warning(f"Project {project_id} not found, caching empty metadata")
             await set_cached_project_metadata(project_id, {})
             return
         
-        project_data = project.data
         sandbox_info = {}
         
         # Extract sandbox info from joined resource data
-        resource_data = project_data.get('resources')
-        if resource_data:
+        if project_data.get('resource_external_id'):
+            resource_config = project_data.get('resource_config') or {}
             sandbox_info = {
-                'id': resource_data.get('external_id'),
-                **(resource_data.get('config') or {})
+                'id': project_data['resource_external_id'],
+                **resource_config
             }
         
         await set_cached_project_metadata(project_id, sandbox_info)
@@ -159,6 +155,9 @@ async def process_agent_responses(
             trace.span(name="agent_run_stopped").end(status_message=f"stopped: {stop_reason}", level="WARNING")
             break
 
+        from core.services.db import serialize_row
+        if isinstance(response, dict):
+            response = serialize_row(response)
         response_json = json.dumps(response)
         
         try:
@@ -239,29 +238,22 @@ async def handle_normal_completion(
 
 
 async def update_agent_run_status(
-    client,
     agent_run_id: str,
     status: str,
     error: Optional[str] = None,
     account_id: Optional[str] = None,
 ) -> bool:
-    """Update agent run status in database."""
-    from core.services.supabase import execute_with_reconnect
+    """Update agent run status in database using direct SQL."""
+    from core.agents import repo as agents_repo
     
-    update_data = {
-        "status": status,
-        "completed_at": datetime.now(timezone.utc).isoformat()
-    }
-    if error:
-        update_data["error"] = error
-
     try:
-        update_result = await execute_with_reconnect(
-            db,
-            lambda c: c.table('agent_runs').update(update_data).eq("id", agent_run_id).execute()
+        success = await agents_repo.update_agent_run_status(
+            agent_run_id=agent_run_id,
+            status=status,
+            error=error
         )
 
-        if hasattr(update_result, 'data') and update_result.data:
+        if success:
             if account_id:
                 try:
                     from core.cache.runtime_cache import invalidate_running_runs_cache
@@ -286,24 +278,22 @@ async def update_agent_run_status(
         return False
 
 
-async def send_completion_notification(client, thread_id: str, agent_config: Optional[Dict[str, Any]], complete_tool_called: bool):
+async def send_completion_notification(thread_id: str, agent_config: Optional[Dict[str, Any]], complete_tool_called: bool):
     """Send completion notification if complete tool was called."""
     if not complete_tool_called:
         return
     
     try:
         from core.notifications.notification_service import notification_service
+        from core.threads import repo as threads_repo
         
         async def get_thread_data():
             try:
-                thread_info = await client.table('threads').select('project_id, account_id').eq('thread_id', thread_id).maybe_single().execute()
-                if thread_info and thread_info.data:
-                    project_id = thread_info.data.get('project_id')
-                    account_id = thread_info.data.get('account_id')
-                    if project_id:
-                        project_info = await client.table('projects').select('name').eq('project_id', project_id).maybe_single().execute()
-                        task_name = project_info.data.get('name', 'Task') if project_info and project_info.data else 'Task'
-                        return {'task_name': task_name, 'account_id': account_id}
+                thread_info = await threads_repo.get_project_and_thread_info(thread_id)
+                if thread_info:
+                    task_name = thread_info.get('project_name') or 'Task'
+                    account_id = thread_info.get('account_id')
+                    return {'task_name': task_name, 'account_id': account_id}
             except Exception as e:
                 logger.warning(f"Failed to get thread data for {thread_id}: {e}")
             return {'task_name': 'Task', 'account_id': None}
@@ -347,15 +337,12 @@ async def execute_agent_run_direct(
     
     logger.info(f"🚀 Executing agent run directly: {agent_run_id}")
     
-    client = None
     stop_checker = None
     final_status = "failed"
     stream_key = f"agent_run:{agent_run_id}:stream"
     trace = None
     
     try:
-        client = await db.client
-        
         start_time = datetime.now(timezone.utc)
         
         await stream_status_message("initializing", "Starting execution...", stream_key=stream_key)
@@ -414,13 +401,13 @@ async def execute_agent_run_direct(
         if final_status == "running":
             final_status = "completed"
             await handle_normal_completion(agent_run_id, start_time, total_responses, stream_key, trace)
-            await send_completion_notification(client, thread_id, agent_config, complete_tool_called)
+            await send_completion_notification(thread_id, agent_config, complete_tool_called)
         
         stop_reason = stop_signal_checker_state.get('stop_reason')
         if stop_reason:
             final_status = "stopped"
         
-        await update_agent_run_status(client, agent_run_id, final_status, error=error_message, account_id=account_id)
+        await update_agent_run_status(agent_run_id, final_status, error=error_message, account_id=account_id)
         
         if final_status == "stopped":
             try:
@@ -433,8 +420,7 @@ async def execute_agent_run_direct(
         
     except Exception as e:
         logger.error(f"Error in agent run {agent_run_id}: {e}", exc_info=True)
-        if client:
-            await update_agent_run_status(client, agent_run_id, "failed", error=str(e), account_id=account_id)
+        await update_agent_run_status(agent_run_id, "failed", error=str(e), account_id=account_id)
         
     finally:
         clear_tool_output_streaming_context()
@@ -453,13 +439,13 @@ async def execute_agent_run_direct(
             pass
         
         # Queue memory extraction on success (only if memory is enabled)
-        if final_status == "completed" and account_id and client:
+        if final_status == "completed" and account_id:
             from core.utils.config import config
             if config.ENABLE_MEMORY:
                 try:
-                    messages_result = await client.table('messages').select('message_id').eq('thread_id', thread_id).execute()
-                    if messages_result.data:
-                        message_ids = [m['message_id'] for m in messages_result.data]
+                    from core.threads import repo as threads_repo
+                    message_ids = await threads_repo.get_thread_messages_ids(thread_id)
+                    if message_ids:
                         # Note: Memory extraction would need to be handled differently without worker dispatch
                         # For now, we'll skip it or handle it inline
                         logger.debug(f"Memory extraction skipped - would need alternative implementation")

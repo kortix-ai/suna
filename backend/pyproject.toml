@@ -97,8 +97,10 @@ dependencies = [
   "autoevals>=0.0.130",
   "huggingface-hub>=0.34.4",
   "datasets>=4.4.2",
-  "orjson>=3.11.1",  # Moved from dev - 3-5x faster JSON serialization for hot paths
-  "watchtower>=3.0.0",  # CloudWatch Logs handler
+  "orjson>=3.11.1", # Moved from dev - 3-5x faster JSON serialization for hot paths
+  "watchtower>=3.0.0", # CloudWatch Logs handler
+  "confluent-kafka>=2.13.0",
+  "psycopg[binary]>=3.3.2",
 ]
 
 [project.urls]

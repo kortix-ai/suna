@@ -291,12 +291,22 @@ class JsonImportService:
             }
         }
         
-        result = await client.table('agents').insert(insert_data).execute()
+        from core.agents import repo as agents_repo
         
-        if not result.data:
+        agent = await agents_repo.create_agent(
+            account_id=account_id,
+            name=agent_name,
+            icon_name=insert_data.get("icon_name", "bot"),
+            icon_color=insert_data.get("icon_color", "#000000"),
+            icon_background=insert_data.get("icon_background", "#F3F4F6"),
+            is_default=insert_data.get("is_default", False),
+            metadata=insert_data.get("metadata", {})
+        )
+        
+        if not agent:
             raise JsonImportError("Failed to create agent from JSON")
         
-        return result.data[0]['agent_id']
+        return agent['agent_id']
     
     async def _create_initial_version(
         self,
@@ -324,10 +334,10 @@ class JsonImportService:
             logger.info(f"Successfully created initial version {version.version_id} for JSON imported agent {agent_id}")
             
             # Verify the agent was updated with current_version_id
-            client = await self._db.client
-            agent_check = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).execute()
-            if agent_check.data and agent_check.data[0].get('current_version_id'):
-                logger.debug(f"Agent {agent_id} current_version_id updated to: {agent_check.data[0]['current_version_id']}")
+            from core.agents import repo as agents_repo
+            agent_check = await agents_repo.get_agent_by_id(agent_id)
+            if agent_check and agent_check.get('current_version_id'):
+                logger.debug(f"Agent {agent_id} current_version_id updated to: {agent_check['current_version_id']}")
             else:
                 logger.error(f"Agent {agent_id} current_version_id was not updated after version creation!")
                 
@@ -337,27 +347,21 @@ class JsonImportService:
 
 @router.get("/agents/{agent_id}/export", summary="Export Agent as JSON", operation_id="export_agent_json")
 async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    """Export an agent configuration as JSON"""
     logger.debug(f"Exporting agent {agent_id} for user: {user_id}")
     
     try:
-        client = await db.client
-        
-        # Get agent data
-        agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-        if not agent_result.data:
+        from core.agents import repo as agents_repo
+        from core.versioning import repo as versioning_repo
+
+        agent = await agents_repo.get_agent_by_id_and_account(agent_id, user_id)
+        if not agent:
             raise HTTPException(status_code=404, detail="Worker not found")
         
-        agent = agent_result.data[0]
-        
-        # Get current version data if available
         current_version = None
         if agent.get('current_version_id'):
-            version_result = await client.table('agent_versions').select('*').eq('version_id', agent['current_version_id']).execute()
-            if version_result.data:
-                current_version = version_result.data[0]
+            current_version = await versioning_repo.get_agent_version_by_id(agent_id, agent['current_version_id'])
 
-        from .config_helper import extract_agent_config
+        from core.config.config_helper import extract_agent_config
         config = extract_agent_config(agent, current_version)
         
         from core.templates.template_service import TemplateService

@@ -138,7 +138,6 @@ async def generate_agent_config_from_description(description: str) -> dict:
                 "icon_background": "#6366F1"
             }
         
-        # Combine results
         result = {
             "name": name_prompt_result.get("name", "Custom Assistant"),
             "system_prompt": name_prompt_result.get("system_prompt", f"Act as a helpful AI assistant. {description}"),
@@ -166,10 +165,6 @@ async def setup_agent_from_chat(
     request: AgentSetupFromChatRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """
-    Create and configure a new worker based on a natural language description.
-    Uses AI to generate appropriate name, system prompt, icon, and colors.
-    """
     logger.info(f"Setting up worker from chat for user {user_id}")
     
     if not request.description.strip():
@@ -177,7 +172,6 @@ async def setup_agent_from_chat(
     
     client = await db.client
     
-    # Check agent count limit
     from core.utils.limits_checker import check_agent_count_limit
     limit_check = await check_agent_count_limit(client, user_id)
     
@@ -193,12 +187,10 @@ async def setup_agent_from_chat(
         raise HTTPException(status_code=402, detail=error_detail)
     
     try:
-        # Generate complete agent configuration (name, prompt, icon, colors) in one LLM call
         config = await generate_agent_config_from_description(request.description)
         agent_name = config['name']
         system_prompt = config['system_prompt']
-        
-        # Create agent in database
+
         insert_data = {
             "account_id": user_id,
             "name": agent_name,
@@ -209,15 +201,22 @@ async def setup_agent_from_chat(
             "version_count": 1
         }
         
-        new_agent = await client.table('agents').insert(insert_data).execute()
+        from core.agents import repo as agents_repo
         
-        if not new_agent.data:
+        agent = await agents_repo.create_agent(
+            account_id=user_id,
+            name=agent_name,
+            icon_name=config["icon_name"],
+            icon_color=config["icon_color"], 
+            icon_background=config["icon_background"],
+            is_default=False
+        )
+        
+        if not agent:
             raise HTTPException(status_code=500, detail="Failed to create worker")
         
-        agent = new_agent.data[0]
         agent_id = agent['agent_id']
         
-        # Create initial version with generated system prompt
         try:
             version_service = await _get_version_service()
             agentpress_tools = ensure_core_tools_enabled(_get_default_agentpress_tools())
@@ -236,16 +235,15 @@ async def setup_agent_from_chat(
             )
         except Exception as e:
             logger.error(f"Error creating initial version: {str(e)}")
-            # Rollback: delete the agent if version creation fails
-            await client.table('agents').delete().eq('agent_id', agent_id).execute()
+            await agents_repo.delete_agent(agent_id, user_id)
             raise HTTPException(status_code=500, detail="Failed to create initial version")
         
-        # Update agent with current version
-        await client.table('agents').update({
-            "current_version_id": version.version_id
-        }).eq("agent_id", agent_id).execute()
+        await agents_repo.update_agent_fields(
+            agent_id, user_id,
+            current_version_id=version.version_id,
+            version_count=1
+        )
         
-        # Invalidate cache
         from core.utils.cache import Cache
         await Cache.invalidate(f"agent_count_limit:{user_id}")
         

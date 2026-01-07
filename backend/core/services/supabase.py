@@ -94,6 +94,15 @@ class DBConnection:
         """Initialize database connection."""
         if self._initialized:
             return
+        
+        # Lazily create the async lock (thread-safe via __new__)
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
+        
+        async with self._async_lock:
+            # Double-check after acquiring lock to prevent race condition
+            if self._initialized:
+                return
                 
         supabase_url = config.SUPABASE_URL
         supabase_key = config.SUPABASE_SERVICE_ROLE_KEY or config.SUPABASE_ANON_KEY

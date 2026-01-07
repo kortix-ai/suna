@@ -1,12 +1,7 @@
-"""
-User Roles API
-Handles user role operations
-"""
-
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
+from core.endpoints.user_roles_repo import get_user_admin_role as repo_get_admin_role
 
 router = APIRouter(tags=["user-roles"])
 
@@ -14,28 +9,11 @@ router = APIRouter(tags=["user-roles"])
 async def get_user_admin_role(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Get admin role for the current user."""
     try:
-        db = DBConnection()
-        client = await db.client
-        
-        result = await client.from_('user_roles').select('role').eq('user_id', user_id).in_('role', ['admin', 'super_admin']).maybe_single().execute()
-        
-        if result and result.data:
-            return {
-                "isAdmin": True,
-                "role": result.data['role']
-            }
-        else:
-            return {
-                "isAdmin": False,
-                "role": None
-            }
-        
+        return await repo_get_admin_role(user_id)
     except Exception as e:
         logger.error(f"Error fetching admin role: {str(e)}")
         return {
             "isAdmin": False,
             "role": None
         }
-
