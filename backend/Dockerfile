@@ -27,32 +27,13 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --quiet
 # Copy application code
 COPY . .
 
-# Calculate optimal worker count based on 16 vCPUs
-# Using (2*CPU)+1 formula for CPU-bound applications
-ENV WORKERS=7
-ENV THREADS=2
-ENV WORKER_CONNECTIONS=2000
-
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-# Gunicorn configuration
-CMD ["sh", "-c", "uv run gunicorn api:app \
-  --workers $WORKERS \
-  --worker-class uvicorn.workers.UvicornWorker \
-  --bind 0.0.0.0:8000 \
-  --timeout 1800 \
-  --graceful-timeout 600 \
-  --keep-alive 1800 \
-  --max-requests 0 \
-  --max-requests-jitter 0 \
-  --forwarded-allow-ips '*' \
-  --worker-connections $WORKER_CONNECTIONS \
-  --worker-tmp-dir /dev/shm \
-  --preload \
-  --log-level info \
-  --access-logfile - \
-  --error-logfile - \
-  --capture-output \
-  --enable-stdio-inheritance \
-  --threads $THREADS"]
+# Production: Gunicorn with async workers
+# WORKERS=16 for 32 vCPU server (2 workers per core, capped at 16)
+# Each worker = separate process = separate HTTP/2 connection = 100 more concurrent streams
+ENV WORKERS=16
+ENV TIMEOUT=300
+
+CMD ["sh", "-c", "uv run gunicorn api:app -w ${WORKERS} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout ${TIMEOUT} --graceful-timeout 30 --keep-alive 65"]

@@ -36,12 +36,13 @@ async def set_thread_has_images(thread_id: str, client=None) -> bool:
     
     Args:
         thread_id: The thread ID
-        client: Optional Supabase client (fetched if not provided)
+        client: Optional Supabase client (unused, kept for backwards compatibility)
         
     Returns:
         True if successfully set, False otherwise
     """
     from core.services import redis
+    from core.threads import repo as threads_repo
     
     cache_key = f"thread_has_images:{thread_id}"
     
@@ -51,22 +52,15 @@ async def set_thread_has_images(thread_id: str, client=None) -> bool:
         if cached == "1":
             return True
         
-        if client is None:
-            db = DBConnection()
-            client = await db.client
-        
-        # Get current metadata
-        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
-        if not result.data:
+        # Check current metadata using direct SQL
+        metadata = await threads_repo.get_thread_metadata(thread_id)
+        if metadata is None:
             logger.warning(f"Thread {thread_id} not found when setting has_images flag")
             return False
         
-        metadata = result.data.get('metadata') or {}
-        
         # Skip DB write if already set
-        if not metadata.get('has_images'):
-            metadata['has_images'] = True
-            await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
+        if not (metadata or {}).get('has_images'):
+            await threads_repo.set_thread_has_images(thread_id)
         
         # Set in Redis with 2 hour TTL (refreshed on each access)
         await redis.set(cache_key, "1", ex=7200)
@@ -122,18 +116,16 @@ class ThreadManager:
         is_public: bool = False,
         metadata: Optional[Dict[str, Any]] = None
     ) -> str:
-        client = await self.db.client
-
-        thread_data = {'is_public': is_public, 'metadata': metadata or {}}
-        if account_id:
-            thread_data['account_id'] = account_id
-        if project_id:
-            thread_data['project_id'] = project_id
-
+        from core.threads import repo as threads_repo
+        
         try:
-            result = await client.table('threads').insert(thread_data).execute()
-            if result.data and len(result.data) > 0 and 'thread_id' in result.data[0]:
-                thread_id = result.data[0]['thread_id']
+            thread_id = await threads_repo.insert_thread(
+                account_id=account_id,
+                project_id=project_id,
+                is_public=is_public,
+                metadata=metadata
+            )
+            if thread_id:
                 logger.info(f"Successfully created thread: {thread_id}")
                 return thread_id
             else:
@@ -152,43 +144,37 @@ class ThreadManager:
         agent_id: Optional[str] = None,
         agent_version_id: Optional[str] = None
     ):
-        from core.services.supabase import execute_with_reconnect
+        from core.threads import repo as threads_repo
 
-        data_to_insert = {
-            'thread_id': thread_id,
-            'type': type,
-            'content': content,
-            'is_llm_message': is_llm_message,
-            'metadata': metadata or {},
-        }
-
-        if agent_id:
-            data_to_insert['agent_id'] = agent_id
-        if agent_version_id:
-            data_to_insert['agent_version_id'] = agent_version_id
-
-        result = await execute_with_reconnect(
-            self.db,
-            lambda c: c.table('messages').insert(data_to_insert).execute()
-        )
-
-        if result.data and len(result.data) > 0 and 'message_id' in result.data[0]:
-            saved_message = result.data[0]
+        try:
+            saved_message = await threads_repo.insert_message(
+                thread_id=thread_id,
+                message_type=type,
+                content=content,
+                is_llm_message=is_llm_message,
+                metadata=metadata,
+                agent_id=agent_id,
+                agent_version_id=agent_version_id
+            )
             
-            # Invalidate message history cache when new message is added
-            if is_llm_message:
-                try:
-                    from core.cache.runtime_cache import invalidate_message_history_cache
-                    await invalidate_message_history_cache(thread_id)
-                except Exception as e:
-                    logger.debug(f"Failed to invalidate message history cache: {e}")
-            
-            if type == "llm_response_end" and isinstance(content, dict):
-                await self._handle_billing(thread_id, content, saved_message)
-            
-            return saved_message
-        else:
-            logger.error(f"Insert operation failed for thread {thread_id}")
+            if saved_message and 'message_id' in saved_message:
+                # Invalidate message history cache when new message is added
+                if is_llm_message:
+                    try:
+                        from core.cache.runtime_cache import invalidate_message_history_cache
+                        await invalidate_message_history_cache(thread_id)
+                    except Exception as e:
+                        logger.debug(f"Failed to invalidate message history cache: {e}")
+                
+                if type == "llm_response_end" and isinstance(content, dict):
+                    await self._handle_billing(thread_id, content, saved_message)
+                
+                return saved_message
+            else:
+                logger.error(f"Insert operation failed for thread {thread_id}")
+                return None
+        except Exception as e:
+            logger.error(f"Failed to add message to thread {thread_id}: {e}")
             return None
 
     async def _handle_billing(self, thread_id: str, content: dict, saved_message: dict):
@@ -234,13 +220,17 @@ class ThreadManager:
                 else:
                     logger.debug(f"❌ NO CACHE: All {prompt_tokens} tokens processed fresh")
 
+                # Convert UUID objects to strings for billing system (still uses PostgREST)
+                message_id_str = str(saved_message['message_id'])
+                thread_id_str = str(thread_id)
+                
                 deduct_result = await billing_integration.deduct_usage(
                     account_id=user_id,
                     prompt_tokens=prompt_tokens,
                     completion_tokens=completion_tokens,
                     model=model or "unknown",
-                    message_id=saved_message['message_id'],
-                    thread_id=thread_id,
+                    message_id=message_id_str,
+                    thread_id=thread_id_str,
                     cache_read_tokens=cache_read_tokens,
                     cache_creation_tokens=cache_creation_tokens
                 )
@@ -320,7 +310,6 @@ class ThreadManager:
         """
         logger.debug(f"Getting messages for thread {thread_id} (lightweight={lightweight})")
         
-        
         # Check cache first (only for non-lightweight mode)
         if not lightweight:
             from core.cache.runtime_cache import get_cached_message_history
@@ -328,7 +317,6 @@ class ThreadManager:
             if cached is not None:
                 logger.debug(f"⏱️ [TIMING] Message history: cache hit ({len(cached)} messages)")
                 # Validate and normalize tool_calls in cached messages
-                # This ensures consistency even if cache was populated before tool_call fixes
                 validated_cached = []
                 for msg in cached:
                     if msg.get('role') == 'assistant' and msg.get('tool_calls'):
@@ -336,45 +324,43 @@ class ThreadManager:
                     validated_cached.append(msg)
                 return validated_cached
         
-        from core.services.supabase import execute_with_reconnect
+        from core.threads import repo as threads_repo
         import asyncio
+        import time as _time
         
-        # Timeout for message queries (seconds) - fail fast on connection issues
         MESSAGE_QUERY_TIMEOUT = 10.0
         
         try:
             all_messages = []
             
             if lightweight:
-                result = await asyncio.wait_for(
-                    execute_with_reconnect(
-                        self.db,
-                        lambda client: client.table('messages').select('message_id, type, content').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').limit(100).execute()
-                    ),
+                logger.info(f"📊 Starting lightweight message fetch for thread {thread_id}")
+                t0 = _time.time()
+                all_messages = await asyncio.wait_for(
+                    threads_repo.get_llm_messages(thread_id, lightweight=True, limit=100),
                     timeout=MESSAGE_QUERY_TIMEOUT
                 )
-                
-                if result.data:
-                    all_messages = result.data
+                elapsed = (_time.time() - t0) * 1000
+                logger.info(f"📊 Lightweight message fetch completed: {elapsed:.0f}ms, {len(all_messages)} messages")
             else:
                 batch_size = 1000
                 offset = 0
                 
                 while True:
-                    # Capture offset in lambda default arg to avoid closure issues
-                    result = await asyncio.wait_for(
-                        execute_with_reconnect(
-                            self.db,
-                            lambda client, _offset=offset: client.table('messages').select('message_id, type, content, metadata').eq('thread_id', thread_id).eq('is_llm_message', True).order('created_at').range(_offset, _offset + batch_size - 1).execute()
-                        ),
+                    logger.info(f"📊 Starting message fetch (offset={offset}) for thread {thread_id}")
+                    t0 = _time.time()
+                    batch = await asyncio.wait_for(
+                        threads_repo.get_llm_messages_paginated(thread_id, offset=offset, batch_size=batch_size),
                         timeout=MESSAGE_QUERY_TIMEOUT
                     )
+                    elapsed = (_time.time() - t0) * 1000
+                    logger.info(f"📊 Message fetch (offset={offset}) completed: {elapsed:.0f}ms, {len(batch)} messages")
                     
-                    if not result.data:
+                    if not batch:
                         break
                         
-                    all_messages.extend(result.data)
-                    if len(result.data) < batch_size:
+                    all_messages.extend(batch)
+                    if len(batch) < batch_size:
                         break
                     offset += batch_size
 
@@ -412,7 +398,6 @@ class ThreadManager:
                         
                         messages.append(parsed_item)
                     except json.JSONDecodeError:
-                        # If compressed, content is a plain string (not JSON) - this is expected
                         if is_compressed:
                             messages.append({
                                 'role': 'user',
@@ -472,6 +457,7 @@ class ThreadManager:
         import asyncio
         import time
         from core.services import redis
+        from core.threads import repo as threads_repo
         
         start = time.time()
         cache_key = f"thread_has_images:{thread_id}"
@@ -487,28 +473,16 @@ class ThreadManager:
             except Exception:
                 pass  # Redis miss or error, fall through to DB
             
-            # Fall back to DB
+            # Fall back to direct SQL
             try:
-                client = await asyncio.wait_for(self.db.client, timeout=3.0)
-            except asyncio.TimeoutError:
-                elapsed = (time.time() - start) * 1000
-                logger.warning(f"⚠️ thread_has_images CLIENT timeout after {elapsed:.1f}ms for {thread_id} - assuming no images")
-                return False
-            
-            try:
-                result = await asyncio.wait_for(
-                    client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute(),
+                has_images = await asyncio.wait_for(
+                    threads_repo.check_thread_has_images(thread_id),
                     timeout=2.0
                 )
             except asyncio.TimeoutError:
                 elapsed = (time.time() - start) * 1000
                 logger.warning(f"⚠️ thread_has_images QUERY timeout after {elapsed:.1f}ms for {thread_id} - assuming no images")
                 return False
-            
-            has_images = False
-            if result.data:
-                metadata = result.data.get('metadata') or {}
-                has_images = metadata.get('has_images', False)
             
             # Cache in Redis if True (2 hour TTL, refreshed on each access)
             if has_images:
@@ -633,33 +607,20 @@ class ThreadManager:
                 try:
                     from core.ai_models import model_manager
                     from litellm.utils import token_counter
+                    from core.threads import repo as threads_repo
                     import time as _time
                     
-                    _t1 = _time.time()
-                    client = await asyncio.wait_for(self.db.client, timeout=3.0)
-                    _client_time = (_time.time() - _t1) * 1000
-                    if _client_time > 100:
-                        logger.warning(f"⚠️ [SLOW] DB client acquired in {_client_time:.1f}ms for fast path check")
-                    
-                    # Query last llm_response_end message from messages table (already stored there!)
+                    # Query last llm_response_end message from messages table (using direct SQL)
                     _t2 = _time.time()
-                    last_usage_result = await asyncio.wait_for(
-                        client.table('messages')\
-                            .select('content')\
-                            .eq('thread_id', thread_id)\
-                            .eq('type', 'llm_response_end')\
-                            .order('created_at', desc=True)\
-                            .limit(1)\
-                            .maybe_single()\
-                            .execute(),
+                    llm_end_content = await asyncio.wait_for(
+                        threads_repo.get_last_llm_response_end(thread_id),
                         timeout=5.0
                     )
                     _query_time = (_time.time() - _t2) * 1000
                     if _query_time > 500:
                         logger.warning(f"⚠️ [SLOW] llm_response_end query took {_query_time:.1f}ms")
                     
-                    if last_usage_result and last_usage_result.data:
-                        llm_end_content = last_usage_result.data.get('content', {})
+                    if llm_end_content:
                         if isinstance(llm_end_content, str):
                             llm_end_content = json.loads(llm_end_content)
                         
@@ -669,33 +630,26 @@ class ThreadManager:
                         logger.debug(f"Fast check data - stored model: {stored_model}, current model: {llm_model}")
                         
                         # Use fast path if we have usage data
-                        # Token counts are similar enough for compression decisions even if model changed
                         if usage:
-                            # Use total_tokens (includes prev completion) for better accuracy
                             last_total_tokens = int(usage.get('total_tokens', 0))
                             
-                            # Add cache creation tokens for accurate count (AWS Bedrock quota calculation)
                             cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
                             if cache_creation > 0:
                                 last_total_tokens += cache_creation
                                 logger.debug(f"Added {cache_creation} cache creation tokens to fast check total")
                             
-                            # Count tokens in new message (only for first turn, not auto-continue)
                             new_msg_tokens = 0
                             
                             if is_auto_continue:
-                                # Auto-continue: Get tool result tokens from auto_continue_state
-                                # These are tracked by _auto_continue_generator when tool chunks are yielded
                                 new_msg_tokens = auto_continue_state.get('tool_result_tokens', 0)
                                 if new_msg_tokens > 0:
                                     logger.debug(f"🔧 Auto-continue: adding {new_msg_tokens} tool result tokens from state")
                                 else:
                                     logger.debug(f"✅ Auto-continue: no tool result tokens in state")
-                                # Reset AFTER consuming - ready for next iteration
                                 auto_continue_state['tool_result_tokens'] = 0
                             elif latest_user_message_content:
-                                # First turn: Use passed content (avoids DB query)
-                                new_msg_tokens = token_counter(
+                                new_msg_tokens = await asyncio.to_thread(
+                                    token_counter,
                                     model=llm_model, 
                                     messages=[{"role": "user", "content": latest_user_message_content}]
                                 )
@@ -703,30 +657,22 @@ class ThreadManager:
                             else:
                                 # First turn fallback: Query DB if content not provided
                                 _t3 = _time.time()
-                                latest_msg_result = await asyncio.wait_for(
-                                    client.table('messages')\
-                                        .select('content')\
-                                        .eq('thread_id', thread_id)\
-                                        .eq('type', 'user')\
-                                        .order('created_at', desc=True)\
-                                        .limit(1)\
-                                        .single()\
-                                        .execute(),
+                                latest_msg_content = await asyncio.wait_for(
+                                    threads_repo.get_latest_user_message(thread_id),
                                     timeout=5.0
                                 )
                                 _user_msg_time = (_time.time() - _t3) * 1000
                                 if _user_msg_time > 500:
                                     logger.warning(f"⚠️ [SLOW] latest user message query took {_user_msg_time:.1f}ms")
                                 
-                                if latest_msg_result and latest_msg_result.data:
-                                    # DB stores content as {"role": "user", "content": "actual text"}
-                                    db_content = latest_msg_result.data.get('content', {})
-                                    if isinstance(db_content, dict):
-                                        new_msg_content = db_content.get('content', '')
+                                if latest_msg_content:
+                                    if isinstance(latest_msg_content, dict):
+                                        new_msg_content = latest_msg_content.get('content', '')
                                     else:
-                                        new_msg_content = db_content
+                                        new_msg_content = latest_msg_content
                                     if new_msg_content:
-                                        new_msg_tokens = token_counter(
+                                        new_msg_tokens = await asyncio.to_thread(
+                                            token_counter,
                                             model=llm_model, 
                                             messages=[{"role": "user", "content": new_msg_content}]
                                         )
@@ -735,7 +681,9 @@ class ThreadManager:
                             # Count memory context tokens (only on first turn - auto-continue already has it in last_total_tokens)
                             memory_context_tokens = 0
                             if not is_auto_continue and self._memory_context:
-                                memory_context_tokens = token_counter(
+                                # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+                                memory_context_tokens = await asyncio.to_thread(
+                                    token_counter,
                                     model=llm_model,
                                     messages=[self._memory_context]
                                 )
@@ -827,16 +775,11 @@ class ThreadManager:
             force_rebuild = False
             if ENABLE_PROMPT_CACHING:
                 try:
-                    client = await self.db.client
-                    result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
-                    if result and result.data:
-                        metadata = result.data.get('metadata', {})
-                        if metadata.get('cache_needs_rebuild'):
-                            force_rebuild = True
-                            logger.info("🔄 Rebuilding cache due to compression/model change")
-                            # Clear the flag
-                            metadata['cache_needs_rebuild'] = False
-                            await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
+                    from core.threads import repo as threads_repo
+                    if await threads_repo.get_cache_needs_rebuild(thread_id):
+                        force_rebuild = True
+                        logger.info("🔄 Rebuilding cache due to compression/model change")
+                        await threads_repo.set_cache_needs_rebuild(thread_id, False)
                 except Exception as e:
                     logger.debug(f"Failed to check cache_needs_rebuild flag: {e}")
 
@@ -916,7 +859,8 @@ class ThreadManager:
                 logger.debug(f"✅ Pre-send validation passed: all tool calls properly paired")
             logger.debug(f"⏱️ [TIMING] Pre-send validation: {(time.time() - validation_start) * 1000:.1f}ms")
             
-            actual_tokens = token_counter(model=llm_model, messages=prepared_messages)
+            # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+            actual_tokens = await asyncio.to_thread(token_counter, model=llm_model, messages=prepared_messages)
             if estimated_total_tokens is not None:
                 token_diff = actual_tokens - estimated_total_tokens
                 diff_pct = (token_diff / estimated_total_tokens * 100) if estimated_total_tokens > 0 else 0
@@ -965,8 +909,8 @@ class ThreadManager:
                     prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
                 else:
                     prepared_messages = [system_prompt] + messages_with_context
-                # Recount tokens
-                actual_tokens = token_counter(model=llm_model, messages=prepared_messages)
+                # Recount tokens (wrap in thread pool - CPU-heavy tiktoken operation)
+                actual_tokens = await asyncio.to_thread(token_counter, model=llm_model, messages=prepared_messages)
                 estimated_total_tokens = actual_tokens
                 logger.info(f"📤 POST-COMPRESSION: {len(prepared_messages)} messages, {actual_tokens} tokens")
             
@@ -1100,7 +1044,9 @@ class ThreadManager:
                                 # Extract the actual content string for token counting
                                 content_str = content.get('content', '') if isinstance(content, dict) else str(content)
                                 if content_str:
-                                    tool_tokens = token_counter(
+                                    # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
+                                    tool_tokens = await asyncio.to_thread(
+                                        token_counter,
                                         model=llm_model,
                                         messages=[{"role": "tool", "content": content_str}]
                                     )

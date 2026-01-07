@@ -282,20 +282,26 @@ function calculateTextHeight(text: string): { height: number; lineCount: number;
   lines.forEach(line => {
     totalChars += line.length;
     if (line.length > 0) {
-      wrappedLineEstimate += Math.max(1, Math.round(line.length / charsPerLine + 0.3));
+      // More conservative: use Math.ceil and larger offset
+      wrappedLineEstimate += Math.max(1, Math.ceil(line.length / charsPerLine + 0.5));
     } else {
       wrappedLineEstimate += 1;
     }
   });
 
   const visualLines = Math.max(lineCount, wrappedLineEstimate);
-  const estimatedHeight = Math.round(visualLines * MARKDOWN_LINE_HEIGHT * 0.88);
+  // Remove aggressive reduction, use full line height
+  const baseHeight = Math.round(visualLines * MARKDOWN_LINE_HEIGHT * 1.0);
+  
+  // Add platform-specific buffer + safety margin
+  const safetyMargin = 4; // Extra pixels to prevent cutoff
+  const totalHeight = baseHeight + HEIGHT_BUFFER + safetyMargin;
 
   return { 
-    height: estimatedHeight, 
+    height: totalHeight, 
     lineCount, 
     wrappedLineEstimate,
-    buffer: 0,
+    buffer: HEIGHT_BUFFER + safetyMargin,
     charCount: totalChars
   };
 }

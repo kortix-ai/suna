@@ -31,6 +31,7 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 export interface UseAgentStreamResult {
   status: string;
   textContent: string; // String for compatibility with existing components
+  reasoningContent: string; // Accumulated reasoning content
   toolCall: UnifiedMessage | null; // UnifiedMessage with metadata.tool_calls
   error: string | null;
   agentRunId: string | null;
@@ -179,6 +180,7 @@ export function useAgentStream(
   return {
     status: coreResult.status,
     textContent: textContentString,
+    reasoningContent: coreResult.reasoningContent || '',
     toolCall: coreResult.toolCall,
     error: coreResult.error,
     agentRunId: coreResult.agentRunId,

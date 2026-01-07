@@ -18,6 +18,8 @@ from fastapi import APIRouter, HTTPException, Depends
 from typing import Dict, Optional
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
+import asyncio
+import httpx
 from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.config import config, EnvMode
@@ -34,6 +36,7 @@ from ..shared.config import (
     TIERS
 )
 from ..subscriptions import subscription_service
+from ..external.stripe import StripeAPIWrapper
 
 router = APIRouter(tags=["billing-account-state"])
 
@@ -116,9 +119,8 @@ async def _build_account_state(account_id: str, client) -> Dict:
     stripe_subscription_id = credit_account.get('stripe_subscription_id')
     if stripe_subscription_id and provider == 'stripe':
         try:
-            import stripe
-            stripe.api_key = config.STRIPE_SECRET_KEY
-            subscription_data = stripe.Subscription.retrieve(stripe_subscription_id)
+            # Use async wrapper with timeout instead of sync call
+            subscription_data = await StripeAPIWrapper.retrieve_subscription(stripe_subscription_id)
             
             # Get billing period from subscription if not in credit_account
             if not billing_period and subscription_data:
@@ -190,9 +192,9 @@ async def _build_account_state(account_id: str, client) -> Dict:
             if revenuecat_cancel_at_period_end:
                 cancellation_effective_date = revenuecat_cancel_at_period_end
     
-    # Get scheduled changes
+    # Get scheduled changes (pass subscription_data to avoid duplicate Stripe API calls)
     try:
-        scheduled_changes = await subscription_service.get_scheduled_changes(account_id)
+        scheduled_changes = await subscription_service.get_scheduled_changes(account_id, subscription_data)
     except Exception as e:
         logger.warning(f"[ACCOUNT_STATE] Failed to get scheduled changes: {e}")
         scheduled_changes = {'has_scheduled_change': False, 'scheduled_change': None}
@@ -456,10 +458,15 @@ async def get_account_state(
             }
         }
     
-    try:
-        # Check cache first (unless skip_cache is True)
-        cache_key = f"account_state:{account_id}"
-        if not skip_cache:
+    # Retry configuration for connection timeouts
+    max_retries = 3
+    retry_delay = 0.5  # seconds
+    
+    cache_key = f"account_state:{account_id}"
+    
+    # Try cache first with timeout protection
+    if not skip_cache:
+        try:
             cached_data = await Cache.get(cache_key)
             if cached_data:
                 cached_data['_cache'] = {
@@ -467,27 +474,65 @@ async def get_account_state(
                     'ttl_seconds': ACCOUNT_STATE_CACHE_TTL
                 }
                 return cached_data
-        
-        # Ensure daily credits are refreshed if needed
-        await credit_service.check_and_refresh_daily_credits(account_id)
-        
-        # Build fresh data
-        db = DBConnection()
-        client = await db.client
-        
-        account_state = await _build_account_state(account_id, client)
-        
-        # Cache the result
-        await Cache.set(cache_key, account_state, ttl=ACCOUNT_STATE_CACHE_TTL)
-        
-        account_state['_cache'] = {
-            'cached': False,
-            'ttl_seconds': ACCOUNT_STATE_CACHE_TTL
-        }
-        
-        return account_state
-        
-    except Exception as e:
-        logger.error(f"[ACCOUNT_STATE] Error getting account state for {account_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        except Exception as cache_err:
+            # Cache miss or timeout - continue to fetch fresh data
+            logger.debug(f"[ACCOUNT_STATE] Cache read failed for {account_id}: {cache_err}")
+    
+    last_error = None
+    db = DBConnection()
+    
+    for attempt in range(max_retries):
+        try:
+            # Ensure daily credits are refreshed if needed (non-blocking on failure)
+            try:
+                await credit_service.check_and_refresh_daily_credits(account_id)
+            except (httpx.ConnectTimeout, httpx.PoolTimeout, TimeoutError) as credit_err:
+                logger.warning(f"[ACCOUNT_STATE] Daily credit refresh timed out for {account_id}: {credit_err}")
+                # Continue - this is not critical for reading account state
+            
+            # Build fresh data
+            client = await db.client
+            
+            account_state = await _build_account_state(account_id, client)
+            
+            # Cache the result (non-blocking on failure)
+            try:
+                await Cache.set(cache_key, account_state, ttl=ACCOUNT_STATE_CACHE_TTL)
+            except Exception as cache_write_err:
+                logger.debug(f"[ACCOUNT_STATE] Cache write failed for {account_id}: {cache_write_err}")
+            
+            account_state['_cache'] = {
+                'cached': False,
+                'ttl_seconds': ACCOUNT_STATE_CACHE_TTL
+            }
+            
+            return account_state
+            
+        except (httpx.ConnectTimeout, httpx.PoolTimeout, httpx.ConnectError) as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                delay = retry_delay * (2 ** attempt)  # Exponential backoff
+                logger.warning(
+                    f"[ACCOUNT_STATE] Connection timeout for {account_id} (attempt {attempt + 1}/{max_retries}), "
+                    f"retrying in {delay}s..."
+                )
+                await asyncio.sleep(delay)
+                # Force reconnection on pool/connect issues
+                try:
+                    await db.force_reconnect()
+                except Exception:
+                    pass
+            else:
+                logger.error(f"[ACCOUNT_STATE] Failed after {max_retries} attempts for {account_id}: {e}")
+                raise HTTPException(
+                    status_code=503, 
+                    detail="Service temporarily unavailable. Please try again."
+                )
+        except Exception as e:
+            logger.error(f"[ACCOUNT_STATE] Error getting account state for {account_id}: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    # Should not reach here, but just in case
+    logger.error(f"[ACCOUNT_STATE] Unexpected exit from retry loop for {account_id}: {last_error}")
+    raise HTTPException(status_code=503, detail="Service temporarily unavailable. Please try again.")
 

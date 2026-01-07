@@ -544,7 +544,9 @@ Generate, edit, upscale, or remove background from images. Video generation supp
 
             if mode == "generate":
                 logger.info(f"Calling Replicate openai/gpt-image-1.5 for generation (quality={quality}, aspect_ratio={aspect_ratio})")
-                output = replicate.run(
+                # Wrap replicate.run() in thread pool to avoid blocking event loop
+                output = await asyncio.to_thread(
+                    replicate.run,
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
@@ -566,7 +568,9 @@ Generate, edit, upscale, or remove background from images. Video generation supp
                 image_data_url = f"data:image/png;base64,{image_b64}"
 
                 logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing (quality={quality}, aspect_ratio={aspect_ratio}) with image_path='{image_path}' (image size: {len(image_bytes)} bytes)")
-                output = replicate.run(
+                # Wrap replicate.run() in thread pool to avoid blocking event loop
+                output = await asyncio.to_thread(
+                    replicate.run,
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
@@ -701,7 +705,9 @@ Generate, edit, upscale, or remove background from images. Video generation supp
             logger.info(f"Calling Replicate bytedance/seedance-1.5-pro for video generation")
             logger.debug(f"Video params: duration={input_params.get('duration')}, aspect_ratio={input_params.get('aspect_ratio')}, generate_audio={input_params.get('generate_audio')}, has_image={'image' in input_params}")
             
-            output = replicate.run(
+            # Wrap replicate.run() in thread pool to avoid blocking event loop
+            output = await asyncio.to_thread(
+                replicate.run,
                 "bytedance/seedance-1.5-pro",
                 input=input_params
             )

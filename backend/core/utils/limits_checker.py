@@ -3,7 +3,7 @@ from datetime import datetime, timezone, timedelta
 from core.utils.logger import logger
 from core.utils.config import config
 from core.utils.cache import Cache
-
+from core.utils import limits_repo
 
 async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
     try:
@@ -15,13 +15,11 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         twenty_four_hours_ago_iso = twenty_four_hours_ago.isoformat()
         
         logger.debug(f"Checking agent run limit for account {account_id} since {twenty_four_hours_ago_iso}")
-        
-        # FAST PATH: Check Redis cache for running runs (5s TTL)
+
         from core.cache.runtime_cache import get_cached_running_runs, set_cached_running_runs
         cached_runs = await get_cached_running_runs(account_id)
         
         if cached_runs:
-            # Cache hit - get tier info only (cached 60s)
             try:
                 from core.billing import subscription_service
                 tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
@@ -42,10 +40,8 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
                 'limit': concurrent_runs_limit
             }
         
-        # CACHE MISS: Run tier lookup and join query in parallel
         async def get_tier_info():
             try:
-                # Check Redis cache first (5 min TTL)
                 from core.cache.runtime_cache import get_cached_tier_info, set_cached_tier_info
                 cached_tier = await get_cached_tier_info(account_id)
                 if cached_tier:
@@ -58,7 +54,6 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
                 tier_name = tier_info['name']
                 concurrent_runs_limit = tier_info.get('concurrent_runs', 1)
                 
-                # Cache the tier info
                 await set_cached_tier_info(account_id, tier_info)
                 
                 logger.debug(f"Account {account_id} tier: {tier_name}, concurrent runs limit: {concurrent_runs_limit}")
@@ -68,40 +63,23 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
                 return config.MAX_PARALLEL_AGENT_RUNS
         
         async def get_running_runs():
-            # OPTIMIZED: Query agent_runs directly with join to threads, filtering by account_id
-            # This avoids fetching all 244 threads first, then checking agent_runs
-            # Instead: Single query with join - MUCH faster!
-            try:
-                running_runs_result = await client.table('agent_runs').select(
-                    'id, thread_id, started_at, threads!inner(account_id)'
-                ).eq('threads.account_id', account_id).eq('status', 'running').gte('started_at', twenty_four_hours_ago_iso).execute()
-                
-                running_runs = running_runs_result.data or []
-                running_count = len(running_runs)
-                running_thread_ids = [run['thread_id'] for run in running_runs]
-                return running_count, running_thread_ids
-            except Exception as join_error:
-                # Fallback to old method if join syntax fails (shouldn't happen, but safety net)
-                logger.warning(f"Join query failed, falling back to batch method: {str(join_error)}")
-                raise
+            from core.utils import limits_repo
+            result = await limits_repo.count_running_agent_runs(account_id)
+            return result["running_count"], result["running_thread_ids"]
         
-        # Run both queries in parallel
         try:
             concurrent_runs_limit, (running_count, running_thread_ids) = await asyncio.gather(
                 get_tier_info(),
                 get_running_runs()
             )
             
-            # Cache the running runs for next request (5s TTL)
             await set_cached_running_runs(account_id, running_count, running_thread_ids)
             
             query_time = (time.time() - t_start) * 1000
             logger.debug(f"⚡ Optimized query: Found {running_count} running runs in {query_time:.1f}ms (parallel tier + join query)")
         except Exception as join_error:
-            # Fallback to old method if join syntax fails (shouldn't happen, but safety net)
             logger.warning(f"Join query failed, falling back to batch method: {str(join_error)}")
             
-            # Get tier info (fallback)
             try:
                 from core.billing import subscription_service
                 tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
@@ -109,9 +87,10 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
             except Exception:
                 concurrent_runs_limit = config.MAX_PARALLEL_AGENT_RUNS
             
-            threads_result = await client.table('threads').select('thread_id').eq('account_id', account_id).execute()
+            from core.utils import limits_repo
+            thread_count = await limits_repo.count_user_threads(account_id)
             
-            if not threads_result.data:
+            if thread_count == 0:
                 logger.debug(f"No threads found for account {account_id}")
                 return {
                     'can_start': True,
@@ -120,25 +99,9 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
                     'limit': concurrent_runs_limit
                 }
             
-            thread_ids = [thread['thread_id'] for thread in threads_result.data]
-            logger.debug(f"Found {len(thread_ids)} threads for account {account_id}")
-            
-            from core.utils.query_utils import batch_query_in
-            
-            running_runs = await batch_query_in(
-                client=client,
-                table_name='agent_runs',
-                select_fields='id, thread_id, started_at',
-                in_field='thread_id',
-                in_values=thread_ids,
-                additional_filters={
-                    'status': 'running',
-                    'started_at_gte': twenty_four_hours_ago_iso
-                }
-            )
-            
-            running_count = len(running_runs)
-            running_thread_ids = [run['thread_id'] for run in running_runs]
+            result = await limits_repo.count_running_agent_runs(account_id)
+            running_count = result["running_count"]
+            running_thread_ids = result["running_thread_ids"]
         
         logger.debug(f"Account {account_id} has {running_count}/{concurrent_runs_limit} running agent runs")
         
@@ -170,16 +133,9 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
                 'tier_name': 'local'
             }
         
-        agents_result = await client.table('agents').select('agent_id, metadata').eq('account_id', account_id).execute()
+        from core.utils import limits_repo
         
-        non_suna_agents = []
-        for agent in agents_result.data or []:
-            metadata = agent.get('metadata', {}) or {}
-            is_suna_default = metadata.get('is_suna_default', False)
-            if not is_suna_default:
-                non_suna_agents.append(agent)
-                
-        current_count = len(non_suna_agents)
+        current_count = await limits_repo.count_user_agents(account_id)
         logger.debug(f"Account {account_id} has {current_count} custom agents (excluding Suna defaults)")
         
         try:
@@ -234,23 +190,18 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         except Exception as cache_error:
             logger.warning(f"Cache read failed for project count limit {account_id}: {str(cache_error)}")
 
-        projects_result = await client.table('projects').select('project_id').eq('account_id', account_id).execute()
-        current_count = len(projects_result.data or [])
+        from core.utils import limits_repo
+        current_count = await limits_repo.count_user_projects(account_id)
         logger.debug(f"Account {account_id} has {current_count} projects (real-time count)")
         
         try:
-            credit_result = await client.table('credit_accounts').select('tier').eq('account_id', account_id).single().execute()
-            tier_name = credit_result.data.get('tier', 'free') if credit_result.data else 'free'
-            logger.debug(f"Account {account_id} credit tier: {tier_name}")
-        except Exception as credit_error:
-            try:
-                logger.debug(f"Trying user_id fallback for account {account_id}")
-                credit_result = await client.table('credit_accounts').select('tier').eq('user_id', account_id).single().execute()
-                tier_name = credit_result.data.get('tier', 'free') if credit_result.data else 'free'
-                logger.debug(f"Account {account_id} credit tier (via fallback): {tier_name}")
-            except:
-                logger.debug(f"No credit account for {account_id}, defaulting to free tier")
-                tier_name = 'free'
+            from core.billing import subscription_service
+            tier_info = await subscription_service.get_user_subscription_tier(account_id)
+            tier_name = tier_info['name']
+            logger.debug(f"Account {account_id} tier: {tier_name}")
+        except Exception as billing_error:
+            logger.warning(f"Failed to get subscription tier for {account_id}: {billing_error}")
+            tier_name = 'free'
         
         from core.billing.shared.config import get_project_limit
         project_limit = get_project_limit(tier_name)
@@ -288,13 +239,10 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
         if agent_id is None or trigger_type is None:
             logger.debug(f"Checking aggregate trigger limits for account {account_id}")
             
-            agents_result = await client.table('agents').select('agent_id').eq('account_id', account_id).execute()
+            agent_ids = await limits_repo.get_agent_ids_for_account(account_id)
             
-            if not agents_result.data:
+            if not agent_ids:
                 logger.debug(f"No agents found for account {account_id}")
-                # Even with no agents, we should still return the correct tier limits so the
-                # frontend can accurately reflect plan entitlements (limits apply once
-                # agents/triggers exist).
                 try:
                     from core.billing import subscription_service
                     tier_info = await subscription_service.get_user_subscription_tier(account_id)
@@ -311,8 +259,6 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
                     'app': {'current_count': 0, 'limit': app_limit},
                     'tier_name': tier_name
                 }
-            
-            agent_ids = [agent['agent_id'] for agent in agents_result.data]
             
             from core.utils.query_utils import batch_query_in
             
@@ -362,9 +308,9 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
         
         logger.debug(f"Checking trigger limit for account {account_id}, agent {agent_id}, type {trigger_type}")
         
-        agent_result = await client.table('agents').select('agent_id').eq('agent_id', agent_id).eq('account_id', account_id).execute()
+        agent_exists = await limits_repo.check_agent_exists(agent_id, account_id)
         
-        if not agent_result.data:
+        if not agent_exists:
             logger.warning(f"Agent {agent_id} not found or access denied for account {account_id}")
             return {
                 'can_create': False,
@@ -374,18 +320,9 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
                 'error': 'Worker not found or access denied'
             }
         
-        triggers_result = await client.table('agent_triggers').select('trigger_id, trigger_type').eq('agent_id', agent_id).execute()
-        
-        scheduled_count = 0
-        app_count = 0
-        
-        if triggers_result.data:
-            for trigger in triggers_result.data:
-                ttype = trigger.get('trigger_type', '')
-                if ttype == 'schedule':
-                    scheduled_count += 1
-                elif ttype in ['webhook', 'app', 'event']:
-                    app_count += 1
+        trigger_counts = await limits_repo.count_agent_triggers(agent_id)
+        scheduled_count = trigger_counts["scheduled"]
+        app_count = trigger_counts["app"]
         
         try:
             from core.billing import subscription_service
@@ -434,32 +371,11 @@ async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
     try:
         logger.debug(f"Checking custom worker limit for account {account_id}")
         
-        agents_result = await client.table('agents').select('agent_id, current_version_id').eq('account_id', account_id).execute()
+        from core.utils import limits_repo
         
-        total_custom_mcps = 0
+        total_custom_mcps = await limits_repo.count_custom_mcps_for_account(account_id)
         
-        if agents_result.data:
-            version_ids = [agent['current_version_id'] for agent in agents_result.data if agent.get('current_version_id')]
-            
-            if version_ids:
-                from core.utils.query_utils import batch_query_in
-                
-                versions = await batch_query_in(
-                    client=client,
-                    table_name='agent_versions',
-                    select_fields='version_id, config',
-                    in_field='version_id',
-                    in_values=version_ids,
-                    additional_filters={}
-                )
-                
-                for version in versions:
-                    config = version.get('config', {})
-                    tools = config.get('tools', {})
-                    custom_mcps = tools.get('custom_mcp', [])
-                    total_custom_mcps += len(custom_mcps)
-        
-        logger.debug(f"Account {account_id} has {total_custom_mcps} custom workers (MCPs)")
+        logger.debug(f"Account {account_id} has {total_custom_mcps} custom MCPs")
         
         try:
             from core.billing import subscription_service
@@ -503,12 +419,10 @@ async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
         
         logger.debug(f"Checking thread limit for account {account_id}")
         
-        # FAST PATH: Check Redis cache for thread count (30s TTL)
         from core.cache.runtime_cache import get_cached_thread_count, set_cached_thread_count
         cached_count = await get_cached_thread_count(account_id)
         
         if cached_count is not None:
-            # Cache hit - get tier info only (cached 60s)
             try:
                 from core.billing import subscription_service
                 tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
@@ -527,28 +441,24 @@ async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
                 'tier_name': tier_name
             }
         
-        # CACHE MISS: Run thread count and tier lookup in parallel
         async def get_thread_count():
-            threads_result = await client.table('threads').select('thread_id', count='exact').eq('account_id', account_id).execute()
-            return threads_result.count if hasattr(threads_result, 'count') else (len(threads_result.data) if threads_result.data else 0)
+            from core.utils import limits_repo
+            return await limits_repo.count_user_threads(account_id)
         
         async def get_tier_limit():
             try:
                 from core.billing import subscription_service
-                # Use cache (60s TTL) - tiers don't change frequently
                 tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
                 return tier_info['name'], tier_info.get('thread_limit', 10)
             except Exception as billing_error:
                 logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
                 return 'free', 10
         
-        # Run both queries in parallel
         current_count, (tier_name, thread_limit) = await asyncio.gather(
             get_thread_count(),
             get_tier_limit()
         )
         
-        # Cache the thread count for next request (30s TTL)
         await set_cached_thread_count(account_id, current_count)
         
         logger.debug(f"Account {account_id} has {current_count} threads")
@@ -575,4 +485,3 @@ async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
             'limit': 10,
             'tier_name': 'free'
         }
-

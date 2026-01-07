@@ -521,6 +521,7 @@ class ResponseProcessor:
         # Don't carry over accumulated_content when auto-continuing after tool_calls
         # Each assistant message should be separate
         accumulated_content = ""
+        accumulated_reasoning_content = ""  # Accumulate reasoning content separately
         tool_calls_buffer = {}
         current_xml_content = ""
         xml_chunks_buffer = []
@@ -785,6 +786,7 @@ class ResponseProcessor:
                     
                     # Check for and log Anthropic thinking content (MiniMax reasoning m2.1 with reasoning_split=True, we avoid yielding such chunks)
                     # NOTE: With reasoning_split=True, reasoning comes separately and should NOT be included in content
+                    reasoning_chunk = None
                     if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
                         if not has_printed_thinking_prefix:
                             # print("[THINKING]: ", end='', flush=True)
@@ -796,6 +798,9 @@ class ResponseProcessor:
                         # logger.debug(f"Processing reasoning_content: type={type(reasoning_content)}, value={reasoning_content}")
                         if isinstance(reasoning_content, list):
                             reasoning_content = ''.join(str(item) for item in reasoning_content)
+                        # Accumulate reasoning content separately from text content
+                        accumulated_reasoning_content += reasoning_content
+                        reasoning_chunk = reasoning_content
                         # logger.debug(f"Reasoning content received (not included in final message): {reasoning_content[:100]}...")
                         # DO NOT add reasoning_content to accumulated_content - only actual text content should be saved
 
@@ -809,17 +814,41 @@ class ResponseProcessor:
 
                         # Yield content chunk IMMEDIATELY - no datetime call, use pre-built metadata
                         # This is the hot path - every microsecond counts!
+                        # Build metadata dynamically if we have reasoning_content (otherwise use cached)
+                        if reasoning_chunk:
+                            # Include reasoning_content in metadata when present
+                            chunk_metadata = {"stream_status": "chunk", "thread_run_id": thread_run_id, "reasoning_content": reasoning_chunk}
+                            chunk_metadata_str = to_json_string_fast(chunk_metadata)
+                        else:
+                            chunk_metadata_str = _chunk_metadata_cached
+                        
                         content_chunk_message = {
                             "sequence": __sequence,
                             "message_id": None, "thread_id": thread_id, "type": "assistant",
                             "is_llm_message": True,
                             "content": to_json_string_fast({"role": "assistant", "content": chunk_content}),
-                            "metadata": _chunk_metadata_cached,  # Pre-built, no serialization per chunk
+                            "metadata": chunk_metadata_str,
                             "created_at": _stream_start_time,  # Reuse start time, no datetime.now() per chunk
                             "updated_at": _stream_start_time
                         }
                         self._log_frontend_message(content_chunk_message, frontend_debug_file)
                         yield content_chunk_message
+                        __sequence += 1
+                    elif reasoning_chunk:
+                        # Yield reasoning chunk separately if there's no content chunk
+                        # This handles cases where reasoning comes without text content
+                        reasoning_metadata = {"stream_status": "chunk", "thread_run_id": thread_run_id, "reasoning_content": reasoning_chunk}
+                        reasoning_chunk_message = {
+                            "sequence": __sequence,
+                            "message_id": None, "thread_id": thread_id, "type": "assistant",
+                            "is_llm_message": True,
+                            "content": to_json_string_fast({"role": "assistant", "content": ""}),  # Empty content, reasoning in metadata
+                            "metadata": to_json_string_fast(reasoning_metadata),
+                            "created_at": _stream_start_time,
+                            "updated_at": _stream_start_time
+                        }
+                        self._log_frontend_message(reasoning_chunk_message, frontend_debug_file)
+                        yield reasoning_chunk_message
                         __sequence += 1
 
                         # --- Process XML Tool Calls (if enabled) ---
@@ -1311,21 +1340,17 @@ class ResponseProcessor:
 
                 # If we already have a placeholder assistant message, update it instead of creating a new one
                 if last_assistant_message_object and last_assistant_message_object.get('message_id'):
+                    from core.threads import repo as threads_repo
                     # Store placeholder message_id for cleanup if update fails
                     placeholder_message_id = last_assistant_message_object['message_id']
                     # Update the existing placeholder message with final content and metadata
-                    client = await self.thread_manager.db.client
                     try:
-                        await client.table('messages').update({
-                            'content': message_data,
-                            'metadata': assistant_metadata,
-                            'updated_at': datetime.now(timezone.utc).isoformat()
-                        }).eq('message_id', placeholder_message_id).execute()
+                        updated_msg = await threads_repo.update_message_content(
+                            placeholder_message_id, message_data, assistant_metadata
+                        )
                         
-                        # Fetch the updated message
-                        result = await client.table('messages').select('*').eq('message_id', placeholder_message_id).single().execute()
-                        if result.data:
-                            last_assistant_message_object = result.data
+                        if updated_msg:
+                            last_assistant_message_object = updated_msg
                             logger.debug(f"Updated placeholder assistant message {last_assistant_message_object['message_id']} with final content")
                             self.trace.event(
                                 name="updated_placeholder_assistant_message",
@@ -1346,24 +1371,23 @@ class ResponseProcessor:
                                 new_message_id = last_assistant_message_object['message_id']
                                 try:
                                     # Update tool results to point to the new message_id
-                                    tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
-                                    if tool_results.data:
+                                    tool_results = await threads_repo.get_tool_results_by_thread(thread_id)
+                                    if tool_results:
                                         updated_count = 0
-                                        for tool_result in tool_results.data:
+                                        for tool_result in tool_results:
                                             metadata = tool_result.get('metadata', {})
                                             if metadata.get('assistant_message_id') == placeholder_message_id:
-                                                # Update this tool result to point to the new message
                                                 updated_metadata = metadata.copy()
                                                 updated_metadata['assistant_message_id'] = new_message_id
-                                                await client.table('messages').update({
-                                                    'metadata': updated_metadata
-                                                }).eq('message_id', tool_result['message_id']).execute()
+                                                await threads_repo.update_message_metadata(
+                                                    tool_result['message_id'], updated_metadata
+                                                )
                                                 updated_count += 1
                                         if updated_count > 0:
                                             logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
                                     
                                     # Delete the orphaned placeholder message
-                                    await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
+                                    await threads_repo.delete_message_by_id(placeholder_message_id, thread_id)
                                     logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
                                     self.trace.event(
                                         name="deleted_orphaned_placeholder_message",
@@ -1386,24 +1410,23 @@ class ResponseProcessor:
                             new_message_id = last_assistant_message_object['message_id']
                             try:
                                 # Update tool results to point to the new message_id
-                                tool_results = await client.table('messages').select('message_id, metadata').eq('thread_id', thread_id).eq('type', 'tool').execute()
-                                if tool_results.data:
+                                tool_results = await threads_repo.get_tool_results_by_thread(thread_id)
+                                if tool_results:
                                     updated_count = 0
-                                    for tool_result in tool_results.data:
+                                    for tool_result in tool_results:
                                         metadata = tool_result.get('metadata', {})
                                         if metadata.get('assistant_message_id') == placeholder_message_id:
-                                            # Update this tool result to point to the new message
                                             updated_metadata = metadata.copy()
                                             updated_metadata['assistant_message_id'] = new_message_id
-                                            await client.table('messages').update({
-                                                'metadata': updated_metadata
-                                            }).eq('message_id', tool_result['message_id']).execute()
+                                            await threads_repo.update_message_metadata(
+                                                tool_result['message_id'], updated_metadata
+                                            )
                                             updated_count += 1
                                     if updated_count > 0:
                                         logger.debug(f"Migrated {updated_count} tool result(s) from placeholder {placeholder_message_id} to new message {new_message_id}")
                                 
                                 # Delete the orphaned placeholder message
-                                await client.table('messages').delete().eq('message_id', placeholder_message_id).eq('thread_id', thread_id).execute()
+                                await threads_repo.delete_message_by_id(placeholder_message_id, thread_id)
                                 logger.info(f"Deleted orphaned placeholder message {placeholder_message_id} after failed update")
                                 self.trace.event(
                                     name="deleted_orphaned_placeholder_message",
@@ -1592,15 +1615,14 @@ class ResponseProcessor:
                     )
                     
                     # Acquire thread lock to prevent race conditions with concurrent tool result saves
+                    from core.threads import repo as threads_repo
                     thread_lock = await self._get_thread_lock(thread_id)
                     async with thread_lock:
-                        client = await self.thread_manager.db.client
-                        update_result = await client.table('messages').update({
-                            'is_llm_message': True
-                        }).in_('message_id', streaming_tool_result_ids).execute()
+                        updated_count = await threads_repo.update_messages_is_llm_message(
+                            streaming_tool_result_ids, is_llm_message=True
+                        )
                     
-                    if update_result.data:
-                        updated_count = len(update_result.data)
+                    if updated_count > 0:
                         logger.info(f"✅ Successfully batch-updated {updated_count}/{len(streaming_tool_result_ids)} streaming tool results to is_llm_message=True")
                         self.trace.event(
                             name="batch_update_streaming_tool_results_success",
@@ -1954,12 +1976,12 @@ class ResponseProcessor:
                             updated_content.pop('tool_calls', None)
                             
                             # Update in database (protected by lock to prevent race conditions)
+                            from core.threads import repo as threads_repo
                             thread_lock = await self._get_thread_lock(thread_id)
                             async with thread_lock:
-                                client = await self.thread_manager.db.client
-                                await client.table('messages').update({
-                                    'content': updated_content
-                                }).eq('message_id', last_assistant_message_object['message_id']).execute()
+                                await threads_repo.update_message_content(
+                                    last_assistant_message_object['message_id'], updated_content
+                                )
                             
                             logger.info(f"✅ Removed {len(tool_call_ids)} orphaned tool_calls from message {last_assistant_message_object['message_id']}: {tool_call_ids}")
                 except Exception as cleanup_e:
@@ -2887,16 +2909,14 @@ class ResponseProcessor:
             
             # If partial_assistant_message_id exists, UPDATE the existing message
             if partial_assistant_message_id:
+                from core.threads import repo as threads_repo
                 async with thread_lock:
-                    client = await self.thread_manager.db.client
-                    result = await client.table('messages').update({
-                        'content': message_data,
-                        'metadata': assistant_metadata
-                    }).eq('message_id', partial_assistant_message_id).execute()
+                    updated_message = await threads_repo.update_message_content(
+                        partial_assistant_message_id, message_data, assistant_metadata
+                    )
                     
-                    if result.data and len(result.data) > 0:
+                    if updated_message:
                         logger.debug(f"Updated partial assistant message {partial_assistant_message_id} with {len(unified_tool_calls)} tool calls")
-                        updated_message = result.data[0]
                         # Log DB write for assistant message update
                         if hasattr(self, '_log_db_write') and updated_message:
                             self._log_db_write("update", "assistant", updated_message, is_update=True)

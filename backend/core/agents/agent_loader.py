@@ -203,17 +203,13 @@ class AgentLoader:
                 logger.debug(f"⚡ Using cached config for agent {agent_id} ({(time.time() - t_start)*1000:.1f}ms)")
                 return self._dict_to_agent_data(cached)
         
-        client = await self.db.client
+        from core.agents import repo as agents_repo
         
-        # Fetch agent metadata
-        result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
+        agent_row = await agents_repo.get_agent_by_id(agent_id)
         
-        if not result.data:
+        if not agent_row:
             raise ValueError(f"Agent {agent_id} not found")
         
-        agent_row = result.data[0]
-        
-        # Check access
         if agent_row['account_id'] != user_id and not agent_row.get('is_public', False):
             raise ValueError(f"Access denied to agent {agent_id}")
         
@@ -277,10 +273,11 @@ class AgentLoader:
         """
         metadata = template_row.get('metadata', {}) or {}
         
-        # Fetch creator name if requested
+        # Fetch creator name if requested (template marketplace operation)
         creator_name = None
         if fetch_creator_name and template_row.get('creator_id'):
             try:
+                # Keep this on Supabase for template marketplace operations
                 client = await self.db.client
                 creator_result = await client.schema('basejump').from_('accounts').select(
                     'name, slug'

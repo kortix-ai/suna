@@ -51,6 +51,7 @@ import sys
 from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
+from core.services.orphan_cleanup import cleanup_orphaned_agent_runs
 
 
 if sys.platform == "win32":
@@ -62,12 +63,12 @@ db = DBConnection()
 import uuid
 instance_id = str(uuid.uuid4())[:8]
 
+
 # Rate limiter state
 ip_tracker = OrderedDict()
 MAX_CONCURRENT_IPS = 25
 
 # Background task handle for CloudWatch metrics
-_queue_metrics_task = None
 _worker_metrics_task = None
 _memory_watchdog_task = None
 
@@ -77,11 +78,14 @@ _is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _queue_metrics_task, _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
+    global _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
         await db.initialize()
+        
+        from core.services.db import init_db
+        await init_db()
         
         # Pre-load tool classes and schemas to avoid first-request delay
         from core.utils.tool_discovery import warm_up_tools_cache
@@ -102,6 +106,15 @@ async def lifespan(app: FastAPI):
             logger.error(f"Failed to initialize Redis connection: {e}")
             # Continue without Redis - the application will handle Redis failures gracefully
         
+        # ===== Cleanup orphaned agent runs from previous instance =====
+        # On startup, ALL runs with status='running' are orphans from the previous instance
+        # Also cleans up orphaned Redis streams without matching DB records
+        try:
+            client = await db.client
+            await cleanup_orphaned_agent_runs(client)
+        except Exception as e:
+            logger.error(f"Failed to cleanup orphaned agent runs on startup: {e}")
+        
         # Start background tasks
         # asyncio.create_task(core_api.restore_running_agent_runs())
         
@@ -110,12 +123,8 @@ async def lifespan(app: FastAPI):
         template_api.initialize(db)
         composio_api.initialize(db)
         
-        # Start CloudWatch queue metrics publisher (production only)
+        # Start CloudWatch worker metrics publisher (production only)
         if config.ENV_MODE == EnvMode.PRODUCTION:
-            from core.services import queue_metrics
-            _queue_metrics_task = asyncio.create_task(queue_metrics.start_cloudwatch_publisher())
-            
-            # Start CloudWatch worker metrics publisher
             from core.services import worker_metrics
             _worker_metrics_task = asyncio.create_task(worker_metrics.start_cloudwatch_publisher())
         
@@ -132,15 +141,49 @@ async def lifespan(app: FastAPI):
         # This ensures no new traffic is routed to this pod
         await asyncio.sleep(2)
         
-        logger.debug("Cleaning up resources")
+        # ===== CRITICAL: Stop all running agent runs on this instance =====
+        from core.agents.runs import _cancellation_events
+        from core.agents.executor import update_agent_run_status
         
-        # Stop CloudWatch queue metrics task
-        if _queue_metrics_task is not None:
-            _queue_metrics_task.cancel()
-            try:
-                await _queue_metrics_task
-            except asyncio.CancelledError:
-                pass
+        active_run_ids = list(_cancellation_events.keys())
+        if active_run_ids:
+            logger.warning(f"🛑 Stopping {len(active_run_ids)} active agent runs on shutdown: {active_run_ids}")
+            
+            # Set cancellation events for all running runs
+            for agent_run_id in active_run_ids:
+                try:
+                    event = _cancellation_events.get(agent_run_id)
+                    if event:
+                        event.set()
+                        logger.info(f"Set cancellation event for {agent_run_id}")
+                except Exception as e:
+                    logger.error(f"Failed to set cancellation event for {agent_run_id}: {e}")
+            
+            # Give tasks a moment to handle cancellation gracefully
+            await asyncio.sleep(1)
+            
+            # Force update DB status for any runs that didn't clean up
+            for agent_run_id in active_run_ids:
+                try:
+                    # Update status to stopped with shutdown message
+                    await update_agent_run_status(
+                        agent_run_id,
+                        "stopped",
+                        error=f"Instance shutdown: {instance_id}"
+                    )
+                    logger.info(f"✅ Marked agent run {agent_run_id} as stopped (instance shutdown)")
+                    
+                    # Also set Redis stop signal for any reconnecting clients
+                    try:
+                        await redis.set_stop_signal(agent_run_id)
+                    except Exception:
+                        pass
+                except Exception as e:
+                    logger.error(f"Failed to update agent run {agent_run_id} on shutdown: {e}")
+        else:
+            logger.info("No active agent runs to stop on shutdown")
+        
+        logger.debug("Cleaning up resources")
         
         # Stop CloudWatch worker metrics task
         if _worker_metrics_task is not None:
@@ -167,6 +210,10 @@ async def lifespan(app: FastAPI):
 
         logger.debug("Disconnecting from database")
         await db.disconnect()
+        
+        # Close direct Postgres connection pool
+        from core.services.db import close_db
+        await close_db()
     except Exception as e:
         logger.error(f"Error during application startup: {e}")
         raise
@@ -371,31 +418,21 @@ async def health_check():
     }
 
 @api_router.get("/metrics", summary="System Metrics", operation_id="metrics", tags=["system"])
-async def metrics_endpoint(
-    type: str = Query("all", description="Metrics type: 'queue', 'workers', or 'all'")
-):
+async def metrics_endpoint():
     """
-    Get system metrics for monitoring and auto-scaling.
+    Get API instance metrics for monitoring.
     
-    - **queue**: Redis Streams pending messages (for auto-scaling)
-    - **workers**: Worker count and task utilization
-    - **all**: Combined queue and worker metrics (default)
+    Returns:
+        - concurrent_agent_runs: Current concurrent agent runs
+        - max_concurrent_runs: Maximum concurrent runs per instance
+        - utilization_percent: Current utilization
+    
+    Note: All tasks execute directly in API process (no queues).
     """
-    from core.services import queue_metrics, worker_metrics
+    from core.services import worker_metrics
     
     try:
-        if type == "queue":
-            return await queue_metrics.get_queue_metrics()
-        elif type == "workers":
-            return await worker_metrics.get_worker_metrics()
-        else:  # type == "all" or default
-            queue_data = await queue_metrics.get_queue_metrics()
-            worker_data = await worker_metrics.get_worker_metrics()
-            return {
-                "queue": queue_data,
-                "workers": worker_data,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
+        return await worker_metrics.get_worker_metrics()
     except Exception as e:
         logger.error(f"Failed to get metrics: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
@@ -411,7 +448,7 @@ async def debug_endpoint(
     - **worker**: Stream worker status and health check
     """
     try:
-        from core.worker.consumer import get_stream_info, CONSUMER_GROUP
+        from core.worker.stream_info import get_stream_info, CONSUMER_GROUP
         from core.worker.tasks import StreamName
         
         if type == "worker":

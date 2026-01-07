@@ -41,15 +41,11 @@ from core.utils.logger import logger
 
 async def get_stored_threshold(thread_id: str, model: str, client=None) -> Optional[Dict[str, Any]]:
     """Get stored cache threshold from thread metadata."""
-    if client is None:
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        client = await db.client
+    from core.threads import repo as threads_repo
     
     try:
-        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
-        if result.data:
-            metadata = result.data.get('metadata', {})
+        metadata = await threads_repo.get_thread_metadata(thread_id)
+        if metadata:
             cache_config = metadata.get('cache_config', {})
             
             # Validate it's for the same model
@@ -63,15 +59,14 @@ async def get_stored_threshold(thread_id: str, model: str, client=None) -> Optio
 
 async def store_threshold(thread_id: str, threshold: int, model: str, reason: str, turn: Optional[int] = None, system_prompt_tokens: Optional[int] = None, client=None):
     """Store cache threshold in thread metadata."""
-    if client is None:
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        client = await db.client
+    from core.threads import repo as threads_repo
+    from datetime import datetime, timezone
     
     try:
         # Get existing metadata
-        result = await client.table('threads').select('metadata').eq('thread_id', thread_id).single().execute()
-        metadata = result.data.get('metadata', {}) if result.data else {}
+        metadata = await threads_repo.get_thread_metadata(thread_id)
+        if metadata is None:
+            metadata = {}
         
         # Update cache config
         metadata['cache_config'] = {
@@ -84,7 +79,7 @@ async def store_threshold(thread_id: str, threshold: int, model: str, reason: st
         }
         
         # Write back
-        await client.table('threads').update({'metadata': metadata}).eq('thread_id', thread_id).execute()
+        await threads_repo.update_thread_metadata(thread_id, metadata)
         
         logger.debug(f"💾 Stored cache threshold: {threshold} tokens (reason: {reason})")
     except Exception as e:

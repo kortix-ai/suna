@@ -17,16 +17,12 @@ redis-server
 
 **1.2 Running the Worker**
 
-The worker processes background tasks (agent runs, memory extraction, etc.) using Redis Streams.
+**NOTE: Worker process removed** - Agent runs now execute directly in the API process as async background tasks. Memory/categorization tasks also run directly.
 
+No separate worker process needed - just run the API:
 ```bash
-uv run python run_worker.py --concurrency 8
+uv run python api.py
 ```
-
-You should see:
-```
-🚀 Starting Redis Streams Worker
-✅ Worker resources initialized
 📡 Consumer loop started
 ```
 
@@ -42,7 +38,7 @@ uv run api.py
 **2. Launching the frontend**
 
 ```bash
-cd frontend
+cd apps/frontend
 pnpm install
 pnpm run dev
 ```

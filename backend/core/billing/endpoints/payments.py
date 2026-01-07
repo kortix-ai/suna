@@ -36,35 +36,17 @@ async def get_my_transactions(
     limit: int = Query(50, ge=1, le=100, description="Number of transactions to fetch"),
     offset: int = Query(0, ge=0, description="Number of transactions to skip")
 ) -> Dict:
+    from core.billing import repo as billing_repo
+    
     try:
-        db = DBConnection()
-        client = await db.client
+        transactions, total_count = await billing_repo.list_transactions(
+            account_id=account_id,
+            limit=limit,
+            offset=offset
+        )
         
-        transactions_result = await client.from_('credit_ledger')\
-            .select('*')\
-            .eq('account_id', account_id)\
-            .order('created_at', desc=True)\
-            .range(offset, offset + limit - 1)\
-            .execute()
-        
-        transactions = []
-        if transactions_result.data:
-            for txn in transactions_result.data:
-                transactions.append({
-                    'id': txn['id'],
-                    'amount': txn['amount'] * CREDITS_PER_DOLLAR,
-                    'type': txn['type'],
-                    'description': txn['description'],
-                    'created_at': txn['created_at'],
-                    'metadata': txn.get('metadata', {})
-                })
-        
-        count_result = await client.from_('credit_ledger')\
-            .select('id')\
-            .eq('account_id', account_id)\
-            .execute()
-        
-        total_count = len(count_result.data) if count_result.data else 0
+        for txn in transactions:
+            txn['amount'] = txn['amount'] * CREDITS_PER_DOLLAR
         
         return {
             'transactions': transactions,
@@ -84,48 +66,16 @@ async def get_transactions_summary(
     account_id: str = Depends(verify_and_get_user_id_from_jwt),
     days: int = Query(30, ge=1, le=365, description="Number of days to look back")
 ) -> Dict:
+    from core.billing import repo as billing_repo
+    
     try:
-        db = DBConnection()
-        client = await db.client
+        summary = await billing_repo.get_transactions_summary(account_id, days)
         
-        since_date = datetime.now(timezone.utc) - timedelta(days=days)
-        
-        summary_result = await client.from_('credit_ledger')\
-            .select('type, amount')\
-            .eq('account_id', account_id)\
-            .gte('created_at', since_date.isoformat())\
-            .execute()
-        
-        summary = {
-            'period_days': days,
-            'period_start': since_date.isoformat(),
-            'period_end': datetime.now(timezone.utc).isoformat(),
-            'total_spent': 0.0,
-            'total_added': 0.0,
-            'usage_count': 0,
-            'purchase_count': 0,
-            'by_type': {}
-        }
-        
-        if summary_result.data:
-            for txn in summary_result.data:
-                txn_type = txn['type']
-                amount = float(txn['amount'])
-                
-                if txn_type not in summary['by_type']:
-                    summary['by_type'][txn_type] = {'count': 0, 'total': 0.0}
-                
-                summary['by_type'][txn_type]['count'] += 1
-                summary['by_type'][txn_type]['total'] += amount
-                
-                if amount < 0:
-                    summary['total_spent'] += abs(amount) * CREDITS_PER_DOLLAR
-                    if txn_type == 'usage':
-                        summary['usage_count'] += 1
-                else:
-                    summary['total_added'] += amount * CREDITS_PER_DOLLAR
-                    if txn_type == 'purchase':
-                        summary['purchase_count'] += 1
+        # Convert to credits
+        summary['total_spent'] = summary['total_spent'] * CREDITS_PER_DOLLAR
+        summary['total_added'] = summary['total_added'] * CREDITS_PER_DOLLAR
+        for type_data in summary['by_type'].values():
+            type_data['total'] = type_data['total'] * CREDITS_PER_DOLLAR
         
         return summary
         
@@ -139,40 +89,28 @@ async def get_credit_usage(
     limit: int = Query(50, ge=1, le=100, description="Number of usage records to fetch"),
     offset: int = Query(0, ge=0, description="Number of usage records to skip")
 ) -> Dict:
+    from core.billing import repo as billing_repo
+    
     try:
-        db = DBConnection()
-        client = await db.client
-        
-        usage_result = await client.from_('credit_ledger')\
-            .select('*')\
-            .eq('account_id', account_id)\
-            .eq('type', 'usage')\
-            .order('created_at', desc=True)\
-            .range(offset, offset + limit - 1)\
-            .execute()
+        records, total_count = await billing_repo.get_credit_usage_records(
+            account_id=account_id,
+            limit=limit,
+            offset=offset
+        )
         
         usage_records = []
-        if usage_result.data:
-            for record in usage_result.data:
-                metadata = record.get('metadata', {})
-                usage_records.append({
-                    'id': record['id'],
-                    'amount': abs(float(record['amount'])) * CREDITS_PER_DOLLAR,
-                    'description': record['description'],
-                    'created_at': record['created_at'],
-                    'message_id': metadata.get('message_id'),
-                    'thread_id': metadata.get('thread_id'),
-                    'model': metadata.get('model'),
-                    'tokens': metadata.get('tokens')
-                })
-        
-        count_result = await client.from_('credit_ledger')\
-            .select('id')\
-            .eq('account_id', account_id)\
-            .eq('type', 'usage')\
-            .execute()
-        
-        total_count = len(count_result.data) if count_result.data else 0
+        for record in records:
+            metadata = record.get('metadata', {})
+            usage_records.append({
+                'id': record['id'],
+                'amount': record['amount'] * CREDITS_PER_DOLLAR,
+                'description': record['description'],
+                'created_at': record['created_at'],
+                'message_id': metadata.get('message_id'),
+                'thread_id': metadata.get('thread_id'),
+                'model': metadata.get('model'),
+                'tokens': metadata.get('tokens')
+            })
         
         return {
             'usage_records': usage_records,

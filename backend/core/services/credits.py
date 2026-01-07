@@ -13,13 +13,13 @@ class CreditService:
     def __init__(self):
         self.db = DBConnection()
         self.cache = Cache
-        self._client = None
+        # NOTE: Do NOT cache client reference here!
+        # DBConnection is a singleton that handles connection pooling.
+        # Caching the client here causes stale connections after force_reconnect().
     
     async def _get_client(self):
-        if self._client is None:
-            await self.db.initialize()
-            self._client = await self.db.client
-        return self._client
+        # Always get fresh client from DBConnection to handle reconnects properly
+        return await self.db.client
     
     async def check_and_refresh_daily_credits(self, user_id: str) -> Tuple[bool, Decimal]:
         try:
@@ -48,9 +48,11 @@ class CreditService:
             lock_key = f"daily_refresh:{user_id}:{today}"
             lock = DistributedLock(lock_key, timeout_seconds=60)
             
-            acquired = await lock.acquire(wait=True, wait_timeout=30)
+            # Reduced wait timeout from 30s to 5s to prevent blocking requests
+            # If another request is already processing, we can skip and let them handle it
+            acquired = await lock.acquire(wait=True, wait_timeout=5)
             if not acquired:
-                logger.warning(f"[DAILY REFRESH] Failed to acquire lock for {user_id} on {today}")
+                logger.info(f"[DAILY REFRESH] Lock busy for {user_id} on {today}, skipping (another request is processing)")
                 return False, Decimal('0')
             
             try:

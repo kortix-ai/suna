@@ -1,9 +1,3 @@
-"""
-Core billing endpoints for mutations and analytics.
-
-Note: For reading billing state, use GET /billing/account-state instead.
-These endpoints are for mutations (deduct) and detailed analytics.
-"""
 from fastapi import APIRouter, HTTPException, Depends, Query
 from typing import Dict
 from decimal import Decimal
@@ -33,7 +27,6 @@ async def deduct_token_usage(
     usage: TokenUsageRequest,
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    """Deduct credits for token usage."""
     cost = calculate_token_cost(usage.prompt_tokens, usage.completion_tokens, usage.model)
     
     if cost <= 0:
@@ -49,7 +42,6 @@ async def deduct_token_usage(
         thread_id=usage.thread_id
     )
     
-    # Invalidate account state cache after deduction
     await invalidate_account_state_cache(account_id)
     
     return {
@@ -66,7 +58,6 @@ async def deduct_token_usage(
 
 @router.get("/tier-configurations") 
 async def get_tier_configurations() -> Dict:
-    """Get all available tier configurations (public, no auth needed for pricing page)."""
     try:
         tier_configs = []
         for tier_key, tier in TIERS.items():
@@ -99,9 +90,7 @@ async def get_tier_configurations() -> Dict:
 async def get_credit_breakdown(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    """Get detailed credit breakdown including purchase history."""
-    db = DBConnection()
-    client = await db.client
+    from core.billing import repo as billing_repo
     
     try:
         balance_result = await credit_service.get_balance(account_id)
@@ -110,18 +99,12 @@ async def get_credit_breakdown(
         else:
             current_balance = float(balance_result)
         
-        purchase_result = await client.from_('credit_ledger')\
-            .select('amount, created_at, description')\
-            .eq('account_id', account_id)\
-            .eq('type', 'purchase')\
-            .execute()
-        
-        total_purchased = sum(float(row['amount']) for row in purchase_result.data) if purchase_result.data else 0
+        total_purchased, purchases = await billing_repo.get_purchases(account_id)
         
         return {
             "balance": current_balance * CREDITS_PER_DOLLAR,
             "total_purchased": total_purchased * CREDITS_PER_DOLLAR,
-            "breakdown": purchase_result.data or []
+            "breakdown": purchases
         }
     except Exception as e:
         logger.error(f"[BILLING] Error getting credit breakdown: {e}")
@@ -133,34 +116,13 @@ async def get_usage_history(
     days: int = 30,
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    """Get usage history for the specified number of days."""
+    from core.billing import repo as billing_repo
+    from datetime import timedelta
+    
     try:
-        db = DBConnection()
-        client = await db.client
+        total_usage, usage_history = await billing_repo.get_usage_history(account_id, days)
         
         since_date = datetime.now(timezone.utc) - timedelta(days=days)
-        
-        usage_result = await client.from_('credit_ledger')\
-            .select('*')\
-            .eq('account_id', account_id)\
-            .eq('type', 'usage')\
-            .gte('created_at', since_date.isoformat())\
-            .order('created_at', desc=True)\
-            .execute()
-        
-        usage_history = []
-        total_usage = 0.0
-        
-        if usage_result.data:
-            for record in usage_result.data:
-                amount = abs(float(record['amount']))
-                total_usage += amount
-                usage_history.append({
-                    'date': record['created_at'],
-                    'amount': amount,
-                    'description': record['description'],
-                    'metadata': record.get('metadata', {})
-                })
         
         return {
             'usage_history': usage_history,

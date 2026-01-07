@@ -116,7 +116,7 @@ export function DashboardContent() {
     sort_order: 'asc'
   });
 
-  const agents = agentsResponse?.agents || [];
+  const agents = Array.isArray(agentsResponse?.agents) ? agentsResponse.agents : [];
   const selectedAgent = selectedAgentId
     ? agents.find(agent => agent.agent_id === selectedAgentId)
     : null;

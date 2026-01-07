@@ -64,7 +64,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
 
   // Update agents list when data changes
   useEffect(() => {
-    if (agentsResponse?.agents) {
+    if (Array.isArray(agentsResponse?.agents)) {
       if (currentPage === 1 || debouncedSearchQuery) {
         // First page or new search - replace all agents
         setAllAgents(agentsResponse.agents);

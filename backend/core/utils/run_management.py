@@ -3,19 +3,18 @@ import json
 from typing import Optional, List
 from fastapi import HTTPException
 from core.services import redis
-from ..utils.logger import logger
-from core.worker import update_agent_run_status, cleanup_redis_keys
+from core.utils.logger import logger
+from core.agents.executor import update_agent_run_status
 
 
 async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional[str] = None, stop_source: str = "api_request"):
     """
-    Stop an agent run and clean up all associated resources.
+    Stop an agent run - SIMPLIFIED.
     
     This function:
-    1. Fetches final responses from Redis stream
-    2. Updates database status
-    3. Publishes STOP signals to all control channels
-    4. Cleans up Redis keys
+    1. Sets cancellation event (in-memory, per instance)
+    2. Sets Redis stop signal (for cross-instance stops)
+    3. Updates database status
     
     Args:
         agent_run_id: The ID of the agent run to stop
@@ -26,42 +25,30 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     
     # Import here to avoid circular dependency
     from core.services.supabase import DBConnection
-    db = DBConnection()
+    from core.agents.runs import _cancellation_events
     
-    client = await db.client
-    final_status = "failed" if error_message else "stopped"
-
-    # Attempt to fetch final responses from Redis stream
-    stream_key = f"agent_run:{agent_run_id}:stream"
-    all_responses = []
+    # Set in-memory cancellation event (if run is on this instance)
+    if agent_run_id in _cancellation_events:
+        _cancellation_events[agent_run_id].set()
+        logger.debug(f"Set cancellation event for {agent_run_id} (local instance)")
+    
+    # Set Redis stop signal (for cross-instance stops)
     try:
-        stream_entries = await redis.xrange(stream_key)
-        all_responses = [json.loads(entry[1].get('data', '{}')) for entry in stream_entries] if stream_entries else []
-        logger.debug(f"Fetched {len(all_responses)} responses from Redis stream for DB update on stop/fail: {agent_run_id}")
+        await redis.set_stop_signal(agent_run_id)
+        logger.debug(f"Set Redis stop signal for {agent_run_id}")
     except Exception as e:
-        logger.error(f"Failed to fetch responses from Redis stream for {agent_run_id} during stop/fail: {e}")
-
-    # Update the agent run status in the database
+        logger.error(f"Failed to set Redis stop signal for {agent_run_id}: {str(e)}")
+    
+    # Update database status
+    final_status = "failed" if error_message else "stopped"
+    
     update_success = await update_agent_run_status(
-        client, agent_run_id, final_status, error=error_message
+        agent_run_id, final_status, error=error_message
     )
 
     if not update_success:
         logger.error(f"Failed to update database status for stopped/failed run {agent_run_id}")
         raise HTTPException(status_code=500, detail="Failed to update agent run status in database")
-
-    # Set STOP signal using simple Redis key (no pubsub needed)
-    try:
-        await redis.set_stop_signal(agent_run_id)
-        logger.warning(f"🛑 Set STOP signal for agent run {agent_run_id} (source: {stop_source})")
-    except Exception as e:
-        logger.error(f"Failed to set STOP signal for agent run {agent_run_id}: {str(e)}")
-
-        # Comprehensive cleanup of all Redis keys for this agent run
-        await cleanup_redis_keys(agent_run_id)
-
-    except Exception as e:
-        logger.error(f"Failed to find or signal active instances for {agent_run_id}: {str(e)}")
 
     logger.debug(f"Successfully initiated stop process for agent run: {agent_run_id}")
 

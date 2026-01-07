@@ -11,8 +11,31 @@ All caches use explicit invalidation on data changes, with TTL as safety net.
 """
 import json
 import time
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Union
 from core.utils.logger import logger
+
+# Use orjson for cache operations (3-5x faster than stdlib json)
+try:
+    import orjson
+    _HAS_ORJSON = True
+except ImportError:
+    _HAS_ORJSON = False
+
+def _json_dumps(value: Any) -> str:
+    """Fast JSON serialization using orjson when available."""
+    if _HAS_ORJSON:
+        return orjson.dumps(value).decode('utf-8')
+    return json.dumps(value)
+
+def _json_loads(value: Union[str, bytes]) -> Any:
+    """Fast JSON deserialization using orjson when available."""
+    if _HAS_ORJSON:
+        if isinstance(value, str):
+            return orjson.loads(value.encode('utf-8'))
+        return orjson.loads(value)
+    if isinstance(value, bytes):
+        return json.loads(value.decode('utf-8'))
+    return json.loads(value)
 
 # ============================================================================
 # STATIC SUNA CONFIG - Loaded once at startup, never expires
@@ -88,7 +111,7 @@ async def get_cached_user_mcps(agent_id: str) -> Optional[Dict[str, Any]]:
         
         cached = await redis_service.get(cache_key)
         if cached:
-            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
             logger.debug(f"⚡ Redis cache hit for user MCPs: {agent_id}")
             return data
     except Exception as e:
@@ -113,7 +136,7 @@ async def set_cached_user_mcps(
     
     try:
         from core.services import redis as redis_service
-        await redis_service.set(cache_key, json.dumps(data), ex=AGENT_CONFIG_TTL)
+        await redis_service.set(cache_key, _json_dumps(data), ex=AGENT_CONFIG_TTL)
         logger.debug(f"✅ Cached user MCPs in Redis: {agent_id}")
     except Exception as e:
         logger.warning(f"Failed to cache user MCPs: {e}")
@@ -133,7 +156,7 @@ async def get_cached_mcp_version_config(agent_id: str) -> Optional[Dict[str, Any
         
         cached = await redis_service.get(cache_key)
         if cached:
-            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
             logger.debug(f"⚡ Redis cache hit for MCP version config: {agent_id}")
             return data
     except Exception as e:
@@ -147,7 +170,7 @@ async def set_cached_mcp_version_config(agent_id: str, config: Dict[str, Any]) -
     
     try:
         from core.services import redis as redis_service
-        await redis_service.set(cache_key, json.dumps(config), ex=MCP_VERSION_CONFIG_TTL)
+        await redis_service.set(cache_key, _json_dumps(config), ex=MCP_VERSION_CONFIG_TTL)
         logger.debug(f"✅ Cached MCP version config in Redis: {agent_id}")
     except Exception as e:
         logger.warning(f"Failed to cache MCP version config: {e}")
@@ -180,7 +203,7 @@ async def get_cached_agent_config(
         
         cached = await redis_service.get(cache_key)
         if cached:
-            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
             logger.debug(f"⚡ Redis cache hit for agent config: {agent_id}")
             return data
     except Exception as e:
@@ -210,7 +233,7 @@ async def set_cached_agent_config(
     
     try:
         from core.services import redis as redis_service
-        await redis_service.set(cache_key, json.dumps(config), ex=AGENT_CONFIG_TTL)
+        await redis_service.set(cache_key, _json_dumps(config), ex=AGENT_CONFIG_TTL)
         logger.debug(f"✅ Cached custom agent config in Redis: {agent_id}")
     except Exception as e:
         logger.warning(f"Failed to cache agent config: {e}")
@@ -265,7 +288,7 @@ async def get_cached_project_metadata(project_id: str) -> Optional[Dict[str, Any
         
         cached = await redis_service.get(cache_key)
         if cached:
-            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
             logger.debug(f"⚡ Redis cache hit for project metadata: {project_id}")
             return data
     except Exception as e:
@@ -281,7 +304,7 @@ async def set_cached_project_metadata(project_id: str, sandbox: Dict[str, Any]) 
     
     try:
         from core.services import redis as redis_service
-        await redis_service.set(cache_key, json.dumps(data), ex=PROJECT_CACHE_TTL)
+        await redis_service.set(cache_key, _json_dumps(data), ex=PROJECT_CACHE_TTL)
         logger.debug(f"✅ Cached project metadata in Redis: {project_id}")
     except Exception as e:
         logger.warning(f"Failed to cache project metadata: {e}")
@@ -323,7 +346,7 @@ async def get_cached_running_runs(account_id: str) -> Optional[Dict[str, Any]]:
         
         cached = await redis_service.get(cache_key)
         if cached:
-            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
             logger.debug(f"⚡ Redis cache hit for running runs: {account_id}")
             return data
     except Exception as e:
@@ -347,7 +370,7 @@ async def set_cached_running_runs(
     
     try:
         from core.services import redis as redis_service
-        await redis_service.set(cache_key, json.dumps(data), ex=RUNNING_RUNS_TTL)
+        await redis_service.set(cache_key, _json_dumps(data), ex=RUNNING_RUNS_TTL)
         logger.debug(f"✅ Cached running runs in Redis: {account_id} ({running_count} runs)")
     except Exception as e:
         logger.warning(f"Failed to cache running runs: {e}")
@@ -561,7 +584,7 @@ async def get_cached_message_history(thread_id: str) -> Optional[list]:
         
         cached = await redis_service.get(cache_key)
         if cached:
-            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
             logger.debug(f"⚡ Redis cache hit for message history: {thread_id} ({len(data)} messages)")
             return data
     except Exception as e:
@@ -576,7 +599,7 @@ async def set_cached_message_history(thread_id: str, messages: list) -> None:
     
     try:
         from core.services import redis as redis_service
-        await redis_service.set(cache_key, json.dumps(messages), ex=MESSAGE_HISTORY_TTL)
+        await redis_service.set(cache_key, _json_dumps(messages), ex=MESSAGE_HISTORY_TTL)
         logger.debug(f"✅ Cached message history in Redis: {thread_id} ({len(messages)} messages)")
     except Exception as e:
         logger.warning(f"Failed to cache message history: {e}")
@@ -615,7 +638,7 @@ async def get_cached_tier_info(account_id: str) -> Optional[Dict[str, Any]]:
         
         cached = await redis_service.get(cache_key)
         if cached:
-            data = json.loads(cached) if isinstance(cached, (str, bytes)) else cached
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
             logger.debug(f"⚡ Redis cache hit for tier info: {account_id}")
             return data
     except Exception as e:
@@ -630,7 +653,7 @@ async def set_cached_tier_info(account_id: str, tier_info: Dict[str, Any]) -> No
     
     try:
         from core.services import redis as redis_service
-        await redis_service.set(cache_key, json.dumps(tier_info), ex=TIER_INFO_TTL)
+        await redis_service.set(cache_key, _json_dumps(tier_info), ex=TIER_INFO_TTL)
         logger.debug(f"✅ Cached tier info in Redis: {account_id} (tier: {tier_info.get('name', 'unknown')})")
     except Exception as e:
         logger.warning(f"Failed to cache tier info: {e}")

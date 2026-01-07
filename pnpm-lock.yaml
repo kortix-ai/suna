@@ -606,8 +606,8 @@ importers:
         specifier: ^2.0.3
         version: 2.0.7(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       streamdown:
-        specifier: ^1.6.10
-        version: 1.6.10(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(react@18.3.1)
+        specifier: ^1.6.11
+        version: 1.6.11(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(react@18.3.1)
       tailwind-merge:
         specifier: ^3.0.2
         version: 3.4.0
@@ -1024,12 +1024,24 @@ importers:
       '@babel/core':
         specifier: ^7.26.0
         version: 7.28.5
+      '@babel/plugin-transform-class-properties':
+        specifier: ^7.26.0
+        version: 7.27.1(@babel/core@7.28.5)
+      '@babel/plugin-transform-classes':
+        specifier: ^7.28.4
+        version: 7.28.4(@babel/core@7.28.5)
+      '@babel/plugin-transform-react-jsx':
+        specifier: ^7.26.0
+        version: 7.27.1(@babel/core@7.28.5)
       '@types/react':
         specifier: ^19.2.7
         version: 19.2.7
       '@types/react-syntax-highlighter':
         specifier: ^15.5.13
         version: 15.5.13
+      babel-preset-expo:
+        specifier: ~54.0.0
+        version: 54.0.9(@babel/core@7.28.5)(@babel/runtime@7.28.4)(expo@54.0.30)(react-refresh@0.14.2)
       patch-package:
         specifier: ^8.0.0
         version: 8.0.1
@@ -11279,8 +11291,8 @@ packages:
     resolution: {integrity: sha512-uyQK/mx5QjHun80FLJTfaWE7JtwfRMKBLkMne6udYOmvH0CawotVa7TfgYHzAnpphn4+TweIx1QKMnRIbipmUg==}
     engines: {node: '>= 0.10.0'}
 
-  streamdown@1.6.10:
-    resolution: {integrity: sha512-B4Y3Z/qiXl1Dc+LzAB5c52Cd1QGRiFjaDwP+ERoj1JtCykdRDM8X6HwQnn3YkpkSk0x3R7S/6LrGe1nQiElHQQ==}
+  streamdown@1.6.11:
+    resolution: {integrity: sha512-Y38fwRx5kCKTluwM+Gf27jbbi9q6Qy+WC9YrC1YbCpMkktT3PsRBJHMWiqYeF8y/JzLpB1IzDoeaB6qkQEDnAA==}
     peerDependencies:
       react: ^18.0.0 || ^19.0.0
 
@@ -25126,7 +25138,7 @@ snapshots:
 
   stream-buffers@2.2.0: {}
 
-  streamdown@1.6.10(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(react@18.3.1):
+  streamdown@1.6.11(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(react@18.3.1):
     dependencies:
       clsx: 2.1.1
       hast: 1.0.0
@@ -25140,6 +25152,7 @@ snapshots:
       rehype-harden: 1.1.7
       rehype-katex: 7.0.1
       rehype-raw: 7.0.0
+      rehype-sanitize: 6.0.0
       remark-cjk-friendly: 1.2.3(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(unified@11.0.5)
       remark-cjk-friendly-gfm-strikethrough: 1.2.3(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(unified@11.0.5)
       remark-gfm: 4.0.1

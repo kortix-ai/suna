@@ -19,14 +19,30 @@ from core.run.config import AgentConfig
 from core.run.tool_manager import ToolManager
 from core.run.mcp_manager import MCPManager
 from core.run.prompt_manager import PromptManager
-from core.worker.helpers import stream_status_message, ensure_project_metadata_cached
 
 load_dotenv()
 
 # Dedicated executor for setup_tools to prevent queue saturation
 # Production showed 1-6 minute queue waits when sharing default executor with other tasks
-# Separation is the key fix; thread count can be tuned based on monitoring
-_SETUP_TOOLS_EXECUTOR = ThreadPoolExecutor(max_workers=16, thread_name_prefix="setup_tools")
+# Separation is the key fix; thread count scales with CPU count
+def _calculate_thread_pool_size() -> int:
+    """Calculate optimal thread pool size based on CPU count."""
+    import multiprocessing
+    cpu_count = multiprocessing.cpu_count()
+    
+    # Thread pool for blocking I/O operations
+    # Scale with CPU count: 1-2 threads per CPU for I/O-bound work
+    # With 32 vCPUs: 32 threads
+    return max(cpu_count, 16)  # Minimum 16, scale with CPU
+
+_SETUP_TOOLS_EXECUTOR = ThreadPoolExecutor(
+    max_workers=_calculate_thread_pool_size(), 
+    thread_name_prefix="setup_tools"
+)
+
+# Log thread pool size
+import multiprocessing
+logger.info(f"🔧 Thread pool size: {_calculate_thread_pool_size()} workers (CPU count: {multiprocessing.cpu_count()})")
 
 # Type variable for generic timeout wrapper
 T = TypeVar('T')
@@ -61,6 +77,9 @@ class AgentRunner:
     
     async def setup(self):
         """Unified setup method - single clean path, no bootstrap/enrichment split."""
+        # Lazy import to avoid circular dependency
+        from core.agents.executor import stream_status_message
+        
         setup_start = time.time()
         
         await stream_status_message("initializing", "Starting setup...")
@@ -97,10 +116,11 @@ class AgentRunner:
         
         # Get account_id if not provided
         if not self.config.account_id:
-            response = await self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).maybe_single().execute()
-            if not response.data:
+            from core.threads import repo as threads_repo
+            account_id = await threads_repo.get_thread_account_id(self.config.thread_id)
+            if not account_id:
                 raise ValueError(f"Thread {self.config.thread_id} not found")
-            self.account_id = response.data.get('account_id')
+            self.account_id = account_id
             if not self.account_id:
                 raise ValueError(f"Thread {self.config.thread_id} has no associated account")
         else:
@@ -124,11 +144,11 @@ class AgentRunner:
             )
         logger.info(f"⏱️ [SETUP TIMING] MCP initialize_jit_loader: {(time.time() - mcp_start) * 1000:.1f}ms")
         
-        # Ensure project metadata is cached (non-blocking if already cached)
-        # TIMEOUT: Was causing 60s+ hangs due to lazy migrations - now skips migration on timeout
+        from core.agents.executor import ensure_project_metadata_cached
+        
         project_meta_start = time.time()
         await with_timeout(
-            ensure_project_metadata_cached(self.config.project_id, self.client),
+            ensure_project_metadata_cached(self.config.project_id),
             timeout_seconds=TIMEOUT_PROJECT_METADATA,
             operation_name="ensure_project_metadata_cached"
         )
@@ -292,6 +312,9 @@ class AgentRunner:
         await self.setup()
         logger.info(f"⏱️ [TIMING] AgentRunner.setup() completed in {(time.time() - setup_start) * 1000:.1f}ms")
         
+        # Lazy import to avoid circular dependency
+        from core.agents.executor import stream_status_message
+        
         parallel_start = time.time()
         await stream_status_message("initializing", "Registering tools...")
         setup_tools_task = asyncio.create_task(self._setup_tools_async())
@@ -315,6 +338,9 @@ class AgentRunner:
         
         tools_elapsed = (time.time() - parallel_start) * 1000
         logger.info(f"⏱️ [TIMING] Tool setup total: {tools_elapsed:.1f}ms")
+        
+        # Lazy import to avoid circular dependency
+        from core.agents.executor import stream_status_message
         
         await stream_status_message("initializing", "Building system prompt...")
         prompt_start = time.time()
@@ -390,13 +416,14 @@ class AgentRunner:
         # Check for new user input (only on turn > 1 - first turn is always triggered by user message)
         if self.turn_number > 1:
             try:
-                latest_message = await asyncio.wait_for(
-                    self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute(),
+                from core.threads import repo as threads_repo
+                
+                latest_type = await asyncio.wait_for(
+                    threads_repo.get_latest_message_type(self.config.thread_id),
                     timeout=2.0
                 )
-                if latest_message.data and len(latest_message.data) > 0:
-                    message_type = latest_message.data[0].get('type')
-                    if message_type == 'assistant':
+                if latest_type:
+                    if latest_type == 'assistant':
                         # No new user message after assistant response - stop the loop
                         logger.debug(f"Last message is assistant, no new input - execution complete for {self.config.thread_id}")
                         yield {
@@ -447,6 +474,8 @@ class AgentRunner:
                 yield chunk
                         
         except Exception as e:
+            # Log full exception details for debugging (especially in production)
+            logger.error(f"Exception in _execute_single_turn for thread {self.config.thread_id}: {type(e).__name__}: {e}", exc_info=True)
             processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": self.config.thread_id})
             ErrorProcessor.log_error(processed_error)
             if generation:
@@ -586,21 +615,17 @@ class AgentRunner:
         
         try:
             # Quick DB fetch with timeout
-            result = await with_timeout(
-                self.client.table('threads')
-                    .select('metadata')
-                    .eq('thread_id', self.config.thread_id)
-                    .single()
-                    .execute(),
+            from core.threads import repo as threads_repo
+            metadata = await with_timeout(
+                threads_repo.get_thread_metadata(self.config.thread_id),
                 timeout_seconds=TIMEOUT_DB_QUERY,
                 operation_name="fetch thread metadata for dynamic tools"
             )
             
-            if not result or not result.data:
+            if not metadata:
                 logger.debug("📦 [DYNAMIC TOOLS] No thread metadata found")
                 return
             
-            metadata = result.data.get('metadata') or {}
             dynamic_tools = metadata.get('dynamic_tools', [])
             
             if not dynamic_tools:

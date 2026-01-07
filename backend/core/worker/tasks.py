@@ -42,32 +42,6 @@ class TaskMessage:
         raise NotImplementedError("Subclasses must implement from_dict")
 
 
-@dataclass
-class AgentRunTask(TaskMessage):
-    """Task for running an agent."""
-    task_type: str = "agent_run"
-    agent_run_id: str = ""
-    thread_id: str = ""
-    instance_id: str = ""
-    project_id: str = ""
-    model_name: str = ""
-    agent_id: Optional[str] = None
-    account_id: Optional[str] = None
-    request_id: Optional[str] = None
-    
-    @classmethod
-    def from_dict(cls, data: Dict[str, str]) -> "AgentRunTask":
-        return cls(
-            agent_run_id=data.get("agent_run_id", ""),
-            thread_id=data.get("thread_id", ""),
-            instance_id=data.get("instance_id", ""),
-            project_id=data.get("project_id", ""),
-            model_name=data.get("model_name", ""),
-            agent_id=data.get("agent_id") or None,
-            account_id=data.get("account_id") or None,
-            request_id=data.get("request_id") or None,
-            enqueued_at=float(data.get("enqueued_at", 0)),
-        )
 
 
 @dataclass
@@ -160,7 +134,6 @@ class StaleProjectsTask(TaskMessage):
 
 # Task type to class mapping
 TASK_CLASSES = {
-    "agent_run": AgentRunTask,
     "memory_extraction": MemoryExtractionTask,
     "memory_embedding": MemoryEmbeddingTask,
     "memory_consolidation": MemoryConsolidationTask,

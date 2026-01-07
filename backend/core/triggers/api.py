@@ -196,70 +196,8 @@ async def get_all_user_triggers(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        client = await db.client
-        
-        agents_result = await client.table('agents').select(
-            'agent_id, name, description, current_version_id, icon_name, icon_color, icon_background'
-        ).eq('account_id', user_id).execute()
-        
-        if not agents_result.data:
-            return []
-        
-        agent_info = {}
-        for agent in agents_result.data:
-            agent_name = agent.get('name', 'Untitled Agent')
-            agent_description = agent.get('description', '')
-            
-            agent_info[agent['agent_id']] = {
-                'agent_name': agent_name,
-                'agent_description': agent_description,
-                'icon_name': agent.get('icon_name'),
-                'icon_color': agent.get('icon_color'),
-                'icon_background': agent.get('icon_background')
-            }
-        
-        agent_ids = [agent['agent_id'] for agent in agents_result.data]
-        triggers_result = await client.table('agent_triggers').select('*').in_('agent_id', agent_ids).execute()
-        
-        if not triggers_result.data:
-            return []
-        
-        responses = []
-        for trigger in triggers_result.data:
-            agent_id = trigger['agent_id']
-
-            config = trigger.get('config', {})
-            if isinstance(config, str):
-                try:
-                    import json
-                    config = json.loads(config)
-                except json.JSONDecodeError:
-                    config = {}
-            
-            response_data = {
-                'trigger_id': trigger['trigger_id'],
-                'agent_id': agent_id,
-                'trigger_type': trigger['trigger_type'],
-                'provider_id': trigger.get('provider_id', ''),
-                'name': trigger['name'],
-                'description': trigger.get('description'),
-                'is_active': trigger.get('is_active', False),
-                'webhook_url': None,
-                'created_at': trigger['created_at'],
-                'updated_at': trigger['updated_at'],
-                'config': config,
-                'agent_name': agent_info.get(agent_id, {}).get('agent_name', 'Untitled Agent'),
-                'agent_description': agent_info.get(agent_id, {}).get('agent_description', ''),
-                'icon_name': agent_info.get(agent_id, {}).get('icon_name'),
-                'icon_color': agent_info.get(agent_id, {}).get('icon_color'),
-                'icon_background': agent_info.get(agent_id, {}).get('icon_background')
-            }
-            
-            responses.append(response_data)
-        responses.sort(key=lambda x: x['updated_at'], reverse=True)
-        
-        return responses
-        
+        from core.triggers.repo import get_all_user_triggers as repo_get_triggers
+        return await repo_get_triggers(user_id)
     except Exception as e:
         logger.error(f"Error getting all user triggers: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

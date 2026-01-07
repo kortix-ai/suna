@@ -2,6 +2,7 @@ import os
 from typing import Dict, List, Optional, Any
 import novu_py
 from novu_py import Novu
+import aiohttp
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 from .models import NotificationChannel, NotificationEvent, NotificationPayload
@@ -166,7 +167,6 @@ class NovuService:
             return False
         
         try:
-            import requests
             url = f"{self.backend_url}/v1/subscribers/{user_id}/credentials"
             headers = {
                 "Authorization": f"ApiKey {self.api_key}",
@@ -181,12 +181,13 @@ class NovuService:
             
             if integration_identifier:
                 payload["integrationIdentifier"] = integration_identifier
-                
-            response = requests.put(url, json=payload, headers=headers)
-            response.raise_for_status()
             
-            logger.info(f"✅ Set push credentials for subscriber {user_id} with provider {provider_id}")
-            return True
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.put(url, json=payload, headers=headers) as response:
+                    response.raise_for_status()
+                    logger.info(f"✅ Set push credentials for subscriber {user_id} with provider {provider_id}")
+                    return True
             
         except Exception as e:
             logger.error(f"❌ Error updating subscriber credentials: {str(e)}")
@@ -394,7 +395,6 @@ class NovuService:
             return {"success": False, "error": "Novu not configured"}
         
         try:
-            import requests
             url = f"{self.backend_url}/v1/events/trigger/broadcast"
             headers = {
                 "Authorization": f"ApiKey {self.api_key}",
@@ -407,18 +407,19 @@ class NovuService:
                 "payload": payload
             }
             
-            response = requests.post(url, json=data, headers=headers)
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            logger.info(f"Novu broadcast triggered: {workflow_id} to all subscribers")
-            
-            return {
-                "success": True,
-                "data": result.get("data", {}),
-                "response": result
-            }
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, json=data, headers=headers) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    
+                    logger.info(f"Novu broadcast triggered: {workflow_id} to all subscribers")
+                    
+                    return {
+                        "success": True,
+                        "data": result.get("data", {}),
+                        "response": result
+                    }
             
         except Exception as e:
             logger.error(f"Error triggering Novu broadcast: {str(e)}")
@@ -434,19 +435,19 @@ class NovuService:
             return {"success": False, "error": "Novu not configured"}
         
         try:
-            import requests
             url = f"{self.backend_url}/v2/workflows"
             headers = {
                 "Authorization": f"ApiKey {self.api_key}",
                 "Accept": "application/json",
             }
             
-            response = requests.get(url, headers=headers)
-            response.raise_for_status()
-            
-            result = response.json()
-            
-            workflows = result.get("data", {}).get("workflows", [])
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(url, headers=headers) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+                    
+                    workflows = result.get("data", {}).get("workflows", [])
             
             formatted_workflows = [
                 {

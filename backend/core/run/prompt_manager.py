@@ -232,6 +232,12 @@ class PromptManager:
     
     @staticmethod
     async def _fetch_knowledge_base(agent_config: Optional[dict], client) -> Optional[str]:
+        from core.utils.config import config
+        
+        if not config.ENABLE_KNOWLEDGE_BASE:
+            logger.debug("Knowledge base fetch skipped: ENABLE_KNOWLEDGE_BASE=False")
+            return None
+            
         if not (agent_config and client and 'agent_id' in agent_config):
             return None
         
@@ -259,20 +265,19 @@ class PromptManager:
                     return kb_section
                 return None
             
-            # Quick EXISTS check before expensive RPC
+            # Quick EXISTS check before expensive RPC using direct SQL
+            from core.threads import repo as threads_repo
             logger.debug(f"Checking if agent {agent_id} has knowledge base entries...")
-            exists_result = await client.table('agent_knowledge_entry_assignments') \
-                .select('agent_id', count='exact', head=True) \
-                .eq('agent_id', agent_id).execute()
+            entry_count = await threads_repo.get_kb_entry_count(agent_id)
             
-            if not exists_result.count or exists_result.count == 0:
+            if entry_count == 0:
                 # Cache empty result to avoid future EXISTS checks
                 await set_cached_kb_context(agent_id, "")
                 elapsed = (time.time() - fetch_start) * 1000
                 logger.debug(f"⏱️ [TIMING] KB fetch: {elapsed:.1f}ms (cache: miss, no entries)")
                 return None
             
-            # Only call RPC if entries exist
+            # Only call RPC if entries exist (RPC still needed for complex aggregation)
             logger.debug(f"Retrieving agent knowledge base context for agent {agent_id}")
             kb_result = await client.rpc('get_agent_knowledge_base_context', {
                 'p_agent_id': agent_id
@@ -632,14 +637,14 @@ Example of correct tool call format (multiple invokes in one block):
             from core.memory.retrieval_service import memory_retrieval_service
             from core.billing import subscription_service
             
-            user_memory_result = await client.rpc('get_user_memory_enabled', {'p_account_id': user_id}).execute()
-            user_memory_enabled = user_memory_result.data if user_memory_result.data is not None else True
+            from core.threads import repo as threads_repo
+            
+            user_memory_enabled = await threads_repo.get_user_memory_enabled(user_id)
             if not user_memory_enabled:
                 logger.debug(f"Memory fetch: disabled by user {user_id}")
                 return None
             
-            thread_memory_result = await client.rpc('get_thread_memory_enabled', {'p_thread_id': thread_id}).execute()
-            thread_memory_enabled = thread_memory_result.data if thread_memory_result.data is not None else True
+            thread_memory_enabled = await threads_repo.get_thread_memory_enabled(thread_id)
             if not thread_memory_enabled:
                 logger.debug(f"Memory fetch: disabled for thread {thread_id}")
                 return None
@@ -648,13 +653,13 @@ Example of correct tool call format (multiple invokes in one block):
             tier_name = tier_info['name']
             logger.debug(f"Memory fetch: user {user_id}, tier {tier_name}")
             
-            messages_result = await client.table('messages').select('content').eq('thread_id', thread_id).eq('type', 'user').order('created_at', desc=False).limit(1).execute()
+            first_message_content = await threads_repo.get_first_user_message_content(thread_id)
             
-            if not messages_result.data:
+            if not first_message_content:
                 logger.debug(f"Memory fetch: no user messages in thread {thread_id}")
                 return None
             
-            first_message_content = messages_result.data[0].get('content', {})
+            # Parse JSON if needed
             if isinstance(first_message_content, str):
                 import json as j
                 try:

@@ -122,7 +122,7 @@ export function ExpandMessageToolView({
             {/* Expanded Message Content - Simple display */}
             {message ? (
               <div className="bg-muted/30 rounded-lg p-4 border border-border overflow-hidden">
-                <UnifiedMarkdown content={message} />
+                <UnifiedMarkdown content={message} isStreaming={isStreaming} />
               </div>
             ) : !isStreaming ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">

@@ -10,6 +10,13 @@ import re
 import logging
 from typing import Any, Union, Dict, List, Tuple
 
+# Use orjson for hot paths (3-5x faster than stdlib json)
+try:
+    import orjson
+    _HAS_ORJSON = True
+except ImportError:
+    _HAS_ORJSON = False
+
 logger = logging.getLogger(__name__)
 
 
@@ -307,8 +314,8 @@ def to_json_string_fast(value: Any) -> str:
     Use this when you KNOW the value is a dict/list that needs serialization.
     This is optimized for the streaming hot path where we serialize every chunk.
     
-    Uses ensure_ascii=False to preserve Unicode characters without escaping,
-    preventing double-escaping issues when JSON strings are nested.
+    Uses orjson when available (3-5x faster than stdlib json) for hot paths.
+    Falls back to stdlib json if orjson is not available.
     
     Args:
         value: The value to convert (must be JSON-serializable)
@@ -316,7 +323,12 @@ def to_json_string_fast(value: Any) -> str:
     Returns:
         JSON string representation
     """
-    return json.dumps(value, separators=(',', ':'), ensure_ascii=False)  # Compact JSON, no extra whitespace
+    if _HAS_ORJSON:
+        # orjson is 3-5x faster and handles Unicode correctly by default
+        return orjson.dumps(value).decode('utf-8')
+    else:
+        # Fallback to stdlib json with compact format
+        return json.dumps(value, separators=(',', ':'), ensure_ascii=False)
 
 
 def format_for_yield(message_object: Dict[str, Any]) -> Dict[str, Any]:

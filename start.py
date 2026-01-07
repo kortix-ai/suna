@@ -105,7 +105,7 @@ def print_manual_instructions(compose_cmd_str):
     step_num += 1
 
     print(f"{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
-    print(f"{Colors.CYAN}   cd frontend && pnpm run dev{Colors.ENDC}\n")
+    print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}\n")
     step_num += 1
 
     print(f"{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")

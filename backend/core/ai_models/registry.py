@@ -59,8 +59,7 @@ class ModelRegistry:
         self._litellm_id_to_pricing["minimax/minimax-m2.1"] = minimax_m2_pricing
         self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = minimax_m2_pricing
         
-        # Kortix Basic - using Anthropic Claude Haiku 4.5
-        # MiniMax M2.1: basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
+        # Kortix Basic - using Anthropic Claude Haiku 4.5 Bedrock
         basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
         
         self.register(Model(
@@ -71,7 +70,6 @@ class ModelRegistry:
             vision_litellm_model_id=HAIKU_BEDROCK_ARN,
             vision_context_window=200_000,
             vision_pricing=HAIKU_PRICING,
-            # MiniMax: provider=ModelProvider.OPENROUTER,
             provider=ModelProvider.ANTHROPIC,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
@@ -81,13 +79,6 @@ class ModelRegistry:
                 ModelCapability.VISION,
                 ModelCapability.PROMPT_CACHING,
             ],
-            # MiniMax pricing:
-            # pricing=ModelPricing(
-            #     input_cost_per_million_tokens=0.30,
-            #     output_cost_per_million_tokens=1.20,
-            #     cached_read_cost_per_million_tokens=0.03,
-            #     cache_write_5m_cost_per_million_tokens=0.375,
-            # ),
             pricing=ModelPricing(
                 input_cost_per_million_tokens=1.00,
                 output_cost_per_million_tokens=5.00,
@@ -99,7 +90,6 @@ class ModelRegistry:
             priority=102,
             recommended=True,
             enabled=True,
-            # MiniMax: config=ModelConfig()
             config=ModelConfig(
                 extra_headers={
                     "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
@@ -169,7 +159,7 @@ class ModelRegistry:
             # MiniMax direct API - requires MINIMAX_API_KEY env var
             # Docs: https://docs.litellm.ai/docs/providers/minimax
             # test_litellm_id = "minimax/MiniMax-M2.1"  # 204,800 context $0.30/M input $1.20/M output
-            test_litellm_id = "openai/gpt-5-mini-2025-08-07" 
+            test_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input $1.20/M output 
             # test_litellm_id = "minimax/MiniMax-M2.1-lightning"  # Faster ~100 tps, $2.40/M output
             # test_litellm_id = "minimax/MiniMax-M2"  # Agentic capabilities
             # test_litellm_id = build_bedrock_profile_arn(MINIMAX_M2_PROFILE_ID)
@@ -190,6 +180,7 @@ class ModelRegistry:
                     ModelCapability.CHAT,
                     ModelCapability.FUNCTION_CALLING,
                     ModelCapability.VISION,
+                    ModelCapability.THINKING,
                     ModelCapability.PROMPT_CACHING,
                 ],
                 pricing=ModelPricing(

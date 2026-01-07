@@ -182,7 +182,7 @@ export default function AgentsPage() {
   const createTemplateMutation = useCreateTemplate();
   const deleteTemplateMutation = useDeleteTemplate();
 
-  const agents = agentsResponse?.agents || [];
+  const agents = Array.isArray(agentsResponse?.agents) ? agentsResponse.agents : [];
   const agentsPagination = agentsResponse?.pagination;
 
   const allMarketplaceItems = useMemo(() => {

@@ -97,6 +97,11 @@ dependencies = [
   "autoevals>=0.0.130",
   "huggingface-hub>=0.34.4",
   "datasets>=4.4.2",
+  "orjson>=3.11.1", # Moved from dev - 3-5x faster JSON serialization for hot paths
+  "watchtower>=3.0.0", # CloudWatch Logs handler
+  "psycopg[binary]>=3.3.2",
+  "sqlalchemy>=2.0.45",
+  "greenlet>=3.3.0",
 ]
 
 [project.urls]
@@ -108,5 +113,4 @@ package = false
 
 [dependency-groups]
 dev = [
-    "orjson>=3.11.1",
 ]

@@ -56,7 +56,7 @@ export default function BerlinPage() {
     gcTime: 10 * 60 * 1000,
   });
 
-  const agents = agentsResponse?.agents || [];
+  const agents = Array.isArray(agentsResponse?.agents) ? agentsResponse.agents : [];
 
   useEffect(() => {
     if (agents.length > 0) {

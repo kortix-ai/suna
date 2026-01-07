@@ -46,7 +46,7 @@ const helpData = {
         },
         {
           title: "Discord Community",
-          url: "https://discord.gg/Py6pCBUUPw",
+          url: "https://discord.com/invite/RvFhXUdZ9H",
           external: true,
         },
       ],

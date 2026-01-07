@@ -203,7 +203,7 @@
     "remark-gfm": "^4.0.1",
     "server-only": "^0.0.1",
     "sonner": "^2.0.3",
-    "streamdown": "^1.6.10",
+    "streamdown": "^1.6.11",
     "tailwind-merge": "^3.0.2",
     "tailwind-scrollbar": "^4.0.2",
     "tailwind-scrollbar-hide": "^2.0.0",

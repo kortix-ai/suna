@@ -7,6 +7,7 @@ reaching the context window limitations of LLM models.
 
 import json
 import os
+import asyncio
 from typing import List, Dict, Any, Optional, Union
 
 from litellm.utils import token_counter
@@ -91,49 +92,14 @@ class ContextManager:
         if not compressed_messages:
             return 0
         
-        saved_count = 0
-        upgraded_count = 0
-        client = await self.db.client
+        from core.threads import repo as threads_repo
         
-        for msg_data in compressed_messages:
-            message_id = msg_data.get('message_id')
-            compressed_content = msg_data.get('compressed_content')
-            is_omission = msg_data.get('is_omission', False)  # Flag for omission placeholders
-            
-            if not message_id or not compressed_content:
-                continue
-            
-            try:
-                # Get existing metadata
-                result = await client.table('messages').select('metadata').eq('message_id', message_id).single().execute()
-                
-                if result.data:
-                    existing_metadata = result.data.get('metadata', {}) or {}
-                    was_already_compressed = existing_metadata.get('compressed', False)
-                    
-                    # Always update compressed content - allows upgrading to more aggressive compression
-                    # (e.g., tiered compression placeholder replacing LLM summary)
-                    existing_metadata['compressed'] = True
-                    existing_metadata['compressed_content'] = compressed_content
-                    if is_omission:
-                        existing_metadata['omitted'] = True
-                    
-                    await client.table('messages').update({
-                        'metadata': existing_metadata
-                    }).eq('message_id', message_id).execute()
-                    
-                    if was_already_compressed:
-                        upgraded_count += 1
-                    else:
-                        saved_count += 1
-                    
-            except Exception as e:
-                logger.warning(f"Failed to save compressed message {message_id}: {e}")
+        saved_count = await threads_repo.save_compressed_messages_batch(compressed_messages)
         
-        if saved_count > 0 or upgraded_count > 0:
-            logger.info(f"💾 Compression save: {saved_count} new, {upgraded_count} upgraded")
+        if saved_count > 0:
+            logger.info(f"💾 Compression save: {saved_count} messages saved")
         
-        return saved_count + upgraded_count
+        return saved_count
     
     def _get_bedrock_client(self):
         """Get the singleton Bedrock client."""
@@ -293,11 +259,11 @@ class ContextManager:
             except Exception as e:
                 logger.debug(f"Bedrock token counting failed, falling back to LiteLLM: {e}")
         
-        # Fallback to LiteLLM token_counter
+        # Fallback to LiteLLM token_counter (wrap in thread pool - CPU-heavy tiktoken operation)
         if system_to_count:
-            return token_counter(model=model, messages=[system_to_count] + messages_to_count)
+            return await asyncio.to_thread(token_counter, model=model, messages=[system_to_count] + messages_to_count)
         else:
-            return token_counter(model=model, messages=messages_to_count)
+            return await asyncio.to_thread(token_counter, model=model, messages=messages_to_count)
 
     async def estimate_token_usage(self, prompt_messages: List[Dict[str, Any]], completion_content: str, model: str) -> Dict[str, Any]:
         """
@@ -319,10 +285,10 @@ class ContextManager:
             # Count prompt tokens using accurate provider APIs
             prompt_tokens = await self.count_tokens(model, prompt_messages, apply_caching=False)
             
-            # Count completion tokens (just the text)
+            # Count completion tokens (just the text) - wrap in thread pool (CPU-heavy tiktoken operation)
             completion_tokens = 0
             if completion_content:
-                completion_tokens = token_counter(model=model, text=completion_content)
+                completion_tokens = await asyncio.to_thread(token_counter, model=model, text=completion_content)
             
             total_tokens = prompt_tokens + completion_tokens
             

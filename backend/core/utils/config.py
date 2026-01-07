@@ -281,7 +281,7 @@ class Configuration:
     OPENAI_API_KEY: Optional[str] = None
     
     ENABLE_MEMORY: bool = False
-    ENABLE_KNOWLEDGE_BASE: bool = True
+    ENABLE_KNOWLEDGE_BASE: bool = False
     ENABLE_USER_CONTEXT: bool = True
     MEMORY_EMBEDDING_PROVIDER: Optional[str] = "openai"
     MEMORY_EMBEDDING_MODEL: Optional[str] = "text-embedding-3-small"
@@ -310,12 +310,11 @@ class Configuration:
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_JWT_SECRET: str
     
-    # Redis configuration
     REDIS_HOST: Optional[str] = "localhost"
     REDIS_PORT: Optional[int] = 6379
     REDIS_PASSWORD: Optional[str] = None
-    REDIS_USERNAME: Optional[str] = None  # Required for Redis Cloud
-    REDIS_MAX_CONNECTIONS: Optional[int] = 10  # Max connections per process (default 10)
+    REDIS_USERNAME: Optional[str] = None  
+    REDIS_MAX_CONNECTIONS: Optional[int] = 300
     REDIS_SSL: Optional[bool] = True
     
     # Daytona sandbox configuration (optional - sandbox features disabled if not configured)

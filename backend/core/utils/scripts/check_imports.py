@@ -36,7 +36,7 @@ def main():
         ("core.services.supabase", "from core.services.supabase import DBConnection"),
         ("core.agents.runs", "from core.agents.runs import router"),
         ("core.threads.api", "from core.threads.api import router"),
-        ("core.worker.handlers", "from core.worker.handlers import get_handlers"),
+        ("core.worker.background_tasks", "from core.worker.background_tasks import start_memory_extraction"),
     ]
     
     errors = []

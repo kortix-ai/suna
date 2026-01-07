@@ -66,8 +66,8 @@ class SubscriptionService:
     async def get_commitment_status(self, account_id: str) -> Dict:
         return await SchedulingHandler.get_commitment_status(account_id)
     
-    async def get_scheduled_changes(self, account_id: str) -> Dict:
-        return await SchedulingHandler.get_scheduled_changes(account_id)
+    async def get_scheduled_changes(self, account_id: str, subscription_data: Optional[Dict] = None) -> Dict:
+        return await SchedulingHandler.get_scheduled_changes(account_id, subscription_data)
     
     async def cancel_scheduled_change(self, account_id: str) -> Dict:
         return await SchedulingHandler.cancel_scheduled_change(account_id)

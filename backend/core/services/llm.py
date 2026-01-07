@@ -3,7 +3,6 @@ import os
 import json
 import asyncio
 import litellm
-from litellm.router import Router
 from litellm.files.main import ModelResponse
 from core.utils.logger import logger
 from core.utils.config import config
@@ -15,26 +14,26 @@ litellm.modify_params = True
 litellm.drop_params = True
 
 # Enable verbose logging for debugging
-litellm.set_verbose = True
-litellm._turn_on_debug()  # Enable all debug logging
+litellm.set_verbose = False
+# litellm._turn_on_debug()  # Enable all debug logging
 import logging
-litellm.verbose_logger.setLevel(logging.DEBUG)
+# litellm.verbose_logger.setLevel(logging.DEBUG)
 
-# Ensure verbose logger has a handler (uses structlog format)
-if not litellm.verbose_logger.handlers:
-    from core.utils.logger import logger as app_logger
-    # Add a handler that writes to the same destination as our app logger
-    import sys
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(logging.Formatter('[LITELLM] %(levelname)s - %(message)s'))
-    litellm.verbose_logger.addHandler(handler)
+# # Ensure verbose logger has a handler (uses structlog format)
+# if not litellm.verbose_logger.handlers:
+#     from core.utils.logger import logger as app_logger
+#     # Add a handler that writes to the same destination as our app logger
+#     import sys
+#     handler = logging.StreamHandler(sys.stderr)
+#     handler.setFormatter(logging.Formatter('[LITELLM] %(levelname)s - %(message)s'))
+#     litellm.verbose_logger.addHandler(handler)
 
 # Retries: Keep low to fail fast. Each retry waits stream_timeout (60s)
 # 1 retry = max 120s delay, 2 retries = max 180s delay
 litellm.num_retries = int(os.environ.get("LITELLM_NUM_RETRIES", 1))
 
 # Timeout for complete request (high for long streams)
-litellm.request_timeout = 1800  # 30 min - matches Router timeout
+litellm.request_timeout = 1800  # 30 min for long streams
 
 # LiteLLM will use its default HTTP client (httpx)
 # This is simpler and works fine for most use cases
@@ -55,16 +54,18 @@ class LLMTimingCallback(CustomLogger):
         call_id = id(kwargs)
         self.call_times[call_id] = time.monotonic()
         
-        # Check retry information from litellm_params
-        litellm_params = kwargs.get("litellm_params", {})
-        metadata = litellm_params.get("metadata", {})
+        # Check retry information from litellm_params (handle None cases)
+        litellm_params = kwargs.get("litellm_params") or {}
+        metadata = litellm_params.get("metadata") if isinstance(litellm_params, dict) else {}
+        if metadata is None:
+            metadata = {}
         
         # Log model and message count
         msg_count = len(messages) if messages else 0
         logger.info(f"[LLM] 🚀 PRE-API-CALL: model={model}, messages={msg_count}, call_id={call_id}")
         
         # Log if this is a retry
-        retry_count = metadata.get("_litellm_retry_count", 0)
+        retry_count = metadata.get("_litellm_retry_count", 0) if isinstance(metadata, dict) else 0
         if retry_count > 0:
             logger.warning(f"[LLM] 🔄 RETRY ATTEMPT #{retry_count} for {model}")
     
@@ -116,10 +117,14 @@ class LLMTimingCallback(CustomLogger):
         # This is CRITICAL - log every failure as it indicates a retry is happening
         logger.error(f"[LLM] ❌ FAILURE (will retry if retries remain): {model} after {duration:.2f}s - {error_str}")
         
-        # Log litellm_params for debugging
-        litellm_params = kwargs.get("litellm_params", {})
-        api_base = litellm_params.get("api_base", "default")
-        custom_provider = litellm_params.get("custom_llm_provider", "unknown")
+        # Log litellm_params for debugging (handle None cases)
+        litellm_params = kwargs.get("litellm_params") or {}
+        if isinstance(litellm_params, dict):
+            api_base = litellm_params.get("api_base", "default")
+            custom_provider = litellm_params.get("custom_llm_provider", "unknown")
+        else:
+            api_base = "default"
+            custom_provider = "unknown"
         logger.error(f"[LLM]    ↳ Provider: {custom_provider}, API base: {api_base}")
 
 # Register timing callback
@@ -130,7 +135,6 @@ if os.getenv("BRAINTRUST_API_KEY"):
 else:
     litellm.callbacks = [_timing_callback]
 
-provider_router = None
 LLM_DEBUG = True
 
 class LLMError(Exception):
@@ -151,93 +155,6 @@ def setup_api_keys() -> None:
     if getattr(config, 'AWS_BEARER_TOKEN_BEDROCK', None):
         os.environ["AWS_BEARER_TOKEN_BEDROCK"] = config.AWS_BEARER_TOKEN_BEDROCK
 
-def setup_provider_router(openai_compatible_api_key: str = None, openai_compatible_api_base: str = None):
-    global provider_router
-    
-    model_list = [
-        {
-            "model_name": "openai-compatible/*",
-            "litellm_params": {
-                "model": "openai/*",
-                "api_key": openai_compatible_api_key or getattr(config, 'OPENAI_COMPATIBLE_API_KEY', None),
-                "api_base": openai_compatible_api_base or getattr(config, 'OPENAI_COMPATIBLE_API_BASE', None),
-            },
-        },
-        # Direct MiniMax API - requires MINIMAX_API_KEY env var
-        # Docs: https://docs.litellm.ai/docs/providers/minimax
-        {
-            "model_name": "minimax/MiniMax-M2.1",
-            "litellm_params": {
-                "model": "openai/MiniMax-M2.1",
-                "api_key": getattr(config, 'MINIMAX_API_KEY', None) or os.environ.get("MINIMAX_API_KEY"),
-                "api_base": "https://api.minimax.io/v1",
-            },
-        },
-        {
-            "model_name": "minimax/MiniMax-M2.1-lightning",
-            "litellm_params": {
-                "model": "openai/MiniMax-M2.1-lightning",
-                "api_key": getattr(config, 'MINIMAX_API_KEY', None) or os.environ.get("MINIMAX_API_KEY"),
-                "api_base": "https://api.minimax.io/v1",
-            },
-        },
-        {
-            "model_name": "minimax/MiniMax-M2",
-            "litellm_params": {
-                "model": "openai/MiniMax-M2",
-                "api_key": getattr(config, 'MINIMAX_API_KEY', None) or os.environ.get("MINIMAX_API_KEY"),
-                "api_base": "https://api.minimax.io/v1",
-            },
-        },
-        {
-            "model_name": "openrouter/minimax/minimax-m2.1",
-            "litellm_params": {
-                "model": "openrouter/minimax/minimax-m2.1",
-            },
-        },
-        {
-            "model_name": "openrouter/z-ai/glm-4.6v",
-            "litellm_params": {
-                "model": "openrouter/z-ai/glm-4.6v",
-            },
-        },
-        {"model_name": "*", "litellm_params": {"model": "*"}},
-    ]
-    
-    # Fallbacks for MiniMax models only (no Haiku fallbacks - let it fail fast)
-    fallbacks = [
-        {"openrouter/minimax/minimax-m2.1": ["openrouter/z-ai/glm-4.6v"]},
-        {"minimax/MiniMax-M2.1": ["openrouter/z-ai/glm-4.6v"]},
-        {"minimax/MiniMax-M2.1-lightning": ["openrouter/z-ai/glm-4.6v"]},
-        {"minimax/MiniMax-M2": ["openrouter/z-ai/glm-4.6v"]},
-        # NO Haiku 4.5 fallbacks - if Bedrock fails, fail immediately rather than
-        # trying fallback models which adds 60+ seconds of latency
-    ]
-    
-    num_retries = getattr(litellm, 'num_retries', 1)
-    
-    # Router timeouts:
-    # - timeout: Total time for COMPLETE response (needs to be high for long streams)
-    # - stream_timeout: Time to get FIRST token (this is what we want to limit)
-    ROUTER_TIMEOUT = 1800         # 30 min total for complete response (long streams)
-    STREAM_TIMEOUT = 60          # 60s to get first token (fail fast if no response)
-    
-    provider_router = Router(
-        model_list=model_list,
-        num_retries=num_retries,
-        fallbacks=fallbacks,
-        timeout=ROUTER_TIMEOUT,
-        stream_timeout=STREAM_TIMEOUT,  # THIS is for first token
-        allowed_fails=3,
-        cooldown_time=10,  # Reduced from 30s to 10s for faster recovery
-        retry_after=1,  # Wait 1 second between retries
-    )
-
-    logger.info(
-        f"[LLM] Router configured: timeout={ROUTER_TIMEOUT}s, stream_timeout={STREAM_TIMEOUT}s, "
-        f"retries={num_retries}, cooldown=10s"
-    )
-
 def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_base: Optional[str]) -> None:
     if not model_name.startswith("openai-compatible/"):
         return
@@ -248,7 +165,7 @@ def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_ba
     if not key or not base:
         raise LLMError("OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE required for openai-compatible models")
     
-    setup_provider_router(api_key, api_base)
+    # Configuration is handled via params in make_llm_api_call
 
 def _save_debug_input(params: Dict[str, Any]) -> None:
     if not (config and getattr(config, 'DEBUG_SAVE_LLM_IO', False)):
@@ -369,9 +286,10 @@ async def make_llm_api_call(
         import psutil
         cpu_at_start = psutil.cpu_percent(interval=None)
         mem_at_start = psutil.Process().memory_info().rss / 1024 / 1024
-    except Exception:
+    except Exception as e:
         cpu_at_start = None
         mem_at_start = None
+        logger.warning(f"[LLM] psutil failed: {e}")
     
     try:
         _save_debug_input(params)
@@ -380,49 +298,51 @@ async def make_llm_api_call(
         msg_count = len(params.get("messages", []))
         tool_count = len(params.get("tools", []) or [])
         
-        if LLM_DEBUG and cpu_at_start is not None:
-            logger.debug(f"[LLM] Starting call: model={model_name} cpu={cpu_at_start}% mem={mem_at_start:.0f}MB")
+        if cpu_at_start is not None:
+            logger.info(f"[LLM] Starting: model={model_name} cpu={cpu_at_start}% mem={mem_at_start:.0f}MB")
         
-        logger.info(f"[LLM] 🎯 BEFORE Router.acompletion: {actual_model}")
-        logger.info(f"[LLM] 📋 Router state: num_retries={provider_router.num_retries}, timeout={provider_router.timeout}, stream_timeout={getattr(provider_router, 'stream_timeout', 'N/A')}")
+        logger.info(f"[LLM] 🎯 BEFORE litellm.acompletion: {actual_model}")
+        logger.info(f"[LLM] 📋 Config: num_retries={litellm.num_retries}, timeout={litellm.request_timeout}s")
         
         if stream:
             pre_call_time = time_module.monotonic()
-            logger.info(f"[LLM] ⏰ T+{(pre_call_time - call_start)*1000:.1f}ms: Calling Router.acompletion()")
+            logger.info(f"[LLM] ⏰ T+{(pre_call_time - call_start)*1000:.1f}ms: Calling litellm.acompletion()")
             
-            response = await provider_router.acompletion(**params)
+            # Direct LiteLLM call - Router removed due to 250+ second delays
+            response = await litellm.acompletion(**params)
             
             post_call_time = time_module.monotonic()
             ttft = post_call_time - call_start
-            router_time = post_call_time - pre_call_time
+            call_time = post_call_time - pre_call_time
             
-            logger.info(f"[LLM] ⏰ T+{(post_call_time - call_start)*1000:.1f}ms: Router.acompletion() returned (router_time={router_time:.2f}s)")
+            logger.info(f"[LLM] ⏰ T+{(post_call_time - call_start)*1000:.1f}ms: litellm.acompletion() returned (call_time={call_time:.2f}s)")
             
             # Check what type of response we got
             logger.info(f"[LLM] 📦 Response type: {type(response).__name__}, hasattr(__aiter__)={hasattr(response, '__aiter__')}")
             
+            try:
+                import psutil
+                cpu_now = psutil.cpu_percent(interval=None)
+                mem_now = psutil.Process().memory_info().rss / 1024 / 1024
+                cpu_info = f"cpu_start={cpu_at_start}% cpu_now={cpu_now}% mem={mem_now:.0f}MB"
+            except Exception:
+                cpu_info = ""
+            
             if ttft > 30.0:
-                try:
-                    import psutil
-                    cpu_now = psutil.cpu_percent(interval=None)
-                    mem_now = psutil.Process().memory_info().rss / 1024 / 1024
-                    logger.error(
-                        f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} (router_time={router_time:.2f}s) "
-                        f"cpu_start={cpu_at_start}% cpu_now={cpu_now}% mem_start={mem_at_start:.0f}MB mem_now={mem_now:.0f}MB"
-                    )
-                except Exception:
-                    logger.error(f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} (router_time={router_time:.2f}s)")
+                logger.error(
+                    f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} {cpu_info}"
+                )
             elif ttft > 10.0:
-                logger.warning(f"[LLM] ⚠️ SLOW TTFT: {ttft:.2f}s for {model_name} (router_time={router_time:.2f}s)")
-            elif LLM_DEBUG:
-                logger.info(f"[LLM] TTFT: {ttft:.2f}s for {model_name} (router_time={router_time:.2f}s)")
+                logger.warning(f"[LLM] ⚠️ SLOW: TTFT={ttft:.2f}s model={model_name} {cpu_info}")
+            else:
+                logger.info(f"[LLM] ✅ TTFT={ttft:.2f}s model={model_name} {cpu_info}")
             
             if hasattr(response, '__aiter__'):
                 logger.info(f"[LLM] 🎁 Wrapping streaming response")
                 return _wrap_streaming_response(response, call_start, model_name)
             return response
         else:
-            response = await provider_router.acompletion(**params)
+            response = await litellm.acompletion(**params)
             call_duration = time_module.monotonic() - call_start
             if LLM_DEBUG:
                 logger.info(f"[LLM] completed: {call_duration:.2f}s for {model_name}")
@@ -453,8 +373,7 @@ async def _wrap_streaming_response(response, start_time: float, model_name: str)
             logger.info(f"[LLM] stream completed: {call_duration:.2f}s, {chunk_count} chunks for {model_name}")
 
 setup_api_keys()
-setup_provider_router()
-logger.info(f"[LLM] Module initialized: debug={LLM_DEBUG}, retries={litellm.num_retries}")
+logger.info(f"[LLM] ✅ Module initialized (DIRECT MODE - no Router): debug={LLM_DEBUG}, retries={litellm.num_retries}, timeout={litellm.request_timeout}s")
 
 
 

@@ -117,7 +117,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   // Memoize agents array to prevent unnecessary recalculations
   const agents = useMemo(() => {
     if (isShared) return [];
-    return agentsQuery?.data?.agents || [];
+    return Array.isArray(agentsQuery?.data?.agents) ? agentsQuery.data.agents : [];
   }, [isShared, agentsQuery?.data?.agents]);
   const [isSidePanelAnimating, setIsSidePanelAnimating] = useState(false);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
@@ -787,6 +787,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const {
     status: streamHookStatus,
     textContent: streamingTextContent,
+    reasoningContent: streamingReasoningContent,
     toolCall: streamingToolCall,
     error: streamError,
     agentRunId: currentHookRunId,
@@ -1567,6 +1568,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         <ThreadContent
           messages={isShared ? playback.playbackState.visibleMessages : displayMessages}
           streamingTextContent={isShared ? '' : displayStreamingText}
+          streamingReasoningContent={isShared ? '' : streamingReasoningContent}
           streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
           agentStatus={displayAgentStatus}
           handleToolClick={showOptimisticUI ? () => {} : handleToolClick}

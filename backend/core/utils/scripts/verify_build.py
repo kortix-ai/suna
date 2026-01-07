@@ -39,7 +39,7 @@ def check_imports():
         "from core.services.supabase import DBConnection",
         "from core.agents.runs import router",
         "from core.threads.api import router",
-        "from core.worker.handlers import get_handlers",
+        "from core.worker.background_tasks import start_memory_extraction",
         "from core.agents.runs import _load_agent_config",
         "from core.agents.agent_loader import get_agent_loader",
         "from core.agents.runs import start_agent_run",
@@ -186,8 +186,7 @@ def test_worker_import():
 import sys
 sys.path.insert(0, '.')
 try:
-    from core.worker.handlers import get_handlers
-    handlers = get_handlers()
+    from core.worker.background_tasks import start_memory_extraction
     print('✅ Worker module imports successfully')
 except Exception as e:
     print(f'❌ Worker import failed: {e}')

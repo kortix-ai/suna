@@ -81,7 +81,7 @@ services:
   frontend:
     init: true
     build:
-      context: ./frontend
+      context: ./apps/frontend
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000/v1}

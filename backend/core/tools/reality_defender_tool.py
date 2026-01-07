@@ -5,6 +5,7 @@ import asyncio
 from urllib.parse import urlparse
 from typing import Optional, Tuple
 import requests
+import aiohttp
 import logging
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
@@ -109,39 +110,41 @@ class RealityDefenderTool(SandboxToolsBase):
         return MAX_IMAGE_SIZE  # Default
 
     async def download_file_from_url(self, url: str) -> Tuple[bytes, str, Optional[str]]:
-        """Download a file from a URL."""
+        """Download a file from a URL (async using aiohttp to avoid blocking event loop)."""
         try:
             headers = {
                 "User-Agent": "Mozilla/5.0"
             }
+            timeout = aiohttp.ClientTimeout(total=30)
 
-            # HEAD request to get file info
-            head_response = requests.head(url, timeout=10, headers=headers, allow_redirects=True)
-            head_response.raise_for_status()
-            
-            # Get content type and size
-            mime_type = head_response.headers.get('Content-Type', '')
-            content_length = head_response.headers.get('Content-Length')
-            
-            # Download the file
-            response = requests.get(url, timeout=30, headers=headers, stream=True, allow_redirects=True)
-            response.raise_for_status()
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                # HEAD request to get file info
+                async with session.head(url, headers=headers, allow_redirects=True) as head_response:
+                    head_response.raise_for_status()
+                    
+                    # Get content type and size
+                    mime_type = head_response.headers.get('Content-Type', '')
+                    content_length = head_response.headers.get('Content-Length')
+                
+                # Download the file
+                async with session.get(url, headers=headers, allow_redirects=True) as response:
+                    response.raise_for_status()
 
-            file_bytes = response.content
-            
-            # Update mime type from actual response if available
-            if response.headers.get('Content-Type'):
-                mime_type = response.headers.get('Content-Type')
-            
-            # Determine media type
-            media_type = self.get_media_type(url, mime_type)
-            if not media_type:
-                raise Exception(f"Unsupported file type. URL must point to an image, audio, or video file.")
-            
-            # Check file size
-            max_size = self.get_max_size(media_type)
-            if len(file_bytes) > max_size:
-                raise Exception(f"File is too large ({len(file_bytes) / (1024*1024):.2f}MB). Maximum size for {media_type} is {max_size / (1024*1024)}MB")
+                    file_bytes = await response.read()
+                    
+                    # Update mime type from actual response if available
+                    if response.headers.get('Content-Type'):
+                        mime_type = response.headers.get('Content-Type')
+                    
+                    # Determine media type
+                    media_type = self.get_media_type(url, mime_type)
+                    if not media_type:
+                        raise Exception(f"Unsupported file type. URL must point to an image, audio, or video file.")
+                    
+                    # Check file size
+                    max_size = self.get_max_size(media_type)
+                    if len(file_bytes) > max_size:
+                        raise Exception(f"File is too large ({len(file_bytes) / (1024*1024):.2f}MB). Maximum size for {media_type} is {max_size / (1024*1024)}MB")
             
             return file_bytes, mime_type, media_type
             

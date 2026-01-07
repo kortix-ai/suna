@@ -145,7 +145,8 @@ export function CompleteToolView({
                 <div className="bg-muted/50 rounded-2xl p-4 border border-border">
                   <UnifiedMarkdown 
                     content={text || resultText || ''} 
-                    className="text-sm" 
+                    className="text-sm"
+                    isStreaming={isStreaming}
                   />
                   {isStreaming && (
                     <span className="inline-block h-4 w-0.5 bg-primary ml-1 -mb-1 animate-pulse" />

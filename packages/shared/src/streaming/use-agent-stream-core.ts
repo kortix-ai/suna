@@ -17,6 +17,7 @@ import {
   handleToolCallChunk,
   handleToolResult,
   createMessageWithToolCalls,
+  extractReasoningContent,
 } from './message-handler';
 
 export interface StreamConfig {
@@ -43,6 +44,7 @@ export interface UseAgentStreamCoreCallbacks {
 export interface UseAgentStreamCoreResult {
   status: string;
   textContent: TextChunk[];
+  reasoningContent: string;
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;
@@ -69,6 +71,7 @@ export function useAgentStreamCore(
 ): UseAgentStreamCoreResult {
   const [status, setStatus] = useState<string>('idle');
   const [textContent, setTextContent] = useState<TextChunk[]>([]);
+  const [reasoningContent, setReasoningContent] = useState<string>('');
   const [toolCall, setToolCall] = useState<UnifiedMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
@@ -403,6 +406,14 @@ export function useAgentStreamCore(
 
     switch (message.type) {
       case 'assistant':
+        // CRITICAL: Extract reasoning content FIRST, before any other processing
+        // This ensures reasoning chunks appear in frontend as soon as possible
+        const reasoningChunk = extractReasoningContent(parsedContent, parsedMetadata);
+        if (reasoningChunk) {
+          // Update reasoning content immediately - no throttling, no delay
+          setReasoningContent((prev) => prev + reasoningChunk);
+        }
+        
         if (parsedMetadata.stream_status === 'tool_call_chunk') {
           // Handle tool call chunks - accumulate arguments smoothly
           const reconstructedToolCalls = handleToolCallChunk(
@@ -476,11 +487,14 @@ export function useAgentStreamCore(
               content: chunkContent,
             });
             callbacksRef.current.onAssistantChunk?.({ content: chunkContent });
-          } else if (parsedMetadata.stream_status === 'complete') {
+          }
+          
+          if (parsedMetadata.stream_status === 'complete') {
             // Flush pending content before completing
             flushPendingContent();
             flushPendingContent();
             setTextContent([]);
+            // Don't clear reasoning content - it should persist
             setToolCall(null);
             clearAccumulator(accumulatorRef.current);
             toolCallArgumentsRef.current.clear();
@@ -714,6 +728,9 @@ export function useAgentStreamCore(
     }
     pendingContentRef.current = [];
     
+    // Clear reasoning content when starting a new stream
+    setReasoningContent('');
+    
     currentRunIdRef.current = runId;
     setAgentRunId(runId);
     setTextContent([]);
@@ -894,6 +911,7 @@ export function useAgentStreamCore(
   return {
     status,
     textContent: orderedTextContent,
+    reasoningContent,
     toolCall,
     error,
     agentRunId,

@@ -182,10 +182,20 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
 
 class StripeAPIWrapper:
     _circuit_breaker = StripeCircuitBreaker()
+    DEFAULT_TIMEOUT = 10  # 10 second timeout for Stripe API calls
     
     @classmethod
-    async def safe_stripe_call(cls, func: Callable, *args, **kwargs) -> Any:
-        return await cls._circuit_breaker.safe_call(func, *args, **kwargs)
+    async def safe_stripe_call(cls, func: Callable, *args, timeout: Optional[float] = None, **kwargs) -> Any:
+        """Execute Stripe API call with circuit breaker and timeout protection."""
+        request_timeout = timeout or cls.DEFAULT_TIMEOUT
+        try:
+            return await asyncio.wait_for(
+                cls._circuit_breaker.safe_call(func, *args, **kwargs),
+                timeout=request_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"[STRIPE API] Timeout after {request_timeout}s for {func.__name__}")
+            raise Exception(f"Stripe API timeout after {request_timeout}s")
     
     @classmethod
     async def get_circuit_status(cls) -> Dict:

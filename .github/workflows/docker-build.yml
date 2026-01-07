@@ -5,8 +5,6 @@ on:
     branches:
       - main
       - PRODUCTION
-      - '**'  # All branches for preview deployments
-  workflow_dispatch:
   repository_dispatch:
     types: [production-updated]
 
@@ -16,75 +14,30 @@ permissions:
   id-token: write
 
 jobs:
-  # verify-build:
-  #   name: Verify Build
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #       with:
-  #         ref: ${{ github.event_name == 'repository_dispatch' && 'PRODUCTION' || github.ref }}
-
-  #     - name: Set up Python
-  #       uses: actions/setup-python@v5
-  #       with:
-  #         python-version: '3.12'
-
-  #     - name: Install uv
-  #       uses: astral-sh/setup-uv@v4
-  #       with:
-  #         version: "latest"
-
-  #     - name: Install backend dependencies
-  #       working-directory: ./backend
-  #       run: |
-  #         uv sync
-
-  #     - name: Verify build
-  #       working-directory: ./backend
-  #       run: |
-  #         uv run python core/utils/scripts/verify_build.py
-
   build-and-push:
-    # needs: verify-build  # Disabled - verify build step removed
     runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.get_tag_name.outputs.environment }}
+      image_tag: ${{ steps.get_tag_name.outputs.branch }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event_name == 'repository_dispatch' && 'PRODUCTION' || github.ref }}
 
-      - name: Get tag name
+      - name: Determine environment
+        id: get_tag_name
         shell: bash
         run: |
-          echo "Event name: ${{ github.event_name }}"
-          echo "Current ref: ${{ github.ref }}"
           BRANCH_NAME="${GITHUB_REF#refs/heads/}"
           echo "Branch: $BRANCH_NAME"
           
-          # Sanitize branch name for Docker tag (replace / with -, remove invalid chars)
-          SANITIZED_BRANCH=$(echo "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9-]/-/g' | sed 's/--*/-/g' | sed 's/^-\|-$//g')
-          
-          if [[ "${{ github.event_name }}" == "repository_dispatch" ]]; then
-            echo "Triggered by repository dispatch - setting prod environment"
+          if [[ "${{ github.event_name }}" == "repository_dispatch" ]] || [[ "$BRANCH_NAME" == "PRODUCTION" ]]; then
             echo "branch=prod" >> $GITHUB_OUTPUT
             echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "is_preview=false" >> $GITHUB_OUTPUT
           elif [[ "$BRANCH_NAME" == "main" ]]; then
             echo "branch=latest" >> $GITHUB_OUTPUT
             echo "environment=staging" >> $GITHUB_OUTPUT
-            echo "is_preview=false" >> $GITHUB_OUTPUT
-          elif [[ "$BRANCH_NAME" == "PRODUCTION" ]]; then
-            echo "branch=prod" >> $GITHUB_OUTPUT
-            echo "environment=prod" >> $GITHUB_OUTPUT
-            echo "is_preview=false" >> $GITHUB_OUTPUT
-          else
-            # Preview deployment for non-main/PRODUCTION branches
-            echo "branch=$SANITIZED_BRANCH" >> $GITHUB_OUTPUT
-            echo "environment=preview" >> $GITHUB_OUTPUT
-            echo "is_preview=true" >> $GITHUB_OUTPUT
-            echo "branch_name=$BRANCH_NAME" >> $GITHUB_OUTPUT
           fi
-          echo "aws_region=us-west-2" >> $GITHUB_OUTPUT
-        id: get_tag_name
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -107,108 +60,116 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  deploy-staging:
+    needs: build-and-push
+    if: needs.build-and-push.outputs.environment == 'staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate staging secrets
+        run: |
+          if [ -z "${{ secrets.AWS_STAGING_HOST }}" ]; then
+            echo "❌ Error: AWS_STAGING_HOST secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_STAGING_USERNAME }}" ]; then
+            echo "❌ Error: AWS_STAGING_USERNAME secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_STAGING_KEY }}" ]; then
+            echo "❌ Error: AWS_STAGING_KEY secret is not set"
+            exit 1
+          fi
+          echo "✅ All staging secrets are configured"
+
       - name: Deploy to staging
-        if: steps.get_tag_name.outputs.environment == 'staging'
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.AWS_STAGING_HOST }}
           username: ${{ secrets.AWS_STAGING_USERNAME }}
           key: ${{ secrets.AWS_STAGING_KEY }}
+          port: 22
+          timeout: 300s
           script: |
             cd /home/ubuntu/suna/backend
             git fetch origin main
             git reset --hard origin/main
-            set -a && source .env && set +a
             
             echo "=== Pre-deployment disk usage ==="
             df -h / | tail -1
             
-            # Clean up old images to save space
+            # Clean up old images
             echo "=== Cleaning up old images ==="
             docker image prune -af --filter "until=24h" || true
             
-            # Build and deploy - Docker Compose handles orchestration
-            echo "=== Building and deploying services ==="
-            docker compose build
+            # Pull pre-built image from registry and deploy
+            echo "=== Pulling and deploying services ==="
+            docker compose pull
             docker compose up -d --remove-orphans
             
-            # Quick cleanup
+            # Post cleanup
             echo "=== Post-deployment cleanup ==="
             docker image prune -af --filter "until=1h" || true
-            docker builder prune -af --keep-storage=2GB || true
             
             echo "=== Deployment complete ==="
             docker compose ps
             df -h / | tail -1
-      # Temporarily disabled preview deployments
-      # Temporarily disabled preview deployments
-      # Temporarily disabled: Preview deployments
-      # - name: Deploy to staging [legacy]
-      #   if: steps.get_tag_name.outputs.environment == 'staging'
-      #   uses: appleboy/ssh-action@v1
-      #   with:
-      #     host: ${{ secrets.STAGING_HOST }}
-      #     username: ${{ secrets.STAGING_USERNAME }}
-      #     key: ${{ secrets.STAGING_KEY }}
-      #     script: |
-      #       cd /home/suna/backend
-      #       git fetch origin main
-      #       git reset --hard origin/main
-      #       docker compose down
-      #       docker compose build
-      #       docker compose up -d
 
+  deploy-production:
+    needs: build-and-push
+    if: needs.build-and-push.outputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    steps:
       - name: Configure AWS credentials
-        if: steps.get_tag_name.outputs.environment == 'prod'
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
-          aws-region: ${{ steps.get_tag_name.outputs.aws_region }}
+          aws-region: us-west-2
 
-      - name: Update ECS services
-        if: steps.get_tag_name.outputs.environment == 'prod'
+      - name: Validate production secrets
         run: |
-          set -e
-          REGION="${{ steps.get_tag_name.outputs.aws_region }}"
-          CLUSTER="suna-ecs"
-          
-          # Get all service ARNs
-          SERVICES=$(aws ecs list-services --cluster $CLUSTER --region $REGION --query 'serviceArns' --output text)
-          
-          # Update API service
-          API_SERVICE_ARN=$(echo $SERVICES | tr ' ' '\n' | grep 'suna-api-svc' | head -1)
-          if [ -n "$API_SERVICE_ARN" ]; then
-            API_SERVICE=$(echo $API_SERVICE_ARN | awk -F'/' '{print $NF}')
-            echo "Updating API service: $API_SERVICE"
-            aws ecs update-service \
-              --cluster $CLUSTER \
-              --service $API_SERVICE \
-              --force-new-deployment \
-              --region $REGION \
-              --no-cli-pager
+          if [ -z "${{ secrets.AWS_PRODUCTION_HOST }}" ]; then
+            echo "❌ Error: AWS_PRODUCTION_HOST secret is not set"
+            exit 1
           fi
-          
-          # Update Worker service
-          WORKER_SERVICE_ARN=$(echo $SERVICES | tr ' ' '\n' | grep 'suna-worker-svc' | head -1)
-          if [ -n "$WORKER_SERVICE_ARN" ]; then
-            WORKER_SERVICE=$(echo $WORKER_SERVICE_ARN | awk -F'/' '{print $NF}')
-            echo "Updating Worker service: $WORKER_SERVICE"
-            aws ecs update-service \
-              --cluster $CLUSTER \
-              --service $WORKER_SERVICE \
-              --force-new-deployment \
-              --region $REGION \
-              --no-cli-pager
+          if [ -z "${{ secrets.AWS_PRODUCTION_USERNAME }}" ]; then
+            echo "❌ Error: AWS_PRODUCTION_USERNAME secret is not set"
+            exit 1
           fi
+          if [ -z "${{ secrets.AWS_PRODUCTION_KEY }}" ]; then
+            echo "❌ Error: AWS_PRODUCTION_KEY secret is not set"
+            exit 1
+          fi
+          echo "✅ All production secrets are configured"
 
-      # - name: Deploy to prod [legacy]
-      #   if: steps.get_tag_name.outputs.environment == 'prod'
-      #   uses: appleboy/ssh-action@v1
-      #   with:
-      #     host: ${{ secrets.PROD_HOST }}
-      #     username: ${{ secrets.PROD_USERNAME }}
-      #     key: ${{ secrets.PROD_KEY }}
-      #     script: |
-      #       cd /mnt/gluster-shared/data/infra/suna
-      #       set -a; source .env; set +a
-      #       docker stack deploy -c docker-compose.yml suna
+      - name: Deploy to production
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.AWS_PRODUCTION_HOST }}
+          username: ${{ secrets.AWS_PRODUCTION_USERNAME }}
+          key: ${{ secrets.AWS_PRODUCTION_KEY }}
+          port: 22
+          timeout: 300s
+          script: |
+            cd /home/ubuntu/suna/backend
+            git fetch origin PRODUCTION
+            git reset --hard origin/PRODUCTION
+            
+            echo "=== Pre-deployment disk usage ==="
+            df -h / | tail -1
+            
+            # Clean up old images
+            echo "=== Cleaning up old images ==="
+            docker image prune -af --filter "until=24h" || true
+            
+            # Pull pre-built image from registry and deploy
+            echo "=== Pulling and deploying services ==="
+            docker compose pull
+            docker compose up -d --remove-orphans
+            
+            # Post cleanup
+            echo "=== Post-deployment cleanup ==="
+            docker image prune -af --filter "until=1h" || true
+            
+            echo "=== Deployment complete ==="
+            docker compose ps
+            df -h / | tail -1

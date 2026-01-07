@@ -137,7 +137,7 @@ def parse_env_file(filepath):
 def load_existing_env_vars():
     """Loads existing environment variables from .env files."""
     backend_env = parse_env_file(os.path.join("backend", ".env"))
-    frontend_env = parse_env_file(os.path.join("frontend", ".env.local"))
+    frontend_env = parse_env_file(os.path.join("apps", "frontend", ".env.local"))
 
     # Organize the variables by category
     existing_vars = {
@@ -499,10 +499,10 @@ class SetupWizard:
                     return False
             
             # Check frontend .env.local
-            if not os.path.exists("frontend/.env.local"):
+            if not os.path.exists("apps/frontend/.env.local"):
                 return False
             
-            with open("frontend/.env.local", "r") as f:
+            with open("apps/frontend/.env.local", "r") as f:
                 frontend_content = f.read()
                 if "NEXT_PUBLIC_SUPABASE_URL" not in frontend_content:
                     return False
@@ -735,7 +735,7 @@ class SetupWizard:
     def check_suna_directory(self):
         """Checks if the script is run from the correct project root directory."""
         print_info("Verifying project structure...")
-        required_dirs = ["backend", "frontend"]
+        required_dirs = ["backend", "apps/frontend"]
         required_files = ["README.md", "docker-compose.yaml"]
 
         for directory in required_dirs:
@@ -1604,9 +1604,9 @@ class SetupWizard:
         for key, value in frontend_env.items():
             frontend_env_content += f"{key}={value or ''}\n"
 
-        with open(os.path.join("frontend", ".env.local"), "w") as f:
+        with open(os.path.join("apps", "frontend", ".env.local"), "w") as f:
             f.write(frontend_env_content)
-        print_success("Created frontend/.env.local file.")
+        print_success("Created apps/frontend/.env.local file.")
 
         # --- Mobile App .env ---
         # Mobile will access from the device, so it should use localhost (not Docker host)
