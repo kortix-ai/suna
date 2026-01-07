@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.pool import NullPool, AsyncAdaptedQueuePool
 from sqlalchemy.exc import OperationalError, InterfaceError
 
+from core.utils.config import EnvMode
+
 from psycopg.types.json import set_json_dumps, set_json_loads
 from core.utils.logger import logger
 
@@ -26,12 +28,46 @@ except ImportError:
 set_json_dumps(_json_serialize)
 set_json_loads(_json_deserialize)
 
-POOL_SIZE = int(os.getenv("POSTGRES_POOL_SIZE", "20"))
-MAX_OVERFLOW = int(os.getenv("POSTGRES_MAX_OVERFLOW", "30"))
-POOL_TIMEOUT = int(os.getenv("POSTGRES_POOL_TIMEOUT", "30"))
-POOL_RECYCLE = int(os.getenv("POSTGRES_POOL_RECYCLE", "1800"))
-STATEMENT_TIMEOUT = int(os.getenv("POSTGRES_STATEMENT_TIMEOUT", "30000"))
-CONNECT_TIMEOUT = int(os.getenv("POSTGRES_CONNECT_TIMEOUT", "10"))
+from core.utils.config import config, EnvMode
+
+def _get_db_config():
+
+    if config.ENV_MODE == EnvMode.PRODUCTION:
+        return {
+            "pool_size": 90,
+            "max_overflow": 180,
+            "pool_timeout": 45,
+            "pool_recycle": 3600,
+            "statement_timeout": 45000,
+            "connect_timeout": 15,
+        }
+    elif config.ENV_MODE == EnvMode.STAGING:
+        return {
+            "pool_size": 10,
+            "max_overflow": 15,
+            "pool_timeout": 30,
+            "pool_recycle": 1800,
+            "statement_timeout": 30000,
+            "connect_timeout": 10,
+        }
+    else:
+        return {
+            "pool_size": 5,
+            "max_overflow": 10,
+            "pool_timeout": 20,
+            "pool_recycle": 600,
+            "statement_timeout": 15000,
+            "connect_timeout": 5,
+        }
+
+_db_config = _get_db_config()
+
+POOL_SIZE = _db_config["pool_size"]
+MAX_OVERFLOW = _db_config["max_overflow"] 
+POOL_TIMEOUT = _db_config["pool_timeout"]
+POOL_RECYCLE = _db_config["pool_recycle"]
+STATEMENT_TIMEOUT = _db_config["statement_timeout"]
+CONNECT_TIMEOUT = _db_config["connect_timeout"]
 MAX_RETRIES = int(os.getenv("POSTGRES_MAX_RETRIES", "3"))
 RETRY_DELAY = float(os.getenv("POSTGRES_RETRY_DELAY", "0.1"))
 USE_NULLPOOL = os.getenv("POSTGRES_USE_NULLPOOL", "auto")
