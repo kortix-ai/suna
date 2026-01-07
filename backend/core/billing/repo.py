@@ -1,6 +1,5 @@
 from typing import List, Dict, Any, Optional, Tuple
-from core.services.db import execute, execute_one, serialize_row
-from core.utils.logger import logger
+from core.services.db import execute, execute_one
 from datetime import datetime, timezone, timedelta
 
 
@@ -258,3 +257,109 @@ async def get_credit_usage_by_thread(
     ]
     
     return threads, total_count
+
+
+async def get_credit_usage_by_thread_with_dates(
+    account_id: str,
+    limit: int = 50,
+    offset: int = 0,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None
+) -> Tuple[List[Dict[str, Any]], int, float]:
+    """
+    Get credit usage grouped by thread with optional date filtering.
+    Returns (thread_usage_list, total_thread_count, total_usage_amount)
+    """
+    # Build date filter
+    date_filter = ""
+    params: Dict[str, Any] = {"account_id": account_id}
+    
+    if start_date:
+        date_filter += " AND created_at >= :start_date"
+        params["start_date"] = start_date
+    if end_date:
+        date_filter += " AND created_at <= :end_date"
+        params["end_date"] = end_date
+    
+    # First get all usage records to calculate totals and group by thread
+    sql = f"""
+    SELECT 
+        COALESCE(metadata->>'thread_id', thread_id::text) as thread_id,
+        amount,
+        created_at
+    FROM credit_ledger
+    WHERE account_id = :account_id 
+      AND type = 'usage'
+      AND (metadata->>'thread_id' IS NOT NULL OR thread_id IS NOT NULL)
+      {date_filter}
+    ORDER BY created_at DESC
+    """
+    
+    rows = await execute(sql, params)
+    
+    if not rows:
+        return [], 0, 0.0
+    
+    # Group by thread in Python (same as original logic)
+    thread_usage: Dict[str, Dict[str, Any]] = {}
+    total_usage = 0.0
+    
+    for row in rows:
+        thread_id = row["thread_id"]
+        if not thread_id:
+            continue
+            
+        amount = abs(float(row["amount"]))
+        total_usage += amount
+        
+        if thread_id not in thread_usage:
+            thread_usage[thread_id] = {
+                "thread_id": thread_id,
+                "total_amount": 0.0,
+                "usage_count": 0,
+                "last_usage": row["created_at"]
+            }
+        
+        thread_usage[thread_id]["total_amount"] += amount
+        thread_usage[thread_id]["usage_count"] += 1
+    
+    # Sort by last_usage descending
+    sorted_threads = sorted(
+        thread_usage.values(),
+        key=lambda x: x["last_usage"],
+        reverse=True
+    )
+    
+    total_count = len(sorted_threads)
+    paginated = sorted_threads[offset:offset + limit]
+    
+    return paginated, total_count, total_usage
+
+
+async def get_thread_details(thread_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+    """Get thread details including project info for a list of thread IDs."""
+    if not thread_ids:
+        return {}
+    
+    sql = """
+    SELECT 
+        t.thread_id,
+        t.project_id,
+        t.created_at,
+        p.name as project_name
+    FROM threads t
+    LEFT JOIN projects p ON t.project_id = p.project_id
+    WHERE t.thread_id = ANY(:thread_ids)
+    """
+    
+    rows = await execute(sql, {"thread_ids": thread_ids})
+    
+    result = {}
+    for row in rows or []:
+        result[row["thread_id"]] = {
+            "project_id": row["project_id"],
+            "created_at": row["created_at"],
+            "project_name": row.get("project_name", "")
+        }
+    
+    return result
