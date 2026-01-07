@@ -314,8 +314,8 @@ class Configuration:
     REDIS_HOST: Optional[str] = "localhost"
     REDIS_PORT: Optional[int] = 6379
     REDIS_PASSWORD: Optional[str] = None
-    REDIS_USERNAME: Optional[str] = None  # Required for Redis Cloud
-    REDIS_MAX_CONNECTIONS: Optional[int] = 10  # Max connections per process (default 10)
+    REDIS_USERNAME: Optional[str] = None  
+    REDIS_MAX_CONNECTIONS: Optional[int] = 50
     REDIS_SSL: Optional[bool] = True
     
     # Daytona sandbox configuration (optional - sandbox features disabled if not configured)

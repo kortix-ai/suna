@@ -13,13 +13,13 @@ class CreditService:
     def __init__(self):
         self.db = DBConnection()
         self.cache = Cache
-        self._client = None
+        # NOTE: Do NOT cache client reference here!
+        # DBConnection is a singleton that handles connection pooling.
+        # Caching the client here causes stale connections after force_reconnect().
     
     async def _get_client(self):
-        if self._client is None:
-            await self.db.initialize()
-            self._client = await self.db.client
-        return self._client
+        # Always get fresh client from DBConnection to handle reconnects properly
+        return await self.db.client
     
     async def check_and_refresh_daily_credits(self, user_id: str) -> Tuple[bool, Decimal]:
         try:
