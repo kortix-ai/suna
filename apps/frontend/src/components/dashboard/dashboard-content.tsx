@@ -231,6 +231,9 @@ export function DashboardContent() {
         let couponId = checkoutData.coupon || '';
         let currency = checkoutData.currency;
         
+        // Transaction ID for GA4 - prefer balance_transaction_id (txn_xxx), fallback to session_id
+        let transactionId = sessionId || `txn_${Date.now()}`;
+        
         // If we have a session_id, fetch actual amounts from Stripe
         // This also validates that the payment was actually successful
         if (sessionId) {
@@ -251,6 +254,12 @@ export function DashboardContent() {
               transactionValue = stripeSession.amount_total / 100;
               discountAmount = stripeSession.amount_discount / 100;
               taxAmount = stripeSession.amount_tax / 100;
+              
+              // Use balance_transaction_id (txn_xxx) as transaction_id if available
+              // Fallback to session_id if no charge was made (e.g., 100% discount)
+              if (stripeSession.balance_transaction_id) {
+                transactionId = stripeSession.balance_transaction_id;
+              }
               // Prefer promotion_code (customer-facing like "HEHE2020") over coupon_id
               couponId = stripeSession.promotion_code || stripeSession.coupon_name || stripeSession.coupon_id || '';
               currency = stripeSession.currency.toUpperCase();
@@ -284,7 +293,7 @@ export function DashboardContent() {
         const customerType = isReturningCustomer ? 'returning' : 'new';
         
         trackPurchase({
-          transaction_id: sessionId || `txn_${Date.now()}`,
+          transaction_id: transactionId, // txn_xxx from Stripe or session_id as fallback
           value: transactionValue, // Actual transaction value after discounts (from Stripe)
           tax: taxAmount, // Tax amount from Stripe
           currency: currency,
