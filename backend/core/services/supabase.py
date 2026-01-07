@@ -179,55 +179,64 @@ class DBConnection:
     async def initialize(self):
         if self._initialized:
             return
+        
+        # Lazily create the async lock (thread-safe via __new__)
+        if self._async_lock is None:
+            self._async_lock = asyncio.Lock()
+        
+        async with self._async_lock:
+            # Double-check after acquiring lock to prevent race condition
+            if self._initialized:
+                return
                 
-        try:
-            supabase_url = config.SUPABASE_URL
-            supabase_key = config.SUPABASE_SERVICE_ROLE_KEY or config.SUPABASE_ANON_KEY
-            
-            if not supabase_url or not supabase_key:
-                logger.error("Missing required environment variables for Supabase connection")
-                raise RuntimeError("SUPABASE_URL and a key (SERVICE_ROLE_KEY or ANON_KEY) environment variables must be set.")
+            try:
+                supabase_url = config.SUPABASE_URL
+                supabase_key = config.SUPABASE_SERVICE_ROLE_KEY or config.SUPABASE_ANON_KEY
+                
+                if not supabase_url or not supabase_key:
+                    logger.error("Missing required environment variables for Supabase connection")
+                    raise RuntimeError("SUPABASE_URL and a key (SERVICE_ROLE_KEY or ANON_KEY) environment variables must be set.")
 
-            from supabase.lib.client_options import AsyncClientOptions
-            
-            # NOTE: We intentionally do NOT pass a shared httpx_client here.
-            # The Supabase SDK has a bug where postgrest and storage3 both mutate
-            # the shared client's base_url, causing a race condition:
-            # - PostgREST sets base_url to /rest/v1
-            # - Storage sets base_url to /storage/v1
-            # - Whichever runs last "wins", corrupting requests for the other service
-            # This caused production errors like "Route POST:/projects not found" 
-            # when REST requests were incorrectly routed to the Storage service.
-            # Let each service create its own httpx client with correct base_url.
-            options = AsyncClientOptions(
-                postgrest_client_timeout=SUPABASE_READ_TIMEOUT,
-                storage_client_timeout=SUPABASE_READ_TIMEOUT,
-                function_client_timeout=SUPABASE_READ_TIMEOUT,
-            )
-            
-            self._client = await create_async_client(
-                supabase_url, 
-                supabase_key,
-                options=options
-            )
-            
-            # Configure each service's httpx client with optimized connection pool settings.
-            # We do this AFTER creation to avoid the shared client bug while still getting
-            # optimal connection pooling for high traffic.
-            self._configure_service_clients()
-            
-            self._initialized = True
-            key_type = "SERVICE_ROLE_KEY" if config.SUPABASE_SERVICE_ROLE_KEY else "ANON_KEY"
-            logger.info(
-                f"Database connection initialized with Supabase using {key_type} | "
-                f"pool(max={SUPABASE_MAX_CONNECTIONS}, keepalive={SUPABASE_MAX_KEEPALIVE}) | "
-                f"timeout(connect={SUPABASE_CONNECT_TIMEOUT}s, pool={SUPABASE_POOL_TIMEOUT}s) | "
-                f"transport(http2={SUPABASE_HTTP2_ENABLED}, retries={SUPABASE_RETRIES})"
-            )
-            
-        except Exception as e:
-            logger.error(f"Database initialization error: {e}")
-            raise RuntimeError(f"Failed to initialize database connection: {str(e)}")
+                from supabase.lib.client_options import AsyncClientOptions
+                
+                # NOTE: We intentionally do NOT pass a shared httpx_client here.
+                # The Supabase SDK has a bug where postgrest and storage3 both mutate
+                # the shared client's base_url, causing a race condition:
+                # - PostgREST sets base_url to /rest/v1
+                # - Storage sets base_url to /storage/v1
+                # - Whichever runs last "wins", corrupting requests for the other service
+                # This caused production errors like "Route POST:/projects not found" 
+                # when REST requests were incorrectly routed to the Storage service.
+                # Let each service create its own httpx client with correct base_url.
+                options = AsyncClientOptions(
+                    postgrest_client_timeout=SUPABASE_READ_TIMEOUT,
+                    storage_client_timeout=SUPABASE_READ_TIMEOUT,
+                    function_client_timeout=SUPABASE_READ_TIMEOUT,
+                )
+                
+                self._client = await create_async_client(
+                    supabase_url, 
+                    supabase_key,
+                    options=options
+                )
+                
+                # Configure each service's httpx client with optimized connection pool settings.
+                # We do this AFTER creation to avoid the shared client bug while still getting
+                # optimal connection pooling for high traffic.
+                self._configure_service_clients()
+                
+                self._initialized = True
+                key_type = "SERVICE_ROLE_KEY" if config.SUPABASE_SERVICE_ROLE_KEY else "ANON_KEY"
+                logger.info(
+                    f"Database connection initialized with Supabase using {key_type} | "
+                    f"pool(max={SUPABASE_MAX_CONNECTIONS}, keepalive={SUPABASE_MAX_KEEPALIVE}) | "
+                    f"timeout(connect={SUPABASE_CONNECT_TIMEOUT}s, pool={SUPABASE_POOL_TIMEOUT}s) | "
+                    f"transport(http2={SUPABASE_HTTP2_ENABLED}, retries={SUPABASE_RETRIES})"
+                )
+                
+            except Exception as e:
+                logger.error(f"Database initialization error: {e}")
+                raise RuntimeError(f"Failed to initialize database connection: {str(e)}")
 
     @classmethod
     async def disconnect(cls):
