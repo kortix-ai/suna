@@ -236,24 +236,45 @@ class RedisClient:
     
     # ========== Stream Operations ==========
     
-    async def stream_add(self, stream_key: str, fields: Dict[str, str], maxlen: int = None, approximate: bool = True) -> str:
-        """Add entry to a Redis stream.
+    async def stream_add(self, stream_key: str, fields: Dict[str, str], maxlen: int = None, 
+                        approximate: bool = True, timeout: Optional[float] = None, 
+                        fail_silently: bool = True) -> Optional[str]:
+        """Add entry to a Redis stream with timeout protection.
         
         Args:
             stream_key: Stream key name
             fields: Dictionary of field-value pairs
             maxlen: Maximum length of stream (None = no limit)
             approximate: Use approximate trimming (faster)
+            timeout: Override timeout in seconds (None = use default from env or 5s)
+            fail_silently: If True, log warning and return None on failure instead of raising
         
         Returns:
-            Entry ID (e.g., "1234567890-0")
+            Entry ID (e.g., "1234567890-0"), or None on timeout/failure if fail_silently=True
         """
         client = await self.get_client()
         kwargs = {}
         if maxlen is not None:
             kwargs['maxlen'] = maxlen
             kwargs['approximate'] = approximate
-        return await client.xadd(stream_key, fields, **kwargs)
+        
+        if timeout is None:
+            env_timeout = os.getenv("REDIS_STREAM_ADD_TIMEOUT")
+            timeout = float(env_timeout) if env_timeout else 5.0
+        
+        try:
+            result = await self._with_timeout(
+                client.xadd(stream_key, fields, **kwargs),
+                timeout_seconds=timeout,
+                operation_name=f"stream_add({stream_key})",
+                default=None
+            )
+            return result
+        except Exception as e:
+            if fail_silently:
+                logger.warning(f"⚠️ stream_add failed (non-fatal) for {stream_key}: {e}")
+                return None
+            raise
     
     async def stream_read(self, stream_key: str, last_id: str = "0", block_ms: int = None, count: int = None) -> List[tuple]:
         """Read entries from a Redis stream.
@@ -376,6 +397,78 @@ class RedisClient:
         key = f"agent_run:{agent_run_id}:stop"
         await self.delete(key)
         logger.debug(f"Cleared stop signal for agent run {agent_run_id}")
+    
+    # ========== Timeout Protection Helpers ==========
+    
+    async def _with_timeout(self, coro, timeout_seconds: float, operation_name: str, default=None):
+        """Execute coroutine with timeout, return default on timeout."""
+        try:
+            return await asyncio.wait_for(coro, timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            logger.warning(f"⚠️ [REDIS TIMEOUT] {operation_name} timed out after {timeout_seconds}s")
+            return default
+        except Exception as e:
+            logger.error(f"⚠️ [REDIS ERROR] {operation_name} failed: {e}")
+            raise
+    
+    async def xreadgroup(self, groupname: str, consumername: str, streams: Dict[str, str], 
+                         block: int = None, count: int = None, timeout: Optional[float] = None) -> List:
+        """XREADGROUP with automatic timeout protection.
+        
+        Args:
+            groupname: Consumer group name
+            consumername: Consumer name
+            streams: Dict mapping stream names to ">" (new messages) or last ID
+            block: Block time in milliseconds (None = non-blocking)
+            count: Maximum number of entries to return
+            timeout: Override timeout in seconds (None = auto-calculated)
+        
+        Returns:
+            List of (stream_name, [(entry_id, fields), ...]) tuples, or [] on timeout
+        """
+        client = await self.get_client()
+        block_ms = block or 0
+        
+        # Default timeout: block_time + 2s buffer, or 30s max, or 10s for non-blocking
+        if timeout is None:
+            env_timeout = os.getenv("REDIS_XREADGROUP_TIMEOUT")
+            if env_timeout:
+                timeout = float(env_timeout)
+            else:
+                timeout = min((block_ms / 1000) + 2.0, 30.0) if block_ms > 0 else 10.0
+        
+        return await self._with_timeout(
+            client.xreadgroup(groupname=groupname, consumername=consumername, 
+                             streams=streams, block=block, count=count),
+            timeout_seconds=timeout,
+            operation_name=f"xreadgroup({groupname})",
+            default=[]  # Return empty on timeout - consumer loop will retry
+        )
+    
+    async def xack(self, stream: str, group: str, *ids, timeout: Optional[float] = None) -> Optional[int]:
+        """XACK with automatic timeout protection.
+        
+        Args:
+            stream: Stream name
+            group: Consumer group name
+            *ids: Entry IDs to acknowledge
+            timeout: Override timeout in seconds (None = use default from env or 10s)
+        
+        Returns:
+            Number of acknowledged entries, or None on timeout
+        """
+        client = await self.get_client()
+        
+        if timeout is None:
+            env_timeout = os.getenv("REDIS_XACK_TIMEOUT")
+            timeout = float(env_timeout) if env_timeout else 10.0
+        
+        return await self._with_timeout(
+            client.xack(stream, group, *ids),
+            timeout_seconds=timeout,
+            operation_name=f"xack({stream})",
+            default=None  # Return None on timeout - log but don't fail
+        )
 
 
 # Global singleton instance
@@ -463,9 +556,11 @@ async def llen(key: str) -> int:
     return await redis.llen(key)
 
 # Stream operations
-async def stream_add(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True) -> str:
-    """Add entry to stream (compatibility function)."""
-    return await redis.stream_add(stream_key, fields, maxlen=maxlen, approximate=approximate)
+async def stream_add(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True, 
+                    timeout: Optional[float] = None, fail_silently: bool = True) -> Optional[str]:
+    """Add entry to stream with timeout protection (compatibility function)."""
+    return await redis.stream_add(stream_key, fields, maxlen=maxlen, approximate=approximate, 
+                                  timeout=timeout, fail_silently=fail_silently)
 
 async def stream_read(stream_key: str, last_id: str = "0", block_ms: int = None, count: int = None):
     """Read from stream (compatibility function).
@@ -529,6 +624,17 @@ async def get_pubsub():
     """Get PubSub instance (compatibility function)."""
     return await redis.get_pubsub()
 
+# Stream group operations with timeout protection
+async def xreadgroup(groupname: str, consumername: str, streams: Dict[str, str], 
+                     block: int = None, count: int = None, timeout: Optional[float] = None):
+    """XREADGROUP with timeout protection (compatibility function)."""
+    return await redis.xreadgroup(groupname=groupname, consumername=consumername, 
+                                 streams=streams, block=block, count=count, timeout=timeout)
+
+async def xack(stream: str, group: str, *ids, timeout: Optional[float] = None):
+    """XACK with timeout protection (compatibility function)."""
+    return await redis.xack(stream, group, *ids, timeout=timeout)
+
 
 # Export everything for backward compatibility
 __all__ = [
@@ -562,6 +668,8 @@ __all__ = [
     'xrange',
     'xlen',
     'xtrim_minid',
+    'xreadgroup',
+    'xack',
     'set_stop_signal',
     'check_stop_signal',
     'clear_stop_signal',

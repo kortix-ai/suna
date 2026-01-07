@@ -107,6 +107,24 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Validate staging secrets
+        if: steps.get_tag_name.outputs.environment == 'staging'
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.AWS_STAGING_HOST }}" ]; then
+            echo "❌ Error: AWS_STAGING_HOST secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_STAGING_USERNAME }}" ]; then
+            echo "❌ Error: AWS_STAGING_USERNAME secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_STAGING_KEY }}" ]; then
+            echo "❌ Error: AWS_STAGING_KEY secret is not set"
+            exit 1
+          fi
+          echo "✅ All staging secrets are configured"
+
       - name: Deploy to staging
         if: steps.get_tag_name.outputs.environment == 'staging'
         uses: appleboy/ssh-action@v1
@@ -114,6 +132,8 @@ jobs:
           host: ${{ secrets.AWS_STAGING_HOST }}
           username: ${{ secrets.AWS_STAGING_USERNAME }}
           key: ${{ secrets.AWS_STAGING_KEY }}
+          port: 22
+          timeout: 300s
           script: |
             cd /home/ubuntu/suna/backend
             git fetch origin main
@@ -165,6 +185,24 @@ jobs:
           role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
           aws-region: ${{ steps.get_tag_name.outputs.aws_region }}
 
+      - name: Validate production secrets
+        if: steps.get_tag_name.outputs.environment == 'prod'
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.AWS_PRODUCTION_HOST }}" ]; then
+            echo "❌ Error: AWS_PRODUCTION_HOST secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_PRODUCTION_USERNAME }}" ]; then
+            echo "❌ Error: AWS_PRODUCTION_USERNAME secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_PRODUCTION_KEY }}" ]; then
+            echo "❌ Error: AWS_PRODUCTION_KEY secret is not set"
+            exit 1
+          fi
+          echo "✅ All production secrets are configured"
+
       - name: Deploy to production
         if: steps.get_tag_name.outputs.environment == 'prod'
         uses: appleboy/ssh-action@v1
@@ -172,6 +210,8 @@ jobs:
           host: ${{ secrets.AWS_PRODUCTION_HOST }}
           username: ${{ secrets.AWS_PRODUCTION_USERNAME }}
           key: ${{ secrets.AWS_PRODUCTION_KEY }}
+          port: 22
+          timeout: 300s
           script: |
             cd /home/ubuntu/suna/backend
             git fetch origin PRODUCTION

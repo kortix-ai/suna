@@ -10,7 +10,7 @@ import uuid
 from typing import Optional, Dict, Any, Callable, Awaitable, List
 
 from core.utils.logger import logger
-from core.services.redis import get_client as get_redis_client
+from core.services.redis import redis as redis_client
 from .tasks import StreamName, parse_task_message, TaskMessage
 
 
@@ -89,7 +89,7 @@ async def cleanup_stale_consumers(redis, stream: str, my_consumer_name: str) -> 
         return 0
 
 
-async def reclaim_pending_messages(redis, consumer_name: str, stream: str, handlers: Optional[Dict[str, Callable]] = None) -> int:
+async def reclaim_pending_messages(redis, consumer_name: str, stream: str, handlers: Optional[Dict[str, Callable]] = None, redis_wrapper=None) -> int:
     """Reclaim messages from dead consumers and optionally process them."""
     try:
         result = await redis.xautoclaim(
@@ -118,17 +118,27 @@ async def reclaim_pending_messages(redis, consumer_name: str, stream: str, handl
                             if handler:
                                 logger.info(f"🔄 Processing reclaimed message: {task_message.task_type} | entry_id={entry_id}")
                                 await handler(task_message)
-                                await redis.xack(stream, CONSUMER_GROUP, entry_id)
+                                # Use wrapper for timeout-protected xack
+                                if redis_wrapper:
+                                    await redis_wrapper.xack(stream, CONSUMER_GROUP, entry_id)
+                                else:
+                                    await redis.xack(stream, CONSUMER_GROUP, entry_id)
                                 logger.info(f"✅ Processed reclaimed message: {entry_id}")
                             else:
                                 # No handler - acknowledge to prevent infinite reclaim
                                 logger.warning(f"⚠️ No handler for reclaimed {task_message.task_type}, acknowledging to clear")
-                                await redis.xack(stream, CONSUMER_GROUP, entry_id)
+                                if redis_wrapper:
+                                    await redis_wrapper.xack(stream, CONSUMER_GROUP, entry_id)
+                                else:
+                                    await redis.xack(stream, CONSUMER_GROUP, entry_id)
                         except Exception as e:
                             # Message failed to process - log and acknowledge to prevent infinite reclaim
                             # This acts as a simple dead letter mechanism
                             logger.error(f"❌ Reclaimed message {entry_id} failed, moving to DLQ: {e}")
-                            await redis.xack(stream, CONSUMER_GROUP, entry_id)
+                            if redis_wrapper:
+                                await redis_wrapper.xack(stream, CONSUMER_GROUP, entry_id)
+                            else:
+                                await redis.xack(stream, CONSUMER_GROUP, entry_id)
                             # Store failed message in DLQ stream for investigation
                             try:
                                 await redis.xadd(
@@ -197,13 +207,16 @@ class StreamWorker:
         )
         
         try:
-            self._redis = await get_redis_client()
+            # Use RedisClient wrapper for timeout protection
+            self._redis = redis_client
+            await self._redis.get_client()  # Ensure connection is initialized
         except Exception as e:
             logger.error(f"Failed to connect to Redis: {e}", exc_info=True)
             raise
         
         try:
-            await ensure_consumer_groups(self._redis)
+            redis_raw = await redis_client.get_client()
+            await ensure_consumer_groups(redis_raw)
         except Exception as e:
             logger.error(f"Failed to ensure consumer groups: {e}", exc_info=True)
             raise
@@ -243,11 +256,12 @@ class StreamWorker:
         if not hasattr(self, '_redis') or not self._redis:
             return
         
+        redis_raw = await self._redis.get_client()
         for stream in self.streams:
             try:
                 # XGROUP DELCONSUMER removes the consumer from the group
                 # Any pending messages will be returned to the group for other consumers
-                deleted = await self._redis.xgroup_delconsumer(
+                deleted = await redis_raw.xgroup_delconsumer(
                     stream.value, CONSUMER_GROUP, self.consumer_name
                 )
                 if deleted > 0:
@@ -268,23 +282,27 @@ class StreamWorker:
                 
                 for stream in self.streams:
                     # Pass handlers so reclaimed messages actually get processed
+                    # Get raw client for reclaim operations that need it
+                    redis_raw = await self._redis.get_client()
                     await reclaim_pending_messages(
-                        self._redis, 
+                        redis_raw, 
                         self.consumer_name, 
                         stream.value,
-                        handlers=self.handlers
+                        handlers=self.handlers,
+                        redis_wrapper=self._redis  # Pass wrapper for xack calls
                     )
                 
                 # Run stale consumer cleanup periodically (every 5 minutes)
                 now = time.time()
                 if now - last_stale_cleanup >= STALE_CONSUMER_CLEANUP_INTERVAL:
                     last_stale_cleanup = now
-                    for stream in self.streams:
-                        await cleanup_stale_consumers(
-                            self._redis,
-                            stream.value,
-                            self.consumer_name
-                        )
+                for stream in self.streams:
+                    redis_raw = await self._redis.get_client()
+                    await cleanup_stale_consumers(
+                        redis_raw,
+                        stream.value,
+                        self.consumer_name
+                    )
                     
             except asyncio.CancelledError:
                 break
@@ -372,7 +390,7 @@ class StreamWorker:
 
 async def get_stream_info() -> Dict[str, Any]:
     """Get information about all streams (for monitoring)."""
-    redis = await get_redis_client()
+    redis = await redis_client.get_client()
     
     result = {
         "consumer_group": CONSUMER_GROUP,
@@ -418,4 +436,5 @@ async def get_stream_info() -> Dict[str, Any]:
             result["streams"][stream.value] = {"error": str(e)}
     
     return result
+
 
