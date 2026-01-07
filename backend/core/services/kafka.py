@@ -19,10 +19,11 @@ KAFKA_SASL_PASSWORD = os.getenv("KAFKA_SASL_PASSWORD", "")
 
 TABLES_TO_BUFFER = {"messages", "credit_ledger"}
 
-KAFKA_CONSUMER_GROUP = "db-writer"
-KAFKA_BATCH_SIZE = 100
-KAFKA_BATCH_TIMEOUT_SEC = 0.1
-
+KAFKA_CONSUMER_GROUP = os.getenv("KAFKA_CONSUMER_GROUP", "supabase-writer")
+KAFKA_BATCH_SIZE = int(os.getenv("KAFKA_BATCH_SIZE", "100"))
+KAFKA_BATCH_TIMEOUT_SEC = float(os.getenv("KAFKA_BATCH_TIMEOUT_SEC", "0.5"))
+KAFKA_DLQ_TOPIC = os.getenv("KAFKA_DLQ_TOPIC", "supabase.writes.dlq")
+KAFKA_MAX_RETRIES = int(os.getenv("KAFKA_MAX_RETRIES", "3"))
 
 def get_kafka_config() -> Dict[str, str]:
     conf = {
@@ -38,17 +39,14 @@ def get_kafka_config() -> Dict[str, str]:
         })
     return conf
 
-
 def is_enabled() -> bool:
     return KAFKA_ENABLED
-
 
 class WriteOperation(Enum):
     INSERT = "insert"
     UPDATE = "update"
     UPSERT = "upsert"
     DELETE = "delete"
-
 
 @dataclass
 class BufferedWrite:
@@ -66,7 +64,6 @@ class BufferedWrite:
     def from_json(cls, data: bytes) -> 'BufferedWrite':
         d = json.loads(data.decode('utf-8'))
         return cls(**d)
-
 
 class KafkaProducerManager:
     _producer = None
@@ -120,17 +117,28 @@ class KafkaProducerManager:
                 logger.info("Kafka producer stopped")
 
 
+def _get_partition_key(event: BufferedWrite) -> bytes:
+    if event.data and isinstance(event.data, dict):
+        if event.table == "messages" and "thread_id" in event.data:
+            return event.data["thread_id"].encode('utf-8')
+        if event.table == "credit_ledger" and "account_id" in event.data:
+            return event.data["account_id"].encode('utf-8')
+    return event.table.encode('utf-8')
+
+
 async def send_to_kafka(event: BufferedWrite) -> bool:
     producer = KafkaProducerManager.get_producer()
     if producer is None:
         return False
     
     try:
+        partition_key = _get_partition_key(event)
+        
         def _send():
             producer.produce(
                 KAFKA_TOPIC_WRITES,
                 value=event.to_json(),
-                key=event.table.encode('utf-8'),
+                key=partition_key,
             )
             producer.poll(0)
         
@@ -140,6 +148,24 @@ async def send_to_kafka(event: BufferedWrite) -> bool:
     except Exception as e:
         logger.warning(f"⚠️ Kafka send failed: {e}")
         return False
+
+
+async def send_to_dlq(producer, event: BufferedWrite, error: str):
+    try:
+        dlq_event = {
+            **asdict(event),
+            'error': error,
+            'failed_at': datetime.now(timezone.utc).isoformat(),
+        }
+        producer.produce(
+            KAFKA_DLQ_TOPIC,
+            value=json.dumps(dlq_event).encode('utf-8'),
+            key=event.table.encode('utf-8'),
+        )
+        producer.poll(0)
+        logger.warning(f"📥 Sent failed event to DLQ: {event.table}/{event.event_id}")
+    except Exception as e:
+        logger.error(f"❌ Failed to send to DLQ: {e}")
 
 
 def should_buffer_table(table: str) -> bool:
@@ -152,30 +178,45 @@ def stop_consumer():
     _consumer_running = False
 
 
-async def _process_batch(db_client, events_by_table: Dict[str, List[BufferedWrite]], stats: Dict[str, int]):
-    """Process a batch of buffered writes. Only INSERTs are buffered through Kafka."""
+async def _process_batch(
+    db_client, 
+    events_by_table: Dict[str, List[BufferedWrite]], 
+    stats: Dict[str, int],
+    dlq_producer=None,
+):
     for table, events in events_by_table.items():
-        # Only inserts are buffered (updates/upserts/deletes go directly to DB)
         inserts = [e for e in events if e.operation == WriteOperation.INSERT.value]
         
         if not inserts:
             continue
         
-        try:
-            flat_data = []
-            for e in inserts:
-                if isinstance(e.data, list):
-                    flat_data.extend(e.data)
-                else:
-                    flat_data.append(e.data)
+        flat_data = []
+        for e in inserts:
+            if isinstance(e.data, list):
+                flat_data.extend(e.data)
+            else:
+                flat_data.append(e.data)
+        
+        last_error = None
+        for attempt in range(KAFKA_MAX_RETRIES):
+            try:
+                await db_client.table(table).insert(flat_data).execute()
+                stats['processed'] += len(inserts)
+                logger.debug(f"📝 Flushed {len(inserts)} inserts to {table}")
+                break
+            except Exception as e:
+                last_error = e
+                if attempt < KAFKA_MAX_RETRIES - 1:
+                    delay = 0.1 * (2 ** attempt)
+                    logger.warning(f"⚠️ Batch insert retry {attempt + 1}/{KAFKA_MAX_RETRIES} for {table}: {e}")
+                    await asyncio.sleep(delay)
+        else:
+            logger.error(f"❌ Batch insert failed for {table} after {KAFKA_MAX_RETRIES} retries: {last_error}")
+            stats['errors'] += len(inserts)
             
-            await db_client.table(table).insert(flat_data).execute()
-            stats['processed'] += len(inserts)
-            logger.debug(f"📝 Flushed {len(inserts)} inserts to {table}")
-                
-        except Exception as e:
-            logger.error(f"❌ Batch insert failed for {table}: {e}")
-            stats['errors'] += 1
+            if dlq_producer:
+                for event in inserts:
+                    await send_to_dlq(dlq_producer, event, str(last_error))
 
 
 def run_consumer():
@@ -187,7 +228,7 @@ def run_consumer():
         return
     
     try:
-        from confluent_kafka import Consumer
+        from confluent_kafka import Consumer, Producer
     except ImportError:
         logger.error("confluent-kafka not installed: pip install confluent-kafka")
         return
@@ -197,13 +238,17 @@ def run_consumer():
     conf['auto.offset.reset'] = 'earliest'
     conf['enable.auto.commit'] = False
     conf['session.timeout.ms'] = 45000
+    conf['max.poll.interval.ms'] = 300000
     
     consumer = Consumer(conf)
     consumer.subscribe([KAFKA_TOPIC_WRITES])
     
-    logger.info(f"🚀 Kafka consumer started: {KAFKA_TOPIC_WRITES} @ {KAFKA_BOOTSTRAP_SERVERS}")
+    dlq_producer = Producer(get_kafka_config())
     
-    stats = {'processed': 0, 'batches': 0, 'errors': 0}
+    logger.info(f"🚀 Kafka consumer started: {KAFKA_TOPIC_WRITES} @ {KAFKA_BOOTSTRAP_SERVERS}")
+    logger.info(f"   DLQ topic: {KAFKA_DLQ_TOPIC} | batch_size={KAFKA_BATCH_SIZE} | timeout={KAFKA_BATCH_TIMEOUT_SEC}s")
+    
+    stats = {'processed': 0, 'batches': 0, 'errors': 0, 'dlq': 0}
     
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
@@ -215,6 +260,7 @@ def run_consumer():
     try:
         batch: List[BufferedWrite] = []
         batch_start = time.time()
+        last_stats_log = time.time()
         
         while _consumer_running:
             msg = consumer.poll(0.05)
@@ -244,19 +290,20 @@ def run_consumer():
                     events_by_table[event.table].append(event)
                 
                 raw_client = loop.run_until_complete(db.raw_client)
-                loop.run_until_complete(_process_batch(raw_client, events_by_table, stats))
+                loop.run_until_complete(_process_batch(raw_client, events_by_table, stats, dlq_producer))
                 consumer.commit()
+                dlq_producer.poll(0)
                 
                 stats['batches'] += 1
-                total = len(batch)
-                if total > 0:
-                    logger.debug(f"📝 Flushed {total} writes | total: {stats['processed']} | errors: {stats['errors']}")
-                
                 batch = []
                 batch_start = time.time()
+            
+            if time.time() - last_stats_log >= 60:
+                logger.info(f"📊 Kafka consumer stats: processed={stats['processed']} batches={stats['batches']} errors={stats['errors']}")
+                last_stats_log = time.time()
     
     except KeyboardInterrupt:
-        pass
+        logger.info("Kafka consumer interrupted")
     finally:
         if batch:
             events_by_table = {}
@@ -265,18 +312,20 @@ def run_consumer():
                     events_by_table[event.table] = []
                 events_by_table[event.table].append(event)
             raw_client = loop.run_until_complete(db.raw_client)
-            loop.run_until_complete(_process_batch(raw_client, events_by_table, stats))
+            loop.run_until_complete(_process_batch(raw_client, events_by_table, stats, dlq_producer))
             consumer.commit()
         
+        dlq_producer.flush(10.0)
         consumer.close()
         loop.close()
-        logger.info(f"Kafka consumer stopped. Stats: {stats}")
+        logger.info(f"✅ Kafka consumer stopped. Final stats: {stats}")
 
 
 __all__ = [
     'KAFKA_ENABLED',
     'KAFKA_BOOTSTRAP_SERVERS',
     'KAFKA_TOPIC_WRITES',
+    'KAFKA_DLQ_TOPIC',
     'TABLES_TO_BUFFER',
     'is_enabled',
     'get_kafka_config',
@@ -284,6 +333,7 @@ __all__ = [
     'BufferedWrite',
     'KafkaProducerManager',
     'send_to_kafka',
+    'send_to_dlq',
     'should_buffer_table',
     'stop_consumer',
     'run_consumer',
