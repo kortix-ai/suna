@@ -46,9 +46,9 @@ function parseStreamingArgs(rawArgs: string | undefined): { task?: string; conte
   }
 }
 
-function parseResultOutput(output: any): { 
-  sub_agent_id?: string; 
-  thread_id?: string; 
+function parseResultOutput(output: any): {
+  sub_agent_id?: string;
+  thread_id?: string;
   task?: string;
   status?: string;
   error?: string;
@@ -70,38 +70,38 @@ export const SubAgentInline: React.FC<SubAgentInlineProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const observerRef = useRef<HTMLDivElement>(null);
-  
+
   // Visibility state - only load when visible
   const [isVisible, setIsVisible] = useState(false);
   const [subAgentContent, setSubAgentContent] = useState<string | null>(null);
   const [isLoadingContent, setIsLoadingContent] = useState(false);
   const [contentError, setContentError] = useState<string | null>(null);
   const fetchedRef = useRef(false);
-  
+
   // Parse result
   const resultData = useMemo(() => {
     if (toolResult?.output) return parseResultOutput(toolResult.output);
     return {};
   }, [toolResult]);
-  
+
   const isSpawned = !!resultData.sub_agent_id;
   const subAgentThreadId = resultData.thread_id;
   const subAgentStatus = resultData.status;
   const isSubAgentComplete = subAgentStatus === 'completed' || subAgentStatus === 'failed' || subAgentStatus === 'stopped';
   const isExecuting = !isSpawned;
-  
+
   // Streaming content for spawn phase
   const rawStreamingSource = toolCall.rawArguments || streamingText;
   const [throttledSource, setThrottledSource] = useState(rawStreamingSource);
   const throttleRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(0);
-  
+
   useEffect(() => {
     if (isSpawned) return;
-    
+
     const now = Date.now();
     const THROTTLE_MS = 100;
-    
+
     if (now - lastUpdateRef.current >= THROTTLE_MS) {
       setThrottledSource(rawStreamingSource);
       lastUpdateRef.current = now;
@@ -112,10 +112,10 @@ export const SubAgentInline: React.FC<SubAgentInlineProps> = ({
         lastUpdateRef.current = Date.now();
       }, THROTTLE_MS);
     }
-    
+
     return () => { if (throttleRef.current) clearTimeout(throttleRef.current); };
   }, [rawStreamingSource, isSpawned]);
-  
+
   // Parse streaming args
   const streamingArgs = useMemo(() => {
     if (!isSpawned && throttledSource) {
@@ -123,70 +123,70 @@ export const SubAgentInline: React.FC<SubAgentInlineProps> = ({
     }
     return {};
   }, [isSpawned, throttledSource]);
-  
+
   // Display values
   const displayTask = streamingArgs.task || toolCall.arguments?.task || resultData.task || '';
-  const headerTitle = displayTask 
+  const headerTitle = displayTask
     ? (displayTask.length > 40 ? displayTask.slice(0, 40) + '...' : displayTask)
     : 'Sub-Agent';
-  
+
   // Link to sub-agent thread
-  const linkHref = project?.project_id && subAgentThreadId 
-    ? `/projects/${project.project_id}?threadId=${subAgentThreadId}` 
+  const linkHref = project?.project_id && subAgentThreadId
+    ? `/projects/${project.project_id}?threadId=${subAgentThreadId}`
     : null;
 
   // IntersectionObserver - only load when visible
   useEffect(() => {
     const el = observerRef.current;
     if (!el) return;
-    
+
     const observer = new IntersectionObserver(
       ([entry]) => {
         setIsVisible(entry.isIntersecting);
       },
       { threshold: 0.1, rootMargin: '100px' }
     );
-    
+
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
-  
+
   // Fetch ALL sub-agent messages when visible and spawned
   const fetchSubAgentContent = useCallback(async () => {
     if (!subAgentThreadId || !isVisible || fetchedRef.current || isLoadingContent) return;
-    
+
     fetchedRef.current = true;
     setIsLoadingContent(true);
     setContentError(null);
-    
+
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      
+
       const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
       if (!API_URL) throw new Error('API URL not configured');
-      
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
       };
       if (session?.access_token) {
         headers['Authorization'] = `Bearer ${session.access_token}`;
       }
-      
+
       // Fetch ALL messages in ascending order
       const response = await fetch(
         `${API_URL}/threads/${subAgentThreadId}/messages?order=asc`,
         { headers, cache: 'no-store' }
       );
-      
+
       if (!response.ok) throw new Error('Failed to fetch');
-      
+
       const data = await response.json();
       const messages = data.messages || [];
-      
+
       // Build full content from all assistant messages + tool calls
       const contentParts: string[] = [];
-      
+
       for (const msg of messages) {
         if (msg.type === 'assistant') {
           // Add text content
@@ -194,13 +194,13 @@ export const SubAgentInline: React.FC<SubAgentInlineProps> = ({
           if (textContent) {
             contentParts.push(textContent);
           }
-          
+
           // Parse tool calls
           const toolCalls = msg.metadata?.tool_calls || [];
           for (const tc of toolCalls) {
             const toolName = tc.function_name?.replace(/_/g, ' ') || 'Tool';
             const args = tc.arguments || {};
-            
+
             // Format tool call info
             if (toolName.toLowerCase().includes('file') || toolName.toLowerCase().includes('create')) {
               const filePath = args.file_path || args.path || '';
@@ -221,7 +221,7 @@ export const SubAgentInline: React.FC<SubAgentInlineProps> = ({
           }
         }
       }
-      
+
       if (contentParts.length > 0) {
         setSubAgentContent(contentParts.join('\n\n'));
       } else {
@@ -234,31 +234,31 @@ export const SubAgentInline: React.FC<SubAgentInlineProps> = ({
       setIsLoadingContent(false);
     }
   }, [subAgentThreadId, isVisible, isLoadingContent]);
-  
+
   // Trigger fetch when visible and spawned
   useEffect(() => {
     if (isVisible && isSpawned && !fetchedRef.current) {
       fetchSubAgentContent();
     }
   }, [isVisible, isSpawned, fetchSubAgentContent]);
-  
+
   // Determine what content to show
   const displayContent = useMemo(() => {
     // Still spawning - show task
     if (!isSpawned) {
       return displayTask || null;
     }
-    
+
     // Spawned - show sub-agent output if available
     if (subAgentContent) {
       return subAgentContent;
     }
-    
+
     // Loading or error
     if (isLoadingContent) {
       return null; // Will show loading state
     }
-    
+
     // Fallback to task
     return displayTask || null;
   }, [isSpawned, subAgentContent, isLoadingContent, displayTask]);
@@ -268,67 +268,69 @@ export const SubAgentInline: React.FC<SubAgentInlineProps> = ({
 
   return (
     <div ref={observerRef} className="my-1.5">
-      <div className="border border-neutral-200 dark:border-neutral-700/50 rounded-2xl overflow-hidden bg-zinc-100 dark:bg-neutral-900">
-        {/* Header */}
-        <div className="flex items-center gap-1.5 py-2 px-2.5 bg-muted">
-          <GitBranch className="h-3.5 w-3.5 text-indigo-500 flex-shrink-0" />
-          <span className="font-mono text-xs text-foreground flex-1 truncate" title={displayTask}>
-            {headerTitle}
-          </span>
-          {isRunning && (
-            <CircleDashed className="h-3.5 w-3.5 text-blue-500 flex-shrink-0 animate-spin" />
-          )}
-          {linkHref && (
-            <Link 
-              href={linkHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 rounded transition-colors"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Open
-            </Link>
-          )}
+      <div className="rounded-xl border bg-card overflow-hidden">
+        {/* Header - matches file attachment style */}
+        <div className="bg-accent p-2 h-[40px] flex items-center justify-between">
+          <div className="flex items-center gap-2 min-w-0">
+            <GitBranch className="h-4 w-4 text-primary flex-shrink-0" />
+            <span className="text-sm font-medium truncate" title={displayTask}>
+              {headerTitle}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            {isRunning && (
+              <CircleDashed className="h-4 w-4 text-blue-500 flex-shrink-0 animate-spin" />
+            )}
+            {linkHref && (
+              <Link
+                href={linkHref}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                title="Open sub-agent thread"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* Content */}
-        <div className="border-t border-neutral-200 dark:border-neutral-700/50">
-          <div className="relative">
-            <div
-              ref={containerRef}
-              className="max-h-[500px] overflow-y-auto scrollbar-none text-xs text-foreground p-3"
-              style={!isSpawned ? {
-                maskImage: 'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)',
-                WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)'
-              } : undefined}
-            >
-              {isLoadingContent ? (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <CircleDashed className="h-3 w-3 animate-spin" />
-                  <span>Loading...</span>
-                </div>
-              ) : contentError ? (
-                <span className="text-red-500 text-xs">{contentError}</span>
-              ) : displayContent ? (
-                <UnifiedMarkdown 
-                  content={displayContent} 
-                  className="text-sm prose prose-sm dark:prose-invert max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0" 
-                />
-              ) : (
-                <span className="text-muted-foreground">
-                  {!isSpawned ? 'Receiving task...' : 'Running...'}
-                </span>
-              )}
-            </div>
-            
-            {/* Gradients only during spawn streaming */}
-            {!isSpawned && (
-              <>
-                <div className="absolute top-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-b from-zinc-100 dark:from-neutral-900 to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t from-zinc-100 dark:from-neutral-900 to-transparent" />
-              </>
+        <div className="relative">
+          <div
+            ref={containerRef}
+            className="max-h-[400px] overflow-y-auto scrollbar-none text-foreground p-3"
+            style={!isSpawned ? {
+              maskImage: 'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)',
+              WebkitMaskImage: 'linear-gradient(to bottom, transparent 0%, black 8%, black 92%, transparent 100%)'
+            } : undefined}
+          >
+            {isLoadingContent ? (
+              <div className="flex items-center gap-2 text-muted-foreground">
+                <CircleDashed className="h-3.5 w-3.5 animate-spin" />
+                <span className="text-sm">Loading...</span>
+              </div>
+            ) : contentError ? (
+              <span className="text-red-500 text-sm">{contentError}</span>
+            ) : displayContent ? (
+              <UnifiedMarkdown
+                content={displayContent}
+                className="text-sm prose prose-sm dark:prose-invert max-w-none [&>:first-child]:mt-0 [&>:last-child]:mb-0"
+              />
+            ) : (
+              <span className="text-muted-foreground text-sm">
+                {!isSpawned ? 'Receiving task...' : 'Running...'}
+              </span>
             )}
           </div>
+
+          {/* Gradients only during spawn streaming */}
+          {!isSpawned && (
+            <>
+              <div className="absolute top-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-b from-card to-transparent" />
+              <div className="absolute bottom-0 left-0 right-0 h-6 pointer-events-none bg-gradient-to-t from-card to-transparent" />
+            </>
+          )}
         </div>
       </div>
     </div>

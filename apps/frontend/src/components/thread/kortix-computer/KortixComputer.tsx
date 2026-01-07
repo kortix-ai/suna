@@ -25,7 +25,7 @@ import {
 import { FileBrowserView } from './FileBrowserView';
 import { FileViewerView } from './FileViewerView';
 import { ToolCallData, ToolResultData } from '../tool-views/types';
-import { PanelHeader } from './components/PanelHeader';
+import { PanelHeader, SubAgentInfo } from './components/PanelHeader';
 import { NavigationControls } from './components/NavigationControls';
 import { EmptyState } from './components/EmptyState';
 import { LoadingState } from './components/LoadingState';
@@ -34,6 +34,8 @@ import { SandboxDesktop } from './components/Desktop';
 import { EnhancedFileBrowser } from './components/EnhancedFileBrowser';
 import { useDirectoryQuery } from '@/hooks/files';
 import { getToolNumber } from '@/hooks/messages/tool-tracking';
+import { useSubAgentThreads } from '@/hooks/threads/use-sub-agents';
+import { useMessagesQuery } from '@/hooks/messages/useMessages';
 
 export interface ToolCallInput {
   toolCall: ToolCallData;
@@ -70,6 +72,7 @@ interface KortixComputerProps {
   streamingText?: string;
   sandboxId?: string;
   projectId?: string;
+  threadId?: string;
   sidePanelRef?: React.RefObject<any>;
 }
 
@@ -102,6 +105,7 @@ export const KortixComputer = memo(function KortixComputer({
   streamingText,
   sandboxId,
   projectId,
+  threadId,
   sidePanelRef,
 }: KortixComputerProps) {
   const t = useTranslations('thread');
@@ -114,8 +118,99 @@ export const KortixComputer = memo(function KortixComputer({
   const [isMaximized, setIsMaximized] = useState(false);
   const [isSuiteMode, setIsSuiteMode] = useState(false);
   const [preSuiteSize, setPreSuiteSize] = useState<number | null>(null);
+  const [selectedSubAgentId, setSelectedSubAgentId] = useState<string | null>(null);
 
   const isMobile = useIsMobile();
+  
+  // Fetch sub-agents for this thread
+  const { data: subAgentThreads = [] } = useSubAgentThreads(threadId || '');
+  
+  // Convert to SubAgentInfo format for PanelHeader
+  const subAgents: SubAgentInfo[] = useMemo(() => {
+    return subAgentThreads.map(agent => ({
+      thread_id: agent.thread_id,
+      task: agent.latest_run?.metadata?.task_description || agent.name,
+      status: agent.latest_run?.status,
+    }));
+  }, [subAgentThreads]);
+  
+  // Reset selected sub-agent when thread changes
+  useEffect(() => {
+    setSelectedSubAgentId(null);
+  }, [threadId]);
+  
+  // Get the threadId for the selected sub-agent
+  const selectedSubAgentThreadId = useMemo(() => {
+    if (!selectedSubAgentId) return null;
+    const agent = subAgentThreads.find(a => a.thread_id === selectedSubAgentId);
+    return agent?.thread_id || null;
+  }, [selectedSubAgentId, subAgentThreads]);
+  
+  // Fetch messages for selected sub-agent
+  const { data: subAgentMessages = [] } = useMessagesQuery(selectedSubAgentThreadId || '', {
+    enabled: !!selectedSubAgentThreadId,
+  });
+  
+  // Extract tool calls from sub-agent messages
+  const subAgentToolCalls: ToolCallInput[] = useMemo(() => {
+    if (!selectedSubAgentId || !subAgentMessages.length) return [];
+    
+    const extractedCalls: ToolCallInput[] = [];
+    
+    for (const msg of subAgentMessages) {
+      if (msg.type === 'assistant' && msg.metadata?.tool_calls) {
+        const toolCallsData = msg.metadata.tool_calls as any[];
+        for (const tc of toolCallsData) {
+          const toolName = tc.function_name || tc.name || '';
+          // Skip hidden tools
+          if (isHiddenTool(toolName)) continue;
+          // Skip ask/complete tools
+          if (toolName === 'ask' || toolName === 'complete') continue;
+          
+          extractedCalls.push({
+            toolCall: {
+              function_name: toolName,
+              arguments: tc.arguments || {},
+              tool_call_id: tc.tool_call_id || tc.id,
+              rawArguments: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments),
+            },
+            assistantTimestamp: msg.created_at,
+          });
+        }
+      }
+      
+      // Match tool results
+      if (msg.type === 'tool' && msg.metadata?.result) {
+        const toolCallId = msg.metadata.tool_call_id;
+        const matchingCall = extractedCalls.find(c => c.toolCall.tool_call_id === toolCallId);
+        if (matchingCall) {
+          matchingCall.toolResult = msg.metadata.result as any;
+          matchingCall.toolTimestamp = msg.created_at;
+          matchingCall.isSuccess = (msg.metadata.result as any)?.success !== false;
+        }
+      }
+    }
+    
+    return extractedCalls;
+  }, [selectedSubAgentId, subAgentMessages]);
+  
+  // Use sub-agent tool calls when viewing a sub-agent, otherwise use main thread's
+  const effectiveToolCalls = selectedSubAgentId ? subAgentToolCalls : toolCalls;
+  const effectiveCurrentIndex = selectedSubAgentId ? 0 : currentIndex;
+  
+  // Reset state when switching sub-agents
+  const prevSubAgentIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (selectedSubAgentId !== prevSubAgentIdRef.current) {
+      prevSubAgentIdRef.current = selectedSubAgentId;
+      if (selectedSubAgentId) {
+        // Switching to a sub-agent
+        setInternalIndex(0);
+        setNavigationMode('live');
+        setIsInitialized(false);
+      }
+    }
+  }, [selectedSubAgentId]);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
   const sandbox = project?.sandbox;
 
@@ -247,18 +342,18 @@ export const KortixComputer = memo(function KortixComputer({
 
   // Filter out hidden tools (internal/initialization tools) before creating snapshots
   const visibleToolCalls = useMemo(() => {
-    return toolCalls.filter(tc => {
+    return effectiveToolCalls.filter(tc => {
       const toolName = tc.toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || '';
       return !isHiddenTool(toolName);
     });
-  }, [toolCalls]);
+  }, [effectiveToolCalls]);
 
   const newSnapshots = useMemo(() => {
     return visibleToolCalls.map((toolCall, index) => ({
-      id: `${index}-${toolCall.assistantTimestamp || Date.now()}`,
+      id: `${index}-${toolCall.assistantTimestamp || toolCall.toolCall?.tool_call_id || index}`,
       toolCall,
       index,
-      timestamp: Date.now(),
+      timestamp: toolCall.assistantTimestamp ? new Date(toolCall.assistantTimestamp).getTime() : index,
     }));
   }, [visibleToolCalls]);
 
@@ -310,13 +405,17 @@ export const KortixComputer = memo(function KortixComputer({
         setInternalIndex(newSnapshots.length - 1);
       }
     }
-  }, [toolCalls, navigationMode, toolCallSnapshots.length, isInitialized, internalIndex, agentStatus, newSnapshots, isBrowserTool, activeView, setActiveView]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveToolCalls.length, navigationMode, isInitialized, agentStatus, activeView]);
 
   useEffect(() => {
+    // Skip when viewing sub-agent - handled by the sub-agent selection effect
+    if (selectedSubAgentId) return;
+    
     if ((!isInitialized || navigationMode === 'manual') && toolCallSnapshots.length > 0) {
-      setInternalIndex(Math.min(currentIndex, toolCallSnapshots.length - 1));
+      setInternalIndex(Math.min(effectiveCurrentIndex, toolCallSnapshots.length - 1));
     }
-  }, [currentIndex, toolCallSnapshots.length, isInitialized, navigationMode]);
+  }, [effectiveCurrentIndex, toolCallSnapshots.length, isInitialized, navigationMode, selectedSubAgentId]);
 
   const { safeInternalIndex, currentSnapshot, currentToolCall, totalCalls, latestIndex, completedToolCalls, totalCompletedCalls } = useMemo(() => {
     const safeIndex = Math.min(internalIndex, Math.max(0, toolCallSnapshots.length - 1));
@@ -733,6 +832,10 @@ export const KortixComputer = memo(function KortixComputer({
                 setIsSuiteMode(true);
               }
             }}
+            subAgents={subAgents}
+            selectedSubAgentId={selectedSubAgentId}
+            onSubAgentSelect={setSelectedSubAgentId}
+            isSubAgentView={!!selectedSubAgentId}
           />
         )}
         <div className="flex-1 overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
@@ -774,6 +877,10 @@ export const KortixComputer = memo(function KortixComputer({
             currentView={activeView}
             onViewChange={setActiveView}
             showFilesTab={true}
+            subAgents={subAgents}
+            selectedSubAgentId={selectedSubAgentId}
+            onSubAgentSelect={setSelectedSubAgentId}
+            isSubAgentView={!!selectedSubAgentId}
           />
 
           <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>

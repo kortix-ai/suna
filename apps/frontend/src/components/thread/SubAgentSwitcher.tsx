@@ -3,12 +3,12 @@
 import React from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { 
-  Users, 
-  ChevronDown, 
-  ArrowLeft, 
-  CheckCircle, 
-  Loader2, 
+import {
+  Users,
+  ChevronDown,
+  ArrowLeft,
+  CheckCircle,
+  Loader2,
   XCircle,
   Circle
 } from 'lucide-react';
@@ -23,10 +23,10 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { 
-  useSubAgentThreads, 
+import {
+  useSubAgentThreads,
   useParentThread,
-  type SubAgentThread 
+  type SubAgentThread
 } from '@/hooks/threads/use-sub-agents';
 
 interface SubAgentSwitcherProps {
@@ -74,19 +74,19 @@ function getStatusColor(status?: string): string {
 /**
  * Sub-agent item in dropdown
  */
-const SubAgentItem: React.FC<{ 
-  agent: SubAgentThread; 
+const SubAgentItem: React.FC<{
+  agent: SubAgentThread;
   projectId: string;
   isCurrent: boolean;
 }> = ({ agent, projectId, isCurrent }) => {
   const taskDescription = agent.latest_run?.metadata?.task_description || agent.name || 'Sub-agent';
-  const displayName = taskDescription.length > 40 
-    ? taskDescription.slice(0, 40) + '...' 
+  const displayName = taskDescription.length > 40
+    ? taskDescription.slice(0, 40) + '...'
     : taskDescription;
-  
+
   return (
     <DropdownMenuItem asChild disabled={isCurrent}>
-      <Link 
+      <Link
         href={`/projects/${projectId}/thread/${agent.thread_id}`}
         className={cn(
           "flex items-center gap-3 py-2 cursor-pointer",
@@ -114,21 +114,21 @@ const SubAgentItem: React.FC<{
  */
 export function SubAgentSwitcher({ threadId, projectId, className }: SubAgentSwitcherProps) {
   const router = useRouter();
-  
+
   // Check if this thread has sub-agents
   const { data: subAgents = [], isLoading: isLoadingSubAgents } = useSubAgentThreads(threadId);
-  
+
   // Check if this thread IS a sub-agent (has a parent)
   const { data: parentThread, isLoading: isLoadingParent } = useParentThread(threadId);
-  
+
   const hasSubAgents = subAgents.length > 0;
   const isSubAgent = !!parentThread;
-  
+
   // Don't render if neither condition is met
   if (!hasSubAgents && !isSubAgent && !isLoadingSubAgents && !isLoadingParent) {
     return null;
   }
-  
+
   // Loading state
   if (isLoadingSubAgents || isLoadingParent) {
     return null; // Don't show anything while loading to avoid flicker
@@ -151,14 +151,14 @@ export function SubAgentSwitcher({ threadId, projectId, className }: SubAgentSwi
 
   // If this thread has sub-agents, show dropdown
   if (hasSubAgents) {
-    const runningCount = subAgents.filter(a => 
+    const runningCount = subAgents.filter(a =>
       a.latest_run?.status === 'running' || a.latest_run?.status === 'pending'
     ).length;
     const completedCount = subAgents.filter(a => a.latest_run?.status === 'completed').length;
-    const failedCount = subAgents.filter(a => 
+    const failedCount = subAgents.filter(a =>
       a.latest_run?.status === 'failed' || a.latest_run?.status === 'stopped'
     ).length;
-    
+
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
@@ -178,7 +178,7 @@ export function SubAgentSwitcher({ threadId, projectId, className }: SubAgentSwi
             <ChevronDown className="h-3 w-3 opacity-50" />
           </Button>
         </DropdownMenuTrigger>
-        
+
         <DropdownMenuContent align="start" className="w-72">
           <DropdownMenuLabel className="flex items-center justify-between">
             <span>Sub-Agent Threads</span>
@@ -203,14 +203,14 @@ export function SubAgentSwitcher({ threadId, projectId, className }: SubAgentSwi
               )}
             </div>
           </DropdownMenuLabel>
-          
+
           <DropdownMenuSeparator />
-          
+
           <div className="max-h-64 overflow-y-auto">
             {subAgents.map(agent => (
-              <SubAgentItem 
-                key={agent.thread_id} 
-                agent={agent} 
+              <SubAgentItem
+                key={agent.thread_id}
+                agent={agent}
                 projectId={projectId}
                 isCurrent={agent.thread_id === threadId}
               />
@@ -220,7 +220,7 @@ export function SubAgentSwitcher({ threadId, projectId, className }: SubAgentSwi
       </DropdownMenu>
     );
   }
-  
+
   return null;
 }
 

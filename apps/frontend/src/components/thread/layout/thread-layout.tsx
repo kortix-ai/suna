@@ -209,6 +209,7 @@ export const ThreadLayout = memo(function ThreadLayout({
                 streamingText={streamingToolArgsJson}
                 sandboxId={sandboxId || undefined}
                 projectId={projectId}
+                threadId={threadId}
               />
             </div>
           )}
@@ -266,6 +267,7 @@ export const ThreadLayout = memo(function ThreadLayout({
           streamingText={streamingToolArgsJson}
           sandboxId={sandboxId || undefined}
           projectId={projectId}
+          threadId={threadId}
         />
       </div>
     );
@@ -350,6 +352,7 @@ export const ThreadLayout = memo(function ThreadLayout({
             streamingText={streamingToolArgsJson}
             sandboxId={sandboxId || undefined}
             projectId={projectId}
+            threadId={threadId}
             sidePanelRef={sidePanelRef}
           />
         </ResizablePanel>
