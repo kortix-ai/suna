@@ -22,7 +22,6 @@ import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Palet
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
-import { UnifiedConfigMenu } from './unified-config-menu';
 import { AttachmentGroup } from '../file-attachment';
 import { cn } from '@/lib/utils';
 import { useModelSelection } from '@/hooks/agents';
@@ -1204,29 +1203,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       setIsDraggingOver(false);
     };
 
-    const renderConfigDropdown = useMemo(() => {
-      // Don't render dropdown components until after hydration to prevent ID mismatches
-      if (!mounted) {
-        return <div className="flex items-center gap-2 h-8" />; // Placeholder with same height
-      }
-      // Unified compact menu for both logged and non-logged (non-logged shows only models subset via menu trigger)
-      return (
-        <div className="flex items-center gap-2">
-          <UnifiedConfigMenu
-            isLoggedIn={isLoggedIn}
-            selectedAgentId={!hideAgentSelection ? selectedAgentId : undefined}
-            onAgentSelect={!hideAgentSelection ? onAgentSelect : undefined}
-            selectedModel={selectedModel}
-            onModelChange={handleModelChange}
-            modelOptions={modelOptions}
-            subscriptionStatus={subscriptionStatus}
-            canAccessModel={canAccessModel}
-            refreshCustomModels={refreshCustomModels}
-          />
-        </div>
-      );
-    }, [mounted, isLoggedIn, hideAgentSelection, selectedAgentId, onAgentSelect, selectedModel, handleModelChange, modelOptions, subscriptionStatus, canAccessModel, refreshCustomModels]);
-
     // Stable callback for submit from textarea
     const handleTextareaSubmit = useCallback(() => {
       handleSubmit({ preventDefault: () => {} } as React.FormEvent);
@@ -1325,8 +1301,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
     const rightControls = useMemo(() => (
       <div className='flex items-center gap-2 flex-shrink-0'>
-        {renderConfigDropdown}
-
         {isLoggedIn && <VoiceRecorder
           onTranscription={handleTranscription}
           disabled={loading || (disabled && !isAgentRunning)}
@@ -1345,7 +1319,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           pendingFilesCount={pendingFilesCount}
         />
       </div>
-    ), [renderConfigDropdown, isLoggedIn, loading, disabled, handleTranscription, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount]);
+    ), [isLoggedIn, loading, disabled, handleTranscription, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount]);
 
     const renderControls = useMemo(() => (
       <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-1.5">

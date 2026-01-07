@@ -116,6 +116,67 @@ if (isLocal) {
   app.commandLine.appendSwitch('ignore-ssl-errors');
 }
 
+// Circular loading animation HTML
+const loadingHTML = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kortix</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      background: #000000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .loader-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+    
+    .circular-loader {
+      width: 48px;
+      height: 48px;
+      border: 3px solid rgba(255, 255, 255, 0.1);
+      border-top-color: #ffffff;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    
+    .loader-text {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 14px;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="loader-container">
+    <div class="circular-loader"></div>
+    <div class="loader-text">Loading...</div>
+  </div>
+</body>
+</html>
+`;
+
 function createWindow() {
   // Use .icns for macOS (proper styling), PNG for other platforms
   const iconPath = process.platform === 'darwin' 
@@ -133,6 +194,7 @@ function createWindow() {
     titleBarStyle: 'default',
     frame: true,
     transparent: false,
+    show: false, // Don't show until ready
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -141,6 +203,12 @@ function createWindow() {
   });
 
   const { webContents } = mainWindow;
+
+  // Show loading animation immediately
+  mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(loadingHTML)}`);
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.show();
+  });
 
   // Set custom user agent to identify Electron app
   webContents.setUserAgent(webContents.getUserAgent() + ' Electron/Kortix-Desktop');
@@ -241,7 +309,11 @@ function createWindow() {
   const authUrl = normalizedUrl.endsWith('/') 
     ? normalizedUrl + 'auth' 
     : normalizedUrl + '/auth';
-  mainWindow.loadURL(authUrl);
+  
+  // Load the actual URL after the loading screen is shown
+  setTimeout(() => {
+    mainWindow.loadURL(authUrl);
+  }, 100);
 
   // Intercept navigation to prevent going to homepage and handle OAuth
   webContents.on('will-navigate', (event, navigationUrl) => {
@@ -260,7 +332,7 @@ function createWindow() {
         console.log('✅ Opening OAuth in popup instead:', navigationUrl);
         event.preventDefault();
         
-        // Create OAuth popup window
+        // Create OAuth popup window with loading animation
         const oauthWindow = new BrowserWindow({
           width: 600,
           height: 800,
@@ -268,13 +340,20 @@ function createWindow() {
           modal: false,
           autoHideMenuBar: true,
           title: 'Sign In',
+          backgroundColor: '#000000',
+          show: false,
           webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
           },
         });
         
-        oauthWindow.loadURL(navigationUrl);
+        // Show loading animation first, then load OAuth URL
+        oauthWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(loadingHTML)}`);
+        oauthWindow.once('ready-to-show', () => {
+          oauthWindow.show();
+          oauthWindow.loadURL(navigationUrl);
+        });
         
         // Handle OAuth callback - close popup and load callback in main window
         oauthWindow.webContents.on('will-navigate', (e, callbackUrl) => {
@@ -414,6 +493,7 @@ function createWindow() {
           modal: false,
           autoHideMenuBar: true,
           title: 'Sign In',
+          backgroundColor: '#000000',
           webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,

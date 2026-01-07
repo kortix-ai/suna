@@ -108,7 +108,7 @@ ${streamingContent}
         </div>
         {isGenerating && (
           <div className="flex items-center gap-1.5">
-            <div className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
+            <div className="h-3 w-3 rounded-full border border-blue-300 border-t-blue-500 animate-spin" />
           </div>
         )}
       </div>

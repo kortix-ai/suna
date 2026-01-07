@@ -171,14 +171,6 @@ export function KortixComputer({
             <Text className="text-lg font-roobert-semibold text-primary">
               Kortix Computer
             </Text>
-            {isStreaming && activeView === 'tools' && (
-              <View className="px-2.5 py-0.5 rounded-full bg-card border border-border flex-row items-center gap-1.5">
-                <View className="w-1.5 h-1.5 rounded-full bg-primary" />
-                <Text className="text-xs font-roobert-medium text-primary">
-                  Running
-                </Text>
-              </View>
-            )}
           </View>
 
           <View className="flex-row items-center gap-2">
