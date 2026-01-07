@@ -1,13 +1,10 @@
 """
-API instance metrics service for tracking concurrent agent runs and background tasks.
+API instance metrics service for tracking active agent runs.
 
 Provides:
-- API instance concurrency metrics (agent runs executing directly)
-- Background task metrics (memory/categorization via Redis Streams)
+- Active agent run counts (from DB - source of truth)
+- Redis stream counts (real-time tracking)
 - CloudWatch publishing for monitoring
-
-Note: Agent runs execute directly in API process with semaphore control.
-Only memory/categorization tasks use Redis Streams.
 """
 import asyncio
 import os
@@ -41,27 +38,20 @@ def _get_cloudwatch_client():
 
 async def get_worker_metrics() -> dict:
     """
-    Get real API instance metrics with actual active agent run counts.
+    Get active agent run metrics.
     
     Returns:
         dict with:
         - active_agent_runs: Total active runs across all instances (from DB)
         - active_redis_streams: Active Redis stream keys (real-time tracking)
-        - current_instance_runs: Runs on this instance (from semaphore)
-        - max_concurrent_runs: Maximum concurrent runs per instance
-        - utilization_percent: Current utilization
+        - orphaned_streams: Streams without DB records (should be 0)
     """
-    from core.agents.runs import MAX_CONCURRENT_RUNS, _run_semaphore
     from core.services.supabase import DBConnection
     from core.services import redis
     
     db = DBConnection()
     
     try:
-        # Get current instance concurrency from semaphore
-        semaphore_available = _run_semaphore._value
-        current_instance_runs = MAX_CONCURRENT_RUNS - semaphore_available
-        
         # Count active agent runs from database (source of truth across all instances)
         client = await db.client
         active_runs_result = await client.table('agent_runs')\
@@ -87,21 +77,14 @@ async def get_worker_metrics() -> dict:
             # Fallback: use DB count if Redis fails
             active_redis_streams = active_agent_runs
         
-        utilization_percent = (current_instance_runs / MAX_CONCURRENT_RUNS * 100) if MAX_CONCURRENT_RUNS > 0 else 0
-        
         # Orphaned streams = Redis streams without corresponding 'running' DB record
         # Should be 0 in healthy state - non-zero indicates cleanup issues
         orphaned_streams = max(0, active_redis_streams - active_agent_runs)
         
         return {
-            # Real metrics - useful data
-            "active_agent_runs": active_agent_runs,  # Total across all instances (DB)
-            "active_redis_streams": active_redis_streams,  # Real-time Redis streams
-            "orphaned_streams": orphaned_streams,  # Streams without DB records (should be 0)
-            "current_instance_runs": current_instance_runs,  # This instance only
-            "max_concurrent_runs": MAX_CONCURRENT_RUNS,
-            "available_slots": semaphore_available,
-            "utilization_percent": round(utilization_percent, 2),
+            "active_agent_runs": active_agent_runs,
+            "active_redis_streams": active_redis_streams,
+            "orphaned_streams": orphaned_streams,
             "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
@@ -147,24 +130,6 @@ async def publish_to_cloudwatch(metrics: dict) -> bool:
                 'Dimensions': [{'Name': 'Service', 'Value': 'api'}]
             },
             {
-                'MetricName': 'CurrentInstanceRuns',
-                'Value': metrics.get('current_instance_runs', 0),
-                'Unit': 'Count',
-                'Dimensions': [{'Name': 'Service', 'Value': 'api'}]
-            },
-            {
-                'MetricName': 'MaxConcurrentRuns',
-                'Value': metrics.get('max_concurrent_runs', 0),
-                'Unit': 'Count',
-                'Dimensions': [{'Name': 'Service', 'Value': 'api'}]
-            },
-            {
-                'MetricName': 'AgentRunUtilization',
-                'Value': metrics.get('utilization_percent', 0),
-                'Unit': 'Percent',
-                'Dimensions': [{'Name': 'Service', 'Value': 'api'}]
-            },
-            {
                 'MetricName': 'OrphanedStreams',
                 'Value': metrics.get('orphaned_streams', 0),
                 'Unit': 'Count',
@@ -176,7 +141,7 @@ async def publish_to_cloudwatch(metrics: dict) -> bool:
             Namespace='Kortix',
             MetricData=metric_data
         )
-        logger.debug(f"Published API instance metrics to CloudWatch: {metrics.get('active_agent_runs')} total runs, {metrics.get('current_instance_runs')}/{metrics.get('max_concurrent_runs')} on this instance ({metrics.get('utilization_percent')}%)")
+        logger.debug(f"Published metrics to CloudWatch: {metrics.get('active_agent_runs')} active runs, {metrics.get('orphaned_streams')} orphaned streams")
         return True
     except Exception as e:
         logger.error(f"Failed to publish API instance metrics to CloudWatch: {e}")

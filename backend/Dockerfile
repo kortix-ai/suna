@@ -30,9 +30,7 @@ COPY . .
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-# Production: Gunicorn with async workers
 # WORKERS=16 for 32 vCPU server (2 workers per core, capped at 16)
-# Each worker = separate process = separate HTTP/2 connection = 100 more concurrent streams
 ENV WORKERS=16
 ENV TIMEOUT=300
 

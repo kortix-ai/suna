@@ -213,7 +213,6 @@ The `mock_llm.py` module provides deterministic responses. Customize `_determine
 
 - All endpoints require `X-Admin-Api-Key` header
 - Uses existing admin authentication system
-- Rate limited via `admin_rate_limiter`
 - No public access to test harness
 - Test user (`testuser@kortix.ai`) is automatically created with minimal permissions
 

@@ -21,12 +21,6 @@ import psutil
 from pydantic import BaseModel
 import uuid
 
-from core.utils.rate_limiter import (
-    auth_rate_limiter,
-    api_key_rate_limiter,
-    admin_rate_limiter,
-    get_client_identifier,
-)
 
 from core.versioning.api import router as versioning_router
 from core.agents.runs import router as agent_runs_router
@@ -229,41 +223,6 @@ app = FastAPI(
 configure_openapi(app)
 
 @app.middleware("http")
-async def rate_limit_middleware(request: Request, call_next):
-    """Apply rate limiting to sensitive endpoints."""
-    path = request.url.path
-    
-    # Skip rate limiting for health checks and OPTIONS requests
-    if path in ["/v1/health", "/v1/health-docker"] or request.method == "OPTIONS":
-        return await call_next(request)
-    
-    # Get client identifier
-    client_id = get_client_identifier(request)
-    
-    # Apply appropriate rate limiter based on path
-    rate_limiter = None
-    
-    if "/v1/api-keys" in path:
-        rate_limiter = api_key_rate_limiter
-    elif "/v1/admin" in path:
-        rate_limiter = admin_rate_limiter
-    elif any(sensitive in path for sensitive in ["/v1/setup/initialize", "/v1/billing/webhook"]):
-        rate_limiter = auth_rate_limiter
-    
-    if rate_limiter:
-        is_limited, retry_after = rate_limiter.is_rate_limited(client_id)
-        if is_limited:
-            logger.warning(f"Rate limited: {path} from {client_id[:8]}...")
-            return JSONResponse(
-                status_code=429,
-                content={"detail": "Too many requests. Please try again later."},
-                headers={"Retry-After": str(retry_after)}
-            )
-    
-    return await call_next(request)
-
-
-@app.middleware("http")
 async def log_requests_middleware(request: Request, call_next):
     structlog.contextvars.clear_contextvars()
 
@@ -423,11 +382,9 @@ async def metrics_endpoint():
     Get API instance metrics for monitoring.
     
     Returns:
-        - concurrent_agent_runs: Current concurrent agent runs
-        - max_concurrent_runs: Maximum concurrent runs per instance
-        - utilization_percent: Current utilization
-    
-    Note: All tasks execute directly in API process (no queues).
+        - active_agent_runs: Total active runs across all instances (from DB)
+        - active_redis_streams: Active Redis stream keys
+        - orphaned_streams: Streams without DB records (should be 0)
     """
     from core.services import worker_metrics
     
@@ -532,50 +489,51 @@ app.include_router(api_router, prefix="/v1")
 async def _memory_watchdog():
     """Monitor worker memory usage and log warnings when thresholds are exceeded.
     
-    Memory thresholds (for 7.5GB limit):
-    - Critical (>6.5GB / 87%): Immediate action needed, risk of OOM kill
-    - Warning (>6GB / 80%): High memory usage, consider cleanup
-    - Info (>5GB / 67%): Elevated memory usage
+    Dynamically calculates per-worker memory limit based on total RAM and worker count.
+    Thresholds: Critical (>87%), Warning (>80%), Info (>67%)
     """
+    # Calculate per-worker memory limit dynamically
+    workers = int(os.getenv("WORKERS", "16"))
+    total_ram_mb = psutil.virtual_memory().total / 1024 / 1024
+    # Reserve 20% for OS/system, divide rest among workers
+    per_worker_limit_mb = (total_ram_mb * 0.8) / workers
+    
+    critical_threshold_mb = per_worker_limit_mb * 0.87
+    warning_threshold_mb = per_worker_limit_mb * 0.80
+    info_threshold_mb = per_worker_limit_mb * 0.67
+    
+    logger.info(
+        f"Memory watchdog started: {total_ram_mb/1024:.1f}GB total, "
+        f"{per_worker_limit_mb/1024:.1f}GB per worker ({workers} workers)"
+    )
+    
     try:
         while True:
             try:
                 process = psutil.Process()
                 mem_info = process.memory_info()
-                mem_mb = mem_info.rss / 1024 / 1024  # Convert to MB
-                mem_percent = (mem_mb / 7680) * 100  # Percentage of 7.5GB limit
+                mem_mb = mem_info.rss / 1024 / 1024
+                mem_percent = (mem_mb / per_worker_limit_mb) * 100
                 
-                # Critical threshold: >6.5GB (87% of 7.5GB limit) - risk of OOM kill
-                if mem_mb > 6500:
+                if mem_mb > critical_threshold_mb:
                     logger.error(
-                        f"🚨 CRITICAL: Worker memory very high: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
-                        f"(instance: {instance_id}) - Risk of OOM kill!"
-                    )
-                    # Try to force garbage collection when memory is critical
-                    try:
-                        import gc
-                        collected = gc.collect()
-                        if collected > 0:
-                            logger.info(f"Emergency GC collected {collected} objects")
-                    except Exception:
-                        pass
-                # Warning threshold: >6GB (80% of 7.5GB limit)
-                elif mem_mb > 6000:
-                    logger.warning(
-                        f"⚠️ Worker memory high: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
-                        f"(instance: {instance_id}) - Approaching limit"
-                    )
-                # Info threshold: >5GB (67% of 7.5GB limit)
-                elif mem_mb > 5000:
-                    logger.info(
-                        f"Worker memory: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"🚨 CRITICAL: Worker memory {mem_mb:.0f}MB ({mem_percent:.1f}% of {per_worker_limit_mb:.0f}MB limit) "
                         f"(instance: {instance_id})"
                     )
+                    import gc
+                    gc.collect()
+                elif mem_mb > warning_threshold_mb:
+                    logger.warning(
+                        f"⚠️ Worker memory high: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"(instance: {instance_id})"
+                    )
+                elif mem_mb > info_threshold_mb:
+                    logger.info(f"Worker memory: {mem_mb:.0f}MB ({mem_percent:.1f}%) (instance: {instance_id})")
                 
             except Exception as e:
                 logger.debug(f"Memory watchdog error: {e}")
             
-            await asyncio.sleep(60)  # Check every minute
+            await asyncio.sleep(60)
     except asyncio.CancelledError:
         logger.debug("Memory watchdog cancelled")
     except Exception as e:

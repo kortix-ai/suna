@@ -24,69 +24,6 @@ from core.services.supabase import DBConnection
 
 db = DBConnection()
 
-# Try to import psutil for memory detection, fallback if not available
-try:
-    import psutil
-    _HAS_PSUTIL = True
-except ImportError:
-    _HAS_PSUTIL = False
-
-# Concurrency control - auto-detect optimal concurrency based on CPU count and memory
-# Agent runs are I/O-bound (LLM API calls, DB queries), so we can handle way more than CPU count
-def _calculate_optimal_concurrency() -> int:
-    """Calculate optimal concurrency based on CPU count and available memory."""
-    import multiprocessing
-    
-    cpu_count = multiprocessing.cpu_count()
-    
-    # Try to detect available memory
-    if _HAS_PSUTIL:
-        try:
-            available_memory_gb = psutil.virtual_memory().total / (1024**3)
-        except Exception:
-            # Fallback: assume high-memory VPS if CPU count is high
-            available_memory_gb = cpu_count * 4  # Assume 4GB per CPU as minimum
-    else:
-        # Fallback: assume high-memory VPS if CPU count is high
-        available_memory_gb = cpu_count * 4  # Assume 4GB per CPU as minimum
-    
-    # Memory-based calculation: each run uses ~50-200MB (use 200MB for safety)
-    memory_per_run_gb = 0.2  # 200MB per run
-    max_by_memory = int(available_memory_gb / memory_per_run_gb)
-    
-    # Use 75% of memory limit to leave headroom for:
-    # - OS, Redis, PostgreSQL, and other system processes
-    # - Traffic spikes and burst handling
-    # - Error recovery and retries
-    # This is a good balance between performance and stability
-    safety_factor = 0.75
-    max_concurrency = int(max_by_memory * safety_factor)
-    
-    # Cap at 1500 for safety (even with huge VPS, leave headroom)
-    max_concurrency = min(max_concurrency, 1500)
-    
-    # Minimum of 10 for small instances
-    return max(max_concurrency, 10)
-
-# Allow override via env var, otherwise auto-calculate
-MAX_CONCURRENT_RUNS = int(os.getenv('MAX_CONCURRENT_AGENT_RUNS', str(_calculate_optimal_concurrency())))
-_run_semaphore = asyncio.Semaphore(MAX_CONCURRENT_RUNS)
-
-# Log the concurrency setting on startup
-if not os.getenv('MAX_CONCURRENT_AGENT_RUNS'):
-    import multiprocessing
-    cpu_count = multiprocessing.cpu_count()
-    if _HAS_PSUTIL:
-        try:
-            available_memory_gb = psutil.virtual_memory().total / (1024**3)
-            logger.info(f"🚀 Auto-detected concurrency: {MAX_CONCURRENT_RUNS} concurrent runs (CPU: {cpu_count}, RAM: {available_memory_gb:.1f}GB)")
-        except Exception:
-            logger.info(f"🚀 Auto-detected concurrency: {MAX_CONCURRENT_RUNS} concurrent runs (CPU count: {cpu_count})")
-    else:
-        logger.info(f"🚀 Auto-detected concurrency: {MAX_CONCURRENT_RUNS} concurrent runs (CPU count: {cpu_count})")
-else:
-    logger.info(f"🚀 Using configured concurrency: {MAX_CONCURRENT_RUNS} concurrent runs")
-
 # Store cancellation events for stop mechanism (in-memory, per instance)
 _cancellation_events: Dict[str, asyncio.Event] = {}
 
@@ -923,25 +860,24 @@ async def start_agent_run(
     cancellation_event = asyncio.Event()
     _cancellation_events[agent_run_id] = cancellation_event
     
-    async def execute_with_semaphore():
-        """Execute agent run with concurrency control."""
-        async with _run_semaphore:
-            try:
-                await execute_agent_run_direct(
-                    agent_run_id=agent_run_id,
-                    thread_id=thread_id,
-                    project_id=project_id,
-                    model_name=effective_model,
-                    agent_config=agent_config,
-                    account_id=account_id,
-                    cancellation_event=cancellation_event
-                )
-            finally:
-                # Clean up cancellation event
-                _cancellation_events.pop(agent_run_id, None)
+    async def execute_run():
+        """Execute agent run as background task."""
+        try:
+            await execute_agent_run_direct(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                project_id=project_id,
+                model_name=effective_model,
+                agent_config=agent_config,
+                account_id=account_id,
+                cancellation_event=cancellation_event
+            )
+        finally:
+            # Clean up cancellation event
+            _cancellation_events.pop(agent_run_id, None)
     
     # Create background task - runs independently
-    execution_task = asyncio.create_task(execute_with_semaphore())
+    execution_task = asyncio.create_task(execute_run())
     logger.info(f"✅ Started agent run {agent_run_id} as background task")
     logger.debug(f"⏱️ [TIMING] Task creation: {(time.time() - t_execute) * 1000:.1f}ms")
     

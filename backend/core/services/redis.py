@@ -4,7 +4,6 @@ from redis.exceptions import BusyLoadingError
 from redis.backoff import ExponentialBackoff
 from redis.retry import Retry
 import os
-import threading
 import asyncio
 from typing import Optional, Dict, List, Any
 from dotenv import load_dotenv
@@ -12,11 +11,24 @@ from core.utils.logger import logger
 
 REDIS_KEY_TTL = 3600 * 2
 
+
+def _calculate_max_connections() -> int:
+    """Calculate optimal Redis pool size based on worker count.
+    
+    Target: 30-50 connections per worker, capped at ~800 total.
+    This prevents connection exhaustion while providing adequate capacity.
+    """
+    workers = int(os.getenv("WORKERS", "16"))
+    # Cap at 50 per worker, minimum 20, total capped at 800
+    per_worker = max(20, min(50, 800 // workers))
+    return per_worker
+
+
 class RedisClient:
     def __init__(self):
         self._pool: Optional[ConnectionPool] = None
         self._client: Optional[Redis] = None
-        self._init_lock = threading.Lock()
+        self._init_lock: Optional[asyncio.Lock] = None
         self._initialized = False
     
     def _get_config(self) -> Dict[str, Any]:
@@ -59,16 +71,23 @@ class RedisClient:
         if self._client is not None and self._initialized:
             return self._client
         
-        with self._init_lock:
+        # Lazily create the async lock (thread-safe via __init__)
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+        
+        async with self._init_lock:
+            # Double-check after acquiring lock to prevent race condition
             if self._client is not None and self._initialized:
                 return self._client
             
             config = self._get_config()
-            max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", "300"))
+            max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", str(_calculate_max_connections())))
             
+            workers = int(os.getenv("WORKERS", "16"))
+            calculated_default = _calculate_max_connections()
             logger.info(
                 f"Initializing Redis to {config['host']}:{config['port']} "
-                f"with max {max_connections} connections"
+                f"with max {max_connections} connections (workers={workers}, calculated_default={calculated_default})"
             )
             
             retry = Retry(ExponentialBackoff(), 1)
@@ -106,7 +125,11 @@ class RedisClient:
         await self.get_client()
     
     async def close(self):
-        with self._init_lock:
+        # Lazily create the async lock if it doesn't exist
+        if self._init_lock is None:
+            self._init_lock = asyncio.Lock()
+        
+        async with self._init_lock:
             if self._client:
                 try:
                     await self._client.aclose()
@@ -153,18 +176,26 @@ class RedisClient:
             raise ConnectionError(f"Redis stream {stream_key} is not writable: {e}")
     
     async def get(self, key: str) -> Optional[str]:
+        if self._initialized and self._client:
+            return await self._client.get(key)
         client = await self.get_client()
         return await client.get(key)
     
     async def set(self, key: str, value: str, ex: int = None, nx: bool = False) -> bool:
+        if self._initialized and self._client:
+            return await self._client.set(key, value, ex=ex, nx=nx)
         client = await self.get_client()
         return await client.set(key, value, ex=ex, nx=nx)
     
     async def setex(self, key: str, seconds: int, value: str) -> bool:
+        if self._initialized and self._client:
+            return await self._client.setex(key, seconds, value)
         client = await self.get_client()
         return await client.setex(key, seconds, value)
     
     async def delete(self, key: str) -> int:
+        if self._initialized and self._client:
+            return await self._client.delete(key)
         client = await self.get_client()
         return await client.delete(key)
     
@@ -206,7 +237,10 @@ class RedisClient:
     async def stream_add(self, stream_key: str, fields: Dict[str, str], maxlen: int = None, 
                         approximate: bool = True, timeout: Optional[float] = None, 
                         fail_silently: bool = True) -> Optional[str]:
-        client = await self.get_client()
+        if self._initialized and self._client:
+            client = self._client
+        else:
+            client = await self.get_client()
         kwargs = {}
         if maxlen is not None:
             kwargs['maxlen'] = maxlen
@@ -231,7 +265,10 @@ class RedisClient:
             raise
     
     async def stream_read(self, stream_key: str, last_id: str = "0", block_ms: int = None, count: int = None) -> List[tuple]:
-        client = await self.get_client()
+        if self._initialized and self._client:
+            client = self._client
+        else:
+            client = await self.get_client()
         streams = {stream_key: last_id}
         block_arg = block_ms if block_ms and block_ms > 0 else None
         result = await client.xread(streams, count=count, block=block_arg)
@@ -247,7 +284,10 @@ class RedisClient:
         return entries
     
     async def stream_range(self, stream_key: str, start: str = "-", end: str = "+", count: int = None) -> List[tuple]:
-        client = await self.get_client()
+        if self._initialized and self._client:
+            client = self._client
+        else:
+            client = await self.get_client()
         result = await client.xrange(stream_key, start, end, count=count)
         return [(entry_id, fields) for entry_id, fields in result]
     
@@ -259,10 +299,14 @@ class RedisClient:
         return await self.stream_add(stream_key, fields, maxlen=maxlen, approximate=approximate)
     
     async def xread(self, streams: Dict[str, str], count: int = None, block: int = None) -> List:
+        if self._initialized and self._client:
+            return await self._client.xread(streams, count=count, block=block)
         client = await self.get_client()
         return await client.xread(streams, count=count, block=block)
     
     async def xrange(self, stream_key: str, start: str = "-", end: str = "+", count: int = None) -> List:
+        if self._initialized and self._client:
+            return await self._client.xrange(stream_key, start, end, count=count)
         client = await self.get_client()
         return await client.xrange(stream_key, start, end, count=count)
     
