@@ -20,9 +20,6 @@ services:
     networks:
       - app-network
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
       - LOG_LEVEL=INFO
     logging:
       driver: "json-file"
