@@ -84,11 +84,10 @@ class AgentService:
         pagination_params: PaginationParams,
         filters: AgentFilters
     ) -> PaginatedResponse[Dict[str, Any]]:
-        """Get user's templates with pagination (both public and private)"""
         try:
-            # Build template queries
-            base_query = self.db.table('agent_templates').select('*').eq('creator_id', user_id)
-            count_query = self.db.table('agent_templates').select('*', count='exact').eq('creator_id', user_id)
+            client = await self.db.client
+            base_query = client.table('agent_templates').select('*').eq('creator_id', user_id)
+            count_query = client.table('agent_templates').select('*', count='exact').eq('creator_id', user_id)
             
             # Apply search filter
             if filters.search:

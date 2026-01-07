@@ -75,42 +75,32 @@ class ProfileService:
         encoded_config = base64.b64encode(encrypted_config).decode('utf-8')
         
         client = await self._db.client
+
+        from core.credentials import repo as credentials_repo
         
         if is_default:
-            await client.table('user_mcp_credential_profiles').update({
-                'is_default': False,
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).eq('account_id', account_id)\
-              .eq('mcp_qualified_name', mcp_qualified_name)\
-              .execute()
+            await credentials_repo.set_default_profile(account_id, profile_id, mcp_qualified_name)
         
-        result = await client.table('user_mcp_credential_profiles').insert({
-            'profile_id': profile_id,
-            'account_id': account_id,
-            'mcp_qualified_name': mcp_qualified_name,
-            'profile_name': profile_name,
-            'display_name': display_name,
-            'encrypted_config': encoded_config,
-            'config_hash': config_hash,
-            'is_active': True,
-            'is_default': is_default,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }).execute()
+        success = await credentials_repo.create_credential_profile(
+            profile_id, account_id, mcp_qualified_name, 
+            profile_name, display_name, encoded_config
+        )
+        
+        if not success:
+            raise Exception("Failed to create credential profile")
         
         logger.debug(f"Stored profile {profile_id} '{profile_name}' for {mcp_qualified_name}")
         return profile_id
     
     async def get_profile(self, account_id: str, profile_id: str) -> Optional[MCPCredentialProfile]:
-        client = await self._db.client
-        result = await client.table('user_mcp_credential_profiles').select('*')\
-            .eq('profile_id', profile_id)\
-            .execute()
+        from core.credentials import repo as credentials_repo
         
-        if not result.data:
+        result = await credentials_repo.get_credential_profile_by_id(profile_id)
+        
+        if not result:
             return None
         
-        profile = self._map_to_profile(result.data[0])
+        profile = self._map_to_profile(result)
         
         if profile.account_id != account_id:
             raise ProfileAccessDeniedError("Access denied to profile")
@@ -122,24 +112,18 @@ class ProfileService:
         account_id: str, 
         mcp_qualified_name: str
     ) -> List[MCPCredentialProfile]:
-        client = await self._db.client
-        result = await client.table('user_mcp_credential_profiles').select('*')\
-            .eq('account_id', account_id)\
-            .eq('mcp_qualified_name', mcp_qualified_name)\
-            .order('is_default', desc=True)\
-            .order('created_at', desc=True)\
-            .execute()
+        from core.credentials import repo as credentials_repo
         
-        return [self._map_to_profile(data) for data in result.data]
+        rows = await credentials_repo.get_profiles_for_mcp(account_id, mcp_qualified_name)
+        
+        return [self._map_to_profile(data) for data in rows]
     
     async def get_all_user_profiles(self, account_id: str) -> List[MCPCredentialProfile]:
-        client = await self._db.client
-        result = await client.table('user_mcp_credential_profiles').select('*')\
-            .eq('account_id', account_id)\
-            .order('created_at', desc=True)\
-            .execute()
+        from core.credentials import repo as credentials_repo
         
-        return [self._map_to_profile(data) for data in result.data]
+        rows = await credentials_repo.get_user_credential_profiles(account_id)
+        
+        return [self._map_to_profile(data) for data in rows]
     
     async def get_default_profile(
         self, 
@@ -161,23 +145,10 @@ class ProfileService:
         if not profile:
             return False
         
-        client = await self._db.client
+        from core.credentials import repo as credentials_repo
         
-        await client.table('user_mcp_credential_profiles').update({
-            'is_default': False,
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', account_id)\
-          .eq('mcp_qualified_name', profile.mcp_qualified_name)\
-          .execute()
+        success = await credentials_repo.set_default_profile(account_id, profile_id, profile.mcp_qualified_name)
         
-        result = await client.table('user_mcp_credential_profiles').update({
-            'is_default': True,
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('profile_id', profile_id)\
-          .eq('account_id', account_id)\
-          .execute()
-        
-        success = len(result.data) > 0
         if success:
             logger.debug(f"Set profile {profile_id} as default")
         
@@ -186,13 +157,10 @@ class ProfileService:
     async def delete_profile(self, account_id: str, profile_id: str) -> bool:
         logger.debug(f"Deleting profile {profile_id}")
         
-        client = await self._db.client
-        result = await client.table('user_mcp_credential_profiles').delete()\
-          .eq('profile_id', profile_id)\
-          .eq('account_id', account_id)\
-          .execute()
+        from core.credentials import repo as credentials_repo
         
-        success = len(result.data) > 0
+        success = await credentials_repo.delete_credential_profile(profile_id, account_id)
+        
         if success:
             logger.debug(f"Deleted profile {profile_id}")
         

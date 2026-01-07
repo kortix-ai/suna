@@ -26,22 +26,19 @@ async def get_custom_mcp_tools_for_agent(
 ):
     logger.debug(f"Getting custom MCP tools for agent {agent_id}, user {user_id}")
     try:
-        client = await db.client
-        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Worker not found")
+        from core.agents import repo as agents_repo
+        from core.versioning import repo as versioning_repo
         
-        agent = agent_result.data[0]
+        # Check if user owns this agent
+        agent = await agents_repo.get_agent_by_id(agent_id)
+        if not agent or agent.get('account_id') != user_id:
+            raise HTTPException(status_code=404, detail="Worker not found")
  
         agent_config = {}
         if agent.get('current_version_id'):
-            version_result = await client.table('agent_versions')\
-                .select('config')\
-                .eq('version_id', agent['current_version_id'])\
-                .maybe_single()\
-                .execute()
-            if version_result.data and version_result.data.get('config'):
-                agent_config = version_result.data['config']
+            version_result = await versioning_repo.get_agent_version_by_id(agent_id, agent['current_version_id'])
+            if version_result and version_result.get('config'):
+                agent_config = version_result['config']
         
         tools = agent_config.get('tools', {})
         custom_mcps = tools.get('custom_mcp', [])
@@ -112,23 +109,19 @@ async def update_custom_mcp_tools_for_agent(
     logger.debug(f"Updating custom MCP tools for agent {agent_id}, user {user_id}")
     
     try:
-        client = await db.client
+        from core.agents import repo as agents_repo
+        from core.versioning import repo as versioning_repo
         
-        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-        if not agent_result.data:
+        # Check if user owns this agent
+        agent = await agents_repo.get_agent_by_id(agent_id)
+        if not agent or agent.get('account_id') != user_id:
             raise HTTPException(status_code=404, detail="Worker not found")
-        
-        agent = agent_result.data[0]
         
         agent_config = {}
         if agent.get('current_version_id'):
-            version_result = await client.table('agent_versions')\
-                .select('config')\
-                .eq('version_id', agent['current_version_id'])\
-                .maybe_single()\
-                .execute()
-            if version_result.data and version_result.data.get('config'):
-                agent_config = version_result.data['config']
+            version_result = await versioning_repo.get_agent_version_by_id(agent_id, agent['current_version_id'])
+            if version_result and version_result.get('config'):
+                agent_config = version_result['config']
         
         tools = agent_config.get('tools', {})
         custom_mcps = tools.get('custom_mcp', [])
@@ -159,6 +152,7 @@ async def update_custom_mcp_tools_for_agent(
         if not updated:
             if config.ENV_MODE != EnvMode.LOCAL:
                 from core.utils.limits_checker import check_custom_mcp_limit
+                client = await db.client  # Get client for limits checker
                 limit_check = await check_custom_mcp_limit(client, user_id)
                 
                 if not limit_check['can_create']:
@@ -238,22 +232,19 @@ async def update_agent_custom_mcps(
     logger.debug(f"Updating agent {agent_id} custom MCPs for user {user_id}")
     
     try:
-        client = await db.client
-        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-        if not agent_result.data:
-            raise HTTPException(status_code=404, detail="Worker not found")
+        from core.agents import repo as agents_repo
+        from core.versioning import repo as versioning_repo
         
-        agent = agent_result.data[0]
+        # Check if user owns this agent
+        agent = await agents_repo.get_agent_by_id(agent_id)
+        if not agent or agent.get('account_id') != user_id:
+            raise HTTPException(status_code=404, detail="Worker not found")
         
         agent_config = {}
         if agent.get('current_version_id'):
-            version_result = await client.table('agent_versions')\
-                .select('config')\
-                .eq('version_id', agent['current_version_id'])\
-                .maybe_single()\
-                .execute()
-            if version_result.data and version_result.data.get('config'):
-                agent_config = version_result.data['config']
+            version_result = await versioning_repo.get_agent_version_by_id(agent_id, agent['current_version_id'])
+            if version_result and version_result.get('config'):
+                agent_config = version_result['config']
         
         new_custom_mcps = request.get('custom_mcps', [])
         if not new_custom_mcps:
@@ -270,6 +261,7 @@ async def update_agent_custom_mcps(
                 additional_workers_needed = new_count - existing_count
                 
                 from core.utils.limits_checker import check_custom_mcp_limit
+                client = await db.client  # Get client for limits checker
                 limit_check = await check_custom_mcp_limit(client, user_id)
                 
                 total_after_adding = limit_check['current_count'] + additional_workers_needed
@@ -367,12 +359,11 @@ async def get_agent_tools(
 ):
         
     logger.debug(f"Fetching enabled tools for agent: {agent_id} by user: {user_id}")
-    client = await db.client
+    from core.agents import repo as agents_repo
 
-    agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-    if not agent_result.data:
+    agent = await agents_repo.get_agent_by_id(agent_id)
+    if not agent:
         raise HTTPException(status_code=404, detail="Worker not found")
-    agent = agent_result.data[0]
     if agent['account_id'] != user_id and not agent.get('is_public', False):
         raise HTTPException(status_code=403, detail="Access denied")
 
@@ -390,7 +381,7 @@ async def get_agent_tools(
         except Exception as e:
             logger.warning(f"Failed to fetch version data for tools endpoint: {e}")
     
-    from .config_helper import extract_agent_config
+    from core.config.config_helper import extract_agent_config
     agent_config = extract_agent_config(agent, version_data)
     
     agentpress_tools_config = agent_config['agentpress_tools']

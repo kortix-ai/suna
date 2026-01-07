@@ -37,15 +37,15 @@ async def update_agent(
     if config.ENV_MODE == EnvMode.STAGING:
         print(f"[DEBUG] update_agent: Received icon fields - icon_name={agent_data.icon_name}, icon_color={agent_data.icon_color}, icon_background={agent_data.icon_background}")
     
-    client = await db.client
-    
     try:
-        existing_agent = await client.table('agents').select('*').eq("agent_id", agent_id).eq("account_id", user_id).maybe_single().execute()
+        from core.agents import repo as agents_repo
         
-        if not existing_agent.data:
+        existing_agent_data = await agents_repo.get_agent_by_id(agent_id)
+        
+        if not existing_agent_data or existing_agent_data.get('account_id') != user_id:
             raise HTTPException(status_code=404, detail="Worker not found")
         
-        existing_data = existing_agent.data
+        existing_data = existing_agent_data
 
         agent_metadata = existing_data.get('metadata', {})
         is_suna_agent = agent_metadata.get('is_suna_default', False)
@@ -106,13 +106,13 @@ async def update_agent(
         if current_version_data is None:
             logger.debug(f"Agent {agent_id} has no version data, creating initial version")
             try:
-                # Fetch triggers for the agent
-                triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
-                triggers = []
-                if triggers_result.data:
+                from core.versioning import repo as versioning_repo
+                triggers = await versioning_repo.get_agent_triggers(agent_id)
+                
+                parsed_triggers = []
+                if triggers:
                     import json
-                    for trigger in triggers_result.data:
-                        # Parse the config string if it's a string
+                    for trigger in triggers:
                         trigger_copy = trigger.copy()
                         if 'config' in trigger_copy and isinstance(trigger_copy['config'], str):
                             try:
@@ -120,7 +120,8 @@ async def update_agent(
                             except json.JSONDecodeError:
                                 logger.warning(f"Failed to parse trigger config for {trigger_copy.get('trigger_id')}")
                                 trigger_copy['config'] = {}
-                        triggers.append(trigger_copy)
+                        parsed_triggers.append(trigger_copy)
+                triggers = parsed_triggers
                 
                 initial_version_data = {
                     "agent_id": agent_id,
@@ -144,25 +145,31 @@ async def update_agent(
                 )
                 initial_version_data["config"] = initial_config
                 
-                version_result = await client.table('agent_versions').insert(initial_version_data).execute()
+                from core.versioning import repo as versioning_repo
+                import uuid
                 
-                if version_result.data:
-                    version_id = version_result.data[0]['version_id']
-                    
-                    await client.table('agents').update({
-                        'current_version_id': version_id,
-                        'version_count': 1
-                    }).eq('agent_id', agent_id).execute()
-                    current_version_data = initial_version_data
-                    logger.debug(f"Created initial version for agent {agent_id}")
-                else:
-                    current_version_data = {
-                        'system_prompt': existing_data.get('system_prompt', ''),
-                        'model': existing_data.get('model'),
-                        'configured_mcps': existing_data.get('configured_mcps', []),
-                        'custom_mcps': existing_data.get('custom_mcps', []),
-                        'agentpress_tools': existing_data.get('agentpress_tools', {})
-                    }
+                version_id = str(uuid.uuid4())
+                await versioning_repo.create_agent_version_with_config(
+                    version_id=version_id,
+                    agent_id=agent_id,
+                    version_number=1,
+                    version_name="v1",
+                    system_prompt=initial_version_data["system_prompt"],
+                    model=initial_version_data["model"],
+                    configured_mcps=initial_version_data["configured_mcps"],
+                    custom_mcps=initial_version_data["custom_mcps"],
+                    agentpress_tools=initial_version_data["agentpress_tools"],
+                    triggers=triggers,
+                    created_by=user_id
+                )
+                
+                await agents_repo.update_agent_fields(
+                    agent_id, user_id, 
+                    current_version_id=version_id, 
+                    version_count=1
+                )
+                current_version_data = initial_version_data
+                logger.debug(f"Created initial version for agent {agent_id}")
             except Exception as e:
                 logger.warning(f"Failed to create initial version for agent {agent_id}: {e}")
                 current_version_data = {
@@ -172,6 +179,8 @@ async def update_agent(
                     'custom_mcps': existing_data.get('custom_mcps', []),
                     'agentpress_tools': existing_data.get('agentpress_tools', {})
                 }
+        else:
+            pass
         
         needs_new_version = False
         version_changes = {}
@@ -220,7 +229,7 @@ async def update_agent(
         if agent_data.is_default is not None:
             update_data["is_default"] = agent_data.is_default
             if agent_data.is_default:
-                await client.table('agents').update({"is_default": False}).eq("account_id", user_id).eq("is_default", True).neq("agent_id", agent_id).execute()
+                await agents_repo.clear_default_agent(user_id, exclude_agent_id=agent_id)
         # Handle new icon system fields
         if agent_data.icon_name is not None:
             update_data["icon_name"] = agent_data.icon_name
@@ -295,17 +304,22 @@ async def update_agent(
             try:
                 print(f"[DEBUG] update_agent DB UPDATE: About to update agent {agent_id} with data: {update_data}")
                 
-                update_result = await client.table('agents').update(update_data).eq("agent_id", agent_id).eq("account_id", user_id).execute()
+                success = await agents_repo.update_agent_fields(
+                    agent_id, user_id,
+                    name=update_data.get("name"),
+                    is_default=update_data.get("is_default"),
+                    icon_name=update_data.get("icon_name"),
+                    icon_color=update_data.get("icon_color"),
+                    icon_background=update_data.get("icon_background"),
+                    current_version_id=update_data.get("current_version_id"),
+                    version_count=update_data.get("version_count")
+                )
                 
                 # Debug logging after DB update
                 if config.ENV_MODE == EnvMode.STAGING:
-                    if update_result.data:
-                        print(f"[DEBUG] update_agent DB UPDATE SUCCESS: Updated {len(update_result.data)} row(s)")
-                        print(f"[DEBUG] update_agent DB UPDATE RESULT: {update_result.data[0] if update_result.data else 'No data'}")
-                    else:
-                        print(f"[DEBUG] update_agent DB UPDATE FAILED: No rows affected")
+                    print(f"[DEBUG] update_agent DB UPDATE SUCCESS: {success}")
                 
-                if not update_result.data:
+                if not success:
                     raise HTTPException(status_code=500, detail="Failed to update agent - no rows affected")
             except Exception as e:
                 logger.error(f"Error updating agent {agent_id}: {str(e)}")
@@ -313,12 +327,12 @@ async def update_agent(
                     print(f"[DEBUG] update_agent DB UPDATE ERROR: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
         
-        updated_agent = await client.table('agents').select('*').eq("agent_id", agent_id).eq("account_id", user_id).maybe_single().execute()
+        updated_agent = await agents_repo.get_agent_by_id_and_account(agent_id, user_id)
         
-        if not updated_agent.data:
+        if not updated_agent:
             raise HTTPException(status_code=500, detail="Failed to fetch updated agent")
         
-        agent = updated_agent.data
+        agent = updated_agent
         
         print(f"[DEBUG] update_agent AFTER UPDATE FETCH: agent_id={agent.get('agent_id')}")
         print(f"[DEBUG] update_agent AFTER UPDATE FETCH: icon_name={agent.get('icon_name')}, icon_color={agent.get('icon_color')}, icon_background={agent.get('icon_background')}")

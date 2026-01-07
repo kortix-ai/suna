@@ -80,18 +80,12 @@ async def list_agents(
     sort_by: str = "created_at",
     sort_order: str = "desc"
 ) -> Tuple[List[Dict[str, Any]], int]:
-    """
-    List agents for a user with pagination and basic filtering.
-    Returns (agents, total_count).
-    """
-    # Validate sort_by to prevent SQL injection
     valid_sort_columns = {"name", "created_at", "updated_at"}
     if sort_by not in valid_sort_columns:
         sort_by = "created_at"
     
     sort_direction = "DESC" if sort_order.lower() == "desc" else "ASC"
     
-    # Build WHERE clauses
     where_clauses = ["account_id = :account_id"]
     params: Dict[str, Any] = {"account_id": account_id, "limit": limit, "offset": offset}
     
@@ -243,16 +237,20 @@ async def update_agent(
     return serialize_row(dict(result)) if result else None
 
 
-async def clear_default_agent(account_id: str) -> int:
+async def clear_default_agent(account_id: str, exclude_agent_id: Optional[str] = None) -> int:
     sql = """
     UPDATE agents 
     SET is_default = false, updated_at = :updated_at
     WHERE account_id = :account_id AND is_default = true
     """
-    return await execute_mutate(sql, {
-        "account_id": account_id,
-        "updated_at": datetime.now(timezone.utc)
-    })
+    params = {"account_id": account_id, "updated_at": datetime.now(timezone.utc)}
+    
+    if exclude_agent_id:
+        sql += " AND agent_id != :exclude_agent_id"
+        params["exclude_agent_id"] = exclude_agent_id
+    
+    result = await execute_mutate(sql, params)
+    return len(result) if result else 0
 
 
 async def delete_agent(agent_id: str, account_id: str) -> bool:

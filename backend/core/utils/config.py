@@ -281,7 +281,7 @@ class Configuration:
     OPENAI_API_KEY: Optional[str] = None
     
     ENABLE_MEMORY: bool = False
-    ENABLE_KNOWLEDGE_BASE: bool = True
+    ENABLE_KNOWLEDGE_BASE: bool = False
     ENABLE_USER_CONTEXT: bool = True
     MEMORY_EMBEDDING_PROVIDER: Optional[str] = "openai"
     MEMORY_EMBEDDING_MODEL: Optional[str] = "text-embedding-3-small"

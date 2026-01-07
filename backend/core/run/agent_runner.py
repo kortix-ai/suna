@@ -115,10 +115,11 @@ class AgentRunner:
         
         # Get account_id if not provided
         if not self.config.account_id:
-            response = await self.client.table('threads').select('account_id').eq('thread_id', self.config.thread_id).maybe_single().execute()
-            if not response.data:
+            from core.threads import repo as threads_repo
+            account_id = await threads_repo.get_thread_account_id(self.config.thread_id)
+            if not account_id:
                 raise ValueError(f"Thread {self.config.thread_id} not found")
-            self.account_id = response.data.get('account_id')
+            self.account_id = account_id
             if not self.account_id:
                 raise ValueError(f"Thread {self.config.thread_id} has no associated account")
         else:
@@ -358,13 +359,14 @@ class AgentRunner:
         # Check for new user input (only on turn > 1 - first turn is always triggered by user message)
         if self.turn_number > 1:
             try:
-                latest_message = await asyncio.wait_for(
-                    self.client.table('messages').select('type').eq('thread_id', self.config.thread_id).in_('type', ['assistant', 'tool', 'user']).order('created_at', desc=True).limit(1).execute(),
+                from core.threads import repo as threads_repo
+                
+                latest_type = await asyncio.wait_for(
+                    threads_repo.get_latest_message_type(self.config.thread_id),
                     timeout=2.0
                 )
-                if latest_message.data and len(latest_message.data) > 0:
-                    message_type = latest_message.data[0].get('type')
-                    if message_type == 'assistant':
+                if latest_type:
+                    if latest_type == 'assistant':
                         # No new user message after assistant response - stop the loop
                         logger.debug(f"Last message is assistant, no new input - stopping execution for {self.config.thread_id}")
                         yield {
@@ -556,21 +558,17 @@ class AgentRunner:
         
         try:
             # Quick DB fetch with timeout
-            result = await with_timeout(
-                self.client.table('threads')
-                    .select('metadata')
-                    .eq('thread_id', self.config.thread_id)
-                    .single()
-                    .execute(),
+            from core.threads import repo as threads_repo
+            metadata = await with_timeout(
+                threads_repo.get_thread_metadata(self.config.thread_id),
                 timeout_seconds=TIMEOUT_DB_QUERY,
                 operation_name="fetch thread metadata for dynamic tools"
             )
             
-            if not result or not result.data:
+            if not metadata:
                 logger.debug("📦 [DYNAMIC TOOLS] No thread metadata found")
                 return
             
-            metadata = result.data.get('metadata') or {}
             dynamic_tools = metadata.get('dynamic_tools', [])
             
             if not dynamic_tools:

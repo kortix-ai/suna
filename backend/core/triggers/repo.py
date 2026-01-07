@@ -10,7 +10,6 @@ async def get_all_user_triggers(user_id: str) -> List[Dict[str, Any]]:
         t.trigger_id,
         t.agent_id,
         t.trigger_type,
-        t.provider_id,
         t.name,
         t.description,
         t.is_active,

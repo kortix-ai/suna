@@ -155,6 +155,9 @@ async def process_agent_responses(
             trace.span(name="agent_run_stopped").end(status_message=f"stopped: {stop_reason}", level="WARNING")
             break
 
+        from core.services.db import serialize_row
+        if isinstance(response, dict):
+            response = serialize_row(response)
         response_json = json.dumps(response)
         
         try:
