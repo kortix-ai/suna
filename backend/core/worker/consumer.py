@@ -22,6 +22,10 @@ PENDING_RECLAIM_INTERVAL = 60  # Check for dead messages every 60s
 PENDING_MIN_IDLE_MS = 30000  # Reclaim messages idle for 30+ seconds
 MAX_PENDING_RECLAIM = 10  # Max messages to reclaim per cycle
 
+# Stale consumer cleanup settings
+STALE_CONSUMER_IDLE_MS = 300000  # 5 minutes - consumers idle longer are considered dead
+STALE_CONSUMER_CLEANUP_INTERVAL = 300  # Run cleanup every 5 minutes
+
 
 async def ensure_consumer_groups(redis) -> None:
     """Create consumer groups for all streams if they don't exist."""
@@ -37,6 +41,52 @@ async def ensure_consumer_groups(redis) -> None:
         except Exception as e:
             if "BUSYGROUP" not in str(e):
                 logger.warning(f"Failed to create consumer group for {stream.value}: {e}")
+
+
+async def cleanup_stale_consumers(redis, stream: str, my_consumer_name: str) -> int:
+    """
+    Remove stale consumers from a stream's consumer group.
+    
+    Stale consumers are those that have been idle for longer than STALE_CONSUMER_IDLE_MS.
+    This handles cases where containers crash or are killed without graceful shutdown.
+    
+    Args:
+        redis: Redis client
+        stream: Stream name
+        my_consumer_name: Current consumer's name (to avoid deleting self)
+    
+    Returns:
+        Number of stale consumers removed
+    """
+    try:
+        consumers = await redis.xinfo_consumers(stream, CONSUMER_GROUP)
+        removed = 0
+        
+        for consumer in consumers:
+            name = consumer.get("name", "")
+            idle_ms = consumer.get("idle", 0)
+            pending = consumer.get("pending", 0)
+            
+            # Skip self
+            if name == my_consumer_name:
+                continue
+            
+            # Remove if idle too long (dead consumer from crashed container)
+            if idle_ms > STALE_CONSUMER_IDLE_MS:
+                try:
+                    deleted = await redis.xgroup_delconsumer(stream, CONSUMER_GROUP, name)
+                    removed += 1
+                    logger.info(
+                        f"🧹 Removed stale consumer '{name}' from {stream} "
+                        f"(idle: {idle_ms/1000:.0f}s, had {deleted} pending messages)"
+                    )
+                except Exception as e:
+                    logger.warning(f"Failed to remove stale consumer '{name}': {e}")
+        
+        return removed
+    except Exception as e:
+        logger.debug(f"Stale consumer cleanup for {stream}: {e}")
+        return 0
 
 
 async def reclaim_pending_messages(redis, consumer_name: str, stream: str, handlers: Optional[Dict[str, Callable]] = None) -> int:
@@ -183,13 +233,39 @@ class StreamWorker:
             logger.info(f"Waiting for {len(self._tasks)} in-flight tasks...")
             await asyncio.gather(*self._tasks, return_exceptions=True)
         
+        # Clean up this consumer from all streams
+        await self._delete_consumer()
+        
         logger.info(f"✅ StreamWorker stopped")
     
+    async def _delete_consumer(self):
+        """Remove this consumer from all consumer groups on shutdown."""
+        if not hasattr(self, '_redis') or not self._redis:
+            return
+        
+        for stream in self.streams:
+            try:
+                # XGROUP DELCONSUMER removes the consumer from the group
+                # Any pending messages will be returned to the group for other consumers
+                deleted = await self._redis.xgroup_delconsumer(
+                    stream.value, CONSUMER_GROUP, self.consumer_name
+                )
+                if deleted > 0:
+                    logger.info(f"🧹 Deleted consumer {self.consumer_name} from {stream.value} (had {deleted} pending)")
+                else:
+                    logger.debug(f"Removed consumer {self.consumer_name} from {stream.value}")
+            except Exception as e:
+                logger.warning(f"Failed to delete consumer from {stream.value}: {e}")
+    
     async def _reclaim_loop(self):
-        """Periodically reclaim dead messages from all streams and process them."""
+        """Periodically reclaim dead messages and clean up stale consumers."""
+        # Track time for stale consumer cleanup (less frequent than reclaim)
+        last_stale_cleanup = time.time()
+        
         while self._running:
             try:
                 await asyncio.sleep(PENDING_RECLAIM_INTERVAL)
+                
                 for stream in self.streams:
                     # Pass handlers so reclaimed messages actually get processed
                     await reclaim_pending_messages(
@@ -198,6 +274,18 @@ class StreamWorker:
                         stream.value,
                         handlers=self.handlers
                     )
+                
+                # Run stale consumer cleanup periodically (every 5 minutes)
+                now = time.time()
+                if now - last_stale_cleanup >= STALE_CONSUMER_CLEANUP_INTERVAL:
+                    last_stale_cleanup = now
+                    for stream in self.streams:
+                        await cleanup_stale_consumers(
+                            self._redis,
+                            stream.value,
+                            self.consumer_name
+                        )
+                    
             except asyncio.CancelledError:
                 break
             except Exception as e:

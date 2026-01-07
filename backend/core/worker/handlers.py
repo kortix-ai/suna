@@ -165,7 +165,8 @@ async def handle_agent_run(task: AgentRunTask):
         logger.error(f"Error in agent run {agent_run_id}: {e}", exc_info=True)
         if client:
             await update_agent_run_status(client, agent_run_id, "failed", error=str(e), account_id=account_id)
-        raise
+        # Don't re-raise - failure is already recorded in DB, let the message be ACKed
+        # Re-raising would cause the message to stay pending forever
         
     finally:
         clear_tool_output_streaming_context()

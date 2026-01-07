@@ -24,7 +24,7 @@ from .dispatcher import (
 )
 
 # Consumer
-from .consumer import StreamWorker, ensure_consumer_groups, reclaim_pending_messages, get_stream_info
+from .consumer import StreamWorker, ensure_consumer_groups, reclaim_pending_messages, cleanup_stale_consumers, get_stream_info
 
 # Handlers - imported lazily to avoid circular imports
 # Use: from core.worker.handlers import get_handlers
