@@ -906,7 +906,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({}, { enabled: isLoggedIn });
-    const agents = agentsResponse?.agents || [];
+    const agents = Array.isArray(agentsResponse?.agents) ? agentsResponse.agents : [];
 
     // Check if selected agent is Kortix based on agent data
     // While loading, default to Kortix (assume Kortix is the default agent)

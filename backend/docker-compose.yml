@@ -20,10 +20,9 @@ services:
     networks:
       - app-network
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
       - LOG_LEVEL=INFO
+      - WORKERS=16
+      - SUPABASE_MAX_CONNECTIONS=50
     logging:
       driver: "json-file"
       options:

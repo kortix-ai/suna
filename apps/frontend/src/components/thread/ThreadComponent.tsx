@@ -117,7 +117,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   // Memoize agents array to prevent unnecessary recalculations
   const agents = useMemo(() => {
     if (isShared) return [];
-    return agentsQuery?.data?.agents || [];
+    return Array.isArray(agentsQuery?.data?.agents) ? agentsQuery.data.agents : [];
   }, [isShared, agentsQuery?.data?.agents]);
   const [isSidePanelAnimating, setIsSidePanelAnimating] = useState(false);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
