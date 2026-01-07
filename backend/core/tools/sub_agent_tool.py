@@ -401,34 +401,48 @@ YOUR TASK:
                 "metadata": run_metadata
             }).execute()
             
-            # Queue the sub-agent execution via Redis Streams
+            # Execute sub-agent directly as async background task
             try:
-                from core.worker.dispatcher import dispatch_agent_run
+                from core.agents.executor import execute_agent_run_direct
                 from core.ai_models import model_manager
-                
-                # Generate a unique instance_id for this sub-agent run
-                # Each sub-agent gets its own instance to avoid conflicts
-                sub_instance_id = f"sub-{str(uuid.uuid4())[:8]}"
                 
                 # Get the user's default model (same model resolution as parent)
                 effective_model = await model_manager.get_default_model_for_user(client, account_id)
                 logger.info(f"Sub-agent will use model: {effective_model}")
                 
-                await dispatch_agent_run(
-                    agent_run_id=agent_run_id,
-                    thread_id=sub_thread_id,
-                    instance_id=sub_instance_id,
-                    project_id=self.project_id,
-                    model_name=effective_model,
+                # Load agent config for sub-agent
+                from core.agents.config import load_agent_config
+                agent_config = await load_agent_config(
                     agent_id=None,
                     account_id=account_id,
+                    user_id=account_id,
+                    client=client,
+                    is_new_thread=False
                 )
+                
+                if not agent_config:
+                    raise ValueError("Failed to load agent config for sub-agent")
+                
+                # Create cancellation event for this sub-agent
+                cancellation_event = asyncio.Event()
+                
+                # Execute as background task (non-blocking)
+                asyncio.create_task(execute_agent_run_direct(
+                    agent_run_id=agent_run_id,
+                    thread_id=sub_thread_id,
+                    project_id=self.project_id,
+                    model_name=effective_model,
+                    agent_config=agent_config,
+                    account_id=account_id,
+                    cancellation_event=cancellation_event
+                ))
+                
             except Exception as e:
-                logger.error(f"Failed to queue sub-agent execution: {e}", exc_info=True)
+                logger.error(f"Failed to start sub-agent execution: {e}", exc_info=True)
                 # Clean up the created thread and agent_run
                 await client.table('agent_runs').delete().eq('id', agent_run_id).execute()
                 await client.table('threads').delete().eq('thread_id', sub_thread_id).execute()
-                return ToolResult(success=False, output=f"Failed to queue sub-agent: {str(e)}")
+                return ToolResult(success=False, output=f"Failed to start sub-agent: {str(e)}")
             
             validation_info = ""
             if validation_level and 1 <= validation_level <= 3:
