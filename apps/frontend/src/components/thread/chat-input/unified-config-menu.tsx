@@ -116,7 +116,7 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
     const { data: agentsResponse, isLoading, isFetching } = useAgents(agentsParams, { enabled: isLoggedIn });
 
     useEffect(() => {
-        if (agentsResponse?.agents) {
+        if (Array.isArray(agentsResponse?.agents)) {
             if (currentPage === 1 || debouncedSearchQuery) {
                 setAllAgents(agentsResponse.agents);
             } else {

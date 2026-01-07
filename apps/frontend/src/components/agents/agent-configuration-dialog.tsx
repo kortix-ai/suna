@@ -92,7 +92,7 @@ export function AgentConfigurationDialog({
     refetchOnWindowFocus: true,
     refetchOnMount: 'always'
   });
-  const agents = agentsResponse?.agents || [];
+  const agents = Array.isArray(agentsResponse?.agents) ? agentsResponse.agents : [];
 
   const updateAgentMutation = useUpdateAgent();
   const updateAgentMCPsMutation = useUpdateAgentMCPs();

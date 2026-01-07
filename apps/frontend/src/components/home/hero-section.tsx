@@ -126,7 +126,7 @@ export function HeroSection() {
         gcTime: 10 * 60 * 1000,
     });
 
-    const agents = agentsResponse?.agents || [];
+    const agents = Array.isArray(agentsResponse?.agents) ? agentsResponse.agents : [];
     const sunaAgent = agents.find(agent => agent.metadata?.is_suna_default === true);
 
     useEffect(() => {
