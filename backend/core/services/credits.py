@@ -48,9 +48,11 @@ class CreditService:
             lock_key = f"daily_refresh:{user_id}:{today}"
             lock = DistributedLock(lock_key, timeout_seconds=60)
             
-            acquired = await lock.acquire(wait=True, wait_timeout=30)
+            # Reduced wait timeout from 30s to 5s to prevent blocking requests
+            # If another request is already processing, we can skip and let them handle it
+            acquired = await lock.acquire(wait=True, wait_timeout=5)
             if not acquired:
-                logger.warning(f"[DAILY REFRESH] Failed to acquire lock for {user_id} on {today}")
+                logger.info(f"[DAILY REFRESH] Lock busy for {user_id} on {today}, skipping (another request is processing)")
                 return False, Decimal('0')
             
             try:

@@ -1,4 +1,5 @@
 name: Update PRODUCTION Branch
+
 on:
   workflow_dispatch:
 
@@ -7,7 +8,7 @@ permissions:
 
 jobs:
   update-production:
-    name: Rebase PRODUCTION to main
+    name: Sync PRODUCTION with main
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -15,34 +16,19 @@ jobs:
           fetch-depth: 0
           clean: true
           token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Configure Git
         run: |
           git config user.name "GitHub Actions"
           git config user.email "actions@github.com"
+
       - name: Sync PRODUCTION with main
         run: |
           git fetch origin
           git checkout PRODUCTION
           git reset --hard origin/main
           git push origin PRODUCTION --force
-      # - name: Set up Supabase CLI
-      #   uses: supabase/setup-cli@v1
-      #   with:
-      #     version: latest
-      # - name: Push Supabase migrations to production
-      #   env:
-      #     SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
-      #     SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      #     SUPABASE_PROJECT_ID: ${{ secrets.SUPABASE_PROJECT_REF }}
-      #   run: |
-      #     cd backend
-      #     echo "Linking to Supabase project: $SUPABASE_PROJECT_ID"
-      #     # Link project non-interactively using access token and database password
-      #     supabase link --project-ref "$SUPABASE_PROJECT_ID" --password "$SUPABASE_DB_PASSWORD"
-      #     echo "Pushing database migrations..."
-      #     # Push migrations non-interactively (yes handles any confirmation prompts)
-      #     yes | supabase db push
-      #   continue-on-error: false
+
       - name: Trigger Docker Build
         uses: peter-evans/repository-dispatch@v3
         with:

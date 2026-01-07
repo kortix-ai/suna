@@ -34,6 +34,7 @@ from ..shared.config import (
     TIERS
 )
 from ..subscriptions import subscription_service
+from ..external.stripe import StripeAPIWrapper
 
 router = APIRouter(tags=["billing-account-state"])
 
@@ -116,9 +117,8 @@ async def _build_account_state(account_id: str, client) -> Dict:
     stripe_subscription_id = credit_account.get('stripe_subscription_id')
     if stripe_subscription_id and provider == 'stripe':
         try:
-            import stripe
-            stripe.api_key = config.STRIPE_SECRET_KEY
-            subscription_data = stripe.Subscription.retrieve(stripe_subscription_id)
+            # Use async wrapper with timeout instead of sync call
+            subscription_data = await StripeAPIWrapper.retrieve_subscription(stripe_subscription_id)
             
             # Get billing period from subscription if not in credit_account
             if not billing_period and subscription_data:
@@ -190,9 +190,9 @@ async def _build_account_state(account_id: str, client) -> Dict:
             if revenuecat_cancel_at_period_end:
                 cancellation_effective_date = revenuecat_cancel_at_period_end
     
-    # Get scheduled changes
+    # Get scheduled changes (pass subscription_data to avoid duplicate Stripe API calls)
     try:
-        scheduled_changes = await subscription_service.get_scheduled_changes(account_id)
+        scheduled_changes = await subscription_service.get_scheduled_changes(account_id, subscription_data)
     except Exception as e:
         logger.warning(f"[ACCOUNT_STATE] Failed to get scheduled changes: {e}")
         scheduled_changes = {'has_scheduled_change': False, 'scheduled_change': None}

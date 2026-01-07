@@ -366,7 +366,14 @@ class SchedulingHandler:
         }
 
     @staticmethod
-    async def get_scheduled_changes(account_id: str) -> Dict:
+    async def get_scheduled_changes(account_id: str, subscription_data: Optional[Dict] = None) -> Dict:
+        """
+        Get scheduled tier changes for an account.
+        
+        Args:
+            account_id: The account ID to check
+            subscription_data: Optional pre-fetched Stripe subscription data to avoid duplicate API calls
+        """
         db = DBConnection()
         client = await db.client
         
@@ -413,7 +420,7 @@ class SchedulingHandler:
         
         if not scheduled_tier or not scheduled_date:
             return await SchedulingHandler._check_stripe_metadata_for_scheduled_changes(
-                data, current_tier_name
+                data, current_tier_name, subscription_data
             )
         
         current_tier = get_tier_by_name(data.get('tier', 'none'))
@@ -498,11 +505,26 @@ class SchedulingHandler:
         }
 
     @staticmethod
-    async def _check_stripe_metadata_for_scheduled_changes(data: Dict, current_tier_name: str) -> Dict:
+    async def _check_stripe_metadata_for_scheduled_changes(
+        data: Dict, 
+        current_tier_name: str,
+        subscription_data: Optional[Dict] = None
+    ) -> Dict:
+        """
+        Check Stripe subscription metadata for scheduled changes.
+        
+        Args:
+            data: Credit account data
+            current_tier_name: Current tier name
+            subscription_data: Optional pre-fetched subscription to avoid duplicate API calls
+        """
         subscription_id = data.get('stripe_subscription_id')
         if subscription_id:
             try:
-                subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+                # Use pre-fetched subscription if available, otherwise fetch it
+                subscription = subscription_data
+                if subscription is None:
+                    subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
                 
                 if subscription.get('metadata', {}).get('downgrade') == 'true':
                     target_tier_name = subscription['metadata'].get('target_tier')
