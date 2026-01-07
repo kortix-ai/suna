@@ -68,7 +68,7 @@ POOL_TIMEOUT = _db_config["pool_timeout"]
 POOL_RECYCLE = _db_config["pool_recycle"]
 STATEMENT_TIMEOUT = _db_config["statement_timeout"]
 CONNECT_TIMEOUT = _db_config["connect_timeout"]
-MAX_RETRIES = int(os.getenv("POSTGRES_MAX_RETRIES", "3"))
+MAX_RETRIES = 2
 RETRY_DELAY = float(os.getenv("POSTGRES_RETRY_DELAY", "0.1"))
 USE_NULLPOOL = os.getenv("POSTGRES_USE_NULLPOOL", "auto")
 ECHO = os.getenv("POSTGRES_ECHO", "false").lower() == "true"
@@ -177,12 +177,20 @@ async def init_db() -> None:
     connect_args = {
         "connect_timeout": CONNECT_TIMEOUT,
         "options": f"-c statement_timeout={STATEMENT_TIMEOUT} -c lock_timeout=5000",
+        "prepare_threshold": None,
     }
     
     use_nullpool = USE_NULLPOOL == "true" or (USE_NULLPOOL == "auto" and is_supavisor)
+    execution_opts = {"prepared_statement_cache_size": 0}
     
     if use_nullpool:
-        _engine = create_async_engine(dsn, poolclass=NullPool, echo=ECHO, connect_args=connect_args)
+        _engine = create_async_engine(
+            dsn,
+            poolclass=NullPool,
+            echo=ECHO,
+            connect_args=connect_args,
+            execution_options=execution_opts,
+        )
         pool_info = "NullPool"
     else:
         _engine = create_async_engine(
@@ -195,6 +203,7 @@ async def init_db() -> None:
             pool_pre_ping=True,
             echo=ECHO,
             connect_args=connect_args,
+            execution_options=execution_opts,
         )
         pool_info = f"Pool(size={POOL_SIZE}, max={POOL_SIZE + MAX_OVERFLOW})"
     
