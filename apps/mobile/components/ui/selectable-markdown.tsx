@@ -2,8 +2,14 @@
  * SelectableMarkdownText Component
  *
  * A wrapper around MarkdownTextInput that provides selectable markdown text
- * with proper styling. This replaces the old hybrid approach with a clean,
- * native solution using @expensify/react-native-live-markdown.
+ * with proper styling using @expensify/react-native-live-markdown.
+ * 
+ * HEIGHT CALCULATION APPROACH:
+ * Uses visual line count (including text wrapping) to calculate height instantly.
+ * No onContentSizeChange = no layout shift during load.
+ * 
+ * Key: A single long paragraph might wrap to 5+ visual lines on screen,
+ * so we estimate wrapping based on character width and screen width.
  */
 
 import React, { useMemo, useState } from 'react';
@@ -13,8 +19,6 @@ import {
   View,
   Text as RNText,
   Pressable,
-  Linking,
-  Alert,
   LogBox,
   Keyboard,
   Platform,
@@ -34,43 +38,52 @@ LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into 
 
 /**
  * LINE HEIGHT CONFIGURATION
- * Adjust these values to tune text spacing and eliminate extra bottom space
+ * Increased for better readability - text was too crowded
  */
-const MARKDOWN_LINE_HEIGHT = 26; // Main line height for readability (increased from 20)
+const MARKDOWN_LINE_HEIGHT = 28; // Bumped from 26 for more breathing room
 const MARKDOWN_FONT_SIZE = 16;
 
-/**
- * HEIGHT BUFFER ADJUSTMENT
- * Controls how much extra space to add when calculating maxHeight for clipping
- * Lower values = more aggressive clipping of bottom space
- * Adjust with: global.setMarkdownHeightBuffer(n)
- */
-let HEIGHT_BUFFER = Platform.select({
-  ios: 4,
-  android: 12,
-  default: 4,
-});
+// Debug mode to see height calculations
+let DEBUG_HEIGHTS = false;
 
-export function setMarkdownHeightBuffer(buffer: number) {
-  HEIGHT_BUFFER = buffer;
-  console.log(
-    `[SelectableMarkdown] Height buffer set to ${buffer}px. ` +
-    `Press 'r' in Metro to reload and see changes.`
-  );
+// Runtime tunable values
+let CHAR_WIDTH_FACTOR = 0.44;
+let HEADING_CHAR_FACTOR = 0.48;
+let EMPTY_LINE_FACTOR = 0.5;
+
+export function enableMarkdownDebug(enabled: boolean = true) {
+  DEBUG_HEIGHTS = enabled;
+  console.log(`[SelectableMarkdown] Debug ${enabled ? 'enabled' : 'disabled'}`);
 }
 
-export function getMarkdownHeightBuffer() {
-  return HEIGHT_BUFFER;
+export function setCharWidthFactor(factor: number) {
+  CHAR_WIDTH_FACTOR = factor;
+  console.log(`[MD] Char width factor: ${factor}`);
 }
 
-// Expose to global for easy console access
+export function setHeadingCharFactor(factor: number) {
+  HEADING_CHAR_FACTOR = factor;
+  console.log(`[MD] Heading char factor: ${factor}`);
+}
+
+export function setEmptyLineFactor(factor: number) {
+  EMPTY_LINE_FACTOR = factor;
+  console.log(`[MD] Empty line factor: ${factor}`);
+}
+
+export function getFactors() {
+  return { char: CHAR_WIDTH_FACTOR, heading: HEADING_CHAR_FACTOR, empty: EMPTY_LINE_FACTOR };
+}
+
 if (__DEV__) {
-  (global as any).setMarkdownHeightBuffer = setMarkdownHeightBuffer;
-  (global as any).getMarkdownHeightBuffer = getMarkdownHeightBuffer;
-  console.log('[SelectableMarkdown] Dev helpers available:');
-  console.log('  - global.setMarkdownHeightBuffer(n) // Set height buffer (try 0-10)');
-  console.log('  - global.getMarkdownHeightBuffer() // Check current buffer');
+  (globalThis as any).enableMarkdownDebug = enableMarkdownDebug;
+  (globalThis as any).setCharWidthFactor = setCharWidthFactor;
+  (globalThis as any).setHeadingCharFactor = setHeadingCharFactor;
+  (globalThis as any).setEmptyLineFactor = setEmptyLineFactor;
+  (globalThis as any).getFactors = getFactors;
+  console.log('[MD] Tune: globalThis.setCharWidthFactor(0.44) / setHeadingCharFactor(0.48) / setEmptyLineFactor(0.5)');
 }
+
 
 export interface SelectableMarkdownTextProps {
   /** The markdown text content to render */
@@ -209,6 +222,7 @@ function isSeparatorLine(line: string): boolean {
 /**
  * Split text into blocks - only by separators
  * Don't split by links - let the markdown renderer handle them naturally
+ * IMPORTANT: Trim blocks to remove leading/trailing newlines that cause extra height
  */
 function splitIntoBlocks(
   text: string
@@ -223,12 +237,15 @@ function splitIntoBlocks(
 
     // Check if this is a separator line
     if (isSeparatorLine(line)) {
-      // Flush current block
+      // Flush current block - TRIM to remove extra newlines
       if (currentBlock.length > 0) {
-        blocks.push({
-          type: 'text',
-          content: currentBlock.join('\n'),
-        });
+        const content = currentBlock.join('\n').trim();
+        if (content) {
+          blocks.push({
+            type: 'text',
+            content,
+          });
+        }
         currentBlock = [];
       }
       // Add separator as its own block
@@ -242,11 +259,15 @@ function splitIntoBlocks(
     currentBlock.push(line);
   }
 
+  // Flush remaining block - TRIM to remove extra newlines
   if (currentBlock.length > 0) {
-    blocks.push({
-      type: 'text',
-      content: currentBlock.join('\n'),
-    });
+    const content = currentBlock.join('\n').trim();
+    if (content) {
+      blocks.push({
+        type: 'text',
+        content,
+      });
+    }
   }
 
   return blocks;
@@ -267,48 +288,148 @@ function Separator({ isDark }: { isDark: boolean }) {
   );
 }
 
-function calculateTextHeight(text: string): { height: number; lineCount: number; wrappedLineEstimate: number; buffer: number; charCount: number } {
-  const screenWidth = Dimensions.get('window').width;
-  const horizontalPadding = 32;
+/**
+ * Count content characteristics for debugging
+ */
+function analyzeContent(text: string): { lines: number; headings: number } {
+  const lines = text.split('\n').length;
+  const headingMatches = text.match(/^#{1,6}\s/gm);
+  const headings = headingMatches ? headingMatches.length : 0;
+  return { lines, headings };
+}
+
+
+/**
+ * CALCULATED HEIGHT - NO MEASUREMENT, NO SHIFTING
+ * 
+ * Calculate the ACTUAL height needed based on visual line count.
+ * Set container height directly = actually removes phantom space.
+ * 
+ * The target height IS the realHeight (visual lines × line height).
+ */
+
+/**
+ * Calculate real height based on visual lines (including text wrapping)
+ * 
+ * Key insight from user feedback:
+ * - Char width was too large (0.5) causing over-estimation
+ * - More accurate: ~0.38 for regular, ~0.42 for headings (bolder)
+ * - Empty lines are very short
+ * - List items (-) and checkmarks (✅) need special handling
+ */
+function calculateRealHeight(text: string, screenWidth: number): number {
+  const horizontalPadding = 48;
   const availableWidth = screenWidth - horizontalPadding;
-  const avgCharWidth = MARKDOWN_FONT_SIZE * 0.47;
-  const charsPerLine = Math.floor(availableWidth / avgCharWidth);
+  
+  // Use runtime-tunable factors
+  const charWidth = MARKDOWN_FONT_SIZE * CHAR_WIDTH_FACTOR;
+  const headingCharWidth = 26 * HEADING_CHAR_FACTOR;
+  const charsPerLine = Math.floor(availableWidth / charWidth);
+  const headingCharsPerLine = Math.floor(availableWidth / headingCharWidth);
   
   const lines = text.split('\n');
-  const lineCount = lines.length;
-  let wrappedLineEstimate = 0;
-  let totalChars = 0;
+  let totalHeight = 0;
   
-  lines.forEach(line => {
-    totalChars += line.length;
-    if (line.length > 0) {
-      // More conservative: use Math.ceil and larger offset
-      wrappedLineEstimate += Math.max(1, Math.ceil(line.length / charsPerLine + 0.5));
-    } else {
-      wrappedLineEstimate += 1;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    
+    // Empty line
+    if (trimmed.length === 0) {
+      totalHeight += MARKDOWN_LINE_HEIGHT * EMPTY_LINE_FACTOR;
+      continue;
     }
-  });
-
-  const visualLines = Math.max(lineCount, wrappedLineEstimate);
-  // Remove aggressive reduction, use full line height
-  const baseHeight = Math.round(visualLines * MARKDOWN_LINE_HEIGHT * 1.0);
+    
+    // Heading
+    const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
+    if (headingMatch) {
+      const headingText = headingMatch[2]
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1')
+        .replace(/[🎯📊💻🔍📝🤖🚀✅👋😊🔄👂🎨🔗📄🌐]/gu, 'X'); // Emoji = 1 char width
+      const wrappedLines = Math.max(1, Math.ceil(headingText.length / headingCharsPerLine));
+      totalHeight += wrappedLines * 36;
+      continue;
+    }
+    
+    // Horizontal rule (---)
+    if (/^[-*_]{3,}$/.test(trimmed)) {
+      totalHeight += 12; // Just a line
+      continue;
+    }
+    
+    // Regular line - strip markdown and calculate wrapping
+    const cleanLine = line
+      .replace(/\*\*([^*]+)\*\*/g, '$1')
+      .replace(/\*([^*]+)\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/^[-*+]\s+/, '')  // List marker
+      .replace(/^\d+\.\s+/, '') // Numbered list
+      .replace(/[🎯📊💻🔍📝🤖🚀✅👋😊🔄👂🎨🔗📄🌐]/gu, 'X'); // Emoji = 1 char
+    
+    const wrappedLines = Math.max(1, Math.ceil(cleanLine.length / charsPerLine));
+    totalHeight += wrappedLines * MARKDOWN_LINE_HEIGHT;
+  }
   
-  // Add platform-specific buffer + safety margin
-  const safetyMargin = 4; // Extra pixels to prevent cutoff
-  const totalHeight = baseHeight + HEIGHT_BUFFER + safetyMargin;
+  return totalHeight;
+}
 
-  return { 
-    height: totalHeight, 
-    lineCount, 
-    wrappedLineEstimate,
-    buffer: HEIGHT_BUFFER + safetyMargin,
-    charCount: totalChars
-  };
+function MeasuredMarkdownInput({
+  text,
+  isDark,
+  style,
+}: {
+  text: string;
+  isDark: boolean;
+  style?: TextStyle;
+}) {
+  const trimmedText = text.trimEnd();
+  
+  // Calculate height IMMEDIATELY - no measurement needed
+  const calculatedHeight = useMemo(() => {
+    const screenWidth = Dimensions.get('window').width;
+    const height = calculateRealHeight(trimmedText, screenWidth);
+    
+    if (DEBUG_HEIGHTS) {
+      const preview = trimmedText.substring(0, 40).replace(/\n/g, '↵');
+      const { lines, headings } = analyzeContent(trimmedText);
+      console.log(`[MD] "${preview}..." height=${height.toFixed(0)}px (lines=${lines} h=${headings})`);
+    }
+    
+    return Math.max(MARKDOWN_LINE_HEIGHT, height);
+  }, [trimmedText]);
+
+  return (
+    <View 
+      style={{
+        height: calculatedHeight,
+        overflow: 'hidden',
+        ...(DEBUG_HEIGHTS ? { borderWidth: 1, borderColor: 'blue' } : {}),
+      }} 
+      pointerEvents="box-none"
+    >
+      <MarkdownTextInput
+        value={trimmedText}
+        onChangeText={() => {}}
+        parser={markdownParser}
+        markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
+        style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
+        editable={false}
+        multiline
+        scrollEnabled={false}
+        caretHidden={true}
+        showSoftInputOnFocus={false}
+        selectTextOnFocus={false}
+        contextMenuHidden={Platform.OS === 'android'}
+        onFocus={() => Keyboard.dismiss()}
+      />
+    </View>
+  );
 }
 
 /**
  * Render markdown - simplified approach without splitting by links
- * Uses MarkdownTextInput for selectable text, handles links with onLinkPress
+ * Uses MeasuredMarkdownInput for accurate height-constrained text
  */
 function MarkdownWithLinkHandling({
   text,
@@ -323,35 +444,13 @@ function MarkdownWithLinkHandling({
 }) {
   const blocks = useMemo(() => splitIntoBlocks(text), [text]);
 
-  // If no separators, just render as single MarkdownTextInput
+  // If no separators, just render as single measured input
   const hasAnySeparators = blocks.some((b) => b.type === 'separator');
 
   if (!hasAnySeparators) {
-    const heightInfo = calculateTextHeight(text);
-    const maxHeight = heightInfo.height;
-
     return (
-      <View style={[needsSpacing && styles.partSpacing, styles.textWrapper]} pointerEvents="box-none">
-        <View 
-          style={[styles.textWrapperInner, { maxHeight }]} 
-          pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
-        >
-          <MarkdownTextInput
-            value={text.trimEnd()}
-            onChangeText={() => { }}
-            parser={markdownParser}
-            markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-            style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
-            editable={false}
-            multiline
-            scrollEnabled={false}
-            caretHidden={true}
-            showSoftInputOnFocus={false}
-            selectTextOnFocus={false}
-            contextMenuHidden={Platform.OS === 'android'}
-            onFocus={() => Keyboard.dismiss()}
-          />
-        </View>
+      <View style={needsSpacing && styles.partSpacing} pointerEvents="box-none">
+        <MeasuredMarkdownInput text={text} isDark={isDark} style={style} />
       </View>
     );
   }
@@ -365,31 +464,9 @@ function MarkdownWithLinkHandling({
         if (block.type === 'separator') {
           return <Separator key={`sep-${idx}`} isDark={isDark} />;
         } else {
-          const heightInfo = calculateTextHeight(block.content);
-          const maxHeight = heightInfo.height;
-
           return (
-            <View key={`txt-${idx}`} style={styles.textWrapper} pointerEvents="box-none">
-              <View 
-                style={[styles.textWrapperInner, { maxHeight }]} 
-                pointerEvents={Platform.OS === 'android' ? 'none' : 'box-none'}
-              >
-                <MarkdownTextInput
-                  value={block.content.trimEnd()}
-                  onChangeText={() => { }}
-                  parser={markdownParser}
-                  markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
-                  style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}
-                  editable={false}
-                  multiline
-                  scrollEnabled={false}
-                  caretHidden={true}
-                  showSoftInputOnFocus={false}
-                  selectTextOnFocus={false}
-                  contextMenuHidden={Platform.OS === 'android'}
-                  onFocus={() => Keyboard.dismiss()}
-                />
-              </View>
+            <View key={`txt-${idx}`} pointerEvents="box-none">
+              <MeasuredMarkdownInput text={block.content} isDark={isDark} style={style} />
             </View>
           );
         }
@@ -578,15 +655,6 @@ const styles = StyleSheet.create({
   },
   partSpacing: {
     marginTop: 8, // Fixed 8px spacing between all parts
-  },
-  textWrapper: {
-    // Wrapper to clip extra TextInput spacing
-    overflow: Platform.OS === 'android' ? 'visible' : 'hidden',
-  },
-  textWrapperInner: {
-    // Inner wrapper to clip bottom space without cutting content
-    // Android: no negative margin to prevent top clipping
-    marginBottom: Platform.OS === 'android' ? 0 : -4,
   },
   base: {
     fontSize: MARKDOWN_FONT_SIZE,

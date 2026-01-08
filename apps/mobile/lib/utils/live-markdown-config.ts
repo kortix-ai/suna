@@ -228,8 +228,13 @@ export const lightMarkdownStyle: MarkdownStyle = {
   } as any,
   h1: {
     fontSize: 26,
+    lineHeight: 36, // Increased for better readability
     get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value
     paddingLeft: 0,
+    paddingTop: 4, // Small top padding for visual separation
+    paddingBottom: 2,
+    marginTop: 0,
+    marginBottom: 0,
   } as any, // Cast to any because we patched the library to add these fields
   emoji: {
     fontSize: 20,
@@ -269,8 +274,13 @@ export const darkMarkdownStyle: MarkdownStyle = {
   } as any,
   h1: {
     fontSize: 26,
+    lineHeight: 36, // Increased for better readability
     get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value
     paddingLeft: 0,
+    paddingTop: 4, // Small top padding for visual separation
+    paddingBottom: 2,
+    marginTop: 0,
+    marginBottom: 0,
   } as any, // Cast to any because we patched the library to add these fields
   emoji: {
     fontSize: 20,
