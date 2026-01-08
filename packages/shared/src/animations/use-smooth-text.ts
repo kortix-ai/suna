@@ -27,8 +27,6 @@ export function useSmoothText(
 ): SmoothTextResult {
   const [displayedLength, setDisplayedLength] = useState(0);
   
-  // Track the highest target we've seen to detect true resets
-  const maxTargetSeenRef = useRef(0);
   const rafIdRef = useRef<number | null>(null);
   const lastUpdateTimeRef = useRef<number | null>(null);
   const targetLengthRef = useRef(0);
@@ -76,21 +74,27 @@ export function useSmoothText(
     
     // Animate if behind target
     if (charsBehind > 0) {
-      // Speed calculation with catch-up
+      // Speed calculation with gradual catch-up
+      // Use logarithmic scaling for smoother catch-up that doesn't jump
       let effectiveSpeed: number;
-      if (charsBehind > 500) {
-        effectiveSpeed = charsPerSecond * 10; // Way behind, speed up a lot
-      } else if (charsBehind > 100) {
-        effectiveSpeed = charsPerSecond * 4; // Behind, speed up
+      if (charsBehind > 1000) {
+        // Very far behind - catch up quickly but smoothly
+        effectiveSpeed = charsPerSecond * 8;
+      } else if (charsBehind > 300) {
+        // Behind - moderate catch up
+        effectiveSpeed = charsPerSecond * 3;
+      } else if (charsBehind > 50) {
+        // Slightly behind - gentle catch up
+        effectiveSpeed = charsPerSecond * 1.5;
       } else {
-        effectiveSpeed = charsPerSecond; // Normal speed
+        // Normal speed - smooth typing effect
+        effectiveSpeed = charsPerSecond;
       }
       
-      const charsToAdd = Math.max(deltaTime * effectiveSpeed, 0.5);
-      const newLength = Math.min(
-        Math.floor(currentDisplayed + charsToAdd),
-        currentTarget
-      );
+      // Calculate chars to add this frame
+      // Minimum 1 char to ensure progress, maximum based on speed
+      const charsToAdd = Math.max(1, Math.round(deltaTime * effectiveSpeed));
+      const newLength = Math.min(currentDisplayed + charsToAdd, currentTarget);
 
       if (newLength > currentDisplayed) {
         displayedLengthRef.current = newLength;
@@ -125,37 +129,13 @@ export function useSmoothText(
     };
   }, [enabled, animationLoop, stopAnimation]);
 
-  // Handle target changes - only reset for truly new content
+  // Handle disabled state - show full text immediately
   useEffect(() => {
     if (!enabled) {
-      // When disabled, show full text immediately
       setDisplayedLength(targetText.length);
       displayedLengthRef.current = targetText.length;
-      maxTargetSeenRef.current = targetText.length;
-      return;
     }
-
-    // Ignore empty targets - don't reset animation state
-    // This prevents blips during format switches
-    if (targetText.length === 0) {
-      return;
-    }
-
-    // Update max target seen
-    if (targetText.length > maxTargetSeenRef.current) {
-      maxTargetSeenRef.current = targetText.length;
-    }
-    
-    // Only reset if target shrunk significantly below what we've displayed
-    // This means truly new content, not just temporary extraction hiccups
-    if (targetText.length < displayedLengthRef.current - 10) {
-      // New content - reset
-      setDisplayedLength(0);
-      displayedLengthRef.current = 0;
-      maxTargetSeenRef.current = targetText.length;
-      lastUpdateTimeRef.current = null;
-    }
-  }, [targetText, enabled]);
+  }, [targetText.length, enabled]);
 
   const result = useMemo((): SmoothTextResult => {
     const text = enabled ? targetText.slice(0, displayedLength) : targetText;

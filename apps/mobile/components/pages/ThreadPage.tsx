@@ -273,21 +273,48 @@ export function ThreadPage({
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const lastMessageCountRef = React.useRef(messages.length);
-  const lastStreamingLengthRef = React.useRef(0);
   const scrollAnimationRef = React.useRef<number | null>(null);
+  const hasScrolledToBottomOnOpenRef = React.useRef(false);
+  const lastUserMessageCountRef = React.useRef(0);
+  const contentHeightRef = React.useRef(0);
+  const layoutHeightRef = React.useRef(0);
 
+  // Count user messages to detect when user sends a new message
+  const userMessageCount = React.useMemo(() => 
+    messages.filter(m => m.type === 'user').length,
+    [messages]
+  );
+
+  // Scroll to bottom ONLY when thread first opens (not during streaming)
   React.useEffect(() => {
-    const hasNewMessages = messages.length > lastMessageCountRef.current;
-    const hasStreamingContent = streamingContent !== '';
-
-    if ((hasNewMessages || hasStreamingContent) && scrollViewRef.current && !isUserScrolling) {
-      scrollViewRef.current?.scrollToEnd({ animated: false });
+    if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current) {
+      // Small delay to ensure content is rendered
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+        hasScrolledToBottomOnOpenRef.current = true;
+      }, 100);
     }
+  }, [messages.length]);
 
-    lastMessageCountRef.current = messages.length;
-    lastStreamingLengthRef.current = streamingContent.length;
-  }, [messages.length, streamingContent, isUserScrolling]);
+  // Reset scroll flag when thread changes
+  React.useEffect(() => {
+    hasScrolledToBottomOnOpenRef.current = false;
+    lastUserMessageCountRef.current = userMessageCount;
+  }, [chat.activeThread?.id]);
+
+  // When user sends a NEW message, scroll to put their message at top of screen
+  React.useEffect(() => {
+    if (userMessageCount > lastUserMessageCountRef.current && scrollViewRef.current) {
+      // User just sent a message - scroll to end so their message appears at top
+      // The content will grow as agent responds, pushing user message up
+      setTimeout(() => {
+        scrollViewRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+    }
+    lastUserMessageCountRef.current = userMessageCount;
+  }, [userMessageCount]);
+
+  // NO auto-scroll during streaming - user controls their scroll position
 
   React.useEffect(() => {
     return () => {
@@ -304,10 +331,14 @@ export function ThreadPage({
     const currentScrollY = contentOffset.y;
     const maxScrollY = contentSize.height - layoutMeasurement.height;
     const isAtBottom = currentScrollY >= maxScrollY - 100;
-    const isScrollingUp = currentScrollY < lastScrollYRef.current;
+    const isScrollingUp = currentScrollY < lastScrollYRef.current - 5; // 5px threshold
 
+    // Track content/layout for potential use
+    contentHeightRef.current = contentSize.height;
+    layoutHeightRef.current = layoutMeasurement.height;
     lastScrollYRef.current = currentScrollY;
 
+    // Show "scroll to bottom" button when user scrolls up and not at bottom
     if (isScrollingUp && !isAtBottom) {
       setIsUserScrolling(true);
       setShowScrollToBottom(true);
