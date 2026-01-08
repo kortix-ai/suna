@@ -34,7 +34,28 @@ export interface SmoothAnimationResult {
 }
 
 /**
+ * Get current time in milliseconds (works in both web and React Native)
+ */
+function getNow(): number {
+  if (typeof performance !== 'undefined' && performance.now) {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+/**
+ * Check if document is hidden (web only, returns false for React Native)
+ */
+function isDocumentHidden(): boolean {
+  if (typeof document !== 'undefined' && 'hidden' in document) {
+    return document.hidden;
+  }
+  return false;
+}
+
+/**
  * Core animation logic for smooth character-by-character text reveal.
+ * Platform-agnostic - works in both web and React Native.
  * This is the foundation used by useSmoothText and useSmoothToolArguments.
  */
 export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAnimationResult {
@@ -53,7 +74,11 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
 
   const stop = useCallback(() => {
     if (stateRef.current.rafId !== null) {
-      cancelAnimationFrame(stateRef.current.rafId);
+      if (typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(stateRef.current.rafId);
+      } else if (typeof clearTimeout !== 'undefined') {
+        clearTimeout(stateRef.current.rafId);
+      }
       stateRef.current.rafId = null;
     }
   }, []);
@@ -97,7 +122,7 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
 
       let deltaTime = (currentTime - state.lastUpdateTime) / 1000;
       
-      // Clamp very large deltas (e.g., after tab switch)
+      // Clamp very large deltas (e.g., after tab switch or app background)
       if (deltaTime > 0.5) {
         deltaTime = 0.016;
       }
@@ -137,12 +162,21 @@ export function useSmoothAnimation(config: SmoothAnimationConfig = {}): SmoothAn
     };
 
     const scheduleNextFrame = () => {
-      if (typeof document !== 'undefined' && document.hidden) {
-        stateRef.current.rafId = window.setTimeout(() => {
-          animateFrame(performance.now());
-        }, 16) as unknown as number;
+      // Use requestAnimationFrame if available, fallback to setTimeout
+      if (typeof requestAnimationFrame !== 'undefined') {
+        // On web, if document is hidden, use setTimeout for better performance
+        if (isDocumentHidden()) {
+          stateRef.current.rafId = setTimeout(() => {
+            animateFrame(getNow());
+          }, 16) as unknown as number;
+        } else {
+          stateRef.current.rafId = requestAnimationFrame(animateFrame);
+        }
       } else {
-        stateRef.current.rafId = requestAnimationFrame(animateFrame);
+        // Fallback for environments without requestAnimationFrame
+        stateRef.current.rafId = setTimeout(() => {
+          animateFrame(getNow());
+        }, 16) as unknown as number;
       }
     };
 

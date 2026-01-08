@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, Pressable, Linking, Text as RNText, TextInput, Platform, ScrollView } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { useSmoothText } from '@agentpress/shared/animations';
 
 // Only import ContextMenu on native platforms (iOS/Android)
 let ContextMenu: React.ComponentType<any> | null = null;
@@ -35,13 +36,14 @@ import { groupMessagesWithStreaming } from '@agentpress/shared/utils';
 import { preprocessTextOnlyTools } from '@agentpress/shared/tools';
 import { getToolIcon } from '@/lib/icons/tool-icons';
 import { useColorScheme } from 'nativewind';
+import { useAgent } from '@/contexts/AgentContext';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
-import { AgentIdentifier } from '@/components/agents';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
 import { CheckCircle2, AlertCircle, Info, CircleDashed } from 'lucide-react-native';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { KortixLogo } from '@/components/ui/KortixLogo';
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
@@ -661,6 +663,9 @@ interface MessageGroup {
   key: string;
 }
 
+// Default Kortix agent ID - when null or this ID, show logomark only
+const KORTIX_DEFAULT_AGENT_ID = '55e65f0e-b598-4dbc-a185-8b904849da44';
+
 export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
   ({
     messages,
@@ -678,6 +683,59 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
   }) => {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
+    const { agents } = useAgent();
+
+    // Helper to render agent indicator based on agent type
+    const renderAgentIndicator = useCallback((agentId: string | null | undefined) => {
+      // Default Kortix agent or no agent ID - show full logomark
+      const isKortixDefault = !agentId || agentId === KORTIX_DEFAULT_AGENT_ID;
+      
+      if (isKortixDefault) {
+        // Full Kortix logomark (icon + text) - same height as symbol+text combo
+        return <KortixLogo size={14} variant="logomark" color={isDark ? 'dark' : 'light'} />;
+      }
+      
+      // Custom agent - show symbol + name
+      const agent = agents.find(a => a.agent_id === agentId);
+      const displayName = agent?.name || 'Agent';
+      
+      return (
+        <View className="flex-row items-center gap-1.5">
+          <KortixLogo size={16} variant="symbol" color={isDark ? 'dark' : 'light'} />
+          <Text className="text-sm font-medium text-muted-foreground">{displayName}</Text>
+        </View>
+      );
+    }, [isDark, agents]);
+
+    // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
+    const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
+      streamingTextContent || '',
+      120,
+      true
+    );
+
+    // Extract ask/complete text from streaming tool call for smooth animation
+    const rawAskCompleteText = useMemo(() => {
+      if (!streamingToolCall) return '';
+      
+      const parsedMetadata = safeJsonParse<ParsedMetadata>(streamingToolCall.metadata, {});
+      const toolCalls = parsedMetadata.tool_calls || [];
+      const askOrCompleteTool = findAskOrCompleteTool(toolCalls);
+      
+      if (!askOrCompleteTool) return '';
+      
+      const toolArgs: any = askOrCompleteTool.arguments;
+      if (!toolArgs) return '';
+      
+      return extractTextFromArguments(toolArgs);
+    }, [streamingToolCall]);
+
+    // Apply smooth text animation to ask/complete streaming content
+    const { text: smoothAskCompleteText, isAnimating: isAskCompleteAnimating } = useSmoothText(
+      rawAskCompleteText,
+      120,
+      true
+    );
 
     const displayMessages = useMemo(() => {
       const displayableTypes = ['user', 'assistant', 'tool', 'system', 'status', 'browser_state'];
@@ -1180,8 +1238,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
             return (
               <View key={group.key} className="mb-6">
-                <View className="mb-3 flex-row items-center">
-                  <AgentIdentifier agentId={groupAgentId} size={24} showName />
+                <View className="mb-2 flex-row items-center">
+                  {renderAgentIndicator(groupAgentId)}
                 </View>
 
                 <View className="gap-3">
@@ -1242,10 +1300,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                   {/* Render streaming text content (XML tool calls or regular text) */}
                   {groupIndex === groupedMessages.length - 1 &&
                     (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
-                    streamingTextContent && (
+                    (streamingTextContent || isSmoothAnimating) && (
                       <View className="mt-2">
                         {(() => {
+                          // Use raw content for tag detection
                           const rawContent = streamingTextContent || '';
+                          // Use smooth content for display (character-by-character animation)
+                          const displayContent = smoothStreamingText || '';
 
                           let detectedTag: string | null = null;
                           let tagStartIndex = -1;
@@ -1266,10 +1327,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                             }
                           }
 
+                          // For smooth display: get text before tag, but only show as much as smoothed
                           const textBeforeTag =
                             detectedTag && tagStartIndex >= 0
-                              ? rawContent.substring(0, tagStartIndex)
-                              : rawContent;
+                              ? displayContent.substring(0, Math.min(displayContent.length, tagStartIndex))
+                              : displayContent;
                           const processedTextBeforeTag =
                             preprocessTextOnlyToolsLocal(textBeforeTag);
 
@@ -1329,17 +1391,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           }
                         }
 
-                        // Extract text from arguments
-                        const toolArgs: any = askOrCompleteTool.arguments;
-                        let askCompleteText = '';
-                        if (toolArgs) {
-                          askCompleteText = extractTextFromArguments(toolArgs);
-                        }
-
+                        // Use pre-computed smooth ask/complete text
                         const toolName =
                           askOrCompleteTool.function_name?.replace(/_/g, '-').toLowerCase() || '';
                         const textToShow =
-                          askCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
+                          smoothAskCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
 
                         return (
                           <View className="mt-2">
@@ -1416,6 +1472,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     (agentStatus === 'running' || agentStatus === 'connecting') &&
                     !streamingTextContent &&
                     !streamingToolCall &&
+                    !isSmoothAnimating &&
+                    !smoothAskCompleteText &&
+                    !isAskCompleteAnimating &&
                     (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
                     (() => {
                       // Check if any message in this group already has ASK or COMPLETE
@@ -1443,17 +1502,40 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           return null;
         })}
 
-        {(agentStatus === 'running' || agentStatus === 'connecting') &&
-          !streamingTextContent &&
-          !streamingToolCall &&
-          (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
+        {/* Show agent indicator when waiting for response - ONLY when last message is user */}
+        {(() => {
+          const lastMsg = messages[messages.length - 1];
+          
+          // Only show this trailing indicator if the LAST message is a USER message
+          // If last message is assistant, the loader is handled inside groupedMessages
+          if (lastMsg?.type !== 'user') return null;
+          
+          const isAgentActive = agentStatus === 'running' || agentStatus === 'connecting';
+          const hasStreamingContent = Boolean(streamingTextContent || streamingToolCall);
+          
+          // If already streaming, don't show - content will appear in the groupedMessages
+          if (hasStreamingContent) return null;
+          
+          // Contemplating = user sent message, agent not yet active
+          // Thinking = agent is active but no content streamed yet
+          const isContemplating = !isAgentActive;
+          const isThinking = isAgentActive;
+          
+          return (
             <View className="mb-6">
-              <View className="mb-3 flex-row items-center">
-                <AgentIdentifier size={24} showName />
+              <View className="mb-2 flex-row items-center">
+                {renderAgentIndicator(null)}
               </View>
-              <AgentLoader />
+              {isContemplating ? (
+                <View className="flex-row py-2 items-center">
+                  <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
+                </View>
+              ) : (
+                <AgentLoader />
+              )}
             </View>
-          )}
+          );
+        })()}
 
         <View className="h-2" />
       </View>

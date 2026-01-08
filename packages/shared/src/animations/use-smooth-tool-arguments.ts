@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useSmoothAnimation, extractFieldFromArguments, type SmoothAnimationConfig } from './useSmoothAnimation';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { useSmoothAnimation, extractFieldFromArguments, type SmoothAnimationConfig } from './use-smooth-animation';
 
 export interface SmoothToolArgumentsResult {
   /** The smoothly revealed arguments string (for display) */
@@ -19,6 +19,7 @@ export interface SmoothToolFieldResult {
 
 /**
  * Hook that smoothly reveals tool call arguments character-by-character.
+ * Platform-agnostic - works in both web and React Native.
  * Designed for streaming tool calls where arguments come in as deltas.
  * Preserves progress when component re-mounts with same content.
  * 
@@ -129,6 +130,7 @@ export function useSmoothToolArguments(
 
 /**
  * Hook that smoothly reveals a specific field from tool call arguments.
+ * Platform-agnostic - works in both web and React Native.
  * Useful for extracting and animating specific content like file_contents, command, etc.
  * Preserves progress when component re-mounts with same content.
  * 
@@ -230,6 +232,7 @@ export function useSmoothToolField(
 
 /**
  * Hook for smoothly streaming tool call content with automatic field detection.
+ * Platform-agnostic - works in both web and React Native.
  * Intelligently extracts the most relevant field based on tool type.
  * 
  * @param toolName - The name of the tool
