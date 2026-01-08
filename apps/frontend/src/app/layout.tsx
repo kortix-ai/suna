@@ -12,16 +12,15 @@ import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
 import { featureFlags } from '@/lib/feature-flags';
+import { CookieConsent } from '@/components/cookie-consent';
 
 // Lazy load non-critical analytics and global components
-// Note: Analytics scripts will be automatically blocked by cookie consent service until consent is given
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
 const SpeedInsights = lazy(() => import('@vercel/speed-insights/next').then(mod => ({ default: mod.SpeedInsights })));
 const GoogleTagManager = lazy(() => import('@next/third-parties/google').then(mod => ({ default: mod.GoogleTagManager })));
 const PostHogIdentify = lazy(() => import('@/components/posthog-identify').then(mod => ({ default: mod.PostHogIdentify })));
 const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-selection-modal').then(mod => ({ default: mod.PlanSelectionModal })));
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
-const CookieConsent = lazy(() => import('@/components/cookie-consent').then(mod => ({ default: mod.CookieConsent })));
 const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
 const AuthEventTracker = lazy(() => import('@/components/analytics/auth-event-tracker').then(mod => ({ default: mod.AuthEventTracker })));
 
@@ -275,9 +274,7 @@ export default function RootLayout({
           <Suspense fallback={null}>
             <PostHogIdentify />
           </Suspense>
-          <Suspense fallback={null}>
-            <CookieConsent />
-          </Suspense>
+          <CookieConsent />
           <Suspense fallback={null}>
             <RouteChangeTracker />
           </Suspense>

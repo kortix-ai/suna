@@ -442,7 +442,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
           className={cn(
             "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-r border-zinc-200 dark:border-zinc-800 transition-colors shrink-0",
             showHome 
-              ? "bg-white dark:bg-zinc-800 text-emerald-600 dark:text-emerald-400" 
+              ? "bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400" 
               : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
           )}
         >
@@ -461,7 +461,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
                 : "text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
             )}
           >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />
+            <FileSpreadsheet className="w-4 h-4 text-zinc-500 dark:text-zinc-400 shrink-0" />
             <span className="truncate">{tab.fileName}</span>
             {tab.hasUnsavedChanges && (
               <span className="w-2 h-2 rounded-full bg-orange-500 shrink-0" />
@@ -531,7 +531,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
 
         <div className="space-y-1">
           <div className="px-3 py-2 rounded-lg bg-zinc-200/50 dark:bg-zinc-800/50 text-zinc-900 dark:text-white text-sm font-medium flex items-center gap-2">
-            <Clock className="w-4 h-4 text-emerald-500" />
+            <Clock className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
             Recents
           </div>
         </div>
@@ -566,7 +566,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
                   onClick={() => openFileInTab(file.path || `/workspace/spreadsheets/${file.name}`)}
                   className="w-full flex items-center gap-4 px-4 py-3 rounded-xl hover:bg-muted/50 transition-all group text-left"
                 >
-                  <div className="w-10 h-10 rounded-lg bg-emerald-50 dark:bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-500 group-hover:scale-105 transition-transform">
+                  <div className="w-10 h-10 rounded-lg bg-zinc-50 dark:bg-zinc-800 flex items-center justify-center text-zinc-600 dark:text-zinc-400 group-hover:scale-105 transition-transform">
                     <FileSpreadsheet className="w-5 h-5" />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -591,7 +591,7 @@ export const SpreadsheetApp = memo(function SpreadsheetApp({
                 <button
                   onClick={createNewSpreadsheet}
                   disabled={isCreating}
-                  className="mt-4 text-emerald-500 hover:text-emerald-600 text-sm font-medium disabled:opacity-50 flex items-center gap-2"
+                  className="mt-4 text-zinc-500 hover:text-zinc-600 dark:text-zinc-400 text-sm font-medium disabled:opacity-50 flex items-center gap-2"
                 >
                   {isCreating && <KortixLoader size="small" />}
                   {isCreating ? 'Creating...' : 'Create New'}

@@ -204,7 +204,7 @@ export function CommandToolView({
                     </div>
                     <div className="p-4 overflow-x-auto">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
-                        <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
+                        <span className="text-zinc-500 dark:text-zinc-400 font-semibold">{displayPrefix} </span>
                         <span className="text-foreground">{displayCommand}</span>
                         {isCommandAnimating && <span className="animate-pulse text-muted-foreground">▌</span>}
                       </pre>
@@ -222,8 +222,8 @@ export function CommandToolView({
                         </Badge>
                         <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <span className="relative flex h-2 w-2">
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                            <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-zinc-400 opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-zinc-500"></span>
                           </span>
                           Live
                         </span>
@@ -244,8 +244,8 @@ export function CommandToolView({
               <div className="flex-1 min-h-0 flex items-center justify-center">
                 <LoadingState
                   icon={Terminal}
-                  iconColor="text-blue-500 dark:text-blue-400"
-                  bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+                  iconColor="text-zinc-500 dark:text-zinc-400"
+                  bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
                   title={name === 'check-command-output' ? 'Checking command output' : 'Executing command'}
                   filePath={displayText || 'Processing command...'}
                   showProgress={true}
@@ -269,7 +269,7 @@ export function CommandToolView({
                     </div>
                     <div className="p-4 overflow-x-auto">
                       <pre className="text-xs text-foreground font-mono whitespace-pre-wrap break-words">
-                        <span className="text-green-500 dark:text-green-400 font-semibold">{displayPrefix} </span>
+                        <span className="text-zinc-500 dark:text-zinc-400 font-semibold">{displayPrefix} </span>
                         <span className="text-foreground">{displayCommand}</span>
                       </pre>
                     </div>
@@ -281,7 +281,7 @@ export function CommandToolView({
                   <div className="bg-card border border-border rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <Badge variant="outline" className="text-xs px-2.5 py-0.5 h-5 font-normal">
-                        <CircleDashed className="h-2.5 w-2.5 mr-1 opacity-70 text-blue-500" />
+                        <CircleDashed className="h-2.5 w-2.5 mr-1 opacity-70 text-zinc-500 dark:text-zinc-400" />
                         Status
                       </Badge>
                     </div>

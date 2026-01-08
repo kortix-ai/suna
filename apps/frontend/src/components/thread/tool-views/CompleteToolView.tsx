@@ -130,7 +130,7 @@ export function CompleteToolView({
               <div className="flex justify-center">
                 <div className="relative">
                   <div className="w-20 h-20 rounded-full bg-gradient-to-br from-emerald-100 to-emerald-200 dark:from-emerald-800/40 dark:to-emerald-900/60 flex items-center justify-center">
-                    <Trophy className="h-10 w-10 text-emerald-600 dark:text-emerald-400" />
+                    <Trophy className="h-10 w-10 text-zinc-600 dark:text-zinc-400" />
                   </div>
                   <div className="absolute -top-1 -right-1">
                     <Sparkles className="h-5 w-5 text-yellow-500 animate-pulse" />
@@ -248,7 +248,7 @@ export function CompleteToolView({
                       className="flex items-start gap-3 p-3 bg-muted/30 rounded-lg border border-border/50"
                     >
                       <div className="mt-1 flex-shrink-0">
-                        <CheckCircle className="h-4 w-4 text-emerald-500" />
+                        <CheckCircle className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                       </div>
                       <div className="flex-1 min-w-0">
                         <UnifiedMarkdown 

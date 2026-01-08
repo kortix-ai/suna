@@ -290,10 +290,10 @@ export function extractWaitForCallCompletionData(toolResult?: ToolResultData): W
 }
 
 export const statusConfig = {
-  queued: { label: 'Queued', color: 'bg-slate-500/10 text-slate-600 dark:text-slate-400' },
-  ringing: { label: 'Ringing', color: 'bg-blue-500/10 text-blue-600 dark:text-blue-400' },
-  'in-progress': { label: 'In Progress', color: 'bg-green-500/10 text-green-600 dark:text-green-400' },
-  completed: { label: 'Completed', color: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' },
-  ended: { label: 'Ended', color: 'bg-gray-500/10 text-gray-600 dark:text-gray-400' },
-  failed: { label: 'Failed', color: 'bg-red-500/10 text-red-600 dark:text-red-400' },
+  queued: { label: 'Queued', color: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400' },
+  ringing: { label: 'Ringing', color: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400' },
+  'in-progress': { label: 'In Progress', color: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400' },
+  completed: { label: 'Completed', color: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400' },
+  ended: { label: 'Ended', color: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400' },
+  failed: { label: 'Failed', color: 'bg-zinc-500/10 text-zinc-600 dark:text-zinc-400' },
 };

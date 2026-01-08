@@ -1291,52 +1291,31 @@ export function extractStreamingFileContent(
 export const getFileIconAndColor = (filename: string) => {
   const ext = filename.split('.').pop()?.toLowerCase();
   
+  // All file types use consistent gray styling
+  const grayStyle = { 
+    color: 'text-zinc-500 dark:text-zinc-400', 
+    bgColor: 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20' 
+  };
+  
   switch (ext) {
     case 'js':
     case 'jsx':
     case 'ts':
     case 'tsx':
-      return { 
-        icon: FileCode, 
-        color: 'text-yellow-500 dark:text-yellow-400', 
-        bgColor: 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border border-yellow-500/20' 
-      };
     case 'py':
-      return { 
-        icon: FileCode, 
-        color: 'text-blue-500 dark:text-blue-400', 
-        bgColor: 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20' 
-      };
     case 'html':
     case 'css':
     case 'scss':
-      return { 
-        icon: FileCode, 
-        color: 'text-orange-500 dark:text-orange-400', 
-        bgColor: 'bg-gradient-to-br from-orange-500/20 to-orange-600/10 border border-orange-500/20' 
-      };
-    
-    // Data files
-    case 'json':
-      return { 
-        icon: FileJson, 
-        color: 'text-green-500 dark:text-green-400', 
-        bgColor: 'bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20' 
-      };
-    case 'csv':
-      return { 
-        icon: Table, 
-        color: 'text-emerald-500 dark:text-emerald-400', 
-        bgColor: 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20' 
-      };
     case 'xml':
     case 'yaml':
     case 'yml':
-      return { 
-        icon: FileCode, 
-        color: 'text-purple-500 dark:text-purple-400', 
-        bgColor: 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20' 
-      };
+      return { icon: FileCode, ...grayStyle };
+    
+    // Data files
+    case 'json':
+      return { icon: FileJson, ...grayStyle };
+    case 'csv':
+      return { icon: Table, ...grayStyle };
     
     // Image files
     case 'jpg':
@@ -1345,76 +1324,39 @@ export const getFileIconAndColor = (filename: string) => {
     case 'gif':
     case 'svg':
     case 'webp':
-      return { 
-        icon: FileImage, 
-        color: 'text-pink-500 dark:text-pink-400', 
-        bgColor: 'bg-gradient-to-br from-pink-500/20 to-pink-600/10 border border-pink-500/20' 
-      };
+      return { icon: FileImage, ...grayStyle };
     
     // Document files
     case 'md':
     case 'mdx':
-      return { 
-        icon: FileText, 
-        color: 'text-slate-500 dark:text-slate-400', 
-        bgColor: 'bg-gradient-to-br from-slate-500/20 to-slate-600/10 border border-slate-500/20' 
-      };
     case 'txt':
-      return { 
-        icon: FileText, 
-        color: 'text-zinc-500 dark:text-zinc-400', 
-        bgColor: 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20' 
-      };
+      return { icon: FileText, ...grayStyle };
     case 'pdf':
-      return { 
-        icon: FileType, 
-        color: 'text-red-500 dark:text-red-400', 
-        bgColor: 'bg-gradient-to-br from-red-500/20 to-red-600/10 border border-red-500/20' 
-      };
+      return { icon: FileType, ...grayStyle };
     
     // Media files
     case 'mp4':
     case 'avi':
     case 'mov':
-      return { 
-        icon: FileVideo, 
-        color: 'text-indigo-500 dark:text-indigo-400', 
-        bgColor: 'bg-gradient-to-br from-indigo-500/20 to-indigo-600/10 border border-indigo-500/20' 
-      };
+      return { icon: FileVideo, ...grayStyle };
     case 'mp3':
     case 'wav':
     case 'ogg':
-      return { 
-        icon: FileAudio, 
-        color: 'text-teal-500 dark:text-teal-400', 
-        bgColor: 'bg-gradient-to-br from-teal-500/20 to-teal-600/10 border border-teal-500/20' 
-      };
+      return { icon: FileAudio, ...grayStyle };
     
     // Archive files
     case 'zip':
     case 'tar':
     case 'gz':
     case 'rar':
-      return { 
-        icon: FileArchive, 
-        color: 'text-amber-500 dark:text-amber-400', 
-        bgColor: 'bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/20' 
-      };
+      return { icon: FileArchive, ...grayStyle };
     
     // Default
     default:
       if (!ext || filename.includes('/')) {
-        return { 
-          icon: FolderOpen, 
-          color: 'text-blue-500 dark:text-blue-400', 
-          bgColor: 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-500/20' 
-        };
+        return { icon: FolderOpen, ...grayStyle };
       }
-      return { 
-        icon: File, 
-        color: 'text-zinc-500 dark:text-zinc-400', 
-        bgColor: 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20' 
-      };
+      return { icon: File, ...grayStyle };
   }
 };
 

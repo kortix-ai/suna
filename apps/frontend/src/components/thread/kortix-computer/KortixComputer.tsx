@@ -713,10 +713,9 @@ export const KortixComputer = memo(function KortixComputer({
             variant="motion"
             currentView={activeView}
             onViewChange={setActiveView}
-            showFilesTab={false}
+            showFilesTab={true}
             isMaximized={isMaximized}
             isSuiteMode={isSuiteMode}
-            hideViewToggle={true}
             onToggleSuiteMode={() => {
               if (isSuiteMode) {
                 // Exit suite mode - restore previous size
@@ -775,8 +774,7 @@ export const KortixComputer = memo(function KortixComputer({
             variant="drawer"
             currentView={activeView}
             onViewChange={setActiveView}
-            showFilesTab={false}
-            hideViewToggle={true}
+            showFilesTab={true}
           />
 
           <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>

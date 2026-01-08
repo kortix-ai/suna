@@ -231,7 +231,7 @@ export function SpreadsheetSimulation({ mode = 'max' }: SpreadsheetSimulationPro
                               >
                                 {isFormula ? (
                                   <motion.div
-                                    className="h-1.5 bg-purple-400 dark:bg-purple-500 rounded-full"
+                                    className="h-1.5 bg-zinc-400 dark:bg-zinc-500 rounded-full"
                                     initial={{ width: 0 }}
                                     animate={{ width: '70%' }}
                                     transition={{ duration: 0.3 }}

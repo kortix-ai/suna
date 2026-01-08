@@ -292,7 +292,7 @@ export function WebCrawlToolView({
                                 onClick={copyContent}
                               >
                                 {copiedContent ? (
-                                  <Check className="w-4 h-4 text-green-600" />
+                                  <Check className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
                                 ) : (
                                   <Copy className="w-4 h-4" />
                                 )}

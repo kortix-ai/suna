@@ -868,9 +868,75 @@ async def expire_existing_credits(account_id: str) -> None:
     SET expires_at = :current_time, is_expired = true
     WHERE account_id = :account_id 
       AND is_expiring = true 
-      AND is_expired IS NOT true
+      AND is_expired IS NULL
     """
     await execute_mutate(sql, {
         "account_id": account_id,
         "current_time": datetime.now(timezone.utc).isoformat()
     })
+
+
+async def insert_credit_record(
+    credit_id: str,
+    account_id: str,
+    amount: float,
+    is_expiring: bool,
+    expires_at: Optional[str],
+    stripe_event_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Insert a credit record into the credits table."""
+    from core.services.db import execute_mutate
+    
+    sql = """
+    INSERT INTO credits (
+        id, account_id, amount, is_expiring, expires_at, stripe_event_id
+    )
+    VALUES (
+        :id, :account_id, :amount, :is_expiring, :expires_at, :stripe_event_id
+    )
+    RETURNING *
+    """
+    
+    rows = await execute_mutate(sql, {
+        "id": credit_id,
+        "account_id": account_id,
+        "amount": amount,
+        "is_expiring": is_expiring,
+        "expires_at": expires_at,
+        "stripe_event_id": stripe_event_id
+    })
+    return rows[0] if rows else None
+
+
+async def insert_credit_ledger_with_credit_id(
+    ledger_id: str,
+    account_id: str,
+    amount: float,
+    ledger_type: str,
+    description: str,
+    credit_id: Optional[str] = None,
+    stripe_event_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Insert a credit ledger entry with credit_id reference (used by reset expiring credits)."""
+    from core.services.db import execute_mutate
+    
+    sql = """
+    INSERT INTO credit_ledger (
+        id, account_id, amount, type, description, credit_id, stripe_event_id
+    )
+    VALUES (
+        :id, :account_id, :amount, :type, :description, :credit_id, :stripe_event_id
+    )
+    RETURNING *
+    """
+    
+    rows = await execute_mutate(sql, {
+        "id": ledger_id,
+        "account_id": account_id,
+        "amount": amount,
+        "type": ledger_type,
+        "description": description,
+        "credit_id": credit_id,
+        "stripe_event_id": stripe_event_id
+    })
+    return rows[0] if rows else None

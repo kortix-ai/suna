@@ -144,28 +144,27 @@ function getFileIcon(fileName: string): React.ReactNode {
   const cleanFileName = fileName.trim().replace(/[\r\n]+/g, '').replace(/\s+$/g, '');
   const ext = cleanFileName.split('.').pop()?.toLowerCase();
   
+  // All file icons use consistent gray color
+  const iconClass = "w-4 h-4 text-zinc-600 dark:text-zinc-400";
+  
   if (cleanFileName === 'package.json') {
-    return <FileJson className="w-4 h-4 text-green-600 dark:text-green-400" />;
+    return <FileJson className={iconClass} />;
   }
   
   switch (ext) {
     case 'ts':
     case 'tsx':
-      return <FileCode className="w-4 h-4 text-blue-600 dark:text-blue-400" />;
     case 'js':
     case 'jsx':
-      return <FileCode className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />;
     case 'json':
-      return <FileCode className="w-4 h-4 text-gray-600 dark:text-gray-400" />;
     case 'css':
     case 'scss':
-      return <FileCode className="w-4 h-4 text-pink-600 dark:text-pink-400" />;
-    case 'md':
-      return <FileText className="w-4 h-4 text-gray-600 dark:text-gray-400" />;
     case 'html':
-      return <FileCode className="w-4 h-4 text-orange-600 dark:text-orange-400" />;
+      return <FileCode className={iconClass} />;
+    case 'md':
+      return <FileText className={iconClass} />;
     default:
-      return <File className="w-4 h-4 text-gray-500 dark:text-gray-400" />;
+      return <File className={iconClass} />;
   }
 }
 
@@ -339,7 +338,7 @@ const FileExplorer: React.FC<{
                     disabled={isCopying}
                   >
                     {isCopying ? (
-                      <Check className="w-3 h-3 text-green-500" />
+                      <Check className="w-3 h-3 text-zinc-500 dark:text-zinc-400" />
                     ) : (
                       <Copy className="w-3 h-3" />
                     )}
@@ -709,8 +708,8 @@ export function GetProjectStructureView({
           {isStreaming ? (
             <LoadingState
               icon={FolderTree}
-              iconColor="text-blue-500 dark:text-blue-400"
-              bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+              iconColor="text-zinc-500 dark:text-zinc-400"
+              bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
               title="Loading project structure"
               filePath={projectData?.projectName || 'Processing...'}
               showProgress={true}
@@ -740,7 +739,7 @@ export function GetProjectStructureView({
         <DialogContent className="max-w-[90vw] w-[90vw] h-[85vh] p-0 gap-0">
           <DialogHeader className="px-6 py-4 border-b flex flex-row items-center justify-between">
             <DialogTitle className="flex items-center gap-2">
-              <FolderTree className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+              <FolderTree className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
               {projectData ? `Project Explorer - ${projectData.projectName}` : 'Project Explorer'}
             </DialogTitle>
             {projectData && (
