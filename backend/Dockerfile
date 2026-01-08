@@ -30,8 +30,6 @@ COPY . .
 ENV PYTHONPATH=/app
 EXPOSE 8000
 
-# WORKERS=16 for 32 vCPU server (2 workers per core, capped at 16)
-ENV WORKERS=16
-ENV TIMEOUT=1800
-
-CMD ["sh", "-c", "uv run gunicorn api:app -w ${WORKERS} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout ${TIMEOUT} --graceful-timeout 30 --keep-alive 65"]
+# WORKERS and TIMEOUT are set via  variables at runtime (ECS task definition)
+# Defaults: WORKERS=4 (2 per vCPU), TIMEOUT=1800 (30 min for long-running agents)
+CMD ["sh", "-c", "uv run gunicorn api:app -w ${WORKERS:-4} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout ${TIMEOUT:-1800} --graceful-timeout 30 --keep-alive 65"]
