@@ -12,7 +12,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { ChevronDown, Check, Lock } from 'lucide-react';
+import { Check, Lock } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModelSelection } from '@/hooks/agents';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
@@ -69,14 +69,14 @@ export const ModeIndicator = memo(function ModeIndicator() {
           <DropdownMenuTrigger asChild>
             <Button
               variant="outline"
-              className="h-10 px-3 bg-transparent border-[1.5px] border-border rounded-2xl cursor-pointer gap-1.5 text-muted-foreground hover:text-foreground hover:bg-accent/50"
-            >
-              {isPowerSelected && <KortixLogo size={12} variant="symbol" />}
-              <span className="text-sm font-medium">{currentModeLabel}</span>
-              {!canAccessPower && !isPowerSelected && (
-                <Lock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2} />
+              size="icon"
+              aria-label={`Switch mode (currently ${currentModeLabel})`}
+              className={cn(
+                "h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl cursor-pointer text-muted-foreground hover:text-foreground hover:bg-accent/50 flex items-center justify-center",
+                isPowerSelected && "border-primary/30 bg-primary/5"
               )}
-              <ChevronDown className="h-3.5 w-3.5 opacity-60" strokeWidth={2} />
+            >
+              <KortixLogo size={18} variant="symbol" />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>

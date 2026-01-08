@@ -20,7 +20,6 @@ import { SharePopover } from "@/components/sidebar/share-modal"
 import { useQueryClient } from "@tanstack/react-query";
 import { projectKeys } from "@/hooks/threads/keys";
 import { threadKeys } from "@/hooks/threads/keys";
-import { ModeIndicator } from "@/components/thread/mode-indicator";
 
 interface ThreadSiteHeaderProps {
   threadId?: string;
@@ -174,9 +173,6 @@ export function SiteHeader({
 
       <div className="flex items-center gap-1 pr-4">
         <TooltipProvider>
-          {/* Mode Indicator - only show for non-shared variant */}
-          {variant !== 'shared' && <ModeIndicator />}
-
           {variant === 'shared' ? (
             <Tooltip>
               <TooltipTrigger asChild>
