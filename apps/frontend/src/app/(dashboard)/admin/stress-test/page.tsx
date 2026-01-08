@@ -30,7 +30,7 @@ import { cn } from '@/lib/utils';
 
 export default function AdminStressTestPage() {
   const [numRequests, setNumRequests] = useState(5);
-  const [batchSize, setBatchSize] = useState(1);
+  const [batchSize, setBatchSize] = useState(20);
   const [measureTtft, setMeasureTtft] = useState(true);
   
   const { state, runStressTest, cancelTest, resetTest } = useStressTest();
