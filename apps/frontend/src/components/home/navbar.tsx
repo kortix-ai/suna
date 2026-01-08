@@ -12,6 +12,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { LocaleSwitcher } from '@/components/home/locale-switcher';
 
 // Scroll threshold with hysteresis to prevent flickering
 const SCROLL_THRESHOLD_DOWN = 50;
@@ -146,6 +147,7 @@ export function Navbar() {
 
             {/* Right Section - Actions */}
             <div className="flex items-center justify-end gap-2 sm:gap-3 ml-auto">
+              <LocaleSwitcher variant="compact" />
               {user ? (
                 <Link
                   href="/dashboard"
@@ -273,8 +275,9 @@ export function Navbar() {
                     </Link>
                   )}
                   
-                  {/* Theme Toggle */}
-                  <div className="flex justify-end">
+                  {/* Language Switcher and Theme Toggle */}
+                  <div className="flex items-center justify-between gap-3">
+                    <LocaleSwitcher variant="compact" />
                     <ThemeToggle />
                   </div>
                 </div>
