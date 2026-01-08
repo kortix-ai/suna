@@ -347,18 +347,13 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "delete_file",
-            "description": "Delete a file at the given path. **IMPORTANT**: You MUST use the `ask` tool to get explicit user confirmation before calling this tool. Never delete files without user permission. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). Before using this tool: 1) Use `ask` to request confirmation with a clear message like 'Do you want me to delete [file_path]?'. 2) Only proceed with deletion if the user confirms. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `file_path` (REQUIRED).",
+            "description": "Delete a file at the given path. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `file_path` (REQUIRED).",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
                         "description": "**REQUIRED** - Path to the file to be deleted, relative to /workspace. Example: 'src/main.py' for /workspace/src/main.py."
-                    },
-                    "user_confirmed": {
-                        "type": "boolean",
-                        "description": "**OPTIONAL** - Set to true only after receiving explicit user confirmation via the `ask` tool. Do not set to true without confirmation. Default: false.",
-                        "default": False
                     }
                 },
                 "required": ["file_path"],
@@ -366,14 +361,8 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    async def delete_file(self, file_path: str, user_confirmed: bool = False) -> ToolResult:
+    async def delete_file(self, file_path: str) -> ToolResult:
         try:
-            if not user_confirmed:
-                return self.fail_response(
-                    f"Cannot delete '{file_path}' without user confirmation. "
-                    f"Please use the `ask` tool to request user permission first, then call this tool again with user_confirmed=true."
-                )
-            
             await self._ensure_sandbox()
             
             full_path = self._get_full_path(file_path)

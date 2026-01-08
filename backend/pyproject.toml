@@ -58,6 +58,7 @@ dependencies = [
   "replicate>=0.25.0",
   "mcp==1.9.4",
   "aiohttp==3.12.0",
+  "httpx>=0.27.0",
   "email-validator==2.0.0",
   "mailtrap==2.0.1",
   "gunicorn>=23.0.0",
@@ -113,4 +114,17 @@ package = false
 
 [dependency-groups]
 dev = [
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+    "e2e: Full end-to-end tests",
+    "slow: Tests taking >30s",
+]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore:Field name.*shadows an attribute in parent:UserWarning",
 ]

@@ -344,8 +344,9 @@ from core.memory.api import router as memory_router
 api_router.include_router(referrals_router)
 api_router.include_router(memory_router)
 
-from core.test_harness.api import router as test_harness_router
+from core.test_harness.api import router as test_harness_router, e2e_router
 api_router.include_router(test_harness_router)
+api_router.include_router(e2e_router)
 
 from core.files import staged_files_router
 api_router.include_router(staged_files_router, prefix="/files")

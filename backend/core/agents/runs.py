@@ -118,9 +118,12 @@ async def _check_billing_and_limits(client, account_id: str, model_name: Optiona
             raise HTTPException(status_code=500, detail={"message": error_message})
     
     if not agent_run_result.get('can_start', True):
+        # Convert UUIDs to strings for JSON serialization
+        running_thread_ids = agent_run_result.get('running_thread_ids', [])
+        running_thread_ids_str = [str(tid) for tid in running_thread_ids] if running_thread_ids else []
         error_detail = {
             "message": f"Maximum of {agent_run_result['limit']} concurrent agent runs allowed. You currently have {agent_run_result['running_count']} running.",
-            "running_thread_ids": agent_run_result.get('running_thread_ids', []),
+            "running_thread_ids": running_thread_ids_str,
             "running_count": agent_run_result['running_count'],
             "limit": agent_run_result['limit'],
             "error_code": "AGENT_RUN_LIMIT_EXCEEDED"
@@ -502,7 +505,7 @@ async def _ensure_sandbox_for_thread(client, project_id: str, files: Optional[Li
         logger.warning(f"Project {project_id} not found when checking for sandbox")
         return None, None
     
-    account_id = project_data.get('account_id')
+    account_id = str(project_data.get('account_id')) if project_data.get('account_id') else None
     sandbox_resource_id = project_data.get('sandbox_resource_id')
     
     resource_service = ResourceService(client)

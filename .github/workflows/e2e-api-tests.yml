@@ -1,0 +1,43 @@
+name: E2E API Tests
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+    inputs:
+      test_filter:
+        description: 'pytest filter expression (optional)'
+        required: false
+        type: string
+      api_url:
+        description: 'API base URL'
+        required: false
+        type: string
+        default: 'http://staging-api.suna.so'
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger E2E tests via API
+        run: |
+          API_URL="${{ github.event.inputs.api_url || 'http://staging-api.suna.so' }}"
+          TEST_FILTER="${{ github.event.inputs.test_filter || '' }}"
+          
+          if [ -n "$TEST_FILTER" ]; then
+            curl -X POST "$API_URL/admin/tests/e2e?test_filter=$TEST_FILTER" \
+              -H "X-Admin-Api-Key: ${{ secrets.KORTIX_ADMIN_API_KEY }}" \
+              -H "Content-Type: application/json"
+          else
+            curl -X POST "$API_URL/admin/tests/e2e" \
+              -H "X-Admin-Api-Key: ${{ secrets.KORTIX_ADMIN_API_KEY }}" \
+              -H "Content-Type: application/json"
+          fi
