@@ -458,9 +458,63 @@ async def check_renewal_already_processed(account_id: str, period_start: int) ->
     """Check if a renewal has already been processed for this period."""
     from core.services.db import execute_one
     
-    # Call the RPC function using raw SQL
-    sql = "SELECT * FROM check_renewal_already_processed(:p_account_id, :p_period_start)"
-    return await execute_one(sql, {
+    # Call the RPC function - use scalar select to get the JSONB directly
+    sql = "SELECT check_renewal_already_processed(:p_account_id, :p_period_start)"
+    result = await execute_one(sql, {
         "p_account_id": account_id,
         "p_period_start": period_start
+    })
+    
+    if not result:
+        return None
+    
+    # The result is {"check_renewal_already_processed": {...}} - extract the inner value
+    return result.get("check_renewal_already_processed")
+
+
+# =============================================================================
+# TRIAL REPOSITORY FUNCTIONS
+# =============================================================================
+
+async def get_trial_credits_by_description(account_id: str, description: str) -> Optional[List[Dict[str, Any]]]:
+    """Get trial credits from credit_ledger by account and description."""
+    sql = """
+    SELECT * FROM credit_ledger
+    WHERE account_id = :account_id AND description = :description
+    """
+    rows = await execute(sql, {"account_id": account_id, "description": description})
+    return rows if rows else None
+
+
+async def create_trial_history(account_id: str, started_at) -> None:
+    """Create or update trial history record."""
+    from core.services.db import execute_mutate
+    from datetime import datetime
+    
+    started_at_str = started_at.isoformat() if isinstance(started_at, datetime) else started_at
+    
+    sql = """
+    INSERT INTO trial_history (account_id, started_at)
+    VALUES (:account_id, :started_at)
+    ON CONFLICT (account_id) DO UPDATE SET started_at = :started_at
+    """
+    await execute_mutate(sql, {"account_id": account_id, "started_at": started_at_str})
+
+
+async def update_trial_end(account_id: str, ended_at, converted: bool = True) -> None:
+    """Update trial end date and conversion status."""
+    from core.services.db import execute_mutate
+    from datetime import datetime
+    
+    ended_at_str = ended_at.isoformat() if isinstance(ended_at, datetime) else ended_at
+    
+    sql = """
+    UPDATE trial_history
+    SET ended_at = :ended_at, converted_to_paid = :converted
+    WHERE account_id = :account_id AND ended_at IS NULL
+    """
+    await execute_mutate(sql, {
+        "account_id": account_id,
+        "ended_at": ended_at_str,
+        "converted": converted
     })
