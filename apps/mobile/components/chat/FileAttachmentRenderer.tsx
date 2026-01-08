@@ -353,8 +353,8 @@ function ImageAttachment({
         });
 
         const { blobToDataURL } = await import('@/lib/files/hooks');
-        const dataUrl = await blobToDataURL(blob);
-        console.log('[ImageAttachment] ✅ Data URL created successfully');
+        const dataUrl = await blobToDataURL(blob, file.path);
+        console.log('[ImageAttachment] ✅ Data URL created successfully, mime fixed for:', file.extension);
         if (!isCancelled) {
           setBlobUrl(dataUrl);
           setIsLoading(false);
@@ -447,10 +447,6 @@ function ImageAttachment({
                 source={{ uri: imageUrl }}
                 style={{ width: '100%', height: '100%' }}
                 resizeMode="cover"
-                onLoadStart={() => {
-                  console.log('[ImageAttachment] Image loading started:', imageUrl?.substring(0, 50));
-                  setIsLoading(true);
-                }}
                 onLoadEnd={() => {
                   console.log('[ImageAttachment] Image loaded successfully');
                   setIsLoading(false);
@@ -462,7 +458,8 @@ function ImageAttachment({
                 }}
               />
 
-              {isLoading && (
+              {/* Only show spinner for network URLs, not data URLs (which load instantly) */}
+              {isLoading && imageUrl && !imageUrl.startsWith('data:') && (
                 <View className="absolute inset-0 bg-muted/50 items-center justify-center">
                   <ActivityIndicator
                     size="small"

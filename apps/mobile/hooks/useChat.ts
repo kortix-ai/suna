@@ -679,11 +679,16 @@ export function useChat(): UseChatReturn {
         setIsNewThreadOptimistic(true);
         console.log('✨ [useChat] INSTANT user message display');
         
+        // Convert attachments before clearing (we need the data)
         const formDataFiles = attachments.length > 0
           ? await convertAttachmentsToFormDataFiles(attachments)
           : [];
         
         console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
+        
+        // Clear input and attachments immediately for instant feedback
+        setInputValue('');
+        setAttachments([]);
         
         // Append hidden context for selected quick action options
         let messageWithContext = content;
@@ -758,9 +763,6 @@ export function useChat(): UseChatReturn {
             setUserInitiatedRun(true);
             setAgentRunId(createResult.agent_run_id);
           }
-          
-          setInputValue('');
-          setAttachments([]);
         } catch (agentStartError: any) {
           console.error('[useChat] Error starting agent for new thread:', agentStartError);
           
@@ -811,6 +813,9 @@ export function useChat(): UseChatReturn {
         
         setMessages((prev) => [...prev, optimisticUserMessage]);
         console.log('✨ [useChat] INSTANT user message display for existing thread');
+        
+        // Clear input immediately for instant feedback
+        setInputValue('');
         
         setIsNewThreadOptimistic(true);
         
@@ -864,6 +869,9 @@ export function useChat(): UseChatReturn {
               : fileReferences;
               
             console.log('[useChat] Message with file references prepared');
+            
+            // Clear attachments after successful upload
+            setAttachments([]);
           } catch (uploadError) {
             console.error('[useChat] File upload failed:', uploadError);
             
@@ -873,6 +881,9 @@ export function useChat(): UseChatReturn {
             );
             return;
           }
+        } else {
+          // No attachments - clear anyway to be safe
+          setAttachments([]);
         }
         
         if (!currentModel) {
@@ -908,9 +919,6 @@ export function useChat(): UseChatReturn {
           }
           
           setIsNewThreadOptimistic(false);
-          
-          setInputValue('');
-          setAttachments([]);
         } catch (sendMessageError: any) {
           console.error('[useChat] Error sending message to existing thread:', sendMessageError);
           

@@ -1139,17 +1139,27 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               }
             })();
 
-            const attachmentsMatch = messageContent.match(/\[Uploaded File: (.*?)\]/g);
-            const attachments = attachmentsMatch
-              ? attachmentsMatch
-                .map((match: string) => {
-                  const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
-                  return pathMatch ? pathMatch[1] : null;
-                })
-                .filter(Boolean)
-              : [];
+            // Match both formats:
+            // 1. [Uploaded File: path] - from existing thread uploads
+            // 2. [Attached: filename (size) -> path] - from new thread creation with files
+            const uploadedFileMatches = messageContent.match(/\[Uploaded File: (.*?)\]/g) || [];
+            const attachedFileMatches = messageContent.match(/\[Attached: .*? -> (.*?)\]/g) || [];
+            
+            const attachments = [
+              ...uploadedFileMatches.map((match: string) => {
+                const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
+                return pathMatch ? pathMatch[1] : null;
+              }),
+              ...attachedFileMatches.map((match: string) => {
+                const pathMatch = match.match(/\[Attached: .*? -> (.*?)\]/);
+                return pathMatch ? pathMatch[1] : null;
+              }),
+            ].filter(Boolean);
 
-            const cleanContent = messageContent.replace(/\[Uploaded File: .*?\]/g, '').trim();
+            const cleanContent = messageContent
+              .replace(/\[Uploaded File: .*?\]/g, '')
+              .replace(/\[Attached: .*? -> .*?\]/g, '')
+              .trim();
 
             return (
               <View key={group.key} className="mb-6">
