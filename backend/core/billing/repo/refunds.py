@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from core.services.db import execute_one, execute_mutate
+from core.infrastructure.database.db import execute_one, execute_mutate
 
 
 async def get_refund_by_stripe_id(stripe_refund_id: str) -> Optional[Dict[str, Any]]:
@@ -182,7 +182,7 @@ async def create_credit_purchase(
     stripe_payment_intent_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None
 ) -> Optional[Dict[str, Any]]:
-    from core.services.db import execute_one
+    from core.infrastructure.database.db import execute_one
     import uuid
     
     purchase_id = str(uuid.uuid4())
@@ -203,7 +203,7 @@ async def create_credit_purchase(
 
 
 async def get_pending_credit_purchases(since: str) -> list:
-    from core.services.db import execute
+    from core.infrastructure.database.db import execute
     
     sql = """
     SELECT id, account_id, amount_dollars, stripe_payment_intent_id, created_at
@@ -214,7 +214,7 @@ async def get_pending_credit_purchases(since: str) -> list:
 
 
 async def get_all_credit_accounts_balances() -> list:
-    from core.services.db import execute
+    from core.infrastructure.database.db import execute
     
     sql = """
     SELECT account_id, balance, expiring_credits, non_expiring_credits
@@ -224,7 +224,7 @@ async def get_all_credit_accounts_balances() -> list:
 
 
 async def check_ledger_by_payment_intent(payment_intent_id: str) -> bool:
-    from core.services.db import execute_one
+    from core.infrastructure.database.db import execute_one
     
     sql = """
     SELECT id FROM credit_ledger
@@ -236,7 +236,7 @@ async def check_ledger_by_payment_intent(payment_intent_id: str) -> bool:
 
 async def get_recent_ledger_entries_for_duplicate_check(since: str) -> list:
     """Get recent ledger entries for duplicate checking."""
-    from core.services.db import execute
+    from core.infrastructure.database.db import execute
     
     sql = """
     SELECT id, account_id, amount, description, created_at, stripe_event_id
@@ -248,21 +248,21 @@ async def get_recent_ledger_entries_for_duplicate_check(since: str) -> list:
 
 
 async def call_reconcile_credit_balance(account_id: str) -> Optional[Dict[str, Any]]:
-    from core.services.db import execute_one
+    from core.infrastructure.database.db import execute_one
     
     sql = "SELECT * FROM reconcile_credit_balance(:p_account_id)"
     return await execute_one(sql, {"p_account_id": account_id})
 
 
 async def call_cleanup_expired_credits() -> list:
-    from core.services.db import execute
+    from core.infrastructure.database.db import execute
     
     sql = "SELECT * FROM cleanup_expired_credits()"
     return await execute(sql, {})
 
 
 async def get_credit_purchase_by_id(purchase_id: str) -> Optional[Dict[str, Any]]:
-    from core.services.db import execute_one
+    from core.infrastructure.database.db import execute_one
     
     sql = "SELECT * FROM credit_purchases WHERE id = :purchase_id"
     return await execute_one(sql, {"purchase_id": purchase_id})

@@ -67,7 +67,7 @@ class CreditRepository:
         app_user_id: str,
         transaction_id: str
     ) -> Optional[Dict]:
-        from core.services.db import execute_one
+        from core.infrastructure.database.db import execute_one
         
         sql = """
         SELECT id, revenuecat_transaction_id, amount_dollars, created_at, status
@@ -88,7 +88,7 @@ class CreditRepository:
         product_id: str,
         transaction_id: str
     ) -> None:
-        from core.services.db import execute_mutate
+        from core.infrastructure.database.db import execute_mutate
         
         sql = """
         INSERT INTO credit_purchases (
@@ -110,7 +110,7 @@ class CreditRepository:
     
     @staticmethod
     async def complete_credit_purchase(client, transaction_id: str) -> None:
-        from core.services.db import execute_mutate
+        from core.infrastructure.database.db import execute_mutate
         
         sql = """
         UPDATE credit_purchases
@@ -124,7 +124,7 @@ class CreditRepository:
     
     @staticmethod
     async def fail_credit_purchase(client, transaction_id: str, error_message: str) -> None:
-        from core.services.db import execute_mutate
+        from core.infrastructure.database.db import execute_mutate
         
         try:
             sql = """

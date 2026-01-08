@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from core.services.db import execute_one, execute_mutate
+from core.infrastructure.database.db import execute_one, execute_mutate
 
 
 async def get_credit_account(account_id: str) -> Optional[Dict[str, Any]]:
@@ -120,14 +120,14 @@ async def get_credit_account_scheduled_changes(account_id: str) -> Optional[Dict
 
 
 async def get_credit_account_balance(account_id: str) -> Optional[Dict[str, Any]]:
-    from core.services.db import serialize_row
+    from core.infrastructure.database.db import serialize_row
     sql = "SELECT balance FROM credit_accounts WHERE account_id = :account_id"
     result = await execute_one(sql, {"account_id": account_id})
     return serialize_row(result) if result else None
 
 
 async def get_credit_account_balances(account_id: str) -> Optional[Dict[str, Any]]:
-    from core.services.db import serialize_row
+    from core.infrastructure.database.db import serialize_row
     sql = """
     SELECT balance, expiring_credits, non_expiring_credits
     FROM credit_accounts
@@ -155,8 +155,8 @@ async def update_credit_account(account_id: str, update_data: Dict[str, Any]) ->
     
     if 'tier' in update_data or 'trial_status' in update_data:
         try:
-            from core.cache.runtime_cache import invalidate_tier_info_cache
-            from core.utils.cache import Cache
+            from core.infrastructure.cache.runtime_cache import invalidate_tier_info_cache
+            from core.shared.cache import Cache
             await invalidate_tier_info_cache(account_id)
             await Cache.invalidate(f"subscription_tier:{account_id}")
         except Exception:
@@ -234,8 +234,8 @@ async def upsert_credit_account(account_id: str, data: Dict[str, Any]) -> bool:
     
     if 'tier' in data or 'trial_status' in data:
         try:
-            from core.cache.runtime_cache import invalidate_tier_info_cache
-            from core.utils.cache import Cache
+            from core.infrastructure.cache.runtime_cache import invalidate_tier_info_cache
+            from core.shared.cache import Cache
             await invalidate_tier_info_cache(account_id)
             await Cache.invalidate(f"subscription_tier:{account_id}")
         except Exception:

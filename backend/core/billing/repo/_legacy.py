@@ -6,7 +6,7 @@ This file contains transactions, trial, and credit operations that will be
 migrated incrementally.
 """
 from typing import List, Dict, Any, Optional, Tuple
-from core.services.db import execute, execute_one, serialize_row
+from core.infrastructure.database.db import execute, execute_one, serialize_row
 from datetime import datetime, timezone, timedelta
 
 # Import get_credit_account from new module for backwards compatibility
@@ -408,7 +408,7 @@ async def get_trial_credits_by_description(account_id: str, description: str) ->
 
 async def create_trial_history(account_id: str, started_at) -> None:
     """Create or update trial history record."""
-    from core.services.db import execute_mutate
+    from core.infrastructure.database.db import execute_mutate
     from datetime import datetime
     
     started_at_str = started_at.isoformat() if isinstance(started_at, datetime) else started_at
@@ -423,7 +423,7 @@ async def create_trial_history(account_id: str, started_at) -> None:
 
 async def update_trial_end(account_id: str, ended_at, converted: bool = True) -> None:
     """Update trial end date and conversion status."""
-    from core.services.db import execute_mutate
+    from core.infrastructure.database.db import execute_mutate
     from datetime import datetime
     
     ended_at_str = ended_at.isoformat() if isinstance(ended_at, datetime) else ended_at
@@ -582,7 +582,7 @@ async def insert_credit_ledger(
     stripe_event_id: Optional[str] = None,
     ledger_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
-    from core.services.db import execute_mutate
+    from core.infrastructure.database.db import execute_mutate
     import uuid
     
     entry_id = ledger_id or str(uuid.uuid4())
@@ -630,7 +630,7 @@ async def insert_credit_ledger_with_balance(
     message_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Insert a credit ledger entry with balance_after (required field)."""
-    from core.services.db import execute_mutate
+    from core.infrastructure.database.db import execute_mutate
     
     sql = """
     INSERT INTO credit_ledger (
@@ -675,7 +675,7 @@ async def add_credits_and_update_account(
     Add credits to an account - updates credit_accounts balance and inserts ledger entry.
     This is a manual fallback when atomic functions are not available.
     """
-    from core.services.db import transaction, _prep_params
+    from core.infrastructure.database.db import transaction, _prep_params
     import uuid
     
     ledger_id = str(uuid.uuid4())
@@ -769,7 +769,7 @@ async def deduct_credits_and_update_account(
     Deduct credits from an account - updates credit_accounts balance and inserts ledger entry.
     This is a manual fallback when atomic functions are not available.
     """
-    from core.services.db import transaction, _prep_params
+    from core.infrastructure.database.db import transaction, _prep_params
     import uuid
     
     ledger_id = str(uuid.uuid4())
@@ -861,7 +861,7 @@ async def deduct_credits_and_update_account(
 
 async def expire_existing_credits(account_id: str) -> None:
     """Expire all existing expiring credits for an account."""
-    from core.services.db import execute_mutate
+    from core.infrastructure.database.db import execute_mutate
     
     sql = """
     UPDATE credits
@@ -885,7 +885,7 @@ async def insert_credit_record(
     stripe_event_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Insert a credit record into the credits table."""
-    from core.services.db import execute_mutate
+    from core.infrastructure.database.db import execute_mutate
     
     sql = """
     INSERT INTO credits (
@@ -918,7 +918,7 @@ async def insert_credit_ledger_with_credit_id(
     stripe_event_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     """Insert a credit ledger entry with credit_id reference (used by reset expiring credits)."""
-    from core.services.db import execute_mutate
+    from core.infrastructure.database.db import execute_mutate
     
     sql = """
     INSERT INTO credit_ledger (

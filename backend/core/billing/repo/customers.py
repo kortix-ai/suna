@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional
-from core.services.db import execute_one, execute_mutate
+from core.infrastructure.database.db import execute_one, execute_mutate
 
 
 async def get_billing_customer(account_id: str) -> Optional[Dict[str, Any]]:

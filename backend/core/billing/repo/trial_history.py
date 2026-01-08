@@ -1,6 +1,6 @@
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
-from core.services.db import execute_one, execute, execute_mutate
+from core.infrastructure.database.db import execute_one, execute, execute_mutate
 
 
 async def get_trial_history(account_id: str) -> Optional[Dict[str, Any]]:

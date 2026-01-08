@@ -67,7 +67,7 @@ class FreeTierService:
                     if user_id:
                         # Try auth.admin first (requires Supabase client for auth operations)
                         try:
-                            from core.services.supabase import DBConnection
+                            from core.infrastructure.database.supabase import DBConnection
                             db = DBConnection()
                             client = await db.client
                             user_result = await client.auth.admin.get_user_by_id(user_id)
