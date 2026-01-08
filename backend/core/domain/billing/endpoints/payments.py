@@ -35,7 +35,7 @@ async def get_my_transactions(
     limit: int = Query(50, ge=1, le=100, description="Number of transactions to fetch"),
     offset: int = Query(0, ge=0, description="Number of transactions to skip")
 ) -> Dict:
-    from core.billing import repo as billing_repo
+    from core.domain.billing import repo as billing_repo
     
     try:
         transactions, total_count = await billing_repo.list_transactions(
@@ -65,7 +65,7 @@ async def get_transactions_summary(
     account_id: str = Depends(verify_and_get_user_id_from_jwt),
     days: int = Query(30, ge=1, le=365, description="Number of days to look back")
 ) -> Dict:
-    from core.billing import repo as billing_repo
+    from core.domain.billing import repo as billing_repo
     
     try:
         summary = await billing_repo.get_transactions_summary(account_id, days)
@@ -88,7 +88,7 @@ async def get_credit_usage(
     limit: int = Query(50, ge=1, le=100, description="Number of usage records to fetch"),
     offset: int = Query(0, ge=0, description="Number of usage records to skip")
 ) -> Dict:
-    from core.billing import repo as billing_repo
+    from core.domain.billing import repo as billing_repo
     
     try:
         records, total_count = await billing_repo.get_credit_usage_records(
@@ -134,7 +134,7 @@ async def get_credit_usage_by_thread(
     start_date: Optional[str] = Query(None, description="Start date in ISO format"),
     end_date: Optional[str] = Query(None, description="End date in ISO format")
 ) -> Dict:
-    from core.billing import repo as billing_repo
+    from core.domain.billing import repo as billing_repo
     
     try:
         period_days = None

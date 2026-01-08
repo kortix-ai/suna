@@ -1,5 +1,5 @@
 from typing import Optional, Dict
-from core.billing import repo as billing_repo
+from core.domain.billing import repo as billing_repo
 
 
 class CommitmentRepository:

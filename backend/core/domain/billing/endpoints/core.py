@@ -89,7 +89,7 @@ async def get_tier_configurations() -> Dict:
 async def get_credit_breakdown(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    from core.billing import repo as billing_repo
+    from core.domain.billing import repo as billing_repo
     
     try:
         balance_result = await credit_service.get_balance(account_id)
@@ -115,7 +115,7 @@ async def get_usage_history(
     days: int = 30,
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
-    from core.billing import repo as billing_repo
+    from core.domain.billing import repo as billing_repo
     from datetime import timedelta
     
     try:

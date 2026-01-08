@@ -4,7 +4,7 @@ from datetime import datetime, timezone, timedelta
 from core.infrastructure.database.supabase import DBConnection
 from core.shared.logger import logger
 from core.shared.cache import Cache
-from core.billing import repo as billing_repo
+from core.domain.billing import repo as billing_repo
 import uuid
 
 

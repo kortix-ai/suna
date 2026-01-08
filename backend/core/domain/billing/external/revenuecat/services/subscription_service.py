@@ -7,7 +7,7 @@ from core.shared.logger import logger
 from ....credits.manager import credit_manager
 from ..repositories import SubscriptionRepository
 from ..utils import ProductMapper
-from core.billing import repo as billing_repo
+from core.domain.billing import repo as billing_repo
 
 
 class SubscriptionService:

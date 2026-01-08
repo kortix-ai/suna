@@ -1,5 +1,5 @@
 from typing import Optional, Dict
-from core.billing import repo as billing_repo
+from core.domain.billing import repo as billing_repo
 
 class CustomerRepository:
     async def get_billing_customer(self, account_id: str) -> Optional[Dict]:

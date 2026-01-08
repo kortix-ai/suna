@@ -1,6 +1,6 @@
 from typing import Optional, Dict, List
 from datetime import datetime
-from core.billing import repo as billing_repo
+from core.domain.billing import repo as billing_repo
 
 
 class TrialRepository:

@@ -19,7 +19,7 @@ from ..shared.config import (
 )
 from ..subscriptions import subscription_service
 from ..external.stripe import StripeAPIWrapper
-from core.billing.repo import get_credit_account
+from core.domain.billing.repo import get_credit_account
 
 router = APIRouter(tags=["billing-account-state"])
 
