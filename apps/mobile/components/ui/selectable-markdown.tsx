@@ -374,6 +374,13 @@ function calculateRealHeight(text: string, screenWidth: number): number {
   return totalHeight;
 }
 
+/**
+ * PURE CALCULATION - NO MEASUREMENT, NO STATE, NO ADJUSTMENT
+ * 
+ * Calculate height ONCE from text content and use it immediately.
+ * NO onContentSizeChange (causes loops), NO useState (causes re-renders).
+ * Just pure math → render → done.
+ */
 function MeasuredMarkdownInput({
   text,
   isDark,
@@ -385,7 +392,7 @@ function MeasuredMarkdownInput({
 }) {
   const trimmedText = text.trimEnd();
   
-  // Calculate height IMMEDIATELY - no measurement needed
+  // Calculate height ONCE - pure function, no state
   const calculatedHeight = useMemo(() => {
     const screenWidth = Dimensions.get('window').width;
     const height = calculateRealHeight(trimmedText, screenWidth);
