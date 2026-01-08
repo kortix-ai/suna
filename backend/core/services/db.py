@@ -39,10 +39,15 @@ def _get_db_config():
     - Supavisor (port 6543) uses NullPool anyway (auto-detected)
     - Direct connections (port 5432) need small pools to stay within Supabase limits
     
-    With 8-16 workers per container:
-    - pool_size=3 × 16 workers = 48 base connections
-    - max_overflow=5 × 16 workers = 80 overflow
-    - Total max = 128 connections (safe for Supabase Pro limits ~200)
+    With 8 workers per container (production):
+    - pool_size=3 × 8 workers = 24 base connections
+    - max_overflow=7 × 8 workers = 56 overflow
+    - Total max = 80 connections per container (safe for Supabase Pro limits ~200)
+    
+    PERFORMANCE OPTIMIZATIONS (Jan 2026):
+    - Increased pool_timeout from 10s to 30s to handle burst traffic
+    - Increased max_overflow from 5 to 7 for better burst handling
+    - Increased connect_timeout for cloud DB reliability
     """
     if config.ENV_MODE == EnvMode.LOCAL:
         return {
@@ -57,11 +62,11 @@ def _get_db_config():
         # Unified config for staging AND production
         return {
             "pool_size": 3,           # 3 per worker (conservative)
-            "max_overflow": 5,        # Allow burst to 8 per worker
-            "pool_timeout": 10,       # Fail fast on pool exhaustion
+            "max_overflow": 7,        # Allow burst to 10 per worker (increased from 5)
+            "pool_timeout": 30,       # Wait up to 30s for connection (increased from 10)
             "pool_recycle": 300,      # Recycle connections every 5 min
             "statement_timeout": 30000,  # 30s query timeout
-            "connect_timeout": 10,    # 10s connection timeout
+            "connect_timeout": 15,    # 15s connection timeout (increased from 10)
         }
 
 _db_config = _get_db_config()
