@@ -292,8 +292,11 @@ export function ThreadPage({
   const extraPushPadding = React.useMemo(() => {
     if (pushToTop) {
       const headerHeight = Math.max(insets.top, 16) + 80;
-      // Leave ~200px from top so user message is visible but not at very top
-      return windowHeight - headerHeight - baseBottomPadding - 200;
+      const availableHeight = windowHeight - headerHeight - baseBottomPadding;
+      // Leave room for user message (~100px) + 10% buffer from top
+      const userMessageHeight = 100;
+      const topBuffer = availableHeight * 0.10;
+      return availableHeight - userMessageHeight - topBuffer;
     }
     return 0;
   }, [pushToTop, windowHeight, insets.top, baseBottomPadding]);
