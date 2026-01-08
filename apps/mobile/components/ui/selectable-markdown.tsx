@@ -53,11 +53,10 @@ let HEADING_CHAR_FACTOR = 0.46;    // Was 0.52
 let EMPTY_LINE_FACTOR = 0.5;
 let BOLD_WIDTH_FACTOR = 1.10;      // Was 1.15, reduced slightly
 
-// PHANTOM SPACE: Larger base + small per-line with cap
-// Base handles most cases, per-line helps medium content
-let BASE_PHANTOM = 18;             // Increased from 10 - handles cutoff
-let LINE_PHANTOM_PX = 0.8;         // Reduced from 1.5 - less aggressive scaling
-let MAX_LINE_PHANTOM = 10;         // Cap at 10px (total max = 28px)
+// PHANTOM SPACE: Solid base + small per-line with cap
+let BASE_PHANTOM = 24;             // Increased - prevents cutoff
+let LINE_PHANTOM_PX = 0.8;
+let MAX_LINE_PHANTOM = 10;         // Total max = 34px
 
 export function enableMarkdownDebug(enabled: boolean = true) {
   DEBUG_HEIGHTS = enabled;
