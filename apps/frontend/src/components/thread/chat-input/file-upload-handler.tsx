@@ -563,7 +563,7 @@ export const FileUploadHandler = memo(forwardRef<
                 {isUploading ? (
                   <KortixLoader size="small" />
                 ) : (
-                  <Paperclip className="h-5 w-5" />
+                  <Paperclip className="h-4 w-4" strokeWidth={2} />
                 )}
               </Button>
             </span>

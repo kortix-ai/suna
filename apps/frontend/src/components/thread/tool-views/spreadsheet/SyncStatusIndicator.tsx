@@ -42,41 +42,39 @@ export function SyncStatusIndicator({
   className,
 }: SyncStatusIndicatorProps) {
   const getStatusConfig = () => {
+    // All status indicators use consistent gray styling
+    const grayStyle = { color: 'text-zinc-500', bgColor: 'bg-zinc-500/10' };
+    
     switch (status) {
       case 'syncing':
         return {
           icon: <KortixLoader customSize={14} />,
           label: 'Saving...',
-          color: 'text-blue-500',
-          bgColor: 'bg-blue-500/10',
+          ...grayStyle,
         };
       case 'synced':
         return {
           icon: <Check className="w-3.5 h-3.5" />,
           label: lastSyncedAt ? `Saved ${formatRelativeTime(lastSyncedAt)}` : 'Saved',
-          color: 'text-green-500',
-          bgColor: 'bg-green-500/10',
+          ...grayStyle,
         };
       case 'offline':
         return {
           icon: <CloudOff className="w-3.5 h-3.5" />,
           label: pendingChanges ? 'Offline - changes pending' : 'Offline',
-          color: 'text-amber-500',
-          bgColor: 'bg-amber-500/10',
+          ...grayStyle,
         };
       case 'error':
         return {
           icon: <AlertCircle className="w-3.5 h-3.5" />,
           label: errorMessage || 'Save failed',
-          color: 'text-red-500',
-          bgColor: 'bg-red-500/10',
+          ...grayStyle,
         };
       case 'conflict':
         return {
           icon: <AlertCircle className="w-3.5 h-3.5" />,
           label: 'External changes detected',
-          color: 'text-orange-500',
-          bgColor: 'bg-orange-500/10',
+          ...grayStyle,
         };
       default:
         return {

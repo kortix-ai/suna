@@ -3,7 +3,6 @@
 import * as React from 'react';
 import Link from 'next/link';
 import { Library, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
@@ -281,192 +280,205 @@ export function SidebarLeft({
       className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
       {...props}
     >
-      <SidebarHeader className={cn("px-6 pt-7 overflow-hidden", state === 'collapsed' && "px-6")}>
-        {state === 'collapsed' ? (
-          <div className="flex h-[32px] items-center justify-center">
-            <div className="relative flex items-center justify-center w-fit group/logo">
-              <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
-                <KortixLogo size={20} className="flex-shrink-0 opacity-100 group-hover/logo:opacity-0 transition-opacity" />
-              </Link>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-10 w-10 p-0 cursor-pointer !bg-transparent hover:!bg-transparent border-0 hover:border-0 absolute opacity-0 group-hover/logo:opacity-100 transition-opacity [&_svg]:!size-5"
-                onClick={() => setOpen(true)}
+      <SidebarHeader className={cn(
+        "pt-7 overflow-visible transition-[padding] duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+        state === 'collapsed' ? "px-0" : "px-6"
+      )}>
+        <div className={cn(
+          "flex h-[32px] items-center transition-all duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+          state === 'collapsed' ? "justify-center" : "justify-between pl-2"
+        )}>
+          {/* Logo - stays visually centered when collapsed, left-aligned when expanded */}
+          <div className="relative flex items-center justify-center group/logo">
+            <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)} className="flex items-center justify-center">
+              <KortixLogo 
+                size={20} 
+                className={cn(
+                  "flex-shrink-0 transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:rotate-180 hover:duration-700",
+                  state === 'collapsed' && "group-hover/logo:opacity-0 group-hover/logo:scale-90"
+                )} 
+              />
+            </Link>
+            {/* Expand button - only shows on hover when collapsed */}
+            {state === 'collapsed' && (
+              <button
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center cursor-pointer opacity-0 scale-75 group-hover/logo:opacity-100 group-hover/logo:scale-100 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setOpen(true);
+                }}
                 aria-label="Expand sidebar"
               >
-                <PanelLeftOpen className="!h-5 !w-5" />
-              </Button>
-            </div>
+                <PanelLeftOpen className="h-5 w-5" />
+              </button>
+            )}
           </div>
-        ) : (
-          <div className={cn("flex h-[32px] items-center justify-between min-w-[200px]")}>
-            <div className="pl-2 relative flex items-center justify-center w-fit">
-              <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)}>
-                <KortixLogo size={20} className="flex-shrink-0 transition-transform duration-700 ease-in-out hover:rotate-180" />
-              </Link>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
-                onClick={() => setShowSearchModal(true)}
-              >
-                <Search className="!h-5 !w-5" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8"
+          
+          {/* Right side buttons - fade in/out */}
+          <div 
+            className={cn(
+              "flex items-center gap-1 transition-opacity duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+              state === 'collapsed' 
+                ? "opacity-0 pointer-events-none w-0 overflow-hidden" 
+                : "opacity-100 pointer-events-auto"
+            )}
+          >
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => setShowSearchModal(true)}
+            >
+              <Search className="!h-5 !w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => {
+                if (isMobile) {
+                  setOpenMobile(false);
+                } else {
+                  setOpen(false);
+                }
+              }}
+            >
+              <PanelLeftClose className="!h-5 !w-5" />
+            </Button>
+          </div>
+        </div>
+      </SidebarHeader>
+      <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none'] relative overflow-hidden">
+        {/* Collapsed layout: + button and state buttons only */}
+        <div
+          className={cn(
+            "absolute inset-0 px-6 pt-4 space-y-3 flex flex-col items-center transition-opacity duration-150 ease-out transform-gpu",
+            state === 'collapsed' 
+              ? "opacity-100 pointer-events-auto delay-100" 
+              : "opacity-0 pointer-events-none delay-0"
+          )}
+        >
+          {/* + button */}
+          <div className="w-full flex flex-col items-center space-y-3">
+            <Button
+              variant="outline"
+              size="icon"
+              className="h-10 w-10 p-0 shadow-none"
+              asChild
+            >
+              <Link
+                href="/dashboard"
                 onClick={() => {
-                  if (isMobile) {
-                    setOpenMobile(false);
-                  } else {
-                    setOpen(false);
-                  }
+                  posthog.capture('new_task_clicked');
+                  if (isMobile) setOpenMobile(false);
                 }}
               >
-                <PanelLeftClose className="!h-5 !w-5" />
+                <Plus className="h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+          <div className="w-full flex flex-col items-center space-y-3">
+            {[
+              { view: 'chats' as const, icon: MessageCircle },
+              { view: 'library' as const, icon: Library },
+              { view: 'starred' as const, icon: Zap },
+            ].map(({ view, icon: Icon }) => (
+              <Button
+                key={view}
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "h-10 w-10 p-0 cursor-pointer hover:bg-card hover:border-[1.5px] hover:border-border",
+                  activeView === view ? 'bg-card border-[1.5px] border-border' : ''
+                )}
+                onClick={() => {
+                  handleViewChange(view);
+                  setOpen(true); // Expand sidebar when clicking state button
+                }}
+              >
+                <Icon className="!h-4 !w-4" />
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {/* Expanded layout */}
+        <div
+          className={cn(
+            "flex flex-col h-full transition-opacity duration-150 ease-out transform-gpu",
+            state === 'collapsed' 
+              ? "opacity-0 pointer-events-none delay-0" 
+              : "opacity-100 pointer-events-auto delay-100"
+          )}
+        >
+          <div className="px-6 pt-4 space-y-4">
+            {/* New Chat button */}
+            <div className="w-full">
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full shadow-none justify-between h-10 px-3 group/new-chat"
+                asChild
+              >
+                <Link
+                  href="/dashboard"
+                  onClick={() => {
+                    posthog.capture('new_task_clicked');
+                    if (isMobile) setOpenMobile(false);
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <Plus className="h-4 w-4" />
+                    {t('newChat')}
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover/new-chat:opacity-100 transition-opacity">
+                  <KbdGroup>
+                    <Kbd>⌘</Kbd>
+                    <Kbd>J</Kbd>
+                  </KbdGroup>
+                  </div>
+                </Link>
               </Button>
             </div>
-          </div>
-        )}
-      </SidebarHeader>
-      <SidebarContent className="[&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']">
-        <AnimatePresence mode="wait">
-          {state === 'collapsed' ? (
-            /* Collapsed layout: + button and 4 state buttons only */
-            <motion.div
-              key="collapsed"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
-              className="px-6 pt-4 space-y-3 flex flex-col items-center"
-            >
-              {/* + button */}
-              <div className="w-full flex flex-col items-center space-y-3">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="h-10 w-10 p-0 shadow-none"
-                  asChild
+
+            {/* State buttons horizontally */}
+            <div className="flex justify-between items-center gap-2">
+              {[
+                { view: 'chats' as const, icon: MessageCircle, label: t('chats') },
+                { view: 'library' as const, icon: Library, label: t('library') },
+                { view: 'starred' as const, icon: Zap, label: t('triggers') }
+              ].map(({ view, icon: Icon, label }) => (
+                <button
+                  key={view}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1.5 p-1.5 rounded-2xl cursor-pointer transition-colors w-[64px] h-[64px]",
+                    "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
+                    activeView === view ? 'bg-card border-[1.5px] border-border' : 'border-[1.5px] border-transparent'
+                  )}
+                  onClick={() => handleViewChange(view)}
                 >
-                  <Link
-                    href="/dashboard"
-                    onClick={() => {
-                      posthog.capture('new_task_clicked');
-                      if (isMobile) setOpenMobile(false);
-                    }}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
-              <div className="w-full flex flex-col items-center space-y-3">
-                {[
-                  { view: 'chats' as const, icon: MessageCircle },
-                  { view: 'library' as const, icon: Library },
-                  { view: 'starred' as const, icon: Zap },
-                ].map(({ view, icon: Icon }) => (
-                  <Button
-                    key={view}
-                    variant="ghost"
-                    size="icon"
-                    className={cn(
-                      "h-10 w-10 p-0 cursor-pointer hover:bg-card hover:border-[1.5px] hover:border-border",
-                      activeView === view ? 'bg-card border-[1.5px] border-border' : ''
-                    )}
-                    onClick={() => {
-                      handleViewChange(view);
-                      setOpen(true); // Expand sidebar when clicking state button
-                    }}
-                  >
-                    <Icon className="!h-4 !w-4" />
-                  </Button>
-                ))}
-              </div>
-            </motion.div>
-          ) : (
-            /* Expanded layout */
-            <motion.div
-              key="expanded"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.15, ease: "easeOut" }}
-              className="flex flex-col h-full"
-            >
-              <div className="px-6 pt-4 space-y-4">
-                {/* New Chat button */}
-                <div className="w-full">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full shadow-none justify-between h-10 px-3 group/new-chat"
-                    asChild
-                  >
-                    <Link
-                      href="/dashboard"
-                      onClick={() => {
-                        posthog.capture('new_task_clicked');
-                        if (isMobile) setOpenMobile(false);
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        <Plus className="h-4 w-4" />
-                        {t('newChat')}
-                      </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover/new-chat:opacity-100 transition-opacity">
-                      <KbdGroup>
-                        <Kbd>⌘</Kbd>
-                        <Kbd>J</Kbd>
-                      </KbdGroup>
-                      </div>
-                    </Link>
-                  </Button>
-                </div>
+                  <Icon className="!h-4 !w-4" />
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {label}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-                {/* State buttons horizontally */}
-                <div className="flex justify-between items-center gap-2">
-                  {[
-                    { view: 'chats' as const, icon: MessageCircle, label: t('chats') },
-                    { view: 'library' as const, icon: Library, label: t('library') },
-                    { view: 'starred' as const, icon: Zap, label: t('triggers') }
-                  ].map(({ view, icon: Icon, label }) => (
-                    <button
-                      key={view}
-                      className={cn(
-                        "flex flex-col items-center justify-center gap-1.5 p-1.5 rounded-2xl cursor-pointer transition-colors w-[64px] h-[64px]",
-                        "hover:bg-muted/60 hover:border-[1.5px] hover:border-border",
-                        activeView === view ? 'bg-card border-[1.5px] border-border' : 'border-[1.5px] border-transparent'
-                      )}
-                      onClick={() => handleViewChange(view)}
-                    >
-                      <Icon className="!h-4 !w-4" />
-                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                        {label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Content area */}
-              <div className="px-6 flex-1 overflow-hidden">
-                {activeView === 'chats' && <NavAgents />}
-                {activeView === 'library' && <NavAgentsView />}
-                {activeView === 'starred' && (
-                  <>
-                    <NavGlobalConfig />
-                    <NavTriggerRuns />
-                  </>
-                )}
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+          {/* Content area */}
+          <div className="px-6 flex-1 overflow-hidden">
+            {activeView === 'chats' && <NavAgents />}
+            {activeView === 'library' && <NavAgentsView />}
+            {activeView === 'starred' && (
+              <>
+                <NavGlobalConfig />
+                <NavTriggerRuns />
+              </>
+            )}
+          </div>
+        </div>
       </SidebarContent>
 
       {/* Enterprise Demo Card - Only show when expanded */}

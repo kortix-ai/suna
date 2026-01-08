@@ -71,7 +71,7 @@ export function CompanySearchToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="relative p-2 rounded-xl bg-blue-500/20 border border-blue-500/20">
-              <Building2 className="w-5 h-5 text-blue-500 dark:text-blue-400" />
+              <Building2 className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -170,7 +170,7 @@ export function CompanySearchToolView({
                                         className={cn(
                                           "text-xs h-5 px-1.5",
                                           satisfiedCount > 0 
-                                            ? "border-emerald-200 text-emerald-700 dark:border-emerald-800 dark:text-emerald-300"
+                                            ? "border-zinc-200 text-zinc-700 dark:border-zinc-700 dark:text-zinc-300"
                                             : "border-muted-foreground/20"
                                         )}
                                       >

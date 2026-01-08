@@ -150,7 +150,7 @@ export const FileInfoContent = memo(function FileInfoContent({
           
           {fileInfo.modTime && (
             <div className="flex items-start gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shrink-0">
+              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-zinc-500 to-zinc-600 flex items-center justify-center shrink-0">
                 <Calendar className="w-4 h-4 text-white" />
               </div>
               <div className="min-w-0 flex-1">
@@ -170,7 +170,7 @@ export const FileInfoContent = memo(function FileInfoContent({
                   onClick={handleCopyPath}
                   className={cn(
                     "shrink-0 p-1.5 rounded-md transition-colors",
-                    copiedPath ? "bg-emerald-500/20 text-emerald-500" : "hover:bg-muted text-muted-foreground"
+                    copiedPath ? "bg-zinc-500/20 text-zinc-500" : "hover:bg-muted text-muted-foreground"
                   )}
                 >
                   {copiedPath ? (

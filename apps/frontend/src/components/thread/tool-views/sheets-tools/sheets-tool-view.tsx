@@ -111,28 +111,14 @@ export function SheetsToolView({
   }, [toolName]);
 
   const sheetIconBgColor = useMemo(() => {
-    switch (toolName) {
-      case 'create-sheet': return 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20';
-      case 'update-sheet': return 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20';
-      case 'view-sheet': return 'bg-gradient-to-br from-yellow-500/20 to-yellow-600/10 border border-yellow-500/20';
-      case 'analyze-sheet': return 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20';
-      case 'visualize-sheet': return 'bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/20';
-      case 'format-sheet': return 'bg-gradient-to-br from-red-500/20 to-red-600/10 border border-red-500/20';
-      default: return 'bg-gradient-to-br from-gray-500/20 to-gray-600/10 border border-gray-500/20';
-    }
-  }, [toolName]);
+    // All sheet tools use consistent gray styling
+    return 'bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20';
+  }, []);
 
   const getSheetIconColor = useCallback(() => {
-    switch (toolName) {
-      case 'create-sheet': return 'text-emerald-600';
-      case 'update-sheet': return 'text-zinc-600';
-      case 'view-sheet': return 'text-yellow-600';
-      case 'analyze-sheet': return 'text-purple-600';
-      case 'visualize-sheet': return 'text-green-600';
-      case 'format-sheet': return 'text-red-600';
-      default: return 'text-gray-600';
-    }
-  }, [toolName]);
+    // All sheet tools use consistent gray icon color
+    return 'text-zinc-600 dark:text-zinc-400';
+  }, []);
 
   const sandboxId = project?.sandbox?.id;
 

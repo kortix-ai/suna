@@ -82,8 +82,8 @@ export function PeopleSearchToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-purple-500/20 border border-purple-500/20">
-              <Users className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <Users className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -179,7 +179,7 @@ export function PeopleSearchToolView({
                                           className={cn(
                                             "text-xs px-1.5 py-0 h-5",
                                             satisfiedCount > 0
-                                              ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                                              ? "bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300"
                                               : "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
                                           )}
                                         >
