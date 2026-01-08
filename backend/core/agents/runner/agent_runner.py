@@ -761,8 +761,20 @@ async def execute_agent_run(
         
         async for response in runner.run(cancellation_event=cancellation_event):
             if not first_response:
-                logger.info(f"⏱️ FIRST RESPONSE: {(time.time() - execution_start) * 1000:.1f}ms")
+                first_response_time_ms = (time.time() - execution_start) * 1000
+                logger.info(f"⏱️ FIRST RESPONSE: {first_response_time_ms:.1f}ms")
                 first_response = True
+                
+                # Emit timing info to Redis stream for stress testing
+                try:
+                    timing_msg = {
+                        "type": "timing",
+                        "first_response_ms": round(first_response_time_ms, 1),
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                    await redis.stream_add(stream_key, {"data": json.dumps(timing_msg)}, maxlen=200, approximate=True)
+                except Exception:
+                    pass  # Non-critical
             
             if stop_state['received']:
                 logger.warning(f"🛑 Agent run stopped: {stop_state['reason']}")
