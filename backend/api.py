@@ -4,15 +4,15 @@ load_dotenv()
 from fastapi import FastAPI, Request, HTTPException, Response, Depends, APIRouter, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
-from core.services import redis
-from core.utils.openapi_config import configure_openapi
+from core.infrastructure.cache import redis
+from core.shared.openapi import configure_openapi
 from contextlib import asynccontextmanager
-from core.agentpress.thread_manager import ThreadManager
-from core.services.supabase import DBConnection
+from core.framework.thread_manager import ThreadManager
+from core.infrastructure.database.supabase import DBConnection
 from datetime import datetime, timezone
-from core.utils.config import config, EnvMode
+from core.config.settings import config, EnvMode
 import asyncio
-from core.utils.logger import logger, structlog
+from core.shared.logger import logger, structlog
 import time
 from collections import OrderedDict
 import os
@@ -22,30 +22,30 @@ from pydantic import BaseModel
 import uuid
 
 
-from core.versioning.api import router as versioning_router
-from core.agents.api import router as agent_runs_router
-from core.agents.agent_crud import router as agent_crud_router
-from core.agents.agent_tools import router as agent_tools_router
-from core.agents.agent_json import router as agent_json_router
-from core.agents.agent_setup import router as agent_setup_router
-from core.threads.api import router as threads_router
-from core.categorization.api import router as categorization_router
-from core.endpoints import router as endpoints_router
+from core.domain.agents.versioning.api import router as versioning_router
+from core.domain.agents.api import router as agent_runs_router
+from core.domain.agents.crud.api import router as agent_crud_router
+from core.domain.agents.crud.tools_api import router as agent_tools_router
+from core.domain.agents.crud.json_api import router as agent_json_router
+from core.domain.agents.crud.setup_api import router as agent_setup_router
+from core.domain.threads.api import router as threads_router
+from core.domain.categorization.api import router as categorization_router
+from core.domain.endpoints import router as endpoints_router
 
-from core.sandbox import api as sandbox_api
-from core.billing.api import router as billing_router
-from core.setup import router as setup_router, webhook_router
-from core.admin.admin_api import router as admin_router
-from core.admin.billing_admin_api import router as billing_admin_router
-from core.admin.feedback_admin_api import router as feedback_admin_router
-from core.admin.notification_admin_api import router as notification_admin_router
-from core.admin.analytics_admin_api import router as analytics_admin_router
-from core.services import transcription as transcription_api
+from core.integrations.sandbox import api as sandbox_api
+from core.domain.billing.api import router as billing_router
+from core.domain.setup import router as setup_router, webhook_router
+from core.domain.admin.admin_api import router as admin_router
+from core.domain.admin.billing_admin_api import router as billing_admin_router
+from core.domain.admin.feedback_admin_api import router as feedback_admin_router
+from core.domain.admin.notification_admin_api import router as notification_admin_router
+from core.domain.admin.analytics_admin_api import router as analytics_admin_router
+from core.integrations.transcription import router as transcription_api
 import sys
-from core.triggers import api as triggers_api
-from core.services import api_keys_api
-from core.notifications import api as notifications_api
-from core.services.orphan_cleanup import cleanup_orphaned_agent_runs
+from core.domain.triggers import api as triggers_api
+from core.domain.accounts import api_keys_api
+from core.domain.notifications import api as notifications_api
+from core.domain.agents.orphan_cleanup import cleanup_orphaned_agent_runs
 
 
 if sys.platform == "win32":
@@ -53,7 +53,7 @@ if sys.platform == "win32":
 
 db = DBConnection()
 # Use shared instance ID for distributed deployments
-from core.utils.instance import get_instance_id, INSTANCE_ID
+from core.shared.instance import get_instance_id, INSTANCE_ID
 instance_id = INSTANCE_ID  # Keep backward compatibility
 
 
@@ -77,21 +77,21 @@ async def lifespan(app: FastAPI):
     try:
         await db.initialize()
         
-        from core.services.db import init_db
+        from core.infrastructure.database.db import init_db
         await init_db()
         
         # Pre-load tool classes and schemas to avoid first-request delay
-        from core.utils.tool_discovery import warm_up_tools_cache
+        from core.domain.agents.tools.utils.tool_discovery import warm_up_tools_cache
         warm_up_tools_cache()
         
         # Pre-load static Suna config for fast path in API requests
-        from core.cache.runtime_cache import load_static_suna_config
+        from core.infrastructure.cache.runtime_cache import load_static_suna_config
         load_static_suna_config()
         
         sandbox_api.initialize(db)
         
         # Initialize Redis connection
-        from core.services import redis
+        from core.infrastructure.cache import redis
         try:
             await redis.initialize_async()
             logger.debug("Redis connection initialized successfully")
@@ -118,7 +118,7 @@ async def lifespan(app: FastAPI):
         
         # Start CloudWatch worker metrics publisher (production only)
         if config.ENV_MODE == EnvMode.PRODUCTION:
-            from core.services import worker_metrics
+            from core.infrastructure import worker_metrics
             _worker_metrics_task = asyncio.create_task(worker_metrics.start_cloudwatch_publisher())
         
         # Start memory watchdog for observability
@@ -135,8 +135,8 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(2)
         
         # ===== CRITICAL: Stop all running agent runs on this instance =====
-        from core.agents.api import _cancellation_events
-        from core.agents.runner.agent_runner import update_agent_run_status
+        from core.domain.agents.api import _cancellation_events
+        from core.domain.agents.runner.agent_runner import update_agent_run_status
         
         active_run_ids = list(_cancellation_events.keys())
         if active_run_ids:
@@ -205,7 +205,7 @@ async def lifespan(app: FastAPI):
         await db.disconnect()
         
         # Close direct Postgres connection pool
-        from core.services.db import close_db
+        from core.infrastructure.database.db import close_db
         await close_db()
     except Exception as e:
         logger.error(f"Error during application startup: {e}")
@@ -307,39 +307,39 @@ api_router.include_router(feedback_admin_router)
 api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
 
-from core.mcp_module import api as mcp_api
-from core.credentials import api as credentials_api
-from core.templates import api as template_api
-from core.templates import presentations_api
+from core.integrations.mcp import api as mcp_api
+from core.domain.credentials import api as credentials_api
+from core.domain.agents.templates import api as template_api
+from core.domain.agents.templates import presentations_api
 
 api_router.include_router(mcp_api.router)
 api_router.include_router(credentials_api.router, prefix="/secure-mcp")
 api_router.include_router(template_api.router, prefix="/templates")
 api_router.include_router(presentations_api.router, prefix="/presentation-templates")
 
-api_router.include_router(transcription_api.router)
+api_router.include_router(transcription_api)
 
-from core.knowledge_base import api as knowledge_base_api
+from core.domain.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
 
 api_router.include_router(triggers_api.router)
 
 api_router.include_router(notifications_api.router)
 
-from core.notifications import presence_api
+from core.domain.notifications import presence_api
 api_router.include_router(presence_api.router)
 
-from core.composio_integration import api as composio_api
+from core.integrations.composio import api as composio_api
 api_router.include_router(composio_api.router)
 
-from core.google.google_slides_api import router as google_slides_router
+from core.integrations.google.slides.api import router as google_slides_router
 api_router.include_router(google_slides_router)
 
-from core.google.google_docs_api import router as google_docs_router
+from core.integrations.google.docs.api import router as google_docs_router
 api_router.include_router(google_docs_router)
 
-from core.referrals import router as referrals_router
-from core.memory.api import router as memory_router
+from core.domain.referrals import router as referrals_router
+from core.domain.memory.api import router as memory_router
 api_router.include_router(referrals_router)
 api_router.include_router(memory_router)
 
@@ -347,10 +347,10 @@ from core.test_harness.api import router as test_harness_router, e2e_router
 api_router.include_router(test_harness_router)
 api_router.include_router(e2e_router)
 
-from core.files import staged_files_router
+from core.domain.files import staged_files_router
 api_router.include_router(staged_files_router, prefix="/files")
 
-from core.sandbox.canvas_ai_api import router as canvas_ai_router
+from core.integrations.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)
 
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
@@ -386,7 +386,7 @@ async def metrics_endpoint():
         - active_redis_streams: Active Redis stream keys
         - orphaned_streams: Streams without DB records (should be 0)
     """
-    from core.services import worker_metrics
+    from core.infrastructure import worker_metrics
     
     try:
         return await worker_metrics.get_worker_metrics()
@@ -397,7 +397,7 @@ async def metrics_endpoint():
 @api_router.get("/debug", summary="Debug Information", operation_id="debug", tags=["system"])
 async def debug_endpoint():
     """Get basic debug information for troubleshooting."""
-    from core.agents.api import _cancellation_events
+    from core.domain.agents.api import _cancellation_events
     
     return {
         "instance_id": instance_id,

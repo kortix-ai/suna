@@ -12,7 +12,7 @@ import json
 from typing import List, Dict, Any, Optional
 from pathlib import Path
 
-from core.utils.logger import logger
+from core.shared.logger import logger
 
 
 # ============================================================================

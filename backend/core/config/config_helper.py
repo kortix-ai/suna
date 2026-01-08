@@ -1,5 +1,5 @@
 from typing import Dict, Any, Optional, List
-from core.utils.logger import logger
+from core.shared.logger import logger
 import os
 
 
@@ -28,7 +28,7 @@ def _extract_suna_agent_config(agent_data: Dict[str, Any], version_data: Optiona
     Uses cached static config from runtime_cache instead of reading SUNA_CONFIG directly.
     Always overrides name from SUNA_CONFIG regardless of what's in the database.
     """
-    from core.cache.runtime_cache import get_static_suna_config, load_static_suna_config
+    from core.infrastructure.cache.runtime_cache import get_static_suna_config, load_static_suna_config
     from core.config.suna_config import SUNA_CONFIG
     
     agent_id = agent_data.get('agent_id', 'Unknown')

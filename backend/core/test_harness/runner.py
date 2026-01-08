@@ -16,8 +16,8 @@ import httpx
 import jwt
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
-from core.utils.logger import logger
-from core.utils.config import config
+from core.shared.logger import logger
+from core.config.settings import config
 
 from .prompts import TEST_PROMPTS, get_prompt, get_all_prompt_ids
 from .metrics import MetricsCollector, BenchmarkResult
@@ -70,7 +70,7 @@ class TestHarnessRunner:
         
         TEST_USER_EMAIL = "testuser@kortix.ai"
         
-        from core.services.supabase import DBConnection
+        from core.infrastructure.database.supabase import DBConnection
         db = DBConnection()
         await db.initialize()
         client = await db.client
@@ -171,7 +171,7 @@ class TestHarnessRunner:
         
         logger.info(f"Cleaning up {len(thread_ids)} test threads for run {run_id}")
         
-        from core.services.supabase import DBConnection
+        from core.infrastructure.database.supabase import DBConnection
         db = DBConnection()
         await db.initialize()
         client = await db.client

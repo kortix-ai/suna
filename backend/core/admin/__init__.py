@@ -1,1 +1,0 @@
-# Admin module for administrative API endpoints 

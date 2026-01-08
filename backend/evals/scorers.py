@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import litellm
 
-from core.utils.logger import logger
+from core.shared.logger import logger
 
 # Scoring prompt template
 FACTUALITY_PROMPT = """You are comparing a submitted answer to an expert answer on a given question.

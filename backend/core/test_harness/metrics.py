@@ -12,8 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 from dataclasses import dataclass, asdict
-from core.services.supabase import DBConnection
-from core.utils.logger import logger
+from core.infrastructure.database.supabase import DBConnection
+from core.shared.logger import logger
 
 
 @dataclass
