@@ -68,12 +68,15 @@ export const ModeIndicator = memo(function ModeIndicator() {
         <TooltipTrigger asChild>
           <DropdownMenuTrigger asChild>
             <Button
-              variant="ghost"
-              className="h-9 px-3 cursor-pointer gap-1.5 text-muted-foreground hover:text-foreground"
+              variant="outline"
+              className="h-10 px-3 bg-transparent border-[1.5px] border-border rounded-2xl cursor-pointer gap-1.5 text-muted-foreground hover:text-foreground hover:bg-accent/50"
             >
               {isPowerSelected && <KortixLogo size={12} variant="symbol" />}
               <span className="text-sm font-medium">{currentModeLabel}</span>
-              <ChevronDown className="h-3.5 w-3.5 opacity-60" />
+              {!canAccessPower && !isPowerSelected && (
+                <Lock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2} />
+              )}
+              <ChevronDown className="h-3.5 w-3.5 opacity-60" strokeWidth={2} />
             </Button>
           </DropdownMenuTrigger>
         </TooltipTrigger>
@@ -92,7 +95,7 @@ export const ModeIndicator = memo(function ModeIndicator() {
           onClick={handleBasicClick}
         >
           <span className="font-medium">Basic</span>
-          {isBasicSelected && <Check className="h-4 w-4 text-primary" />}
+          {isBasicSelected && <Check className="h-4 w-4 text-primary" strokeWidth={2} />}
         </div>
 
         {/* Advanced Mode */}
@@ -103,7 +106,7 @@ export const ModeIndicator = memo(function ModeIndicator() {
               ? 'bg-muted'
               : canAccessPower
               ? 'hover:bg-muted/50'
-              : 'opacity-60'
+              : 'hover:bg-muted/50 cursor-pointer'
           )}
           onClick={handleAdvancedClick}
         >
@@ -118,8 +121,8 @@ export const ModeIndicator = memo(function ModeIndicator() {
               Advanced
             </span>
           </div>
-          {isPowerSelected && <Check className="h-4 w-4 text-primary" />}
-          {!canAccessPower && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+          {isPowerSelected && <Check className="h-4 w-4 text-primary" strokeWidth={2} />}
+          {!canAccessPower && <Lock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2} />}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

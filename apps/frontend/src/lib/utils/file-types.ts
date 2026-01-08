@@ -18,6 +18,11 @@ export const IMAGE_EXTENSIONS = [
   'jpg', 'jpeg', 'png', 'gif', 'webp', 'svg', 'bmp', 'ico', 'heic', 'heif',
 ] as const;
 
+// Video extensions
+export const VIDEO_EXTENSIONS = [
+  'mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v',
+] as const;
+
 // Code file extensions
 export const CODE_EXTENSIONS = [
   'js', 'jsx', 'ts', 'tsx', 'py', 'java', 'c', 'cpp', 'go', 'rs', 'rb', 'php',
@@ -105,5 +110,19 @@ export function isSpreadsheetExtension(ext: string): boolean {
 
 export function isPdfExtension(ext: string): boolean {
   return ext.toLowerCase() === 'pdf';
+}
+
+/**
+ * Check if file is a video
+ */
+export function isVideoExtension(ext: string): boolean {
+  return (VIDEO_EXTENSIONS as readonly string[]).includes(ext.toLowerCase());
+}
+
+/**
+ * Check if file path is a video
+ */
+export function isVideoFile(filepath: string): boolean {
+  return isVideoExtension(getExtension(filepath));
 }
 
