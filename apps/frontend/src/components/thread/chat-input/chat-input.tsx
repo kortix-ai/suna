@@ -42,6 +42,7 @@ import { isStagingMode, isLocalMode } from '@/lib/config';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
+import { ModeIndicator } from '@/components/thread/mode-indicator';
 
 import posthog from 'posthog-js';
 import { trackCtaUpgrade } from '@/lib/analytics/gtm';
@@ -1278,6 +1279,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onOpenRegistry={handleOpenRegistry}
           onOpenPlanModal={handleOpenPlanModal}
         />
+
+        <ModeIndicator />
 
         <div className="hidden sm:block">
           <SunaAgentModeSwitcher
