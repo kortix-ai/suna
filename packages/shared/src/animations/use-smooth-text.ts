@@ -6,7 +6,18 @@ export interface SmoothTextResult {
 }
 
 /**
+ * Get current time in milliseconds (works in both web and React Native)
+ */
+function getNow(): number {
+  if (typeof performance !== 'undefined' && performance.now) {
+    return performance.now();
+  }
+  return Date.now();
+}
+
+/**
  * Smooth text animation hook - displays text character by character.
+ * Platform-agnostic - works in both web and React Native.
  * NEVER stops mid-stream. Once started, continues until unmount.
  */
 export function useSmoothText(
@@ -34,7 +45,11 @@ export function useSmoothText(
   // Stop animation - only called on unmount
   const stopAnimation = useCallback(() => {
     if (rafIdRef.current !== null) {
-      cancelAnimationFrame(rafIdRef.current);
+      if (typeof cancelAnimationFrame !== 'undefined') {
+        cancelAnimationFrame(rafIdRef.current);
+      } else if (typeof clearTimeout !== 'undefined') {
+        clearTimeout(rafIdRef.current);
+      }
       rafIdRef.current = null;
     }
   }, []);
@@ -48,7 +63,7 @@ export function useSmoothText(
 
     let deltaTime = (currentTime - lastUpdateTimeRef.current) / 1000;
     
-    // Clamp very large deltas (e.g., after tab switch)
+    // Clamp very large deltas (e.g., after tab switch or app background)
     if (deltaTime > 0.5) {
       deltaTime = 0.016;
     }
@@ -84,7 +99,12 @@ export function useSmoothText(
     }
 
     // ALWAYS schedule next frame - loop runs forever until unmount
-    rafIdRef.current = requestAnimationFrame(animationLoop);
+    if (typeof requestAnimationFrame !== 'undefined') {
+      rafIdRef.current = requestAnimationFrame(animationLoop);
+    } else {
+      // Fallback for environments without requestAnimationFrame
+      rafIdRef.current = setTimeout(() => animationLoop(getNow()), 16) as unknown as number;
+    }
   }, [charsPerSecond]);
 
   // Start loop on mount, stop on unmount
@@ -93,7 +113,11 @@ export function useSmoothText(
     
     // Start the animation loop if not already running
     if (rafIdRef.current === null) {
-      rafIdRef.current = requestAnimationFrame(animationLoop);
+      if (typeof requestAnimationFrame !== 'undefined') {
+        rafIdRef.current = requestAnimationFrame(animationLoop);
+      } else {
+        rafIdRef.current = setTimeout(() => animationLoop(getNow()), 16) as unknown as number;
+      }
     }
 
     return () => {
@@ -141,3 +165,4 @@ export function useSmoothText(
 
   return result;
 }
+

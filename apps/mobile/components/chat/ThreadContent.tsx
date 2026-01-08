@@ -1,6 +1,7 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, Pressable, Linking, Text as RNText, TextInput, Platform, ScrollView } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
+import { useSmoothText } from '@agentpress/shared/animations';
 
 // Only import ContextMenu on native platforms (iOS/Android)
 let ContextMenu: React.ComponentType<any> | null = null;
@@ -679,6 +680,36 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
 
+    // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
+    const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
+      streamingTextContent || '',
+      120,
+      true
+    );
+
+    // Extract ask/complete text from streaming tool call for smooth animation
+    const rawAskCompleteText = useMemo(() => {
+      if (!streamingToolCall) return '';
+      
+      const parsedMetadata = safeJsonParse<ParsedMetadata>(streamingToolCall.metadata, {});
+      const toolCalls = parsedMetadata.tool_calls || [];
+      const askOrCompleteTool = findAskOrCompleteTool(toolCalls);
+      
+      if (!askOrCompleteTool) return '';
+      
+      const toolArgs: any = askOrCompleteTool.arguments;
+      if (!toolArgs) return '';
+      
+      return extractTextFromArguments(toolArgs);
+    }, [streamingToolCall]);
+
+    // Apply smooth text animation to ask/complete streaming content
+    const { text: smoothAskCompleteText, isAnimating: isAskCompleteAnimating } = useSmoothText(
+      rawAskCompleteText,
+      120,
+      true
+    );
+
     const displayMessages = useMemo(() => {
       const displayableTypes = ['user', 'assistant', 'tool', 'system', 'status', 'browser_state'];
       return messages.filter((msg) => displayableTypes.includes(msg.type));
@@ -1242,10 +1273,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                   {/* Render streaming text content (XML tool calls or regular text) */}
                   {groupIndex === groupedMessages.length - 1 &&
                     (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
-                    streamingTextContent && (
+                    (streamingTextContent || isSmoothAnimating) && (
                       <View className="mt-2">
                         {(() => {
+                          // Use raw content for tag detection
                           const rawContent = streamingTextContent || '';
+                          // Use smooth content for display (character-by-character animation)
+                          const displayContent = smoothStreamingText || '';
 
                           let detectedTag: string | null = null;
                           let tagStartIndex = -1;
@@ -1266,10 +1300,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                             }
                           }
 
+                          // For smooth display: get text before tag, but only show as much as smoothed
                           const textBeforeTag =
                             detectedTag && tagStartIndex >= 0
-                              ? rawContent.substring(0, tagStartIndex)
-                              : rawContent;
+                              ? displayContent.substring(0, Math.min(displayContent.length, tagStartIndex))
+                              : displayContent;
                           const processedTextBeforeTag =
                             preprocessTextOnlyToolsLocal(textBeforeTag);
 
@@ -1329,17 +1364,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           }
                         }
 
-                        // Extract text from arguments
-                        const toolArgs: any = askOrCompleteTool.arguments;
-                        let askCompleteText = '';
-                        if (toolArgs) {
-                          askCompleteText = extractTextFromArguments(toolArgs);
-                        }
-
+                        // Use pre-computed smooth ask/complete text
                         const toolName =
                           askOrCompleteTool.function_name?.replace(/_/g, '-').toLowerCase() || '';
                         const textToShow =
-                          askCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
+                          smoothAskCompleteText || (toolName === 'ask' ? 'Asking...' : 'Completing...');
 
                         return (
                           <View className="mt-2">

@@ -24,7 +24,7 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { WebSearchLoadingState } from './WebSearchLoadingState';
 import { extractWebSearchData } from './_utils';
-import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
+import { useSmoothToolField } from '@/hooks/messages';
 
 export function WebSearchToolView({
   toolCall,

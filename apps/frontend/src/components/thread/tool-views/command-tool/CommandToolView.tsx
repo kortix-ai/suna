@@ -16,8 +16,7 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { extractCommandData } from './_utils';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
-import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
-import { useSmoothText } from '@/hooks/messages/useSmoothText';
+import { useSmoothToolField, useSmoothText } from '@/hooks/messages';
 
 export function CommandToolView({
   toolCall,

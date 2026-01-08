@@ -24,7 +24,7 @@ import {
   extractTextFromStreamingAskComplete,
 } from "@/hooks/messages/utils";
 import { AppIcon } from "../tool-views/shared/AppIcon";
-import { useSmoothText } from "@/hooks/messages/useSmoothText";
+import { useSmoothText } from "@/hooks/messages";
 import { isHiddenTool } from "@agentpress/shared/tools";
 import { ReasoningSection } from "./ReasoningSection";
 

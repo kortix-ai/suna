@@ -3,7 +3,7 @@ import { ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Streamdown } from "streamdown";
-import { useSmoothText } from "@/hooks/messages/useSmoothText";
+import { useSmoothText } from "@/hooks/messages";
 
 interface ReasoningSectionProps {
   content: string;

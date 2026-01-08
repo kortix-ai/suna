@@ -1,6 +1,6 @@
 import React from 'react';
 import { ComposioUrlDetector } from './composio-url-detector';
-import { useSmoothText } from '@/hooks/messages/useSmoothText';
+import { useSmoothText } from '@/hooks/messages';
 
 interface StreamingTextProps {
   content: string;
