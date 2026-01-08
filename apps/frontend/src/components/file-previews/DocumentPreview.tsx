@@ -1,5 +1,5 @@
 /**
- * DocumentPreview - HTML/Markdown/JSON file preview component
+ * DocumentPreview - HTML/Markdown/JSON/Text file preview component
  */
 
 import { HtmlRenderer, JsonRenderer } from '@/components/file-renderers';
@@ -28,6 +28,7 @@ export function DocumentPreview({
     const isHtml = extension === 'html' || extension === 'htm';
     const isMarkdown = extension === 'md' || extension === 'markdown';
     const isJson = extension === 'json';
+    const isText = extension === 'txt';
     
     const { data: fileContent, isLoading } = useFileData(
         sandboxId,
@@ -72,6 +73,17 @@ export function DocumentPreview({
     if (isJson) {
         return (
             <JsonRenderer content={fileContent} />
+        );
+    }
+    
+    // Plain Text Preview
+    if (isText) {
+        return (
+            <div className={cn("h-full w-full overflow-auto bg-zinc-50 dark:bg-zinc-900", className)}>
+                <pre className="px-6 py-4 text-sm font-mono text-foreground leading-relaxed whitespace-pre-wrap break-words">
+                    {fileContent}
+                </pre>
+            </div>
         );
     }
     

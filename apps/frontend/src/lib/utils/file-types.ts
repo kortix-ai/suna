@@ -11,6 +11,7 @@ export const PREVIEWABLE_EXTENSIONS = [
   'csv', 'tsv',
   'xlsx', 'xls',
   'pdf',
+  'txt',
 ] as const;
 
 // Image extensions
@@ -110,6 +111,10 @@ export function isSpreadsheetExtension(ext: string): boolean {
 
 export function isPdfExtension(ext: string): boolean {
   return ext.toLowerCase() === 'pdf';
+}
+
+export function isTextExtension(ext: string): boolean {
+  return ext.toLowerCase() === 'txt';
 }
 
 /**

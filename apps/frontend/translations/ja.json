@@ -419,6 +419,8 @@
     "emptyActionsDescription": "ワーカーのアクションがここに表示されます",
     "toolIsRunning": "ツールが実行中です",
     "toolCurrentlyExecuting": "{toolName} が現在実行中です。完了すると結果がここに表示されます。",
+    "thinkingTitle": "考え中",
+    "thinkingDescription": "アクションを準備しています...",
     "rateThisResult": "この結果を評価",
     "feedbackHelpsImprove": "フィードバックは改善に役立ちます",
     "additionalFeedbackOptional": "追加のフィードバック（任意）",

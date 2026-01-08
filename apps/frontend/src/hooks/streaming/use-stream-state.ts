@@ -41,10 +41,10 @@ export function useStreamState(): UseStreamStateResult {
   }, []);
   
   const appendChunk = useCallback((chunk: ChunkMessage) => {
+    // STREAMING OPTIMIZATION: Flush immediately for real-time streaming
+    // Previously used RAF batching which added ~16ms delay per batch
     pendingRef.current.push(chunk);
-    if (!rafRef.current) {
-      rafRef.current = requestAnimationFrame(flush);
-    }
+    flush();
   }, [flush]);
   
   const orderedContent = useMemo(() => 

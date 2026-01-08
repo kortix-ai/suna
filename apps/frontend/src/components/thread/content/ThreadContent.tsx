@@ -24,7 +24,6 @@ import {
   extractTextFromStreamingAskComplete,
 } from "@/hooks/messages/utils";
 import { AppIcon } from "../tool-views/shared/AppIcon";
-import { useSmoothText } from "@/hooks/messages/useSmoothText";
 import { isHiddenTool } from "@agentpress/shared/tools";
 import { ReasoningSection } from "./ReasoningSection";
 
@@ -190,17 +189,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
-  // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
-  // Returns { text, isAnimating } - we continue rendering while animation is in progress
-  const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
-    streamingTextContent || "",
-    120,
-    true
-  );
+  // STREAMING OPTIMIZATION: Content now displays immediately as it arrives from the stream
+  // Removed useSmoothText typewriter animation that was causing 120 chars/sec artificial delay
+  const displayStreamingText = streamingTextContent || "";
 
-  // Extract ask/complete text from streaming tool call for smooth animation
+  // Extract ask/complete text from streaming tool call
   // Handles both raw streaming format AND accumulated format from useToolCallAccumulator
-  const rawAskCompleteText = useMemo(() => {
+  const askCompleteText = useMemo(() => {
     if (!streamingToolCall) return "";
     
     const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
@@ -262,12 +257,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     return extractedText;
   }, [streamingToolCall]);
 
-  // Apply smooth text animation to ask/complete streaming content
-  const { text: smoothAskCompleteText, isAnimating: isAskCompleteAnimating } = useSmoothText(
-    rawAskCompleteText,
-    120,
-    true
-  );
+  // No animation - display ask/complete text immediately
+  const isAskCompleteAnimating = false;
 
   const toolResultsMap = useMemo(() => {
     const map = new Map<string | null, UnifiedMessage[]>();
@@ -345,10 +336,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
-    // Continue rendering if:
-    // 1. Currently streaming, OR
-    // 2. Animation is still in progress (let it finish even after stream ends)
-    // But immediately stop if agent is not running (user stopped)
+    // Render streaming content immediately - no animation delay
     const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
     
@@ -357,7 +345,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       return null;
     }
     
-    const shouldRender = isLastGroup && !readOnly && smoothStreamingText && (isStreaming || isSmoothAnimating);
+    const shouldRender = isLastGroup && !readOnly && displayStreamingText && isStreaming;
     
     if (!shouldRender) {
       return null;
@@ -366,8 +354,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
 
-    const askIndex = smoothStreamingText.indexOf("<ask");
-    const completeIndex = smoothStreamingText.indexOf("<complete");
+    const askIndex = displayStreamingText.indexOf("<ask");
+    const completeIndex = displayStreamingText.indexOf("<complete");
     if (askIndex !== -1 && (completeIndex === -1 || askIndex < completeIndex)) {
       detectedTag = "ask";
       tagStartIndex = askIndex;
@@ -376,10 +364,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       tagStartIndex = completeIndex;
     } else {
       const functionCallsIndex =
-        smoothStreamingText.indexOf("<function_calls>");
+        displayStreamingText.indexOf("<function_calls>");
       if (functionCallsIndex !== -1) {
         const functionCallsContent =
-          smoothStreamingText.substring(functionCallsIndex);
+          displayStreamingText.substring(functionCallsIndex);
         if (
           functionCallsContent.includes('<invoke name="ask"') ||
           functionCallsContent.includes("<invoke name='ask'")
@@ -400,7 +388,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         for (const tag of HIDE_STREAMING_XML_TAGS) {
           if (tag === "ask" || tag === "complete") continue;
           const openingTagPattern = `<${tag}`;
-          const index = smoothStreamingText.indexOf(openingTagPattern);
+          const index = displayStreamingText.indexOf(openingTagPattern);
           if (index !== -1) {
             detectedTag = tag;
             tagStartIndex = index;
@@ -410,14 +398,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       }
     }
 
-    const textToRender = smoothStreamingText;
+    const textToRender = displayStreamingText;
     const textBeforeTag = detectedTag
       ? textToRender.substring(0, tagStartIndex)
       : textToRender;
     const isAskOrComplete = detectedTag === "ask" || detectedTag === "complete";
-    // Show streaming indicator while streaming OR while animation is still completing
+    // Streaming indicator - no animation delay
     const isCurrentlyStreaming =
-      streamHookStatus === "streaming" || streamHookStatus === "connecting" || isSmoothAnimating;
+      streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
     return (
       <div className="mt-1.5">
@@ -459,8 +447,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [
     isLastGroup,
     readOnly,
-    smoothStreamingText,
-    isSmoothAnimating,
+    displayStreamingText,
     streamHookStatus,
     agentStatus,
     visibleMessages,
@@ -603,17 +590,15 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         }
       }
 
-      // Use smooth animated text for display - render like regular streaming text
+      // Display ask/complete text immediately - no animation delay
       const isCurrentlyStreaming =
-        streamHookStatus === "streaming" || streamHookStatus === "connecting" || isAskCompleteAnimating;
+        streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
-      // Prefer smooth animated text, fall back to raw text
-      const textToRender = smoothAskCompleteText || rawAskCompleteText;
-      
-      if (textToRender) {
+      // Display text immediately
+      if (askCompleteText) {
         return (
           <ComposioUrlDetector
-            content={textToRender}
+            content={askCompleteText}
             isStreaming={isCurrentlyStreaming}
           />
         );
@@ -706,17 +691,15 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamHookStatus,
     agentStatus,
     handleToolClick,
-    smoothAskCompleteText,
-    rawAskCompleteText,
-    isAskCompleteAnimating,
+    askCompleteText,
   ]);
 
   const showLoader = useMemo(() => {
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
     if (streamingTextContent || streamingToolCall) return false;
-    // Don't show loader if we're animating ask/complete text
-    if (smoothAskCompleteText || isAskCompleteAnimating) return false;
+    // Don't show loader if we have ask/complete text
+    if (askCompleteText) return false;
     if (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
       return false;
 
@@ -742,8 +725,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamingToolCall,
     streamHookStatus,
     group.messages,
-    smoothAskCompleteText,
-    isAskCompleteAnimating,
+    askCompleteText,
   ]);
 
   // Display reasoning section ONLY when reasoning chunks actually arrive

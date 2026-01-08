@@ -53,7 +53,7 @@ export interface UseAgentStreamCoreResult {
 }
 
 export interface ContentThrottleConfig {
-  type: 'raf' | 'timeout';
+  type: 'immediate' | 'raf' | 'timeout';
   throttleMs?: number;
 }
 
@@ -93,7 +93,8 @@ export function useAgentStreamCore(
   const previousToolCallStateRef = useRef<string | null>(null);
   const lastToolCallUpdateTimeRef = useRef<number>(0);
   const toolCallArgumentsRef = useRef<Map<string, string>>(new Map());
-  const THROTTLE_MS = 100;
+  // Reduced from 100ms to 16ms for smoother real-time tool call streaming
+  const THROTTLE_MS = 16;
   
   // Heartbeat detection refs
   const lastMessageTimeRef = useRef<number>(0);
@@ -135,7 +136,7 @@ export function useAgentStreamCore(
     };
   }, []);
 
-  // Content throttling flush function
+  // Content flush function - processes pending content and updates state
   const flushPendingContent = useCallback(() => {
     if (pendingContentRef.current.length > 0) {
       const sortedContent = pendingContentRef.current.slice().sort((a: { content: string; sequence?: number }, b: { content: string; sequence?: number }) => {
@@ -145,59 +146,47 @@ export function useAgentStreamCore(
       });
       pendingContentRef.current = [];
       
-      if (throttleConfig.type === 'raf' && typeof (globalThis as any).requestAnimationFrame !== 'undefined') {
-        // RAF-based throttling (frontend)
-        setTextContent((prev: TextChunk[]) => {
-          const combined = [...prev, ...sortedContent];
-          const deduplicated = new Map<number, { content: string; sequence?: number }>();
-          for (const chunk of combined) {
-            const seq = chunk.sequence ?? 0;
-            deduplicated.set(seq, chunk);
-          }
-          return Array.from(deduplicated.values()).sort((a: { content: string; sequence?: number }, b: { content: string; sequence?: number }) => {
-            const aSeq = a.sequence ?? 0;
-            const bSeq = b.sequence ?? 0;
-            return aSeq - bSeq;
-          });
+      // Optimized state update - append and dedupe in one pass
+      setTextContent((prev: TextChunk[]) => {
+        const combined = [...prev, ...sortedContent];
+        const deduplicated = new Map<number, { content: string; sequence?: number }>();
+        for (const chunk of combined) {
+          const seq = chunk.sequence ?? 0;
+          deduplicated.set(seq, chunk);
+        }
+        return Array.from(deduplicated.values()).sort((a: { content: string; sequence?: number }, b: { content: string; sequence?: number }) => {
+          const aSeq = a.sequence ?? 0;
+          const bSeq = b.sequence ?? 0;
+          return aSeq - bSeq;
         });
-        lastFlushTimeRef.current = (typeof (globalThis as any).performance !== 'undefined' ? (globalThis as any).performance.now() : Date.now()) as number;
-      } else {
-        // Timeout-based throttling (mobile)
-        setTextContent((prev: TextChunk[]) => {
-          const combined = [...prev, ...sortedContent];
-          return combined.sort((a: TextChunk, b: TextChunk) => {
-            const aSeq = a.sequence ?? 0;
-            const bSeq = b.sequence ?? 0;
-            return aSeq - bSeq;
-          });
-        });
-      }
+      });
+      lastFlushTimeRef.current = (typeof (globalThis as any).performance !== 'undefined' ? (globalThis as any).performance.now() : Date.now()) as number;
     }
     
     rafRef.current = null;
     throttleTimeoutRef.current = null;
-  }, [throttleConfig.type]);
+  }, []);
 
-  // Add content with throttling
+  // Add content - supports immediate, RAF, or timeout modes
   const addContentThrottled = useCallback((content: { content: string; sequence?: number }) => {
     pendingContentRef.current.push(content);
     
+    // IMMEDIATE mode - flush synchronously for real-time streaming
+    if (throttleConfig.type === 'immediate') {
+      flushPendingContent();
+      return;
+    }
+    
+    // RAF mode - batch updates to next animation frame
     if (throttleConfig.type === 'raf' && typeof (globalThis as any).requestAnimationFrame !== 'undefined') {
       if (!rafRef.current) {
-        const timeSinceLastFlush = (typeof (globalThis as any).performance !== 'undefined' 
-          ? (globalThis as any).performance.now() - lastFlushTimeRef.current 
-          : Date.now() - lastFlushTimeRef.current) as number;
-        if (pendingContentRef.current.length > 10 || timeSinceLastFlush > 50) {
-          rafRef.current = (globalThis as any).requestAnimationFrame(flushPendingContent);
-        } else {
-          rafRef.current = (globalThis as any).requestAnimationFrame(flushPendingContent);
-        }
+        rafRef.current = (globalThis as any).requestAnimationFrame(flushPendingContent);
       }
-    } else {
-      // Timeout-based throttling
-      if (throttleTimeoutRef.current) {
-        return;
-      }
+      return;
+    }
+    
+    // Timeout mode - batch updates with configurable delay
+    if (!throttleTimeoutRef.current) {
       const throttleMs = throttleConfig.throttleMs || 16;
       throttleTimeoutRef.current = (globalThis as any).setTimeout(() => {
         flushPendingContent();

@@ -284,15 +284,32 @@ export const KortixComputer = memo(function KortixComputer({
       ).length;
 
       if (completedCount > 0) {
-        let lastCompletedIndex = -1;
+        // File operation tool names that should be prioritized
+        const fileOpTools = ['create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file'];
+        
+        // First, try to find the latest completed file operation
+        let targetIndex = -1;
         for (let i = newSnapshots.length - 1; i >= 0; i--) {
           const snapshot = newSnapshots[i];
-          if (snapshot.toolCall.toolResult !== undefined) {
-            lastCompletedIndex = i;
+          const toolName = snapshot.toolCall.toolCall?.function_name?.replace(/_/g, '-').toLowerCase() || '';
+          if (snapshot.toolCall.toolResult !== undefined && fileOpTools.includes(toolName)) {
+            targetIndex = i;
             break;
           }
         }
-        setInternalIndex(Math.max(0, lastCompletedIndex));
+        
+        // If no file operation found, fall back to the latest completed tool
+        if (targetIndex === -1) {
+          for (let i = newSnapshots.length - 1; i >= 0; i--) {
+            const snapshot = newSnapshots[i];
+            if (snapshot.toolCall.toolResult !== undefined) {
+              targetIndex = i;
+              break;
+            }
+          }
+        }
+        
+        setInternalIndex(Math.max(0, targetIndex));
       } else {
         setInternalIndex(Math.max(0, newSnapshots.length - 1));
       }
@@ -364,20 +381,8 @@ export const KortixComputer = memo(function KortixComputer({
     }
   }, [displayToolCall, displayIndex]);
 
-  const showDuringStreaming = currentToolName && [
-    'create-file', 'edit-file', 'full-file-rewrite', 'read-file', 'delete-file',
-    'execute-command', 'check-command-output', 'terminate-command',
-    'spreadsheet-create', 'spreadsheet-add-rows', 'spreadsheet-update-cell', 'spreadsheet-format-cells', 'spreadsheet-read',
-    'web-search', 'image-search'
-  ].includes(currentToolName);
-
-  if (isCurrentToolStreaming && totalCompletedCalls > 0 && !showDuringStreaming) {
-    const lastCompletedSnapshot = completedToolCalls[completedToolCalls.length - 1];
-    if (lastCompletedSnapshot?.toolCall?.toolCall) {
-      displayToolCall = lastCompletedSnapshot.toolCall;
-      displayIndex = completedToolCalls.length - 1;
-    }
-  }
+  // Always show the current streaming tool - this ensures streaming appears immediately
+  // The tool view components handle showing appropriate loading states for their respective tools
 
   const isStreaming = displayToolCall != null && displayToolCall.toolResult === undefined;
 
@@ -524,6 +529,7 @@ export const KortixComputer = memo(function KortixComputer({
     return () => clearInterval(interval);
   }, [isStreaming]);
 
+
   if (!isOpen) {
     return null;
   }
@@ -535,71 +541,56 @@ export const KortixComputer = memo(function KortixComputer({
   const effectiveSandboxId = sandboxId || project?.sandbox?.id || '';
 
   const renderToolsView = () => {
-    if (!displayToolCall && toolCallSnapshots.length === 0) {
+    // If no tool calls at all, show empty state
+    if (toolCallSnapshots.length === 0) {
       return <EmptyState t={t} />;
     }
 
-    if (!displayToolCall && toolCallSnapshots.length > 0) {
-      const firstStreamingTool = toolCallSnapshots.find(s => s.toolCall.toolResult === undefined);
-      if (firstStreamingTool && totalCompletedCalls === 0) {
-        const toolName = firstStreamingTool.toolCall.toolCall?.function_name?.replace(/_/g, '-') || 'Tool';
-        return (
-          <div className="flex flex-col items-center justify-center flex-1 p-8">
-            <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
-              <div className="relative">
-                <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                  <KortixLoader size="medium" />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <h3 className="text-lg font-medium text-zinc-900 dark:text-zinc-100">
-                  Tool is running
-                </h3>
-                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                  {getUserFriendlyToolName(toolName)} is currently executing. Results will appear here when complete.
-                </p>
-              </div>
-            </div>
-          </div>
-        );
+    // Find the tool to display - prefer displayToolCall, fallback to latest streaming tool
+    let toolToShow = displayToolCall;
+    let toolIndex = displayIndex;
+    let toolIsStreaming = isStreaming;
+    
+    // If displayToolCall is not available, find any streaming tool to show immediately
+    if (!toolToShow && toolCallSnapshots.length > 0) {
+      const streamingSnapshot = toolCallSnapshots.find(s => s.toolCall.toolResult === undefined);
+      if (streamingSnapshot) {
+        toolToShow = streamingSnapshot.toolCall;
+        toolIndex = streamingSnapshot.index;
+        toolIsStreaming = true;
+      } else {
+        // No streaming tool, show the latest completed one
+        const latestSnapshot = toolCallSnapshots[toolCallSnapshots.length - 1];
+        if (latestSnapshot) {
+          toolToShow = latestSnapshot.toolCall;
+          toolIndex = latestSnapshot.index;
+          toolIsStreaming = false;
+        }
       }
-
-      return (
-        <div className="h-full p-4">
-          <div className="space-y-4">
-            <Skeleton className="h-8 w-32" />
-            <Skeleton className="h-20 w-full rounded-md" />
-          </div>
-        </div>
-      );
     }
 
-    if (!displayToolCall || !displayToolCall.toolCall) {
-      return (
-        <div className="h-full p-4">
-          <div className="space-y-4">
-            <Skeleton className="h-8 w-32" />
-            <Skeleton className="h-20 w-full rounded-md" />
-          </div>
-        </div>
-      );
+    // Still no tool to show - shouldn't happen but fallback to empty state
+    if (!toolToShow || !toolToShow.toolCall) {
+      return <EmptyState t={t} />;
     }
+
+    const toolSuccess = toolIsStreaming ? true : (toolToShow.toolResult?.success ?? toolToShow.isSuccess ?? true);
 
     return (
       <ToolView
-        toolCall={displayToolCall.toolCall}
-        toolResult={displayToolCall.toolResult}
-        assistantTimestamp={displayToolCall.assistantTimestamp}
-        toolTimestamp={displayToolCall.toolTimestamp}
-        isSuccess={isSuccess}
-        isStreaming={isStreaming}
+        toolCall={toolToShow.toolCall}
+        toolResult={toolToShow.toolResult}
+        assistantTimestamp={toolToShow.assistantTimestamp}
+        toolTimestamp={toolToShow.toolTimestamp}
+        isSuccess={toolSuccess}
+        isStreaming={toolIsStreaming}
         project={project}
         messages={messages}
         agentStatus={agentStatus}
-        currentIndex={displayIndex}
+        currentIndex={toolIndex}
         totalCalls={displayTotalCalls}
         onFileClick={onFileClick}
-        streamingText={isStreaming ? streamingText : undefined}
+        streamingText={toolIsStreaming ? streamingText : undefined}
       />
     );
   };
