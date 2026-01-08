@@ -86,7 +86,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         ) : (
           <AgentAvatar agent={agent} size={26} />
         )}
-        <View className="absolute -bottom-0.5 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
+        <View className="absolute -bottom-1 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
           <Icon
             as={ChevronDown}
             size={8}
@@ -115,9 +115,10 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
       )}
       <Icon
         as={ChevronDown}
-        size={15}
-        className="text-foreground/60 pt-0.5"
+        size={13}
+        className="text-foreground/60"
         strokeWidth={2}
+        style={{ marginTop: 2 }}
       />
     </TouchableOpacity>
   );

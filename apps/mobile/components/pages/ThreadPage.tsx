@@ -690,7 +690,7 @@ export function ThreadPage({
             {
               position: 'absolute',
               right: 24,
-              bottom: baseBottomPadding + 16,
+              bottom: baseBottomPadding - 40,
               zIndex: 150,
             },
             scrollButtonAnimatedStyle,
