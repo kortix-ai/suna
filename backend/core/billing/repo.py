@@ -1,5 +1,5 @@
 from typing import List, Dict, Any, Optional, Tuple
-from core.services.db import execute, execute_one
+from core.services.db import execute, execute_one, serialize_row
 from datetime import datetime, timezone, timedelta
 
 
@@ -361,10 +361,11 @@ async def get_thread_details(thread_ids: List[str]) -> Dict[str, Dict[str, Any]]
     
     result = {}
     for row in rows or []:
-        result[row["thread_id"]] = {
-            "project_id": row["project_id"],
-            "created_at": row["created_at"],
-            "project_name": row["project_name"] or ""  # Handle NULL from LEFT JOIN
+        serialized = serialize_row(row)
+        result[serialized["thread_id"]] = {
+            "project_id": serialized["project_id"],
+            "created_at": serialized["created_at"],
+            "project_name": serialized["project_name"] or ""  # Handle NULL from LEFT JOIN
         }
     
     return result
