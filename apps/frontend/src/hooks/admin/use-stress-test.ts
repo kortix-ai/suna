@@ -5,20 +5,9 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 export interface StressTestConfig {
   num_requests: number;
-  batch_size: number;
   prompts?: string[];
   measure_ttft?: boolean;
   ttft_timeout?: number;
-}
-
-export interface TimingBreakdown {
-  load_config?: number;
-  get_model?: number;
-  create_project?: number;
-  create_thread?: number;
-  create_message?: number;
-  create_agent_run?: number;
-  start_background_task?: number;
 }
 
 export interface StressTestResult {
@@ -28,18 +17,27 @@ export interface StressTestResult {
   project_id?: string;
   agent_run_id?: string;
   // Timing metrics
-  thread_creation_time: number;  // Time to create thread (before agent runs)
+  request_time: number;  // Time for HTTP request to complete
   time_to_first_response?: number | null;  // Time from agent start to first LLM response
-  total_ttft?: number | null;  // thread_creation_time + time_to_first_response
-  llm_ttft?: number | null;  // Actual LLM TTFT (pure LiteLLM call time, from llm.py)
-  timing_breakdown?: TimingBreakdown;
+  total_ttft?: number | null;  // request_time + time_to_first_response
+  llm_ttft?: number | null;  // Actual LLM TTFT
   error?: string;
+  // Detailed timing breakdown
+  timing_breakdown?: {
+    load_config_ms?: number;
+    get_model_ms?: number;
+    create_project_ms?: number;
+    create_thread_ms?: number;
+    create_message_and_run_ms?: number;
+    total_setup_ms?: number;
+  };
 }
 
-export interface TimingSummary {
+export interface TimingBreakdownStats {
   min: number;
   avg: number;
   max: number;
+  count: number;
 }
 
 export interface StressTestSummary {
@@ -48,27 +46,34 @@ export interface StressTestSummary {
   failed: number;
   total_time: number;
   throughput: number;
-  // Thread creation times (setup before agent runs)
-  min_thread_creation_time: number;
-  avg_thread_creation_time: number;
-  max_thread_creation_time: number;
-  // Time to first response (agent execution time)
+  // Request times (HTTP call duration)
+  min_request_time: number;
+  avg_request_time: number;
+  max_request_time: number;
+  // Time to first response
   first_response_measured: number;
   min_time_to_first_response: number | null;
   avg_time_to_first_response: number | null;
   max_time_to_first_response: number | null;
-  // Total TTFT (end-to-end)
+  // Total TTFT
   min_total_ttft: number | null;
   avg_total_ttft: number | null;
   max_total_ttft: number | null;
-  // Actual LLM TTFT (pure LiteLLM call time)
+  // Actual LLM TTFT
   llm_ttft_measured: number;
   min_llm_ttft: number | null;
   avg_llm_ttft: number | null;
   max_llm_ttft: number | null;
-  // Detailed timing breakdown
-  timing_breakdown: Record<string, TimingSummary>;
   error_breakdown: Record<string, number>;
+  // Timing breakdown aggregates
+  timing_breakdown?: {
+    load_config_ms?: TimingBreakdownStats;
+    get_model_ms?: TimingBreakdownStats;
+    create_project_ms?: TimingBreakdownStats;
+    create_thread_ms?: TimingBreakdownStats;
+    create_message_and_run_ms?: TimingBreakdownStats;
+    total_setup_ms?: TimingBreakdownStats;
+  };
 }
 
 export interface StressTestState {
@@ -78,7 +83,6 @@ export interface StressTestState {
   currentBatch: number;
   totalBatches: number;
   error: string | null;
-  measureTtft: boolean;
 }
 
 export function useStressTest() {
@@ -89,29 +93,25 @@ export function useStressTest() {
     currentBatch: 0,
     totalBatches: 0,
     error: null,
-    measureTtft: true,
   });
   
   const abortControllerRef = useRef<AbortController | null>(null);
 
   const runStressTest = useCallback(async (config: StressTestConfig) => {
-    const measureTtft = config.measure_ttft ?? true;
-    
     // Reset state
     setState({
       isRunning: true,
       results: Array.from({ length: config.num_requests }, (_, i) => ({
         request_id: i,
         status: 'pending',
-        thread_creation_time: 0,
+        request_time: 0,
         time_to_first_response: null,
         total_ttft: null,
       })),
       summary: null,
       currentBatch: 0,
-      totalBatches: Math.ceil(config.num_requests / config.batch_size),
+      totalBatches: 0,  // Will be set by server response
       error: null,
-      measureTtft,
     });
 
     try {
@@ -132,7 +132,7 @@ export function useStressTest() {
         },
         body: JSON.stringify({
           ...config,
-          measure_ttft: measureTtft,
+          measure_ttft: true,
         }),
         signal: abortControllerRef.current.signal,
       });
@@ -169,7 +169,6 @@ export function useStressTest() {
                 setState(prev => ({
                   ...prev,
                   totalBatches: event.num_batches,
-                  measureTtft: event.measure_ttft ?? true,
                 }));
                 break;
                 
@@ -202,12 +201,12 @@ export function useStressTest() {
                           thread_id: event.thread_id,
                           project_id: event.project_id,
                           agent_run_id: event.agent_run_id,
-                          thread_creation_time: event.thread_creation_time,
+                          request_time: event.request_time,
                           time_to_first_response: event.time_to_first_response,
                           total_ttft: event.total_ttft,
                           llm_ttft: event.llm_ttft,
-                          timing_breakdown: event.timing_breakdown,
                           error: event.error,
+                          timing_breakdown: event.timing_breakdown,
                         }
                       : r
                   ),
@@ -224,9 +223,9 @@ export function useStressTest() {
                     failed: event.failed,
                     total_time: event.total_time,
                     throughput: event.throughput,
-                    min_thread_creation_time: event.min_thread_creation_time,
-                    avg_thread_creation_time: event.avg_thread_creation_time,
-                    max_thread_creation_time: event.max_thread_creation_time,
+                    min_request_time: event.min_request_time,
+                    avg_request_time: event.avg_request_time,
+                    max_request_time: event.max_request_time,
                     first_response_measured: event.first_response_measured,
                     min_time_to_first_response: event.min_time_to_first_response,
                     avg_time_to_first_response: event.avg_time_to_first_response,
@@ -238,8 +237,8 @@ export function useStressTest() {
                     min_llm_ttft: event.min_llm_ttft,
                     avg_llm_ttft: event.avg_llm_ttft,
                     max_llm_ttft: event.max_llm_ttft,
-                    timing_breakdown: event.timing_breakdown,
                     error_breakdown: event.error_breakdown,
+                    timing_breakdown: event.timing_breakdown,
                   },
                 }));
                 break;
@@ -280,7 +279,6 @@ export function useStressTest() {
       currentBatch: 0,
       totalBatches: 0,
       error: null,
-      measureTtft: true,
     });
   }, []);
 

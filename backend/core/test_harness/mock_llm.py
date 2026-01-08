@@ -115,6 +115,11 @@ class MockLLMProvider:
                 if tool_calls:
                     self.tool_calls = tool_calls
         
+        # Yield TTFT metadata first (simulates time to first token)
+        # The delay_ms represents the mock "thinking" time
+        ttft_seconds = self.delay_ms / 1000.0
+        yield {"__llm_ttft_seconds__": ttft_seconds, "model": model}
+        
         # Stream tool calls first
         for i, tool_call in enumerate(tool_calls):
             await asyncio.sleep(self.delay_ms / 1000)
