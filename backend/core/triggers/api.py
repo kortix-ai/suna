@@ -290,7 +290,7 @@ async def create_agent_trigger(
             trigger_type_str = 'scheduled' if provider_trigger_type.value == 'schedule' else 'app'
             
             from core.utils.limits_checker import check_trigger_limit
-            limit_check = await check_trigger_limit(client, user_id, agent_id, trigger_type_str)
+            limit_check = await check_trigger_limit(user_id, agent_id, trigger_type_str)
             
             if not limit_check['can_create']:
                 error_detail = {

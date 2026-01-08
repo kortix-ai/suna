@@ -1,15 +1,16 @@
+"""
+Legacy billing repository functions.
+
+Note: Credit account functions have been migrated to credit_accounts.py
+This file contains transactions, trial, and credit operations that will be
+migrated incrementally.
+"""
 from typing import List, Dict, Any, Optional, Tuple
 from core.services.db import execute, execute_one, serialize_row
 from datetime import datetime, timezone, timedelta
 
-
-async def get_credit_account(account_id: str) -> Optional[Dict[str, Any]]:
-    sql = """
-    SELECT * FROM credit_accounts 
-    WHERE account_id = :account_id OR user_id = :account_id
-    LIMIT 1
-    """
-    return await execute_one(sql, {"account_id": account_id})
+# Import get_credit_account from new module for backwards compatibility
+from .credit_accounts import get_credit_account
 
 
 async def list_transactions(
@@ -373,103 +374,22 @@ async def get_thread_details(thread_ids: List[str]) -> Dict[str, Dict[str, Any]]
 
 # =============================================================================
 # CREDIT ACCOUNT REPOSITORY FUNCTIONS
+# Note: These functions have been migrated to credit_accounts.py
+# Re-import here for backwards compatibility with existing code
 # =============================================================================
 
-async def get_credit_account_by_id(account_id: str) -> Optional[Dict[str, Any]]:
-    """Get credit account by account_id only (no user_id fallback)."""
-    sql = "SELECT * FROM credit_accounts WHERE account_id = :account_id"
-    return await execute_one(sql, {"account_id": account_id})
-
-
-async def get_credit_account_subscription_info(account_id: str) -> Optional[Dict[str, Any]]:
-    """Get credit account with subscription-related fields."""
-    sql = """
-    SELECT stripe_subscription_id, trial_status, tier
-    FROM credit_accounts
-    WHERE account_id = :account_id
-    """
-    return await execute_one(sql, {"account_id": account_id})
-
-
-async def get_credit_account_subscription_details(account_id: str) -> Optional[Dict[str, Any]]:
-    """Get credit account with subscription details including commitment."""
-    sql = """
-    SELECT stripe_subscription_id, tier, commitment_type, commitment_end_date
-    FROM credit_accounts
-    WHERE account_id = :account_id
-    """
-    return await execute_one(sql, {"account_id": account_id})
-
-
-async def get_credit_account_scheduled_changes(account_id: str) -> Optional[Dict[str, Any]]:
-    """Get credit account with scheduled change fields."""
-    sql = """
-    SELECT stripe_subscription_id, tier, scheduled_tier_change, 
-           scheduled_tier_change_date, scheduled_price_id
-    FROM credit_accounts
-    WHERE account_id = :account_id
-    """
-    return await execute_one(sql, {"account_id": account_id})
-
-
-async def update_credit_account(account_id: str, update_data: Dict[str, Any]) -> bool:
-    """Update credit account fields."""
-    from core.services.db import execute_mutate
-    
-    if not update_data:
-        return True
-    
-    # Build dynamic SET clause
-    set_parts = []
-    params = {"account_id": account_id}
-    
-    for key, value in update_data.items():
-        set_parts.append(f"{key} = :{key}")
-        params[key] = value
-    
-    set_sql = ", ".join(set_parts)
-    sql = f"UPDATE credit_accounts SET {set_sql} WHERE account_id = :account_id"
-    
-    await execute_mutate(sql, params)
-    
-    # Invalidate caches if tier is being updated
-    if 'tier' in update_data or 'trial_status' in update_data:
-        try:
-            from core.cache.runtime_cache import invalidate_tier_info_cache
-            from core.utils.cache import Cache
-            await invalidate_tier_info_cache(account_id)
-            await Cache.invalidate(f"subscription_tier:{account_id}")
-        except Exception:
-            pass  # Non-critical - cache will expire naturally
-    
-    return True
-
-
-async def clear_credit_account_scheduled_changes(account_id: str) -> bool:
-    """Clear scheduled tier change fields."""
-    return await update_credit_account(account_id, {
-        'scheduled_tier_change': None,
-        'scheduled_tier_change_date': None,
-        'scheduled_price_id': None
-    })
-
-
-async def check_renewal_already_processed(account_id: str, period_start: int) -> Optional[Dict[str, Any]]:
-    """Check if a renewal has already been processed for this period."""
-    from core.services.db import execute_one
-    
-    # Call the RPC function - use scalar select to get the JSONB directly
-    sql = "SELECT check_renewal_already_processed(:p_account_id, :p_period_start)"
-    result = await execute_one(sql, {
-        "p_account_id": account_id,
-        "p_period_start": period_start
-    })
-    
-    if not result:
-        return None
-    
-    # The result is {"check_renewal_already_processed": {...}} - extract the inner value
-    return result.get("check_renewal_already_processed")
+from .credit_accounts import (
+    get_credit_account_by_id,
+    get_credit_account_subscription_info,
+    get_credit_account_subscription_details,
+    get_credit_account_scheduled_changes,
+    get_credit_account_balance,
+    get_credit_account_balances,
+    update_credit_account,
+    update_credit_account_balances,
+    clear_credit_account_scheduled_changes,
+    check_renewal_already_processed,
+)
 
 
 # =============================================================================
@@ -534,9 +454,8 @@ async def atomic_add_credits(
     stripe_event_id: Optional[str],
     idempotency_key: str
 ) -> Optional[Dict[str, Any]]:
-    """Call atomic_add_credits RPC function."""
     sql = """
-    SELECT * FROM atomic_add_credits(
+    SELECT atomic_add_credits(
         CAST(:p_account_id AS uuid),
         CAST(:p_amount AS numeric(10,2)),
         :p_is_expiring,
@@ -545,9 +464,9 @@ async def atomic_add_credits(
         :p_type,
         :p_stripe_event_id,
         :p_idempotency_key
-    )
+    ) as result
     """
-    return await execute_one(sql, {
+    row = await execute_one(sql, {
         "p_account_id": account_id,
         "p_amount": amount,
         "p_is_expiring": is_expiring,
@@ -557,6 +476,7 @@ async def atomic_add_credits(
         "p_stripe_event_id": stripe_event_id,
         "p_idempotency_key": idempotency_key
     }, commit=True)
+    return row.get('result') if row else None
 
 
 async def atomic_reset_expiring_credits(
@@ -565,21 +485,21 @@ async def atomic_reset_expiring_credits(
     description: str,
     stripe_event_id: Optional[str]
 ) -> Optional[Dict[str, Any]]:
-    """Call atomic_reset_expiring_credits RPC function."""
     sql = """
-    SELECT * FROM atomic_reset_expiring_credits(
+    SELECT atomic_reset_expiring_credits(
         CAST(:p_account_id AS uuid),
         CAST(:p_new_credits AS numeric(10,2)),
         :p_description,
         :p_stripe_event_id
-    )
+    ) as result
     """
-    return await execute_one(sql, {
+    row = await execute_one(sql, {
         "p_account_id": account_id,
         "p_new_credits": new_credits,
         "p_description": description,
         "p_stripe_event_id": stripe_event_id
     }, commit=True)
+    return row.get('result') if row else None
 
 
 async def atomic_use_credits(
@@ -589,67 +509,65 @@ async def atomic_use_credits(
     thread_id: Optional[str],
     message_id: Optional[str]
 ) -> Optional[Dict[str, Any]]:
-    """Call atomic_use_credits RPC function."""
     sql = """
-    SELECT * FROM atomic_use_credits(
+    SELECT atomic_use_credits(
         CAST(:p_account_id AS uuid),
         CAST(:p_amount AS numeric(10,2)),
         :p_description,
         :p_thread_id,
         :p_message_id
-    )
+    ) as result
     """
-    return await execute_one(sql, {
+    row = await execute_one(sql, {
         "p_account_id": account_id,
         "p_amount": amount,
         "p_description": description,
         "p_thread_id": thread_id,
         "p_message_id": message_id
     }, commit=True)
+    return row.get('result') if row else None
 
 
-async def get_credit_account_balance(account_id: str) -> Optional[Dict[str, Any]]:
-    """Get credit account balance."""
-    sql = "SELECT balance FROM credit_accounts WHERE account_id = :account_id"
-    result = await execute_one(sql, {"account_id": account_id})
-    return serialize_row(result) if result else None
-
-
-async def get_credit_account_balances(account_id: str) -> Optional[Dict[str, Any]]:
-    """Get credit account balance breakdown."""
-    sql = """
-    SELECT balance, expiring_credits, non_expiring_credits
-    FROM credit_accounts
-    WHERE account_id = :account_id
-    """
-    result = await execute_one(sql, {"account_id": account_id})
-    return serialize_row(result) if result else None
-
-
-async def update_credit_account_balances(
+async def atomic_grant_renewal_credits(
     account_id: str,
-    expiring_credits: float,
-    non_expiring_credits: float,
-    balance: float
-) -> None:
-    """Update credit account balance fields."""
-    from core.services.db import execute_mutate
-    
+    period_start: int,
+    period_end: int,
+    credits: float,
+    processed_by: str,
+    invoice_id: str,
+    stripe_event_id: Optional[str],
+    provider: str = 'stripe',
+    revenuecat_transaction_id: Optional[str] = None,
+    revenuecat_product_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Call atomic_grant_renewal_credits RPC function."""
     sql = """
-    UPDATE credit_accounts
-    SET expiring_credits = :expiring_credits,
-        non_expiring_credits = :non_expiring_credits,
-        balance = :balance,
-        updated_at = :updated_at
-    WHERE account_id = :account_id
+    SELECT atomic_grant_renewal_credits(
+        CAST(:p_account_id AS uuid),
+        :p_period_start,
+        :p_period_end,
+        CAST(:p_credits AS numeric(10,2)),
+        :p_processed_by,
+        :p_invoice_id,
+        :p_stripe_event_id,
+        :p_provider,
+        :p_revenuecat_transaction_id,
+        :p_revenuecat_product_id
+    ) as result
     """
-    await execute_mutate(sql, {
-        "account_id": account_id,
-        "expiring_credits": expiring_credits,
-        "non_expiring_credits": non_expiring_credits,
-        "balance": balance,
-        "updated_at": datetime.now(timezone.utc).isoformat()
-    })
+    row = await execute_one(sql, {
+        "p_account_id": account_id,
+        "p_period_start": period_start,
+        "p_period_end": period_end,
+        "p_credits": credits,
+        "p_processed_by": processed_by,
+        "p_invoice_id": invoice_id,
+        "p_stripe_event_id": stripe_event_id,
+        "p_provider": provider,
+        "p_revenuecat_transaction_id": revenuecat_transaction_id,
+        "p_revenuecat_product_id": revenuecat_product_id
+    }, commit=True)
+    return row.get('result') if row else None
 
 
 async def insert_credit_ledger(
@@ -664,7 +582,6 @@ async def insert_credit_ledger(
     stripe_event_id: Optional[str] = None,
     ledger_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
-    """Insert a credit ledger entry."""
     from core.services.db import execute_mutate
     import uuid
     

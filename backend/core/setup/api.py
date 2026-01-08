@@ -97,12 +97,14 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
                 }
         
         logger.info(f"[SETUP] Installing Suna agent for {account_id}")
-        suna_service = SunaDefaultAgentService(db)
-        agent_id = await suna_service.install_suna_agent_for_user(account_id)
-        
-
-        if not agent_id:
-            logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}, but continuing")
+        try:
+            suna_service = SunaDefaultAgentService(db)
+            agent_id = await suna_service.install_suna_agent_for_user(account_id)
+            if not agent_id:
+                logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}")
+        except Exception as e:
+            logger.error(f"[SETUP] Error installing Suna agent for {account_id}: {e}")
+            agent_id = None
         
         if user_record:
             raw_user_metadata = user_record.get('raw_user_meta_data', {})
@@ -127,17 +129,13 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
                             referral_code=referral_code
                         )
                         
-                        logger.info(f"[SETUP] Referral processing result: {referral_result}")
-                        
                         if referral_result.get('success'):
                             logger.info(
                                 f"[SETUP] ✅ Referral processed: {referrer_id} referred {account_id}, "
                                 f"awarded {referral_result.get('credits_awarded')} credits"
                             )
                         else:
-                            logger.warning(
-                                f"[SETUP] Failed to process referral: {referral_result.get('message')}"
-                            )
+                            logger.warning(f"[SETUP] Failed to process referral: {referral_result.get('message')}")
                     else:
                         logger.warning(
                             f"[SETUP] Invalid referral code or self-referral: {referral_code}, "

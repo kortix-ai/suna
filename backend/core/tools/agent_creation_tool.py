@@ -139,7 +139,7 @@ class AgentCreationTool(Tool):
             
             
             from core.utils.limits_checker import check_agent_count_limit
-            limit_check = await check_agent_count_limit(client, account_id)
+            limit_check = await check_agent_count_limit(account_id)
             
             if not limit_check['can_create']:
                 return self.fail_response(

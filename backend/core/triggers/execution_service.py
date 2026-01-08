@@ -48,7 +48,7 @@ class ExecutionService:
             if config.ENV_MODE != EnvMode.LOCAL:
                 from core.utils.limits_checker import check_project_count_limit, check_thread_limit
                 
-                project_limit = await check_project_count_limit(client, account_id)
+                project_limit = await check_project_count_limit(account_id)
                 if not project_limit['can_create']:
                     logger.warning(f"Trigger execution blocked: project limit reached for account {account_id} ({project_limit['current_count']}/{project_limit['limit']})")
                     return {
@@ -57,7 +57,7 @@ class ExecutionService:
                         "message": "Failed to execute trigger - project limit exceeded"
                     }
                 
-                thread_limit = await check_thread_limit(client, account_id)
+                thread_limit = await check_thread_limit(account_id)
                 if not thread_limit['can_create']:
                     logger.warning(f"Trigger execution blocked: thread limit reached for account {account_id} ({thread_limit['current_count']}/{thread_limit['limit']})")
                     return {

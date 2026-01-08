@@ -91,17 +91,17 @@ async def _check_billing_and_limits(
     async def check_agent_runs():
         if config.ENV_MODE == EnvMode.LOCAL:
             return {'can_start': True}
-        return await check_agent_run_limit(client, account_id)
+        return await check_agent_run_limit(account_id)
     
     async def check_projects():
         if config.ENV_MODE == EnvMode.LOCAL or not check_project_limit:
             return {'can_create': True}
-        return await check_project_count_limit(client, account_id)
+        return await check_project_count_limit(account_id)
     
     async def check_threads():
         if config.ENV_MODE == EnvMode.LOCAL or not check_thread_limit:
             return {'can_create': True}
-        return await _check_thread_limit(client, account_id)
+        return await _check_thread_limit(account_id)
     
     billing_result, agent_run_result, project_result, thread_result = await asyncio.gather(
         check_billing(), check_agent_runs(), check_projects(), check_threads()

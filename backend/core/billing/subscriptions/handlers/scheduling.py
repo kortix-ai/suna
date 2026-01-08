@@ -3,7 +3,6 @@ from typing import Dict, Optional
 from datetime import datetime, timezone, timedelta
 import stripe # type: ignore
 
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.billing.shared.config import (
     get_tier_by_name,
@@ -11,24 +10,21 @@ from core.billing.shared.config import (
     get_price_type
 )
 from core.billing.external.stripe import StripeAPIWrapper
+from core.billing import repo as billing_repo
+
 
 class SchedulingHandler:
     @staticmethod
     async def schedule_tier_downgrade(account_id: str, target_tier_key: str, commitment_type: Optional[str] = None) -> Dict:
-        db = DBConnection()
-        client = await db.client
+        credit_result = await billing_repo.get_credit_account_for_downgrade(account_id)
         
-        credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, tier, commitment_type, commitment_end_date'
-        ).eq('account_id', account_id).execute()
-        
-        if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
+        if not credit_result or not credit_result.get('stripe_subscription_id'):
             raise HTTPException(status_code=404, detail="No active subscription found")
         
-        subscription_id = credit_result.data[0]['stripe_subscription_id']
-        current_tier_name = credit_result.data[0].get('tier', 'none')
-        user_commitment_type = credit_result.data[0].get('commitment_type')
-        commitment_end_date = credit_result.data[0].get('commitment_end_date')
+        subscription_id = credit_result['stripe_subscription_id']
+        current_tier_name = credit_result.get('tier', 'none')
+        user_commitment_type = credit_result.get('commitment_type')
+        commitment_end_date = credit_result.get('commitment_end_date')
         
         current_tier = get_tier_by_name(current_tier_name)
         target_tier = get_tier_by_name(target_tier_key)
@@ -59,7 +55,7 @@ class SchedulingHandler:
             
             await SchedulingHandler._create_or_update_schedule(
                 subscription_id, subscription, target_price_id, current_period_end, account_id, 
-                current_tier_name, target_tier_key, client
+                current_tier_name, target_tier_key
             )
             
             return SchedulingHandler._build_downgrade_response(
@@ -99,7 +95,7 @@ class SchedulingHandler:
     async def _create_or_update_schedule(
         subscription_id: str, subscription: Dict, target_price_id: str, 
         current_period_end: int, account_id: str, current_tier_name: str, 
-        target_tier_key: str, client
+        target_tier_key: str
     ):
         schedule_metadata = {
             'account_id': account_id,
@@ -124,11 +120,12 @@ class SchedulingHandler:
                 subscription_id, subscription, target_price_id, current_period_end, schedule_metadata
             )
         
-        await client.from_('credit_accounts').update({
-            'scheduled_tier_change': target_tier_key,
-            'scheduled_tier_change_date': datetime.fromtimestamp(current_period_end, tz=timezone.utc).isoformat(),
-            'scheduled_price_id': target_price_id
-        }).eq('account_id', account_id).execute()
+        await billing_repo.update_scheduled_tier_change(
+            account_id,
+            target_tier_key,
+            datetime.fromtimestamp(current_period_end, tz=timezone.utc).isoformat(),
+            target_price_id
+        )
 
     @staticmethod
     async def _handle_existing_schedule(
@@ -147,15 +144,12 @@ class SchedulingHandler:
             logger.info(f"[DOWNGRADE] Existing schedule status: {schedule_status}")
             
             if schedule_status in ['active', 'not_started']:
-                # Check if the current phase has already ended
-                # This can happen when user upgraded after a schedule was created
                 phases = existing_schedule.get('phases', [])
                 now = int(datetime.now(timezone.utc).timestamp())
                 
                 if phases and len(phases) > 0:
                     first_phase_end = phases[0].get('end_date', 0)
                     if first_phase_end and first_phase_end < now:
-                        # Phase 0 has already ended - release and create new
                         logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} phase 0 has ended (ended at {first_phase_end}, now is {now}), releasing and creating new")
                         try:
                             await StripeAPIWrapper.safe_stripe_call(
@@ -216,7 +210,6 @@ class SchedulingHandler:
                 logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} no longer exists, will create new")
                 return None
             elif 'phase that has already ended' in error_str:
-                # Phase already ended - release and create new
                 logger.info(f"[DOWNGRADE] Schedule {existing_schedule_id} has ended phase, releasing and creating new")
                 try:
                     await StripeAPIWrapper.safe_stripe_call(
@@ -318,14 +311,9 @@ class SchedulingHandler:
 
     @staticmethod
     async def get_commitment_status(account_id: str) -> Dict:
-        db = DBConnection()
-        client = await db.client
+        result = await billing_repo.get_commitment_status(account_id)
         
-        result = await client.from_('credit_accounts').select(
-            'commitment_type, commitment_start_date, commitment_end_date, commitment_price_id'
-        ).eq('account_id', account_id).execute()
-        
-        if not result.data or not result.data[0].get('commitment_type'):
+        if not result or not result.get('commitment_type'):
             return {
                 'has_commitment': False,
                 'can_cancel': True,
@@ -334,18 +322,11 @@ class SchedulingHandler:
                 'commitment_end_date': None
             }
         
-        data = result.data[0]
-        end_date = datetime.fromisoformat(data['commitment_end_date'].replace('Z', '+00:00'))
+        end_date = datetime.fromisoformat(result['commitment_end_date'].replace('Z', '+00:00'))
         now = datetime.now(timezone.utc)
         
         if now >= end_date:
-            await client.from_('credit_accounts').update({
-                'commitment_type': None,
-                'commitment_start_date': None,
-                'commitment_end_date': None,
-                'commitment_price_id': None,
-                'can_cancel_after': None
-            }).eq('account_id', account_id).execute()
+            await billing_repo.clear_commitment(account_id)
             
             return {
                 'has_commitment': False,
@@ -360,58 +341,37 @@ class SchedulingHandler:
         return {
             'has_commitment': True,
             'can_cancel': False,
-            'commitment_type': data['commitment_type'],
+            'commitment_type': result['commitment_type'],
             'months_remaining': max(1, months_remaining),
-            'commitment_end_date': data['commitment_end_date']
+            'commitment_end_date': result['commitment_end_date']
         }
 
     @staticmethod
     async def get_scheduled_changes(account_id: str, subscription_data: Optional[Dict] = None) -> Dict:
-        """
-        Get scheduled tier changes for an account.
+        data = await billing_repo.get_credit_account_with_scheduling(account_id)
         
-        Args:
-            account_id: The account ID to check
-            subscription_data: Optional pre-fetched Stripe subscription data to avoid duplicate API calls
-        """
-        db = DBConnection()
-        client = await db.client
-        
-        # Include RevenueCat pending change columns
-        credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, tier, provider, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id, '
-            'revenuecat_pending_change_product, revenuecat_pending_change_date, revenuecat_pending_change_type'
-        ).eq('account_id', account_id).execute()
-        
-        if not credit_result.data:
+        if not data:
             return {
                 'has_scheduled_change': False,
                 'scheduled_change': None
             }
         
-        data = credit_result.data[0]
         current_tier_name = data.get('tier')
         provider = data.get('provider', 'stripe')
         
-        # Check RevenueCat pending changes first (if provider is revenuecat)
         if provider == 'revenuecat':
             revenuecat_result = await SchedulingHandler._check_revenuecat_pending_changes(
-                data, current_tier_name, client, account_id
+                data, current_tier_name, account_id
             )
             if revenuecat_result.get('has_scheduled_change'):
                 return revenuecat_result
         
-        # Check Stripe/database scheduled changes
         scheduled_tier = data.get('scheduled_tier_change')
         scheduled_date = data.get('scheduled_tier_change_date')
         
         if scheduled_tier and current_tier_name == scheduled_tier:
             logger.info(f"[SCHEDULED_CHANGES] Scheduled tier {scheduled_tier} matches current tier - downgrade already completed, clearing fields")
-            await client.from_('credit_accounts').update({
-                'scheduled_tier_change': None,
-                'scheduled_tier_change_date': None,
-                'scheduled_price_id': None
-            }).eq('account_id', account_id).execute()
+            await billing_repo.clear_scheduled_tier_change(account_id)
             
             return {
                 'has_scheduled_change': False,
@@ -445,8 +405,7 @@ class SchedulingHandler:
         }
 
     @staticmethod
-    async def _check_revenuecat_pending_changes(data: Dict, current_tier_name: str, client, account_id: str) -> Dict:
-        """Check for RevenueCat pending plan changes."""
+    async def _check_revenuecat_pending_changes(data: Dict, current_tier_name: str, account_id: str) -> Dict:
         pending_product = data.get('revenuecat_pending_change_product')
         pending_date = data.get('revenuecat_pending_change_date')
         pending_type = data.get('revenuecat_pending_change_type', 'change')
@@ -457,7 +416,6 @@ class SchedulingHandler:
                 'scheduled_change': None
             }
         
-        # Map RevenueCat product ID to tier
         from core.billing.external.revenuecat.utils import ProductMapper
         target_tier_name, target_tier_info = ProductMapper.get_tier_info(pending_product)
         
@@ -468,16 +426,11 @@ class SchedulingHandler:
                 'scheduled_change': None
             }
         
-        # Check if change already applied
         if current_tier_name == target_tier_name:
             logger.info(
                 f"[SCHEDULED_CHANGES] RevenueCat pending change to {target_tier_name} already applied, clearing"
             )
-            await client.from_('credit_accounts').update({
-                'revenuecat_pending_change_product': None,
-                'revenuecat_pending_change_date': None,
-                'revenuecat_pending_change_type': None
-            }).eq('account_id', account_id).execute()
+            await billing_repo.clear_revenuecat_pending_change(account_id)
             
             return {
                 'has_scheduled_change': False,
@@ -489,7 +442,7 @@ class SchedulingHandler:
         return {
             'has_scheduled_change': True,
             'scheduled_change': {
-                'type': pending_type,  # 'upgrade', 'downgrade', or 'change'
+                'type': pending_type,
                 'current_tier': {
                     'name': current_tier.name if current_tier else current_tier_name,
                     'display_name': current_tier.display_name if current_tier else current_tier_name,
@@ -510,18 +463,9 @@ class SchedulingHandler:
         current_tier_name: str,
         subscription_data: Optional[Dict] = None
     ) -> Dict:
-        """
-        Check Stripe subscription metadata for scheduled changes.
-        
-        Args:
-            data: Credit account data
-            current_tier_name: Current tier name
-            subscription_data: Optional pre-fetched subscription to avoid duplicate API calls
-        """
         subscription_id = data.get('stripe_subscription_id')
         if subscription_id:
             try:
-                # Use pre-fetched subscription if available, otherwise fetch it
                 subscription = subscription_data
                 if subscription is None:
                     subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
@@ -566,38 +510,23 @@ class SchedulingHandler:
 
     @staticmethod
     async def cancel_scheduled_change(account_id: str) -> Dict:
-        """Cancel any scheduled tier change for the account."""
-        db = DBConnection()
-        client = await db.client
+        data = await billing_repo.get_credit_account_with_scheduling(account_id)
         
-        # First check if there's a scheduled change (include RevenueCat columns)
-        credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, provider, scheduled_tier_change, scheduled_tier_change_date, scheduled_price_id, '
-            'revenuecat_pending_change_product, revenuecat_pending_change_date, revenuecat_pending_change_type'
-        ).eq('account_id', account_id).execute()
-        
-        if not credit_result.data:
+        if not data:
             return {
                 'success': False,
                 'message': 'No account found'
             }
         
-        data = credit_result.data[0]
         scheduled_tier = data.get('scheduled_tier_change')
         subscription_id = data.get('stripe_subscription_id')
         provider = data.get('provider', 'stripe')
         
-        # Check for RevenueCat pending changes
         revenuecat_pending = data.get('revenuecat_pending_change_product')
         
-        # Handle RevenueCat scheduled changes
         if provider == 'revenuecat' and revenuecat_pending:
             logger.info(f"[CANCEL_SCHEDULE] Clearing RevenueCat pending change for {account_id}")
-            await client.from_('credit_accounts').update({
-                'revenuecat_pending_change_product': None,
-                'revenuecat_pending_change_date': None,
-                'revenuecat_pending_change_type': None
-            }).eq('account_id', account_id).execute()
+            await billing_repo.clear_revenuecat_pending_change(account_id)
             
             logger.info(f"[CANCEL_SCHEDULE] Successfully cancelled RevenueCat scheduled change for {account_id}")
             return {
@@ -606,12 +535,10 @@ class SchedulingHandler:
             }
         
         if not scheduled_tier:
-            # Check Stripe metadata as fallback
             if subscription_id:
                 try:
                     subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
                     if subscription.get('metadata', {}).get('downgrade') == 'true':
-                        # Clear Stripe metadata
                         await StripeAPIWrapper.modify_subscription(subscription_id, {
                             'metadata': {
                                 'downgrade': None,
@@ -620,7 +547,6 @@ class SchedulingHandler:
                             }
                         })
                         
-                        # Also try to release any Stripe schedule
                         schedule_id = subscription.get('schedule')
                         if schedule_id:
                             try:
@@ -643,14 +569,8 @@ class SchedulingHandler:
                 'message': 'No scheduled change found'
             }
         
-        # Clear the scheduled change in database
-        await client.from_('credit_accounts').update({
-            'scheduled_tier_change': None,
-            'scheduled_tier_change_date': None,
-            'scheduled_price_id': None
-        }).eq('account_id', account_id).execute()
+        await billing_repo.clear_scheduled_tier_change(account_id)
         
-        # Also clear Stripe subscription schedule if it exists
         if subscription_id:
             try:
                 subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
@@ -665,7 +585,6 @@ class SchedulingHandler:
                     except Exception as e:
                         logger.warning(f"[CANCEL_SCHEDULE] Could not release schedule: {e}")
                 
-                # Clear metadata
                 await StripeAPIWrapper.modify_subscription(subscription_id, {
                     'metadata': {
                         'downgrade': None,
