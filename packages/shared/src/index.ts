@@ -16,6 +16,9 @@
  * 
  * // Import general utilities
  * import { safeJsonParse, groupMessages } from '@agentpress/shared/utils';
+ * 
+ * // Import animation utilities
+ * import { useSmoothText, useSmoothToolField } from '@agentpress/shared/animations';
  */
 
 // Re-export everything for convenience
@@ -23,4 +26,5 @@ export * from './types';
 export * from './streaming';
 export * from './tools';
 export * from './utils';
+export * from './animations';
 

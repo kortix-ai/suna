@@ -80,8 +80,14 @@ const DOCUMENT_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf', 'odt'];
 // Spreadsheet extensions (main outputs)
 const SPREADSHEET_EXTENSIONS = ['xlsx', 'xls', 'csv', 'ods'];
 
+// Video extensions (for thumbnail support)
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'm4v'];
+
+// Audio extensions
+const AUDIO_EXTENSIONS = ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'];
+
 // Video/Audio extensions (main outputs)
-const MEDIA_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mp3', 'wav', 'ogg'];
+const MEDIA_EXTENSIONS = [...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS];
 
 // Folders to hide in library view (internal/utility folders)
 const HIDDEN_FOLDERS = ['downloads', 'node_modules', '.git', '__pycache__', 'assets', 'images', 'fonts', 'scripts', 'src', 'dist', 'build', 'public', 'static'];
@@ -231,6 +237,138 @@ function XlsxThumbnail({
   return <SpreadsheetThumbnail data={data || []} isLoading={isLoading} />;
 }
 
+// Video thumbnail component - captures first frame
+function VideoThumbnail({ 
+  url, 
+  fallbackIcon 
+}: { 
+  url: string; 
+  fallbackIcon: React.ReactNode;
+}) {
+  const [thumbnail, setThumbnail] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  
+  useEffect(() => {
+    if (!url) {
+      setHasError(true);
+      setIsLoading(false);
+      return;
+    }
+    
+    let cancelled = false;
+    const video = document.createElement('video');
+    video.muted = true;
+    video.playsInline = true;
+    video.preload = 'auto';
+    
+    const captureFrame = () => {
+      if (cancelled) return;
+      
+      try {
+        // Ensure we have valid dimensions
+        if (video.videoWidth === 0 || video.videoHeight === 0) {
+          console.warn('Video dimensions not available');
+          setHasError(true);
+          setIsLoading(false);
+          return;
+        }
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+          if (!cancelled) {
+            setThumbnail(dataUrl);
+            setIsLoading(false);
+          }
+        } else {
+          setHasError(true);
+          setIsLoading(false);
+        }
+      } catch (e) {
+        console.error('Failed to capture video frame:', e);
+        if (!cancelled) {
+          setHasError(true);
+          setIsLoading(false);
+        }
+      }
+    };
+    
+    const handleCanPlay = () => {
+      if (cancelled) return;
+      // Set to a small time offset to ensure we get the first frame
+      video.currentTime = 0.01;
+    };
+    
+    const handleSeeked = () => {
+      if (cancelled) return;
+      // Small delay to ensure frame is rendered
+      requestAnimationFrame(() => {
+        captureFrame();
+      });
+    };
+    
+    const handleError = (e: Event) => {
+      if (cancelled) return;
+      console.error('Failed to load video for thumbnail:', e);
+      setHasError(true);
+      setIsLoading(false);
+    };
+    
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('seeked', handleSeeked);
+    video.addEventListener('error', handleError);
+    
+    video.src = url;
+    
+    return () => {
+      cancelled = true;
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('seeked', handleSeeked);
+      video.removeEventListener('error', handleError);
+      video.pause();
+      video.src = '';
+      video.load();
+    };
+  }, [url]);
+  
+  if (isLoading) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted/10">
+        <KortixLoader size="small" />
+      </div>
+    );
+  }
+  
+  if (hasError || !thumbnail) {
+    return (
+      <div className="w-full h-full flex items-center justify-center bg-muted/10">
+        {fallbackIcon}
+      </div>
+    );
+  }
+  
+  return (
+    <div className="w-full h-full relative">
+      <img
+        src={thumbnail}
+        alt="Video thumbnail"
+        className="w-full h-full object-cover"
+      />
+      {/* Video play icon overlay */}
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+          <Film className="h-5 w-5 text-white" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // Static spreadsheet thumbnail - completely non-interactive
 function SpreadsheetThumbnail({ data, isLoading }: { data: string[][]; isLoading?: boolean }) {
   if (isLoading) {
@@ -309,6 +447,7 @@ function ThumbnailPreview({
 }) {
   const extension = file.name.split('.').pop()?.toLowerCase() || '';
   const isImage = IMAGE_EXTENSIONS.includes(extension);
+  const isVideo = VIDEO_EXTENSIONS.includes(extension);
   const isPdf = extension === 'pdf';
   const isCsv = extension === 'csv';
   const isXlsx = extension === 'xlsx' || extension === 'xls' || extension === 'ods';
@@ -316,7 +455,7 @@ function ThumbnailPreview({
   const isText = extension === 'txt';
   
   // Determine what content to fetch
-  const needsBlobContent = isImage || isPdf;
+  const needsBlobContent = isImage || isPdf || isVideo;
   const needsTextContent = isMarkdown || isText || isCsv;
   
   // For images/PDFs, use blob content
@@ -365,6 +504,16 @@ function ThumbnailPreview({
         alt={file.name}
         className="w-full h-full object-cover"
         loading="lazy"
+      />
+    );
+  }
+  
+  // For videos, show first frame thumbnail
+  if (isVideo && blobUrl && !hasError) {
+    return (
+      <VideoThumbnail 
+        url={blobUrl} 
+        fallbackIcon={fallbackIcon} 
       />
     );
   }
