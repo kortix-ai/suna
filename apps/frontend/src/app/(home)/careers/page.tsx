@@ -37,10 +37,22 @@ const openings = [
     location: "Remote (Global)",
     description: "Engineer with taste. Exceptional frontend skills paired with an obsession for beautiful, polished interfaces.",
     href: "/careers/design-engineer",
+  },
+  {
+    title: "Infra / Site Reliability Manager",
+    location: "Remote (Global)",
+    description:
+      "Own reliability and scale across our Python/FastAPI + Postgres stack on AWS—SLOs, observability, incident response, and infra roadmap.",
+    href: "/careers/infra-site-reliability-manager",
   }
 ];
 
 export default function CareersPage() {
+  if (process.env.NODE_ENV === 'development') {
+    // Helpful when iterating on copy/structure and sharing data shapes.
+    console.log('[CareersPage] openings', openings);
+  }
+
   return (
     <main className="min-h-screen bg-background">
       {/* Hero Section */}
