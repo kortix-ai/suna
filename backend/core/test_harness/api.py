@@ -21,6 +21,8 @@ from .metrics import MetricsCollector
 
 router = APIRouter(prefix="/admin/test-harness", tags=["admin-test-harness"])
 
+e2e_router = APIRouter(prefix="/admin/tests", tags=["admin-e2e-tests"])
+
 
 # Pydantic models for request/response
 class StartTestRequest(BaseModel):
@@ -337,4 +339,77 @@ async def list_test_prompts(
         'prompts': prompts,
         'total': len(prompts)
     }
+
+
+@e2e_router.post("/e2e", summary="Run E2E API Tests")
+async def run_e2e_tests(
+    test_filter: Optional[str] = Query(None, description="pytest filter expression (e.g., 'test_agents' or 'test_accounts::test_get_accounts')"),
+    _: bool = Depends(verify_admin_api_key)
+):
+    """
+    Trigger pytest E2E API test suite.
+    
+    Runs the functional E2E tests from backend/tests/ directory.
+    Requires X-Admin-Api-Key header for authentication.
+    
+    Args:
+        test_filter: Optional pytest filter expression to run specific tests.
+                    Examples:
+                    - "test_agents" - run all agent tests
+                    - "test_accounts::test_get_accounts" - run specific test
+                    - "test_full_flow" - run E2E flow tests
+    
+    Returns:
+        Test execution results with status, returncode, stdout, and stderr
+    """
+    import subprocess
+    import os
+    from pathlib import Path
+    
+    # Get backend directory path
+    backend_dir = Path(__file__).parent.parent.parent
+    
+    # Build pytest command
+    cmd = ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+    
+    if test_filter:
+        cmd.extend(["-k", test_filter])
+    
+    logger.info(f"Running E2E tests: {' '.join(cmd)}")
+    
+    try:
+        # Run pytest in backend directory
+        result = await asyncio.to_thread(
+            subprocess.run,
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=str(backend_dir),
+            timeout=600.0  # 10 minute timeout
+        )
+        
+        return {
+            "status": "passed" if result.returncode == 0 else "failed",
+            "returncode": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "command": " ".join(cmd)
+        }
+    
+    except subprocess.TimeoutExpired:
+        logger.error("E2E test execution timed out after 10 minutes")
+        return {
+            "status": "timeout",
+            "returncode": -1,
+            "stdout": "",
+            "stderr": "Test execution timed out after 10 minutes",
+            "command": " ".join(cmd)
+        }
+    
+    except Exception as e:
+        logger.error(f"Error running E2E tests: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to run E2E tests: {str(e)}"
+        )
 

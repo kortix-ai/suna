@@ -1,12 +1,14 @@
 from typing import Dict, Optional
 from datetime import datetime
+import asyncio
 import stripe # type: ignore
-from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.distributed_lock import DistributedLock
+from core.billing import repo as billing_repo
 from ..shared.config import FREE_TIER_INITIAL_CREDITS
 from dateutil.relativedelta import relativedelta # type: ignore
+
 
 class FreeTierService:
     def __init__(self):
@@ -23,20 +25,17 @@ class FreeTierService:
             return {'success': False, 'message': 'Lock acquisition failed'}
         
         try:
-            db = DBConnection()
-            client = await db.client
-            
             logger.info(f"[FREE TIER] Auto-subscribing user {account_id} to free tier (lock acquired)")
             
-            existing_sub = await client.from_('credit_accounts').select(
-                'stripe_subscription_id, revenuecat_subscription_id, provider, tier'
-            ).eq('account_id', account_id).execute()
+            existing_sub, billing_customer = await asyncio.gather(
+                billing_repo.get_credit_account_for_free_tier(account_id),
+                billing_repo.get_billing_customer(account_id)
+            )
             
-            if existing_sub.data and len(existing_sub.data) > 0:
-                account = existing_sub.data[0]
-                has_stripe_sub = account.get('stripe_subscription_id')
-                has_revenuecat_sub = account.get('revenuecat_subscription_id')
-                provider = account.get('provider')
+            if existing_sub:
+                has_stripe_sub = existing_sub.get('stripe_subscription_id')
+                has_revenuecat_sub = existing_sub.get('revenuecat_subscription_id')
+                provider = existing_sub.get('provider')
                 
                 if has_stripe_sub or has_revenuecat_sub or provider == 'revenuecat':
                     logger.info(
@@ -46,11 +45,7 @@ class FreeTierService:
                     )
                     return {'success': False, 'message': 'Already subscribed'}
             
-            customer_result = await client.schema('basejump').from_('billing_customers').select(
-                'id'
-            ).eq('account_id', account_id).execute()
-            
-            stripe_customer_id = customer_result.data[0]['id'] if customer_result.data and len(customer_result.data) > 0 else None
+            stripe_customer_id = billing_customer.get('id') if billing_customer else None
             
             if stripe_customer_id:
                 try:
@@ -59,34 +54,29 @@ class FreeTierService:
                 except stripe.error.InvalidRequestError as e:
                     if 'No such customer' in str(e):
                         logger.warning(f"[FREE TIER] Customer {stripe_customer_id} not found in Stripe, will create new customer")
-                        await client.schema('basejump').from_('billing_customers')\
-                            .delete()\
-                            .eq('account_id', account_id)\
-                            .execute()
+                        await billing_repo.delete_billing_customer(account_id)
                         stripe_customer_id = None
                     else:
                         raise
             
             if not email:
-                account_result = await client.schema('basejump').from_('accounts').select(
-                    'primary_owner_user_id'
-                ).eq('id', account_id).execute()
+                account_details = await billing_repo.get_account_details(account_id)
                 
-                if account_result.data and len(account_result.data) > 0:
-                    user_id = account_result.data[0]['primary_owner_user_id']
-                    try:
-                        user_result = await client.auth.admin.get_user_by_id(user_id)
-                        email = user_result.user.email if user_result and user_result.user else None
-                    except:
-                        pass
-                    
-                    if not email:
+                if account_details:
+                    user_id = account_details.get('primary_owner_user_id')
+                    if user_id:
+                        # Try auth.admin first (requires Supabase client for auth operations)
                         try:
-                            email_result = await client.rpc('get_user_email', {'user_id': user_id}).execute()
-                            if email_result.data:
-                                email = email_result.data
+                            from core.services.supabase import DBConnection
+                            db = DBConnection()
+                            client = await db.client
+                            user_result = await client.auth.admin.get_user_by_id(user_id)
+                            email = user_result.user.email if user_result and user_result.user else None
                         except:
                             pass
+                        
+                        if not email:
+                            email = await billing_repo.get_user_email(user_id)
             
             if not email:
                 logger.error(f"[FREE TIER] Could not get email for account {account_id}")
@@ -103,11 +93,7 @@ class FreeTierService:
                 )
                 stripe_customer_id = customer.id
                 
-                await client.schema('basejump').from_('billing_customers').insert({
-                    'id': stripe_customer_id,
-                    'account_id': account_id,
-                    'email': email
-                }).execute()
+                await billing_repo.create_billing_customer(stripe_customer_id, account_id, email)
             
             logger.info(f"[FREE TIER] Creating $0/month subscription for {account_id}")
             subscription = await self.stripe.Subscription.create_async(
@@ -121,11 +107,14 @@ class FreeTierService:
                 }
             )
             
-            await client.from_('credit_accounts').update({
+            await billing_repo.upsert_credit_account(account_id, {
                 'tier': 'free',
                 'stripe_subscription_id': subscription.id,
-                'last_grant_date': datetime.now().isoformat()
-            }).eq('account_id', account_id).execute()
+                'last_grant_date': datetime.now().isoformat(),
+                'balance': 0,
+                'expiring_credits': 0,
+                'non_expiring_credits': 0
+            })
             
             from core.services.credits import credit_service
             refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
@@ -134,9 +123,10 @@ class FreeTierService:
             else:
                 logger.warning(f"[FREE TIER] Daily refresh did not grant credits on signup for {account_id}")
             
-            current_balance = await client.from_('credit_accounts').select('balance').eq('account_id', account_id).execute()
+            current_balance_result = await billing_repo.get_credit_account_balance(account_id)
+            current_balance = float(current_balance_result.get('balance', 0)) if current_balance_result else 0
             
-            if current_balance.data and float(current_balance.data[0]['balance']) < FREE_TIER_INITIAL_CREDITS:
+            if current_balance < FREE_TIER_INITIAL_CREDITS:
                 from ..credits.manager import credit_manager
                 from decimal import Decimal
                 
@@ -169,5 +159,6 @@ class FreeTierService:
         finally:
             await lock.release()
             logger.info(f"[FREE TIER] Released lock for {account_id}")
+
 
 free_tier_service = FreeTierService()

@@ -26,7 +26,7 @@ from core.agentpress.xml_tool_parser import (
     extract_xml_chunks,
     parse_xml_tool_calls_with_ids
 )
-from core.worker.tool_output_streaming_context import set_current_tool_call_id
+from core.utils.tool_output_streaming import set_current_tool_call_id
 from core.agentpress.native_tool_parser import (
     extract_tool_call_chunk_data,
     is_tool_call_complete,
@@ -692,7 +692,22 @@ class ResponseProcessor:
             _chunk_metadata_cached = to_json_string_fast({"stream_status": "chunk", "thread_run_id": thread_run_id})
             _stream_start_time = datetime.now(timezone.utc).isoformat()
             
+            llm_ttft_seconds = None  # Actual LLM TTFT from llm.py
+            
             async for chunk in llm_response:
+                # Check for special TTFT metadata chunk from llm.py wrapper
+                if isinstance(chunk, dict) and "__llm_ttft_seconds__" in chunk:
+                    llm_ttft_seconds = chunk["__llm_ttft_seconds__"]
+                    logger.info(f"[ResponseProcessor] 📊 Received LLM TTFT metadata: {llm_ttft_seconds:.2f}s")
+                    # Yield a special message with the LLM TTFT for downstream consumers
+                    yield {
+                        "type": "llm_ttft",
+                        "ttft_seconds": llm_ttft_seconds,
+                        "model": chunk.get("model"),
+                        "thread_id": thread_id,
+                    }
+                    continue  # Don't process this as a regular chunk
+                
                 # Check for cancellation before processing each chunk
                 if cancellation_event.is_set():
                     logger.info(f"Cancellation signal received for thread {thread_id} - stopping LLM stream processing")

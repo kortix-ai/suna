@@ -134,10 +134,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [placeholder, t]
   );
 
-  // Memoized dynamic height
+  // Memoized dynamic height - cap at ~4-5 lines of text
   const dynamicHeight = React.useMemo(() => {
     const baseHeight = 120;
-    const maxHeight = 200;
+    const maxHeight = 160; // ~4-5 lines max
     const calculatedHeight = contentHeight + 80;
     return Math.max(baseHeight, Math.min(calculatedHeight, maxHeight));
   }, [contentHeight]);
@@ -574,6 +574,7 @@ const NormalMode = React.memo(({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         nestedScrollEnabled={true}
+        style={{ maxHeight: 100 }} // Cap at ~4-5 lines
       >
         <TextInput
           ref={textInputRef}

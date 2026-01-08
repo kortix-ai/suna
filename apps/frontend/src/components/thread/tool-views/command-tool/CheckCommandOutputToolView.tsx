@@ -27,7 +27,7 @@ interface CheckCommandOutputData {
 }
 
 import { ToolCallData, ToolResultData } from '../types';
-import { useSmoothText } from '@/hooks/messages/useSmoothText';
+import { useSmoothText } from '@/hooks/messages';
 
 function extractCheckCommandOutputData(
     toolCall: ToolCallData,

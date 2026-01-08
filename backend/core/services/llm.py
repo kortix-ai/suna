@@ -338,8 +338,8 @@ async def make_llm_api_call(
                 logger.info(f"[LLM] ✅ TTFT={ttft:.2f}s model={model_name} {cpu_info}")
             
             if hasattr(response, '__aiter__'):
-                logger.info(f"[LLM] 🎁 Wrapping streaming response")
-                return _wrap_streaming_response(response, call_start, model_name)
+                logger.info(f"[LLM] 🎁 Wrapping streaming response (TTFT={ttft:.2f}s)")
+                return _wrap_streaming_response(response, call_start, model_name, ttft_seconds=ttft)
             return response
         else:
             response = await litellm.acompletion(**params)
@@ -356,10 +356,15 @@ async def make_llm_api_call(
         raise LLMError(processed_error.message)
 
 
-async def _wrap_streaming_response(response, start_time: float, model_name: str) -> AsyncGenerator:
+async def _wrap_streaming_response(response, start_time: float, model_name: str, ttft_seconds: float = None) -> AsyncGenerator:
+    """Wraps streaming response and yields TTFT metadata as first chunk."""
     import time as time_module
     chunk_count = 0
     try:
+        # Yield TTFT metadata as the very first item (special marker dict, not LiteLLM chunk)
+        if ttft_seconds is not None:
+            yield {"__llm_ttft_seconds__": ttft_seconds, "model": model_name}
+        
         async for chunk in response:
             chunk_count += 1
             yield chunk

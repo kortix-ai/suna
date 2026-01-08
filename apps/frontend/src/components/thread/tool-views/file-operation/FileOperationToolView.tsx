@@ -74,7 +74,7 @@ import { toast } from '@/lib/toast';
 import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
+import { useSmoothToolField } from '@/hooks/messages';
 
 const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[]; fileName?: string }> = ({ lineDiff, fileName }) => (
   <div className="font-mono text-[13px] leading-relaxed">

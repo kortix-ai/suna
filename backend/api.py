@@ -23,7 +23,7 @@ import uuid
 
 
 from core.versioning.api import router as versioning_router
-from core.agents.runs import router as agent_runs_router
+from core.agents.api import router as agent_runs_router
 from core.agents.agent_crud import router as agent_crud_router
 from core.agents.agent_tools import router as agent_tools_router
 from core.agents.agent_json import router as agent_json_router
@@ -40,6 +40,7 @@ from core.admin.billing_admin_api import router as billing_admin_router
 from core.admin.feedback_admin_api import router as feedback_admin_router
 from core.admin.notification_admin_api import router as notification_admin_router
 from core.admin.analytics_admin_api import router as analytics_admin_router
+from core.admin.stress_test_admin_api import router as stress_test_admin_router
 from core.services import transcription as transcription_api
 import sys
 from core.triggers import api as triggers_api
@@ -52,10 +53,9 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 db = DBConnection()
-# Generate unique instance ID per process/worker
-# This is critical for distributed locking - each worker needs a unique ID
-import uuid
-instance_id = str(uuid.uuid4())[:8]
+# Use shared instance ID for distributed deployments
+from core.utils.instance import get_instance_id, INSTANCE_ID
+instance_id = INSTANCE_ID  # Keep backward compatibility
 
 
 # Rate limiter state
@@ -136,8 +136,8 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(2)
         
         # ===== CRITICAL: Stop all running agent runs on this instance =====
-        from core.agents.runs import _cancellation_events
-        from core.agents.executor import update_agent_run_status
+        from core.agents.api import _cancellation_events
+        from core.agents.runner.agent_runner import update_agent_run_status
         
         active_run_ids = list(_cancellation_events.keys())
         if active_run_ids:
@@ -259,7 +259,7 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.kortix.com", "https://kortix.com"]
+allowed_origins = ["https://www.kortix.com", "https://kortix.com", "https://prod-test.kortix.com"]
 allow_origin_regex = None
 
 # Add staging-specific origins
@@ -307,6 +307,7 @@ api_router.include_router(admin_router)
 api_router.include_router(feedback_admin_router)
 api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
+api_router.include_router(stress_test_admin_router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
@@ -344,8 +345,9 @@ from core.memory.api import router as memory_router
 api_router.include_router(referrals_router)
 api_router.include_router(memory_router)
 
-from core.test_harness.api import router as test_harness_router
+from core.test_harness.api import router as test_harness_router, e2e_router
 api_router.include_router(test_harness_router)
+api_router.include_router(e2e_router)
 
 from core.files import staged_files_router
 api_router.include_router(staged_files_router, prefix="/files")
@@ -395,72 +397,16 @@ async def metrics_endpoint():
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
 
 @api_router.get("/debug", summary="Debug Information", operation_id="debug", tags=["system"])
-async def debug_endpoint(
-    type: str = Query("streams", description="Debug type: 'streams' (queue) or 'worker'")
-):
-    """
-    Get detailed debug information for troubleshooting.
+async def debug_endpoint():
+    """Get basic debug information for troubleshooting."""
+    from core.agents.api import _cancellation_events
     
-    - **streams**: Detailed Redis Streams status with all consumer groups and keys
-    - **worker**: Stream worker status and health check
-    """
-    try:
-        from core.worker.stream_info import get_stream_info, CONSUMER_GROUP
-        from core.worker.tasks import StreamName
-        
-        if type == "worker":
-            # Worker status (simplified)
-            info = await get_stream_info()
-            return {
-                "status": "healthy" if not info.get("error") else "error",
-                **info,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-        else:  # type == "streams" or default
-            # Detailed queue debug info
-            client = await redis.get_client()
-            stream_info = await get_stream_info()
-            
-            # Get all stream-related keys for debugging
-            all_stream_keys = await client.keys("suna:*")
-            
-            # Get pending messages summary
-            streams_summary = {}
-            total_pending = 0
-            total_length = 0
-            
-            for stream_name in StreamName:
-                stream_data = stream_info.get("streams", {}).get(stream_name.value, {})
-                pending = stream_data.get("pending_count", 0)
-                length = stream_data.get("length", 0)
-                total_pending += pending
-                total_length += length
-                
-                streams_summary[stream_name.value] = {
-                    "length": length,
-                    "pending": pending,
-                    "consumers": stream_data.get("consumers", []),
-                }
-            
-            return {
-                "consumer_group": CONSUMER_GROUP,
-                "streams": streams_summary,
-                "totals": {
-                    "pending_messages": total_pending,
-                    "total_stream_length": total_length,
-                },
-                "all_stream_keys": [k if isinstance(k, str) else k.decode() for k in all_stream_keys[:20]],
-                "redis_connected": True,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-    except Exception as e:
-        logger.error(f"Debug endpoint failed: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "redis_connected": False,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+    return {
+        "instance_id": instance_id,
+        "active_runs_on_instance": len(_cancellation_events),
+        "is_shutting_down": _is_shutting_down,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 @api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
 async def health_check_docker():

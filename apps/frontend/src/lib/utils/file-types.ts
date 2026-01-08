@@ -130,4 +130,3 @@ export function isVideoExtension(ext: string): boolean {
 export function isVideoFile(filepath: string): boolean {
   return isVideoExtension(getExtension(filepath));
 }
-

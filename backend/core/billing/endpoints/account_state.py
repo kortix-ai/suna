@@ -1,26 +1,8 @@
-"""
-Unified Account State Endpoint
-
-This endpoint combines all billing-related data into a single, cached response:
-- Credit balance (daily, monthly, extra)
-- Subscription info (tier, status, billing period)
-- Available models
-- Limits (projects, threads, concurrent runs)
-- Scheduled changes
-- Commitment info
-
-All data is cached in Redis for 5 minutes, invalidated on:
-- Credit transactions
-- Subscription changes
-- Tier changes
-"""
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Optional
-from decimal import Decimal
+from typing import Dict
 from datetime import datetime, timezone, timedelta
 import asyncio
 import httpx
-from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
@@ -31,32 +13,21 @@ from ..shared.config import (
     CREDITS_PER_DOLLAR,
     get_tier_by_name,
     is_model_allowed,
-    get_tier_limits,
     get_price_type,
     TIERS
 )
 from ..subscriptions import subscription_service
 from ..external.stripe import StripeAPIWrapper
+from ..repo import get_credit_account
 
 router = APIRouter(tags=["billing-account-state"])
 
-# Import from shared module to avoid circular imports
 from ..shared.cache_utils import ACCOUNT_STATE_CACHE_TTL, invalidate_account_state_cache
 
 
-async def _build_account_state(account_id: str, client) -> Dict:
-    """Build the complete account state response."""
+async def _build_account_state(account_id: str) -> Dict:
+    credit_account = await get_credit_account(account_id) or {}
     
-    # Get credit account data - use select('*') to get all available columns
-    credit_account_result = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
-    
-    # Fallback to user_id if account_id not found
-    if not credit_account_result.data:
-        credit_account_result = await client.from_('credit_accounts').select('*').eq('user_id', account_id).execute()
-    
-    credit_account = credit_account_result.data[0] if credit_account_result.data else {}
-    
-    # Extract tier info
     tier_name = credit_account.get('tier', 'none')
     tier_info = get_tier_by_name(tier_name)
     if not tier_info:
@@ -237,15 +208,14 @@ async def _build_account_state(account_id: str, client) -> Dict:
         check_custom_mcp_limit
     )
     
-    # Fetch all detailed limits in parallel
-    import asyncio
+    # Fetch all detailed limits in parallel (client parameter is now optional/unused)
     thread_limit, concurrent_runs_limit, agent_count_limit, project_count_limit, trigger_limit, custom_mcp_limit = await asyncio.gather(
-        check_thread_limit(client, account_id),
-        check_agent_run_limit(client, account_id),
-        check_agent_count_limit(client, account_id),
-        check_project_count_limit(client, account_id),
-        check_trigger_limit(client, account_id),
-        check_custom_mcp_limit(client, account_id)
+        check_thread_limit(account_id),
+        check_agent_run_limit(account_id),
+        check_agent_count_limit(account_id),
+        check_project_count_limit(account_id),
+        check_trigger_limit(account_id),
+        check_custom_mcp_limit(account_id)
     )
     
     # Build response
@@ -479,7 +449,6 @@ async def get_account_state(
             logger.debug(f"[ACCOUNT_STATE] Cache read failed for {account_id}: {cache_err}")
     
     last_error = None
-    db = DBConnection()
     
     for attempt in range(max_retries):
         try:
@@ -490,10 +459,8 @@ async def get_account_state(
                 logger.warning(f"[ACCOUNT_STATE] Daily credit refresh timed out for {account_id}: {credit_err}")
                 # Continue - this is not critical for reading account state
             
-            # Build fresh data
-            client = await db.client
-            
-            account_state = await _build_account_state(account_id, client)
+            # Build fresh data (no client needed - uses repo)
+            account_state = await _build_account_state(account_id)
             
             # Cache the result (non-blocking on failure)
             try:
@@ -517,11 +484,6 @@ async def get_account_state(
                     f"retrying in {delay}s..."
                 )
                 await asyncio.sleep(delay)
-                # Force reconnection on pool/connect issues
-                try:
-                    await db.force_reconnect()
-                except Exception:
-                    pass
             else:
                 logger.error(f"[ACCOUNT_STATE] Failed after {max_retries} attempts for {account_id}: {e}")
                 raise HTTPException(
@@ -535,4 +497,3 @@ async def get_account_state(
     # Should not reach here, but just in case
     logger.error(f"[ACCOUNT_STATE] Unexpected exit from retry loop for {account_id}: {last_error}")
     raise HTTPException(status_code=503, detail="Service temporarily unavailable. Please try again.")
-

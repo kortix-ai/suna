@@ -3,11 +3,11 @@ from typing import Dict
 from decimal import Decimal
 from datetime import datetime, timezone
 import stripe
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from ..external.stripe import generate_credit_purchase_idempotency_key, StripeAPIWrapper
 from .interfaces import PaymentProcessorInterface
 from core.utils.config import config
+from core.billing import repo as billing_repo
 
 class PaymentService(PaymentProcessorInterface):
     def __init__(self):
@@ -47,15 +47,12 @@ class PaymentService(PaymentProcessorInterface):
         if not tier.get('can_purchase_credits', False):
             raise HTTPException(status_code=403, detail="Credit purchases not available for your tier")
         
-        db = DBConnection()
-        client = await db.client
+        customer_data = await billing_repo.get_billing_customer(account_id)
         
-        customer_result = await client.schema('basejump').from_('billing_customers').select('id, email').eq('account_id', account_id).execute()
-        
-        if not customer_result.data or len(customer_result.data) == 0:
+        if not customer_data:
             raise HTTPException(status_code=400, detail="No billing customer found")
         
-        customer_id = customer_result.data[0]['id']
+        customer_id = customer_data['id']
         
         try:
             await StripeAPIWrapper.safe_stripe_call(
@@ -74,17 +71,16 @@ class PaymentService(PaymentProcessorInterface):
         
         purchase_id = None
         try:
-            purchase_record = await client.table('credit_purchases').insert({
-                'account_id': account_id,
-                'amount_dollars': float(amount),
-                'stripe_payment_intent_id': None,
-                'status': 'pending',
-                'created_at': datetime.now(timezone.utc).isoformat(),
-                'metadata': {'amount': float(amount)}
-            }).execute()
+            purchase_record = await billing_repo.create_credit_purchase(
+                account_id=account_id,
+                amount_dollars=float(amount),
+                status='pending',
+                stripe_payment_intent_id=None,
+                metadata={'amount': float(amount)}
+            )
             
-            if purchase_record.data:
-                purchase_id = purchase_record.data[0]['id']
+            if purchase_record:
+                purchase_id = purchase_record['id']
                 logger.info(f"[PAYMENT] Created purchase record {purchase_id} for account {account_id}")
         except Exception as e:
             logger.error(f"[PAYMENT FAILURE] Failed to create purchase record: {e}")
@@ -123,11 +119,12 @@ class PaymentService(PaymentProcessorInterface):
             if not payment_intent_id:
                 logger.warning(f"[PAYMENT] No payment_intent in session {session.id} for account {account_id} - will track by session_id")
             
-            await client.table('credit_purchases').update({
-                'stripe_payment_intent_id': payment_intent_id,
-                'status': 'pending',
-                'metadata': {'session_id': session.id, 'amount': float(amount), 'purchase_id': str(purchase_id)}
-            }).eq('id', purchase_id).execute()
+            await billing_repo.update_purchase_by_id(
+                purchase_id=purchase_id,
+                status='pending',
+                stripe_payment_intent_id=payment_intent_id,
+                metadata={'session_id': session.id, 'amount': float(amount), 'purchase_id': str(purchase_id)}
+            )
             
             logger.info(f"[PAYMENT SUCCESS] Created checkout session {session.id} for purchase {purchase_id}")
             return {'checkout_url': session.url}
@@ -139,10 +136,11 @@ class PaymentService(PaymentProcessorInterface):
             )
             
             try:
-                await client.table('credit_purchases').update({
-                    'status': 'failed',
-                    'metadata': {'error': str(e), 'failed_at': datetime.now(timezone.utc).isoformat()}
-                }).eq('id', purchase_id).execute()
+                await billing_repo.update_purchase_by_id(
+                    purchase_id=purchase_id,
+                    status='failed',
+                    metadata={'error': str(e), 'failed_at': datetime.now(timezone.utc).isoformat()}
+                )
             except Exception as log_error:
                 logger.error(f"[PAYMENT FAILURE] Failed to update purchase record: {log_error}")
             

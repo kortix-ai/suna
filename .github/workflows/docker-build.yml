@@ -114,7 +114,8 @@ jobs:
             docker compose ps
             df -h / | tail -1
 
-  deploy-production:
+  # Deploy to Lightsail (existing production instance)
+  deploy-production-lightsail:
     needs: build-and-push
     if: needs.build-and-push.outputs.environment == 'prod'
     runs-on: ubuntu-latest
@@ -141,7 +142,7 @@ jobs:
           fi
           echo "✅ All production secrets are configured"
 
-      - name: Deploy to production
+      - name: Deploy to Lightsail
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.AWS_PRODUCTION_HOST }}
@@ -173,3 +174,54 @@ jobs:
             echo "=== Deployment complete ==="
             docker compose ps
             df -h / | tail -1
+
+  # Deploy to ECS (new scalable production cluster)
+  deploy-production-ecs:
+    needs: build-and-push
+    if: needs.build-and-push.outputs.environment == 'prod'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOYMENT_ROLE }}
+          aws-region: us-west-2
+
+      - name: Deploy to ECS
+        run: |
+          echo "🚀 Deploying to ECS cluster..."
+          
+          # Force new deployment to pull latest image
+          aws ecs update-service \
+            --cluster suna-ecs \
+            --service suna-api-svc-6a0ece6 \
+            --force-new-deployment \
+            --region us-west-2
+          
+          echo "✅ ECS deployment triggered"
+          echo ""
+          echo "📊 Waiting for deployment to stabilize..."
+          
+          # Wait for service to become stable (up to 10 minutes)
+          aws ecs wait services-stable \
+            --cluster suna-ecs \
+            --services suna-api-svc-6a0ece6 \
+            --region us-west-2 || {
+              echo "⚠️ Deployment still in progress after timeout, checking status..."
+              aws ecs describe-services \
+                --cluster suna-ecs \
+                --services suna-api-svc-6a0ece6 \
+                --region us-west-2 \
+                --query 'services[0].{Status:status,Desired:desiredCount,Running:runningCount,Pending:pendingCount}'
+            }
+          
+          echo ""
+          echo "🎉 ECS deployment complete!"
+          
+          # Show final status
+          aws ecs describe-services \
+            --cluster suna-ecs \
+            --services suna-api-svc-6a0ece6 \
+            --region us-west-2 \
+            --query 'services[0].{Status:status,Desired:desiredCount,Running:runningCount}' \
+            --output table

@@ -44,16 +44,28 @@ class CustomMCPError(MCPException):
     pass
 
 
-@dataclass(frozen=True)
-class MCPConnection:
+@dataclass
+class MCPServerInfo:
+    """
+    Cached metadata about an MCP server.
+    
+    NOTE: We do NOT cache active sessions/connections here.
+    Each tool execution creates a fresh connection (connect-use-disconnect).
+    This prevents connection leaks from context managers exiting.
+    """
     qualified_name: str
     name: str
     config: Dict[str, Any]
     enabled_tools: List[str]
     provider: str = 'custom'
     external_user_id: Optional[str] = None
-    session: Optional[ClientSession] = field(default=None, compare=False)
-    tools: Optional[List[Any]] = field(default=None, compare=False)
+    tools: Optional[List[Any]] = field(default=None)
+    server_url: Optional[str] = None
+    headers: Optional[Dict[str, str]] = None
+
+
+# Keep for backwards compatibility but mark as metadata-only
+MCPConnection = MCPServerInfo
 
 
 @dataclass(frozen=True)
@@ -99,16 +111,39 @@ class ToolExecutionResult:
 
 
 class MCPService:
+    """
+    MCP Service with ephemeral connections.
+    
+    Architecture:
+    - We cache SERVER METADATA (tools list, URLs, headers) for fast lookups
+    - Each tool execution creates a FRESH connection (connect -> use -> disconnect)
+    - This prevents connection leaks from context managers closing prematurely
+    
+    The previous design stored ClientSession objects, but those became invalid
+    when the streamablehttp_client context manager exited.
+    """
+    
     def __init__(self):
         self._logger = logger
-        # LRU cache: Dict[name, (connection, created_at_timestamp)]
-        self._connections: OrderedDict[str, Tuple[MCPConnection, float]] = OrderedDict()
+        # LRU cache: Dict[name, (server_info, created_at_timestamp)]
+        # NOTE: This caches METADATA only, not active connections
+        self._servers: OrderedDict[str, Tuple[MCPServerInfo, float]] = OrderedDict()
         self._encryption_service = EncryptionService()
-        self._max_connections = 100  # Maximum connections to keep in memory
-        self._connection_ttl = 3600  # 1 hour TTL for connections
+        self._max_servers = 100  # Maximum server configs to cache
+        self._server_ttl = 3600  # 1 hour TTL for cached metadata
+    
+    # Backwards compatibility alias
+    @property
+    def _connections(self):
+        return self._servers
 
-    async def connect_server(self, mcp_config: Dict[str, Any], external_user_id: Optional[str] = None) -> MCPConnection:
-        # Determine provider from type field
+    async def connect_server(self, mcp_config: Dict[str, Any], external_user_id: Optional[str] = None) -> MCPServerInfo:
+        """
+        Discover and cache an MCP server's tools.
+        
+        This connects temporarily to fetch tool metadata, then disconnects.
+        The metadata is cached for fast tool lookups during execution.
+        """
         provider = mcp_config.get('type', mcp_config.get('provider', 'custom'))
         
         request = MCPConnectionRequest(
@@ -116,66 +151,75 @@ class MCPService:
             name=mcp_config.get('name', ''),
             config=mcp_config.get('config', {}),
             enabled_tools=mcp_config.get('enabledTools', mcp_config.get('enabled_tools', [])),
-            provider=provider,  # Use the determined provider
+            provider=provider,
             external_user_id=external_user_id
         )
-        return await self._connect_server_internal(request)
+        return await self._discover_and_cache_server(request)
     
-    async def _connect_server_internal(self, request: MCPConnectionRequest) -> MCPConnection:
-        self._logger.debug(f"Connecting to MCP server: {request.qualified_name}")
+    async def _discover_and_cache_server(self, request: MCPConnectionRequest) -> MCPServerInfo:
+        """
+        Connect to server, fetch tools, cache metadata, then disconnect.
+        
+        The connection is ephemeral - we only keep the metadata.
+        """
+        self._logger.debug(f"Discovering MCP server: {request.qualified_name}")
         
         try:
             server_url = await self._get_server_url(request.qualified_name, request.config, request.provider)
             headers = self._get_headers(request.qualified_name, request.config, request.provider, request.external_user_id)
             
-            # Add debugging
-            self._logger.debug(f"MCP connection details - Provider: {request.provider}, URL: {server_url}, Headers: {headers}")
+            self._logger.debug(f"MCP discovery - Provider: {request.provider}, URL: {server_url}")
             
-            # Add timeout to prevent hanging
+            # Ephemeral connection: connect, fetch tools, disconnect
+            tools = []
             async with asyncio.timeout(30):
                 async with streamablehttp_client(server_url, headers=headers) as (
                     read_stream, write_stream, _
                 ):
-                    session = ClientSession(read_stream, write_stream)
-                    await session.initialize()
-                    
-                    tool_result = await session.list_tools()
-                    tools = tool_result.tools if tool_result else []
-                    
-                    connection = MCPConnection(
-                        qualified_name=request.qualified_name,
-                        name=request.name,
-                        config=request.config,
-                        enabled_tools=request.enabled_tools,
-                        provider=request.provider,
-                        external_user_id=request.external_user_id,
-                        session=session,
-                        tools=tools
-                    )
-                    
-                    # Store with timestamp for TTL tracking
-                    self._connections[request.qualified_name] = (connection, time())
-                    # Move to end (most recently used)
-                    self._connections.move_to_end(request.qualified_name)
-                    self._logger.debug(f"Connected to {request.qualified_name} ({len(tools)} tools available)")
-                    
-                    # Cleanup old connections
-                    await self._cleanup_old_connections()
-                    
-                    return connection
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        tool_result = await session.list_tools()
+                        tools = tool_result.tools if tool_result else []
+            # Connection is now closed (context manager exited)
+            
+            # Cache only metadata - no session reference
+            server_info = MCPServerInfo(
+                qualified_name=request.qualified_name,
+                name=request.name,
+                config=request.config,
+                enabled_tools=request.enabled_tools,
+                provider=request.provider,
+                external_user_id=request.external_user_id,
+                tools=tools,
+                server_url=server_url,
+                headers=headers
+            )
+            
+            # Store with timestamp for TTL tracking
+            self._servers[request.qualified_name] = (server_info, time())
+            self._servers.move_to_end(request.qualified_name)
+            self._logger.debug(f"Cached {request.qualified_name} ({len(tools)} tools)")
+            
+            # Cleanup old entries
+            self._cleanup_old_servers()
+            
+            return server_info
                     
         except asyncio.TimeoutError:
             error_msg = f"Connection timeout for {request.qualified_name} after 30 seconds"
             self._logger.error(error_msg)
             raise MCPConnectionError(error_msg)
         except Exception as e:
-            self._logger.error(f"Failed to connect to {request.qualified_name}: {str(e)}")
+            self._logger.error(f"Failed to discover {request.qualified_name}: {str(e)}")
             raise MCPConnectionError(f"Failed to connect to MCP server: {str(e)}")
     
+    # Backwards compatibility alias
+    async def _connect_server_internal(self, request: MCPConnectionRequest) -> MCPServerInfo:
+        return await self._discover_and_cache_server(request)
+    
     async def connect_all(self, mcp_configs: List[Dict[str, Any]]) -> None:
-        requests = []
+        """Discover and cache multiple MCP servers."""
         for config in mcp_configs:
-            # Determine provider from type field
             provider = config.get('type', config.get('provider', 'custom'))
             
             request = MCPConnectionRequest(
@@ -183,77 +227,70 @@ class MCPService:
                 name=config.get('name', ''),
                 config=config.get('config', {}),
                 enabled_tools=config.get('enabledTools', config.get('enabled_tools', [])),
-                provider=provider,  # Use the determined provider
+                provider=provider,
                 external_user_id=config.get('external_user_id')
             )
-            requests.append(request)
-        
-        for request in requests:
+            
             try:
-                await self._connect_server_internal(request)
+                await self._discover_and_cache_server(request)
             except MCPConnectionError as e:
-                self._logger.error(f"Failed to connect to {request.qualified_name}: {str(e)}")
+                self._logger.error(f"Failed to discover {request.qualified_name}: {str(e)}")
                 continue
     
-    async def _cleanup_old_connections(self) -> None:
-        """Remove connections older than TTL or if over limit (LRU eviction)"""
+    def _cleanup_old_servers(self) -> None:
+        """Remove expired or excess cached server metadata (sync - no connections to close)."""
         now = time()
-        expired_names = []
+        expired_names = [
+            name for name, (_, created_at) in self._servers.items()
+            if now - created_at > self._server_ttl
+        ]
         
-        # Find expired connections
-        for name, (conn, created_at) in self._connections.items():
-            if now - created_at > self._connection_ttl:
-                expired_names.append(name)
-        
-        # Remove expired connections
         for name in expired_names:
-            await self.disconnect_server(name)
+            self._servers.pop(name, None)
+            self._logger.debug(f"Expired cached metadata for {name}")
         
-        # Enforce LRU limit (remove oldest if over limit)
-        while len(self._connections) > self._max_connections:
-            oldest_name = next(iter(self._connections))
-            await self.disconnect_server(oldest_name)
+        # Enforce LRU limit
+        while len(self._servers) > self._max_servers:
+            oldest_name = next(iter(self._servers))
+            self._servers.pop(oldest_name, None)
+            self._logger.debug(f"Evicted cached metadata for {oldest_name}")
+    
+    # Backwards compatibility
+    async def _cleanup_old_connections(self) -> None:
+        self._cleanup_old_servers()
     
     async def disconnect_server(self, qualified_name: str) -> None:
-        connection_data = self._connections.get(qualified_name)
-        if connection_data:
-            connection, _ = connection_data
-            if connection and connection.session:
-                try:
-                    await connection.session.close()
-                    self._logger.debug(f"Disconnected from {qualified_name}")
-                except Exception as e:
-                    self._logger.warning(f"Error disconnecting from {qualified_name}: {str(e)}")
-        
-        self._connections.pop(qualified_name, None)
+        """Remove cached server metadata. No connections to close (they're ephemeral)."""
+        if qualified_name in self._servers:
+            self._servers.pop(qualified_name, None)
+            self._logger.debug(f"Removed cached metadata for {qualified_name}")
     
     async def disconnect_all(self) -> None:
-        for qualified_name in list(self._connections.keys()):
-            await self.disconnect_server(qualified_name)
-        self._connections.clear()
-        self._logger.debug("Disconnected from all MCP servers")
+        """Clear all cached server metadata."""
+        self._servers.clear()
+        self._logger.debug("Cleared all cached MCP server metadata")
     
-    def get_connection(self, qualified_name: str) -> Optional[MCPConnection]:
-        """Get connection, moving it to end (most recently used) for LRU"""
-        if qualified_name in self._connections:
-            connection_data = self._connections[qualified_name]
-            self._connections.move_to_end(qualified_name)  # Mark as recently used
-            return connection_data[0]  # Return connection, not tuple
+    def get_connection(self, qualified_name: str) -> Optional[MCPServerInfo]:
+        """Get cached server info, updating LRU position."""
+        if qualified_name in self._servers:
+            self._servers.move_to_end(qualified_name)
+            return self._servers[qualified_name][0]
         return None
     
-    def get_all_connections(self) -> List[MCPConnection]:
-        """Get all connections (without timestamps)"""
-        return [conn for conn, _ in self._connections.values()]
+    def get_all_connections(self) -> List[MCPServerInfo]:
+        """Get all cached server infos."""
+        return [info for info, _ in self._servers.values()]
 
     def get_all_tools_openapi(self) -> List[Dict[str, Any]]:
+        """Get OpenAPI-formatted tools from all cached servers."""
         tools = []
         
-        for connection in self.get_all_connections():
-            if not connection.tools:
+        for server_info in self.get_all_connections():
+            if not server_info.tools:
                 continue
             
-            for tool in connection.tools:
-                if tool.name not in connection.enabled_tools:
+            for tool in server_info.tools:
+                if tool.name not in server_info.enabled_tools:
                     continue
                 
                 openapi_tool = {
@@ -269,6 +306,12 @@ class MCPService:
         return tools
     
     async def execute_tool(self, tool_name: str, arguments: Dict[str, Any], external_user_id: Optional[str] = None) -> ToolExecutionResult:
+        """
+        Execute a tool with a fresh ephemeral connection.
+        
+        Pattern: connect -> execute -> disconnect
+        This prevents connection leaks.
+        """
         request = ToolExecutionRequest(
             tool_name=tool_name,
             arguments=arguments,
@@ -279,23 +322,31 @@ class MCPService:
     async def _execute_tool_internal(self, request: ToolExecutionRequest) -> ToolExecutionResult:
         self._logger.debug(f"Executing tool: {request.tool_name}")
         
-        connection = self._find_tool_connection(request.tool_name)
-        if not connection:
+        # Find which server has this tool
+        server_info = self._find_tool_server(request.tool_name)
+        if not server_info:
             raise MCPToolNotFoundError(f"Tool not found: {request.tool_name}")
         
-        if not connection.session:
-            raise MCPToolExecutionError(f"No active session for tool: {request.tool_name}")
-        
-        # Note: _find_tool_connection already marks connection as recently used (LRU)
-        
-        if request.tool_name not in connection.enabled_tools:
+        if request.tool_name not in server_info.enabled_tools:
             raise MCPToolExecutionError(f"Tool not enabled: {request.tool_name}")
         
+        if not server_info.server_url:
+            raise MCPToolExecutionError(f"No server URL for tool: {request.tool_name}")
+        
         try:
-            result = await connection.session.call_tool(request.tool_name, request.arguments)
+            # Create fresh ephemeral connection for this execution
+            async with asyncio.timeout(30):
+                async with streamablehttp_client(server_info.server_url, headers=server_info.headers or {}) as (
+                    read_stream, write_stream, _
+                ):
+                    async with ClientSession(read_stream, write_stream) as session:
+                        await session.initialize()
+                        result = await session.call_tool(request.tool_name, request.arguments)
+            # Connection closed here (context manager exited)
             
             self._logger.debug(f"Tool {request.tool_name} executed successfully")
             
+            # Extract result content
             if hasattr(result, 'content'):
                 content = result.content
                 if isinstance(content, list) and content:
@@ -313,26 +364,33 @@ class MCPService:
                 result=result_data
             )
             
+        except asyncio.TimeoutError:
+            error_msg = f"Tool execution timeout for {request.tool_name}"
+            self._logger.error(error_msg)
+            return ToolExecutionResult(success=False, result=None, error=error_msg)
         except Exception as e:
             error_msg = f"Tool execution failed: {str(e)}"
             self._logger.error(error_msg)
-            
-            return ToolExecutionResult(
-                success=False,
-                result=None,
-                error=error_msg
-            )
+            return ToolExecutionResult(success=False, result=None, error=error_msg)
     
-    def _find_tool_connection(self, tool_name: str) -> Optional[MCPConnection]:
-        for connection in self.get_all_connections():
-            if not connection.tools:
+    def _find_tool_server(self, tool_name: str) -> Optional[MCPServerInfo]:
+        """Find which cached server has the given tool."""
+        for server_info in self.get_all_connections():
+            if not server_info.tools:
                 continue
             
-            for tool in connection.tools:
+            for tool in server_info.tools:
                 if tool.name == tool_name:
-                    return connection
+                    # Update LRU position
+                    if server_info.qualified_name in self._servers:
+                        self._servers.move_to_end(server_info.qualified_name)
+                    return server_info
         
         return None
+    
+    # Backwards compatibility alias
+    def _find_tool_connection(self, tool_name: str) -> Optional[MCPServerInfo]:
+        return self._find_tool_server(tool_name)
 
     async def discover_custom_tools(self, request_type: str, config: Dict[str, Any]) -> CustomMCPConnectionResult:
         if request_type == "http":
@@ -514,4 +572,4 @@ class MCPService:
         return headers
 
 
-mcp_service = MCPService() 
+mcp_service = MCPService()

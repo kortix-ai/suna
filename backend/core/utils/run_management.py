@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 from core.services import redis
 from core.utils.logger import logger
-from core.agents.executor import update_agent_run_status
+from core.agents.runner.agent_runner import update_agent_run_status
 
 
 async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional[str] = None, stop_source: str = "api_request"):
@@ -25,7 +25,7 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     
     # Import here to avoid circular dependency
     from core.services.supabase import DBConnection
-    from core.agents.runs import _cancellation_events
+    from core.agents.api import _cancellation_events
     
     # Set in-memory cancellation event (if run is on this instance)
     if agent_run_id in _cancellation_events:

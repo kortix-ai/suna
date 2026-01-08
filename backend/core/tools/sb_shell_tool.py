@@ -5,7 +5,7 @@ from uuid import uuid4
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-from core.worker.tool_output_streaming_context import stream_tool_output, get_tool_output_streaming_context, get_current_tool_call_id
+from core.utils.tool_output_streaming import stream_tool_output, get_tool_output_streaming_context, get_current_tool_call_id
 from core.utils.logger import logger
 
 @tool_metadata(

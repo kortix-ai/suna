@@ -432,7 +432,7 @@ async def import_agent_from_json(
     
     client = await db.client
     from core.utils.limits_checker import check_agent_count_limit
-    limit_check = await check_agent_count_limit(client, user_id)
+    limit_check = await check_agent_count_limit(user_id)
     
     if not limit_check['can_create']:
         error_detail = {

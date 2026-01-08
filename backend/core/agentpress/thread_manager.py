@@ -584,15 +584,18 @@ class ThreadManager:
             registry_model_id = llm_model
             
             # ===== MODEL SWITCHING FOR IMAGES =====
-            # Check if thread has images - if yes, use the model's vision variant
-            # The registry handles switching to the appropriate LLM (e.g., Haiku Bedrock)
-            has_images = await self.thread_has_images(thread_id)
-            if has_images:
-                from core.ai_models import model_manager
-                # Get the vision-specific LLM model ID from registry
-                llm_model = model_manager.get_litellm_model_id(registry_model_id, has_images=True)
-                if llm_model != registry_model_id:
-                    logger.info(f"🖼️ Thread has images - switching model from {registry_model_id} to vision model: {llm_model}")
+            # Only check for images if the model has a separate vision model configured
+            # (e.g., MiniMax models use Haiku Bedrock for vision). Skip expensive lookup
+            # for models that handle images natively (e.g., Anthropic, OpenAI models).
+            from core.ai_models import model_manager
+            has_images = False
+            if model_manager.needs_vision_model_check(registry_model_id):
+                has_images = await self.thread_has_images(thread_id)
+                if has_images:
+                    # Get the vision-specific LLM model ID from registry
+                    llm_model = model_manager.get_litellm_model_id(registry_model_id, has_images=True)
+                    if llm_model != registry_model_id:
+                        logger.info(f"🖼️ Thread has images - switching model from {registry_model_id} to vision model: {llm_model}")
             # ======================================
             
             # Fast path: Check stored token count + new message tokens
@@ -605,7 +608,6 @@ class ThreadManager:
             
             if ENABLE_PROMPT_CACHING:
                 try:
-                    from core.ai_models import model_manager
                     from litellm.utils import token_counter
                     from core.threads import repo as threads_repo
                     import time as _time
@@ -870,7 +872,6 @@ class ThreadManager:
                 logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (no fast check available)")
             
             # Calculate threshold (same logic as fast check)
-            from core.ai_models import model_manager
             context_window = model_manager.get_context_window(registry_model_id, has_images=has_images)
             if context_window >= 1_000_000:
                 safety_threshold = context_window - 300_000

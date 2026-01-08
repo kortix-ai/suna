@@ -5,7 +5,6 @@ from core.billing.credits.calculator import calculate_token_cost, calculate_cach
 from core.billing.credits.manager import credit_manager
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
 from ..shared.config import is_model_allowed
 from ..shared.cache_utils import invalidate_account_state_cache
 

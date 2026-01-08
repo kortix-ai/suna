@@ -66,10 +66,10 @@ class ModelRegistry:
             id="kortix/basic",
             name="Kortix Basic",
             litellm_model_id=basic_litellm_id,
-            # Vision model: Use Haiku Bedrock when thread has images
-            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            vision_context_window=200_000,
-            vision_pricing=HAIKU_PRICING,
+            # MiniMax vision fallback (only enable when using MiniMax as primary model):
+            # vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            # vision_context_window=200_000,
+            # vision_pricing=HAIKU_PRICING,
             provider=ModelProvider.ANTHROPIC,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
@@ -105,10 +105,10 @@ class ModelRegistry:
             id="kortix/power",
             name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
-            # Vision model: Use Haiku Bedrock when thread has images
-            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            vision_context_window=200_000,
-            vision_pricing=HAIKU_PRICING,
+            # MiniMax vision fallback (only enable when using MiniMax as primary model):
+            # vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            # vision_context_window=200_000,
+            # vision_pricing=HAIKU_PRICING,
             # MiniMax: provider=ModelProvider.OPENROUTER,
             provider=ModelProvider.ANTHROPIC,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
@@ -267,6 +267,24 @@ class ModelRegistry:
         if model:
             return model.get_litellm_model_id_for_context(has_images)
         return model_id
+    
+    def needs_vision_model_check(self, model_id: str) -> bool:
+        """Check if a model has a separate vision model configured.
+        
+        Use this to avoid expensive thread_has_images() lookups for models
+        that don't need to switch to a different model for vision tasks.
+        
+        Args:
+            model_id: Registry model ID or alias
+            
+        Returns:
+            True if the model has vision_litellm_model_id set (e.g., MiniMax models),
+            False otherwise (model handles images natively or no vision fallback configured)
+        """
+        model = self.get(model_id)
+        if model:
+            return model.vision_litellm_model_id is not None
+        return False
     
     def get_litellm_params(self, model_id: str, **override_params) -> Dict[str, Any]:
         """Get complete LiteLLM parameters for a model from the registry."""

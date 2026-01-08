@@ -25,7 +25,7 @@ import { JsonViewer } from './shared/JsonViewer';
 import { ToolViewIconTitle } from './shared/ToolViewIconTitle';
 import { ToolViewFooter } from './shared/ToolViewFooter';
 import { KortixComputerHeader } from '../kortix-computer/KortixComputerHeader';
-import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
+import { useSmoothToolField } from '@/hooks/messages';
 
 interface BrowserHeaderProps {
   isConnected: boolean;

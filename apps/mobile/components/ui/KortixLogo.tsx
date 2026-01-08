@@ -26,14 +26,19 @@ export function KortixLogo({
   
   const isDark = colorScheme === 'dark';
 
+  // Logomark is wide (708x142 = ~5:1 ratio), symbol is almost square (35x30)
+  if (variant === 'logomark') {
+    // For logomark, size = height, width scales proportionally (5:1 ratio)
+    const logomarkWidth = size * 5;
+    const logomarkHeight = size;
+    
   const containerStyle: ViewStyle = {
-    width: size,
-    height: size,
+      width: logomarkWidth,
+      height: logomarkHeight,
     flexShrink: 0,
     ...style,
   };
 
-  if (variant === 'logomark') {
     const LogomarkComponent = color === 'dark' ? LogomarkWhite : LogomarkBlack;
     return (
       <View 
@@ -42,13 +47,20 @@ export function KortixLogo({
         {...props}
       >
         <LogomarkComponent 
-          width={size} 
-          height={size}
-          color={color}
+          width={logomarkWidth} 
+          height={logomarkHeight}
         />
       </View>
     );
   }
+
+  // Symbol is almost square
+  const containerStyle: ViewStyle = {
+    width: size,
+    height: size,
+    flexShrink: 0,
+    ...style,
+  };
 
   const SymbolComponent = color === 'dark' ? KortixSymbolWhite : KortixSymbolBlack;
 

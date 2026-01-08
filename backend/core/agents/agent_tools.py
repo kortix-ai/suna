@@ -152,8 +152,7 @@ async def update_custom_mcp_tools_for_agent(
         if not updated:
             if config.ENV_MODE != EnvMode.LOCAL:
                 from core.utils.limits_checker import check_custom_mcp_limit
-                client = await db.client  # Get client for limits checker
-                limit_check = await check_custom_mcp_limit(client, user_id)
+                limit_check = await check_custom_mcp_limit(user_id)
                 
                 if not limit_check['can_create']:
                     error_detail = {
@@ -261,8 +260,7 @@ async def update_agent_custom_mcps(
                 additional_workers_needed = new_count - existing_count
                 
                 from core.utils.limits_checker import check_custom_mcp_limit
-                client = await db.client  # Get client for limits checker
-                limit_check = await check_custom_mcp_limit(client, user_id)
+                limit_check = await check_custom_mcp_limit(user_id)
                 
                 total_after_adding = limit_check['current_count'] + additional_workers_needed
                 

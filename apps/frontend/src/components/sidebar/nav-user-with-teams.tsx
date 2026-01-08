@@ -471,6 +471,14 @@ export function NavUserWithTeams({
                         </Link>
                       </DropdownMenuItem>
                     )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/stress-test" className="gap-2 p-2">
+                          <Zap className="h-4 w-4" />
+                          <span>Stress Test</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
                     {isLocalMode() && (
                       <DropdownMenuItem
                         onClick={() => {

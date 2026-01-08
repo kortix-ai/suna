@@ -1,31 +1,21 @@
 from typing import Dict, Optional
 from datetime import datetime, timezone
 
-from core.services.supabase import DBConnection
 from core.utils.config import config
 from core.utils.logger import logger
 from core.billing.shared.config import TIERS, get_tier_by_price_id
 from core.billing.external.stripe import StripeAPIWrapper
+from core.billing import repo as billing_repo
+
 
 class SubscriptionRetrievalHandler:
     @staticmethod
     async def get_subscription(account_id: str) -> Dict:
-        db = DBConnection()
-        client = await db.client
-        
-        credit_result = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
-        if not credit_result.data or len(credit_result.data) == 0:
-            try:
-                credit_result_fallback = await client.from_('credit_accounts').select('*').eq('user_id', account_id).execute()
-                if credit_result_fallback.data:
-                    credit_result = credit_result_fallback
-            except Exception as e:
-                logger.debug(f"[SUBSCRIPTION] Fallback query failed: {e}")
+        credit_account = await billing_repo.get_credit_account(account_id)
         
         subscription_data = None
         
-        if credit_result.data:
-            credit_account = credit_result.data[0]
+        if credit_account:
             tier_name = credit_account.get('tier', 'none')
             trial_status = credit_account.get('trial_status')
             trial_ends_at = credit_account.get('trial_ends_at')
@@ -46,7 +36,6 @@ class SubscriptionRetrievalHandler:
             
             stripe_subscription_id = credit_account.get('stripe_subscription_id')
             
-            # Get actual price_id from Stripe subscription, not from tier config
             if stripe_subscription_id:
                 try:
                     stripe_subscription = await StripeAPIWrapper.retrieve_subscription(stripe_subscription_id)
@@ -56,7 +45,6 @@ class SubscriptionRetrievalHandler:
                         price_id = stripe_subscription['items']['data'][0]['price']['id']
                         logger.debug(f"[RETRIEVAL] Using actual subscription price_id: {price_id}")
                     else:
-                        # Fallback to tier config
                         price_id = tier_obj.price_ids[0] if tier_obj and tier_obj.price_ids else config.STRIPE_FREE_TIER_ID
                         logger.debug(f"[RETRIEVAL] Fallback to tier config price_id: {price_id}")
                 except Exception as e:

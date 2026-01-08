@@ -26,8 +26,7 @@ import { ToolViewIconTitle } from './shared/ToolViewIconTitle';
 import { ToolViewFooter } from './shared/ToolViewFooter';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import Image from 'next/image';
-import { useSmoothToolField } from '@/hooks/messages/useSmoothToolArguments';
-import { useSmoothText } from '@/hooks/messages/useSmoothText';
+import { useSmoothToolField, useSmoothText } from '@/hooks/messages';
 
 export function WebCrawlToolView({
   toolCall,

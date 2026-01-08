@@ -1,0 +1,194 @@
+name: E2E API Tests
+
+on:
+  pull_request:
+    paths:
+      - 'backend/**'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/**'
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: false
+        type: choice
+        options:
+          - staging
+          - production
+        default: 'staging'
+      test_filter:
+        description: 'pytest filter expression (optional)'
+        required: false
+        type: string
+      api_url:
+        description: 'API base URL (overrides environment selection)'
+        required: false
+        type: string
+  workflow_run:
+    workflows: ["Build, push and deploy"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  e2e-tests:
+    runs-on: ubuntu-latest
+    # Only run if:
+    # - workflow_run: deployment completed successfully
+    # - push to main: run directly (deployment might be in progress, we'll poll)
+    # - pull_request: always run
+    # - workflow_dispatch: manual trigger
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'workflow_dispatch')
+    
+    steps:
+      - name: Determine environment
+        id: env
+        run: |
+          # If api_url is explicitly provided, use it
+          if [ -n "${{ github.event.inputs.api_url }}" ]; then
+            echo "environment=custom" >> $GITHUB_OUTPUT
+            echo "api_url=${{ github.event.inputs.api_url }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if environment is explicitly set to production
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "api_url=https://api.kortix.com" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Main branch maps to staging
+          if [ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.base_ref }}" = "main" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "api_url=https://staging-api.suna.so" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Default to staging
+          echo "environment=staging" >> $GITHUB_OUTPUT
+          echo "api_url=https://staging-api.suna.so" >> $GITHUB_OUTPUT
+      
+      - name: Trigger E2E tests via API
+        env:
+          API_URL: ${{ steps.env.outputs.api_url }}
+          ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
+        run: |
+          set -e
+          
+          # Validate admin API key is configured
+          if [ -z "$ADMIN_API_KEY" ]; then
+            echo "❌ Error: KORTIX_ADMIN_API_KEY is not set"
+            echo "Please add it at: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
+          fi
+          
+          # Mask secrets
+          echo "::add-mask::$ADMIN_API_KEY"
+          
+          # Ensure API_URL has /v1 path
+          if [[ "$API_URL" != */v1 ]]; then
+            API_URL="${API_URL}/v1"
+          fi
+          
+          TEST_FILTER="${{ github.event.inputs.test_filter || '' }}"
+          
+          echo "🧪 Starting E2E tests"
+          echo "📍 Environment: ${{ steps.env.outputs.environment }}"
+          echo "📍 API URL: $API_URL"
+          if [ -n "$TEST_FILTER" ]; then
+            echo "🔍 Test filter: $TEST_FILTER"
+          fi
+          echo ""
+          
+          # Wait for deployment to complete (2 min for staging, 6 min for production)
+          if [ "${{ steps.env.outputs.environment }}" = "production" ]; then
+            echo "⏳ Waiting 6 minutes for production deployment to complete..."
+            sleep 360
+          else
+            echo "⏳ Waiting 2 minutes for staging deployment to complete..."
+            sleep 120
+          fi
+          echo "✅ Wait complete, proceeding with tests"
+          echo ""
+          
+          # Build request URL
+          if [ -n "$TEST_FILTER" ]; then
+            REQUEST_URL="$API_URL/admin/tests/e2e?test_filter=$TEST_FILTER"
+          else
+            REQUEST_URL="$API_URL/admin/tests/e2e"
+          fi
+          
+          # Make API request with detailed error handling
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 900 -X POST "$REQUEST_URL" \
+            -H "X-Admin-Api-Key: $ADMIN_API_KEY" \
+            -H "Content-Type: application/json" 2>&1)
+          
+          # Extract HTTP status code and body
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ Failed to trigger E2E tests (HTTP $HTTP_STATUS)"
+            echo ""
+            echo "Response body:"
+            echo "$RESPONSE_BODY" | jq '.' 2>/dev/null || echo "$RESPONSE_BODY"
+            echo ""
+            echo "🔍 Troubleshooting:"
+            echo "  1. Verify API URL is correct: $API_URL"
+            echo "  2. Check that KORTIX_ADMIN_API_KEY is valid"
+            echo "  3. Ensure the API server is running and accessible"
+            echo "  4. Check API server logs for more details"
+            exit 1
+          fi
+          
+          echo "✅ E2E tests completed"
+          echo ""
+          echo "API Response:"
+          echo "$RESPONSE_BODY" | jq '.' 2>/dev/null || echo "$RESPONSE_BODY"
+          echo ""
+          
+          # Extract test status from response
+          TEST_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+          TEST_RETURNCODE=$(echo "$RESPONSE_BODY" | jq -r '.returncode // -1' 2>/dev/null || echo "-1")
+          
+          # Create summary
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: $TEST_STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Return Code**: $TEST_RETURNCODE" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$TEST_FILTER" ]; then
+            echo "- **Test Filter**: \`$TEST_FILTER\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add test output
+          echo "### Test Output:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "$RESPONSE_BODY" | jq -r '.stdout // ""' 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "$RESPONSE_BODY" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          
+          # Exit with test return code
+          if [ "$TEST_STATUS" = "passed" ] && [ "$TEST_RETURNCODE" = "0" ]; then
+            echo "✅ All tests passed"
+            exit 0
+          elif [ "$TEST_STATUS" = "timeout" ]; then
+            echo "❌ Tests timed out"
+            exit 1
+          elif [ "$TEST_STATUS" = "failed" ]; then
+            echo "❌ Tests failed (return code: $TEST_RETURNCODE)"
+            exit 1
+          else
+            echo "⚠️  Unknown test status: $TEST_STATUS"
+            exit 1
+          fi

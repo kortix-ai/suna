@@ -762,7 +762,7 @@ async def create_file_in_project(
     
     try:
         # Reuse existing sandbox creation/retrieval logic from agent_runs
-        from core.agents.runs import _ensure_sandbox_for_thread
+        from core.files import ensure_sandbox_for_thread
         
         # Check if sandbox existed before
         from core.resources import ResourceService
@@ -771,7 +771,7 @@ async def create_file_in_project(
         existing_sandbox_id = sandbox_resource.get('external_id') if sandbox_resource else None
         
         # Ensure sandbox exists (creates if needed)
-        sandbox, sandbox_id = await _ensure_sandbox_for_thread(client, project_id, [file])
+        sandbox, sandbox_id = await ensure_sandbox_for_thread(client, project_id, [file])
         
         if not sandbox or not sandbox_id:
             raise HTTPException(status_code=500, detail="Failed to ensure sandbox for file upload")

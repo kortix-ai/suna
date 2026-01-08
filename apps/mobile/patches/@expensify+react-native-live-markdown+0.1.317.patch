@@ -85,6 +85,21 @@ index 350653c..8339bd1 100644
    } else if (type == "strikethrough") {
      [attributedString addAttribute:NSStrikethroughStyleAttributeName value:[NSNumber numberWithInteger:NSUnderlineStyleSingle] range:range];
    } else if (type == "code") {
+diff --git a/node_modules/@expensify/react-native-live-markdown/apple/MarkdownTextInputDecoratorComponentView.mm b/node_modules/@expensify/react-native-live-markdown/apple/MarkdownTextInputDecoratorComponentView.mm
+index 350653c..a1b2c3d 100644
+--- a/node_modules/@expensify/react-native-live-markdown/apple/MarkdownTextInputDecoratorComponentView.mm
++++ b/node_modules/@expensify/react-native-live-markdown/apple/MarkdownTextInputDecoratorComponentView.mm
+@@ -118,6 +118,10 @@
+   } else if ([backedTextInputView isKindOfClass:[RCTUITextView class]]) {
+     _textView = (RCTUITextView *)backedTextInputView;
+ 
++    // Remove native padding to eliminate phantom space in read-only mode
++    _textView.textContainerInset = UIEdgeInsetsZero;
++    _textView.textContainer.lineFragmentPadding = 0;
++
+     // Enable TextView AdaptiveImageGlyph support for iOS 18.0+
+     [self enableAdaptiveImageGlyphSupport:_textView];
+ 
 diff --git a/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.h b/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.h
 index f57fa41..22bd2a4 100644
 --- a/node_modules/@expensify/react-native-live-markdown/apple/RCTMarkdownStyle.h

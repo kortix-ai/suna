@@ -1,6 +1,5 @@
 from typing import Dict
 from fastapi import HTTPException  # type: ignore
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from ..repositories import SubscriptionRepository
 from ..utils import ProductMapper
@@ -35,10 +34,7 @@ class SyncService:
                 logger.error(f"[REVENUECAT SYNC] Unknown product: {product_id}")
                 return {'status': 'unknown_product', 'product_id': product_id}
             
-            db = DBConnection()
-            client = await db.client
-            
-            current_account = await SubscriptionRepository.get_credit_account(client, account_id)
+            current_account = await SubscriptionRepository.get_credit_account(None, account_id)
             current_provider = current_account.get('provider') if current_account else None
             current_tier = current_account.get('tier') if current_account else None
             current_rc_product = current_account.get('revenuecat_product_id') if current_account else None
