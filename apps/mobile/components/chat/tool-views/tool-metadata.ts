@@ -644,7 +644,7 @@ export const toolMetadataMap: Record<string, ToolMetadata> = {
     iconColor: 'text-blue-600',
     iconBgColor: 'bg-blue-50',
     subtitle: 'Image',
-    defaultTitle: 'Load Image',
+    defaultTitle: 'Image Loaded',
   },
 
   // Presentation Tools
