@@ -16,8 +16,8 @@ import braintrust
 from braintrust import Eval, init_logger
 
 # Load config FIRST to get env vars
-from core.utils.config import config
-from core.utils.logger import logger
+from core.config.settings import config
+from core.shared.logger import logger
 
 
 @dataclass
@@ -117,7 +117,7 @@ class AgentEvalRunner:
         if self._test_user_initialized and self.test_account_id:
             return self.test_account_id
         
-        from core.utils.config import config
+        from core.config.settings import config
         
         # For evals, just use the system admin user
         if hasattr(config, 'SYSTEM_ADMIN_USER_ID') and config.SYSTEM_ADMIN_USER_ID:
@@ -138,8 +138,8 @@ class AgentEvalRunner:
         Creates an isolated thread, sends the input, runs the agent,
         and collects the output.
         """
-        from core.agentpress.thread_manager import ThreadManager
-        from core.agents.runner import run_agent
+        from core.framework.thread_manager import ThreadManager
+        from core.domain.agents.runner import run_agent
         
         start_time = datetime.now()
         tools_called = []
@@ -168,7 +168,7 @@ class AgentEvalRunner:
             # Create project if not provided (needed for sandbox tools like web_search)
             project_id = self.project_id
             if not project_id:
-                from core.services.supabase import DBConnection
+                from core.infrastructure.database.supabase import DBConnection
                 from datetime import timezone
                 import uuid
                 
@@ -195,7 +195,7 @@ class AgentEvalRunner:
             
             # Create a new thread for this test case (linked to project)
             try:
-                from core.services.supabase import DBConnection
+                from core.infrastructure.database.supabase import DBConnection
                 import uuid
                 
                 db = DBConnection()
@@ -735,21 +735,21 @@ def create_agent_task(
         def reset_singletons():
             """Reset all singleton instances that hold async state."""
             try:
-                from core.services.supabase import DBConnection
+                from core.infrastructure.database.supabase import DBConnection
                 DBConnection._instance = None
             except Exception:
                 pass
             
             try:
-                from core.services.redis import _redis_client
-                import core.services.redis as redis_module
+                from core.infrastructure.cache.redis import _redis_client
+                import core.infrastructure.cache.redis as redis_module
                 redis_module._redis_client = None
             except Exception:
                 pass
             
             try:
-                from core.utils.db_helpers import _db_instance
-                import core.utils.db_helpers as db_helpers_module
+                from core.infrastructure.database.helpers import _db_instance
+                import core.infrastructure.database.helpers as db_helpers_module
                 db_helpers_module._db_instance = None
             except Exception:
                 pass

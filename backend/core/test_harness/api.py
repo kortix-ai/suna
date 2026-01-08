@@ -12,8 +12,8 @@ import asyncio
 from typing import Optional, List
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
-from core.utils.auth_utils import verify_admin_api_key
-from core.utils.logger import logger
+from core.middleware.utils import verify_admin_api_key
+from core.shared.logger import logger
 
 from .runner import TestHarnessRunner
 from .metrics import MetricsCollector

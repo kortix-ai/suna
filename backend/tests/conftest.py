@@ -20,8 +20,8 @@ from datetime import datetime, timezone, timedelta
 from typing import AsyncGenerator, Dict
 
 from tests.config import E2ETestConfig
-from core.utils.config import config
-from core.utils.logger import logger
+from core.config.settings import config
+from core.shared.logger import logger
 
 
 # Register custom markers
@@ -33,7 +33,7 @@ def pytest_configure(config):
 
 @pytest.fixture(scope="session")
 def test_config() -> E2ETestConfig:
-    """Test configuration fixture - uses values from core.utils.config"""
+    """Test configuration fixture - uses values from core.config.settings"""
     return E2ETestConfig(
         base_url=os.getenv("TEST_API_URL", "http://localhost:8000/v1"),
         supabase_url=config.SUPABASE_URL or "",
@@ -127,7 +127,7 @@ async def _ensure_test_user_exists(test_config: E2ETestConfig) -> Dict[str, str]
         
         # Initialize account (set up tier and credits)
         try:
-            from core.setup.api import initialize_user_account
+            from core.domain.setup.api import initialize_user_account
             
             logger.info(f"Initializing account for test user: {TEST_USER_EMAIL}")
             user_record = {
@@ -181,7 +181,7 @@ async def _ensure_test_user_exists(test_config: E2ETestConfig) -> Dict[str, str]
                 
                 # Initialize account (set up tier and credits)
                 try:
-                    from core.setup.api import initialize_user_account
+                    from core.domain.setup.api import initialize_user_account
                     
                     logger.info(f"Initializing account for test user (retry): {TEST_USER_EMAIL}")
                     user_record = {

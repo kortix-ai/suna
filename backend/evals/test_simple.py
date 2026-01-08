@@ -8,7 +8,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from evals.runner import AgentEvalRunner, EvalCase
-from core.utils.logger import logger
+from core.shared.logger import logger
 
 
 async def main():

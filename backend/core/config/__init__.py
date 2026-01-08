@@ -1,6 +1,16 @@
-"""Configuration helpers."""
+from .models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig
+from .registry import ModelRegistry, registry
 
-from .config_helper import *
-from .suna_config import *
-from .vapi_config import vapi_config, DEFAULT_SYSTEM_PROMPT, DEFAULT_FIRST_MESSAGE
+# Backwards compatibility alias
+model_manager = registry
 
+__all__ = [
+    'ModelRegistry',
+    'registry',
+    'Model',
+    'ModelProvider',
+    'ModelCapability',
+    'ModelPricing',
+    'ModelConfig',
+    'model_manager',  # Backwards compatibility
+]

@@ -39,7 +39,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Load config first to get env vars
-from core.utils.config import config
+from core.config.settings import config
 
 from braintrust import Eval
 

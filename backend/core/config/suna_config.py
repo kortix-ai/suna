@@ -1,4 +1,4 @@
-from core.prompts.core_prompt import CORE_SYSTEM_PROMPT
+from core.domain.agents.prompts.core_prompt import CORE_SYSTEM_PROMPT
 
 SUNA_CONFIG = {
     "name": "Kortix",
