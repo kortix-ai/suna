@@ -28,10 +28,26 @@ on:
         description: 'API base URL (overrides environment selection)'
         required: false
         type: string
+  workflow_run:
+    workflows: ["Build, push and deploy"]
+    types:
+      - completed
+    branches:
+      - main
 
 jobs:
   e2e-tests:
     runs-on: ubuntu-latest
+    # Only run if:
+    # - workflow_run: deployment completed successfully
+    # - push to main: run directly (deployment might be in progress, we'll poll)
+    # - pull_request: always run
+    # - workflow_dispatch: manual trigger
+    if: |
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')) ||
+      (github.event_name == 'pull_request') ||
+      (github.event_name == 'workflow_dispatch')
     
     steps:
       - name: Determine environment
@@ -94,17 +110,15 @@ jobs:
           fi
           echo ""
           
-          # Test API connectivity
-          echo "🔍 Testing API connectivity..."
-          HEALTH_CHECK=$(curl -s -w "\n%{http_code}" "$API_URL/health" 2>&1 || echo -e "\nERROR")
-          HEALTH_STATUS=$(echo "$HEALTH_CHECK" | tail -n1)
-          
-          if [ "$HEALTH_STATUS" != "200" ]; then
-            echo "⚠️  Warning: API health check failed (HTTP $HEALTH_STATUS)"
-            echo "The API might be unreachable or down. Continuing anyway..."
+          # Wait for deployment to complete (2 min for staging, 6 min for production)
+          if [ "${{ steps.env.outputs.environment }}" = "production" ]; then
+            echo "⏳ Waiting 6 minutes for production deployment to complete..."
+            sleep 360
           else
-            echo "✅ API is reachable"
+            echo "⏳ Waiting 2 minutes for staging deployment to complete..."
+            sleep 120
           fi
+          echo "✅ Wait complete, proceeding with tests"
           echo ""
           
           # Build request URL
@@ -115,7 +129,7 @@ jobs:
           fi
           
           # Make API request with detailed error handling
-          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 300 -X POST "$REQUEST_URL" \
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 900 -X POST "$REQUEST_URL" \
             -H "X-Admin-Api-Key: $ADMIN_API_KEY" \
             -H "Content-Type: application/json" 2>&1)
           
@@ -137,7 +151,44 @@ jobs:
             exit 1
           fi
           
-          echo "✅ E2E tests triggered successfully"
+          echo "✅ E2E tests completed"
           echo ""
           echo "API Response:"
           echo "$RESPONSE_BODY" | jq '.' 2>/dev/null || echo "$RESPONSE_BODY"
+          echo ""
+          
+          # Extract test status from response
+          TEST_STATUS=$(echo "$RESPONSE_BODY" | jq -r '.status // "unknown"' 2>/dev/null || echo "unknown")
+          TEST_RETURNCODE=$(echo "$RESPONSE_BODY" | jq -r '.returncode // -1' 2>/dev/null || echo "-1")
+          
+          # Create summary
+          echo "## E2E Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Environment**: ${{ steps.env.outputs.environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: $TEST_STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "- **Return Code**: $TEST_RETURNCODE" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$TEST_FILTER" ]; then
+            echo "- **Test Filter**: \`$TEST_FILTER\`" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Add test output
+          echo "### Test Output:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "$RESPONSE_BODY" | jq -r '.stdout // ""' 2>/dev/null >> $GITHUB_STEP_SUMMARY || echo "$RESPONSE_BODY" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          
+          # Exit with test return code
+          if [ "$TEST_STATUS" = "passed" ] && [ "$TEST_RETURNCODE" = "0" ]; then
+            echo "✅ All tests passed"
+            exit 0
+          elif [ "$TEST_STATUS" = "timeout" ]; then
+            echo "❌ Tests timed out"
+            exit 1
+          elif [ "$TEST_STATUS" = "failed" ]; then
+            echo "❌ Tests failed (return code: $TEST_RETURNCODE)"
+            exit 1
+          else
+            echo "⚠️  Unknown test status: $TEST_STATUS"
+            exit 1
+          fi
