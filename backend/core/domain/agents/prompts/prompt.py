@@ -391,7 +391,7 @@ You have the abilixwty to execute operations using both Python and CLI tools:
   * **When user wants to create a new image:** Use mode="generate" without image_path
   * **MULTI-TURN WORKFLOW:** If you've generated an image and user asks for ANY follow-up changes, ALWAYS use edit mode
   * **ASSUME FOLLOW-UPS ARE EDITS:** When user says "change this", "add that", "make it different", etc. - use edit mode
-  * **Image path sources:** Can be a workspace file path (e.g., "sunset_city_neon.png") OR a full URL
+  * **Image path sources:** Can be a workspace file path (e.g., "Sunset City Neon.png") OR a full URL
   
   **GENERATE MODE (Creating new images):**
   * Set mode="generate" and provide a descriptive prompt
@@ -411,7 +411,7 @@ You have the abilixwty to execute operations using both Python and CLI tools:
       <invoke name="image_edit_or_generate">
       <parameter name="mode">edit</parameter>
       <parameter name="prompt">Add a red hat to the person in the image</parameter>
-      <parameter name="image_path">sunset_city_neon.png</parameter>
+      <parameter name="image_path">Sunset City Neon.png</parameter>
       </invoke>
       </function_calls>
   * Example with URL:
@@ -425,9 +425,9 @@ You have the abilixwty to execute operations using both Python and CLI tools:
   
   **MULTI-TURN WORKFLOW EXAMPLE:**
   * Step 1 - User: "Create a logo for my company"
-    → Use generate mode: creates "company_logo_design.png"
+    → Use generate mode: creates "Company Logo.png"
   * Step 2 - User: "Can you make it more colorful?"
-    → Use edit mode with "company_logo_design.png" (AUTOMATIC - this is a follow-up)
+    → Use edit mode with "Company Logo.png" (AUTOMATIC - this is a follow-up)
   * Step 3 - User: "Add some text to it"
     → Use edit mode with the most recent image (AUTOMATIC - this is another follow-up)
   

@@ -133,7 +133,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
             </div>
           )}
           {message && (
-            <div className="text-sm text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20 rounded p-3">
+            <div className="text-sm text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/20 rounded p-3">
               {message}
             </div>
           )}
@@ -350,7 +350,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
                 <div className="flex justify-between text-xs text-zinc-600 dark:text-zinc-400">
                   <span>{(file.size / 1024).toFixed(1)} KB</span>
                   <span>{file.date}</span>
-                  <span className={file.status === 'active' ? 'text-green-600' : 'text-zinc-500'}>
+                  <span className={file.status === 'active' ? 'text-zinc-600 dark:text-zinc-400' : 'text-zinc-500'}>
                     {file.status}
                   </span>
                 </div>
@@ -404,7 +404,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
         <div className="space-y-2">
           {message && (
             <div className={`text-sm p-3 rounded ${success
-              ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20'
+              ? 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/20'
               : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20'
               }`}>
               {message}
@@ -420,7 +420,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
         <div className="space-y-2">
           {message && (
             <div className={`text-sm p-3 rounded ${success
-              ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20'
+              ? 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/20'
               : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20'
               }`}>
               {message}
@@ -436,7 +436,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
         <div className="space-y-2">
           {message && (
             <div className={`text-sm p-3 rounded ${success
-              ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20'
+              ? 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/20'
               : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20'
               }`}>
               {message}
@@ -452,7 +452,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
         <div className="space-y-2">
           {message && (
             <div className={`text-sm p-3 rounded ${success
-              ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20'
+              ? 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/20'
               : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20'
               }`}>
               {message}
@@ -468,7 +468,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
         <div className="space-y-2">
           {message && (
             <div className={`text-sm p-3 rounded ${success
-              ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20'
+              ? 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/20'
               : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20'
               }`}>
               {message}
@@ -482,7 +482,7 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
       <div className="space-y-3">
         {message && (
           <div className={`text-sm p-3 rounded ${success
-            ? 'text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950/20'
+            ? 'text-zinc-600 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900/20'
             : 'text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/20'
             }`}>
             {message}
@@ -542,10 +542,10 @@ const KbParametersDisplay: React.FC<{ operation: KbOperation }> = ({ operation }
         <div className="space-y-1 text-xs">
           {Object.entries(operation.data).map(([key, value]) => (
             <div key={key} className="flex">
-              <span className="font-medium text-blue-700 dark:text-blue-300 min-w-20">
+              <span className="font-medium text-zinc-700 dark:text-zinc-300 min-w-20">
                 {key}:
               </span>
-              <span className="ml-2 text-blue-600 dark:text-blue-400">
+              <span className="ml-2 text-zinc-600 dark:text-zinc-400">
                 {Array.isArray(value) ? value.join(', ') : String(value)}
               </span>
             </div>
@@ -635,7 +635,7 @@ export function KbToolView({
           <LoadingState
             iconColor={isGlobal
               ? "text-zinc-500 dark:text-zinc-400"
-              : "text-green-500 dark:text-green-400"
+              : "text-zinc-500 dark:text-zinc-400"
             }
             bgColor={isGlobal
               ? "bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"

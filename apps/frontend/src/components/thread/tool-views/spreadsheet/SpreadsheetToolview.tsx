@@ -90,11 +90,11 @@ export function SpreadsheetToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-green-100 dark:bg-green-900/50 border-green-300 dark:border-green-700">
+            <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
               {isStreaming || isLoading ? (
                 <KortixLoader customSize={20} />
               ) : (
-                <Table className="w-5 h-5 text-green-600 dark:text-green-400" />
+                <Table className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
               )}
             </div>
             <div>

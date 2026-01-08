@@ -9,17 +9,12 @@ from core.domain.billing.external.stripe import StripeAPIWrapper
 class SubscriptionSyncHandler:
     @staticmethod
     async def sync_subscription(account_id: str) -> Dict:
-        db = DBConnection()
-        client = await db.client
+        credit_result = await billing_repo.get_credit_account_subscription_info(account_id)
         
-        credit_result = await client.from_('credit_accounts').select(
-            'stripe_subscription_id, tier'
-        ).eq('account_id', account_id).execute()
-        
-        if not credit_result.data or not credit_result.data[0].get('stripe_subscription_id'):
+        if not credit_result or not credit_result.get('stripe_subscription_id'):
             return {'success': False, 'message': 'No subscription found'}
         
-        subscription_id = credit_result.data[0]['stripe_subscription_id']
+        subscription_id = credit_result['stripe_subscription_id']
         
         try:
             subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)

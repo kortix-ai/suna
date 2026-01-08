@@ -1935,3 +1935,76 @@ async def websocket_pty_terminal(
             await websocket.close()
         except:
             pass
+
+
+class RenameFilesRequest(BaseModel):
+    dry_run: bool = True
+    path: str = "/workspace"
+
+
+class RenameResult(BaseModel):
+    old_name: str
+    new_name: str
+
+
+class RenameFilesResponse(BaseModel):
+    success: bool
+    message: str
+    renames: list
+    dry_run: bool
+
+
+@router.post("/sandboxes/{sandbox_id}/files/smart-rename")
+async def smart_rename_files(
+    sandbox_id: str,
+    request_body: RenameFilesRequest,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """
+    Rename files with ugly auto-generated names (like 'generated_image_abc123.png')
+    to descriptive names using AI vision analysis.
+    
+    This endpoint scans for files matching patterns like:
+    - generated_image_*.png
+    - generated_video_*.mp4
+    - design_*x*_*.png
+    - etc.
+    
+    And renames them to descriptive names based on their content.
+    
+    Args:
+        sandbox_id: The sandbox to scan
+        request_body.dry_run: If True, only returns proposed renames without executing
+        request_body.path: Base path to scan (default: /workspace)
+    """
+    try:
+        client = await db.client
+        await verify_sandbox_access(client, sandbox_id, user_id)
+        
+        sandbox = await get_sandbox_by_id_safely(client, sandbox_id)
+        
+        logger.info(f"Starting smart rename for sandbox {sandbox_id}, dry_run={request_body.dry_run}")
+        
+        renames = await rename_ugly_files(
+            sandbox=sandbox,
+            workspace_path=request_body.path,
+            dry_run=request_body.dry_run
+        )
+        
+        if request_body.dry_run:
+            message = f"Found {len(renames)} file(s) with ugly names that can be renamed"
+        else:
+            message = f"Successfully renamed {len(renames)} file(s)"
+        
+        return RenameFilesResponse(
+            success=True,
+            message=message,
+            renames=[{"old_name": old, "new_name": new} for old, new in renames],
+            dry_run=request_body.dry_run
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error in smart rename for sandbox {sandbox_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -57,10 +57,10 @@ const VIEW_CONFIGS = {
   approval: {
     title: 'Apify Approval Request',
     icon: Clock,
-    color: 'from-yellow-500 to-yellow-600',
-    bgColor: 'bg-yellow-50 dark:bg-yellow-900/20',
-    textColor: 'text-yellow-700 dark:text-yellow-300',
-    borderColor: 'border-yellow-200 dark:border-yellow-800',
+    color: 'from-zinc-500 to-zinc-600',
+    bgColor: 'bg-zinc-50 dark:bg-zinc-900/20',
+    textColor: 'text-zinc-700 dark:text-zinc-300',
+    borderColor: 'border-zinc-200 dark:border-zinc-800',
   },
   run: {
     title: 'Run Apify Actor',
@@ -618,7 +618,7 @@ export function ApifyToolView({
                                 </p>
                               </div>
                               <div>
-                                <p className="text-emerald-600 dark:text-emerald-400">Succeeded</p>
+                                <p className="text-zinc-600 dark:text-zinc-400">Succeeded</p>
                                 <p className="font-medium text-zinc-900 dark:text-zinc-100">
                                   {detailsData.stats.publicActorRunStats30Days.SUCCEEDED?.toLocaleString() || 0}
                                 </p>
@@ -630,7 +630,7 @@ export function ApifyToolView({
                                 </p>
                               </div>
                               <div>
-                                <p className="text-yellow-600 dark:text-yellow-400">Aborted</p>
+                                <p className="text-zinc-600 dark:text-zinc-400">Aborted</p>
                                 <p className="font-medium text-zinc-900 dark:text-zinc-100">
                                   {detailsData.stats.publicActorRunStats30Days.ABORTED?.toLocaleString() || 0}
                                 </p>
@@ -836,7 +836,7 @@ export function ApifyToolView({
                               <ChevronRight className="h-3 w-3 ml-auto text-zinc-400 group-open:rotate-90 transition-transform" />
                             </summary>
                             <div className="mt-2 p-3 bg-zinc-900 dark:bg-zinc-950 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                              <pre className="text-xs font-mono text-emerald-400 dark:text-emerald-300 overflow-x-auto">
+                              <pre className="text-xs font-mono text-zinc-400 dark:text-zinc-300 overflow-x-auto">
                                 {JSON.stringify(result, null, 2)}
                               </pre>
                             </div>

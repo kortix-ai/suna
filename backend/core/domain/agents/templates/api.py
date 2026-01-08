@@ -17,7 +17,6 @@ from .service import (
 from .installation_service import (
     get_installation_service,
     TemplateInstallationRequest,
-    TemplateInstallationResult,
     TemplateInstallationError,
     InvalidCredentialError
 )
@@ -27,12 +26,10 @@ router = APIRouter(tags=["templates"])
 
 db: Optional[DBConnection] = None
 
-
 class UsageExampleMessage(BaseModel):
     role: str
     content: str
     tool_calls: Optional[List[Dict[str, Any]]] = None
-
 
 class CreateTemplateRequest(BaseModel):
     agent_id: str
@@ -560,11 +557,9 @@ async def get_my_templates(
 
 @router.get("/public/{template_id}", response_model=TemplateResponse)
 async def get_public_template(template_id: str):
-    """Get a public template by ID without authentication"""
     try:
         logger.info(f"Attempting to fetch public template: {template_id}")
         
-        # Validate template_id format (should be UUID)
         if not template_id or len(template_id) < 10:
             logger.warning(f"Invalid template_id format: {template_id}")
             raise HTTPException(status_code=404, detail="Template not found")
@@ -592,7 +587,6 @@ async def get_public_template(template_id: str):
         return TemplateResponse(**format_template_for_response(template))
         
     except HTTPException as http_exc:
-        # Re-raise HTTP exceptions as-is
         raise http_exc
     except Exception as e:
         try:
@@ -627,6 +621,3 @@ async def get_template(
             error_str = f"Error of type {type(e).__name__}"
         logger.error(f"Error getting template {template_id}: {error_str}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-
-# Share link functionality removed - now using direct template ID URLs for simplicity 

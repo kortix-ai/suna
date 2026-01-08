@@ -47,7 +47,7 @@ export const NavigationControls = memo(function NavigationControls({
             onClick={onJumpToLive}
           >
             <div className={`${dotClasses} bg-blue-500 animate-pulse`} />
-            <span className={`${textClasses} text-blue-700 dark:text-blue-400`}>Live Updates</span>
+            <span className={`${textClasses} text-zinc-700 dark:text-zinc-400`}>Live Updates</span>
           </div>
         );
       } else {
@@ -66,7 +66,7 @@ export const NavigationControls = memo(function NavigationControls({
             onClick={onJumpToLive}
           >
             <div className={`${dotClasses} bg-blue-500 animate-pulse`} />
-            <span className={`${textClasses} text-blue-700 dark:text-blue-400`}>Jump to Live</span>
+            <span className={`${textClasses} text-zinc-700 dark:text-zinc-400`}>Jump to Live</span>
           </div>
         );
       } else {

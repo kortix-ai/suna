@@ -116,12 +116,12 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
   // Only show error after retries exhausted (15 attempts) and not waiting for sandbox
   if (error && !isLoading && !waitingForSandbox && failureCount >= 15) {
     return (
-      <div className="flex flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-rose-50 to-rose-100 dark:from-rose-950/30 dark:to-rose-900/20 rounded-lg border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-300 shadow-inner">
+      <div className="flex flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 shadow-inner">
         <div className="bg-white dark:bg-black/30 p-3 rounded-full shadow-md mb-3">
-          <ImageOff className="h-8 w-8 text-rose-500 dark:text-rose-400" />
+          <ImageOff className="h-8 w-8 text-zinc-500 dark:text-zinc-400" />
         </div>
         <p className="text-sm font-medium">Unable to load image</p>
-        <p className="text-xs text-rose-600/70 dark:text-rose-400/70 mt-1 max-w-xs text-center break-all">
+        <p className="text-xs text-zinc-600/70 dark:text-zinc-400/70 mt-1 max-w-xs text-center break-all">
           {filePath}
         </p>
       </div>
@@ -305,7 +305,7 @@ export function SeeImageToolView({
                   {isClearTool ? "Clear Images from Context" : truncateString(filename, 25)}
                 </CardTitle>
                 {!isClearTool && isAnimated && (
-                  <Badge variant="outline" className="ml-2 text-[10px] py-0 px-1.5 h-4 border-amber-300 text-amber-700 dark:border-amber-700 dark:text-amber-400">
+                  <Badge variant="outline" className="ml-2 text-[10px] py-0 px-1.5 h-4 border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-400">
                     ANIMATED
                   </Badge>
                 )}
@@ -343,7 +343,7 @@ export function SeeImageToolView({
                 actualIsSuccess ? 'bg-gradient-to-b from-green-100 to-green-50 shadow-inner dark:from-green-800/40 dark:to-green-900/60 dark:shadow-green-950/20' : 'bg-gradient-to-b from-red-100 to-red-50 shadow-inner dark:from-red-800/40 dark:to-red-900/60 dark:shadow-red-950/20'
               )}>
                 {actualIsSuccess ? (
-                  <CheckCircle className="h-8 w-8 text-green-500 dark:text-green-400" />
+                  <CheckCircle className="h-8 w-8 text-zinc-500 dark:text-zinc-400" />
                 ) : (
                   <AlertTriangle className="h-8 w-8 text-red-500 dark:text-red-400" />
                 )}
@@ -377,7 +377,7 @@ export function SeeImageToolView({
 
       <div className="h-10 px-4 py-2 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center">
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          <Badge className="py-0.5 h-6 bg-gradient-to-b from-blue-50 to-blue-100 text-blue-700 border border-blue-200/50 dark:from-blue-900/30 dark:to-blue-800/20 dark:text-blue-400 dark:border-blue-800/30">
+          <Badge className="py-0.5 h-6 bg-gradient-to-b from-zinc-50 to-zinc-100 text-zinc-700 border border-zinc-200/50 dark:from-zinc-800 dark:to-zinc-700/20 dark:text-zinc-400 dark:border-zinc-700/30">
             {isClearTool ? (
               <>
                 <Trash2 className="h-3 w-3 mr-1" />

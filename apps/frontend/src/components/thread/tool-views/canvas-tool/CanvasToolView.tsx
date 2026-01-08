@@ -284,8 +284,8 @@ export function CanvasToolView({
           </div>
         ) : !actualIsSuccess ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-rose-100 to-rose-50 dark:from-rose-800/40 dark:to-rose-900/60">
-              <AlertTriangle className="h-8 w-8 text-rose-500 dark:text-rose-400" />
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60">
+              <AlertTriangle className="h-8 w-8 text-zinc-500 dark:text-zinc-400" />
             </div>
             <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100 mb-2">
               Operation Failed

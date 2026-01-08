@@ -1,11 +1,12 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from core.shared.logger import logger
 from core.config.settings import config
 from core.shared.cache import Cache
 from core.domain.billing import limits_repo
 
-async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
+
+async def check_agent_run_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         import time
         import asyncio
@@ -123,7 +124,7 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_agent_count_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         if config.ENV_MODE.value == "local":
             return {
@@ -172,7 +173,7 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_project_count_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         if config.ENV_MODE.value == "local":
             return {
@@ -234,7 +235,7 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_trigger_limit(client, account_id: str, agent_id: str = None, trigger_type: str = None) -> Dict[str, Any]:
+async def check_trigger_limit(account_id: str, agent_id: str = None, trigger_type: str = None, client=None) -> Dict[str, Any]:
     try:
         if agent_id is None or trigger_type is None:
             logger.debug(f"Checking aggregate trigger limits for account {account_id}")
@@ -297,11 +298,13 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
             return {
                 'scheduled': {
                     'current_count': scheduled_count,
-                    'limit': scheduled_limit
+                    'limit': scheduled_limit,
+                    'can_create': scheduled_count < scheduled_limit
                 },
                 'app': {
                     'current_count': app_count,
-                    'limit': app_limit
+                    'limit': app_limit,
+                    'can_create': app_count < app_limit
                 },
                 'tier_name': tier_name
             }
@@ -367,7 +370,7 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
         }
 
 
-async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_custom_mcp_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         logger.debug(f"Checking custom worker limit for account {account_id}")
         
@@ -411,7 +414,7 @@ async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_thread_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         import asyncio
         import time

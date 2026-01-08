@@ -150,7 +150,7 @@ export function WaitToolView({
               <div className={cn(
                 "text-xs px-3 py-2 rounded-full",
                 isStreaming 
-                  ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
+                  ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
                   : "bg-muted/50 text-muted-foreground"
               )}>
                 {isStreaming ? (

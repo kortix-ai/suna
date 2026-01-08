@@ -103,7 +103,7 @@ export function ListPresentationsToolView({
         {isStreaming ? (
           <LoadingState
             icon={FolderOpen}
-            iconColor="text-blue-500 dark:text-blue-400"
+            iconColor="text-zinc-500 dark:text-zinc-400"
             bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
             title="Loading presentations"
             filePath="Scanning workspace..."
@@ -124,7 +124,7 @@ export function ListPresentationsToolView({
         ) : presentationsData.presentations.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60">
-              <Presentation className="h-10 w-10 text-blue-400 dark:text-blue-600" />
+              <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               No presentations found
@@ -152,8 +152,8 @@ export function ListPresentationsToolView({
                   <Card key={presentation.folder} className="p-6 hover:shadow-md transition-shadow">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-4 flex-1">
-                        <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/20 flex-shrink-0">
-                          <Presentation className="h-6 w-6 text-blue-600 dark:text-blue-400" />
+                        <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-zinc-100 dark:bg-zinc-800 flex-shrink-0">
+                          <Presentation className="h-6 w-6 text-zinc-600 dark:text-zinc-400" />
                         </div>
                         
                         <div className="flex-1 min-w-0">
@@ -193,11 +193,7 @@ export function ListPresentationsToolView({
                       <div className="flex items-center gap-2 ml-4">
                         <Badge 
                           variant="outline" 
-                          className={`h-6 py-0.5 ${
-                            presentation.total_slides > 0 
-                              ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300'
-                              : 'bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800'
-                          }`}
+                          className="h-6 py-0.5 bg-zinc-50 dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-300"
                         >
                           {presentation.total_slides > 0 ? 'Ready' : 'Empty'}
                         </Badge>

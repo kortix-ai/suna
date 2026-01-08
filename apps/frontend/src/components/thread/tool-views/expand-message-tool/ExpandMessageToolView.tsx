@@ -91,8 +91,8 @@ export function ExpandMessageToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
-              <Expand className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <Expand className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -112,7 +112,7 @@ export function ExpandMessageToolView({
               <div className="flex items-center gap-2">
                 <Badge 
                   variant="outline" 
-                  className="font-mono text-xs bg-purple-50 dark:bg-purple-950/20 border-purple-200 dark:border-purple-800"
+                  className="font-mono text-xs bg-zinc-50 dark:bg-zinc-900/20 border-zinc-200 dark:border-zinc-700"
                 >
                   ID: {messageId}
                 </Badge>
@@ -126,8 +126,8 @@ export function ExpandMessageToolView({
               </div>
             ) : !isStreaming ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <div className="w-16 h-16 rounded-full bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center mb-4 border-2 border-purple-200 dark:border-purple-800">
-                  <MessageSquareText className="h-8 w-8 text-purple-500 dark:text-purple-400" />
+                <div className="w-16 h-16 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center mb-4 border-2 border-zinc-200 dark:border-zinc-700">
+                  <MessageSquareText className="h-8 w-8 text-zinc-500 dark:text-zinc-400" />
                 </div>
                 <h3 className="text-lg font-medium text-foreground mb-2">
                   {actualIsSuccess ? 'No Message Content' : 'Expansion Failed'}
@@ -143,9 +143,9 @@ export function ExpandMessageToolView({
         </ScrollArea>
       </CardContent>
 
-      <div className="px-4 py-2 h-10 backdrop-blur-sm border-t border-purple-200 dark:border-purple-800 flex justify-between items-center gap-4">
-        <div className="h-full flex items-center gap-2 text-sm text-purple-600 dark:text-purple-400">
-          <Badge className="h-6 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800" variant="outline">
+      <div className="px-4 py-2 h-10 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-700 flex justify-between items-center gap-4">
+        <div className="h-full flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
+          <Badge className="h-6 py-0.5 bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700" variant="outline">
             <Expand className="h-3 w-3 mr-1" />
             Message Retrieval
           </Badge>

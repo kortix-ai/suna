@@ -45,62 +45,9 @@ const convertToolName = (toolName: string) => {
   return toolName;
 };
 
-const getToolColorScheme = (toolName: string): { bg: string; iconColor: string } => {
-  const normalized = toolName?.toLowerCase() || '';
-
-  if (normalized.includes('browser') || normalized.includes('web') || normalized.includes('crawl') || normalized.includes('scrape')) {
-    return { bg: 'bg-gradient-to-br from-[#7CB9E8] to-[#5B9BD5]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('file') || normalized.includes('create-file') || normalized.includes('edit-file') || normalized.includes('read-file') || normalized.includes('delete-file') || normalized.includes('full-file-rewrite') || normalized.includes('str-replace')) {
-    return { bg: 'bg-gradient-to-br from-[#89A8C8] to-[#6B8DB5]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('execute-command') || normalized.includes('terminal') || normalized.includes('command') || normalized.includes('check-command')) {
-    return { bg: 'bg-gradient-to-br from-[#4A4A4A] to-[#333333]', iconColor: 'text-[#8FD9A8]' };
-  }
-
-  if (normalized.includes('search')) {
-    return { bg: 'bg-gradient-to-br from-[#B8A9C9] to-[#9683A9]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('task') || normalized.includes('complete') || normalized.includes('list')) {
-    return { bg: 'bg-gradient-to-br from-[#E8B87D] to-[#D4956A]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('phone') || normalized.includes('call') || normalized.includes('vapi')) {
-    return { bg: 'bg-gradient-to-br from-[#8FBF9F] to-[#6FA380]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('sheet') || normalized.includes('table')) {
-    return { bg: 'bg-gradient-to-br from-[#9DD5B0] to-[#7ABF92]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('slide') || normalized.includes('presentation')) {
-    return { bg: 'bg-gradient-to-br from-[#92A8D1] to-[#7088B8]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('ask') || normalized.includes('message')) {
-    return { bg: 'bg-gradient-to-br from-[#A8D0E6] to-[#7FB3D3]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('code') || normalized.includes('execute-code')) {
-    return { bg: 'bg-gradient-to-br from-[#88C9C9] to-[#69AAAA]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('network') || normalized.includes('data-provider') || normalized.includes('api')) {
-    return { bg: 'bg-gradient-to-br from-[#E8A5A5] to-[#D08888]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('mcp') || normalized.includes('plug') || normalized.includes('initialize')) {
-    return { bg: 'bg-gradient-to-br from-[#C9A8D4] to-[#A888B8]', iconColor: 'text-white' };
-  }
-
-  if (normalized.includes('expose-port') || normalized.includes('computer')) {
-    return { bg: 'bg-gradient-to-br from-[#8A8A8F] to-[#6A6A70]', iconColor: 'text-white' };
-  }
-
-  return { bg: 'bg-gradient-to-br from-[#A0A0A5] to-[#808085]', iconColor: 'text-white' };
+const getToolColorScheme = (_toolName: string): { bg: string; iconColor: string } => {
+  // All tools use a consistent gray color scheme
+  return { bg: 'bg-gradient-to-br from-zinc-500 to-zinc-600', iconColor: 'text-white' };
 };
 
 interface OpenWindow {

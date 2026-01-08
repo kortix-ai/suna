@@ -141,7 +141,7 @@ export function UpdateAgentToolView({
                         Default
                       </Badge>
                     )}
-                    <Badge variant="secondary" className="text-xs bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800">
+                    <Badge variant="secondary" className="text-xs bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700">
                       Active
                     </Badge>
                   </div>

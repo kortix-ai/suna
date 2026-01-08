@@ -416,8 +416,8 @@ export function DesignerToolView({
       <CardHeader className="h-16 border-b p-3 px-4">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 border border-purple-500/20">
-              <Palette className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <Palette className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-semibold text-zinc-900 dark:text-zinc-100">
@@ -501,7 +501,7 @@ export function DesignerToolView({
                     <Toggle
                       pressed={showGrid}
                       onPressedChange={setShowGrid}
-                      className="h-8 w-8 data-[state=on]:bg-purple-100 dark:data-[state=on]:bg-purple-900/50"
+                      className="h-8 w-8 data-[state=on]:bg-zinc-100 dark:data-[state=on]:bg-zinc-800"
                     >
                       <Grid className="h-4 w-4" />
                     </Toggle>
@@ -514,7 +514,7 @@ export function DesignerToolView({
                     <Toggle
                       pressed={snapToGrid}
                       onPressedChange={setSnapToGrid}
-                      className="h-8 w-8 data-[state=on]:bg-purple-100 dark:data-[state=on]:bg-purple-900/50"
+                      className="h-8 w-8 data-[state=on]:bg-zinc-100 dark:data-[state=on]:bg-zinc-800"
                     >
                       <svg
                         className="h-4 w-4"
@@ -603,18 +603,18 @@ export function DesignerToolView({
                   />
                   {selectedElement === element.id && !element.locked && (
                     <>
-                      <div className="absolute -top-3 -left-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-nw-resize z-10 shadow-sm" />
-                      <div className="absolute -top-3 -right-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-ne-resize z-10 shadow-sm" />
-                      <div className="absolute -bottom-3 -left-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-sw-resize z-10 shadow-sm" />
-                      <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-white border-2 border-purple-500 rounded-full cursor-se-resize z-10 shadow-sm" />
+                      <div className="absolute -top-3 -left-3 w-6 h-6 bg-white border-2 border-zinc-500 rounded-full cursor-nw-resize z-10 shadow-sm" />
+                      <div className="absolute -top-3 -right-3 w-6 h-6 bg-white border-2 border-zinc-500 rounded-full cursor-ne-resize z-10 shadow-sm" />
+                      <div className="absolute -bottom-3 -left-3 w-6 h-6 bg-white border-2 border-zinc-500 rounded-full cursor-sw-resize z-10 shadow-sm" />
+                      <div className="absolute -bottom-3 -right-3 w-6 h-6 bg-white border-2 border-zinc-500 rounded-full cursor-se-resize z-10 shadow-sm" />
                     </>
                   )}
                 </div>
               ))}
               {elements.length === 0 && !isStreaming && (
                 <div className="flex flex-col items-center justify-center h-96 text-center">
-                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-purple-100 to-pink-100 dark:from-purple-900/50 dark:to-pink-900/50 flex items-center justify-center mb-4">
-                    <Sparkles className="h-10 w-10 text-purple-600 dark:text-purple-400" />
+                  <div className="w-20 h-20 rounded-full bg-gradient-to-br from-zinc-100 to-zinc-200 dark:from-zinc-800 dark:to-zinc-700 flex items-center justify-center mb-4">
+                    <Sparkles className="h-10 w-10 text-zinc-600 dark:text-zinc-400" />
                   </div>
                   <h3 className="text-lg font-medium text-foreground mb-2">
                     Professional Design Canvas
@@ -660,7 +660,7 @@ export function DesignerToolView({
                             className={cn(
                               "p-2 rounded cursor-pointer text-xs flex items-center justify-between",
                               selectedElement === el.id 
-                                ? "bg-purple-100 dark:bg-purple-900/50 border border-purple-500" 
+                                ? "bg-zinc-100 dark:bg-zinc-800 border border-zinc-500" 
                                 : "hover:bg-gray-100 dark:hover:bg-gray-800 border border-transparent"
                             )}
                           >

@@ -51,12 +51,12 @@ function extractGeneratedImage(output: string | undefined): string | null {
 }
 
 const BLOB_COLORS = [
-  'from-purple-300/60 to-pink-300/60',
-  'from-blue-300/60 to-cyan-300/60',
-  'from-emerald-300/60 to-teal-300/60',
-  'from-orange-300/60 to-amber-300/60',
-  'from-rose-300/60 to-red-300/60',
-  'from-indigo-300/60 to-violet-300/60',
+  'from-zinc-300/60 to-zinc-400/60',
+  'from-zinc-350/60 to-zinc-450/60',
+  'from-neutral-300/60 to-neutral-400/60',
+  'from-stone-300/60 to-stone-400/60',
+  'from-gray-300/60 to-gray-400/60',
+  'from-slate-300/60 to-slate-400/60',
 ];
 
 function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {

@@ -194,7 +194,7 @@ class SandboxDesignerTool(SandboxToolsBase):
             else:
                 return self.fail_response("Invalid mode. Use 'create' or 'edit'.")
 
-            design_path = await self._process_design_response(response, actual_width, actual_height)
+            design_path = await self._process_design_response(response, actual_width, actual_height, prompt, platform_preset)
             if isinstance(design_path, ToolResult):  
                 return design_path
 
@@ -365,13 +365,24 @@ class SandboxDesignerTool(SandboxToolsBase):
                 f"Could not read design file from sandbox: {image_path} - {str(e)}"
             )
 
-    async def _process_design_response(self, response, width: int, height: int) -> str | ToolResult:
+    async def _process_design_response(self, response, width: int, height: int, prompt: str = "", platform: str = "") -> str | ToolResult:
         try:
             original_b64_str = response.data[0].b64_json
             image_data = base64.b64decode(original_b64_str)
 
-            random_filename = f"design_{width}x{height}_{uuid.uuid4().hex[:8]}.png"
-            full_path = f"{self.designs_dir}/{random_filename}"
+            # Generate smart filename based on the design prompt
+            if prompt:
+                smart_filename = await generate_smart_filename(
+                    prompt=prompt,
+                    file_type="image",
+                    extension="png"
+                )
+            else:
+                # Fallback with platform info
+                platform_title = platform.replace('_', ' ').title() if platform else 'Custom'
+                smart_filename = f"{platform_title} Design.png"
+            
+            full_path = f"{self.designs_dir}/{smart_filename}"
 
             await self.sandbox.fs.upload_file(image_data, full_path)
             

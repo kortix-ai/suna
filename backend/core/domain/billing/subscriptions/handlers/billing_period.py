@@ -22,9 +22,6 @@ class BillingPeriodHandler:
         is_new_subscription: bool = False,
         skip_credits: bool = False
     ) -> Dict:
-        db = DBConnection()
-        client = await db.client
-        
         tier_info = get_tier_by_price_id(price_id)
         if not tier_info:
             logger.error(f"[BILLING PERIOD] Unknown price ID: {price_id}")
@@ -62,7 +59,7 @@ class BillingPeriodHandler:
             )
             update_data['last_grant_date'] = billing_anchor.isoformat()
         
-        await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+        await billing_repo.update_credit_account(account_id, update_data)
         
         await Cache.invalidate(f"subscription_tier:{account_id}")
         await Cache.invalidate(f"credit_balance:{account_id}")
@@ -149,13 +146,10 @@ class BillingPeriodHandler:
         billing_anchor = datetime.fromtimestamp(period_start, tz=timezone.utc)
         
         if plan_type == 'yearly':
-            # Yearly: User pays upfront, gets credits monthly
             next_grant_date = billing_anchor + relativedelta(months=1)
         elif plan_type == 'yearly_commitment':
-            # Yearly commitment: User pays monthly but committed to 12 months
             next_grant_date = datetime.fromtimestamp(period_end, tz=timezone.utc)
         else:
-            # Monthly: Normal period end
             next_grant_date = datetime.fromtimestamp(period_end, tz=timezone.utc)
         
         return next_grant_date.isoformat()

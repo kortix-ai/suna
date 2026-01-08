@@ -80,19 +80,19 @@ export function RealityDefenderToolView({
       return {
         label: 'Likely Manipulated',
         icon: AlertTriangle,
-        color: 'text-red-600 dark:text-red-400',
+        color: 'text-zinc-600 dark:text-zinc-400',
       };
     } else if (verdict === 'likely_authentic') {
       return {
         label: 'Likely Authentic',
         icon: CheckCircle2,
-        color: 'text-emerald-600 dark:text-emerald-400',
+        color: 'text-zinc-600 dark:text-zinc-400',
       };
     } else {
       return {
         label: 'Uncertain',
         icon: HelpCircle,
-        color: 'text-amber-600 dark:text-amber-400',
+        color: 'text-zinc-600 dark:text-zinc-400',
       };
     }
   };
@@ -123,7 +123,7 @@ export function RealityDefenderToolView({
         {isStreaming && !filePath ? (
           <LoadingState
             icon={Shield}
-            iconColor="text-blue-500 dark:text-blue-400"
+            iconColor="text-zinc-500 dark:text-zinc-400"
             bgColor="bg-linear-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
             title="Analyzing media file"
             filePath=""

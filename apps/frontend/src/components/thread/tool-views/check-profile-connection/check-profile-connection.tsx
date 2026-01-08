@@ -81,7 +81,7 @@ export function CheckProfileConnectionToolView({
     return {
       icon: isConnected ? Link2 : Link2Off,
       color: isConnected
-        ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800'
+        ? 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700'
         : 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800',
       text: isConnected ? 'Connected' : 'Not Connected'
     };
@@ -101,7 +101,7 @@ export function CheckProfileConnectionToolView({
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="relative p-2 rounded-xl bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border border-emerald-500/20">
-              <Shield className="w-5 h-5 text-emerald-500 dark:text-emerald-400" />
+              <Shield className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -117,7 +117,7 @@ export function CheckProfileConnectionToolView({
         {isStreaming ? (
           <LoadingState
             icon={Shield}
-            iconColor="text-emerald-500 dark:text-emerald-400"
+            iconColor="text-zinc-500 dark:text-zinc-400"
             bgColor="bg-gradient-to-b from-emerald-100 to-emerald-50 shadow-inner dark:from-emerald-800/40 dark:to-emerald-900/60 dark:shadow-emerald-950/20"
             title="Checking profile connection"
             filePath={profile_name ? `"${profile_name}"` : undefined}
@@ -130,7 +130,7 @@ export function CheckProfileConnectionToolView({
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-900/40 dark:to-emerald-800/20 border border-emerald-200 dark:border-emerald-800 flex items-center justify-center">
-                      <User className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+                      <User className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
@@ -217,7 +217,7 @@ export function CheckProfileConnectionToolView({
               {connections.length > 0 && (
                 <div className="border rounded-xl p-4 space-y-3">
                   <div className="flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-green-500" />
+                    <Activity className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                     <h3 className="font-medium text-zinc-900 dark:text-zinc-100">
                       Active Connections
                     </h3>
@@ -245,7 +245,7 @@ export function CheckProfileConnectionToolView({
                             className={cn(
                               "text-xs font-medium",
                               connection.is_active
-                                ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800"
+                                ? "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
                                 : "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-300 dark:border-gray-800"
                             )}
                           >

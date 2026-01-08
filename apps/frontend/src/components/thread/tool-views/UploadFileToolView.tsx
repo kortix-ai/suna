@@ -168,10 +168,10 @@ export function UploadFileToolView({
             <div className="flex items-start gap-4 flex-shrink-0">
               {/* File Icon with Success Badge */}
               <div className="relative flex-shrink-0">
-                <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50">
-                  <FileIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+                <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-900/30 flex items-center justify-center border border-zinc-100 dark:border-zinc-800/50">
+                  <FileIcon className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
                 </div>
-                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
+                <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-zinc-500 flex items-center justify-center shadow-sm">
                   <Check className="h-3 w-3 text-white" />
                 </div>
               </div>
@@ -214,7 +214,7 @@ export function UploadFileToolView({
                       onClick={() => copyToClipboard(uploadResult.secure_url!)}
                       className={cn(
                         "h-8 text-xs transition-colors",
-                        copied && "text-emerald-600 dark:text-emerald-400"
+                        copied && "text-zinc-600 dark:text-zinc-400"
                       )}
                     >
                       {copied ? (

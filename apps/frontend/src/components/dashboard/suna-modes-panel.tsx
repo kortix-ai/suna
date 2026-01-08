@@ -48,53 +48,48 @@ interface SunaModesPanelProps {
 
 type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'canvas' | 'video' | 'research';
 
-// Color themes for each mode - carefully chosen for meaning and visual distinction
-// Slides: Warm orange - spotlight, stage, presentation energy
-// Data: Teal - analytical, growth, trust in numbers
-// Docs: Sky blue - clarity, documentation, professional
-// Canvas: Fuchsia - creative, artistic expression
-// Video: Rose/coral - record button, energy, motion
-// Research: Indigo - depth, knowledge, exploration
-// Image: Violet - imagination, visual creativity
+// Color themes for each mode - ADA compliant with softer saturation
+// Uses 500 shades for light mode and 400 for dark mode - slightly muted but readable
+// Background/border use balanced opacity for subtle distinction
 const modeColors: Record<ModeType, { 
   accent: string; 
   bg: string; 
   border: string;
 }> = {
   slides: { 
-    accent: 'text-orange-500', 
-    bg: 'bg-orange-500/10',
-    border: 'border-orange-500/40',
+    accent: 'text-amber-500 dark:text-amber-400', 
+    bg: 'bg-amber-500/8 dark:bg-amber-400/12',
+    border: 'border-amber-500/20 dark:border-amber-400/25',
   },
   data: { 
-    accent: 'text-teal-500', 
-    bg: 'bg-teal-500/10',
-    border: 'border-teal-500/40',
+    accent: 'text-teal-500 dark:text-teal-400', 
+    bg: 'bg-teal-500/8 dark:bg-teal-400/12',
+    border: 'border-teal-500/20 dark:border-teal-400/25',
   },
   docs: { 
-    accent: 'text-sky-500', 
-    bg: 'bg-sky-500/10',
-    border: 'border-sky-500/40',
+    accent: 'text-blue-500 dark:text-blue-400', 
+    bg: 'bg-blue-500/8 dark:bg-blue-400/12',
+    border: 'border-blue-500/20 dark:border-blue-400/25',
   },
   canvas: { 
-    accent: 'text-fuchsia-500', 
-    bg: 'bg-fuchsia-500/10',
-    border: 'border-fuchsia-500/40',
+    accent: 'text-pink-500 dark:text-pink-400', 
+    bg: 'bg-pink-500/8 dark:bg-pink-400/12',
+    border: 'border-pink-500/20 dark:border-pink-400/25',
   },
   video: { 
-    accent: 'text-rose-500', 
-    bg: 'bg-rose-500/10',
-    border: 'border-rose-500/40',
+    accent: 'text-rose-500 dark:text-rose-400', 
+    bg: 'bg-rose-500/8 dark:bg-rose-400/12',
+    border: 'border-rose-500/20 dark:border-rose-400/25',
   },
   research: { 
-    accent: 'text-indigo-500', 
-    bg: 'bg-indigo-500/10',
-    border: 'border-indigo-500/40',
+    accent: 'text-indigo-500 dark:text-indigo-400', 
+    bg: 'bg-indigo-500/8 dark:bg-indigo-400/12',
+    border: 'border-indigo-500/20 dark:border-indigo-400/25',
   },
   image: { 
-    accent: 'text-violet-500', 
-    bg: 'bg-violet-500/10',
-    border: 'border-violet-500/40',
+    accent: 'text-violet-500 dark:text-violet-400', 
+    bg: 'bg-violet-500/8 dark:bg-violet-400/12',
+    border: 'border-violet-500/20 dark:border-violet-400/25',
   },
 };
 
@@ -132,7 +127,7 @@ const modes: Mode[] = [
   {
     id: 'slides',
     label: 'Slides',
-    icon: <Presentation className="w-4 h-4" />,
+    icon: <Presentation className="w-4 h-4" strokeWidth={2} />,
     isVisual: true,
     samplePrompts: [
       { text: 'Create a Series A pitch deck with market size, traction, and financial projections', thumbnail: '/images/presentation-templates/startup-min.png' },
@@ -173,7 +168,7 @@ const modes: Mode[] = [
   {
     id: 'data',
     label: 'Data',
-    icon: <BarChart3 className="w-4 h-4" />,
+    icon: <BarChart3 className="w-4 h-4" strokeWidth={2} />,
     isVisual: true,
     samplePrompts: [
       { text: 'Build a financial model projecting ARR growth with different pricing scenarios', thumbnail: '/images/landing-showcase/data.png' },
@@ -214,7 +209,7 @@ const modes: Mode[] = [
   {
     id: 'docs',
     label: 'Docs',
-    icon: <FileText className="w-4 h-4" />,
+    icon: <FileText className="w-4 h-4" strokeWidth={2} />,
     isVisual: true,
     samplePrompts: [
       { text: 'Write a comprehensive PRD for an AI-powered recommendation engine', thumbnail: '/images/landing-showcase/docs.png' },
@@ -245,7 +240,7 @@ const modes: Mode[] = [
   {
     id: 'canvas',
     label: 'Canvas',
-    icon: <Palette className="w-4 h-4" />,
+    icon: <Palette className="w-4 h-4" strokeWidth={2} />,
     isVisual: true,
     samplePrompts: [
       { text: 'Add a tech startup banner to canvas with futuristic city skyline', thumbnail: '/images/image-styles/digital_art_cyberpunk-min.png' },
@@ -272,7 +267,7 @@ const modes: Mode[] = [
   {
     id: 'video',
     label: 'Video',
-    icon: <Video className="w-4 h-4" />,
+    icon: <Video className="w-4 h-4" strokeWidth={2} />,
     isVisual: true,
     samplePrompts: [
       { text: 'Animate my product photo rotating smoothly with studio lighting', thumbnail: '/images/video-styles/product.png' },
@@ -301,7 +296,7 @@ const modes: Mode[] = [
   {
     id: 'research',
     label: 'Research',
-    icon: <Search className="w-4 h-4" />,
+    icon: <Search className="w-4 h-4" strokeWidth={2} />,
     isVisual: true,
     samplePrompts: [
       { text: 'Analyze emerging trends in quantum computing and potential business applications', thumbnail: '/images/landing-showcase/research.png' },
@@ -319,7 +314,7 @@ const modes: Mode[] = [
   {
     id: 'image',
     label: 'Image',
-    icon: <ImageIcon className="w-4 h-4" />,
+    icon: <ImageIcon className="w-4 h-4" strokeWidth={2} />,
     isVisual: true,
     samplePrompts: [
       { text: 'A majestic golden eagle soaring through misty mountain peaks at sunrise with dramatic lighting', thumbnail: '/images/image-styles/photorealistic_eagle-min.png' },

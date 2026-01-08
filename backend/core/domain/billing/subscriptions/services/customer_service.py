@@ -7,6 +7,7 @@ from core.shared.logger import logger
 from core.domain.billing.external.stripe import StripeAPIWrapper
 from ..repositories.customer import CustomerRepository
 
+
 class CustomerService:
     def __init__(self):
         self.repository = CustomerRepository()
@@ -27,7 +28,7 @@ class CustomerService:
         email = await self._try_get_email_from_auth(user_id)
         
         if not email:
-            email = await self.repository.get_user_email_by_rpc(user_id)
+            email = await billing_repo.get_user_email(user_id)
         
         if not email:
             logger.error(f"Could not find email for user {user_id} / account {account_id}")
@@ -59,4 +60,4 @@ class CustomerService:
     
     async def cleanup_stale_customer_record(self, account_id: str) -> None:
         logger.warning(f"[BILLING] Deleting stale customer record for account {account_id}")
-        await self.repository.delete_billing_customer(account_id)
+        await billing_repo.delete_billing_customer(account_id)

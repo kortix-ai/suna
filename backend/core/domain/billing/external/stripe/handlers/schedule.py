@@ -1,4 +1,3 @@
-from fastapi import HTTPException, Request # type: ignore
 from typing import Dict
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
@@ -11,7 +10,7 @@ from core.shared.distributed_lock import WebhookLock, RenewalLock, DistributedLo
 
 class ScheduleHandler:
     @staticmethod
-    async def handle_subscription_schedule_event(event, client):
+    async def handle_subscription_schedule_event(event, client=None):
         schedule = event.data.object
         subscription_id = schedule.get('subscription')
         schedule_id = schedule.id
@@ -33,16 +32,10 @@ class ScheduleHandler:
                     try:
                         logger.info(f"[SCHEDULE COMPLETED] 🔒 Acquired lock for cleanup")
                         
-                        recheck = await client.from_('credit_accounts').select(
-                            'scheduled_tier_change, tier'
-                        ).eq('account_id', account_id).execute()
+                        recheck = await billing_repo.get_credit_account_scheduled_changes(account_id)
                         
-                        if recheck.data and recheck.data[0].get('scheduled_tier_change'):
-                            await client.from_('credit_accounts').update({
-                                'scheduled_tier_change': None,
-                                'scheduled_tier_change_date': None,
-                                'scheduled_price_id': None
-                            }).eq('account_id', account_id).execute()
+                        if recheck and recheck.get('scheduled_tier_change'):
+                            await billing_repo.clear_scheduled_tier_change(account_id)
                             
                             await Cache.invalidate(f"subscription_tier:{account_id}")
                             

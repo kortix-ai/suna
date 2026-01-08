@@ -1649,8 +1649,15 @@ export function FileBrowserView({
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
                                 <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleItemClick(file); }}>
+                                  <Eye className="mr-2 h-4 w-4" />
                                   {file.is_dir ? 'Open folder' : 'Open file'}
                                 </DropdownMenuItem>
+                                {!file.is_dir && (
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDownloadFile(file.path); }}>
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Download
+                                  </DropdownMenuItem>
+                                )}
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
@@ -1671,49 +1678,35 @@ export function FileBrowserView({
                   </div>
                 )}
 
-                {/* Other files - collapsible section with smaller cards */}
+                {/* Other files - collapsible section matching thread list style */}
                 {otherFiles.length > 0 && (
                   <div className={cn("mt-8", mainOutputFiles.length === 0 && "mt-0")}>
                     <button
                       onClick={() => setShowOtherFiles(!showOtherFiles)}
-                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
                     >
                       <ChevronRight className={cn(
                         "h-4 w-4 transition-transform",
                         showOtherFiles && "rotate-90"
                       )} />
-                      <span>Other files ({otherFiles.length})</span>
+                      <span>Other files</span>
                     </button>
                     
                     {showOtherFiles && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-w-2xl">
                         {otherFiles.map((file) => (
-                          <div
+                          <button
                             key={file.path}
-                            className="bg-card/50 rounded-xl border border-border/60 overflow-hidden cursor-pointer group hover:border-border/80 hover:bg-card transition-colors"
+                            className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-muted/50 transition-colors text-left group min-w-0"
                             onClick={() => handleItemClick(file)}
                           >
-                            {/* Compact header */}
-                            <div className="flex items-center gap-2 p-2.5 border-b border-border/30">
-                              <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-muted/50 flex-shrink-0">
-                                {getFileIcon(file, 'small')}
-                              </div>
-                              <span className="flex-1 text-xs font-medium truncate text-muted-foreground group-hover:text-foreground transition-colors">
-                                {file.name}
-                              </span>
+                            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                              {getFileIcon(file, 'header')}
                             </div>
-                            
-                            {/* Smaller preview */}
-                            <div className="w-full aspect-[4/3] relative overflow-hidden bg-muted/20">
-                              <ThumbnailPreview
-                                file={file}
-                                sandboxId={sandboxId}
-                                project={project}
-                                isPresentationFolder={false}
-                                fallbackIcon={getFileIcon(file, 'medium')}
-                              />
-                            </div>
-                          </div>
+                            <span className="flex-1 text-sm text-muted-foreground group-hover:text-foreground truncate min-w-0">
+                              {file.name}
+                            </span>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -1952,49 +1945,35 @@ export function FileBrowserView({
                 </div>
               )}
 
-              {/* Other files - collapsible section with smaller cards */}
+              {/* Other files - collapsible section matching thread list style */}
               {otherPanelFiles.length > 0 && (
                 <div className={cn("mt-6", mainPanelFiles.length === 0 && "mt-0")}>
                   <button
                     onClick={() => setShowOtherFiles(!showOtherFiles)}
-                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
                   >
                     <ChevronRight className={cn(
                       "h-3.5 w-3.5 transition-transform",
                       showOtherFiles && "rotate-90"
                     )} />
-                    <span>Other files ({otherPanelFiles.length})</span>
+                    <span>Other files</span>
                   </button>
                   
                   {showOtherFiles && (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-0.5">
                       {otherPanelFiles.map((file) => (
-                        <div
+                        <button
                           key={file.path}
-                          className="bg-card/50 rounded-lg border border-border/50 overflow-hidden cursor-pointer group hover:border-border/70 hover:bg-card transition-colors"
+                          className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-muted/50 transition-colors text-left group min-w-0"
                           onClick={() => handleItemClick(file)}
                         >
-                          {/* Compact header */}
-                          <div className="flex items-center gap-1.5 p-2 border-b border-border/30">
-                            <div className="flex items-center justify-center w-5 h-5 rounded bg-muted/50 flex-shrink-0">
-                              {getFileIcon(file, 'small')}
-                            </div>
-                            <span className="flex-1 text-[10px] font-medium truncate text-muted-foreground group-hover:text-foreground transition-colors">
-                              {file.name}
-                            </span>
+                          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                            {getFileIcon(file, 'header')}
                           </div>
-                          
-                          {/* Smaller preview */}
-                          <div className="w-full aspect-square relative overflow-hidden bg-muted/20">
-                            <ThumbnailPreview
-                              file={file}
-                              sandboxId={sandboxId}
-                              project={project}
-                              isPresentationFolder={false}
-                              fallbackIcon={getFileIcon(file, 'small')}
-                            />
-                          </div>
-                        </div>
+                          <span className="flex-1 text-sm text-muted-foreground group-hover:text-foreground truncate min-w-0">
+                            {file.name}
+                          </span>
+                        </button>
                       ))}
                     </div>
                   )}
