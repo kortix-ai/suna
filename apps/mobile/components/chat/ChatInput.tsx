@@ -322,15 +322,15 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     }
     
     // Priority 4: Start audio recording
-    if (!isAuthenticated) {
-      console.warn('⚠️ User not authenticated - cannot record audio');
-      return;
-    }
-    if (!hasAgent) {
-      console.warn('⚠️ No agent selected - cannot record audio');
-      return;
-    }
-    onAudioRecord?.();
+      if (!isAuthenticated) {
+        console.warn('⚠️ User not authenticated - cannot record audio');
+        return;
+      }
+      if (!hasAgent) {
+        console.warn('⚠️ No agent selected - cannot record audio');
+        return;
+      }
+      onAudioRecord?.();
   }, [isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
   // Content size change handler - debounced via ref comparison

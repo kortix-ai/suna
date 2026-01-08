@@ -501,7 +501,7 @@ export function ThreadPage({
       scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
     } else {
       // Normal mode - scroll to very end
-      scrollViewRef.current?.scrollToEnd({ animated: true });
+    scrollViewRef.current?.scrollToEnd({ animated: true });
     }
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
@@ -697,12 +697,12 @@ export function ThreadPage({
           ]}
           pointerEvents={showScrollToBottom ? 'auto' : 'none'}
         >
-          <Pressable
-            onPress={scrollToBottom}
+        <Pressable
+          onPress={scrollToBottom}
             className="h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
           >
-            <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
-          </Pressable>
+          <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
+        </Pressable>
         </Animated.View>
       )}
 

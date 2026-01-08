@@ -84,7 +84,7 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         {isKortixDefault ? (
           <KortixLogo size={14} variant="symbol" color={isDark ? 'dark' : 'light'} />
         ) : (
-          <AgentAvatar agent={agent} size={26} />
+        <AgentAvatar agent={agent} size={26} />
         )}
         <View className="absolute -bottom-1 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
           <Icon
@@ -109,8 +109,8 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         <KortixLogo size={11} variant="logomark" color={isDark ? 'dark' : 'light'} />
       ) : (
         <>
-          <AgentAvatar agent={agent} size={19} />
-          <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
+      <AgentAvatar agent={agent} size={19} />
+      <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
         </>
       )}
       <Icon
