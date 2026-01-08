@@ -396,72 +396,16 @@ async def metrics_endpoint():
         raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
 
 @api_router.get("/debug", summary="Debug Information", operation_id="debug", tags=["system"])
-async def debug_endpoint(
-    type: str = Query("streams", description="Debug type: 'streams' (queue) or 'worker'")
-):
-    """
-    Get detailed debug information for troubleshooting.
+async def debug_endpoint():
+    """Get basic debug information for troubleshooting."""
+    from core.agents.runs import _cancellation_events
     
-    - **streams**: Detailed Redis Streams status with all consumer groups and keys
-    - **worker**: Stream worker status and health check
-    """
-    try:
-        from core.worker.stream_info import get_stream_info, CONSUMER_GROUP
-        from core.worker.tasks import StreamName
-        
-        if type == "worker":
-            # Worker status (simplified)
-            info = await get_stream_info()
-            return {
-                "status": "healthy" if not info.get("error") else "error",
-                **info,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-        else:  # type == "streams" or default
-            # Detailed queue debug info
-            client = await redis.get_client()
-            stream_info = await get_stream_info()
-            
-            # Get all stream-related keys for debugging
-            all_stream_keys = await client.keys("suna:*")
-            
-            # Get pending messages summary
-            streams_summary = {}
-            total_pending = 0
-            total_length = 0
-            
-            for stream_name in StreamName:
-                stream_data = stream_info.get("streams", {}).get(stream_name.value, {})
-                pending = stream_data.get("pending_count", 0)
-                length = stream_data.get("length", 0)
-                total_pending += pending
-                total_length += length
-                
-                streams_summary[stream_name.value] = {
-                    "length": length,
-                    "pending": pending,
-                    "consumers": stream_data.get("consumers", []),
-                }
-            
-            return {
-                "consumer_group": CONSUMER_GROUP,
-                "streams": streams_summary,
-                "totals": {
-                    "pending_messages": total_pending,
-                    "total_stream_length": total_length,
-                },
-                "all_stream_keys": [k if isinstance(k, str) else k.decode() for k in all_stream_keys[:20]],
-                "redis_connected": True,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-    except Exception as e:
-        logger.error(f"Debug endpoint failed: {e}")
-        return {
-            "status": "error",
-            "error": str(e),
-            "redis_connected": False,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
+    return {
+        "instance_id": instance_id,
+        "active_runs_on_instance": len(_cancellation_events),
+        "is_shutting_down": _is_shutting_down,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
 
 @api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
 async def health_check_docker():

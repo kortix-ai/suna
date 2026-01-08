@@ -1184,7 +1184,6 @@ async def stream_agent_run(
         terminate_stream = False
         initial_yield_complete = False
         last_id = "0"  # Start from beginning for initial read
-        pubsub = None
 
         try:
             # === INITIAL CATCH-UP (unchanged) ===
@@ -1245,92 +1244,88 @@ async def stream_agent_run(
                 thread_id=agent_run_data.get('thread_id'),
             )
 
-            # === NEW: PUB/SUB BASED REAL-TIME STREAMING ===
-            notify_channel = f"{stream_key}:notify"
-            pubsub = await redis.get_pubsub()
-            await pubsub.subscribe(notify_channel)
-            
-            # After catch-up, keep using the actual last entry ID to read entries after it
-            # NOTE: Do NOT use "$" here! "$" means "entries after this XREAD command", not "entries after this ID"
-            # Since worker writes entries BEFORE publishing notifications, using "$" would miss those entries
+            # === POLLING-BASED STREAMING (no PubSub - saves Redis connections) ===
+            # Poll every 200ms for new entries. This trades ~200ms latency for not holding
+            # a dedicated PubSub connection per SSE client (which exhausts connection pools).
+            # Use Redis XREAD BLOCK for efficient long-polling:
+            # - Blocks server-side (no busy waiting)
+            # - Returns INSTANTLY when new data arrives
+            # - 100ms max wait balances responsiveness vs Redis load
+            BLOCK_MS = 100
+            POLLS_PER_PING = 50  # 50 polls * 100ms = 5 seconds between pings
             
             # Startup timeout: if no real data received after N pings, check if worker is stuck
+            polls_since_ping = 0
             consecutive_pings = 0
             received_real_data = len(initial_entries) > 0 if initial_entries else False
-            MAX_STARTUP_PINGS = 4  # 4 pings * 5 seconds = 20 second startup timeout (should start in ms)
+            MAX_STARTUP_PINGS = 4  # 4 pings * 5 seconds = 20 second startup timeout
             
             while not terminate_stream:
                 try:
-                    # Wait for pub/sub notification or timeout
-                    message = await asyncio.wait_for(
-                        pubsub.get_message(ignore_subscribe_messages=True),
-                        timeout=5.0
-                    )
+                    # Efficient blocking read - returns instantly on new data, or after BLOCK_MS
+                    entries = await redis.stream_read(stream_key, last_id, block_ms=BLOCK_MS)
                     
-                    if message:
-                        # Notification received - read new entries immediately
+                    if entries:
                         received_real_data = True
                         consecutive_pings = 0
+                        polls_since_ping = 0
                         
-                        entries = await redis.stream_read(stream_key, last_id, block_ms=0)
-                        if entries:
-                            for entry_id, fields in entries:
-                                data = fields.get('data', '{}')
-                                yield f"data: {data}\n\n"
-                                last_id = entry_id
-                                
-                                # Check for completion status
+                        for entry_id, fields in entries:
+                            data = fields.get('data', '{}')
+                            yield f"data: {data}\n\n"
+                            last_id = entry_id
+                            
+                            # Check for completion status
+                            try:
+                                response = json.loads(data)
+                                if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
+                                    logger.debug(f"Detected completion via stream: {response.get('status')}")
+                                    terminate_stream = True
+                                    break
+                            except json.JSONDecodeError:
+                                pass
+                    else:
+                        # XREAD timed out (no new data) - increment poll counter
+                        polls_since_ping += 1
+                        
+                        # Send periodic ping to keep SSE connection alive
+                        if polls_since_ping >= POLLS_PER_PING:
+                            polls_since_ping = 0
+                            consecutive_pings += 1
+                            
+                            # Startup timeout check
+                            if not received_real_data and consecutive_pings >= MAX_STARTUP_PINGS:
+                                logger.warning(f"Startup timeout for agent run {agent_run_id}: no data received after {consecutive_pings * 5}s")
                                 try:
-                                    response = json.loads(data)
-                                    if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
-                                        logger.debug(f"Detected completion via stream: {response.get('status')}")
+                                    from core.agents import repo as agents_repo
+                                    run_check = await agents_repo.get_agent_run_status(agent_run_id)
+                                    db_status = run_check.get('status') if run_check else None
+                                    if db_status == 'running':
+                                        logger.error(f"Agent run {agent_run_id} stuck: status is 'running' but worker never produced output")
+                                        await agents_repo.update_agent_run_status(
+                                            agent_run_id,
+                                            'failed',
+                                            error='Worker failed to start within timeout period'
+                                        )
+                                        yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Agent worker failed to start. Please try again.'})}\n\n"
                                         terminate_stream = True
                                         break
-                                except json.JSONDecodeError:
-                                    pass
-                    else:
-                        # No message (None returned) - continue waiting
-                        pass
-                        
-                except asyncio.TimeoutError:
-                    consecutive_pings += 1
-                    
-                    # Startup timeout check: if we haven't received any real data and hit the limit
-                    if not received_real_data and consecutive_pings >= MAX_STARTUP_PINGS:
-                        logger.warning(f"Startup timeout for agent run {agent_run_id}: no data received after {consecutive_pings * 5}s")
-                        # Check DB status to see if run is still supposed to be running
-                        try:
-                            from core.agents import repo as agents_repo
-                            run_check = await agents_repo.get_agent_run_status(agent_run_id)
-                            db_status = run_check.get('status') if run_check else None
-                            if db_status == 'running':
-                                # Worker never started - mark as failed
-                                logger.error(f"Agent run {agent_run_id} stuck: status is 'running' but worker never produced output")
-                                await agents_repo.update_agent_run_status(
-                                    agent_run_id,
-                                    'failed',
-                                    error='Worker failed to start within timeout period'
-                                )
-                                yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Agent worker failed to start. Please try again.'})}\n\n"
-                                terminate_stream = True
-                                break
-                            elif db_status in ['completed', 'failed', 'stopped']:
-                                logger.debug(f"Agent run {agent_run_id} already finished with status: {db_status}")
-                                yield f"data: {json.dumps({'type': 'status', 'status': db_status})}\n\n"
-                                terminate_stream = True
-                                break
-                        except Exception as db_err:
-                            logger.warning(f"Failed to check agent_run status during timeout: {db_err}")
-                    
-                    # Send ping to keep connection alive
-                    yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                                    elif db_status in ['completed', 'failed', 'stopped']:
+                                        logger.debug(f"Agent run {agent_run_id} already finished with status: {db_status}")
+                                        yield f"data: {json.dumps({'type': 'status', 'status': db_status})}\n\n"
+                                        terminate_stream = True
+                                        break
+                                except Exception as db_err:
+                                    logger.warning(f"Failed to check agent_run status during timeout: {db_err}")
+                            
+                            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
 
                 except asyncio.CancelledError:
                     logger.debug(f"Stream generator cancelled for {agent_run_id}")
                     terminate_stream = True
                     break
                 except Exception as e:
-                    logger.error(f"Error processing message for {agent_run_id}: {e}", exc_info=True)
+                    logger.error(f"Error polling stream for {agent_run_id}: {e}", exc_info=True)
                     yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': f'Stream failed: {e}'})}\n\n"
                     terminate_stream = True
                     break
@@ -1342,13 +1337,6 @@ async def stream_agent_run(
 
         finally:
             terminate_stream = True
-            # Clean up pub/sub subscription
-            if pubsub:
-                try:
-                    await pubsub.unsubscribe(notify_channel)
-                    await pubsub.close()
-                except Exception:
-                    pass
             logger.debug(f"Streaming cleanup complete for agent run: {agent_run_id}")
 
     return StreamingResponse(stream_generator(agent_run_data), media_type="text/event-stream", headers={

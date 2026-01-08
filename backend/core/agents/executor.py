@@ -163,12 +163,6 @@ async def process_agent_responses(
         try:
             await redis.stream_add(stream_key, {"data": response_json}, maxlen=200, approximate=True)
             
-            # Publish notification for instant delivery
-            try:
-                await redis.publish(f"{stream_key}:notify", response.get('type', 'message'))
-            except Exception:
-                pass
-            
             if not stream_ttl_set:
                 try:
                     await asyncio.wait_for(redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS), timeout=2.0)
@@ -229,10 +223,6 @@ async def handle_normal_completion(
             redis.stream_add(stream_key, {'data': json.dumps(completion_message)}, maxlen=200, approximate=True),
             timeout=5.0
         )
-        try:
-            await redis.publish(f"{stream_key}:notify", "status")
-        except Exception:
-            pass
     except Exception as e:
         logger.warning(f"Failed to write completion message for {agent_run_id}: {e}")
 

@@ -11,15 +11,8 @@ from typing import List, Dict, Any
 from core.utils.logger import logger, structlog
 from core.services.supabase import DBConnection
 from core.worker.helpers import initialize
-from core.worker.tasks import (
-    MemoryExtractionTask,
-    MemoryEmbeddingTask,
-    MemoryConsolidationTask,
-    CategorizationTask,
-    StaleProjectsTask,
-)
 
-db = DBConnection()
+_db = DBConnection()
 
 
 async def run_memory_extraction(
@@ -46,7 +39,7 @@ async def run_memory_extraction(
         from core.billing import subscription_service
         from core.billing.shared.config import is_memory_enabled
         
-        client = await db.client
+        client = await _db.client
         
         tier_info = await subscription_service.get_user_subscription_tier(account_id)
         if not is_memory_enabled(tier_info['name']):
@@ -104,7 +97,7 @@ async def run_memory_embedding(
         from core.billing import subscription_service
         from core.billing.shared.config import get_memory_config
         
-        client = await db.client
+        client = await _db.client
         embedding_service = EmbeddingService()
         
         tier_info = await subscription_service.get_user_subscription_tier(account_id)
@@ -143,18 +136,6 @@ async def run_memory_embedding(
         logger.error(f"Memory embedding failed: {e}", exc_info=True)
 
 
-async def run_memory_consolidation(account_id: str) -> None:
-    """Consolidate memories - runs as async background task."""
-    from core.utils.config import config
-    
-    if not config.ENABLE_MEMORY:
-        logger.debug("Memory consolidation skipped: ENABLE_MEMORY is False")
-        return
-    
-    logger.info(f"🔄 Consolidating memories for {account_id}")
-    # Placeholder - implement if needed
-
-
 async def run_categorization(project_id: str) -> None:
     """Categorize project - runs as async background task."""
     logger.info(f"🏷️ Categorizing project: {project_id}")
@@ -164,7 +145,7 @@ async def run_categorization(project_id: str) -> None:
     try:
         from core.categorization.service import categorize_from_messages
         
-        client = await db.client
+        client = await _db.client
         
         threads = await client.table('threads').select('thread_id').eq('project_id', project_id).limit(1).execute()
         if not threads.data:
@@ -200,7 +181,7 @@ async def run_stale_projects() -> None:
     await initialize()
     
     try:
-        client = await db.client
+        client = await _db.client
         
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
         
@@ -229,12 +210,6 @@ def start_memory_embedding(account_id: str, thread_id: str, extracted_memories: 
     """Start memory embedding as background task."""
     asyncio.create_task(run_memory_embedding(account_id, thread_id, extracted_memories))
     logger.debug(f"Started memory embedding for thread {thread_id}")
-
-
-def start_memory_consolidation(account_id: str) -> None:
-    """Start memory consolidation as background task."""
-    asyncio.create_task(run_memory_consolidation(account_id))
-    logger.debug(f"Started memory consolidation for account {account_id}")
 
 
 def start_categorization(project_id: str) -> None:

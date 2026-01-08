@@ -21,15 +21,6 @@ async def embed_memories(account_id: str, thread_id: str, memories: List[Dict[st
     start_memory_embedding(account_id, thread_id, memories)
 
 
-async def consolidate_memories(account_id: str):
-    """Start memory consolidation task."""
-    from core.utils.config import config
-    if not config.ENABLE_MEMORY:
-        return
-    from core.worker.background_tasks import start_memory_consolidation
-    start_memory_consolidation(account_id)
-
-
 # Backwards-compatible wrappers with .send() interface
 class _DispatchWrapper:
     def __init__(self, dispatch_fn):

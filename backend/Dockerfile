@@ -32,6 +32,6 @@ EXPOSE 8000
 
 # WORKERS=16 for 32 vCPU server (2 workers per core, capped at 16)
 ENV WORKERS=16
-ENV TIMEOUT=300
+ENV TIMEOUT=1800
 
 CMD ["sh", "-c", "uv run gunicorn api:app -w ${WORKERS} -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:8000 --timeout ${TIMEOUT} --graceful-timeout 30 --keep-alive 65"]

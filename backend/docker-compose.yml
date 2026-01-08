@@ -20,9 +20,8 @@ services:
     networks:
       - app-network
     environment:
-      - LOG_LEVEL=INFO
+      - LOG_LEVEL=DEBUG
       - WORKERS=${WORKERS:-16}
-      - SUPABASE_MAX_CONNECTIONS=50
     logging:
       driver: "json-file"
       options:

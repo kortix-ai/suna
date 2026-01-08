@@ -20,7 +20,7 @@ on:
         description: 'API base URL'
         required: false
         type: string
-        default: 'http://staging-api.suna.so'
+        default: 'https://staging-api.suna.so'
 
 jobs:
   e2e-tests:
@@ -29,15 +29,18 @@ jobs:
     steps:
       - name: Trigger E2E tests via API
         run: |
-          API_URL="${{ github.event.inputs.api_url || 'http://staging-api.suna.so' }}"
+          API_URL="${{ github.event.inputs.api_url || 'https://staging-api.suna.so' }}"
           TEST_FILTER="${{ github.event.inputs.test_filter || '' }}"
           
           if [ -n "$TEST_FILTER" ]; then
-            curl -X POST "$API_URL/admin/tests/e2e?test_filter=$TEST_FILTER" \
+            RESPONSE=$(curl -sf --max-time 300 -X POST "$API_URL/admin/tests/e2e?test_filter=$TEST_FILTER" \
               -H "X-Admin-Api-Key: ${{ secrets.KORTIX_ADMIN_API_KEY }}" \
-              -H "Content-Type: application/json"
+              -H "Content-Type: application/json")
           else
-            curl -X POST "$API_URL/admin/tests/e2e" \
+            RESPONSE=$(curl -sf --max-time 300 -X POST "$API_URL/admin/tests/e2e" \
               -H "X-Admin-Api-Key: ${{ secrets.KORTIX_ADMIN_API_KEY }}" \
-              -H "Content-Type: application/json"
+              -H "Content-Type: application/json")
           fi
+          
+          echo "API Response:"
+          echo "$RESPONSE"
