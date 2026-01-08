@@ -1,7 +1,7 @@
 """Thread-related API models."""
 
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict
 
 
 class UnifiedAgentStartResponse(BaseModel):
@@ -10,6 +10,8 @@ class UnifiedAgentStartResponse(BaseModel):
     agent_run_id: Optional[str] = None  # None in optimistic mode
     project_id: Optional[str] = None    # Returned in optimistic mode
     status: str = "running"  # "running" for regular, "pending" for optimistic
+    # Optional timing breakdown for stress testing (only present when X-Emit-Timing header is set)
+    timing_breakdown: Optional[Dict[str, float]] = None
 
 
 class CreateThreadResponse(BaseModel):

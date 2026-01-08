@@ -8,6 +8,7 @@ Thin API layer - delegates to core modules:
 
 import asyncio
 import json
+import time
 import traceback
 import uuid
 from datetime import datetime, timezone
@@ -228,11 +229,16 @@ async def start_agent_run(
     staged_files: Optional[List[Dict[str, Any]]] = None,
     memory_enabled: Optional[bool] = None,
     is_optimistic: bool = False,
+    emit_timing: bool = False,
 ) -> Dict[str, Any]:
     """Start an agent run - core business logic."""
     from core.agents.config import load_agent_config
     from core.threads import repo as threads_repo
     from core.utils.project_helpers import generate_and_update_project_name
+    
+    # Timing instrumentation for stress testing
+    timing_breakdown = {}
+    total_start = time.time()
     
     client = await db.client
     is_new_thread = thread_id is None or is_optimistic
@@ -244,6 +250,8 @@ async def start_agent_run(
     final_message_content = prompt
     
     # Parallel: load config + check limits
+    step_start = time.time()
+    
     async def load_config():
         return await load_agent_config(agent_id, account_id, user_id=account_id, client=client, is_new_thread=is_new_thread)
     
@@ -253,7 +261,11 @@ async def start_agent_run(
                                            check_project_limit=is_new_thread, check_thread_limit=is_new_thread)
     
     agent_config, _ = await asyncio.gather(load_config(), check_limits())
+    timing_breakdown["load_config_ms"] = round((time.time() - step_start) * 1000, 1)
+    
+    step_start = time.time()
     effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
+    timing_breakdown["get_model_ms"] = round((time.time() - step_start) * 1000, 1)
     
     # For existing threads, fetch project_id
     if not is_new_thread and not project_id:
@@ -266,8 +278,10 @@ async def start_agent_run(
         if not project_id:
             project_id = str(uuid.uuid4())
         
+        step_start = time.time()
         placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
         await threads_repo.create_project(project_id=project_id, account_id=account_id, name=placeholder_name)
+        timing_breakdown["create_project_ms"] = round((time.time() - step_start) * 1000, 1)
         project_created_here = True
         
         try:
@@ -282,6 +296,7 @@ async def start_agent_run(
             thread_id = str(uuid.uuid4())
         
         try:
+            step_start = time.time()
             await threads_repo.create_thread_full(
                 thread_id=thread_id,
                 project_id=project_id,
@@ -290,6 +305,7 @@ async def start_agent_run(
                 status="pending",
                 memory_enabled=memory_enabled
             )
+            timing_breakdown["create_thread_ms"] = round((time.time() - step_start) * 1000, 1)
             
             if prompt:
                 from core.utils.thread_name_generator import generate_and_update_thread_name
@@ -370,7 +386,9 @@ async def start_agent_run(
             initialization_completed_at=now_iso
         )
     
+    step_start = time.time()
     _, agent_run_id, _ = await asyncio.gather(create_message(), create_agent_run(), update_thread_status())
+    timing_breakdown["create_message_and_run_ms"] = round((time.time() - step_start) * 1000, 1)
     
     # Insert image contexts in background
     if image_contexts_to_inject:
@@ -417,11 +435,15 @@ async def start_agent_run(
     asyncio.create_task(execute_run())
     logger.info(f"✅ Started agent run {agent_run_id} as background task")
     
+    # Calculate total setup time
+    timing_breakdown["total_setup_ms"] = round((time.time() - total_start) * 1000, 1)
+    
     return {
         "thread_id": thread_id,
         "agent_run_id": agent_run_id,
         "project_id": project_id,
-        "status": "running"
+        "status": "running",
+        "timing_breakdown": timing_breakdown if emit_timing else None,
     }
 
 
@@ -477,6 +499,18 @@ async def unified_agent_start(
     
     memory_enabled_bool = memory_enabled.lower() == 'true' if memory_enabled else None
     
+    # Check for admin bypass header (for stress testing)
+    # Must verify user is super_admin before trusting the header
+    skip_limits = False
+    emit_timing = False
+    if request.headers.get("X-Skip-Limits", "").lower() == "true":
+        from core.endpoints.user_roles_repo import get_user_admin_role
+        role_info = await get_user_admin_role(user_id)
+        if role_info.get('role') == 'super_admin':
+            skip_limits = True
+            # Also check for timing emission (stress test feature)
+            emit_timing = request.headers.get("X-Emit-Timing", "").lower() == "true"
+    
     try:
         # Verify access for existing threads
         if thread_id and not is_optimistic:
@@ -499,14 +533,20 @@ async def unified_agent_start(
             staged_files=staged_files_data,
             memory_enabled=memory_enabled_bool,
             is_optimistic=is_optimistic,
+            skip_limits_check=skip_limits,
+            emit_timing=emit_timing,
         )
         
-        return {
+        response = {
             "thread_id": result["thread_id"],
             "agent_run_id": result["agent_run_id"],
             "project_id": result.get("project_id"),
             "status": result.get("status", "running")
         }
+        # Include timing breakdown for stress testing (only when emit_timing is True)
+        if emit_timing and result.get("timing_breakdown"):
+            response["timing_breakdown"] = result["timing_breakdown"]
+        return response
     
     except HTTPException:
         raise
