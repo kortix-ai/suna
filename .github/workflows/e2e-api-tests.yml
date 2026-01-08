@@ -34,9 +34,37 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
+      - name: Determine environment
+        id: env
+        run: |
+          # If api_url is explicitly provided, use it
+          if [ -n "${{ github.event.inputs.api_url }}" ]; then
+            echo "environment=custom" >> $GITHUB_OUTPUT
+            echo "api_url=${{ github.event.inputs.api_url }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Check if environment is explicitly set to production
+          if [ "${{ github.event.inputs.environment }}" = "production" ]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "api_url=https://api.kortix.com" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Main branch maps to staging
+          if [ "${{ github.ref }}" = "refs/heads/main" ] || [ "${{ github.base_ref }}" = "main" ]; then
+            echo "environment=staging" >> $GITHUB_OUTPUT
+            echo "api_url=https://staging-api.suna.so" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Default to staging
+          echo "environment=staging" >> $GITHUB_OUTPUT
+          echo "api_url=https://staging-api.suna.so" >> $GITHUB_OUTPUT
+      
       - name: Trigger E2E tests via API
         env:
-          API_URL: ${{ github.event.inputs.api_url || (github.event.inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so') }}
+          API_URL: ${{ steps.env.outputs.api_url }}
           ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
         run: |
           set -e
@@ -59,6 +87,7 @@ jobs:
           TEST_FILTER="${{ github.event.inputs.test_filter || '' }}"
           
           echo "🧪 Starting E2E tests"
+          echo "📍 Environment: ${{ steps.env.outputs.environment }}"
           echo "📍 API URL: $API_URL"
           if [ -n "$TEST_FILTER" ]; then
             echo "🔍 Test filter: $TEST_FILTER"

@@ -258,7 +258,7 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.kortix.com", "https://kortix.com"]
+allowed_origins = ["https://www.kortix.com", "https://kortix.com", "https://prod-test.kortix.com"]
 allow_origin_regex = None
 
 # Add staging-specific origins
