@@ -1499,20 +1499,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           return null;
         })}
 
-        {/* Show agent indicator when waiting for response */}
+        {/* Show agent indicator when waiting for response - ONLY when last message is user */}
         {(() => {
           const lastMsg = messages[messages.length - 1];
-          const isWaitingForResponse = lastMsg?.type === 'user' && !streamingTextContent && !streamingToolCall;
+          
+          // Only show this trailing indicator if the LAST message is a USER message
+          // If last message is assistant, the loader is handled inside groupedMessages
+          if (lastMsg?.type !== 'user') return null;
+          
           const isAgentActive = agentStatus === 'running' || agentStatus === 'connecting';
+          const hasStreamingContent = Boolean(streamingTextContent || streamingToolCall);
           
-          if (!isWaitingForResponse && !isAgentActive) return null;
-          if (streamingTextContent || streamingToolCall) return null;
+          // If already streaming, don't show - content will appear in the groupedMessages
+          if (hasStreamingContent) return null;
           
-          // Determine which state we're in
-          const isContemplating = isWaitingForResponse && !isAgentActive;
+          // Contemplating = user sent message, agent not yet active
+          // Thinking = agent is active but no content streamed yet
+          const isContemplating = !isAgentActive;
           const isThinking = isAgentActive;
-          
-          if (!isContemplating && !isThinking) return null;
           
           return (
             <View className="mb-6">
