@@ -90,6 +90,7 @@ async def wait_for_timing_messages(agent_run_id: str, timeout: float = 120.0) ->
     last_id = "0"
     
     result = TimingResult()
+    logger.info(f"[STRESS TEST] Waiting for timing messages on stream: {stream_key}")
     
     while time.time() - start_time < timeout:
         # Stop if we have both values
@@ -123,13 +124,16 @@ async def wait_for_timing_messages(agent_run_id: str, timeout: float = 120.0) ->
                             
                             # If we get a terminal status, stop waiting
                             if msg_type == 'status' and data.get('status') in ['completed', 'failed', 'stopped', 'error']:
+                                logger.info(f"[STRESS TEST] Got terminal status '{data.get('status')}' - stopping wait. Result: first_response_ms={result.first_response_ms}, llm_ttft={result.llm_ttft_seconds}")
                                 return result
                         except Exception as e:
                             logger.debug(f"Error parsing stream message: {e}")
         except Exception as e:
             # Stream might not exist yet, keep waiting
+            logger.debug(f"[STRESS TEST] Redis xread error (stream may not exist yet): {e}")
             await asyncio.sleep(0.2)
     
+    logger.warning(f"[STRESS TEST] Timeout waiting for timing messages after {timeout}s. Result: first_response_ms={result.first_response_ms}, llm_ttft={result.llm_ttft_seconds}")
     return result
 
 
