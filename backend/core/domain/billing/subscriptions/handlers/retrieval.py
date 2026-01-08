@@ -6,6 +6,7 @@ from core.config.settings import config
 from core.shared.logger import logger
 from core.domain.billing.shared.config import TIERS, get_tier_by_price_id
 from core.domain.billing.external.stripe import StripeAPIWrapper
+from core.domain.billing import repo as billing_repo
 
 class SubscriptionRetrievalHandler:
     @staticmethod

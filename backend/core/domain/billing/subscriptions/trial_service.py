@@ -13,6 +13,7 @@ from ..shared.config import (
 )
 from ..credits.manager import credit_manager
 from ..external.stripe import generate_trial_idempotency_key, StripeAPIWrapper
+from core.domain.billing import repo as billing_repo
 
 
 class TrialService:

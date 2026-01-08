@@ -15,6 +15,7 @@ from core.domain.billing.credits.manager import credit_manager
 from core.domain.billing.shared.cache_utils import invalidate_account_state_cache
 from ..client import StripeAPIWrapper
 from ....subscriptions.handlers.billing_period import BillingPeriodHandler
+from core.domain.billing import repo as billing_repo
 
 class InvoiceHandler:
     @staticmethod

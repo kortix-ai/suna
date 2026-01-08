@@ -1,6 +1,7 @@
 from typing import Dict, Optional
 from datetime import datetime, timezone
 from core.shared.logger import logger
+from core.domain.billing import repo as billing_repo
 
 
 class SubscriptionRepository:

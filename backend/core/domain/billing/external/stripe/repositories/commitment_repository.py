@@ -1,6 +1,7 @@
 from typing import Optional, Dict
 from datetime import datetime
 from core.infrastructure.database.supabase import DBConnection
+from core.domain.billing import repo as billing_repo
 
 class CommitmentRepository:
     async def get_existing_commitment(self, subscription_id: str) -> bool:

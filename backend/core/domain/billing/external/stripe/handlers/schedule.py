@@ -7,6 +7,7 @@ from core.config.settings import config
 from core.shared.logger import logger
 from core.shared.cache import Cache
 from core.shared.distributed_lock import WebhookLock, RenewalLock, DistributedLock
+from core.domain.billing import repo as billing_repo
 
 class ScheduleHandler:
     @staticmethod

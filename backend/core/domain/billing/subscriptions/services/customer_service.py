@@ -6,6 +6,7 @@ from core.config.settings import config
 from core.shared.logger import logger
 from core.domain.billing.external.stripe import StripeAPIWrapper
 from ..repositories.customer import CustomerRepository
+from core.domain.billing import repo as billing_repo
 
 
 class CustomerService:

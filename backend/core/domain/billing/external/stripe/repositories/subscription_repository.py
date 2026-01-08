@@ -1,5 +1,6 @@
 from typing import Optional, Dict, List
 from core.infrastructure.database.supabase import DBConnection
+from core.domain.billing import repo as billing_repo
 
 class SubscriptionRepository:
     async def get_account_from_customer(self, customer_id: str) -> Optional[str]:

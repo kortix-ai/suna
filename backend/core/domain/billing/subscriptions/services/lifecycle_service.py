@@ -16,6 +16,7 @@ from core.domain.billing.credits.manager import credit_manager
 from core.domain.billing.external.stripe import StripeAPIWrapper
 from ..repositories.credit_account import CreditAccountRepository
 from ..repositories.trial import TrialRepository
+from core.domain.billing import repo as billing_repo
 
 
 class LifecycleService:

@@ -13,6 +13,7 @@ from core.domain.billing.shared.config import (
 )
 from core.domain.billing.credits.manager import credit_manager
 from core.domain.billing.external.stripe.client import StripeAPIWrapper
+from core.domain.billing import repo as billing_repo
 
 class CheckoutHandler:
     @staticmethod

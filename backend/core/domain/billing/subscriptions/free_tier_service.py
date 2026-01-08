@@ -8,6 +8,7 @@ from core.shared.logger import logger
 from core.shared.distributed_lock import DistributedLock
 from ..shared.config import FREE_TIER_INITIAL_CREDITS
 from dateutil.relativedelta import relativedelta # type: ignore
+from core.domain.billing import repo as billing_repo
 
 
 class FreeTierService:

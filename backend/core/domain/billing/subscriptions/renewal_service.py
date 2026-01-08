@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from core.infrastructure.database.supabase import DBConnection
 from ..shared.config import get_tier_by_name
 import logging
+from core.domain.billing import repo as billing_repo
 
 logger = logging.getLogger(__name__)
 

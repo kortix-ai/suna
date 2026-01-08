@@ -10,6 +10,7 @@ from ..shared.config import get_tier_by_price_id
 from ..external.stripe import StripeAPIWrapper
 from .interfaces import ReconciliationManagerInterface
 from core.config.settings import config
+from core.domain.billing import repo as billing_repo
 
 class ReconciliationService(ReconciliationManagerInterface):
     def __init__(self):

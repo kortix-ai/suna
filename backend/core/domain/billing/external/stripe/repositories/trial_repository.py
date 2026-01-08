@@ -1,6 +1,7 @@
 from typing import Optional, Dict
 from datetime import datetime
 from core.infrastructure.database.supabase import DBConnection
+from core.domain.billing import repo as billing_repo
 
 class TrialRepository:
     async def update_trial_status(self, account_id: str, status: str, tier: str = None, subscription_id: str = None) -> None:

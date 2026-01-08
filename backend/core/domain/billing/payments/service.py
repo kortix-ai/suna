@@ -8,6 +8,7 @@ from core.shared.logger import logger
 from ..external.stripe import generate_credit_purchase_idempotency_key, StripeAPIWrapper
 from .interfaces import PaymentProcessorInterface
 from core.config.settings import config
+from core.domain.billing import repo as billing_repo
 
 class PaymentService(PaymentProcessorInterface):
     def __init__(self):

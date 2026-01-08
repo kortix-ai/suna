@@ -5,6 +5,7 @@ from core.infrastructure.database.supabase import DBConnection
 from core.shared.logger import logger
 from core.shared.cache import Cache
 from core.domain.billing.external.stripe import StripeAPIWrapper
+from core.domain.billing import repo as billing_repo
 
 class SubscriptionSyncHandler:
     @staticmethod
