@@ -255,9 +255,10 @@ export function useThreadData(
           }
         }
 
-        const requiredDataLoaded = isShared 
-          ? (threadQuery.data && messagesQuery.data)
-          : (threadQuery.data && messagesQuery.data && agentRunsQuery.data);
+        // "Initial load" should mean we can render the thread UI (messages + thread metadata).
+        // Agent runs are *nice to have* (they can be slow/404 transiently when infra changes),
+        // but they should never block the UI from becoming interactive (e.g. opening Kortix Computer).
+        const requiredDataLoaded = Boolean(threadQuery.data && messagesQuery.data);
           
         if (requiredDataLoaded) {
           initialLoadCompleted.current = true;
