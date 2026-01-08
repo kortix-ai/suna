@@ -36,6 +36,7 @@ import { groupMessagesWithStreaming } from '@agentpress/shared/utils';
 import { preprocessTextOnlyTools } from '@agentpress/shared/tools';
 import { getToolIcon } from '@/lib/icons/tool-icons';
 import { useColorScheme } from 'nativewind';
+import { useAgent } from '@/contexts/AgentContext';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
@@ -662,6 +663,9 @@ interface MessageGroup {
   key: string;
 }
 
+// Default Kortix agent ID - when null or this ID, show logomark only
+const KORTIX_DEFAULT_AGENT_ID = '55e65f0e-b598-4dbc-a185-8b904849da44';
+
 export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
   ({
     messages,
@@ -679,6 +683,28 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
   }) => {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
+    const { agents } = useAgent();
+
+    // Helper to render agent indicator based on agent type
+    const renderAgentIndicator = useCallback((agentId: string | null | undefined) => {
+      // Default Kortix agent or no agent ID - just show logomark
+      const isKortixDefault = !agentId || agentId === KORTIX_DEFAULT_AGENT_ID;
+      
+      if (isKortixDefault) {
+        return <KortixLogo size={24} variant="logomark" color={isDark ? 'dark' : 'light'} />;
+      }
+      
+      // Custom agent - show symbol + name
+      const agent = agents.find(a => a.agent_id === agentId);
+      const displayName = agent?.name || 'Agent';
+      
+      return (
+        <View className="flex-row items-center gap-1.5">
+          <KortixLogo size={18} variant="symbol" color={isDark ? 'dark' : 'light'} />
+          <Text className="text-sm font-medium text-muted-foreground">{displayName}</Text>
+        </View>
+      );
+    }, [isDark, agents]);
 
     // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
     const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
@@ -1212,7 +1238,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             return (
               <View key={group.key} className="mb-6">
                 <View className="mb-2 flex-row items-center">
-                  <KortixLogo size={20} variant="symbol" color={isDark ? 'dark' : 'light'} />
+                  {renderAgentIndicator(groupAgentId)}
                 </View>
 
                 <View className="gap-3">
@@ -1472,17 +1498,36 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           return null;
         })}
 
-        {(agentStatus === 'running' || agentStatus === 'connecting') &&
-          !streamingTextContent &&
-          !streamingToolCall &&
-          (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
+        {/* Show agent indicator when waiting for response */}
+        {(() => {
+          const lastMsg = messages[messages.length - 1];
+          const isWaitingForResponse = lastMsg?.type === 'user' && !streamingTextContent && !streamingToolCall;
+          const isAgentActive = agentStatus === 'running' || agentStatus === 'connecting';
+          
+          if (!isWaitingForResponse && !isAgentActive) return null;
+          if (streamingTextContent || streamingToolCall) return null;
+          
+          // Determine which state we're in
+          const isContemplating = isWaitingForResponse && !isAgentActive;
+          const isThinking = isAgentActive;
+          
+          if (!isContemplating && !isThinking) return null;
+          
+          return (
             <View className="mb-6">
               <View className="mb-2 flex-row items-center">
-                <KortixLogo size={20} variant="symbol" color={isDark ? 'dark' : 'light'} />
+                {renderAgentIndicator(null)}
               </View>
-              <AgentLoader />
+              {isContemplating ? (
+                <View className="flex-row py-2 items-center">
+                  <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
+                </View>
+              ) : (
+                <AgentLoader />
+              )}
             </View>
-          )}
+          );
+        })()}
 
         <View className="h-2" />
       </View>
