@@ -47,9 +47,10 @@ const MARKDOWN_FONT_SIZE = 16;
 let DEBUG_HEIGHTS = false;
 
 // Runtime tunable values
-let CHAR_WIDTH_FACTOR = 0.44;
-let HEADING_CHAR_FACTOR = 0.48;
+let CHAR_WIDTH_FACTOR = 0.46;      // Slightly wider chars = more wrapping = more height
+let HEADING_CHAR_FACTOR = 0.50;
 let EMPTY_LINE_FACTOR = 0.5;
+let BASE_BUFFER = 16;              // Always add this minimum buffer to prevent cutoff
 
 export function enableMarkdownDebug(enabled: boolean = true) {
   DEBUG_HEIGHTS = enabled;
@@ -71,8 +72,13 @@ export function setEmptyLineFactor(factor: number) {
   console.log(`[MD] Empty line factor: ${factor}`);
 }
 
+export function setBaseBuffer(buffer: number) {
+  BASE_BUFFER = buffer;
+  console.log(`[MD] Base buffer: ${buffer}px`);
+}
+
 export function getFactors() {
-  return { char: CHAR_WIDTH_FACTOR, heading: HEADING_CHAR_FACTOR, empty: EMPTY_LINE_FACTOR };
+  return { char: CHAR_WIDTH_FACTOR, heading: HEADING_CHAR_FACTOR, empty: EMPTY_LINE_FACTOR, buffer: BASE_BUFFER };
 }
 
 if (__DEV__) {
@@ -80,8 +86,9 @@ if (__DEV__) {
   (globalThis as any).setCharWidthFactor = setCharWidthFactor;
   (globalThis as any).setHeadingCharFactor = setHeadingCharFactor;
   (globalThis as any).setEmptyLineFactor = setEmptyLineFactor;
+  (globalThis as any).setBaseBuffer = setBaseBuffer;
   (globalThis as any).getFactors = getFactors;
-  console.log('[MD] Tune: globalThis.setCharWidthFactor(0.44) / setHeadingCharFactor(0.48) / setEmptyLineFactor(0.5)');
+  console.log('[MD] Tune: setCharWidthFactor(0.46) / setHeadingCharFactor(0.50) / setBaseBuffer(16)');
 }
 
 
@@ -317,8 +324,11 @@ function analyzeContent(text: string): { lines: number; headings: number } {
  * - Empty lines are very short
  * - List items (-) and checkmarks (✅) need special handling
  */
+// Common emoji regex - catches most Unicode emojis
+const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{231A}-\u{231B}]|[\u{23E9}-\u{23F3}]|[\u{23F8}-\u{23FA}]|[\u{25AA}-\u{25AB}]|[\u{25B6}]|[\u{25C0}]|[\u{25FB}-\u{25FE}]/gu;
+
 function calculateRealHeight(text: string, screenWidth: number): number {
-  const horizontalPadding = 48;
+  const horizontalPadding = 32; // ThreadPage uses paddingHorizontal: 16 each side
   const availableWidth = screenWidth - horizontalPadding;
   
   // Use runtime-tunable factors
@@ -345,7 +355,7 @@ function calculateRealHeight(text: string, screenWidth: number): number {
       const headingText = headingMatch[2]
         .replace(/\*\*([^*]+)\*\*/g, '$1')
         .replace(/\*([^*]+)\*/g, '$1')
-        .replace(/[🎯📊💻🔍📝🤖🚀✅👋😊🔄👂🎨🔗📄🌐]/gu, 'X'); // Emoji = 1 char width
+        .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width
       const wrappedLines = Math.max(1, Math.ceil(headingText.length / headingCharsPerLine));
       totalHeight += wrappedLines * 36;
       continue;
@@ -353,7 +363,7 @@ function calculateRealHeight(text: string, screenWidth: number): number {
     
     // Horizontal rule (---)
     if (/^[-*_]{3,}$/.test(trimmed)) {
-      totalHeight += 12; // Just a line
+      totalHeight += 12;
       continue;
     }
     
@@ -365,13 +375,14 @@ function calculateRealHeight(text: string, screenWidth: number): number {
       .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
       .replace(/^[-*+]\s+/, '')  // List marker
       .replace(/^\d+\.\s+/, '') // Numbered list
-      .replace(/[🎯📊💻🔍📝🤖🚀✅👋😊🔄👂🎨🔗📄🌐]/gu, 'X'); // Emoji = 1 char
+      .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width (they're wider)
     
     const wrappedLines = Math.max(1, Math.ceil(cleanLine.length / charsPerLine));
     totalHeight += wrappedLines * MARKDOWN_LINE_HEIGHT;
   }
   
-  return totalHeight;
+  // Always add base buffer to prevent cutoff
+  return totalHeight + BASE_BUFFER;
 }
 
 /**

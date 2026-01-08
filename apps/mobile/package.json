@@ -4,7 +4,6 @@
   "version": "1.0.0",
   "scripts": {
     "dev": "expo start -c",
-    "postinstall": "patch-package",
     "android": "expo start -c --android",
     "android:dev": "./scripts/start-android.sh",
     "android:build:local": "npx expo run:android",
