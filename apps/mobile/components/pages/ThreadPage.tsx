@@ -363,9 +363,18 @@ export function ThreadPage({
   }, [chat.activeThread?.id]);
 
   // When user sends a NEW message - activate push to top
+  // Only trigger for ACTUAL new messages (count increases by 1-2), NOT bulk thread loads
   React.useEffect(() => {
-    if (userMessageCount > lastUserMessageCountRef.current) {
-      console.log(`[SCROLL DEBUG] 📤 User sent message! userMessageCount: ${lastUserMessageCountRef.current} → ${userMessageCount}`);
+    const prevCount = lastUserMessageCountRef.current;
+    const diff = userMessageCount - prevCount;
+    
+    // Only trigger if:
+    // 1. Count increased by 1-2 (actual new message, not bulk load)
+    // 2. Previous count was > 0 (thread was already loaded, not initial load)
+    const isActualNewMessage = diff > 0 && diff <= 2 && prevCount > 0;
+    
+    if (isActualNewMessage) {
+      console.log(`[SCROLL DEBUG] 📤 User sent NEW message! userMessageCount: ${prevCount} → ${userMessageCount}`);
       console.log('[SCROLL DEBUG] Setting pushToTop=true, scrollLockActive=true');
       
       setPushToTop(true);
@@ -375,7 +384,6 @@ export function ThreadPage({
       // Multiple scroll attempts
       const scrollAttempt = (ms: number) => {
         setTimeout(() => {
-          console.log(`[SCROLL DEBUG] Scroll attempt at ${ms}ms`);
           scrollViewRef.current?.scrollToEnd({ animated: false });
         }, ms);
       };
@@ -386,7 +394,10 @@ export function ThreadPage({
       scrollAttempt(100);
       scrollAttempt(150);
       scrollAttempt(200);
+    } else if (diff > 2) {
+      console.log(`[SCROLL DEBUG] Thread loaded with ${userMessageCount} user messages (bulk load, not triggering pushToTop)`);
     }
+    
     lastUserMessageCountRef.current = userMessageCount;
   }, [userMessageCount]);
 
@@ -395,25 +406,20 @@ export function ThreadPage({
     console.log(`[SCROLL DEBUG] pushToTop changed to: ${pushToTop}, extraPushPadding: ${extraPushPadding}`);
   }, [pushToTop, extraPushPadding]);
 
-  // Turn off pushToTop when agent ACTUALLY finishes (was running, now stopped)
+  // Track when agent is running (for future use if needed)
   React.useEffect(() => {
     const isRunning = chat.isStreaming || chat.isAgentRunning;
     
     if (isRunning) {
-      // Agent is now running - mark it
       agentWasRunningRef.current = true;
       console.log('[SCROLL DEBUG] Agent started running');
-    } else if (agentWasRunningRef.current && pushToTop) {
-      // Agent WAS running and now stopped - this is the real "finished" state
-      console.log('[SCROLL DEBUG] Agent ACTUALLY finished - will remove pushToTop in 500ms');
+    } else if (agentWasRunningRef.current) {
+      console.log('[SCROLL DEBUG] Agent finished');
       agentWasRunningRef.current = false;
-      const timer = setTimeout(() => {
-        console.log('[SCROLL DEBUG] Removing pushToTop');
-        setPushToTop(false);
-      }, 500);
-      return () => clearTimeout(timer);
+      // DON'T remove pushToTop - keep the padding to avoid scroll jump
+      // The extra space at bottom is fine, user can scroll naturally
     }
-  }, [chat.isStreaming, chat.isAgentRunning, pushToTop]);
+  }, [chat.isStreaming, chat.isAgentRunning]);
 
 
   const lastScrollYRef = React.useRef(0);
@@ -425,29 +431,30 @@ export function ThreadPage({
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const currentScrollY = contentOffset.y;
     const maxScrollY = contentSize.height - layoutMeasurement.height;
-    const isAtBottom = currentScrollY >= maxScrollY - 100;
+    
+    // Calculate the ACTUAL content bottom (excluding extra push padding)
+    const actualContentHeight = contentSize.height - extraPushPadding;
+    const actualMaxScrollY = Math.max(0, actualContentHeight - layoutMeasurement.height);
+    
+    // User is at bottom of ACTUAL content (not counting padding)
+    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 100;
     const isScrollingUp = currentScrollY < lastScrollYRef.current - 5;
-
-    // DEBUG: Log significant scroll changes
-    if (Math.abs(currentScrollY - lastLoggedScrollY.current) > 50) {
-      console.log(`[SCROLL DEBUG] 📍 scrollY: ${Math.round(currentScrollY)} / ${Math.round(maxScrollY)} (content: ${Math.round(contentSize.height)}, viewport: ${Math.round(layoutMeasurement.height)})`);
-      lastLoggedScrollY.current = currentScrollY;
-    }
 
     // Track for calculations
     contentHeightRef.current = contentSize.height;
     viewportHeightRef.current = layoutMeasurement.height;
     lastScrollYRef.current = currentScrollY;
 
-    // Show "scroll to bottom" button when user scrolls up and not at bottom
-    if (isScrollingUp && !isAtBottom) {
+    // Show "scroll to bottom" button only when there's ACTUAL content below
+    // Not just extra padding space
+    if (isScrollingUp && !isAtActualBottom) {
       setIsUserScrolling(true);
       setShowScrollToBottom(true);
-    } else if (isAtBottom) {
+    } else if (isAtActualBottom) {
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
-  }, []);
+  }, [extraPushPadding]);
 
   const scrollToBottom = React.useCallback(() => {
     scrollViewRef.current?.scrollToEnd({ animated: true });
@@ -636,7 +643,7 @@ export function ThreadPage({
           onPress={scrollToBottom}
           className="absolute right-6 h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
           style={{
-            bottom: contentBottomPadding - 44,
+            bottom: baseBottomPadding + 16,
             zIndex: 150,
           }}>
           <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />

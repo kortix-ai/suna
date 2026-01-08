@@ -38,11 +38,11 @@ import { getToolIcon } from '@/lib/icons/tool-icons';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
-import { AgentIdentifier } from '@/components/agents';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { AgentLoader } from './AgentLoader';
 import { CheckCircle2, AlertCircle, Info, CircleDashed } from 'lucide-react-native';
 import { KortixLoader } from '@/components/ui/kortix-loader';
+import { KortixLogo } from '@/components/ui/KortixLogo';
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
@@ -1211,8 +1211,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
             return (
               <View key={group.key} className="mb-6">
-                <View className="mb-3 flex-row items-center">
-                  <AgentIdentifier agentId={groupAgentId} size={24} showName />
+                <View className="mb-2 flex-row items-center">
+                  <KortixLogo size={20} variant="symbol" color={isDark ? 'dark' : 'light'} />
                 </View>
 
                 <View className="gap-3">
@@ -1477,8 +1477,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           !streamingToolCall &&
           (messages.length === 0 || messages[messages.length - 1].type === 'user') && (
             <View className="mb-6">
-              <View className="mb-3 flex-row items-center">
-                <AgentIdentifier size={24} showName />
+              <View className="mb-2 flex-row items-center">
+                <KortixLogo size={20} variant="symbol" color={isDark ? 'dark' : 'light'} />
               </View>
               <AgentLoader />
             </View>
