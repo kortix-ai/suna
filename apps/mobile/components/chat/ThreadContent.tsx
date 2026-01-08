@@ -1187,15 +1187,27 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         className="rounded-2xl overflow-hidden border border-border"
                         style={{ width: 120, height: 120 }}
                       >
-                        {attachment.type?.startsWith('image/') ? (
-                          <Image
-                            source={{ uri: attachment.uri }}
-                            style={{ width: '100%', height: '100%' }}
-                            resizeMode="cover"
-                          />
+                        {attachment.type === 'image' || attachment.type === 'video' ? (
+                          <>
+                            <Image
+                              source={{ uri: attachment.uri }}
+                              style={{ width: '100%', height: '100%' }}
+                              resizeMode="cover"
+                            />
+                            {/* Uploading overlay */}
+                            <View 
+                              className="absolute inset-0 bg-black/40 items-center justify-center"
+                              style={{ borderRadius: 16 }}
+                            >
+                              <View className="bg-white/20 rounded-full p-2">
+                                <KortixLoader size="small" />
+                              </View>
+                            </View>
+                          </>
                         ) : (
                           <View className="flex-1 items-center justify-center bg-card">
-                            <Text className="text-xs text-muted-foreground text-center px-2" numberOfLines={2}>
+                            <KortixLoader size="small" />
+                            <Text className="text-xs text-muted-foreground text-center px-2 mt-2" numberOfLines={2}>
                               {attachment.name}
                             </Text>
                           </View>

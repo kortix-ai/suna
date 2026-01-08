@@ -131,7 +131,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Swipe down gesture to dismiss keyboard
   // Only triggers on downward swipe with enough velocity/distance
-  const swipeDownGesture = React.useMemo(() => 
+  const swipeDownGesture = React.useMemo(() =>
     Gesture.Pan()
       .onEnd((event) => {
         // Only dismiss if:
@@ -141,14 +141,14 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
         const isDownwardSwipe = event.translationY > SWIPE_DOWN_THRESHOLD;
         const isVertical = Math.abs(event.translationY) > Math.abs(event.translationX);
         const hasDownwardVelocity = event.velocityY > 0;
-        
+
         if (isDownwardSwipe && isVertical && hasDownwardVelocity) {
           runOnJS(dismissKeyboard)();
         }
       })
       .minDistance(SWIPE_DOWN_THRESHOLD)
       .activeOffsetY(SWIPE_DOWN_THRESHOLD) // Only activate on downward movement
-  , [dismissKeyboard]);
+    , [dismissKeyboard]);
 
   // Derived values - computed once per render
   const hasText = !!(value && value.trim());
@@ -157,7 +157,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const hasAgent = !!agent?.agent_id;
   // Allow input to be editable during streaming - only disable when sending or transcribing
   const isDisabled = isSendingMessage || isTranscribing;
-  
+
   // Reset stopping state when activity stops
   React.useEffect(() => {
     if (!isAgentRunning && !isSendingMessage && !isTranscribing) {
@@ -327,7 +327,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Main button press handler
   const handleButtonPress = React.useCallback(() => {
     console.log('[ChatInput] 🔘 Button pressed!', { isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping });
-    
+
     // Priority 1: Stop if agent is running OR if we're in sending/transcribing state
     if (isAgentRunning || isSendingMessage || isTranscribing) {
       console.log('[ChatInput] 🛑 Calling onStopAgentRun (isAgentRunning:', isAgentRunning, ', isSendingMessage:', isSendingMessage, ')');
@@ -335,13 +335,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       onStopAgentRun?.();
       return;
     }
-    
+
     // Priority 2: Handle recording
     if (isRecording) {
       handleSendAudioMessage();
       return;
     }
-    
+
     // Priority 3: Send message if has content
     if (hasContent) {
       if (!hasAgent) {
@@ -351,17 +351,17 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       handleSendMessage();
       return;
     }
-    
+
     // Priority 4: Start audio recording
-      if (!isAuthenticated) {
-        console.warn('⚠️ User not authenticated - cannot record audio');
-        return;
-      }
-      if (!hasAgent) {
-        console.warn('⚠️ No agent selected - cannot record audio');
-        return;
-      }
-      onAudioRecord?.();
+    if (!isAuthenticated) {
+      console.warn('⚠️ User not authenticated - cannot record audio');
+      return;
+    }
+    if (!hasAgent) {
+      console.warn('⚠️ No agent selected - cannot record audio');
+      return;
+    }
+    onAudioRecord?.();
   }, [isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
   // Content size change handler - debounced via ref comparison
