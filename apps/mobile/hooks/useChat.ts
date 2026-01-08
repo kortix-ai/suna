@@ -326,11 +326,31 @@ export function useChat(): UseChatReturn {
           );
         } else {
           if (message.type === 'user') {
+            // Helper to extract base content (before attachment references)
+            const getBaseContent = (content: string | object): string => {
+              try {
+                const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+                const textContent = typeof parsed === 'object' && parsed?.content 
+                  ? parsed.content 
+                  : String(parsed);
+                // Remove all attachment reference formats
+                return textContent
+                  .replace(/\[Pending Attachment: .*?\]/g, '')
+                  .replace(/\[Uploaded File: .*?\]/g, '')
+                  .replace(/\[Attached: .*? -> .*?\]/g, '')
+                  .trim();
+              } catch {
+                return String(content);
+              }
+            };
+            
+            const newBaseContent = getBaseContent(message.content);
+            
             const optimisticIndex = prev.findIndex(
               (m) =>
                 m.type === 'user' &&
                 m.message_id?.startsWith('optimistic-') &&
-                m.content === message.content,
+                getBaseContent(m.content) === newBaseContent,
             );
             if (optimisticIndex !== -1) {
               console.log('[STREAM] Replacing optimistic user message with real one');
@@ -435,12 +455,49 @@ export function useChat(): UseChatReturn {
             unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[]
           );
           
-          const localExtras = (prev || []).filter(
-            (m) =>
-              !m.message_id ||
-              (typeof m.message_id === 'string' && m.message_id.startsWith('optimistic-')) ||
-              !serverIds.has(m.message_id as string),
+          // Helper to get base content for matching optimistic to real messages
+          const getBaseContent = (content: string | object): string => {
+            try {
+              const parsed = typeof content === 'string' ? JSON.parse(content) : content;
+              const textContent = typeof parsed === 'object' && parsed?.content 
+                ? parsed.content 
+                : String(parsed);
+              return textContent
+                .replace(/\[Pending Attachment: .*?\]/g, '')
+                .replace(/\[Uploaded File: .*?\]/g, '')
+                .replace(/\[Attached: .*? -> .*?\]/g, '')
+                .trim();
+            } catch {
+              return String(content);
+            }
+          };
+          
+          // Build set of server message base contents for matching
+          const serverBaseContents = new Set(
+            unifiedMessages
+              .filter(m => m.type === 'user')
+              .map(m => getBaseContent(m.content))
           );
+          
+          // Filter out optimistic messages that have matching server messages
+          const localExtras = (prev || []).filter((m) => {
+            // Keep messages without IDs
+            if (!m.message_id) return true;
+            
+            // For optimistic messages, check if a matching server message exists
+            if (typeof m.message_id === 'string' && m.message_id.startsWith('optimistic-')) {
+              const baseContent = getBaseContent(m.content);
+              const hasMatchingServerMessage = serverBaseContents.has(baseContent);
+              if (hasMatchingServerMessage) {
+                console.log('[useChat] Removing optimistic message - server version exists');
+                return false; // Remove - server has the real version
+              }
+              return true; // Keep - still pending
+            }
+            
+            // Keep messages not in server set
+            return !serverIds.has(m.message_id as string);
+          });
           
           const merged = [...unifiedMessages, ...localExtras].sort((a, b) => {
             const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
@@ -944,6 +1001,50 @@ export function useChat(): UseChatReturn {
           });
           
           console.log('[useChat] Message sent, agent run started:', result.agentRunId);
+          
+          // Replace optimistic message with real message from server
+          if (result.message) {
+            setMessages((prev) => {
+              // Helper to get base content for matching
+              const getBaseContent = (msgContent: string | object): string => {
+                try {
+                  const parsed = typeof msgContent === 'string' ? JSON.parse(msgContent) : msgContent;
+                  const textContent = typeof parsed === 'object' && parsed?.content 
+                    ? parsed.content 
+                    : String(parsed);
+                  return textContent
+                    .replace(/\[Pending Attachment: .*?\]/g, '')
+                    .replace(/\[Uploaded File: .*?\]/g, '')
+                    .replace(/\[Attached: .*? -> .*?\]/g, '')
+                    .trim();
+                } catch {
+                  return String(msgContent);
+                }
+              };
+              
+              const realMessageContent = getBaseContent(result.message.content);
+              
+              // Find and replace optimistic message
+              const optimisticIndex = prev.findIndex(
+                (m) =>
+                  m.type === 'user' &&
+                  typeof m.message_id === 'string' &&
+                  m.message_id.startsWith('optimistic-') &&
+                  getBaseContent(m.content) === realMessageContent
+              );
+              
+              if (optimisticIndex !== -1) {
+                console.log('[useChat] ✅ Replacing optimistic message with real one');
+                return prev.map((m, index) =>
+                  index === optimisticIndex ? (result.message as UnifiedMessage) : m
+                );
+              }
+              
+              // If no optimistic found, just add the message
+              console.log('[useChat] No optimistic message found to replace, adding new');
+              return [...prev, result.message as UnifiedMessage];
+            });
+          }
           
           if (result.agentRunId) {
             console.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);

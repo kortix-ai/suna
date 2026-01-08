@@ -90,8 +90,8 @@ export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ['expose_port', 'Exposing Port'],
   
   // Image operations
-  ['load-image', 'Loading Image'],
-  ['load_image', 'Loading Image'],
+  ['load-image', 'Loaded Image'],
+  ['load_image', 'Loaded Image'],
   ['clear-images-from-context', 'Clearing Images'],
   ['image-edit-or-generate', 'Generate Media'],
   ['image_edit_or_generate', 'Generate Media'],
