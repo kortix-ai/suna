@@ -687,11 +687,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
     // Helper to render agent indicator based on agent type
     const renderAgentIndicator = useCallback((agentId: string | null | undefined) => {
-      // Default Kortix agent or no agent ID - just show logomark
+      // Default Kortix agent or no agent ID - show full logomark
       const isKortixDefault = !agentId || agentId === KORTIX_DEFAULT_AGENT_ID;
       
       if (isKortixDefault) {
-        return <KortixLogo size={24} variant="logomark" color={isDark ? 'dark' : 'light'} />;
+        // Full Kortix logomark (icon + text) - same height as symbol+text combo
+        return <KortixLogo size={14} variant="logomark" color={isDark ? 'dark' : 'light'} />;
       }
       
       // Custom agent - show symbol + name
@@ -700,7 +701,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       
       return (
         <View className="flex-row items-center gap-1.5">
-          <KortixLogo size={18} variant="symbol" color={isDark ? 'dark' : 'light'} />
+          <KortixLogo size={16} variant="symbol" color={isDark ? 'dark' : 'light'} />
           <Text className="text-sm font-medium text-muted-foreground">{displayName}</Text>
         </View>
       );
