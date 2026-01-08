@@ -210,104 +210,112 @@ export default function AboutPage() {
 
         {/* Passport with Travel Stamps */}
         <div className="mt-24 md:mt-32">
-          {/* Two-page spread */}
-          <div className="grid grid-cols-2 border border-foreground/10 rounded-sm">
+          {/* Mobile: Single page with stacked stamps */}
+          <div className="md:hidden border border-foreground/10 rounded-sm p-6">
+            {/* Visas header */}
+            <div className="text-center mb-6">
+              <span className="text-xs uppercase tracking-[0.3em] text-foreground/40 font-medium">Visas</span>
+            </div>
+            
+            {/* Stamps grid - 2 columns on mobile */}
+            <div className="grid grid-cols-2 gap-4 place-items-center">
+              {/* Belgrade */}
+              <div className="rotate-[-8deg] opacity-70 [filter:grayscale(100%)]">
+                <Image src="/images/stamps/bg.svg" alt="Belgrade stamp" width={120} height={78} className="w-[120px]" />
+              </div>
+              {/* Lisbon */}
+              <div className="rotate-[12deg] opacity-70 [filter:grayscale(100%)]">
+                <Image src="/images/stamps/lisbon.svg" alt="Lisbon stamp" width={110} height={71} className="w-[110px]" />
+              </div>
+              {/* NYC */}
+              <div className="rotate-[-5deg] opacity-70 [filter:grayscale(100%)]">
+                <Image src="/images/stamps/nyc.svg" alt="New York City stamp" width={130} height={84} className="w-[130px]" />
+              </div>
+              {/* San Francisco */}
+              <div className="rotate-[6deg] opacity-70 [filter:grayscale(100%)]">
+                <Image src="/images/stamps/sf.svg" alt="San Francisco stamp" width={115} height={75} className="w-[115px]" />
+              </div>
+              {/* London */}
+              <div className="rotate-[8deg] opacity-70 [filter:grayscale(100%)]">
+                <Image src="/images/stamps/london.svg" alt="London stamp" width={115} height={75} className="w-[115px]" />
+              </div>
+              {/* Malaga */}
+              <div className="rotate-[-10deg] opacity-70 [filter:grayscale(100%)]">
+                <Image src="/images/stamps/malaga.svg" alt="Malaga stamp" width={130} height={84} className="w-[130px]" />
+              </div>
+              {/* Bali */}
+              <div className="rotate-[10deg] opacity-70 [filter:grayscale(100%)]">
+                <Image src="/images/stamps/bali.svg" alt="Bali stamp" width={100} height={100} className="w-[100px]" />
+              </div>
+            </div>
+
+            {/* Kortix logo */}
+            <div className="text-center mt-6">
+              <Image src="/kortix-symbol.svg" alt="Kortix" width={16} height={13} className="inline-block opacity-20 dark:invert" />
+            </div>
+          </div>
+
+          {/* Desktop: Two-page spread */}
+          <div className="hidden md:grid grid-cols-2 border border-foreground/10 rounded-sm">
             {/* Left Page */}
-            <div className="relative border-r border-foreground/10 p-4 md:p-6 flex flex-col aspect-[3/4]">
+            <div className="relative border-r border-foreground/10 p-6 flex flex-col aspect-[3/4]">
               {/* Visas header */}
               <div className="text-center mb-4">
-                <span className="text-[10px] md:text-xs uppercase tracking-[0.3em] text-foreground/40 font-medium">Visas</span>
+                <span className="text-xs uppercase tracking-[0.3em] text-foreground/40 font-medium">Visas</span>
               </div>
               
               {/* Stamps on left page */}
               <div className="relative flex-1">
                 {/* Belgrade */}
-                <div className="absolute left-[0%] top-[8%] rotate-[-8deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(320deg)_saturate(300%)_brightness(0.9)]">
-                  <Image
-                    src="/images/stamps/bg.svg"
-                    alt="Belgrade stamp"
-                    width={160}
-                    height={104}
-                    className="md:w-[180px]"
-                  />
+                <div className="absolute left-[5%] top-[2%] rotate-[-12deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(320deg)_saturate(300%)_brightness(0.9)]">
+                  <Image src="/images/stamps/bg.svg" alt="Belgrade stamp" width={160} height={104} className="w-[160px]" />
                 </div>
-
                 {/* Lisbon */}
-                <div className="absolute right-[2%] top-[25%] rotate-[12deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(90deg)_saturate(400%)_brightness(0.85)]">
-                  <Image
-                    src="/images/stamps/lisbon.svg"
-                    alt="Lisbon stamp"
-                    width={140}
-                    height={91}
-                    className="md:w-[160px]"
-                  />
+                <div className="absolute right-[0%] top-[0%] rotate-[15deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(90deg)_saturate(400%)_brightness(0.85)]">
+                  <Image src="/images/stamps/lisbon.svg" alt="Lisbon stamp" width={145} height={94} className="w-[145px]" />
                 </div>
-
                 {/* NYC */}
-                <div className="absolute left-[5%] bottom-[5%] rotate-[-5deg] opacity-70 hover:opacity-100 transition-all duration-300 z-10 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(130deg)_saturate(500%)_brightness(0.85)]">
-                  <Image
-                    src="/images/stamps/nyc.svg"
-                    alt="New York City stamp"
-                    width={170}
-                    height={110}
-                    className="md:w-[200px]"
-                  />
+                <div className="absolute left-[0%] bottom-[25%] rotate-[-7deg] opacity-70 hover:opacity-100 transition-all duration-300 z-10 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(130deg)_saturate(500%)_brightness(0.85)]">
+                  <Image src="/images/stamps/nyc.svg" alt="New York City stamp" width={175} height={114} className="w-[175px]" />
+                </div>
+                {/* San Francisco */}
+                <div className="absolute right-[0%] bottom-[0%] rotate-[8deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(180deg)_saturate(400%)_brightness(0.9)]">
+                  <Image src="/images/stamps/sf.svg" alt="San Francisco stamp" width={150} height={97} className="w-[150px]" />
                 </div>
               </div>
 
               {/* Kortix logo */}
               <div className="text-center mt-4">
-                <Image
-                  src="/kortix-symbol.svg"
-                  alt="Kortix"
-                  width={16}
-                  height={13}
-                  className="inline-block opacity-20 dark:invert"
-                />
+                <Image src="/kortix-symbol.svg" alt="Kortix" width={16} height={13} className="inline-block opacity-20 dark:invert" />
               </div>
             </div>
 
             {/* Right Page */}
-            <div className="relative p-4 md:p-6 flex flex-col aspect-[3/4]">
+            <div className="relative p-6 flex flex-col aspect-[3/4]">
               {/* Visas header */}
               <div className="text-center mb-4">
-                <span className="text-[10px] md:text-xs uppercase tracking-[0.3em] text-foreground/40 font-medium">Visas</span>
+                <span className="text-xs uppercase tracking-[0.3em] text-foreground/40 font-medium">Visas</span>
               </div>
               
               {/* Stamps on right page */}
               <div className="relative flex-1">
                 {/* London */}
-                <div className="absolute left-[5%] top-[5%] rotate-[8deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(330deg)_saturate(350%)_brightness(0.9)]">
-                  <Image
-                    src="/images/stamps/london.svg"
-                    alt="London stamp"
-                    width={150}
-                    height={97}
-                    className="md:w-[170px]"
-                  />
+                <div className="absolute left-[0%] top-[0%] rotate-[11deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(330deg)_saturate(350%)_brightness(0.9)]">
+                  <Image src="/images/stamps/london.svg" alt="London stamp" width={150} height={97} className="w-[150px]" />
                 </div>
-
                 {/* Malaga */}
-                <div className="absolute right-[0%] bottom-[25%] rotate-[-15deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(350deg)_saturate(400%)_brightness(0.95)]">
-                  <Image
-                    src="/images/stamps/malaga.svg"
-                    alt="Malaga stamp"
-                    width={180}
-                    height={117}
-                    className="md:w-[210px]"
-                  />
+                <div className="absolute right-[-5%] top-[12%] rotate-[-14deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(350deg)_saturate(400%)_brightness(0.95)]">
+                  <Image src="/images/stamps/malaga.svg" alt="Malaga stamp" width={170} height={110} className="w-[170px]" />
+                </div>
+                {/* Bali */}
+                <div className="absolute left-[15%] bottom-[8%] rotate-[13deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(30deg)_saturate(350%)_brightness(0.95)]">
+                  <Image src="/images/stamps/bali.svg" alt="Bali stamp" width={130} height={130} className="w-[130px]" />
                 </div>
               </div>
 
               {/* Kortix logo */}
               <div className="text-center mt-4">
-                <Image
-                  src="/kortix-symbol.svg"
-                  alt="Kortix"
-                  width={16}
-                  height={13}
-                  className="inline-block opacity-20 dark:invert"
-                />
+                <Image src="/kortix-symbol.svg" alt="Kortix" width={16} height={13} className="inline-block opacity-20 dark:invert" />
               </div>
             </div>
           </div>
