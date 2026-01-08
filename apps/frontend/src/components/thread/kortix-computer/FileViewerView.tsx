@@ -916,7 +916,7 @@ export function FileViewerView({
                     variant="outline"
                     size="sm"
                     disabled
-                    className="h-8 w-8 p-0 bg-transparent border border-green-500/20 rounded-xl text-green-600"
+                    className="h-8 w-8 p-0 bg-transparent border border-zinc-500/20 rounded-xl text-zinc-600 dark:text-zinc-400"
                     title="Saved"
                   >
                     <Check className="h-4 w-4" />
@@ -926,7 +926,7 @@ export function FileViewerView({
                     variant="outline"
                     size="sm"
                     onClick={mdEditorControls.save}
-                    className="h-8 w-8 p-0 bg-transparent border border-red-500/20 rounded-xl text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                    className="h-8 w-8 p-0 bg-transparent border border-zinc-500/20 rounded-xl text-zinc-500 hover:text-zinc-600 hover:bg-zinc-50 dark:hover:bg-zinc-950/20"
                     title="Retry save"
                   >
                     <AlertCircle className="h-4 w-4" />
@@ -1169,7 +1169,7 @@ export function FileViewerView({
         ) : (contentError && !isStillRetrying) ? (
           <div className="h-full w-full flex items-center justify-center p-4">
             <div className="max-w-md p-6 text-center border rounded-lg bg-muted/10">
-              <AlertTriangle className="h-10 w-10 text-orange-500 mx-auto mb-4" />
+              <AlertTriangle className="h-10 w-10 text-zinc-500 dark:text-zinc-400 mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">Error Loading File</h3>
               <p className="text-sm text-muted-foreground mb-4">{contentError}</p>
               <div className="flex justify-center gap-3">
@@ -1273,8 +1273,8 @@ export function FileViewerView({
           </DialogHeader>
 
           <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30">
-            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500 mt-0.5 shrink-0" />
-            <span className="text-xs text-red-700 dark:text-red-400">This will replace current files with the selected version snapshot. Your current changes will be overwritten.</span>
+            <AlertTriangle className="h-4 w-4 text-zinc-600 dark:text-zinc-500 mt-0.5 shrink-0" />
+            <span className="text-xs text-zinc-700 dark:text-zinc-400">This will replace current files with the selected version snapshot. Your current changes will be overwritten.</span>
           </div>
 
           {revertLoadingInfo ? (

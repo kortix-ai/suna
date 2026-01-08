@@ -621,6 +621,7 @@ export const KortixComputer = memo(function KortixComputer({
         sandboxId={effectiveSandboxId}
         project={project}
         projectId={projectId}
+        variant="inline-library"
       />
     );
   };

@@ -36,10 +36,10 @@ def check_imports_directly():
     backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     test_imports = [
         "from core.services.supabase import DBConnection",
-        "from core.agents.runs import router",
+        "from core.agents.api import router",
         "from core.threads.api import router", 
-        "from core.worker.background_tasks import start_memory_extraction",
-        "from core.agents.runs import _load_agent_config",
+        "from core.memory.background_jobs import start_memory_extraction",
+        "from core.agents.api import _load_agent_config",
     ]
     
     errors = []

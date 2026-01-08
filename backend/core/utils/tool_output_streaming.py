@@ -1,3 +1,9 @@
+"""
+Tool output streaming context management.
+
+Provides context for streaming tool outputs back to the frontend in real-time.
+"""
+
 import json
 import asyncio
 from contextvars import ContextVar
@@ -88,3 +94,4 @@ async def stream_tool_output(
         
     except Exception as e:
         logger.warning(f"Failed to stream tool output: {e}")
+

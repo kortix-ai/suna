@@ -362,9 +362,11 @@ async def set_cached_running_runs(
 ) -> None:
     """Cache running runs data in Redis."""
     cache_key = _get_running_runs_key(account_id)
+    # Convert UUIDs to strings for JSON serialization
+    thread_ids_str = [str(tid) for tid in running_thread_ids] if running_thread_ids else []
     data = {
         'running_count': running_count,
-        'running_thread_ids': running_thread_ids,
+        'running_thread_ids': thread_ids_str,
         'cached_at': time.time()
     }
     

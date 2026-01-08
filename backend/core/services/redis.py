@@ -15,12 +15,18 @@ REDIS_KEY_TTL = 3600 * 2
 def _calculate_max_connections() -> int:
     """Calculate optimal Redis pool size based on worker count.
     
-    Target: 30-50 connections per worker, capped at ~800 total.
-    This prevents connection exhaustion while providing adequate capacity.
+    Each gunicorn worker gets its own connection pool. We use conservative 
+    defaults suitable for cloud Redis (Upstash has 10K limit even on free tier).
+    
+    The pool handles transient operations (cache get/set, stream writes).
+    SSE streaming uses polling (not PubSub) so no long-held connections.
+    
+    Default: ~6 connections per worker (16 workers = 96 total)
+    Override via REDIS_MAX_CONNECTIONS env var if needed.
     """
     workers = int(os.getenv("WORKERS", "16"))
-    # Cap at 50 per worker, minimum 20, total capped at 800
-    per_worker = max(20, min(50, 800 // workers))
+    # 5-10 per worker based on worker count, minimum 5
+    per_worker = max(5, min(10, 100 // workers))
     return per_worker
 
 
@@ -317,14 +323,6 @@ class RedisClient:
         client = await self.get_client()
         return await client.xtrim(stream_key, minid=minid, approximate=approximate)
     
-    async def publish(self, channel: str, message: str) -> int:
-        client = await self.get_client()
-        return await client.publish(channel, message)
-
-    async def get_pubsub(self):
-        client = await self.get_client()
-        return client.pubsub()
-    
     async def set_stop_signal(self, agent_run_id: str) -> None:
         key = f"agent_run:{agent_run_id}:stop"
         await self.set(key, "1", ex=300)
@@ -495,12 +493,6 @@ async def check_stop_signal(agent_run_id: str) -> bool:
 async def clear_stop_signal(agent_run_id: str):
     await redis.clear_stop_signal(agent_run_id)
 
-async def publish(channel: str, message: str) -> int:
-    return await redis.publish(channel, message)
-
-async def get_pubsub():
-    return await redis.get_pubsub()
-
 async def xreadgroup(groupname: str, consumername: str, streams: Dict[str, str], 
                      block: int = None, count: int = None, timeout: Optional[float] = None):
     return await redis.xreadgroup(groupname=groupname, consumername=consumername, 
@@ -546,6 +538,4 @@ __all__ = [
     'set_stop_signal',
     'check_stop_signal',
     'clear_stop_signal',
-    'publish',
-    'get_pubsub',
 ]

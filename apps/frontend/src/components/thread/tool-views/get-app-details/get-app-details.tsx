@@ -62,16 +62,9 @@ export function GetAppDetailsToolView({
 
   const toolTitle = getToolTitle(name);
 
-  const getAuthTypeColor = (authSchemes: string[]) => {
-    if (authSchemes?.includes('OAUTH2')) {
-      return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800';
-    } else if (authSchemes?.includes('API_KEY')) {
-      return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800';
-    } else if (authSchemes?.includes('BEARER_TOKEN')) {
-      return 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800';
-    } else {
-      return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-300 dark:border-gray-800';
-    }
+  const getAuthTypeColor = (_authSchemes: string[]) => {
+    // All auth types use consistent gray styling
+    return 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700';
   };
 
   const getAuthTypeIcon = (authSchemes: string[]) => {
@@ -94,7 +87,7 @@ export function GetAppDetailsToolView({
         {isStreaming ? (
           <LoadingState
             icon={Info}
-            iconColor="text-blue-500 dark:text-blue-400"
+            iconColor="text-zinc-500 dark:text-zinc-400"
             bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
             title="Loading app details"
             filePath={toolkit_slug ? `"${toolkit_slug}"` : undefined}
@@ -146,7 +139,7 @@ export function GetAppDetailsToolView({
                               <Tooltip>
                                 <TooltipTrigger>
                                   <div className="flex items-center">
-                                    <Sparkles className="w-5 h-5 text-blue-500" />
+                                    <Sparkles className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
                                   </div>
                                 </TooltipTrigger>
                                 <TooltipContent>
@@ -202,7 +195,7 @@ export function GetAppDetailsToolView({
               {toolkit.categories && toolkit.categories.length > 0 && (
                 <div className="bg-white dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4">
                   <div className="flex items-center gap-2 mb-2">
-                    <Tag className="w-4 h-4 text-purple-500" />
+                    <Tag className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                     <h3 className="font-medium text-zinc-900 dark:text-zinc-100">Categories</h3>
                   </div>
                   <div className="flex flex-wrap gap-1">

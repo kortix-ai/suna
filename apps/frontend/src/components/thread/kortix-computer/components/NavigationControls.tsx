@@ -43,11 +43,11 @@ export const NavigationControls = memo(function NavigationControls({
       if (agentStatus === 'running') {
         return (
           <div
-            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer`}
+            className={`${baseClasses} bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer`}
             onClick={onJumpToLive}
           >
-            <div className={`${dotClasses} bg-green-500 animate-pulse`} />
-            <span className={`${textClasses} text-green-700 dark:text-green-400`}>Live Updates</span>
+            <div className={`${dotClasses} bg-blue-500 animate-pulse`} />
+            <span className={`${textClasses} text-zinc-700 dark:text-zinc-400`}>Live Updates</span>
           </div>
         );
       } else {
@@ -62,11 +62,11 @@ export const NavigationControls = memo(function NavigationControls({
       if (agentStatus === 'running') {
         return (
           <div
-            className={`${baseClasses} bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors cursor-pointer`}
+            className={`${baseClasses} bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors cursor-pointer`}
             onClick={onJumpToLive}
           >
-            <div className={`${dotClasses} bg-green-500 animate-pulse`} />
-            <span className={`${textClasses} text-green-700 dark:text-green-400`}>Jump to Live</span>
+            <div className={`${dotClasses} bg-blue-500 animate-pulse`} />
+            <span className={`${textClasses} text-zinc-700 dark:text-zinc-400`}>Jump to Live</span>
           </div>
         );
       } else {

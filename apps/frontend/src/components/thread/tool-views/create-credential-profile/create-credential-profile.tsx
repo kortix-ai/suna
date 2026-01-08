@@ -78,7 +78,7 @@ export function CreateCredentialProfileToolView({
     return {
       icon: isConnected ? Link2 : Link2Off,
       color: isConnected 
-        ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800'
+        ? 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700'
         : 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-300 dark:border-yellow-800',
       text: isConnected ? 'Connected' : 'Not Connected'
     };
@@ -95,7 +95,7 @@ export function CreateCredentialProfileToolView({
               className={cn(
                 "text-xs font-medium",
                 actualIsSuccess
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
+                  ? "bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
                   : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800"
               )}
             >
@@ -114,7 +114,7 @@ export function CreateCredentialProfileToolView({
         {isStreaming ? (
           <LoadingState
             icon={UserPlus}
-            iconColor="text-green-500 dark:text-green-400"
+            iconColor="text-zinc-500 dark:text-zinc-400"
             bgColor="bg-gradient-to-b from-green-100 to-green-50 shadow-inner dark:from-green-800/40 dark:to-green-900/60 dark:shadow-green-950/20"
             title="Creating credential profile"
             filePath={profile_name ? `"${profile_name}"` : undefined}
@@ -137,12 +137,12 @@ export function CreateCredentialProfileToolView({
                             target.style.display = 'none';
                             const parent = target.parentElement;
                             if (parent) {
-                              parent.innerHTML = `<div class="w-full h-full flex items-center justify-center"><svg class="w-6 h-6 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></div>`;
+                              parent.innerHTML = `<div class="w-full h-full flex items-center justify-center"><svg class="w-6 h-6 text-zinc-600 dark:text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></div>`;
                             }
                           }}
                         />
                       ) : (
-                        <User className="w-6 h-6 text-green-600 dark:text-green-400" />
+                        <User className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
                       )}
                     </div>
                     <div>
@@ -193,14 +193,14 @@ export function CreateCredentialProfileToolView({
                 </div>
 
                 {!profile.is_connected && (
-                  <div className="mt-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-3">
+                  <div className="mt-4 bg-zinc-50 dark:bg-zinc-900/20 border border-zinc-200 dark:border-zinc-700 rounded-xl p-3">
                     <div className="flex items-start gap-2">
-                      <Settings className="w-4 h-4 text-blue-600 dark:text-blue-400 mt-0.5" />
+                      <Settings className="w-4 h-4 text-zinc-600 dark:text-zinc-400 mt-0.5" />
                       <div>
-                        <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-1">
+                        <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-1">
                           Setup Required
                         </p>
-                        <p className="text-xs text-blue-700 dark:text-blue-300">
+                        <p className="text-xs text-zinc-700 dark:text-zinc-300">
                           This credential profile needs to be connected before it can be used. Follow the authentication flow to complete the setup.
                         </p>
                       </div>

@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends, Query # type: ignore
 from typing import Optional, Dict
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
-from core.services.supabase import DBConnection
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from ..shared.models import PurchaseCreditsRequest
@@ -135,104 +134,43 @@ async def get_credit_usage_by_thread(
     start_date: Optional[str] = Query(None, description="Start date in ISO format"),
     end_date: Optional[str] = Query(None, description="End date in ISO format")
 ) -> Dict:
+    from core.billing import repo as billing_repo
+    
     try:
-        db = DBConnection()
-        client = await db.client
-        
-        query = client.from_('credit_ledger')\
-            .select('thread_id, amount, created_at, description, metadata')\
-            .eq('account_id', account_id)\
-            .eq('type', 'usage')
-        
         period_days = None
+        start_dt = None
+        end_dt = None
         
         # Handle date filtering: prioritize start_date/end_date over days
         if start_date and end_date:
             try:
                 start_dt = datetime.fromisoformat(start_date.replace('Z', '+00:00'))
                 end_dt = datetime.fromisoformat(end_date.replace('Z', '+00:00'))
-                query = query.gte('created_at', start_dt.isoformat())
-                query = query.lte('created_at', end_dt.isoformat())
                 period_days = (end_dt - start_dt).days
                 logger.info(f"[BILLING] Filtering credit usage by date range: {start_dt.isoformat()} to {end_dt.isoformat()}")
             except ValueError as e:
                 logger.error(f"[BILLING] Invalid date format: {e}")
                 raise HTTPException(status_code=400, detail=f"Invalid date format: {e}")
         elif days:
-            since_date = datetime.now(timezone.utc) - timedelta(days=days)
-            query = query.gte('created_at', since_date.isoformat())
+            start_dt = datetime.now(timezone.utc) - timedelta(days=days)
+            end_dt = datetime.now(timezone.utc)
             period_days = days
             logger.info(f"[BILLING] Filtering credit usage by days: {days} days back from now")
         
-        usage_result = await query.order('created_at', desc=True).execute()
-        logger.info(f"[BILLING] Found {len(usage_result.data) if usage_result.data else 0} credit usage records for account {account_id}")
-        
-        thread_usage = {}
-        total_usage = 0.0
-        
-        if usage_result.data:
-            for record in usage_result.data:
-                # thread_id can be in the column OR in metadata (from atomic functions)
-                thread_id = record.get('thread_id')
-                if not thread_id and record.get('metadata'):
-                    thread_id = record['metadata'].get('thread_id')
-                
-                # Skip records without thread_id
-                if not thread_id:
-                    continue
-                
-                amount = abs(float(record['amount']))
-                total_usage += amount
-                
-                if thread_id not in thread_usage:
-                    thread_usage[thread_id] = {
-                        'thread_id': thread_id,
-                        'total_amount': 0.0,
-                        'usage_count': 0,
-                        'last_usage': record['created_at']
-                    }
-                
-                thread_usage[thread_id]['total_amount'] += amount
-                thread_usage[thread_id]['usage_count'] += 1
-        
-        sorted_threads = sorted(
-            thread_usage.values(), 
-            key=lambda x: x['last_usage'], 
-            reverse=True
+        # Get usage data from repo
+        paginated_threads, total_threads, total_usage = await billing_repo.get_credit_usage_by_thread_with_dates(
+            account_id=account_id,
+            limit=limit,
+            offset=offset,
+            start_date=start_dt,
+            end_date=end_dt
         )
         
-        total_threads = len(sorted_threads)
-        paginated_threads = sorted_threads[offset:offset + limit]
+        logger.info(f"[BILLING] Found {total_threads} threads with credit usage for account {account_id}")
         
-        # Fetch thread details to get project_id and project_name
+        # Fetch thread details
         thread_ids = [t['thread_id'] for t in paginated_threads]
-        thread_details = {}
-        if thread_ids:
-            threads_result = await client.from_('threads')\
-                .select('thread_id, project_id, created_at')\
-                .in_('thread_id', thread_ids)\
-                .execute()
-            
-            if threads_result.data:
-                for thread in threads_result.data:
-                    thread_details[thread['thread_id']] = {
-                        'project_id': thread.get('project_id'),
-                        'created_at': thread.get('created_at')
-                    }
-                
-                # Fetch project names for threads that have project_id
-                project_ids = [t['project_id'] for t in threads_result.data if t.get('project_id')]
-                if project_ids:
-                    projects_result = await client.from_('projects')\
-                        .select('project_id, name')\
-                        .in_('project_id', project_ids)\
-                        .execute()
-                    
-                    if projects_result.data:
-                        project_names = {p['project_id']: p.get('name', '') for p in projects_result.data}
-                        for thread in threads_result.data:
-                            if thread.get('project_id') in project_names:
-                                thread_details[thread['thread_id']]['project_name'] = project_names[thread['project_id']]
+        thread_details = await billing_repo.get_thread_details(thread_ids)
         
         # Transform to match frontend interface
         thread_usage_records = []
@@ -250,11 +188,8 @@ async def get_credit_usage_by_thread(
             })
         
         # Calculate start_date and end_date for summary
-        summary_start_date = start_date if start_date else None
-        summary_end_date = end_date if end_date else None
-        if not summary_start_date and days:
-            summary_start_date = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
-            summary_end_date = datetime.now(timezone.utc).isoformat()
+        summary_start_date = start_dt.isoformat() if start_dt else ''
+        summary_end_date = end_dt.isoformat() if end_dt else ''
         
         return {
             'thread_usage': thread_usage_records,
@@ -268,10 +203,12 @@ async def get_credit_usage_by_thread(
                 'total_credits_used': total_usage * CREDITS_PER_DOLLAR,
                 'total_threads': total_threads,
                 'period_days': period_days,
-                'start_date': summary_start_date or '',
-                'end_date': summary_end_date or ''
+                'start_date': summary_start_date,
+                'end_date': summary_end_date
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"[BILLING] Error getting credit usage by thread: {e}")
         raise HTTPException(status_code=500, detail=str(e))

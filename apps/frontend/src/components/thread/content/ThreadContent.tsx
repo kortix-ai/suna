@@ -1274,9 +1274,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
                   </div>
                   <div className="max-w-[90%] px-4 py-3 text-sm">
                     <div className="flex items-center gap-1.5 py-1">
-                      <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-150" />
-                      <div className="h-1.5 w-1.5 rounded-full bg-primary/50 animate-pulse delay-300" />
+                      <div className="h-4 w-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin" />
                     </div>
                   </div>
                 </div>

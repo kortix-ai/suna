@@ -122,7 +122,7 @@ export function TaskCompletedFeedback({
         {/* Task Completed Message with Rating */}
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <CheckCircle2 className="h-4 w-4 text-emerald-600 dark:text-emerald-400 flex-shrink-0" />
+            <CheckCircle2 className="h-4 w-4 text-zinc-600 dark:text-zinc-400 flex-shrink-0" />
             <p className="text-sm text-muted-foreground">
               {t('thread.taskCompleted')}
             </p>

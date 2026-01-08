@@ -20,9 +20,13 @@ async def count_running_agent_runs(account_id: str) -> Dict[str, Any]:
     if not result:
         return {"running_count": 0, "running_thread_ids": []}
     
+    # Convert UUIDs to strings for JSON serialization
+    thread_ids = result["running_thread_ids"] or []
+    thread_ids_str = [str(tid) for tid in thread_ids] if thread_ids else []
+    
     return {
         "running_count": result["running_count"] or 0,
-        "running_thread_ids": result["running_thread_ids"] or []
+        "running_thread_ids": thread_ids_str
     }
 
 

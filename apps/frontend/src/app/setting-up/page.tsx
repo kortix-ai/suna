@@ -146,7 +146,7 @@ export default function SettingUpPage() {
                     <div className="flex items-center gap-3">
                       <div className="flex flex-col gap-1">
                         <div className='flex items-center gap-2'>
-                          <div className="h-2.5 w-2.5 bg-blue-500 rounded-full animate-pulse"></div>
+                          <div className="h-2.5 w-2.5 border border-blue-500 border-t-transparent rounded-full animate-spin"></div>
                           <span className="text-base font-medium text-blue-400">Initializing</span>
                         </div>
                         <p className="text-base text-gray-400">Setting up your account...</p>

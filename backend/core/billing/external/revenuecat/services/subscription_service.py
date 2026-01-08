@@ -2,11 +2,11 @@ from typing import Dict, Tuple, Optional
 from decimal import Decimal
 from datetime import datetime, timezone
 from dateutil.relativedelta import relativedelta # type: ignore
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from ....credits.manager import credit_manager
 from ..repositories import SubscriptionRepository
 from ..utils import ProductMapper
+from core.billing import repo as billing_repo
 
 
 class SubscriptionService:
@@ -43,9 +43,7 @@ class SubscriptionService:
         subscription_id = event.get('original_transaction_id') or event.get('id', '')
         revenuecat_event_id = event.get('id')
         
-        db = DBConnection()
-        client = await db.client
-        existing_account = await SubscriptionRepository.get_credit_account(client, app_user_id)
+        existing_account = await SubscriptionRepository.get_credit_account(None, app_user_id)
         
         if existing_account:
             logger.info(f"[REVENUECAT] Existing account found, checking for Stripe subscription...")
@@ -93,20 +91,20 @@ class SubscriptionService:
         
         try:
             await SubscriptionRepository.update_account_tier(
-                client, app_user_id, tier_name, subscription_id, product_id,
+                None, app_user_id, tier_name, subscription_id, product_id,
                 plan_type=plan_type,
                 billing_cycle_anchor=billing_cycle_anchor,
                 next_credit_grant=next_credit_grant
             )
             
-            final_check = await client.from_('credit_accounts').select(
-                'balance, tier, provider, expiring_credits'
-            ).eq('account_id', app_user_id).execute()
+            final_check = await billing_repo.get_credit_account_balances(app_user_id)
             
-            if final_check.data:
-                final_balance = final_check.data[0].get('balance', 0)
-                final_tier = final_check.data[0].get('tier')
-                final_expiring = final_check.data[0].get('expiring_credits', 0)
+            if final_check:
+                final_balance = final_check.get('balance', 0)
+                final_expiring = final_check.get('expiring_credits', 0)
+                
+                tier_check = await billing_repo.get_credit_account_tier(app_user_id)
+                final_tier = tier_check.get('tier') if tier_check else None
                 
                 logger.info(
                     f"[REVENUECAT] Final verification: balance=${final_balance}, "
@@ -137,10 +135,7 @@ class SubscriptionService:
         product_id: str,
         webhook_data: Dict
     ) -> None:
-        db = DBConnection()
-        client = await db.client
-        
-        account = await SubscriptionRepository.get_credit_account(client, app_user_id)
+        account = await SubscriptionRepository.get_credit_account(None, app_user_id)
         pending_product = account.get('revenuecat_pending_change_product') if account else None
         pending_change_type = account.get('revenuecat_pending_change_type') if account else None
         
@@ -151,7 +146,7 @@ class SubscriptionService:
             )
             product_id = pending_product
             
-            await SubscriptionRepository.clear_pending_plan_change(client, app_user_id)
+            await SubscriptionRepository.clear_pending_plan_change(None, app_user_id)
         
         tier_name, tier_info = ProductMapper.get_tier_info(product_id)
         if not tier_info:
@@ -176,7 +171,7 @@ class SubscriptionService:
             next_grant = anchor_date + relativedelta(months=1)
             
             await SubscriptionRepository.update_renewal_data(
-                client, app_user_id,
+                None, app_user_id,
                 billing_cycle_anchor=anchor_date,
                 next_credit_grant=next_grant
             )
@@ -217,11 +212,8 @@ class SubscriptionService:
                 f"user cannot change until commitment ends"
             )
         
-        db = DBConnection()
-        client = await db.client
-        
         await SubscriptionRepository.schedule_plan_change(
-            client, app_user_id, new_product_id, change_date, change_type
+            None, app_user_id, new_product_id, change_date, change_type
         )
     
     @staticmethod

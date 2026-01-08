@@ -123,7 +123,7 @@ export function SearchMcpServersForAgentToolView({
                       <Filter className="w-3 h-3 mr-1" />
                       {search_query}
                     </Badge>
-                    <Badge variant="secondary" className="text-xs bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">
+                    <Badge variant="secondary" className="text-xs bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700">
                       <Package className="w-3 h-3 mr-1" />
                       {total_found} found
                     </Badge>

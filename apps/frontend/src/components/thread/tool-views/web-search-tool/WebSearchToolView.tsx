@@ -167,9 +167,9 @@ export function WebSearchToolView({
                         Query {safeQueryIndex + 1} of {batchResults.length}
                       </span>
                       {currentBatchItem.success ? (
-                        <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <CheckCircle className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
                       ) : (
-                        <AlertTriangle className="h-3.5 w-3.5 text-rose-600 dark:text-rose-400" />
+                        <AlertTriangle className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
                       )}
                       {name === 'image-search' && currentBatchItem.images?.length > 0 && (
                         <Badge variant="outline" className="text-xs font-normal h-4 px-1.5">
@@ -409,7 +409,7 @@ export function WebSearchToolView({
                               href={result.url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-md font-medium text-blue-600 dark:text-blue-400 hover:underline line-clamp-1 mb-1"
+                              className="text-md font-medium text-zinc-700 dark:text-zinc-300 hover:underline line-clamp-1 mb-1"
                             >
                               {truncateString(cleanUrl(result.title), 50)}
                             </a>

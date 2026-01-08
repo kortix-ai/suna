@@ -240,9 +240,9 @@ export function SpreadsheetViewer({
   const getSyncIcon = () => {
     switch (syncState.status) {
       case 'syncing':
-        return <Cloud className="w-3 h-3 text-blue-500 animate-pulse" />;
+        return <Cloud className="w-3 h-3 text-zinc-500 dark:text-zinc-400 animate-pulse" />;
       case 'synced':
-        return <Cloud className="w-3 h-3 text-emerald-500" />;
+        return <Cloud className="w-3 h-3 text-zinc-500 dark:text-zinc-400" />;
       case 'offline':
         return <CloudOff className="w-3 h-3 text-amber-500" />;
       case 'error':

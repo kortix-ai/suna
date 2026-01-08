@@ -21,8 +21,8 @@ interface LoadingStateProps {
 
 export function LoadingState({
   icon: Icon,
-  iconColor = 'text-purple-500 dark:text-purple-400',
-  bgColor = 'bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20',
+  iconColor = 'text-zinc-500 dark:text-zinc-400',
+  bgColor = 'bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20',
   title,
   subtitle,
   filePath,
@@ -52,13 +52,13 @@ export function LoadingState({
   return (
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] overflow-hidden scrollbar-hide py-12 px-6">
       <div className="text-center w-full max-w-sm">
-        <div className={cn("w-16 h-16 rounded-full mx-auto mb-6 flex items-center justify-center", bgColor)}>
+        <div className={cn("w-12 h-12 rounded-full mx-auto mb-6 flex items-center justify-center", bgColor)}>
           {useKortixLoader ? (
-            <KortixLoader customSize={32} />
+            <KortixLoader customSize={20} />
           ) : Icon ? (
-            <Icon className={cn("h-8 w-8", iconColor)} />
+            <Icon className={cn("h-5 w-5", iconColor)} />
           ) : (
-            <KortixLoader customSize={32} />
+            <KortixLoader customSize={20} />
           )}
         </div>
         

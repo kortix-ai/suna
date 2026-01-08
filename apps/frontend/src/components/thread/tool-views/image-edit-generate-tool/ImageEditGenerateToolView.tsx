@@ -11,12 +11,12 @@ import { useFileContentQuery } from '@/hooks/files/use-file-queries';
 import { VideoRenderer } from '@/components/file-renderers/video-renderer';
 
 const BLOB_COLORS = [
-  'from-purple-300/60 to-pink-300/60',
-  'from-blue-300/60 to-cyan-300/60',
-  'from-emerald-300/60 to-teal-300/60',
-  'from-orange-300/60 to-amber-300/60',
-  'from-rose-300/60 to-red-300/60',
-  'from-indigo-300/60 to-violet-300/60',
+  'from-zinc-300/60 to-zinc-400/60',
+  'from-zinc-350/60 to-zinc-450/60',
+  'from-neutral-300/60 to-neutral-400/60',
+  'from-stone-300/60 to-stone-400/60',
+  'from-gray-300/60 to-gray-400/60',
+  'from-slate-300/60 to-slate-400/60',
 ];
 
 function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
@@ -229,7 +229,7 @@ function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxI
   if (fetchError || (!videoBlob && !isLoading)) {
     return (
       <div className="aspect-video flex flex-col items-center justify-center p-6 text-center rounded-2xl border border-neutral-200 dark:border-neutral-700/50 bg-muted/30">
-        <AlertTriangle className="h-10 w-10 text-rose-500 dark:text-rose-400 mb-3" />
+        <AlertTriangle className="h-10 w-10 text-zinc-500 dark:text-zinc-400 mb-3" />
         <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
           Failed to load video
         </h3>
@@ -244,7 +244,7 @@ function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxI
   if (!videoUrl) {
     return (
       <div className="aspect-video flex flex-col items-center justify-center p-6 text-center rounded-2xl border border-neutral-200 dark:border-neutral-700/50 bg-muted/30">
-        <AlertTriangle className="h-10 w-10 text-rose-500 dark:text-rose-400 mb-3" />
+        <AlertTriangle className="h-10 w-10 text-zinc-500 dark:text-zinc-400 mb-3" />
         <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
           Failed to load video
         </h3>
@@ -259,7 +259,7 @@ function VideoRendererFull({ filePath, sandboxId }: { filePath: string; sandboxI
   if (hasVideoError) {
     return (
       <div className="aspect-video flex flex-col items-center justify-center p-6 text-center rounded-2xl border border-neutral-200 dark:border-neutral-700/50 bg-muted/30">
-        <AlertTriangle className="h-10 w-10 text-rose-500 dark:text-rose-400 mb-3" />
+        <AlertTriangle className="h-10 w-10 text-zinc-500 dark:text-zinc-400 mb-3" />
         <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
           Failed to play video
         </h3>
@@ -366,11 +366,11 @@ export function ImageEditGenerateToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-lg border shrink-0 bg-purple-200/60 dark:bg-purple-900 border-purple-300 dark:border-purple-700">
+            <div className="relative p-2 rounded-lg border shrink-0 bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700">
               {videoPath ? (
-                <VideoIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <VideoIcon className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
               ) : (
-                <ImageIcon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                <ImageIcon className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
               )}
             </div>
             <div>
@@ -402,8 +402,8 @@ export function ImageEditGenerateToolView({
         ) : hasActualError ? (
           /* Error State - Only after streaming complete AND actual failure */
           <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-rose-100 to-rose-50 dark:from-rose-800/40 dark:to-rose-900/60">
-              <AlertTriangle className="h-8 w-8 text-rose-500 dark:text-rose-400" />
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 bg-gradient-to-b from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-900/60">
+              <AlertTriangle className="h-8 w-8 text-zinc-500 dark:text-zinc-400" />
             </div>
             <h3 className="text-base font-medium text-zinc-900 dark:text-zinc-100 mb-2">
               Processing Failed

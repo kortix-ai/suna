@@ -5,8 +5,8 @@ from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel, Field
 from core.auth import require_admin, require_super_admin
 from core.billing.credits.manager import credit_manager
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
+from core.admin import repo
 import stripe
 from core.utils.config import config
 
@@ -67,19 +67,17 @@ async def adjust_user_credits(
                 raise HTTPException(status_code=400, detail=result.get('error', 'Insufficient balance'))
             new_balance = result['new_total']
         
-        db = DBConnection()
-        client = await db.client
-        await client.table('admin_audit_log').insert({
-            'admin_account_id': admin['user_id'],
-            'action': 'credit_adjustment',
-            'target_account_id': request.account_id,
-            'details': {
+        await repo.insert_admin_audit_log(
+            admin_account_id=admin['user_id'],
+            action='credit_adjustment',
+            target_account_id=request.account_id,
+            details={
                 'amount': float(request.amount),
                 'reason': request.reason,
                 'is_expiring': request.is_expiring,
                 'new_balance': float(new_balance)
             }
-        }).execute()
+        )
         
         logger.info(f"[ADMIN] Admin {admin['user_id']} adjusted credits for {request.account_id} by {request.amount} (expiring: {request.is_expiring})")
         
@@ -145,20 +143,15 @@ async def get_user_billing_summary(
     admin: dict = Depends(require_admin)
 ):
     balance_info = await credit_manager.get_balance(account_id)
-    db = DBConnection()
-    client = await db.client
     
-    transactions_result = await client.from_('credit_ledger').select('*').eq('account_id', account_id).order('created_at', desc=True).limit(20).execute()
-    
-    subscription_result = await client.schema('basejump').from_('billing_subscriptions').select('*').eq('account_id', account_id).order('created', desc=True).limit(1).execute()
-    
-    subscription = subscription_result.data[0] if subscription_result.data else None
+    recent_transactions = await repo.get_recent_transactions(account_id, limit=20)
+    subscription = await repo.get_billing_subscription(account_id)
     
     return {
         'account_id': account_id,
         'credit_account': balance_info,
         'subscription': subscription,
-        'recent_transactions': transactions_result.data or []
+        'recent_transactions': recent_transactions
     }
 
 @router.get("/user/{account_id}/transactions")
@@ -172,31 +165,17 @@ async def get_user_transactions(
     try:
         from core.utils.pagination import PaginationService, PaginationParams
         
-        db = DBConnection()
-        client = await db.client
-        
         pagination_params = PaginationParams(page=page, page_size=page_size)
         
-        # Get total count
-        count_query = client.from_('credit_ledger').select('*', count='exact').eq('account_id', account_id)
-        if type_filter:
-            count_query = count_query.eq('type', type_filter)
-        count_result = await count_query.execute()
-        total_count = count_result.count or 0
-        
-        # Get paginated transactions
-        offset = (pagination_params.page - 1) * pagination_params.page_size
-        transactions_query = client.from_('credit_ledger').select('*').eq('account_id', account_id)
-        
-        if type_filter:
-            transactions_query = transactions_query.eq('type', type_filter)
-            
-        transactions_result = await transactions_query.order('created_at', desc=True).range(
-            offset, offset + pagination_params.page_size - 1
-        ).execute()
+        transactions_data, total_count = await repo.get_user_transactions_paginated(
+            account_id=account_id,
+            page=page,
+            page_size=page_size,
+            type_filter=type_filter
+        )
         
         transactions = []
-        for tx in transactions_result.data or []:
+        for tx in transactions_data:
             transactions.append({
                 'id': tx.get('id'),
                 'created_at': tx.get('created_at'),

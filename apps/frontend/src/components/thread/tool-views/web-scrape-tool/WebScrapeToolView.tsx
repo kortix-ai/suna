@@ -264,14 +264,14 @@ export function WebScrapeToolView({
                                     Website
                                   </Badge>
                                   {actualIsSuccess && !isStreaming && (
-                                    <CheckCircle className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                                    <CheckCircle className="h-3.5 w-3.5 text-zinc-600 dark:text-zinc-400" />
                                   )}
                                 </div>
                                 <a
                                   href={urlItem}
                                   target="_blank"
                                   rel="noopener noreferrer"
-                                  className="text-md font-medium text-blue-600 dark:text-blue-400 hover:underline line-clamp-1 mb-1"
+                                  className="text-md font-medium text-zinc-700 dark:text-zinc-300 hover:underline line-clamp-1 mb-1"
                                 >
                                   {truncateString(urlItem, 60)}
                                 </a>
@@ -337,7 +337,7 @@ export function WebScrapeToolView({
                               onClick={() => copyFilePath(filePath)}
                               className={cn(
                                 "h-8 text-xs opacity-0 group-hover:opacity-100 transition-opacity",
-                                isCopied && "opacity-100 text-emerald-600 dark:text-emerald-400"
+                                isCopied && "opacity-100 text-zinc-600 dark:text-zinc-400"
                               )}
                             >
                               {isCopied ? (

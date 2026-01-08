@@ -10,16 +10,15 @@ interface UseKeyboardShortcutsProps {
 
 /**
  * Checks if user is currently focused on an editable element.
- * Returns true for editors, inputs, textareas, and contenteditable elements.
+ * Returns true for rich editors (TipTap/ProseMirror/CodeMirror, contenteditable).
+ *
+ * Note: We intentionally do NOT treat plain inputs/textareas as "editable" here.
+ * On the thread page, users almost always have focus in the chat textarea, and we
+ * still want Cmd+I / Cmd+B to reliably toggle the Kortix Computer / left sidebar.
  */
 function isEditableElementFocused(): boolean {
   const el = document.activeElement;
   if (!el) return false;
-
-  const tagName = el.tagName.toLowerCase();
-
-  // Input fields and textareas
-  if (tagName === 'input' || tagName === 'textarea') return true;
 
   // Contenteditable elements (TipTap/ProseMirror)
   if (el.getAttribute('contenteditable') === 'true') return true;

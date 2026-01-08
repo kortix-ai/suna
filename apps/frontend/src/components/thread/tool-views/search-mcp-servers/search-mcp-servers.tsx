@@ -61,16 +61,9 @@ export function SearchMcpServersToolView({
     assistantTimestamp
   );
 
-  const getAuthSchemeColor = (authSchemes: string[]) => {
-    if (authSchemes?.includes('OAUTH2')) {
-      return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800';
-    } else if (authSchemes?.includes('API_KEY')) {
-      return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800';
-    } else if (authSchemes?.includes('BEARER_TOKEN')) {
-      return 'bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800';
-    } else {
-      return 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-300 dark:border-gray-800';
-    }
+  const getAuthSchemeColor = (_authSchemes: string[]) => {
+    // All auth schemes use consistent gray styling
+    return 'bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700';
   };
 
   const getAuthSchemeIcon = (authSchemes: string[]) => {
@@ -118,8 +111,8 @@ export function SearchMcpServersToolView({
         {isStreaming ? (
           <LoadingState
             icon={Search}
-            iconColor="text-purple-500 dark:text-purple-400"
-            bgColor="bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20"
             title="Searching MCP servers"
             filePath={query ? `"${query}"` : undefined}
             showProgress={true}
@@ -160,7 +153,7 @@ export function SearchMcpServersToolView({
                         </div>
                         {hasOAuth && (
                           <div className="absolute -top-1 -right-1">
-                            <div className="bg-emerald-500 rounded-full p-1">
+                            <div className="bg-zinc-500 rounded-full p-1">
                               <Verified className="w-3 h-3 text-white" />
                             </div>
                           </div>
@@ -179,7 +172,7 @@ export function SearchMcpServersToolView({
                                   <Tooltip>
                                     <TooltipTrigger>
                                       <div className="flex items-center">
-                                        <Sparkles className="w-4 h-4 text-emerald-500" />
+                                        <Sparkles className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                                       </div>
                                     </TooltipTrigger>
                                     <TooltipContent>

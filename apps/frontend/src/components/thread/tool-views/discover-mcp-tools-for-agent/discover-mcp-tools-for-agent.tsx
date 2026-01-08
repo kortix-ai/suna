@@ -80,8 +80,8 @@ export function DiscoverMcpToolsForAgentToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
-              <Search className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <Search className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -115,8 +115,8 @@ export function DiscoverMcpToolsForAgentToolView({
         {isStreaming ? (
           <LoadingState
             icon={Search}
-            iconColor="text-purple-500 dark:text-purple-400"
-            bgColor="bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20"
             title="Discovering tools"
             filePath={profile_name ? `"${profile_name}"` : undefined}
             showProgress={true}
@@ -139,12 +139,12 @@ export function DiscoverMcpToolsForAgentToolView({
                             target.style.display = 'none';
                             const parent = target.parentElement;
                             if (parent) {
-                              parent.innerHTML = `<div class="w-full h-full flex items-center justify-center"><svg class="w-6 h-6 text-purple-600 dark:text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></div>`;
+                              parent.innerHTML = `<div class="w-full h-full flex items-center justify-center"><svg class="w-6 h-6 text-zinc-600 dark:text-zinc-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg></div>`;
                             }
                           }}
                         />
                       ) : (
-                        <Package className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                        <Package className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
                       )}
                     </div>
                     <div>
@@ -223,7 +223,7 @@ export function DiscoverMcpToolsForAgentToolView({
                         {tools.map((tool, index) => (
                           <div key={index} className="bg-muted/30 rounded-lg p-3 space-y-2">
                             <div className="flex items-center gap-2">
-                              <Wrench className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                              <Wrench className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
                               <h5 className="font-medium text-sm text-zinc-900 dark:text-zinc-100">
                                 {tool.name}
                               </h5>

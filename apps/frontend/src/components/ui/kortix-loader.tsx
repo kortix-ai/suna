@@ -11,7 +11,7 @@ interface KortixLoaderProps {
    */
   size?: 'small' | 'medium' | 'large' | 'xlarge';
   /**
-   * Animation speed multiplier
+   * Animation speed multiplier (affects spin duration)
    * @default 1.2
    */
   speed?: number;
@@ -58,10 +58,9 @@ const SIZE_MAP = {
 } as const;
 
 /**
- * KortixLoader - A unified loading animation component
+ * KortixLoader - A unified circular loading animation component
  * 
- * Uses separate Lottie animations (white and black) that dynamically load
- * based on the current theme or can be explicitly set.
+ * Uses a CSS-based circular spinner that adapts to light/dark themes.
  * 
  * **Automatic Behavior:**
  * - Light mode → Black loader (for white backgrounds)
@@ -70,10 +69,6 @@ const SIZE_MAP = {
  * **Manual Override (for special cases):**
  * Use the `variant` prop when the background doesn't match the theme.
  * For example, a dark button in light mode needs `variant="white"`.
- * 
- * **Files:**
- * - loading-white.json: White loader (for dark backgrounds)
- * - loading-black.json: Black loader (for light backgrounds)
  * 
  * @example
  * ```tsx
@@ -127,8 +122,21 @@ export function KortixLoader({
     effectiveVariant = isDark ? 'white' : 'black';
   }
 
-  // Don't render Lottie during SSR - render a simple placeholder instead
-  // This prevents any hydration mismatches
+  // Calculate border width based on size (roughly 1/16 of the size, min 2px)
+  const borderWidth = Math.max(2, Math.round(loaderSize / 16));
+  
+  // Calculate animation duration based on speed (lower = faster)
+  const animationDuration = 0.8 / speed;
+
+  // Colors based on variant
+  const borderColor = effectiveVariant === 'white' 
+    ? 'rgba(255, 255, 255, 0.15)' 
+    : 'rgba(0, 0, 0, 0.1)';
+  const spinnerColor = effectiveVariant === 'white' 
+    ? '#ffffff' 
+    : '#000000';
+
+  // Don't render during SSR - render a placeholder instead
   if (!mounted) {
     return (
       <div 
@@ -145,85 +153,29 @@ export function KortixLoader({
     );
   }
 
-  // Dynamically import Lottie only on client-side
   return (
     <div className={cn('flex items-center justify-center', className)} style={style}>
-      <LottieAnimation
-        loaderSize={loaderSize}
-        loop={loop}
-        autoPlay={autoPlay}
-        variant={effectiveVariant}
-        speed={speed}
+      <div
+        style={{
+          width: loaderSize,
+          height: loaderSize,
+          border: `${borderWidth}px solid ${borderColor}`,
+          borderTopColor: spinnerColor,
+          borderRadius: '50%',
+          animation: autoPlay && loop 
+            ? `kortix-spin ${animationDuration}s linear infinite` 
+            : autoPlay 
+              ? `kortix-spin ${animationDuration}s linear` 
+              : 'none',
+        }}
       />
+      <style jsx>{`
+        @keyframes kortix-spin {
+          to {
+            transform: rotate(360deg);
+          }
+        }
+      `}</style>
     </div>
   );
 }
-
-// Separate client-only Lottie component
-function LottieAnimation({
-  loaderSize,
-  loop,
-  autoPlay,
-  variant,
-  speed,
-}: {
-  loaderSize: number;
-  loop: boolean;
-  autoPlay: boolean;
-  variant: 'white' | 'black';
-  speed: number;
-}) {
-  const lottieRef = React.useRef<any>(null);
-  const [Lottie, setLottie] = React.useState<any>(null);
-  const [animationData, setAnimationData] = React.useState<any>(null);
-
-  // Dynamically import Lottie and correct animation based on variant
-  React.useEffect(() => {
-    // Reset animation data when variant changes
-    setAnimationData(null);
-    
-    Promise.all([
-      import('lottie-react'),
-      variant === 'white'
-        ? import('@/assets/animations/loading-white.json')
-        : import('@/assets/animations/loading-black.json')
-    ]).then(([lottieModule, animData]) => {
-      setLottie(() => lottieModule.default);
-      setAnimationData(animData.default);
-    });
-  }, [variant]); // Reload when variant changes
-
-  // Ensure animation starts from beginning when loaded
-  React.useEffect(() => {
-    if (lottieRef.current) {
-      lottieRef.current.goToAndPlay(0, true);
-      lottieRef.current.setSpeed(speed);
-    }
-  }, [animationData, speed]);
-
-  // Show placeholder while loading
-  if (!Lottie || !animationData) {
-    return (
-      <div 
-        style={{ 
-          width: loaderSize, 
-          height: loaderSize 
-        }} 
-      />
-    );
-  }
-
-  return (
-    <Lottie
-      lottieRef={lottieRef}
-      animationData={animationData}
-      loop={loop}
-      autoplay={autoPlay}
-      style={{ 
-        width: loaderSize, 
-        height: loaderSize
-      }}
-    />
-  );
-}
-

@@ -231,7 +231,7 @@ async def get_checkout_session(
     """
     Retrieve checkout session details from Stripe.
     Used to get actual transaction amounts after checkout completes (for analytics).
-    Returns amount_total, discount, coupon, and promotion code info.
+    Returns amount_total, discount, coupon, promotion code, and balance_transaction_id (txn_xxx).
     """
     try:
         # Validate session_id format (starts with cs_)
@@ -253,6 +253,7 @@ async def get_checkout_session(
         coupon_id = None
         coupon_name = None
         promotion_code = None  # The customer-facing code (e.g., "HEHE2020")
+        balance_transaction_id = None  # txn_xxx for linking to Stripe balance
         
         # Get discount and tax amounts from total_details
         if session.total_details:
@@ -278,6 +279,38 @@ async def get_checkout_session(
                 coupon_id = discount.coupon.id
                 coupon_name = discount.coupon.name
         
+        # Get balance_transaction_id (txn_xxx) - the Stripe balance transaction ID
+        # Path depends on checkout mode:
+        # - subscription: session → subscription → latest_invoice → charge → balance_transaction
+        # - payment: session → payment_intent → latest_charge → balance_transaction
+        try:
+            if session.subscription:
+                # Subscription mode: get via subscription's latest invoice
+                sub = await stripe.Subscription.retrieve_async(
+                    session.subscription,
+                    expand=['latest_invoice.charge.balance_transaction']
+                )
+                if (sub.latest_invoice and 
+                    hasattr(sub.latest_invoice, 'charge') and sub.latest_invoice.charge and
+                    hasattr(sub.latest_invoice.charge, 'balance_transaction') and sub.latest_invoice.charge.balance_transaction):
+                    bt = sub.latest_invoice.charge.balance_transaction
+                    if hasattr(bt, 'id'):
+                        balance_transaction_id = bt.id
+            elif session.payment_intent:
+                # Payment mode: get via payment intent's latest charge
+                pi = await stripe.PaymentIntent.retrieve_async(
+                    session.payment_intent,
+                    expand=['latest_charge.balance_transaction']
+                )
+                if (pi.latest_charge and 
+                    hasattr(pi.latest_charge, 'balance_transaction') and pi.latest_charge.balance_transaction):
+                    bt = pi.latest_charge.balance_transaction
+                    if hasattr(bt, 'id'):
+                        balance_transaction_id = bt.id
+        except Exception as e:
+            # Log but don't fail - balance_transaction is optional for analytics
+            logger.warning(f"[BILLING] Could not retrieve balance_transaction: {e}")
+        
         return {
             'session_id': session_id,
             'amount_total': amount_total,           # Final amount in cents (after discounts and tax)
@@ -288,6 +321,7 @@ async def get_checkout_session(
             'coupon_id': coupon_id,                 # Internal Stripe coupon ID
             'coupon_name': coupon_name,             # Coupon display name
             'promotion_code': promotion_code,       # Customer-facing code (e.g., "HEHE2020")
+            'balance_transaction_id': balance_transaction_id,  # txn_xxx for Stripe balance
             'status': session.status,
             'payment_status': session.payment_status
         }

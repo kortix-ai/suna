@@ -1,16 +1,12 @@
 from typing import Dict, Optional
 from datetime import datetime, timezone
 from core.utils.logger import logger
-
+from core.billing import repo as billing_repo
 
 class SubscriptionRepository:
     @staticmethod
     async def get_credit_account(client, app_user_id: str) -> Optional[Dict]:
-        result = await client.from_('credit_accounts').select('*').eq(
-            'account_id', app_user_id
-        ).execute()
-        
-        return result.data[0] if result.data else None
+        return await billing_repo.get_credit_account(app_user_id)
     
     @staticmethod
     async def update_account_tier(
@@ -29,12 +25,10 @@ class SubscriptionRepository:
             f"plan={plan_type}, anchor={billing_cycle_anchor}, next_grant={next_credit_grant}"
         )
         
-        before_result = await client.from_('credit_accounts').select(
-            'tier, provider, revenuecat_subscription_id, revenuecat_product_id'
-        ).eq('account_id', app_user_id).execute()
+        before_result = await billing_repo.get_credit_account_with_scheduling(app_user_id)
         
-        if before_result.data:
-            logger.info(f"[REVENUECAT] Current state BEFORE update: {before_result.data[0]}")
+        if before_result:
+            logger.info(f"[REVENUECAT] Current state BEFORE update: {before_result}")
         else:
             logger.warning(f"[REVENUECAT] No credit_account found for {app_user_id}")
         
@@ -61,36 +55,15 @@ class SubscriptionRepository:
         logger.info(f"[REVENUECAT] Executing update with data: {update_data}")
         
         try:
-            result = await client.from_('credit_accounts').update(update_data).eq(
-                'account_id', app_user_id
-            ).execute()
+            await billing_repo.update_credit_account(app_user_id, update_data)
             
             logger.info(f"[REVENUECAT] Update executed, checking result...")
             
-            if not result.data or len(result.data) == 0:
-                logger.error(
-                    f"[REVENUECAT] ❌ Update returned no data! "
-                    f"This means no rows were updated for account {app_user_id}"
-                )
-                
-                exists_check = await client.from_('credit_accounts').select('account_id').eq(
-                    'account_id', app_user_id
-                ).execute()
-                
-                if not exists_check.data:
-                    logger.error(f"[REVENUECAT] ❌ Account {app_user_id} does NOT exist in credit_accounts!")
-                else:
-                    logger.error(f"[REVENUECAT] ❌ Account exists but update failed silently")
-            else:
-                logger.info(f"[REVENUECAT] ✅ Update returned data: {result.data}")
+            after_result = await billing_repo.get_credit_account(app_user_id)
             
-            after_result = await client.from_('credit_accounts').select(
-                'tier, provider, revenuecat_subscription_id, revenuecat_product_id'
-            ).eq('account_id', app_user_id).execute()
-            
-            if after_result.data:
-                final_state = after_result.data[0]
-                logger.info(f"[REVENUECAT] Current state AFTER update: {final_state}")
+            if after_result:
+                final_state = after_result
+                logger.info(f"[REVENUECAT] Current state AFTER update: tier={final_state.get('tier')}")
                 
                 if final_state.get('tier') != tier_name:
                     logger.error(
@@ -100,14 +73,12 @@ class SubscriptionRepository:
                     )
                     
                     logger.info(f"[REVENUECAT] 🔄 Retrying tier update to fix race condition...")
-                    retry_update = await client.from_('credit_accounts').update({
+                    await billing_repo.update_credit_account(app_user_id, {
                         'tier': tier_name,
                         'provider': 'revenuecat',
                         'updated_at': datetime.now(timezone.utc).isoformat()
-                    }).eq('account_id', app_user_id).execute()
-                    
-                    if retry_update.data:
-                        logger.info(f"[REVENUECAT] ✅ Retry successful, tier is now: {retry_update.data[0].get('tier')}")
+                    })
+                    logger.info(f"[REVENUECAT] ✅ Retry completed")
             
         except Exception as e:
             logger.error(f"[REVENUECAT] ❌ Exception during update: {e}", exc_info=True)
@@ -115,7 +86,7 @@ class SubscriptionRepository:
     
     @staticmethod
     async def mark_subscription_as_cancelled(
-        client,
+        client,  # Kept for backwards compatibility, unused
         app_user_id: str,
         expiration_at_ms: Optional[int]
     ) -> None:
@@ -133,9 +104,7 @@ class SubscriptionRepository:
                 f"then will be switched to Stripe free tier"
             )
         
-        await client.from_('credit_accounts').update(update_data).eq(
-            'account_id', app_user_id
-        ).execute()
+        await billing_repo.update_credit_account(app_user_id, update_data)
         
         logger.info(
             f"[REVENUECAT CANCELLATION] Cancellation scheduled for {app_user_id}. "
@@ -144,11 +113,11 @@ class SubscriptionRepository:
     
     @staticmethod
     async def clear_cancellation(client, app_user_id: str) -> None:
-        await client.from_('credit_accounts').update({
+        await billing_repo.update_credit_account(app_user_id, {
             'revenuecat_cancelled_at': None,
             'revenuecat_cancel_at_period_end': None,
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', app_user_id).execute()
+        })
         
         logger.info(
             f"[REVENUECAT UNCANCELLATION] Cleared scheduled cancellation for {app_user_id}. "
@@ -157,7 +126,7 @@ class SubscriptionRepository:
     
     @staticmethod
     async def transition_to_free_tier(client, app_user_id: str) -> None:
-        await client.from_('credit_accounts').update({
+        await billing_repo.update_credit_account(app_user_id, {
             'stripe_subscription_id': None,
             'revenuecat_subscription_id': None,
             'revenuecat_cancelled_at': None,
@@ -167,24 +136,24 @@ class SubscriptionRepository:
             'provider': 'stripe',
             'tier': 'free',
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', app_user_id).execute()
+        })
         
         logger.info(f"[REVENUECAT EXPIRATION] Cleared subscription data for {app_user_id}")
     
     @staticmethod
     async def schedule_plan_change(
-        client,
+        client,  # Kept for backwards compatibility, unused
         app_user_id: str,
         new_product_id: str,
         change_date: datetime,
         change_type: str
     ) -> None:
-        await client.from_('credit_accounts').update({
+        await billing_repo.update_credit_account(app_user_id, {
             'revenuecat_pending_change_product': new_product_id,
             'revenuecat_pending_change_date': change_date.isoformat(),
             'revenuecat_pending_change_type': change_type,
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', app_user_id).execute()
+        })
         
         logger.info(
             f"[REVENUECAT PRODUCT_CHANGE] ⏰ Scheduled {change_type} to {new_product_id} "
@@ -194,16 +163,11 @@ class SubscriptionRepository:
     
     @staticmethod
     async def clear_pending_plan_change(client, app_user_id: str) -> None:
-        await client.from_('credit_accounts').update({
-            'revenuecat_pending_change_product': None,
-            'revenuecat_pending_change_date': None,
-            'revenuecat_pending_change_type': None,
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', app_user_id).execute()
+        await billing_repo.clear_revenuecat_pending_change(app_user_id)
     
     @staticmethod
     async def update_renewal_data(
-        client,
+        client,  # Kept for backwards compatibility, unused
         app_user_id: str,
         billing_cycle_anchor: datetime = None,
         next_credit_grant: datetime = None
@@ -218,14 +182,14 @@ class SubscriptionRepository:
         if next_credit_grant:
             update_data['next_credit_grant'] = next_credit_grant.isoformat()
         
-        await client.from_('credit_accounts').update(update_data).eq('account_id', app_user_id).execute()
+        await billing_repo.update_credit_account(app_user_id, update_data)
     
     @staticmethod
     async def update_tier_only(client, app_user_id: str, tier_name: str) -> None:
-        await client.from_('credit_accounts').update({
+        await billing_repo.update_credit_account(app_user_id, {
             'tier': tier_name,
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', app_user_id).execute()
+        })
         
         logger.info(f"[REVENUECAT RENEWAL] Updated tier to {tier_name} for {app_user_id}")
     
@@ -238,13 +202,12 @@ class SubscriptionRepository:
     ) -> None:
         product_id = customer_info.get('active_subscriptions', [None])[0]
         
-        await client.from_('credit_accounts').update({
+        await billing_repo.update_credit_account(account_id, {
             'tier': tier_name,
             'provider': 'revenuecat',
             'revenuecat_customer_id': customer_info.get('original_app_user_id'),
             'revenuecat_product_id': product_id,
             'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', account_id).execute()
+        })
         
         logger.info(f"[REVENUECAT SYNC] Synced tier {tier_name} (product: {product_id}) for {account_id}")
-

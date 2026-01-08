@@ -663,7 +663,7 @@ Example of correct tool call format (multiple invokes in one block):
             return None
         
         try:
-            from core.agents.runs import get_cached_file_context, format_file_context_for_agent
+            from core.files import get_cached_file_context, format_file_context_for_agent
             
             files = await get_cached_file_context(thread_id)
             if files:

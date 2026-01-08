@@ -3,7 +3,6 @@ from typing import Dict
 import json
 from core.utils.logger import logger
 from core.utils.distributed_lock import WebhookLock
-from core.services.supabase import DBConnection
 from .utils import SignatureVerifier, ProductMapper
 from .repositories import SubscriptionRepository
 from .handlers import (
@@ -133,9 +132,7 @@ class RevenueCatService:
                 logger.warning(f"[REVENUECAT VERIFY] Unknown product {product_id}, will process")
                 return True
             
-            db = DBConnection()
-            client = await db.client
-            account = await SubscriptionRepository.get_credit_account(client, app_user_id)
+            account = await SubscriptionRepository.get_credit_account(None, app_user_id)
             
             if not account:
                 logger.info(f"[REVENUECAT VERIFY] No account found for {app_user_id} - needs processing")

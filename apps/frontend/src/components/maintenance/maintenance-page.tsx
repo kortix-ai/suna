@@ -63,7 +63,7 @@ export function MaintenancePage() {
                 <div className="flex items-center gap-3">
                   <div className="flex flex-col gap-1">
                     <div className='flex items-center gap-2'>
-                      <div className="h-2.5 w-2.5 bg-red-500 rounded-full animate-pulse"></div>
+                      <div className="h-2.5 w-2.5 rounded-full border border-red-500 border-t-transparent animate-spin"></div>
                       <span className="text-base font-medium text-red-400">Services Offline</span>
                     </div>
                     <p className="text-base text-gray-400">All Worker executions are currently paused.</p>
