@@ -419,6 +419,8 @@
     "emptyActionsDescription": "Les actions du Worker apparaîtront ici",
     "toolIsRunning": "L'outil est en cours d'exécution",
     "toolCurrentlyExecuting": "{toolName} est en cours d'exécution. Les résultats apparaîtront ici une fois terminé.",
+    "thinkingTitle": "Réflexion",
+    "thinkingDescription": "Préparation des actions...",
     "rateThisResult": "Évaluer ce résultat",
     "feedbackHelpsImprove": "Vos commentaires nous aident à nous améliorer",
     "additionalFeedbackOptional": "Commentaire supplémentaire (optionnel)",

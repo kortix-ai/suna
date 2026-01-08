@@ -4,21 +4,22 @@ import { useSmoothText } from '@/hooks/messages';
 
 interface StreamingTextProps {
   content: string;
+  isStreaming?: boolean;
 }
 
 export const StreamingText: React.FC<StreamingTextProps> = ({
   content,
+  isStreaming = true,
 }) => {
-  // Apply smooth typewriter effect: reveal text at ~50 chars/second
-  const smoothContent = useSmoothText(content, 50, true);
-
-  if (!smoothContent) {
+  // STREAMING OPTIMIZATION: Display content immediately without typewriter animation
+  // This ensures real-time streaming without artificial delays
+  if (!content) {
     return null;
   }
 
   return (
     <div className="break-words overflow-hidden">
-      <ComposioUrlDetector content={smoothContent.text} isStreaming={smoothContent.isAnimating} />
+      <ComposioUrlDetector content={content} isStreaming={isStreaming} />
     </div>
   );
 };

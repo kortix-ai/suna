@@ -557,13 +557,23 @@ function ThumbnailPreview({
     );
   }
   
-  // For plain text, show text preview
+  // For plain text, show text preview (scaled down like markdown for better readability)
   if (isText && textContent && !hasError) {
     return (
-      <div className="w-full h-full overflow-hidden bg-white dark:bg-zinc-900 p-2">
-        <pre className="text-[8px] text-foreground leading-[1.3] whitespace-pre-wrap break-words overflow-hidden h-full font-mono">
-          {textContent.slice(0, 1500)}
-        </pre>
+      <div className="w-full h-full overflow-hidden bg-zinc-50 dark:bg-zinc-900 p-2">
+        <div 
+          className="overflow-hidden h-full origin-top-left"
+          style={{ 
+            transform: 'scale(0.55)', 
+            transformOrigin: 'top left',
+            width: '182%',
+            height: '182%'
+          }}
+        >
+          <pre className="text-xs font-mono text-foreground leading-relaxed whitespace-pre-wrap break-words">
+            {textContent.slice(0, 1500)}
+          </pre>
+        </div>
       </div>
     );
   }
