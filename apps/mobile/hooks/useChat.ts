@@ -962,15 +962,16 @@ export function useChat(): UseChatReturn {
   ]);
 
   const stopAgent = useCallback(async () => {
-    if (agentRunId) {
-      console.log('[useChat] 🛑 Stopping agent run:', agentRunId);
-      
-      const runIdToStop = agentRunId;
-      
-      setAgentRunId(null);
-      
-      await stopStreaming();
-      
+    // Use local agentRunId or fallback to the streaming hook's run ID
+    const runIdToStop = agentRunId || currentHookRunId;
+    
+    console.log('[useChat] 🛑 Stopping agent run:', runIdToStop, '(local:', agentRunId, ', hook:', currentHookRunId, ')');
+    
+    // Always clear local state and stop streaming
+    setAgentRunId(null);
+    await stopStreaming();
+    
+    if (runIdToStop) {
       try {
         await stopAgentRunMutation.mutateAsync(runIdToStop);
         console.log('[useChat] ✅ Backend stop confirmed');
@@ -984,8 +985,10 @@ export function useChat(): UseChatReturn {
       } catch (error) {
         console.error('[useChat] ❌ Error stopping agent:', error);
       }
+    } else {
+      console.log('[useChat] ⚠️ No run ID to stop, but streaming was stopped');
     }
-  }, [agentRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
+  }, [agentRunId, currentHookRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
 
   const addAttachment = useCallback((attachment: Attachment) => {
     setAttachments(prev => [...prev, attachment]);

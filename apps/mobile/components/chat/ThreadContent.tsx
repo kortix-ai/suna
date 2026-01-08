@@ -40,10 +40,10 @@ import { useAgent } from '@/contexts/AgentContext';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
-import { AgentLoader } from './AgentLoader';
 import { CheckCircle2, AlertCircle, Info, CircleDashed } from 'lucide-react-native';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { KortixLogo } from '@/components/ui/KortixLogo';
+import { AgentLoader } from './AgentLoader';
 import { StreamingToolCard } from './StreamingToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
@@ -655,6 +655,8 @@ interface ThreadContentProps {
   agentName?: string;
   /** Handler to auto-fill chat input with a prompt (for follow-up prompts) */
   onPromptFill?: (prompt: string) => void;
+  /** Whether a message is currently being sent (optimistic state) */
+  isSendingMessage?: boolean;
 }
 
 interface MessageGroup {
@@ -680,6 +682,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     sandboxUrl,
     agentName = 'Kortix',
     onPromptFill,
+    isSendingMessage = false,
   }) => {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
@@ -1516,10 +1519,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           // If already streaming, don't show - content will appear in the groupedMessages
           if (hasStreamingContent) return null;
           
-          // Contemplating = user sent message, agent not yet active
-          // Thinking = agent is active but no content streamed yet
-          const isContemplating = !isAgentActive;
-          const isThinking = isAgentActive;
+          // If nothing is happening and not sending, don't show anything (canceled/idle)
+          if (!isSendingMessage && !isAgentActive) return null;
+          
+          // Contemplating = sending message, waiting for server (before agent starts)
+          // AgentLoader = agent is active but no content yet
+          const isContemplating = isSendingMessage && !isAgentActive;
           
           return (
             <View className="mb-6">

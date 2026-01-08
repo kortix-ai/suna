@@ -1,6 +1,5 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useLanguage } from '@/contexts';
 import { AudioLines, CornerDownLeft, Paperclip, X } from 'lucide-react-native';
 import { StopIcon } from '@/components/ui/StopIcon';
@@ -116,6 +115,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const [contentHeight, setContentHeight] = React.useState(0);
   const [isFocused, setIsFocused] = React.useState(false);
   const [selection, setSelection] = React.useState({ start: 0, end: 0 });
+  const [isStopping, setIsStopping] = React.useState(false);
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
 
@@ -126,6 +126,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const hasAgent = !!agent?.agent_id;
   // Allow input to be editable during streaming - only disable when sending or transcribing
   const isDisabled = isSendingMessage || isTranscribing;
+  
+  // Reset stopping state when activity stops
+  React.useEffect(() => {
+    if (!isAgentRunning && !isSendingMessage && !isTranscribing) {
+      setIsStopping(false);
+    }
+  }, [isAgentRunning, isSendingMessage, isTranscribing]);
 
 
   // Memoized placeholder
@@ -288,29 +295,43 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Main button press handler
   const handleButtonPress = React.useCallback(() => {
-    if (isAgentRunning) {
+    console.log('[ChatInput] 🔘 Button pressed!', { isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping });
+    
+    // Priority 1: Stop if agent is running OR if we're in sending/transcribing state
+    if (isAgentRunning || isSendingMessage || isTranscribing) {
+      console.log('[ChatInput] 🛑 Calling onStopAgentRun (isAgentRunning:', isAgentRunning, ', isSendingMessage:', isSendingMessage, ')');
+      setIsStopping(true);
       onStopAgentRun?.();
-    } else if (isRecording) {
+      return;
+    }
+    
+    // Priority 2: Handle recording
+    if (isRecording) {
       handleSendAudioMessage();
-    } else if (hasContent) {
+      return;
+    }
+    
+    // Priority 3: Send message if has content
+    if (hasContent) {
       if (!hasAgent) {
         console.warn('⚠️ No agent selected - cannot send message');
         return;
       }
       handleSendMessage();
-    } else {
-      // Start audio recording
-      if (!isAuthenticated) {
-        console.warn('⚠️ User not authenticated - cannot record audio');
-        return;
-      }
-      if (!hasAgent) {
-        console.warn('⚠️ No agent selected - cannot record audio');
-        return;
-      }
-      onAudioRecord?.();
+      return;
     }
-  }, [isAgentRunning, isRecording, hasContent, hasAgent, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
+    
+    // Priority 4: Start audio recording
+    if (!isAuthenticated) {
+      console.warn('⚠️ User not authenticated - cannot record audio');
+      return;
+    }
+    if (!hasAgent) {
+      console.warn('⚠️ No agent selected - cannot record audio');
+      return;
+    }
+    onAudioRecord?.();
+  }, [isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
   // Content size change handler - debounced via ref comparison
   const handleContentSizeChange = React.useCallback(
@@ -434,6 +455,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             isSendingMessage={isSendingMessage}
             isTranscribing={isTranscribing}
             isAgentRunning={isAgentRunning}
+            isStopping={isStopping}
             ButtonIcon={ButtonIcon}
             buttonIconSize={buttonIconSize}
             buttonIconClass={buttonIconClass}
@@ -533,6 +555,7 @@ interface NormalModeProps {
   isSendingMessage: boolean;
   isTranscribing: boolean;
   isAgentRunning: boolean;
+  isStopping: boolean;
   ButtonIcon: React.ComponentType<any>;
   buttonIconSize: number;
   buttonIconClass: string;
@@ -562,6 +585,7 @@ const NormalMode = React.memo(({
   isSendingMessage,
   isTranscribing,
   isAgentRunning,
+  isStopping,
   ButtonIcon,
   buttonIconSize,
   buttonIconClass,
@@ -631,14 +655,14 @@ const NormalMode = React.memo(({
           onPress={() => {
             onButtonPress();
           }}
-          disabled={isSendingMessage || isTranscribing || !hasAgent}
-          style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: (!hasAgent && !isAgentRunning) ? 0.4 : 1 }}
-          className={isAgentRunning ? 'bg-foreground' : 'bg-primary'}
+          disabled={isStopping || (!hasAgent && !isAgentRunning && !isSendingMessage)}
+          style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isStopping ? 0.5 : ((!hasAgent && !isAgentRunning && !isSendingMessage) ? 0.4 : 1) }}
+          className={(isAgentRunning || isSendingMessage || isTranscribing || isStopping) ? 'bg-foreground' : 'bg-primary'}
           hitSlop={ANDROID_HIT_SLOP}
           activeOpacity={0.7}
         >
-          {isSendingMessage || isTranscribing ? (
-            <KortixLoader size="small" customSize={16} forceTheme="dark" />
+          {(isSendingMessage || isTranscribing || isAgentRunning || isStopping) ? (
+            <StopIcon size={14} className="text-background" />
           ) : (
             ButtonIcon === StopIcon ? (
               <StopIcon size={buttonIconSize} className={buttonIconClass} />

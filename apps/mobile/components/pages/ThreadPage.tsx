@@ -637,6 +637,7 @@ export function ThreadPage({
                 onToolPress={handleToolPress}
                 onFilePress={handleFilePress}
                 onPromptFill={chat.setInputValue}
+                isSendingMessage={chat.isSendingMessage}
               />
             )}
           </ScrollView>
