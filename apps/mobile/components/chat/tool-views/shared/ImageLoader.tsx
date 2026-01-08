@@ -10,6 +10,35 @@ interface ImageLoaderProps extends Omit<ImageProps, 'source'> {
   showLoadingState?: boolean;
 }
 
+/**
+ * Sanitize image URL by encoding special characters that may cause loading issues
+ */
+function sanitizeImageUrl(url: string): string {
+  try {
+    // Check if URL is already valid
+    new URL(url);
+    
+    // Split URL into base and path parts
+    const urlObj = new URL(url);
+    
+    // Encode path segments individually to handle special characters
+    const pathParts = urlObj.pathname.split('/');
+    const encodedPath = pathParts.map(part => {
+      // Only encode if it contains special characters that aren't already encoded
+      if (part.includes(' ') || part.includes('(') || part.includes(')')) {
+        return encodeURIComponent(decodeURIComponent(part));
+      }
+      return part;
+    }).join('/');
+    
+    urlObj.pathname = encodedPath;
+    return urlObj.toString();
+  } catch {
+    // If URL parsing fails, return original
+    return url;
+  }
+}
+
 export function ImageLoader({
   source,
   className = '',
@@ -20,6 +49,16 @@ export function ImageLoader({
   const isDark = colorScheme === 'dark';
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+
+  // Sanitize the URL if it's a string URI
+  const sanitizedSource = React.useMemo(() => {
+    if (typeof source === 'object' && 'uri' in source && typeof source.uri === 'string') {
+      const sanitized = sanitizeImageUrl(source.uri);
+      console.log('[ImageLoader] Sanitized URL:', { original: source.uri.substring(0, 80), sanitized: sanitized.substring(0, 80) });
+      return { uri: sanitized };
+    }
+    return source;
+  }, [source]);
 
   return (
     <View className={`relative ${className}`}>
@@ -35,13 +74,18 @@ export function ImageLoader({
       ) : (
         <RNImage
           {...imageProps}
-          source={source}
+          source={sanitizedSource}
           onLoadStart={() => {
+            console.log('[ImageLoader] onLoadStart:', sanitizedSource);
             setLoading(true);
             setError(false);
           }}
-          onLoadEnd={() => setLoading(false)}
-          onError={() => {
+          onLoadEnd={() => {
+            console.log('[ImageLoader] ✅ onLoadEnd - image loaded successfully');
+            setLoading(false);
+          }}
+          onError={(e) => {
+            console.log('[ImageLoader] ❌ onError:', e.nativeEvent);
             setLoading(false);
             setError(true);
           }}

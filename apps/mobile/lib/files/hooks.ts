@@ -512,10 +512,56 @@ export function useDownloadSandboxFile() {
 // Utilities
 // ============================================================================
 
-export async function blobToDataURL(blob: Blob): Promise<string> {
+/**
+ * Get proper mime type from file extension
+ */
+function getMimeTypeFromExtension(extension: string): string | null {
+  const mimeTypes: Record<string, string> = {
+    // Images
+    'jpg': 'image/jpeg',
+    'jpeg': 'image/jpeg',
+    'png': 'image/png',
+    'gif': 'image/gif',
+    'webp': 'image/webp',
+    'svg': 'image/svg+xml',
+    'bmp': 'image/bmp',
+    'ico': 'image/x-icon',
+    'heic': 'image/heic',
+    'heif': 'image/heif',
+    // Videos
+    'mp4': 'video/mp4',
+    'webm': 'video/webm',
+    'mov': 'video/quicktime',
+    'avi': 'video/x-msvideo',
+  };
+  return mimeTypes[extension.toLowerCase()] || null;
+}
+
+/**
+ * Convert blob to data URL, optionally fixing the mime type based on file extension
+ */
+export async function blobToDataURL(blob: Blob, filePath?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload = () => {
+      let dataUrl = reader.result as string;
+      
+      // If the blob has application/octet-stream mime type and we have a file path,
+      // try to fix the mime type based on the file extension
+      if (blob.type === 'application/octet-stream' && filePath) {
+        const ext = filePath.split('.').pop()?.toLowerCase() || '';
+        const correctMimeType = getMimeTypeFromExtension(ext);
+        if (correctMimeType) {
+          // Replace the incorrect mime type in the data URL
+          dataUrl = dataUrl.replace(
+            'data:application/octet-stream',
+            `data:${correctMimeType}`
+          );
+        }
+      }
+      
+      resolve(dataUrl);
+    };
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
