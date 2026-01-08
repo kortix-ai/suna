@@ -89,10 +89,18 @@ TRANSIENT_ERRORS = (
 
 
 def serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        k: str(v) if isinstance(v, uuid.UUID) else v.isoformat() if isinstance(v, datetime) else v
-        for k, v in row.items()
-    }
+    from decimal import Decimal
+    result = {}
+    for k, v in row.items():
+        if isinstance(v, uuid.UUID):
+            result[k] = str(v)
+        elif isinstance(v, datetime):
+            result[k] = v.isoformat()
+        elif isinstance(v, Decimal):
+            result[k] = float(v)
+        else:
+            result[k] = v
+    return result
 
 
 def serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:

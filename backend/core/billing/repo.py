@@ -518,3 +518,442 @@ async def update_trial_end(account_id: str, ended_at, converted: bool = True) ->
         "ended_at": ended_at_str,
         "converted": converted
     })
+
+
+# =============================================================================
+# CREDIT MANAGER REPOSITORY FUNCTIONS
+# =============================================================================
+
+async def atomic_add_credits(
+    account_id: str,
+    amount: float,
+    is_expiring: bool,
+    description: str,
+    expires_at: Optional[str],
+    credit_type: Optional[str],
+    stripe_event_id: Optional[str],
+    idempotency_key: str
+) -> Optional[Dict[str, Any]]:
+    """Call atomic_add_credits RPC function."""
+    sql = """
+    SELECT * FROM atomic_add_credits(
+        CAST(:p_account_id AS uuid),
+        CAST(:p_amount AS numeric(10,2)),
+        :p_is_expiring,
+        :p_description,
+        CAST(:p_expires_at AS timestamptz),
+        :p_type,
+        :p_stripe_event_id,
+        :p_idempotency_key
+    )
+    """
+    return await execute_one(sql, {
+        "p_account_id": account_id,
+        "p_amount": amount,
+        "p_is_expiring": is_expiring,
+        "p_description": description,
+        "p_expires_at": expires_at,
+        "p_type": credit_type,
+        "p_stripe_event_id": stripe_event_id,
+        "p_idempotency_key": idempotency_key
+    }, commit=True)
+
+
+async def atomic_reset_expiring_credits(
+    account_id: str,
+    new_credits: float,
+    description: str,
+    stripe_event_id: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """Call atomic_reset_expiring_credits RPC function."""
+    sql = """
+    SELECT * FROM atomic_reset_expiring_credits(
+        CAST(:p_account_id AS uuid),
+        CAST(:p_new_credits AS numeric(10,2)),
+        :p_description,
+        :p_stripe_event_id
+    )
+    """
+    return await execute_one(sql, {
+        "p_account_id": account_id,
+        "p_new_credits": new_credits,
+        "p_description": description,
+        "p_stripe_event_id": stripe_event_id
+    }, commit=True)
+
+
+async def atomic_use_credits(
+    account_id: str,
+    amount: float,
+    description: str,
+    thread_id: Optional[str],
+    message_id: Optional[str]
+) -> Optional[Dict[str, Any]]:
+    """Call atomic_use_credits RPC function."""
+    sql = """
+    SELECT * FROM atomic_use_credits(
+        CAST(:p_account_id AS uuid),
+        CAST(:p_amount AS numeric(10,2)),
+        :p_description,
+        :p_thread_id,
+        :p_message_id
+    )
+    """
+    return await execute_one(sql, {
+        "p_account_id": account_id,
+        "p_amount": amount,
+        "p_description": description,
+        "p_thread_id": thread_id,
+        "p_message_id": message_id
+    }, commit=True)
+
+
+async def get_credit_account_balance(account_id: str) -> Optional[Dict[str, Any]]:
+    """Get credit account balance."""
+    sql = "SELECT balance FROM credit_accounts WHERE account_id = :account_id"
+    result = await execute_one(sql, {"account_id": account_id})
+    return serialize_row(result) if result else None
+
+
+async def get_credit_account_balances(account_id: str) -> Optional[Dict[str, Any]]:
+    """Get credit account balance breakdown."""
+    sql = """
+    SELECT balance, expiring_credits, non_expiring_credits
+    FROM credit_accounts
+    WHERE account_id = :account_id
+    """
+    result = await execute_one(sql, {"account_id": account_id})
+    return serialize_row(result) if result else None
+
+
+async def update_credit_account_balances(
+    account_id: str,
+    expiring_credits: float,
+    non_expiring_credits: float,
+    balance: float
+) -> None:
+    """Update credit account balance fields."""
+    from core.services.db import execute_mutate
+    
+    sql = """
+    UPDATE credit_accounts
+    SET expiring_credits = :expiring_credits,
+        non_expiring_credits = :non_expiring_credits,
+        balance = :balance,
+        updated_at = :updated_at
+    WHERE account_id = :account_id
+    """
+    await execute_mutate(sql, {
+        "account_id": account_id,
+        "expiring_credits": expiring_credits,
+        "non_expiring_credits": non_expiring_credits,
+        "balance": balance,
+        "updated_at": datetime.now(timezone.utc).isoformat()
+    })
+
+
+async def insert_credit_ledger(
+    account_id: str,
+    amount: float,
+    balance_after: float,
+    ledger_type: str,
+    description: str,
+    is_expiring: bool,
+    expires_at: str,
+    metadata: Dict[str, Any],
+    stripe_event_id: Optional[str] = None,
+    ledger_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Insert a credit ledger entry."""
+    from core.services.db import execute_mutate
+    import uuid
+    
+    entry_id = ledger_id or str(uuid.uuid4())
+    
+    # execute_mutate uses _prep_params which handles dict→JSON serialization
+    sql = """
+    INSERT INTO credit_ledger (
+        id, account_id, amount, balance_after, type, description, 
+        is_expiring, expires_at, metadata, stripe_event_id
+    )
+    VALUES (
+        :id, :account_id, :amount, :balance_after, :type, :description,
+        :is_expiring, :expires_at, :metadata, :stripe_event_id
+    )
+    RETURNING *
+    """
+    
+    rows = await execute_mutate(sql, {
+        "id": entry_id,
+        "account_id": account_id,
+        "amount": amount,
+        "balance_after": balance_after,
+        "type": ledger_type,
+        "description": description,
+        "is_expiring": is_expiring,
+        "expires_at": expires_at,
+        "metadata": metadata,  # _prep_params will serialize this
+        "stripe_event_id": stripe_event_id
+    })
+    return rows[0] if rows else None
+
+
+async def insert_credit_ledger_with_balance(
+    ledger_id: str,
+    account_id: str,
+    amount: float,
+    balance_after: float,
+    ledger_type: str,
+    description: str,
+    is_expiring: bool = False,
+    expires_at: Optional[str] = None,
+    stripe_event_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None,
+    thread_id: Optional[str] = None,
+    message_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Insert a credit ledger entry with balance_after (required field)."""
+    from core.services.db import execute_mutate
+    
+    sql = """
+    INSERT INTO credit_ledger (
+        id, account_id, amount, balance_after, type, description, 
+        is_expiring, expires_at, stripe_event_id, metadata, thread_id, message_id
+    )
+    VALUES (
+        :id, :account_id, :amount, :balance_after, :type, :description,
+        :is_expiring, :expires_at, :stripe_event_id, :metadata, :thread_id, :message_id
+    )
+    RETURNING *
+    """
+    
+    rows = await execute_mutate(sql, {
+        "id": ledger_id,
+        "account_id": account_id,
+        "amount": amount,
+        "balance_after": balance_after,
+        "type": ledger_type,
+        "description": description,
+        "is_expiring": is_expiring,
+        "expires_at": expires_at,
+        "stripe_event_id": stripe_event_id,
+        "metadata": metadata,
+        "thread_id": thread_id,
+        "message_id": message_id
+    })
+    return rows[0] if rows else None
+
+
+async def add_credits_and_update_account(
+    account_id: str,
+    amount: float,
+    ledger_type: str,
+    description: str,
+    is_expiring: bool = False,
+    expires_at: Optional[str] = None,
+    stripe_event_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Add credits to an account - updates credit_accounts balance and inserts ledger entry.
+    This is a manual fallback when atomic functions are not available.
+    """
+    from core.services.db import transaction, _prep_params
+    import uuid
+    
+    ledger_id = str(uuid.uuid4())
+    
+    async with transaction() as session:
+        from sqlalchemy import text
+        
+        # Get current balance
+        result = await session.execute(
+            text("SELECT balance, expiring_credits, non_expiring_credits FROM credit_accounts WHERE account_id = :account_id FOR UPDATE"),
+            {"account_id": account_id}
+        )
+        row = result.fetchone()
+        
+        if not row:
+            raise ValueError(f"Account {account_id} not found")
+        
+        current_balance = float(row[0])
+        current_expiring = float(row[1])
+        current_non_expiring = float(row[2])
+        
+        new_balance = current_balance + amount
+        if is_expiring:
+            new_expiring = current_expiring + amount
+            new_non_expiring = current_non_expiring
+        else:
+            new_expiring = current_expiring
+            new_non_expiring = current_non_expiring + amount
+        
+        # Update account balance
+        await session.execute(
+            text("""
+                UPDATE credit_accounts 
+                SET balance = :balance, 
+                    expiring_credits = :expiring_credits,
+                    non_expiring_credits = :non_expiring_credits,
+                    updated_at = NOW()
+                WHERE account_id = :account_id
+            """),
+            {
+                "account_id": account_id,
+                "balance": new_balance,
+                "expiring_credits": new_expiring,
+                "non_expiring_credits": new_non_expiring
+            }
+        )
+        
+        # Insert ledger entry - use _prep_params to properly serialize dict to JSON
+        await session.execute(
+            text("""
+                INSERT INTO credit_ledger (
+                    id, account_id, amount, balance_after, type, description,
+                    is_expiring, expires_at, stripe_event_id, metadata
+                )
+                VALUES (
+                    :id, :account_id, :amount, :balance_after, :type, :description,
+                    :is_expiring, :expires_at, :stripe_event_id, :metadata
+                )
+            """),
+            _prep_params({
+                "id": ledger_id,
+                "account_id": account_id,
+                "amount": amount,
+                "balance_after": new_balance,
+                "type": ledger_type,
+                "description": description,
+                "is_expiring": is_expiring,
+                "expires_at": expires_at,
+                "stripe_event_id": stripe_event_id,
+                "metadata": metadata
+            })
+        )
+    
+    return {
+        "ledger_id": ledger_id,
+        "new_balance": new_balance,
+        "amount_added": amount
+    }
+
+
+async def deduct_credits_and_update_account(
+    account_id: str,
+    amount: float,
+    description: str,
+    ledger_type: str = 'usage',
+    thread_id: Optional[str] = None,
+    message_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    """
+    Deduct credits from an account - updates credit_accounts balance and inserts ledger entry.
+    This is a manual fallback when atomic functions are not available.
+    """
+    from core.services.db import transaction, _prep_params
+    import uuid
+    
+    ledger_id = str(uuid.uuid4())
+    
+    async with transaction() as session:
+        from sqlalchemy import text
+        
+        # Get current balance
+        result = await session.execute(
+            text("SELECT balance, expiring_credits, non_expiring_credits FROM credit_accounts WHERE account_id = :account_id FOR UPDATE"),
+            {"account_id": account_id}
+        )
+        row = result.fetchone()
+        
+        if not row:
+            raise ValueError(f"Account {account_id} not found")
+        
+        current_balance = float(row[0])
+        current_expiring = float(row[1])
+        current_non_expiring = float(row[2])
+        
+        # Deduct from expiring first, then non-expiring
+        from_expiring = min(amount, current_expiring)
+        from_non_expiring = amount - from_expiring
+        
+        new_balance = current_balance - amount
+        new_expiring = current_expiring - from_expiring
+        new_non_expiring = current_non_expiring - from_non_expiring
+        
+        # Update account balance
+        await session.execute(
+            text("""
+                UPDATE credit_accounts 
+                SET balance = :balance, 
+                    expiring_credits = :expiring_credits,
+                    non_expiring_credits = :non_expiring_credits,
+                    updated_at = NOW()
+                WHERE account_id = :account_id
+            """),
+            {
+                "account_id": account_id,
+                "balance": new_balance,
+                "expiring_credits": new_expiring,
+                "non_expiring_credits": new_non_expiring
+            }
+        )
+        
+        # Build metadata - include thread_id and message_id
+        full_metadata = metadata.copy() if metadata else {}
+        if thread_id:
+            full_metadata['thread_id'] = thread_id
+        if message_id:
+            full_metadata['message_id'] = message_id
+        
+        # Insert ledger entry (negative amount for deduction)
+        # Use _prep_params to properly serialize dict to JSON
+        await session.execute(
+            text("""
+                INSERT INTO credit_ledger (
+                    id, account_id, amount, balance_after, type, description,
+                    metadata, thread_id, message_id
+                )
+                VALUES (
+                    :id, :account_id, :amount, :balance_after, :type, :description,
+                    :metadata, :thread_id, :message_id
+                )
+            """),
+            _prep_params({
+                "id": ledger_id,
+                "account_id": account_id,
+                "amount": -amount,  # Negative for deduction
+                "balance_after": new_balance,
+                "type": ledger_type,
+                "description": description,
+                "metadata": full_metadata if full_metadata else None,
+                "thread_id": thread_id,
+                "message_id": message_id
+            })
+        )
+    
+    return {
+        "ledger_id": ledger_id,
+        "new_balance": new_balance,
+        "amount_deducted": amount,
+        "from_expiring": from_expiring,
+        "from_non_expiring": from_non_expiring
+    }
+
+
+async def expire_existing_credits(account_id: str) -> None:
+    """Expire all existing expiring credits for an account."""
+    from core.services.db import execute_mutate
+    
+    sql = """
+    UPDATE credits
+    SET expires_at = :current_time, is_expired = true
+    WHERE account_id = :account_id 
+      AND is_expiring = true 
+      AND is_expired IS NOT true
+    """
+    await execute_mutate(sql, {
+        "account_id": account_id,
+        "current_time": datetime.now(timezone.utc).isoformat()
+    })
