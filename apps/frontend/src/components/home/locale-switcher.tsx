@@ -48,10 +48,10 @@ export function LocaleSwitcher({ variant = 'compact' }: LocaleSwitcherProps) {
       >
         <SelectTrigger 
           size="sm"
-          className="h-7 px-2.5 w-fit min-w-[60px] border-0 bg-transparent hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50 text-muted-foreground/60 transition-all duration-200 shadow-none"
+          className="h-8 px-2.5 w-fit min-w-[60px] border-0 bg-transparent hover:bg-accent/50 hover:text-foreground text-muted-foreground transition-all duration-300 ease-out shadow-none"
         >
           <div className="flex items-center gap-1.5">
-            <Globe className="size-3.5" />
+            <Globe className="size-3.5 opacity-70" />
             <SelectValue>
               {languageCodes[locale as Locale] || locale.toUpperCase()}
             </SelectValue>
