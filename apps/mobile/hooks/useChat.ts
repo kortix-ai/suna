@@ -665,30 +665,49 @@ export function useChat(): UseChatReturn {
       if (!currentThreadId) {
         console.log('[useChat] Creating new thread via /agent/start with optimistic UI');
         
+        // Store attachments before clearing for optimistic display
+        const pendingAttachments = [...attachments];
+        
+        // Build optimistic content with attachment placeholders for preview
+        let optimisticContent = content;
+        if (pendingAttachments.length > 0) {
+          const attachmentRefs = pendingAttachments
+            .map(a => `[Pending Attachment: ${a.name}]`)
+            .join('\n');
+          optimisticContent = content ? `${content}\n\n${attachmentRefs}` : attachmentRefs;
+        }
+        
         const optimisticUserMessage: UnifiedMessage = {
           message_id: 'optimistic-user-' + Date.now(),
           thread_id: 'optimistic',
           type: 'user',
-          content: JSON.stringify({ content }),
-          metadata: JSON.stringify({}),
+          content: JSON.stringify({ content: optimisticContent }),
+          metadata: JSON.stringify({ 
+            pendingAttachments: pendingAttachments.map(a => ({
+              uri: a.uri,
+              name: a.name,
+              type: a.type,
+              size: a.size,
+            }))
+          }),
           is_llm_message: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
         setMessages([optimisticUserMessage]);
         setIsNewThreadOptimistic(true);
-        console.log('✨ [useChat] INSTANT user message display');
-        
-        // Convert attachments before clearing (we need the data)
-        const formDataFiles = attachments.length > 0
-          ? await convertAttachmentsToFormDataFiles(attachments)
-          : [];
-        
-        console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
+        console.log('✨ [useChat] INSTANT user message display with', pendingAttachments.length, 'attachments');
         
         // Clear input and attachments immediately for instant feedback
         setInputValue('');
         setAttachments([]);
+        
+        // Convert attachments for upload (we need the data)
+        const formDataFiles = pendingAttachments.length > 0
+          ? await convertAttachmentsToFormDataFiles(pendingAttachments)
+          : [];
+        
+        console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
         
         // Append hidden context for selected quick action options
         let messageWithContext = content;
@@ -800,12 +819,31 @@ export function useChat(): UseChatReturn {
       } else {
         console.log('[useChat] Sending to existing thread:', currentThreadId);
         
+        // Store attachments before clearing for upload
+        const pendingAttachments = [...attachments];
+        
+        // Build optimistic content with attachment placeholders for preview
+        let optimisticContent = content;
+        if (pendingAttachments.length > 0) {
+          const attachmentRefs = pendingAttachments
+            .map(a => `[Pending Attachment: ${a.name}]`)
+            .join('\n');
+          optimisticContent = content ? `${content}\n\n${attachmentRefs}` : attachmentRefs;
+        }
+        
         const optimisticUserMessage: UnifiedMessage = {
           message_id: 'optimistic-user-' + Date.now(),
           thread_id: currentThreadId,
           type: 'user',
-          content: JSON.stringify({ content }),
-          metadata: JSON.stringify({}),
+          content: JSON.stringify({ content: optimisticContent }),
+          metadata: JSON.stringify({ 
+            pendingAttachments: pendingAttachments.map(a => ({
+              uri: a.uri,
+              name: a.name,
+              type: a.type,
+              size: a.size,
+            }))
+          }),
           is_llm_message: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -814,8 +852,9 @@ export function useChat(): UseChatReturn {
         setMessages((prev) => [...prev, optimisticUserMessage]);
         console.log('✨ [useChat] INSTANT user message display for existing thread');
         
-        // Clear input immediately for instant feedback
+        // Clear input and attachments immediately for instant feedback
         setInputValue('');
+        setAttachments([]);
         
         setIsNewThreadOptimistic(true);
         
@@ -833,7 +872,7 @@ export function useChat(): UseChatReturn {
           console.log('[useChat] Appended image style context:', selectedQuickActionOption);
         }
         
-        if (attachments.length > 0) {
+        if (pendingAttachments.length > 0) {
           const sandboxId = activeSandboxId;
           
           if (!sandboxId) {
@@ -845,10 +884,10 @@ export function useChat(): UseChatReturn {
             return;
           }
           
-          console.log('[useChat] Uploading', attachments.length, 'files to sandbox:', sandboxId);
+          console.log('[useChat] Uploading', pendingAttachments.length, 'files to sandbox:', sandboxId);
           
           try {
-            const filesToUpload = await convertAttachmentsToFormDataFiles(attachments);
+            const filesToUpload = await convertAttachmentsToFormDataFiles(pendingAttachments);
             
             const uploadResults = await uploadFilesMutation.mutateAsync({
               sandboxId,
@@ -869,9 +908,6 @@ export function useChat(): UseChatReturn {
               : fileReferences;
               
             console.log('[useChat] Message with file references prepared');
-            
-            // Clear attachments after successful upload
-            setAttachments([]);
           } catch (uploadError) {
             console.error('[useChat] File upload failed:', uploadError);
             
@@ -881,9 +917,6 @@ export function useChat(): UseChatReturn {
             );
             return;
           }
-        } else {
-          // No attachments - clear anyway to be safe
-          setAttachments([]);
         }
         
         if (!currentModel) {

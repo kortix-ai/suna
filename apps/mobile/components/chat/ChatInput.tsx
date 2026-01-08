@@ -11,8 +11,10 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
-  withRepeat
+  withRepeat,
+  runOnJS,
 } from 'react-native-reanimated';
+import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { Attachment } from '@/hooks/useChat';
 import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
@@ -21,6 +23,9 @@ import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './Ma
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
+
+// Threshold for swipe down to dismiss keyboard (in pixels)
+const SWIPE_DOWN_THRESHOLD = 30;
 
 // Spring config - defined once outside component
 const SPRING_CONFIG = { damping: 15, stiffness: 400 };
@@ -118,6 +123,32 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const [isStopping, setIsStopping] = React.useState(false);
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
+
+  // Helper to dismiss keyboard - needs to be called from worklet via runOnJS
+  const dismissKeyboard = React.useCallback(() => {
+    Keyboard.dismiss();
+  }, []);
+
+  // Swipe down gesture to dismiss keyboard
+  // Only triggers on downward swipe with enough velocity/distance
+  const swipeDownGesture = React.useMemo(() => 
+    Gesture.Pan()
+      .onEnd((event) => {
+        // Only dismiss if:
+        // 1. Swipe is primarily downward (translationY > threshold)
+        // 2. Swipe is more vertical than horizontal
+        // 3. Velocity is downward
+        const isDownwardSwipe = event.translationY > SWIPE_DOWN_THRESHOLD;
+        const isVertical = Math.abs(event.translationY) > Math.abs(event.translationX);
+        const hasDownwardVelocity = event.velocityY > 0;
+        
+        if (isDownwardSwipe && isVertical && hasDownwardVelocity) {
+          runOnJS(dismissKeyboard)();
+        }
+      })
+      .minDistance(SWIPE_DOWN_THRESHOLD)
+      .activeOffsetY(SWIPE_DOWN_THRESHOLD) // Only activate on downward movement
+  , [dismissKeyboard]);
 
   // Derived values - computed once per render
   const hasText = !!(value && value.trim());
@@ -411,60 +442,62 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const buttonIconClass = isAgentRunning ? "text-background" : "text-primary-foreground";
 
   return (
-    <View
-      className="relative rounded-[30px] overflow-hidden bg-card border border-border"
-      style={containerStyle}
-      collapsable={false}
-      {...props}
-    >
-      <View className="absolute inset-0" />
-      <View className="p-4 flex-1" collapsable={false}>
-        {isRecording ? (
-          <RecordingMode
-            audioLevels={audioLevels}
-            recordingStatusText={recordingStatusText}
-            cancelAnimatedStyle={cancelAnimatedStyle}
-            stopAnimatedStyle={stopAnimatedStyle}
-            onCancelPressIn={handleCancelPressIn}
-            onCancelPressOut={handleCancelPressOut}
-            onCancelRecording={onCancelRecording}
-            onStopPressIn={handleStopPressIn}
-            onStopPressOut={handleStopPressOut}
-            onSendAudio={handleSendAudioMessage}
-          />
-        ) : (
-          <NormalMode
-            textInputRef={textInputRef}
-            value={value}
-            onChangeText={onChangeText}
-            effectivePlaceholder={effectivePlaceholder}
-            placeholderTextColor={placeholderTextColor}
-            isDisabled={isDisabled}
-            textInputStyle={textInputStyle}
-            handleContentSizeChange={handleContentSizeChange}
-            attachButtonStyle={attachButtonStyle}
-            onAttachPressIn={handleAttachPressIn}
-            onAttachPressOut={handleAttachPressOut}
-            onAttachPress={onAttachPress}
-            onAgentPress={onAgentPress}
-            sendAnimatedStyle={sendAnimatedStyle}
-            rotationAnimatedStyle={rotationAnimatedStyle}
-            onSendPressIn={handleSendPressIn}
-            onSendPressOut={handleSendPressOut}
-            onButtonPress={handleButtonPress}
-            isSendingMessage={isSendingMessage}
-            isTranscribing={isTranscribing}
-            isAgentRunning={isAgentRunning}
-            isStopping={isStopping}
-            ButtonIcon={ButtonIcon}
-            buttonIconSize={buttonIconSize}
-            buttonIconClass={buttonIconClass}
-            isAuthenticated={isAuthenticated}
-            hasAgent={hasAgent}
-          />
-        )}
+    <GestureDetector gesture={swipeDownGesture}>
+      <View
+        className="relative rounded-[30px] overflow-hidden bg-card border border-border"
+        style={containerStyle}
+        collapsable={false}
+        {...props}
+      >
+        <View className="absolute inset-0" />
+        <View className="p-4 flex-1" collapsable={false}>
+          {isRecording ? (
+            <RecordingMode
+              audioLevels={audioLevels}
+              recordingStatusText={recordingStatusText}
+              cancelAnimatedStyle={cancelAnimatedStyle}
+              stopAnimatedStyle={stopAnimatedStyle}
+              onCancelPressIn={handleCancelPressIn}
+              onCancelPressOut={handleCancelPressOut}
+              onCancelRecording={onCancelRecording}
+              onStopPressIn={handleStopPressIn}
+              onStopPressOut={handleStopPressOut}
+              onSendAudio={handleSendAudioMessage}
+            />
+          ) : (
+            <NormalMode
+              textInputRef={textInputRef}
+              value={value}
+              onChangeText={onChangeText}
+              effectivePlaceholder={effectivePlaceholder}
+              placeholderTextColor={placeholderTextColor}
+              isDisabled={isDisabled}
+              textInputStyle={textInputStyle}
+              handleContentSizeChange={handleContentSizeChange}
+              attachButtonStyle={attachButtonStyle}
+              onAttachPressIn={handleAttachPressIn}
+              onAttachPressOut={handleAttachPressOut}
+              onAttachPress={onAttachPress}
+              onAgentPress={onAgentPress}
+              sendAnimatedStyle={sendAnimatedStyle}
+              rotationAnimatedStyle={rotationAnimatedStyle}
+              onSendPressIn={handleSendPressIn}
+              onSendPressOut={handleSendPressOut}
+              onButtonPress={handleButtonPress}
+              isSendingMessage={isSendingMessage}
+              isTranscribing={isTranscribing}
+              isAgentRunning={isAgentRunning}
+              isStopping={isStopping}
+              ButtonIcon={ButtonIcon}
+              buttonIconSize={buttonIconSize}
+              buttonIconClass={buttonIconClass}
+              isAuthenticated={isAuthenticated}
+              hasAgent={hasAgent}
+            />
+          )}
+        </View>
       </View>
-    </View>
+    </GestureDetector>
   );
 }));
 

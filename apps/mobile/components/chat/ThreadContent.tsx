@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, Pressable, Linking, Text as RNText, TextInput, Platform, ScrollView } from 'react-native';
+import { View, Pressable, Linking, Text as RNText, TextInput, Platform, ScrollView, Image } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import { useSmoothText } from '@agentpress/shared/animations';
 
@@ -1139,9 +1139,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               }
             })();
 
-            // Match both formats:
+            // Match all attachment formats:
             // 1. [Uploaded File: path] - from existing thread uploads
             // 2. [Attached: filename (size) -> path] - from new thread creation with files
+            // 3. [Pending Attachment: name] - optimistic messages (local URIs in metadata)
             const uploadedFileMatches = messageContent.match(/\[Uploaded File: (.*?)\]/g) || [];
             const attachedFileMatches = messageContent.match(/\[Attached: .*? -> (.*?)\]/g) || [];
             
@@ -1156,13 +1157,55 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               }),
             ].filter(Boolean);
 
+            // Parse pending attachments from metadata (for optimistic messages)
+            let pendingAttachments: Array<{ uri: string; name: string; type: string; size?: number }> = [];
+            try {
+              const metadata = typeof message.metadata === 'string' 
+                ? JSON.parse(message.metadata) 
+                : message.metadata;
+              if (metadata?.pendingAttachments) {
+                pendingAttachments = metadata.pendingAttachments;
+              }
+            } catch {
+              // Ignore parse errors
+            }
+
             const cleanContent = messageContent
               .replace(/\[Uploaded File: .*?\]/g, '')
               .replace(/\[Attached: .*? -> .*?\]/g, '')
+              .replace(/\[Pending Attachment: .*?\]/g, '')
               .trim();
 
             return (
               <View key={group.key} className="mb-6">
+                {/* Render pending attachments (local URIs from optimistic messages) */}
+                {pendingAttachments.length > 0 && (
+                  <View className="flex-row flex-wrap justify-end gap-2 mb-2">
+                    {pendingAttachments.map((attachment, idx) => (
+                      <View
+                        key={`pending-${idx}`}
+                        className="rounded-2xl overflow-hidden border border-border"
+                        style={{ width: 120, height: 120 }}
+                      >
+                        {attachment.type?.startsWith('image/') ? (
+                          <Image
+                            source={{ uri: attachment.uri }}
+                            style={{ width: '100%', height: '100%' }}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <View className="flex-1 items-center justify-center bg-card">
+                            <Text className="text-xs text-muted-foreground text-center px-2" numberOfLines={2}>
+                              {attachment.name}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {/* Render server-side attachments */}
                 {renderStandaloneAttachments(
                   attachments as string[],
                   sandboxId,
