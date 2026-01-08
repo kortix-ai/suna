@@ -235,7 +235,7 @@ class CreditManager:
             raise Exception("Failed to insert new credit record")
         
         # Insert ledger record
-        ledger_result = await billing_repo.insert_credit_ledger_simple(
+        ledger_result = await billing_repo.insert_credit_ledger_with_credit_id(
             ledger_id=ledger_id,
             account_id=account_id,
             amount=float(new_credits),
