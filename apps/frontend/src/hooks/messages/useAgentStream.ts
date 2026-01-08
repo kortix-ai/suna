@@ -161,14 +161,14 @@ export function useAgentStream(
     onToolOutputStream: callbacks.onToolOutputStream,
   };
 
-  // Use the core hook
+  // Use the core hook - immediate mode for real-time streaming without delay
   const coreResult = useAgentStreamCore(
     config,
     coreCallbacks,
     threadId,
     setMessages,
     queryClient,
-    { type: 'raf' } // Frontend uses RAF throttling
+    { type: 'immediate' } // Immediate updates for real-time streaming
   );
 
   // Convert TextChunk[] to string for compatibility with existing components
