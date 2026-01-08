@@ -70,7 +70,7 @@ export function patchMarkdownTextInputHeight() {
   try {
     // Get the original component's prototype or defaultProps
     const OriginalComponent = MarkdownTextInput as any;
-    
+
     // We need to wrap the component to intercept props
     // Store reference to original
     originalRender = OriginalComponent.render?.bind(OriginalComponent);
@@ -89,7 +89,7 @@ export function patchMarkdownTextInputHeight() {
         const originalHeight = event.nativeEvent.contentSize.height;
         const reduction = getReductionFactor(value || '');
         const adjustedHeight = originalHeight * (1 - reduction);
-
+            
         // Create modified event with adjusted height
         const modifiedEvent = {
           ...event,
@@ -104,7 +104,7 @@ export function patchMarkdownTextInputHeight() {
 
         originalCallback?.(modifiedEvent);
       };
-    };
+      };
 
     // Monkey patch by wrapping the component
     // This is hacky but works for class/function components
@@ -113,7 +113,7 @@ export function patchMarkdownTextInputHeight() {
     
     // Export the wrapper function for use
     (globalThis as any).__patchedContentSizeChange = patchedOnContentSizeChange;
-    
+
     isPatched = true;
   } catch (error) {
     console.error('[MarkdownPatch] ❌ Failed to patch:', error);
@@ -130,8 +130,8 @@ export function createPatchedOnContentSizeChange(
   return (event: any) => {
     if (!event?.nativeEvent?.contentSize) {
       originalCallback?.(event);
-      return;
-    }
+    return;
+  }
 
     const originalHeight = event.nativeEvent.contentSize.height;
     const reduction = getReductionFactor(value || '');

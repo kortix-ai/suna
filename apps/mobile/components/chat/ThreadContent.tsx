@@ -1472,6 +1472,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     (agentStatus === 'running' || agentStatus === 'connecting') &&
                     !streamingTextContent &&
                     !streamingToolCall &&
+                    !isSmoothAnimating &&
+                    !smoothAskCompleteText &&
+                    !isAskCompleteAnimating &&
                     (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
                     (() => {
                       // Check if any message in this group already has ASK or COMPLETE

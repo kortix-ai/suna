@@ -32,13 +32,13 @@ export function KortixLogo({
     const logomarkWidth = size * 5;
     const logomarkHeight = size;
     
-    const containerStyle: ViewStyle = {
+  const containerStyle: ViewStyle = {
       width: logomarkWidth,
       height: logomarkHeight,
-      flexShrink: 0,
-      ...style,
-    };
-    
+    flexShrink: 0,
+    ...style,
+  };
+
     const LogomarkComponent = color === 'dark' ? LogomarkWhite : LogomarkBlack;
     return (
       <View 

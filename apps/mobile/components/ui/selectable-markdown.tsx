@@ -46,11 +46,18 @@ const MARKDOWN_FONT_SIZE = 16;
 // Debug mode to see height calculations
 let DEBUG_HEIGHTS = false;
 
-// Runtime tunable values
-let CHAR_WIDTH_FACTOR = 0.46;      // Slightly wider chars = more wrapping = more height
-let HEADING_CHAR_FACTOR = 0.50;
+// Runtime tunable values  
+// CHAR_WIDTH_FACTOR: Lower = more chars per line = fewer visual lines = shorter (less over-estimation)
+let CHAR_WIDTH_FACTOR = 0.42;      // Was 0.48, reduced to prevent over-estimation on long text
+let HEADING_CHAR_FACTOR = 0.46;    // Was 0.52
 let EMPTY_LINE_FACTOR = 0.5;
-let BASE_BUFFER = 16;              // Always add this minimum buffer to prevent cutoff
+let BOLD_WIDTH_FACTOR = 1.10;      // Was 1.15, reduced slightly
+
+// PHANTOM SPACE: Small base + tiny per-line with LOW cap
+// This helps short/medium text without affecting large text
+let BASE_PHANTOM = 10;             // Fixed base
+let LINE_PHANTOM_PX = 1.5;         // Small per-line for short/medium content
+let MAX_LINE_PHANTOM = 15;         // Cap at 15px (hits at 10 lines, then stops)
 
 export function enableMarkdownDebug(enabled: boolean = true) {
   DEBUG_HEIGHTS = enabled;
@@ -72,13 +79,28 @@ export function setEmptyLineFactor(factor: number) {
   console.log(`[MD] Empty line factor: ${factor}`);
 }
 
-export function setBaseBuffer(buffer: number) {
-  BASE_BUFFER = buffer;
-  console.log(`[MD] Base buffer: ${buffer}px`);
+export function setBasePhantom(px: number) {
+  BASE_PHANTOM = px;
+  console.log(`[MD] Base phantom: ${px}px`);
+}
+
+export function setLinePhantom(px: number) {
+  LINE_PHANTOM_PX = px;
+  console.log(`[MD] Line phantom: ${px}px per line`);
+}
+
+export function setMaxLinePhantom(px: number) {
+  MAX_LINE_PHANTOM = px;
+  console.log(`[MD] Max line phantom: ${px}px`);
+}
+
+export function setBoldWidthFactor(factor: number) {
+  BOLD_WIDTH_FACTOR = factor;
+  console.log(`[MD] Bold width factor: ${(factor * 100).toFixed(0)}%`);
 }
 
 export function getFactors() {
-  return { char: CHAR_WIDTH_FACTOR, heading: HEADING_CHAR_FACTOR, empty: EMPTY_LINE_FACTOR, buffer: BASE_BUFFER };
+  return { char: CHAR_WIDTH_FACTOR, heading: HEADING_CHAR_FACTOR, empty: EMPTY_LINE_FACTOR, basePhantom: BASE_PHANTOM, linePhantom: LINE_PHANTOM_PX, maxLinePhantom: MAX_LINE_PHANTOM, bold: BOLD_WIDTH_FACTOR };
 }
 
 if (__DEV__) {
@@ -86,9 +108,12 @@ if (__DEV__) {
   (globalThis as any).setCharWidthFactor = setCharWidthFactor;
   (globalThis as any).setHeadingCharFactor = setHeadingCharFactor;
   (globalThis as any).setEmptyLineFactor = setEmptyLineFactor;
-  (globalThis as any).setBaseBuffer = setBaseBuffer;
+  (globalThis as any).setBasePhantom = setBasePhantom;
+  (globalThis as any).setLinePhantom = setLinePhantom;
+  (globalThis as any).setMaxLinePhantom = setMaxLinePhantom;
+  (globalThis as any).setBoldWidthFactor = setBoldWidthFactor;
   (globalThis as any).getFactors = getFactors;
-  console.log('[MD] Tune: setCharWidthFactor(0.46) / setHeadingCharFactor(0.50) / setBaseBuffer(16)');
+  console.log('[MD] Tune: setBasePhantom(16) / setLinePhantom(0.5) / setMaxLinePhantom(20)');
 }
 
 
@@ -330,25 +355,31 @@ const EMOJI_REGEX = /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF
 function calculateRealHeight(text: string, screenWidth: number): number {
   const horizontalPadding = 32; // ThreadPage uses paddingHorizontal: 16 each side
   const availableWidth = screenWidth - horizontalPadding;
-  
+
   // Use runtime-tunable factors
   const charWidth = MARKDOWN_FONT_SIZE * CHAR_WIDTH_FACTOR;
   const headingCharWidth = 26 * HEADING_CHAR_FACTOR;
   const charsPerLine = Math.floor(availableWidth / charWidth);
   const headingCharsPerLine = Math.floor(availableWidth / headingCharWidth);
-  
+
   const lines = text.split('\n');
   let totalHeight = 0;
-  
-  for (const line of lines) {
+  let totalVisualLines = 0; // Track total visual lines for phantom calculation
+  let debugInfo: string[] = [];
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const trimmed = line.trim();
-    
+
     // Empty line
     if (trimmed.length === 0) {
-      totalHeight += MARKDOWN_LINE_HEIGHT * EMPTY_LINE_FACTOR;
+      const h = MARKDOWN_LINE_HEIGHT * EMPTY_LINE_FACTOR;
+      totalHeight += h;
+      totalVisualLines += 0.5; // Empty lines add less phantom
+      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: empty → ${h.toFixed(0)}px`);
       continue;
     }
-    
+
     // Heading
     const headingMatch = trimmed.match(/^(#{1,6})\s+(.*)$/);
     if (headingMatch) {
@@ -357,18 +388,42 @@ function calculateRealHeight(text: string, screenWidth: number): number {
         .replace(/\*([^*]+)\*/g, '$1')
         .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width
       const wrappedLines = Math.max(1, Math.ceil(headingText.length / headingCharsPerLine));
-      totalHeight += wrappedLines * 36;
+      const h = wrappedLines * 36;
+      totalHeight += h;
+      totalVisualLines += wrappedLines;
+      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: h${headingMatch[1].length} ${headingText.length}ch → ${wrappedLines}vl × 36 = ${h}px`);
       continue;
     }
-    
+
     // Horizontal rule (---)
     if (/^[-*_]{3,}$/.test(trimmed)) {
       totalHeight += 12;
+      if (DEBUG_HEIGHTS) debugInfo.push(`L${i}: hr → 12px`);
       continue;
     }
-    
-    // Regular line - strip markdown and calculate wrapping
-    const cleanLine = line
+
+    // Regular line - calculate effective width accounting for bold
+    // Bold text is wider, so we expand it to simulate extra width
+    let effectiveLength = 0;
+
+    // First, handle bold: **text** → text takes ~15% more width
+    const boldRegex = /\*\*([^*]+)\*\*/g;
+    let lastIndex = 0;
+    let match;
+    let processedLine = line;
+
+    while ((match = boldRegex.exec(line)) !== null) {
+      // Regular text before bold
+      effectiveLength += match.index - lastIndex;
+      // Bold text is wider
+      effectiveLength += match[1].length * BOLD_WIDTH_FACTOR;
+      lastIndex = match.index + match[0].length;
+    }
+    // Remaining text after last bold
+    effectiveLength += line.length - lastIndex;
+
+    // Now strip other markdown for cleaner calculation
+    const cleanLine = processedLine
       .replace(/\*\*([^*]+)\*\*/g, '$1')
       .replace(/\*([^*]+)\*/g, '$1')
       .replace(/`([^`]+)`/g, '$1')
@@ -376,13 +431,31 @@ function calculateRealHeight(text: string, screenWidth: number): number {
       .replace(/^[-*+]\s+/, '')  // List marker
       .replace(/^\d+\.\s+/, '') // Numbered list
       .replace(EMOJI_REGEX, 'XX'); // Emoji = 2 char width (they're wider)
-    
-    const wrappedLines = Math.max(1, Math.ceil(cleanLine.length / charsPerLine));
-    totalHeight += wrappedLines * MARKDOWN_LINE_HEIGHT;
+
+    // Use the larger of clean length or effective length (bold-adjusted)
+    const charCount = Math.max(cleanLine.length, Math.round(effectiveLength));
+    const wrappedLines = Math.max(1, Math.ceil(charCount / charsPerLine));
+    const h = wrappedLines * MARKDOWN_LINE_HEIGHT;
+    totalHeight += h;
+    totalVisualLines += wrappedLines;
+    if (DEBUG_HEIGHTS) {
+      const boldNote = effectiveLength > cleanLine.length ? ` (${Math.round(effectiveLength)}eff)` : '';
+      debugInfo.push(`L${i}: ${cleanLine.length}ch${boldNote}/${charsPerLine}cpl → ${wrappedLines}vl × ${MARKDOWN_LINE_HEIGHT} = ${h}px`);
+    }
   }
-  
-  // Always add base buffer to prevent cutoff
-  return totalHeight + BASE_BUFFER;
+
+  // Add phantom space: fixed base + tiny per-line with cap
+  // Cap prevents runaway on very long text (100+ lines)
+  const linePhantom = Math.min(totalVisualLines * LINE_PHANTOM_PX, MAX_LINE_PHANTOM);
+  const phantomSpace = Math.round(BASE_PHANTOM + linePhantom);
+  const finalHeight = totalHeight + phantomSpace;
+
+  if (DEBUG_HEIGHTS && debugInfo.length <= 10) {
+    const capNote = linePhantom >= MAX_LINE_PHANTOM ? ' [CAPPED]' : '';
+    console.log(`[MD] Breakdown (w=${availableWidth}, cpl=${charsPerLine}):\n  ${debugInfo.join('\n  ')}\n  TOTAL: ${totalHeight} + ${phantomSpace}px phantom (${BASE_PHANTOM}base + ${linePhantom.toFixed(1)}px line${capNote}) = ${finalHeight}px`);
+  }
+
+  return finalHeight;
 }
 
 /**
@@ -402,33 +475,33 @@ function MeasuredMarkdownInput({
   style?: TextStyle;
 }) {
   const trimmedText = text.trimEnd();
-  
+
   // Calculate height ONCE - pure function, no state
   const calculatedHeight = useMemo(() => {
     const screenWidth = Dimensions.get('window').width;
     const height = calculateRealHeight(trimmedText, screenWidth);
-    
+
     if (DEBUG_HEIGHTS) {
       const preview = trimmedText.substring(0, 40).replace(/\n/g, '↵');
       const { lines, headings } = analyzeContent(trimmedText);
       console.log(`[MD] "${preview}..." height=${height.toFixed(0)}px (lines=${lines} h=${headings})`);
     }
-    
+
     return Math.max(MARKDOWN_LINE_HEIGHT, height);
   }, [trimmedText]);
 
   return (
-    <View 
+    <View
       style={{
         height: calculatedHeight,
         overflow: 'hidden',
         ...(DEBUG_HEIGHTS ? { borderWidth: 1, borderColor: 'blue' } : {}),
-      }} 
+      }}
       pointerEvents="box-none"
     >
       <MarkdownTextInput
         value={trimmedText}
-        onChangeText={() => {}}
+        onChangeText={() => { }}
         parser={markdownParser}
         markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
         style={[styles.base, isDark ? styles.darkText : styles.lightText, style]}

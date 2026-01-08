@@ -306,7 +306,7 @@ export function ThreadPage({
   // DEBUG: Track state changes
   const prevStreamingRef = React.useRef(false);
   const prevAgentRunningRef = React.useRef(false);
-  
+
   React.useEffect(() => {
     if (chat.isStreaming !== prevStreamingRef.current) {
       console.log(`[SCROLL DEBUG] isStreaming changed: ${prevStreamingRef.current} → ${chat.isStreaming}`);
@@ -430,7 +430,7 @@ export function ThreadPage({
 
   // Track significant scroll changes for debugging
   const lastLoggedScrollY = React.useRef(0);
-  
+
   const handleScroll = React.useCallback((event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const currentScrollY = contentOffset.y;
