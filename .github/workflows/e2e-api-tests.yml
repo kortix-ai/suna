@@ -12,15 +12,22 @@ on:
       - 'backend/**'
   workflow_dispatch:
     inputs:
+      environment:
+        description: 'Target environment'
+        required: false
+        type: choice
+        options:
+          - staging
+          - production
+        default: 'staging'
       test_filter:
         description: 'pytest filter expression (optional)'
         required: false
         type: string
       api_url:
-        description: 'API base URL'
+        description: 'API base URL (overrides environment selection)'
         required: false
         type: string
-        default: 'https://staging-api.suna.so'
 
 jobs:
   e2e-tests:
@@ -28,19 +35,80 @@ jobs:
     
     steps:
       - name: Trigger E2E tests via API
+        env:
+          API_URL: ${{ github.event.inputs.api_url || (github.event.inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so') }}
+          ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
         run: |
-          API_URL="${{ github.event.inputs.api_url || 'https://staging-api.suna.so' }}"
-          TEST_FILTER="${{ github.event.inputs.test_filter || '' }}"
+          set -e
           
-          if [ -n "$TEST_FILTER" ]; then
-            RESPONSE=$(curl -sf --max-time 300 -X POST "$API_URL/admin/tests/e2e?test_filter=$TEST_FILTER" \
-              -H "X-Admin-Api-Key: ${{ secrets.KORTIX_ADMIN_API_KEY }}" \
-              -H "Content-Type: application/json")
-          else
-            RESPONSE=$(curl -sf --max-time 300 -X POST "$API_URL/admin/tests/e2e" \
-              -H "X-Admin-Api-Key: ${{ secrets.KORTIX_ADMIN_API_KEY }}" \
-              -H "Content-Type: application/json")
+          # Validate admin API key is configured
+          if [ -z "$ADMIN_API_KEY" ]; then
+            echo "❌ Error: KORTIX_ADMIN_API_KEY is not set"
+            echo "Please add it at: https://github.com/${{ github.repository }}/settings/secrets/actions"
+            exit 1
           fi
           
+          # Mask secrets
+          echo "::add-mask::$ADMIN_API_KEY"
+          
+          # Ensure API_URL has /v1 path
+          if [[ "$API_URL" != */v1 ]]; then
+            API_URL="${API_URL}/v1"
+          fi
+          
+          TEST_FILTER="${{ github.event.inputs.test_filter || '' }}"
+          
+          echo "🧪 Starting E2E tests"
+          echo "📍 API URL: $API_URL"
+          if [ -n "$TEST_FILTER" ]; then
+            echo "🔍 Test filter: $TEST_FILTER"
+          fi
+          echo ""
+          
+          # Test API connectivity
+          echo "🔍 Testing API connectivity..."
+          HEALTH_CHECK=$(curl -s -w "\n%{http_code}" "$API_URL/health" 2>&1 || echo -e "\nERROR")
+          HEALTH_STATUS=$(echo "$HEALTH_CHECK" | tail -n1)
+          
+          if [ "$HEALTH_STATUS" != "200" ]; then
+            echo "⚠️  Warning: API health check failed (HTTP $HEALTH_STATUS)"
+            echo "The API might be unreachable or down. Continuing anyway..."
+          else
+            echo "✅ API is reachable"
+          fi
+          echo ""
+          
+          # Build request URL
+          if [ -n "$TEST_FILTER" ]; then
+            REQUEST_URL="$API_URL/admin/tests/e2e?test_filter=$TEST_FILTER"
+          else
+            REQUEST_URL="$API_URL/admin/tests/e2e"
+          fi
+          
+          # Make API request with detailed error handling
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" --max-time 300 -X POST "$REQUEST_URL" \
+            -H "X-Admin-Api-Key: $ADMIN_API_KEY" \
+            -H "Content-Type: application/json" 2>&1)
+          
+          # Extract HTTP status code and body
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1)
+          RESPONSE_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+          
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "❌ Failed to trigger E2E tests (HTTP $HTTP_STATUS)"
+            echo ""
+            echo "Response body:"
+            echo "$RESPONSE_BODY" | jq '.' 2>/dev/null || echo "$RESPONSE_BODY"
+            echo ""
+            echo "🔍 Troubleshooting:"
+            echo "  1. Verify API URL is correct: $API_URL"
+            echo "  2. Check that KORTIX_ADMIN_API_KEY is valid"
+            echo "  3. Ensure the API server is running and accessible"
+            echo "  4. Check API server logs for more details"
+            exit 1
+          fi
+          
+          echo "✅ E2E tests triggered successfully"
+          echo ""
           echo "API Response:"
-          echo "$RESPONSE"
+          echo "$RESPONSE_BODY" | jq '.' 2>/dev/null || echo "$RESPONSE_BODY"
