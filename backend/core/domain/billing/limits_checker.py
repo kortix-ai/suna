@@ -261,16 +261,15 @@ async def check_trigger_limit(account_id: str, agent_id: str = None, trigger_typ
                     'tier_name': tier_name
                 }
             
-            from core.shared.query_utils import batch_query_in
+            # Use SQLAlchemy execute like the rest of the module
+            from core.infrastructure.database.db import execute
             
-            triggers = await batch_query_in(
-                client=client,
-                table_name='agent_triggers',
-                select_fields='trigger_id, trigger_type',
-                in_field='agent_id',
-                in_values=agent_ids,
-                additional_filters={}
-            )
+            sql = """
+            SELECT trigger_id, trigger_type 
+            FROM agent_triggers 
+            WHERE agent_id = ANY(:agent_ids)
+            """
+            triggers = await execute(sql, {"agent_ids": agent_ids})
             
             scheduled_count = 0
             app_count = 0

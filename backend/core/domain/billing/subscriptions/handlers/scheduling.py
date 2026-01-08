@@ -11,6 +11,7 @@ from core.domain.billing.shared.config import (
     get_price_type
 )
 from core.domain.billing.external.stripe import StripeAPIWrapper
+from core.domain.billing import repo as billing_repo
 
 class SchedulingHandler:
     @staticmethod

@@ -3,6 +3,7 @@ from core.infrastructure.database.supabase import DBConnection
 from core.shared.cache import Cache
 from core.shared.logger import logger
 from core.domain.billing.shared.config import TIERS, TRIAL_TIER
+from core.domain.billing import repo as billing_repo
 
 class TierHandler:
     @staticmethod
