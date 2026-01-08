@@ -73,8 +73,8 @@ export default function CreateAgentScheduledTriggerToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
-              <Clock className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <Clock className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -108,8 +108,8 @@ export default function CreateAgentScheduledTriggerToolView({
         {isStreaming ? (
           <LoadingState
             icon={Clock}
-            iconColor="text-purple-500 dark:text-purple-400"
-            bgColor="bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20"
             title="Creating scheduled trigger"
             filePath={triggerName ? `"${triggerName}"` : undefined}
             showProgress={true}
@@ -120,8 +120,8 @@ export default function CreateAgentScheduledTriggerToolView({
               <div className="border border-border rounded-xl p-4 space-y-4 bg-muted/20 dark:bg-muted/10">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20 flex items-center justify-center">
-                      <Clock className="h-6 w-6 text-purple-600" />
+                    <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                      <Clock className="h-6 w-6 text-zinc-600 dark:text-zinc-400" />
                     </div>
                     <div className="space-y-1">
                       <h3 className="font-semibold text-foreground">{trigger.name}</h3>
@@ -135,7 +135,7 @@ export default function CreateAgentScheduledTriggerToolView({
                       <Play className="h-3 w-3 mr-1" />
                       {trigger.is_active ? 'Active' : 'Inactive'}
                     </Badge>
-                    <Badge variant="outline" className="text-xs border-purple-200 text-purple-700 bg-purple-50">
+                    <Badge variant="outline" className="text-xs border-zinc-200 text-zinc-700 bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:bg-zinc-800">
                       <Bot className="h-3 w-3 mr-1" />
                       Worker
                     </Badge>
@@ -183,8 +183,8 @@ export default function CreateAgentScheduledTriggerToolView({
                 )}
 
                 <div className="pt-2 border-t border-border">
-                  <div className="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-400">
-                    <div className="w-2 h-2 bg-purple-500 rounded-full" />
+                  <div className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-400">
+                    <div className="w-2 h-2 bg-zinc-500 rounded-full" />
                     The scheduled trigger is now active and will run automatically according to the schedule.
                   </div>
                 </div>

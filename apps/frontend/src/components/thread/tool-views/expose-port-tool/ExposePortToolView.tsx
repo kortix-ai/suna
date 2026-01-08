@@ -100,8 +100,8 @@ export function ExposePortToolView({
         {isStreaming ? (
           <LoadingState
             icon={Computer}
-            iconColor="text-green-500 dark:text-green-400"
-            bgColor="bg-gradient-to-b from-green-100 to-green-50 shadow-inner dark:from-green-800/40 dark:to-green-900/60 dark:shadow-green-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
             title="Exposing port"
             filePath={port?.toString()}
             showProgress={true}
@@ -119,7 +119,7 @@ export function ExposePortToolView({
                     href={url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline flex items-center gap-2 break-all"
+                    className="text-sm font-medium text-zinc-700 dark:text-zinc-300 hover:underline flex items-center gap-2 break-all"
                   >
                     {url}
                     <ExternalLink className="flex-shrink-0 h-3.5 w-3.5" />
@@ -140,7 +140,7 @@ export function ExposePortToolView({
                 </div>
               )}
               
-              <div className="text-xs bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50 rounded-md p-3 text-amber-700 dark:text-amber-300 flex items-start gap-2 mt-3">
+              <div className="text-xs bg-zinc-50 dark:bg-zinc-900/30 border border-zinc-200 dark:border-zinc-700/50 rounded-md p-3 text-zinc-700 dark:text-zinc-300 flex items-start gap-2 mt-3">
                 <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
                 <span>This URL is temporarily available and may expire after some time.</span>
               </div>
@@ -157,8 +157,8 @@ export function ExposePortToolView({
           </div>
         ) : (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-green-100 to-green-50 shadow-inner dark:from-green-800/40 dark:to-green-900/60">
-              <Computer className="h-10 w-10 text-green-500 dark:text-green-400" />
+            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
+              <Computer className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               No Port Information

@@ -108,8 +108,8 @@ export function ListCommandsToolView({
         {isStreaming ? (
           <LoadingState
             icon={Terminal}
-            iconColor="text-blue-500 dark:text-blue-400"
-            bgColor="bg-gradient-to-b from-blue-100 to-blue-50 shadow-inner dark:from-blue-800/40 dark:to-blue-900/60 dark:shadow-blue-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
             title="Listing commands"
             filePath="Retrieving running commands..."
             showProgress={true}
@@ -140,7 +140,7 @@ export function ListCommandsToolView({
                             variant="outline"
                             className={`text-xs h-4 px-1.5 ${
                               status.toLowerCase().includes('running')
-                                ? 'border-emerald-700/30 text-emerald-400'
+                                ? 'border-zinc-700/30 text-zinc-400'
                                 : ''
                             }`}
                           >
@@ -162,7 +162,7 @@ export function ListCommandsToolView({
                             </Badge>
                           </div>
                           <div className="font-mono text-xs text-foreground">
-                            <span className="text-green-500 dark:text-green-400 font-semibold">$ </span>
+                            <span className="text-zinc-500 dark:text-zinc-400 font-semibold">$ </span>
                             <span className="text-foreground">{command}</span>
                           </div>
                         </div>

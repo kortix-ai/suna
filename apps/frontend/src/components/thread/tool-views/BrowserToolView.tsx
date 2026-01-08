@@ -331,8 +331,8 @@ export function BrowserToolView({
             renderScreenshot()
           ) : (
             <div className="p-8 flex flex-col items-center justify-center w-full bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900 text-zinc-700 dark:text-zinc-400 min-h-600">
-              <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60">
-                <MonitorPlay className="h-10 w-10 text-purple-400 dark:text-purple-600" />
+              <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
+                <MonitorPlay className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
               </div>
               <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
                 {isRunning ? 'Browser action in progress' : 'Browser action completed'}

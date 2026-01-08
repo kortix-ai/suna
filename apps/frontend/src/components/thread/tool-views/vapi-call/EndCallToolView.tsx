@@ -48,7 +48,7 @@ export function EndCallToolView({
         </div>
 
         {callData.message && (
-          <div className="text-sm text-muted-foreground bg-emerald-500/10 rounded-lg p-3 border border-emerald-500/20">
+          <div className="text-sm text-muted-foreground bg-zinc-500/10 rounded-lg p-3 border border-zinc-500/20">
             {callData.message}
           </div>
         )}

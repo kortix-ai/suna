@@ -89,8 +89,8 @@ export function CreateEventTriggerToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
-              <Zap className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <Zap className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -122,8 +122,8 @@ export function CreateEventTriggerToolView({
         {isStreaming ? (
           <LoadingState
             icon={Zap}
-            iconColor="text-purple-500 dark:text-purple-400"
-            bgColor="bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20"
             title="Creating event trigger"
             filePath={triggerName ? `"${triggerName}"` : undefined}
             showProgress={true}
@@ -134,8 +134,8 @@ export function CreateEventTriggerToolView({
               <div className="border rounded-xl p-4 space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/40 dark:to-purple-800/20 border border-purple-200 dark:border-purple-800 flex items-center justify-center">
-                      <Bell className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                      <Bell className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-lg text-zinc-900 dark:text-zinc-100">
@@ -270,9 +270,9 @@ export function CreateEventTriggerToolView({
                 </div>
               )}
 
-              <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 rounded-lg p-4 border border-purple-200 dark:border-purple-800">
-                <div className="flex items-center gap-2 text-sm text-purple-700 dark:text-purple-400">
-                  <div className="w-2 h-2 bg-purple-500 rounded-full animate-pulse" />
+              <div className="bg-gradient-to-r from-zinc-50 to-zinc-100 dark:from-zinc-900/20 dark:to-zinc-800/20 rounded-lg p-4 border border-zinc-200 dark:border-zinc-700">
+                <div className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-400">
+                  <div className="w-2 h-2 bg-zinc-500 rounded-full animate-pulse" />
                   This trigger is now active and will automatically execute the agent when the configured event occurs.
                 </div>
               </div>

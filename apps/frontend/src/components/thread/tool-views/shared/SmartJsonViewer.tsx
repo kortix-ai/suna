@@ -41,9 +41,9 @@ const ValueRenderer = ({ value }: { value: any }) => {
     // Image detection (basic)
     if (value.match(/\.(jpeg|jpg|gif|png|webp)$/i)) {
       // Could show a preview on hover or inline, but keeping it simple for now
-      return <span className="text-emerald-600 dark:text-emerald-400">"{value}"</span>;
+      return <span className="text-zinc-600 dark:text-zinc-400">"{value}"</span>;
     }
-    return <span className="text-emerald-600 dark:text-emerald-400 break-all">"{value}"</span>;
+    return <span className="text-zinc-600 dark:text-zinc-400 break-all">"{value}"</span>;
   }
   if (type === 'number') return <span className="text-blue-600 dark:text-blue-400">{value}</span>;
   if (type === 'boolean') return <span className="text-amber-600 dark:text-amber-400">{String(value)}</span>;
@@ -52,7 +52,7 @@ const ValueRenderer = ({ value }: { value: any }) => {
 };
 
 const KeyRenderer = ({ name }: { name: string }) => (
-  <span className="text-purple-700 dark:text-purple-400 mr-1 font-medium">"{name}":</span>
+  <span className="text-zinc-700 dark:text-zinc-400 mr-1 font-medium">"{name}":</span>
 );
 
 export const SmartJsonViewer: React.FC<SmartJsonViewerProps> = ({ 
@@ -143,7 +143,7 @@ export const SmartJsonViewer: React.FC<SmartJsonViewerProps> = ({
              className="h-4 w-4 ml-2 opacity-0 group-hover:opacity-100 transition-opacity"
              onClick={handleCopy}
            >
-             {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+             {copied ? <Check className="h-3 w-3 text-zinc-500" /> : <Copy className="h-3 w-3" />}
            </Button>
         )}
       </div>

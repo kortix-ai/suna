@@ -76,15 +76,15 @@ export function DiscoverUserMcpServersToolView({
   const getCategoryIcon = (category: string) => {
     switch (category) {
       case 'Create':
-        return <span className="text-green-500">+</span>;
+        return <span className="text-zinc-500">+</span>;
       case 'Update':
-        return <span className="text-blue-500">✎</span>;
+        return <span className="text-zinc-500">✎</span>;
       case 'Delete':
-        return <span className="text-red-500">×</span>;
+        return <span className="text-zinc-500">×</span>;
       case 'Read':
-        return <span className="text-purple-500">⊙</span>;
+        return <span className="text-zinc-500">⊙</span>;
       case 'Advanced':
-        return <span className="text-orange-500">⚡</span>;
+        return <span className="text-zinc-500">⚡</span>;
       default:
         return <span className="text-gray-500">•</span>;
     }
@@ -110,8 +110,8 @@ export function DiscoverUserMcpServersToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
-              <Search className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+              <Search className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -125,7 +125,7 @@ export function DiscoverUserMcpServersToolView({
               className={cn(
                 "text-xs font-medium",
                 actualIsSuccess
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
+                  ? "bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
                   : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800"
               )}
             >
@@ -143,8 +143,8 @@ export function DiscoverUserMcpServersToolView({
         {isStreaming ? (
           <LoadingState
             icon={Search}
-            iconColor="text-purple-500 dark:text-purple-400"
-            bgColor="bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
             title="Discovering MCP tools"
             showProgress={true}
           />
@@ -154,8 +154,8 @@ export function DiscoverUserMcpServersToolView({
               <div className="border rounded-xl p-4 space-y-4">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/40 dark:to-purple-800/20 border border-purple-200 dark:border-purple-800 flex items-center justify-center">
-                      <Plug className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-700/20 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                      <Plug className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-lg text-zinc-900 dark:text-zinc-100">
@@ -172,7 +172,7 @@ export function DiscoverUserMcpServersToolView({
                       className={cn(
                         "text-xs",
                         profile_info.is_connected 
-                          ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800"
+                          ? "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
                           : "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-300 dark:border-gray-800"
                       )}
                     >
@@ -225,7 +225,7 @@ export function DiscoverUserMcpServersToolView({
                                 <div className="flex items-start justify-between gap-2">
                                   <div className="flex-1 space-y-1">
                                     <div className="flex items-center gap-2">
-                                      <Zap className="w-3 h-3 text-purple-500 dark:text-purple-400" />
+                                      <Zap className="w-3 h-3 text-zinc-500 dark:text-zinc-400" />
                                       <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                                         {formatToolName(tool.name)}
                                       </p>

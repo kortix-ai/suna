@@ -99,8 +99,8 @@ export function GetCurrentAgentConfigToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/20">
-              <Settings className="w-5 h-5 text-purple-500 dark:text-purple-400" />
+            <div className="relative p-2 rounded-xl bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
+              <Settings className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -115,7 +115,7 @@ export function GetCurrentAgentConfigToolView({
               className={cn(
                 "text-xs font-medium",
                 actualIsSuccess
-                  ? "bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-300 dark:border-emerald-800"
+                  ? "bg-zinc-50 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
                   : "bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800"
               )}
             >
@@ -134,8 +134,8 @@ export function GetCurrentAgentConfigToolView({
         {isStreaming ? (
           <LoadingState
             icon={Settings}
-            iconColor="text-purple-500 dark:text-purple-400"
-            bgColor="bg-gradient-to-b from-purple-100 to-purple-50 shadow-inner dark:from-purple-800/40 dark:to-purple-900/60 dark:shadow-purple-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
             title="Loading agent configuration"
             showProgress={true}
           />
@@ -145,8 +145,8 @@ export function GetCurrentAgentConfigToolView({
               <div className="space-y-6">
                 <div className="border rounded-xl p-5 space-y-4">
                   <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-900/40 dark:to-purple-800/20 border border-purple-200 dark:border-purple-800 flex items-center justify-center">
-                      <Bot className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-700/20 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
                     </div>
                     <div>
                       <h3 className="font-semibold text-lg text-zinc-900 dark:text-zinc-100">
@@ -185,8 +185,8 @@ export function GetCurrentAgentConfigToolView({
                 <div className="border rounded-xl p-5 space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-900/40 dark:to-blue-800/20 border border-blue-200 dark:border-blue-800 flex items-center justify-center">
-                        <Wrench className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-700/20 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                        <Wrench className="w-5 h-5 text-zinc-600 dark:text-zinc-400" />
                       </div>
                       <div>
                         <h4 className="font-medium text-zinc-900 dark:text-zinc-100">
@@ -221,7 +221,7 @@ export function GetCurrentAgentConfigToolView({
                           className={cn(
                             "text-xs",
                             tool.enabled 
-                              ? "bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800"
+                              ? "bg-zinc-100 text-zinc-700 border-zinc-200 dark:bg-zinc-800 dark:text-zinc-300 dark:border-zinc-700"
                               : "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-900/20 dark:text-gray-300 dark:border-gray-800"
                           )}
                         >
@@ -263,8 +263,8 @@ export function GetCurrentAgentConfigToolView({
                         <div key={index} className="border rounded-lg p-4 space-y-3">
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-100 to-green-50 dark:from-green-900/40 dark:to-green-800/20 border border-green-200 dark:border-green-800 flex items-center justify-center">
-                                <Link2 className="w-4 h-4 text-green-600 dark:text-green-400" />
+                              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800/40 dark:to-zinc-700/20 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                                <Link2 className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
                               </div>
                               <div>
                                 <h5 className="font-medium text-zinc-900 dark:text-zinc-100">

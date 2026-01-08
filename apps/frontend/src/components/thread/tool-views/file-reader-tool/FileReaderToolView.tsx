@@ -83,10 +83,10 @@ function SingleFileView({ result }: { result: FileReadResult }) {
       {/* File Header */}
       <div className="flex items-start gap-4 flex-shrink-0">
         <div className="relative flex-shrink-0">
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50">
-            <FileIcon className="h-5 w-5 text-emerald-600 dark:text-emerald-400" />
+          <div className="w-12 h-12 rounded-xl bg-zinc-50 dark:bg-zinc-900/30 flex items-center justify-center border border-zinc-100 dark:border-zinc-800/50">
+            <FileIcon className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
           </div>
-          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-emerald-500 flex items-center justify-center shadow-sm">
+          <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-zinc-500 flex items-center justify-center shadow-sm">
             <CheckCircle2 className="h-3 w-3 text-white" />
           </div>
         </div>
@@ -108,7 +108,7 @@ function SingleFileView({ result }: { result: FileReadResult }) {
                 </span>
               )}
               {result.truncated && (
-                <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-amber-600 dark:text-amber-400 border-amber-300 dark:border-amber-700">
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-zinc-600 dark:text-zinc-400 border-zinc-300 dark:border-zinc-700">
                   Truncated
                 </Badge>
               )}
@@ -122,7 +122,7 @@ function SingleFileView({ result }: { result: FileReadResult }) {
               onClick={copyToClipboard}
               className={cn(
                 "h-8 text-xs transition-colors",
-                copied && "text-emerald-600 dark:text-emerald-400"
+                copied && "text-zinc-600 dark:text-zinc-400"
               )}
             >
               {copied ? (
@@ -200,7 +200,7 @@ function BatchFileView({ results }: { results: FileReadResult[] }) {
               </div>
               <div className="flex items-center gap-2 flex-shrink-0">
                 {result.success ? (
-                  <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                  <CheckCircle2 className="h-4 w-4 text-zinc-500 dark:text-zinc-400" />
                 ) : (
                   <AlertTriangle className="h-4 w-4 text-red-500" />
                 )}
@@ -222,7 +222,7 @@ function BatchFileView({ results }: { results: FileReadResult[] }) {
                     }}
                     className={cn(
                       "h-7 text-xs",
-                      copiedIndex === idx && "text-emerald-600 dark:text-emerald-400"
+                      copiedIndex === idx && "text-zinc-600 dark:text-zinc-400"
                     )}
                   >
                     {copiedIndex === idx ? (
@@ -280,8 +280,8 @@ function SearchResultsView({ hits }: { hits: SearchHit[] }) {
           >
             <div className="p-4 space-y-3">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center border border-emerald-100 dark:border-emerald-900/50 flex-shrink-0">
-                  <FileIcon className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                <div className="w-8 h-8 rounded-lg bg-zinc-50 dark:bg-zinc-900/30 flex items-center justify-center border border-zinc-100 dark:border-zinc-800/50 flex-shrink-0">
+                  <FileIcon className="h-4 w-4 text-zinc-600 dark:text-zinc-400" />
                 </div>
                 <p className="text-sm font-medium text-zinc-900 dark:text-zinc-100 truncate flex-1">
                   {filename}
@@ -305,7 +305,7 @@ function SearchResultsView({ hits }: { hits: SearchHit[] }) {
                 onClick={() => copyToClipboard(hit.content, idx)}
                 className={cn(
                   "h-8 text-xs w-full transition-colors",
-                  copiedIndex === idx && "text-emerald-600 dark:text-emerald-400"
+                  copiedIndex === idx && "text-zinc-600 dark:text-zinc-400"
                 )}
               >
                 {copiedIndex === idx ? (

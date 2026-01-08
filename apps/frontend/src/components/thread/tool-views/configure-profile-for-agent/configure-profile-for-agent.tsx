@@ -77,8 +77,8 @@ export function ConfigureProfileForAgentToolView({
       <CardHeader className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 space-y-2">
         <div className="flex flex-row items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="relative p-2 rounded-xl bg-gradient-to-br from-violet-500/20 to-violet-600/10 border border-violet-500/20">
-              <Settings className="w-5 h-5 text-violet-500 dark:text-violet-400" />
+            <div className="relative p-2 rounded-xl bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700">
+              <Settings className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
             </div>
             <div>
               <CardTitle className="text-base font-medium text-zinc-900 dark:text-zinc-100">
@@ -112,8 +112,8 @@ export function ConfigureProfileForAgentToolView({
         {isStreaming ? (
           <LoadingState
             icon={Settings}
-            iconColor="text-violet-500 dark:text-violet-400"
-            bgColor="bg-gradient-to-b from-violet-100 to-violet-50 shadow-inner dark:from-violet-800/40 dark:to-violet-900/60 dark:shadow-violet-950/20"
+            iconColor="text-zinc-500 dark:text-zinc-400"
+            bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60 dark:shadow-zinc-950/20"
             title="Configuring profile for worker"
             filePath={display_name ? `"${display_name}"` : undefined}
             showProgress={true}
@@ -123,8 +123,8 @@ export function ConfigureProfileForAgentToolView({
             <div className="p-4 space-y-4">
               <div className="border rounded-xl p-4 space-y-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-100 to-violet-50 dark:from-violet-900/40 dark:to-violet-800/20 border border-violet-200 dark:border-violet-800 flex items-center justify-center">
-                    <User className="w-6 h-6 text-violet-600 dark:text-violet-400" />
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                    <User className="w-6 h-6 text-zinc-600 dark:text-zinc-400" />
                   </div>
                   <div>
                     <h3 className="font-semibold text-zinc-900 dark:text-zinc-100">
@@ -151,7 +151,7 @@ export function ConfigureProfileForAgentToolView({
               {enabled_tools.length > 0 && (
                 <div className="border rounded-xl p-4 space-y-3">
                   <div className="flex items-center gap-2">
-                    <Wrench className="w-4 h-4 text-violet-500" />
+                    <Wrench className="w-4 h-4 text-zinc-500 dark:text-zinc-400" />
                     <h3 className="font-medium text-zinc-900 dark:text-zinc-100">
                       Enabled Tools
                     </h3>
@@ -166,8 +166,8 @@ export function ConfigureProfileForAgentToolView({
                         key={index}
                         className="flex items-center gap-3 p-3 bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 rounded-xl"
                       >
-                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-violet-100 to-violet-50 dark:from-violet-900/40 dark:to-violet-800/20 border border-violet-200 dark:border-violet-800 flex items-center justify-center">
-                          <Zap className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+                        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 border border-zinc-200 dark:border-zinc-700 flex items-center justify-center">
+                          <Zap className="w-4 h-4 text-zinc-600 dark:text-zinc-400" />
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center gap-2 mb-1">
@@ -176,7 +176,7 @@ export function ConfigureProfileForAgentToolView({
                             </p>
                             <Badge
                               variant="secondary"
-                              className="text-xs bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300"
+                              className="text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
                             >
                               <Tag className="w-2.5 h-2.5" />
                               {getToolCategory(tool)}
