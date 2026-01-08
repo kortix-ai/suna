@@ -152,7 +152,13 @@ class SubscriptionUpgradeService:
         from ..handlers.lifecycle import SubscriptionLifecycleHandler
         from ..handlers.scheduling import SchedulingHandler
         
-        await SubscriptionLifecycleHandler.handle_subscription_change(updated_subscription)
+        try:
+            await SubscriptionLifecycleHandler.handle_subscription_change(updated_subscription)
+        except Exception as e:
+            if "already granted recently" in str(e):
+                logger.info(f"[UPGRADE] Credits already granted for {account_id} - continuing with upgrade")
+            else:
+                raise
         
         old_tier = get_tier_by_price_id(updated_subscription['items']['data'][0]['price']['id'])
         new_tier = get_tier_by_price_id(price_id)
@@ -160,8 +166,6 @@ class SubscriptionUpgradeService:
         old_amount = float(old_tier.monthly_credits) if old_tier else 0
         new_amount = float(new_tier.monthly_credits) if new_tier else 0
         
-        # If this is an upgrade (or any plan change), cancel any scheduled downgrade
-        # This ensures that if user was scheduled to downgrade but then upgrades, the downgrade is cancelled
         try:
             await SchedulingHandler.cancel_scheduled_change(account_id)
             logger.info(f"[UPGRADE] Cleared any scheduled downgrades for {account_id} after plan change")

@@ -1,11 +1,12 @@
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime, timezone, timedelta
 from core.utils.logger import logger
 from core.utils.config import config
 from core.utils.cache import Cache
 from core.utils import limits_repo
 
-async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
+
+async def check_agent_run_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         import time
         import asyncio
@@ -63,7 +64,6 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
                 return config.MAX_PARALLEL_AGENT_RUNS
         
         async def get_running_runs():
-            from core.utils import limits_repo
             result = await limits_repo.count_running_agent_runs(account_id)
             return result["running_count"], result["running_thread_ids"]
         
@@ -87,7 +87,6 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
             except Exception:
                 concurrent_runs_limit = config.MAX_PARALLEL_AGENT_RUNS
             
-            from core.utils import limits_repo
             thread_count = await limits_repo.count_user_threads(account_id)
             
             if thread_count == 0:
@@ -123,7 +122,7 @@ async def check_agent_run_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_agent_count_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         if config.ENV_MODE.value == "local":
             return {
@@ -132,8 +131,6 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
                 'limit': 999999,
                 'tier_name': 'local'
             }
-        
-        from core.utils import limits_repo
         
         current_count = await limits_repo.count_user_agents(account_id)
         logger.debug(f"Account {account_id} has {current_count} custom agents (excluding Suna defaults)")
@@ -172,7 +169,7 @@ async def check_agent_count_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_project_count_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         if config.ENV_MODE.value == "local":
             return {
@@ -190,7 +187,6 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         except Exception as cache_error:
             logger.warning(f"Cache read failed for project count limit {account_id}: {str(cache_error)}")
 
-        from core.utils import limits_repo
         current_count = await limits_repo.count_user_projects(account_id)
         logger.debug(f"Account {account_id} has {current_count} projects (real-time count)")
         
@@ -234,52 +230,14 @@ async def check_project_count_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_trigger_limit(client, account_id: str, agent_id: str = None, trigger_type: str = None) -> Dict[str, Any]:
+async def check_trigger_limit(account_id: str, agent_id: str = None, trigger_type: str = None, client=None) -> Dict[str, Any]:
     try:
         if agent_id is None or trigger_type is None:
             logger.debug(f"Checking aggregate trigger limits for account {account_id}")
             
-            agent_ids = await limits_repo.get_agent_ids_for_account(account_id)
-            
-            if not agent_ids:
-                logger.debug(f"No agents found for account {account_id}")
-                try:
-                    from core.billing import subscription_service
-                    tier_info = await subscription_service.get_user_subscription_tier(account_id)
-                    tier_name = tier_info['name']
-                    scheduled_limit = tier_info.get('scheduled_triggers_limit', 0)
-                    app_limit = tier_info.get('app_triggers_limit', 0)
-                except Exception as billing_error:
-                    logger.warning(f"Could not get subscription tier for {account_id}: {str(billing_error)}, defaulting to free")
-                    tier_name = 'free'
-                    scheduled_limit = 0
-                    app_limit = 0
-                return {
-                    'scheduled': {'current_count': 0, 'limit': scheduled_limit},
-                    'app': {'current_count': 0, 'limit': app_limit},
-                    'tier_name': tier_name
-                }
-            
-            from core.utils.query_utils import batch_query_in
-            
-            triggers = await batch_query_in(
-                client=client,
-                table_name='agent_triggers',
-                select_fields='trigger_id, trigger_type',
-                in_field='agent_id',
-                in_values=agent_ids,
-                additional_filters={}
-            )
-            
-            scheduled_count = 0
-            app_count = 0
-            
-            for trigger in triggers:
-                ttype = trigger.get('trigger_type', '')
-                if ttype == 'schedule':
-                    scheduled_count += 1
-                elif ttype in ['webhook', 'app', 'event']:
-                    app_count += 1
+            trigger_counts = await limits_repo.count_all_triggers_for_account(account_id)
+            scheduled_count = trigger_counts.get("scheduled", 0)
+            app_count = trigger_counts.get("app", 0)
             
             try:
                 from core.billing import subscription_service
@@ -297,11 +255,13 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
             return {
                 'scheduled': {
                     'current_count': scheduled_count,
-                    'limit': scheduled_limit
+                    'limit': scheduled_limit,
+                    'can_create': scheduled_count < scheduled_limit
                 },
                 'app': {
                     'current_count': app_count,
-                    'limit': app_limit
+                    'limit': app_limit,
+                    'can_create': app_count < app_limit
                 },
                 'tier_name': tier_name
             }
@@ -367,11 +327,9 @@ async def check_trigger_limit(client, account_id: str, agent_id: str = None, tri
         }
 
 
-async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_custom_mcp_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         logger.debug(f"Checking custom worker limit for account {account_id}")
-        
-        from core.utils import limits_repo
         
         total_custom_mcps = await limits_repo.count_custom_mcps_for_account(account_id)
         
@@ -411,7 +369,7 @@ async def check_custom_mcp_limit(client, account_id: str) -> Dict[str, Any]:
         }
 
 
-async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
+async def check_thread_limit(account_id: str, client=None) -> Dict[str, Any]:
     try:
         import asyncio
         import time
@@ -442,7 +400,6 @@ async def check_thread_limit(client, account_id: str) -> Dict[str, Any]:
             }
         
         async def get_thread_count():
-            from core.utils import limits_repo
             return await limits_repo.count_user_threads(account_id)
         
         async def get_tier_limit():

@@ -2,7 +2,6 @@ from typing import Dict, List, Optional
 from decimal import Decimal
 from datetime import datetime, timezone, timedelta
 import stripe
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from ..credits.manager import credit_manager
@@ -10,15 +9,14 @@ from ..shared.config import get_tier_by_price_id
 from ..external.stripe import StripeAPIWrapper
 from .interfaces import ReconciliationManagerInterface
 from core.utils.config import config
+from core.billing import repo as billing_repo
 
 class ReconciliationService(ReconciliationManagerInterface):
     def __init__(self):
         self.stripe = stripe
         stripe.api_key = config.STRIPE_SECRET_KEY
-        self.db = DBConnection()
     
     async def reconcile_failed_payments(self) -> Dict:
-        client = await self.db.client
         results = {
             'checked': 0,
             'fixed': 0,
@@ -29,17 +27,15 @@ class ReconciliationService(ReconciliationManagerInterface):
         try:
             since = datetime.now(timezone.utc) - timedelta(hours=24)
             
-            failed_purchases = await client.table('credit_purchases').select(
-                'id, account_id, amount_dollars, stripe_payment_intent_id, created_at'
-            ).eq('status', 'pending').gte('created_at', since.isoformat()).execute()
+            failed_purchases = await billing_repo.get_pending_credit_purchases(since.isoformat())
             
-            if not failed_purchases.data:
+            if not failed_purchases:
                 logger.info("[RECONCILIATION] No pending credit purchases found")
                 return results
             
-            results['checked'] = len(failed_purchases.data)
+            results['checked'] = len(failed_purchases)
             
-            for purchase in failed_purchases.data:
+            for purchase in failed_purchases:
                 try:
                     payment_intent = await StripeAPIWrapper.retrieve_payment_intent(
                         purchase['stripe_payment_intent_id']
@@ -48,11 +44,11 @@ class ReconciliationService(ReconciliationManagerInterface):
                     if payment_intent.status == 'succeeded':
                         logger.warning(f"[RECONCILIATION] Found successful payment without credits: {purchase['id']}")
                         
-                        ledger_check = await client.from_('credit_ledger').select('id').eq(
-                            'metadata->>stripe_payment_intent_id', purchase['stripe_payment_intent_id']
-                        ).execute()
+                        ledger_exists = await billing_repo.check_ledger_by_payment_intent(
+                            purchase['stripe_payment_intent_id']
+                        )
                         
-                        if not ledger_check.data:
+                        if not ledger_exists:
                             result = await credit_manager.add_credits(
                                 account_id=purchase['account_id'],
                                 amount=Decimal(str(purchase['amount_dollars'])),
@@ -63,10 +59,11 @@ class ReconciliationService(ReconciliationManagerInterface):
                             )
                             
                             if result.get('success'):
-                                await client.table('credit_purchases').update({
-                                    'status': 'completed',
-                                    'reconciled_at': datetime.now(timezone.utc).isoformat()
-                                }).eq('id', purchase['id']).execute()
+                                await billing_repo.update_purchase_by_id(
+                                    purchase_id=purchase['id'],
+                                    status='completed',
+                                    reconciled_at=datetime.now(timezone.utc).isoformat()
+                                )
                                 
                                 results['fixed'] += 1
                                 logger.info(f"[RECONCILIATION] Fixed missing credits for {purchase['account_id']}")
@@ -74,18 +71,20 @@ class ReconciliationService(ReconciliationManagerInterface):
                                 results['failed'] += 1
                                 results['errors'].append(f"Failed to add credits for {purchase['id']}")
                         else:
-                            await client.table('credit_purchases').update({
-                                'status': 'completed',
-                                'note': 'Credits already added'
-                            }).eq('id', purchase['id']).execute()
+                            await billing_repo.update_purchase_by_id(
+                                purchase_id=purchase['id'],
+                                status='completed',
+                                note='Credits already added'
+                            )
                             
                             logger.info(f"[RECONCILIATION] Purchase {purchase['id']} already processed")
                     
                     elif payment_intent.status == 'canceled' or payment_intent.status == 'failed':
-                        await client.table('credit_purchases').update({
-                            'status': 'failed',
-                            'error_message': f'Payment {payment_intent.status}'
-                        }).eq('id', purchase['id']).execute()
+                        await billing_repo.update_purchase_by_id(
+                            purchase_id=purchase['id'],
+                            status='failed',
+                            error_message=f'Payment {payment_intent.status}'
+                        )
                         
                         logger.info(f"[RECONCILIATION] Marked purchase {purchase['id']} as failed")
                 
@@ -102,7 +101,6 @@ class ReconciliationService(ReconciliationManagerInterface):
         return results
     
     async def verify_balance_consistency(self) -> Dict:
-        client = await self.db.client
         results = {
             'checked': 0,
             'fixed': 0,
@@ -110,13 +108,11 @@ class ReconciliationService(ReconciliationManagerInterface):
         }
         
         try:
-            accounts = await client.from_('credit_accounts').select(
-                'account_id, balance, expiring_credits, non_expiring_credits'
-            ).execute()
+            accounts = await billing_repo.get_all_credit_accounts_balances()
             
-            results['checked'] = len(accounts.data) if accounts.data else 0
+            results['checked'] = len(accounts) if accounts else 0
             
-            for account in accounts.data or []:
+            for account in accounts or []:
                 expected = Decimal(str(account['expiring_credits'])) + Decimal(str(account['non_expiring_credits']))
                 actual = Decimal(str(account['balance']))
                 
@@ -131,11 +127,9 @@ class ReconciliationService(ReconciliationManagerInterface):
                         'difference': float(expected - actual)
                     })
                     
-                    result = await client.rpc('reconcile_credit_balance', {
-                        'p_account_id': account['account_id']
-                    }).execute()
+                    result = await billing_repo.call_reconcile_credit_balance(account['account_id'])
                     
-                    if result.data and result.data[0].get('was_fixed'):
+                    if result and result.get('was_fixed'):
                         results['fixed'] += 1
                         logger.info(f"[BALANCE CHECK] Fixed balance for {account['account_id']}")
         
@@ -145,7 +139,6 @@ class ReconciliationService(ReconciliationManagerInterface):
         return results
     
     async def detect_double_charges(self) -> Dict:
-        client = await self.db.client
         results = {
             'duplicates_found': [],
             'total_checked': 0
@@ -154,14 +147,12 @@ class ReconciliationService(ReconciliationManagerInterface):
         try:
             since = datetime.now(timezone.utc) - timedelta(days=7)
             
-            ledger_entries = await client.from_('credit_ledger').select(
-                'id, account_id, amount, description, created_at, stripe_event_id'
-            ).gte('created_at', since.isoformat()).order('created_at', desc=True).execute()
+            ledger_entries = await billing_repo.get_recent_ledger_entries_for_duplicate_check(since.isoformat())
             
-            results['total_checked'] = len(ledger_entries.data) if ledger_entries.data else 0
+            results['total_checked'] = len(ledger_entries) if ledger_entries else 0
             
             seen = {}
-            for entry in ledger_entries.data or []:
+            for entry in ledger_entries or []:
                 key = f"{entry['account_id']}_{entry['amount']}_{entry['description']}"
                 
                 if key in seen:
@@ -187,17 +178,16 @@ class ReconciliationService(ReconciliationManagerInterface):
         return results
     
     async def cleanup_expired_credits(self) -> Dict:
-        client = await self.db.client
         results = {
             'accounts_cleaned': 0,
             'credits_removed': 0.0
         }
         
         try:
-            result = await client.rpc('cleanup_expired_credits').execute()
+            result = await billing_repo.call_cleanup_expired_credits()
             
-            if result.data:
-                for row in result.data:
+            if result:
+                for row in result:
                     results['accounts_cleaned'] += 1
                     results['credits_removed'] += float(row.get('credits_removed', 0))
                     logger.info(f"[CLEANUP] Removed ${row['credits_removed']:.2f} expired credits from {row['account_id']}")
@@ -208,15 +198,11 @@ class ReconciliationService(ReconciliationManagerInterface):
         return results
     
     async def retry_failed_payment(self, payment_id: str) -> Dict:
-        client = await self.db.client
-        
         try:
-            payment_result = await client.from_('credit_purchases').select('*').eq('id', payment_id).execute()
+            payment = await billing_repo.get_credit_purchase_by_id(payment_id)
             
-            if not payment_result.data:
+            if not payment:
                 return {'success': False, 'error': 'Payment not found'}
-            
-            payment = payment_result.data[0]
             
             if payment['status'] != 'pending':
                 return {'success': False, 'error': f'Payment status is {payment["status"]}, cannot retry'}
@@ -233,10 +219,11 @@ class ReconciliationService(ReconciliationManagerInterface):
                     stripe_event_id=f"retry_{payment_id}"
                 )
                 
-                await client.from_('credit_purchases').update({
-                    'status': 'completed',
-                    'completed_at': datetime.now(timezone.utc).isoformat()
-                }).eq('id', payment_id).execute()
+                await billing_repo.update_purchase_by_id(
+                    purchase_id=payment_id,
+                    status='completed',
+                    completed_at=datetime.now(timezone.utc).isoformat()
+                )
                 
                 logger.info(f"[RETRY] Successfully reconciled payment {payment_id}")
                 return {'success': True, 'action': 'reconciled', 'credits_added': float(payment['amount_dollars'])}

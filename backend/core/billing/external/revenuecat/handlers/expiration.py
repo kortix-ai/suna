@@ -1,6 +1,5 @@
 from typing import Dict
 from decimal import Decimal
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from ....credits.manager import credit_manager
 from ..repositories import SubscriptionRepository
@@ -17,9 +16,6 @@ class ExpirationHandler:
             f"- switching to Stripe free tier NOW"
         )
         
-        db = DBConnection()
-        client = await db.client
-        
         logger.info(
             f"[REVENUECAT EXPIRATION] Clearing expiring credits for {app_user_id} "
             f"(free tier subscription will grant new credits)"
@@ -31,7 +27,7 @@ class ExpirationHandler:
             description="Subscription expired - clearing credits before free tier"
         )
         
-        await SubscriptionRepository.transition_to_free_tier(client, app_user_id)
+        await SubscriptionRepository.transition_to_free_tier(None, app_user_id)
         
         from ....subscriptions import free_tier_service
         result = await free_tier_service.auto_subscribe_to_free_tier(app_user_id)

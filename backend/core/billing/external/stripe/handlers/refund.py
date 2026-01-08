@@ -1,18 +1,13 @@
-from fastapi import HTTPException, Request # type: ignore
-from typing import Dict
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta
-import stripe
-from core.services.supabase import DBConnection
-from core.utils.config import config
+from datetime import datetime, timezone
 from core.utils.logger import logger
-from core.utils.cache import Cache
-from core.utils.distributed_lock import WebhookLock, RenewalLock, DistributedLock
 from core.billing.credits.manager import credit_manager
+from core.billing import repo as billing_repo
+
 
 class RefundHandler:
     @staticmethod
-    async def handle_refund(event, client):
+    async def handle_refund(event, client=None):
         refund_obj = event.data.object
         
         if event.type == 'charge.refunded':
@@ -32,53 +27,48 @@ class RefundHandler:
             logger.error(f"[REFUND] Missing refund_id or charge_id in event {event.id}")
             return
         
-        existing_refund = await client.from_('refund_history').select('id, status').eq(
-            'stripe_refund_id', refund_id
-        ).execute()
+        existing_refund = await billing_repo.get_refund_by_stripe_id(refund_id)
         
-        if existing_refund.data:
-            if existing_refund.data[0]['status'] == 'processed':
+        if existing_refund:
+            if existing_refund['status'] == 'processed':
                 logger.info(f"[REFUND] Refund {refund_id} already processed")
                 return
         
-        purchase_record = await client.from_('credit_purchases').select(
-            'id, account_id, amount_dollars, status'
-        ).eq('stripe_payment_intent_id', payment_intent_id).execute()
+        purchase = await billing_repo.get_purchase_by_payment_intent(payment_intent_id)
         
-        if not purchase_record.data:
+        if not purchase:
             logger.warning(f"[REFUND] No purchase found for payment_intent {payment_intent_id}")
             
-            if not existing_refund.data:
-                await client.from_('refund_history').insert({
-                    'stripe_refund_id': refund_id,
-                    'stripe_charge_id': charge_id,
-                    'stripe_payment_intent_id': payment_intent_id,
-                    'amount_refunded': float(amount_refunded),
-                    'credits_deducted': 0,
-                    'refund_reason': 'No associated purchase found',
-                    'status': 'failed',
-                    'error_message': 'Purchase record not found',
-                    'account_id': '00000000-0000-0000-0000-000000000000',
-                    'processed_at': datetime.now(timezone.utc).isoformat()
-                }).execute()
+            if not existing_refund:
+                await billing_repo.create_refund_history(
+                    account_id='00000000-0000-0000-0000-000000000000',
+                    stripe_refund_id=refund_id,
+                    stripe_charge_id=charge_id,
+                    stripe_payment_intent_id=payment_intent_id,
+                    amount_refunded=float(amount_refunded),
+                    credits_deducted=0,
+                    refund_reason='No associated purchase found',
+                    status='failed',
+                    error_message='Purchase record not found',
+                    processed_at=datetime.now(timezone.utc).isoformat()
+                )
             return
         
-        purchase = purchase_record.data[0]
         account_id = purchase['account_id']
         credits_to_deduct = Decimal(str(purchase['amount_dollars']))
         
         try:
-            if not existing_refund.data:
-                await client.from_('refund_history').insert({
-                    'account_id': account_id,
-                    'stripe_refund_id': refund_id,
-                    'stripe_charge_id': charge_id,
-                    'stripe_payment_intent_id': payment_intent_id,
-                    'amount_refunded': float(amount_refunded),
-                    'credits_deducted': 0,
-                    'status': 'pending',
-                    'metadata': {'purchase_id': purchase['id']}
-                }).execute()
+            if not existing_refund:
+                await billing_repo.create_refund_history(
+                    account_id=account_id,
+                    stripe_refund_id=refund_id,
+                    stripe_charge_id=charge_id,
+                    stripe_payment_intent_id=payment_intent_id,
+                    amount_refunded=float(amount_refunded),
+                    credits_deducted=0,
+                    status='pending',
+                    metadata={'purchase_id': purchase['id']}
+                )
             
             balance_info = await credit_manager.get_balance(account_id)
             current_balance = Decimal(str(balance_info['total']))
@@ -101,23 +91,26 @@ class RefundHandler:
                 
                 if not result.get('success'):
                     logger.error(f"[REFUND] Failed to deduct credits: {result.get('error')}")
-                    await client.from_('refund_history').update({
-                        'status': 'failed',
-                        'error_message': result.get('error'),
-                        'processed_at': datetime.now(timezone.utc).isoformat()
-                    }).eq('stripe_refund_id', refund_id).execute()
+                    await billing_repo.update_refund_history(
+                        stripe_refund_id=refund_id,
+                        status='failed',
+                        error_message=result.get('error'),
+                        processed_at=datetime.now(timezone.utc).isoformat()
+                    )
                     return
             
-            await client.from_('credit_purchases').update({
-                'status': 'refunded',
-                'metadata': {'refund_id': refund_id, 'refund_processed_at': datetime.now(timezone.utc).isoformat()}
-            }).eq('id', purchase['id']).execute()
+            await billing_repo.update_purchase_status(
+                purchase_id=purchase['id'],
+                status='refunded',
+                metadata={'refund_id': refund_id, 'refund_processed_at': datetime.now(timezone.utc).isoformat()}
+            )
             
-            await client.from_('refund_history').update({
-                'status': 'processed',
-                'credits_deducted': float(credits_to_deduct),
-                'processed_at': datetime.now(timezone.utc).isoformat()
-            }).eq('stripe_refund_id', refund_id).execute()
+            await billing_repo.update_refund_history(
+                stripe_refund_id=refund_id,
+                status='processed',
+                credits_deducted=float(credits_to_deduct),
+                processed_at=datetime.now(timezone.utc).isoformat()
+            )
             
             logger.info(
                 f"[REFUND] Successfully processed refund {refund_id} for account {account_id}. "
@@ -126,9 +119,10 @@ class RefundHandler:
             
         except Exception as e:
             logger.error(f"[REFUND] Error processing refund {refund_id}: {e}")
-            await client.from_('refund_history').update({
-                'status': 'failed',
-                'error_message': str(e),
-                'processed_at': datetime.now(timezone.utc).isoformat()
-            }).eq('stripe_refund_id', refund_id).execute()
+            await billing_repo.update_refund_history(
+                stripe_refund_id=refund_id,
+                status='failed',
+                error_message=str(e),
+                processed_at=datetime.now(timezone.utc).isoformat()
+            )
 

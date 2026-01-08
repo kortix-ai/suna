@@ -14,43 +14,31 @@ from core.billing.shared.config import (
 )
 from core.billing.credits.manager import credit_manager
 from core.billing.external.stripe import StripeAPIWrapper
+from core.billing import repo as billing_repo
 from ..repositories.credit_account import CreditAccountRepository
 from ..repositories.trial import TrialRepository
+
 
 class LifecycleService:
     def __init__(self):
         self.credit_repo = CreditAccountRepository()
         self.trial_repo = TrialRepository()
     
-
-
-
     async def get_account_id_from_subscription(self, subscription: Dict, customer_id: str) -> Optional[str]:
         account_id = subscription.get('metadata', {}).get('account_id')
         
         if not account_id:
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
+            customer_result = await billing_repo.get_billing_customer_by_stripe_id(customer_id)
             
-            customer_result = await client.schema('basejump').from_('billing_customers')\
-                .select('account_id')\
-                .eq('id', customer_id)\
-                .execute()
-            
-            if not customer_result.data or len(customer_result.data) == 0:
+            if not customer_result:
                 logger.warning(f"Could not find account for customer {customer_id}")
                 return None
             
-            account_id = customer_result.data[0]['account_id']
+            account_id = customer_result.get('account_id')
         
         return account_id
     
-
-
-
-
-    def is_renewal(self, subscription: Dict, current_account_data: Optional[Dict], billing_anchor: datetime) -> bool:
+    def is_renewal(self, subscription: Dict, current_account_data: Optional[Dict], billing_anchor) -> bool:
         if not subscription.get('id'):
             return False
         
@@ -77,6 +65,23 @@ class LifecycleService:
             logger.info(f"[RENEWAL DETECTION] New subscription, free-to-paid upgrade, or tier change ({current_tier_name} -> {new_tier_info.name if new_tier_info else 'unknown'}) - NOT blocking")
             return False
         
+        try:
+            if isinstance(billing_anchor, datetime):
+                if billing_anchor.tzinfo is None:
+                    billing_anchor = billing_anchor.replace(tzinfo=timezone.utc)
+            elif isinstance(billing_anchor, str):
+                billing_anchor = datetime.fromisoformat(billing_anchor.replace('Z', '+00:00'))
+            elif isinstance(billing_anchor, (int, float)):
+                billing_anchor = datetime.fromtimestamp(billing_anchor, tz=timezone.utc)
+            else:
+                if hasattr(billing_anchor, 'timestamp'):
+                    billing_anchor = datetime.fromtimestamp(billing_anchor.timestamp(), tz=timezone.utc)
+                else:
+                    billing_anchor = datetime.fromtimestamp(int(billing_anchor), tz=timezone.utc)
+        except Exception as e:
+            logger.warning(f"[RENEWAL DETECTION] Could not parse billing_anchor: {e}")
+            return False
+        
         now = datetime.now(timezone.utc)
         seconds_since_period_start = (now - billing_anchor).total_seconds()
         
@@ -86,10 +91,6 @@ class LifecycleService:
         
         return False
     
-
-
-
-
     def should_grant_credits(self, current_tier_data: Optional[Dict], new_tier: Dict, subscription: Dict, is_renewal: bool = False) -> bool:
         if is_renewal:
             return False
@@ -115,18 +116,30 @@ class LifecycleService:
         
         return False
     
-
-
-
-
-
-    def is_duplicate_credit_grant(self, last_grant_date: Optional[str], billing_anchor: datetime, current_tier_name: str, new_tier: Dict) -> bool:
+    def is_duplicate_credit_grant(self, last_grant_date: Optional[str], billing_anchor, current_tier_name: str, new_tier: Dict) -> bool:
         if not last_grant_date:
             return False
         
         try:
-            last_grant_dt = datetime.fromisoformat(last_grant_date.replace('Z', '+00:00'))
+            if isinstance(last_grant_date, datetime):
+                last_grant_dt = last_grant_date if last_grant_date.tzinfo else last_grant_date.replace(tzinfo=timezone.utc)
+            else:
+                last_grant_dt = datetime.fromisoformat(str(last_grant_date).replace('Z', '+00:00'))
+            
             time_since_last_grant = (datetime.now(timezone.utc) - last_grant_dt).total_seconds()
+            
+            if isinstance(billing_anchor, datetime):
+                if billing_anchor.tzinfo is None:
+                    billing_anchor = billing_anchor.replace(tzinfo=timezone.utc)
+            elif isinstance(billing_anchor, str):
+                billing_anchor = datetime.fromisoformat(billing_anchor.replace('Z', '+00:00'))
+            elif isinstance(billing_anchor, (int, float)):
+                billing_anchor = datetime.fromtimestamp(billing_anchor, tz=timezone.utc)
+            else:
+                if hasattr(billing_anchor, 'timestamp'):
+                    billing_anchor = datetime.fromtimestamp(billing_anchor.timestamp(), tz=timezone.utc)
+                else:
+                    billing_anchor = datetime.fromtimestamp(int(billing_anchor), tz=timezone.utc)
             
             is_free_to_paid_upgrade = (current_tier_name in ['free', 'none'] and 
                                       new_tier['name'] not in ['free', 'none'])
@@ -152,11 +165,6 @@ class LifecycleService:
             
         return False
     
-
-
-
-
-
     async def grant_subscription_credits(self, account_id: str, tier: Dict, billing_anchor: datetime, is_tier_upgrade: bool = False) -> None:
         full_amount = Decimal(tier['credits'])
         
@@ -203,24 +211,13 @@ class LifecycleService:
         finally:
             await lock.release()
     
-
-
-
-
     async def _check_for_recent_duplicate_credits(self, account_id: str, tier_name: str, amount: Decimal) -> None:
-        from core.services.supabase import DBConnection
-        
-        db = DBConnection()
-        client = await db.client
-        
         two_minutes_ago = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
         
-        recent_credits = await client.from_('credit_ledger').select('amount, description, created_at').eq(
-            'account_id', account_id
-        ).gte('created_at', two_minutes_ago).execute()
+        recent_credits = await billing_repo.get_recent_credit_ledger_entries(account_id, two_minutes_ago)
         
-        if recent_credits.data:
-            for credit in recent_credits.data:
+        if recent_credits:
+            for credit in recent_credits:
                 credit_description = credit.get('description', '')
                 credit_amount = credit.get('amount', 0)
                 
@@ -228,9 +225,6 @@ class LifecycleService:
                     abs(float(credit_amount) - float(amount)) < 0.01):
                     logger.warning(f"[DUPLICATE PREVENTION] Credits for {tier_name} (${amount}) already granted recently - BLOCKING duplicate")
                     raise Exception(f"Credits for {tier_name} upgrade already granted recently")
-    
-
-
     
     async def invalidate_caches(self, account_id: str) -> None:
         cache_keys = [
@@ -242,7 +236,6 @@ class LifecycleService:
         
         for key in cache_keys:
             await Cache.invalidate(key)
-    
     
     def calculate_next_credit_grant(self, plan_type: str, billing_anchor: datetime, period_end_timestamp: int) -> datetime:
         if plan_type == 'yearly':

@@ -1,7 +1,6 @@
 from typing import Dict
 from decimal import Decimal
-from datetime import datetime, timezone, timedelta, timedelta
-from core.services.supabase import DBConnection
+from datetime import datetime, timezone, timedelta
 from core.utils.logger import logger
 from core.utils.cache import Cache
 from core.utils.distributed_lock import RenewalLock
@@ -13,6 +12,7 @@ from core.billing.shared.config import (
 )
 from core.billing.credits.manager import credit_manager
 from core.billing.shared.cache_utils import invalidate_account_state_cache
+from core.billing import repo as billing_repo
 from ..client import StripeAPIWrapper
 from ....subscriptions.handlers.billing_period import BillingPeriodHandler
 
@@ -36,9 +36,6 @@ class InvoiceHandler:
     @staticmethod
     async def handle_subscription_renewal(invoice: Dict, stripe_event_id: str = None):
         try:
-            db = DBConnection()
-            client = await db.client
-            
             subscription_id = invoice.get('subscription')
             invoice_id = invoice.get('id')
             billing_reason = invoice.get('billing_reason')
@@ -52,26 +49,20 @@ class InvoiceHandler:
             if not period_start or not period_end:
                 return
             
-            customer_result_early = await client.schema('basejump').from_('billing_customers')\
-                .select('account_id')\
-                .eq('id', invoice['customer'])\
-                .execute()
+            customer_data = await billing_repo.get_billing_customer_by_stripe_id(invoice['customer'])
             
-            if not customer_result_early.data:
+            if not customer_data:
                 logger.error(f"[RENEWAL] No account found for customer {invoice['customer']}")
                 return
             
-            account_id = customer_result_early.data[0]['account_id']
+            account_id = customer_data['account_id']
             
-            guard_check = await client.rpc('check_renewal_already_processed', {
-                'p_account_id': account_id,
-                'p_period_start': period_start
-            }).execute()
+            guard_check = await billing_repo.check_renewal_already_processed(account_id, period_start)
             
-            if guard_check.data and guard_check.data.get('already_processed'):
+            if guard_check and guard_check.get('already_processed'):
                 logger.info(
                     f"[RENEWAL GUARD] ⛔ Renewal already processed for {account_id} period {period_start} "
-                    f"by {guard_check.data.get('processed_by')} at {guard_check.data.get('processed_at')}"
+                    f"by {guard_check.get('processed_by')} at {guard_check.get('processed_at')}"
                 )
                 return
             
@@ -82,9 +73,6 @@ class InvoiceHandler:
                 return
             
             try:
-                db_check = DBConnection()
-                client_check = await db_check.client
-                
                 logger.debug(f"[RENEWAL] Starting renewal logic for account {account_id}, billing_reason={billing_reason}")
                 
                 is_prorated_upgrade = False
@@ -112,16 +100,7 @@ class InvoiceHandler:
                 elif billing_reason == 'subscription_update':
                     logger.debug(f"[RENEWAL] Billing reason is subscription_update")
                     if is_prorated_upgrade:
-                        customer_result = await client.schema('basejump').from_('billing_customers')\
-                            .select('account_id')\
-                            .eq('id', invoice['customer'])\
-                            .execute()
-                        
-                        if not customer_result.data:
-                            logger.debug(f"[RENEWAL] No customer data found, returning")
-                            return
-                        
-                        account_id = customer_result.data[0]['account_id']
+                        # account_id already set from early customer lookup
                         logger.info(f"[RENEWAL] Processing prorated upgrade for account {account_id}")
                         
                         subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
@@ -129,32 +108,21 @@ class InvoiceHandler:
                         
                         if price_id:
                             tier_info = get_tier_by_price_id(price_id) 
-                            existing_tier_result = await client.from_('credit_accounts').select('tier').eq('account_id', account_id).execute()
+                            existing_tier_result = await billing_repo.get_credit_account_tier(account_id)
                             
-                            if tier_info and existing_tier_result.data:
-                                existing_tier_name = existing_tier_result.data[0].get('tier')
+                            if tier_info and existing_tier_result:
+                                existing_tier_name = existing_tier_result.get('tier')
                                 existing_tier = get_tier_by_name(existing_tier_name)
                                 
                                 if existing_tier and tier_info.name != existing_tier.name and float(tier_info.monthly_credits) > float(existing_tier.monthly_credits):
-                                    # Only skip credit grant if monthly_refill is explicitly disabled
-                                    if not tier_info.monthly_refill_enabled:
-                                        logger.info(f"[RENEWAL] Skipping upgrade credits for tier {tier_info.name} - monthly_refill_enabled=False")
-                                    else:
-                                        await credit_manager.add_credits(
-                                            account_id=account_id,
-                                            amount=tier_info.monthly_credits,
-                                            is_expiring=True,
-                                            description=f"Upgrade to {tier_info.display_name} tier",
-                                            stripe_event_id=stripe_event_id
-                                        )
+                                    logger.info(f"[RENEWAL] Prorated upgrade detected ({existing_tier.name} -> {tier_info.name}) - credits handled by subscription.updated, updating metadata only")
                                     
-                                    await client.from_('credit_accounts').update({
+                                    await billing_repo.update_credit_account(account_id, {
                                         'tier': tier_info.name,
                                         'last_processed_invoice_id': invoice_id,
                                         'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
-                                    }).eq('account_id', account_id).execute()
+                                    })
                                     
-                                    logger.info(f"[RENEWAL] Upgrade credits granted for prorated subscription_update")
                                     return
                         logger.debug(f"[RENEWAL] No price_id found, returning")
                         return
@@ -167,28 +135,14 @@ class InvoiceHandler:
                 
                 logger.debug(f"[RENEWAL] Fetching account for customer {invoice.get('customer')}")
                 
-                customer_result = await client.schema('basejump').from_('billing_customers')\
-                    .select('account_id')\
-                    .eq('id', invoice['customer'])\
-                    .execute()
-                
-                if not customer_result.data:
-                    logger.warning(f"[RENEWAL] No account found for customer {invoice.get('customer')}")
-                    return
-                
-                account_id = customer_result.data[0]['account_id']
+                # account_id already set from early customer lookup
                 logger.debug(f"[RENEWAL] Found account {account_id}, continuing with renewal")
                 
-                account_result = await client.from_('credit_accounts')\
-                    .select('tier, last_grant_date, next_credit_grant, billing_cycle_anchor, last_processed_invoice_id, trial_status, last_renewal_period_start')\
-                    .eq('account_id', account_id)\
-                    .execute()
+                account = await billing_repo.get_credit_account_for_renewal(account_id)
                 
-                if not account_result.data:
+                if not account:
                     logger.warning(f"[RENEWAL] No credit account found for {account_id}")
                     return
-                
-                account = account_result.data[0]
                 tier = account['tier']
                 trial_status = account.get('trial_status')
                 period_start_dt = datetime.fromtimestamp(period_start, tz=timezone.utc)
@@ -207,20 +161,17 @@ class InvoiceHandler:
                 
                 if trial_status == 'active' and billing_reason == 'subscription_create' and is_still_trialing:
                     logger.debug(f"[RENEWAL] Trial + subscription_create + still trialing, updating invoice ID only")
-                    await client.from_('credit_accounts').update({
+                    await billing_repo.update_credit_account(account_id, {
                         'last_processed_invoice_id': invoice_id
-                    }).eq('account_id', account_id).execute()
+                    })
                     return
                 
                 if trial_status == 'active' and not is_still_trialing:
                     logger.info(f"[RENEWAL] Trial ended (subscription is {subscription_status}), will grant first paid period credits and mark trial as converted")
-                    await client.from_('credit_accounts').update({
+                    await billing_repo.update_credit_account(account_id, {
                         'trial_status': 'converted'
-                    }).eq('account_id', account_id).execute()
-                    await client.from_('trial_history').update({
-                        'ended_at': datetime.now(timezone.utc).isoformat(),
-                        'converted_to_paid': True
-                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                    })
+                    await billing_repo.mark_trial_converted(account_id)
                     trial_status = 'converted'
                     logger.info(f"[RENEWAL] Trial status updated to 'converted' for account {account_id}")
                 
@@ -261,13 +212,13 @@ class InvoiceHandler:
                 if not tier_config.monthly_refill_enabled:
                     logger.info(f"[RENEWAL] Skipping credit grant for tier {tier} - monthly_refill_enabled=False")
                     # Still update invoice tracking and metadata
-                    await client.from_('credit_accounts').update({
+                    await billing_repo.update_credit_account(account_id, {
                         'last_processed_invoice_id': invoice_id,
                         'stripe_subscription_id': subscription_id,
                         'tier': tier,
                         'billing_cycle_anchor': period_start_dt.isoformat(),
                         'next_credit_grant': BillingPeriodHandler._calculate_next_credit_grant(price_id, period_start, period_end) if price_id else None
-                    }).eq('account_id', account_id).execute()
+                    })
                     await Cache.invalidate(f"credit_balance:{account_id}")
                     await Cache.invalidate(f"credit_summary:{account_id}")
                     await Cache.invalidate(f"subscription_tier:{account_id}")
@@ -305,48 +256,47 @@ class InvoiceHandler:
                                 update_data['trial_status'] = trial_status
                             
                             logger.info(f"[INITIAL GRANT SKIP] Updating metadata for tier {tier}")
-                            await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                            await billing_repo.update_credit_account(account_id, update_data)
                             return
                     elif last_grant and current_db_tier != tier:
                         logger.info(f"[TIER CHANGE DETECTED] Last grant was for tier {current_db_tier}, but invoice is for tier {tier} - will grant credits for new tier")
                 
                 if is_true_renewal:
                     tier_config = get_tier_by_name(tier)
-                    # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
                     if tier_config and not tier_config.monthly_refill_enabled:
                         logger.info(f"[RENEWAL SKIP] Skipping monthly credit grant for {account_id} - tier {tier} has monthly_refill_enabled=False")
-                        await client.from_('credit_accounts').update({
+                        await billing_repo.update_credit_account(account_id, {
                             'last_processed_invoice_id': invoice_id,
                             'stripe_subscription_id': subscription_id
-                        }).eq('account_id', account_id).execute()
+                        })
                         return
                     
                     logger.info(f"[RENEWAL] Using atomic function to grant ${monthly_credits} credits for {account_id} (TRUE RENEWAL)")
-                    result = await client.rpc('atomic_grant_renewal_credits', {
-                        'p_account_id': account_id,
-                        'p_period_start': period_start,
-                        'p_period_end': period_end,
-                        'p_credits': float(monthly_credits),
-                        'p_processed_by': 'webhook_invoice',
-                        'p_invoice_id': invoice_id,
-                        'p_stripe_event_id': stripe_event_id,
-                        'p_provider': 'stripe',
-                        'p_revenuecat_transaction_id': None,
-                        'p_revenuecat_product_id': None
-                    }).execute()
+                    result = await billing_repo.atomic_grant_renewal_credits(
+                        account_id=account_id,
+                        period_start=period_start,
+                        period_end=period_end,
+                        credits=float(monthly_credits),
+                        processed_by='webhook_invoice',
+                        invoice_id=invoice_id,
+                        stripe_event_id=stripe_event_id,
+                        provider='stripe',
+                        revenuecat_transaction_id=None,
+                        revenuecat_product_id=None
+                    )
                 else:
                     recent_time_threshold = datetime.now(timezone.utc) - timedelta(minutes=5)
                     
-                    recent_credits = await client.from_('credit_ledger').select('description, amount, created_at, stripe_event_id').eq(
-                        'account_id', account_id
-                    ).gte('created_at', recent_time_threshold.isoformat()).execute()
+                    recent_credits = await billing_repo.get_recent_credit_ledger_entries(
+                        account_id, recent_time_threshold.isoformat()
+                    )
                     
                     checkout_credits_already_granted = False
-                    if recent_credits.data:
-                        for entry in recent_credits.data:
-                            description = entry.get('description', '')
+                    if recent_credits:
+                        for entry in recent_credits:
+                            description = entry.get('description', '') or ''
                             amount = entry.get('amount', 0)
-                            stripe_event_id_check = entry.get('stripe_event_id', '')
+                            stripe_event_id_check = entry.get('stripe_event_id') or ''
                             
                             if ((('checkout.session.completed' in description or 'checkout_' in stripe_event_id_check or 'free_upgrade_' in stripe_event_id_check) and
                                 float(amount) == float(monthly_credits) and
@@ -374,11 +324,11 @@ class InvoiceHandler:
                         if trial_status in ['cancelled', 'expired']:
                             update_data['trial_status'] = 'none'
                         
-                        await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                        await billing_repo.update_credit_account(account_id, update_data)
                         return
                     
                     tier_config = get_tier_by_name(tier)
-                    # Only skip credit grant if monthly_refill is explicitly disabled (e.g., free tier)
+                    
                     if tier_config and not tier_config.monthly_refill_enabled:
                         logger.info(f"[INITIAL GRANT SKIP] Skipping initial credit grant for {account_id} - tier {tier} has monthly_refill_enabled=False")
                     else:
@@ -404,44 +354,46 @@ class InvoiceHandler:
                         update_data['trial_status'] = 'none'
                         logger.info(f"[RENEWAL] Resetting trial_status from {trial_status} to 'none'")
                     
-                    await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                    await billing_repo.update_credit_account(account_id, update_data)
                     
                     result = add_result
                 
-                if is_true_renewal and result and hasattr(result, 'data') and result.data:
-                    data = result.data
-                    credits_granted = data.get('credits_granted', monthly_credits)
-                    expiring = data.get('expiring_credits', credits_granted)
-                    non_expiring = data.get('non_expiring_credits', 0)
-                    total = data.get('new_balance', credits_granted)
+                if is_true_renewal and result:
+                    credits_granted = result.get('credits_granted', monthly_credits)
+                    expiring = result.get('expiring_credits', credits_granted)
+                    non_expiring = result.get('non_expiring_credits', 0)
+                    total = result.get('new_balance', credits_granted)
                     
-                    logger.info(
-                        f"[RENEWAL SUCCESS] ✅ Granted ${credits_granted} credits "
-                        f"to {account_id}: Expiring=${expiring:.2f}, "
-                        f"Non-expiring=${non_expiring:.2f}, "
-                        f"Total=${total:.2f}"
-                    )
-                    
-                    if trial_status == 'converted':
-                        await client.from_('credit_accounts').update({
-                            'trial_status': 'none'
-                        }).eq('account_id', account_id).execute()
-                    
-                    try:
-                        await Cache.invalidate(f"credit_balance:{account_id}")
-                        await Cache.invalidate(f"credit_summary:{account_id}")
-                        await Cache.invalidate(f"subscription_tier:{account_id}")
-                        await invalidate_account_state_cache(account_id)
-                    except Exception as cache_err:
-                        logger.warning(f"[RENEWAL] Cache invalidation failed for {account_id}: {str(cache_err)}")
-                elif is_true_renewal and result and hasattr(result, 'data') and result.data and result.data.get('duplicate_prevented'):
-                    logger.info(
-                        f"[RENEWAL DEDUPE] ⛔ Duplicate renewal prevented for {account_id} period {period_start} "
-                        f"(already processed by {result.data.get('processed_by')})"
-                    )
+                    if result.get('duplicate_prevented'):
+                        logger.info(
+                            f"[RENEWAL DEDUPE] ⛔ Duplicate renewal prevented for {account_id} period {period_start} "
+                            f"(already processed by {result.get('processed_by')})"
+                        )
+                    elif result.get('success') or credits_granted:
+                        logger.info(
+                            f"[RENEWAL SUCCESS] ✅ Granted ${credits_granted} credits "
+                            f"to {account_id}: Expiring=${expiring:.2f}, "
+                            f"Non-expiring=${non_expiring:.2f}, "
+                            f"Total=${total:.2f}"
+                        )
+                        
+                        if trial_status == 'converted':
+                            await billing_repo.update_credit_account(account_id, {
+                                'trial_status': 'none'
+                            })
+                        
+                        try:
+                            await Cache.invalidate(f"credit_balance:{account_id}")
+                            await Cache.invalidate(f"credit_summary:{account_id}")
+                            await Cache.invalidate(f"subscription_tier:{account_id}")
+                            await invalidate_account_state_cache(account_id)
+                        except Exception as cache_err:
+                            logger.warning(f"[RENEWAL] Cache invalidation failed for {account_id}: {str(cache_err)}")
+                    else:
+                        error_msg = result.get('error', 'Unknown error')
+                        logger.error(f"[RENEWAL ERROR] Failed to grant credits for account {account_id}: {error_msg}")
                 elif is_true_renewal:
-                    error_msg = result.data.get('error', 'Unknown error') if (result and hasattr(result, 'data') and result.data) else 'No response from atomic function'
-                    logger.error(f"[RENEWAL ERROR] Failed to grant credits for account {account_id}: {error_msg}")
+                    logger.error(f"[RENEWAL ERROR] Failed to grant credits for account {account_id}: No response from atomic function")
                 elif not is_true_renewal and result and result.get('success'):
                     logger.info(f"[INITIAL GRANT SUCCESS] ✅ Granted ${monthly_credits} initial subscription credits to {account_id}")
                     
@@ -472,7 +424,7 @@ class InvoiceHandler:
             )
 
     @staticmethod
-    async def handle_invoice_payment_failed(event, client):
+    async def handle_invoice_payment_failed(event, client=None):
         invoice = event.data.object
         subscription_id = invoice.get('subscription')
         billing_reason = invoice.get('billing_reason')
@@ -491,45 +443,36 @@ class InvoiceHandler:
             logger.debug(f"[PAYMENT FAILED] Retrieved subscription: status={subscription_status}, account_id={account_id}")
             
             if not account_id:
-                customer_result = await client.schema('basejump').from_('billing_customers')\
-                    .select('account_id')\
-                    .eq('id', subscription['customer'])\
-                    .execute()
+                customer_data = await billing_repo.get_billing_customer_by_stripe_id(subscription['customer'])
                 
-                if customer_result.data:
-                    account_id = customer_result.data[0]['account_id']
+                if customer_data:
+                    account_id = customer_data['account_id']
                     logger.info(f"[PAYMENT FAILED] Found account_id from billing_customers: {account_id}")
             
             if account_id:
                 try:
-                    # Check if this is a failed payment for a NEW subscription that never became active
-                    # Include 'canceled' status because Stripe may delete incomplete subscriptions
                     is_new_subscription_failure = (
                         billing_reason == 'subscription_create' and 
                         subscription_status in ['incomplete', 'incomplete_expired', 'canceled']
                     )
                     
                     if is_new_subscription_failure:
-                        # Payment failed for initial subscription - revert tier and clean up
-                        # This is a safety net in case tier was incorrectly set
                         logger.info(f"[PAYMENT FAILED] Initial subscription payment failed for {account_id} - reverting tier to 'free'")
                         
-                        await client.from_('credit_accounts').update({
+                        await billing_repo.update_credit_account(account_id, {
                             'payment_status': 'failed',
                             'last_payment_failure': datetime.now(timezone.utc).isoformat(),
-                            'tier': 'free',  # Revert to free tier
-                            'stripe_subscription_id': None,  # Clear the failed subscription
+                            'tier': 'free',
+                            'stripe_subscription_id': None,
                             'stripe_subscription_status': None
-                        }).eq('account_id', account_id).execute()
+                        })
                         
                         logger.info(f"[PAYMENT FAILED] Successfully reverted {account_id} to free tier")
                     else:
-                        # Existing subscription payment failed - just mark as failed
-                        # User keeps their tier during grace period
-                        await client.from_('credit_accounts').update({
+                        await billing_repo.update_credit_account(account_id, {
                             'payment_status': 'failed',
                             'last_payment_failure': datetime.now(timezone.utc).isoformat()
-                        }).eq('account_id', account_id).execute()
+                        })
                         
                         logger.info(f"[PAYMENT FAILED] Marked payment as failed for account {account_id}")
                     

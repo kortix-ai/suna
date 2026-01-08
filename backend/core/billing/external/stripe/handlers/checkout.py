@@ -13,25 +13,26 @@ from core.billing.shared.config import (
 )
 from core.billing.credits.manager import credit_manager
 from core.billing.external.stripe.client import StripeAPIWrapper
+from core.billing import repo as billing_repo
 
 class CheckoutHandler:
     @staticmethod
-    async def handle_checkout_session_completed(event, client):
+    async def handle_checkout_session_completed(event, client=None):
         session = event.data.object
         logger.info(f"[WEBHOOK] Checkout session completed - ID: {session.get('id')}, Has subscription: {bool(session.get('subscription'))}, Metadata: {session.get('metadata', {})}")
         
         if session.get('metadata', {}).get('type') == 'credit_purchase':
-            await CheckoutHandler._handle_credit_purchase(session, client)
+            await CheckoutHandler._handle_credit_purchase(session)
         elif session.get('metadata', {}).get('type') == 'yearly_upgrade':
-            await CheckoutHandler._handle_yearly_upgrade_payment(session, client)
+            await CheckoutHandler._handle_yearly_upgrade_payment(session)
         elif session.get('subscription'):
             logger.info(f"[WEBHOOK] Routing to subscription checkout handler")
-            await CheckoutHandler._handle_subscription_checkout(session, client)
+            await CheckoutHandler._handle_subscription_checkout(session)
         else:
             logger.warning(f"[WEBHOOK] Checkout session has neither credit_purchase type nor subscription")
 
     @staticmethod
-    async def _handle_credit_purchase(session, client):
+    async def _handle_credit_purchase(session):
         metadata = session.get('metadata', {})
         account_id = metadata.get('account_id')
         credit_amount_str = metadata.get('credit_amount')
@@ -45,32 +46,31 @@ class CheckoutHandler:
             return
         
         try:
-            current_state = await client.from_('credit_accounts').select(
-                'balance, expiring_credits, non_expiring_credits'
-            ).eq('account_id', account_id).execute()
+            current_state = await billing_repo.get_credit_account_balances(account_id)
             
             if session.payment_intent:
-                update_result = await client.table('credit_purchases').update({
-                    'status': 'completed',
-                    'completed_at': datetime.now(timezone.utc).isoformat(),
-                    'stripe_payment_intent_id': session.payment_intent
-                }).eq('stripe_payment_intent_id', session.payment_intent).execute()
-                
-                if not update_result.data or len(update_result.data) == 0:
-                    purchase_id = metadata.get('purchase_id')
-                    if purchase_id:
-                        update_result = await client.table('credit_purchases').update({
-                            'status': 'completed',
-                            'completed_at': datetime.now(timezone.utc).isoformat(),
-                            'stripe_payment_intent_id': session.payment_intent
-                        }).eq('id', purchase_id).execute()
+                await billing_repo.update_purchase_by_payment_intent(
+                    payment_intent_id=session.payment_intent,
+                    status='completed',
+                    completed_at=datetime.now(timezone.utc).isoformat()
+                )
+                # Also try by purchase_id as fallback
+                purchase_id = metadata.get('purchase_id')
+                if purchase_id:
+                    await billing_repo.update_purchase_by_id(
+                        purchase_id=purchase_id,
+                        status='completed',
+                        completed_at=datetime.now(timezone.utc).isoformat(),
+                        stripe_payment_intent_id=session.payment_intent
+                    )
             else:
                 purchase_id = metadata.get('purchase_id')
                 if purchase_id:
-                    update_result = await client.table('credit_purchases').update({
-                        'status': 'completed',
-                        'completed_at': datetime.now(timezone.utc).isoformat()
-                    }).eq('id', purchase_id).execute()
+                    await billing_repo.update_purchase_by_id(
+                        purchase_id=purchase_id,
+                        status='completed',
+                        completed_at=datetime.now(timezone.utc).isoformat()
+                    )
             
             result = await credit_manager.add_credits(
                 account_id=account_id,
@@ -82,38 +82,37 @@ class CheckoutHandler:
             if not result.get('success'):
                 purchase_id = metadata.get('purchase_id')
                 if purchase_id:
-                    await client.table('credit_purchases').update({
-                        'status': 'failed',
-                        'error_message': 'Credit addition failed'
-                    }).eq('id', purchase_id).execute()
+                    await billing_repo.update_purchase_by_id(
+                        purchase_id=purchase_id,
+                        status='failed',
+                        error_message='Credit addition failed'
+                    )
                 
                 return
         except Exception as e:
             try:
                 purchase_id = metadata.get('purchase_id')
                 if purchase_id:
-                    await client.table('credit_purchases').update({
-                        'status': 'failed',
-                        'error_message': str(e)
-                    }).eq('id', purchase_id).execute()
+                    await billing_repo.update_purchase_by_id(
+                        purchase_id=purchase_id,
+                        status='failed',
+                        error_message=str(e)
+                    )
             except:
                 pass
             return
         
-        final_state = await client.from_('credit_accounts').select(
-            'balance, expiring_credits, non_expiring_credits'
-        ).eq('account_id', account_id).execute()
+        final_state = await billing_repo.get_credit_account_balances(account_id)
         
-        if final_state.data:
-            before = current_state.data[0] if current_state.data else {'balance': 0, 'expiring_credits': 0, 'non_expiring_credits': 0}
-            after = final_state.data[0]
+        if final_state:
+            before = current_state if current_state else {'balance': 0, 'expiring_credits': 0, 'non_expiring_credits': 0}
+            after = final_state
             
             expected_total = float(before['balance']) + float(credit_amount)
             actual_total = float(after['balance'])
 
     @staticmethod
-    async def _handle_yearly_upgrade_payment(session, client):
-        """Handle completed yearly upgrade payment and create new subscription"""
+    async def _handle_yearly_upgrade_payment(session):
         metadata = session.get('metadata', {})
         account_id = metadata.get('account_id')
         target_price_id = metadata.get('target_price_id')
@@ -125,17 +124,13 @@ class CheckoutHandler:
         logger.info(f"[YEARLY UPGRADE] Processing upgrade payment for {account_id} → {target_price_id}")
         
         try:
-            # 1. Create the new yearly subscription
-            customer_result = await client.schema('basejump').from_('billing_customers')\
-                .select('id')\
-                .eq('account_id', account_id)\
-                .execute()
+            customer_data = await billing_repo.get_billing_customer(account_id)
             
-            if not customer_result.data:
+            if not customer_data:
                 logger.error(f"[YEARLY UPGRADE] No customer found for account {account_id}")
                 return
                 
-            customer_id = customer_result.data[0]['id']
+            customer_id = customer_data['id']
             
             new_subscription = await StripeAPIWrapper.safe_stripe_call(
                 stripe.Subscription.create_async,
@@ -151,51 +146,43 @@ class CheckoutHandler:
             
             logger.info(f"[YEARLY UPGRADE] Created new subscription {new_subscription.id} for {account_id}")
             
-            # 2. Update local state
             from ....subscriptions.handlers.lifecycle import SubscriptionLifecycleHandler
             await SubscriptionLifecycleHandler.handle_subscription_change(new_subscription)
             
-            # 3. Clear pending upgrade fields
-            await client.from_('credit_accounts').update({
+            await billing_repo.update_credit_account(account_id, {
                 'pending_yearly_upgrade': None,
                 'pending_upgrade_amount': None,
                 'upgrade_effective_date': None
-            }).eq('account_id', account_id).execute()
+            })
             
             logger.info(f"[YEARLY UPGRADE] ✅ Successfully completed yearly upgrade for {account_id}")
             
         except Exception as e:
             logger.error(f"[YEARLY UPGRADE] Error processing upgrade payment: {e}")
-            # Mark the upgrade as failed
-            await client.from_('credit_accounts').update({
+            await billing_repo.update_credit_account(account_id, {
                 'pending_yearly_upgrade': None,
                 'pending_upgrade_amount': None,
                 'upgrade_effective_date': None
-            }).eq('account_id', account_id).execute()
+            })
 
     @staticmethod
-    async def _handle_subscription_checkout(session, client):
+    async def _handle_subscription_checkout(session):
         logger.info(f"[WEBHOOK CHECKOUT] Starting subscription checkout handler for session {session.get('id')}")
         account_id = session.get('metadata', {}).get('account_id')
         
         if not account_id:
-            customer_result = await client.schema('basejump').from_('billing_customers')\
-                .select('account_id')\
-                .eq('id', session.get('customer'))\
-                .execute()
-            if customer_result.data:
-                account_id = customer_result.data[0].get('account_id')
+            customer_data = await billing_repo.get_billing_customer_by_stripe_id(session.get('customer'))
+            if customer_data:
+                account_id = customer_data.get('account_id')
         
         logger.info(f"[WEBHOOK CHECKOUT] Account ID: {account_id}, Has subscription: {bool(session.get('subscription'))}")
         
         if account_id:
-            trial_check = await client.from_('credit_accounts').select(
-                'trial_status, tier, balance'
-            ).eq('account_id', account_id).execute()
+            trial_check = await billing_repo.get_credit_account_for_trial(account_id)
             
-            logger.info(f"[WEBHOOK CHECKOUT] Trial check data: {trial_check.data[0] if trial_check.data else 'No data'}")
+            logger.info(f"[WEBHOOK CHECKOUT] Trial check data: {trial_check if trial_check else 'No data'}")
             
-            if trial_check.data and trial_check.data[0].get('trial_status') == 'active':
+            if trial_check and trial_check.get('trial_status') == 'active':
                 subscription_id = session.get('subscription')
                 if subscription_id:
                     subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
@@ -206,19 +193,15 @@ class CheckoutHandler:
                         logger.error(f"[WEBHOOK CHECKOUT] Cannot process checkout - price_id {price_id} not recognized")
                         raise ValueError(f"Unrecognized price_id: {price_id}")
                     
-                    await client.from_('credit_accounts').update({
+                    await billing_repo.update_credit_account(account_id, {
                         'trial_status': 'converted',
                         'tier': tier_info.name,
                         'stripe_subscription_id': subscription['id']
-                    }).eq('account_id', account_id).execute()
+                    })
                     
-                    await client.from_('trial_history').update({
-                        'ended_at': datetime.now(timezone.utc).isoformat(),
-                        'converted_to_paid': True,
-                        'status': 'converted'
-                    }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                    await billing_repo.mark_trial_converted(account_id)
+                    await billing_repo.update_trial_history(account_id, {'status': 'converted'})
                     
-                    # Invalidate account-state cache to refresh subscription and limits
                     from core.billing.shared.cache_utils import invalidate_account_state_cache
                     await invalidate_account_state_cache(account_id)
                     
@@ -226,20 +209,20 @@ class CheckoutHandler:
 
         logger.info(f"[WEBHOOK CHECKOUT] Checking converting_from_trial metadata: {session.get('metadata', {}).get('converting_from_trial')}")
         if session.get('metadata', {}).get('converting_from_trial') == 'true':
-            await CheckoutHandler._handle_trial_conversion_webhook(session, client)
+            await CheckoutHandler._handle_trial_conversion_webhook(session)
             return
 
         logger.info(f"[WEBHOOK CHECKOUT] Checking trial_start metadata: {session.get('metadata', {}).get('trial_start')}")
         if session.get('metadata', {}).get('trial_start') == 'true':
-            await CheckoutHandler._handle_trial_start_webhook(session, client)
+            await CheckoutHandler._handle_trial_start_webhook(session)
             return
 
         logger.info(f"[WEBHOOK CHECKOUT] Reached default handler section. Has subscription: {bool(session.get('subscription'))}")
         if session.get('subscription'):
-            await CheckoutHandler._handle_default_subscription_webhook(session, client)
+            await CheckoutHandler._handle_default_subscription_webhook(session)
 
     @staticmethod
-    async def _handle_trial_conversion_webhook(session, client):
+    async def _handle_trial_conversion_webhook(session):
         account_id = session['metadata'].get('account_id')
         if session.get('subscription'):
             subscription_id = session['subscription']
@@ -270,14 +253,11 @@ class CheckoutHandler:
                 tier_name = tier_info.name
                 tier_credits = float(tier_info.monthly_credits)
                 
-                current_balance_result = await client.from_('credit_accounts')\
-                    .select('balance, non_expiring_credits')\
-                    .eq('account_id', account_id)\
-                    .execute()
+                current_balance = await billing_repo.get_credit_account_balances(account_id)
                 
                 old_non_expiring = 0
-                if current_balance_result.data:
-                    old_non_expiring = float(current_balance_result.data[0].get('non_expiring_credits', 0))
+                if current_balance:
+                    old_non_expiring = float(current_balance.get('non_expiring_credits', 0))
                 
                 billing_anchor = datetime.fromtimestamp(subscription['current_period_start'], tz=timezone.utc)
                 next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
@@ -290,7 +270,7 @@ class CheckoutHandler:
                 
                 expires_at = next_grant_date
                 
-                await client.from_('credit_accounts').update({
+                await billing_repo.update_credit_account(account_id, {
                     'trial_status': 'converted',
                     'converted_to_paid_at': datetime.now(timezone.utc).isoformat(),
                     'tier': tier_name,
@@ -299,7 +279,7 @@ class CheckoutHandler:
                     'stripe_subscription_status': subscription.get('status', 'active'),
                     'billing_cycle_anchor': billing_anchor.isoformat(),
                     'next_credit_grant': next_grant_date.isoformat()
-                }).eq('account_id', account_id).execute()
+                })
                 
                 await credit_manager.add_credits(
                     account_id=account_id,
@@ -309,17 +289,13 @@ class CheckoutHandler:
                     expires_at=expires_at
                 )
                 
-                await client.from_('trial_history').update({
-                    'ended_at': datetime.now(timezone.utc).isoformat(),
-                    'converted_to_paid': True,
-                    'status': 'converted'
-                }).eq('account_id', account_id).is_('ended_at', 'null').execute()
+                await billing_repo.mark_trial_converted(account_id)
+                await billing_repo.update_trial_history(account_id, {'status': 'converted'})
                 
                 await CheckoutHandler._cleanup_duplicate_subscriptions(
                     session.get('customer'), subscription['id'], account_id
                 )
                 
-                # Cancel old subscription if this was a trial conversion via checkout
                 cancel_after_checkout = subscription.get('metadata', {}).get('cancel_after_checkout')
                 if cancel_after_checkout:
                     logger.info(f"[TRIAL CONVERSION] Cancelling old subscription {cancel_after_checkout} after checkout completion")
@@ -329,7 +305,6 @@ class CheckoutHandler:
                     except Exception as e:
                         logger.warning(f"[TRIAL CONVERSION] Could not cancel old subscription {cancel_after_checkout}: {e}")
                 
-                # Invalidate account-state cache to refresh subscription and limits
                 from core.billing.shared.cache_utils import invalidate_account_state_cache
                 await invalidate_account_state_cache(account_id)
                 
@@ -338,7 +313,7 @@ class CheckoutHandler:
                 await lock.release()
 
     @staticmethod
-    async def _handle_trial_start_webhook(session, client):
+    async def _handle_trial_start_webhook(session):
         account_id = session['metadata'].get('account_id')
         if session.get('subscription'):
             subscription_id = session['subscription']
@@ -360,16 +335,18 @@ class CheckoutHandler:
                 try:
                     logger.info(f"[WEBHOOK TRIAL] 🔒 Acquired lock for trial activation for {account_id}")
                     
-                    existing_account = await client.from_('credit_accounts').select('trial_status').eq('account_id', account_id).execute()
-                    if existing_account.data and existing_account.data[0].get('trial_status') == 'active':
+                    existing_account = await billing_repo.get_credit_account_subscription_info(account_id)
+                    if existing_account and existing_account.get('trial_status') == 'active':
                         logger.info(f"[WEBHOOK] Trial already active for account {account_id} in checkout handler, skipping duplicate credits")
                         return
                     
-                    recent_trial_credits = await client.from_('credit_ledger').select('*').eq(
-                        'account_id', account_id
-                    ).eq('description', f'{TRIAL_DURATION_DAYS}-day free trial credits').execute()
+                    # Check for existing trial credits
+                    from datetime import timedelta
+                    recent_time = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+                    recent_trial_credits = await billing_repo.get_recent_credit_ledger_entries(account_id, recent_time)
                     
-                    if recent_trial_credits.data:
+                    trial_description = f'{TRIAL_DURATION_DAYS}-day free trial credits'
+                    if recent_trial_credits and any(e.get('description') == trial_description for e in recent_trial_credits):
                         logger.warning(f"[WEBHOOK] Trial credits already granted for account {account_id} (found in ledger), skipping duplicate")
                         return
                     
@@ -379,30 +356,28 @@ class CheckoutHandler:
 
                     trial_ends_at = datetime.fromtimestamp(subscription.trial_end, tz=timezone.utc) if subscription.get('trial_end') else None
                     
-                    await client.from_('credit_accounts').update({
+                    await billing_repo.update_credit_account(account_id, {
                         'trial_status': 'active',
                         'trial_started_at': datetime.now(timezone.utc).isoformat(),
                         'trial_ends_at': trial_ends_at.isoformat() if trial_ends_at else None,
                         'stripe_subscription_id': subscription['id'],
                         'tier': tier_name
-                    }).eq('account_id', account_id).execute()
+                    })
                     
                     await credit_manager.add_credits(
                         account_id=account_id,
                         amount=TRIAL_CREDITS,
                         is_expiring=True,
-                        description=f'{TRIAL_DURATION_DAYS}-day free trial credits',
+                        description=trial_description,
                         expires_at=trial_ends_at
                     )
 
-                    await client.from_('trial_history').upsert({
-                        'account_id': account_id,
+                    await billing_repo.upsert_trial_history(account_id, {
                         'started_at': datetime.now(timezone.utc).isoformat(),
                         'stripe_checkout_session_id': session.get('id'),
                         'status': 'active'
-                    }, on_conflict='account_id').execute()
+                    })
                     
-                    # Cancel old subscription if any was marked for cancellation
                     cancel_after_checkout = subscription.get('metadata', {}).get('cancel_after_checkout')
                     if cancel_after_checkout:
                         logger.info(f"[WEBHOOK] Cancelling old subscription {cancel_after_checkout} after trial start")
@@ -412,7 +387,6 @@ class CheckoutHandler:
                         except Exception as e:
                             logger.warning(f"[WEBHOOK] Could not cancel old subscription {cancel_after_checkout}: {e}")
                     
-                    # Invalidate account-state cache
                     from core.billing.shared.cache_utils import invalidate_account_state_cache
                     await invalidate_account_state_cache(account_id)
                     
@@ -423,7 +397,7 @@ class CheckoutHandler:
                 logger.info(f"[WEBHOOK] Subscription status: {subscription.status}, not trialing")
 
     @staticmethod
-    async def _handle_default_subscription_webhook(session, client):
+    async def _handle_default_subscription_webhook(session):
         subscription_id = session['subscription']
         subscription = await StripeAPIWrapper.safe_stripe_call(
             stripe.Subscription.retrieve_async, 
@@ -435,12 +409,9 @@ class CheckoutHandler:
         if subscription.status == 'active':
             account_id = session.get('metadata', {}).get('account_id')
             if not account_id:
-                customer_result = await client.schema('basejump').from_('billing_customers')\
-                    .select('account_id')\
-                    .eq('id', session.get('customer'))\
-                    .execute()
-                if customer_result.data:
-                    account_id = customer_result.data[0].get('account_id')
+                customer_data = await billing_repo.get_billing_customer_by_stripe_id(session.get('customer'))
+                if customer_data:
+                    account_id = customer_data.get('account_id')
             
             if not account_id:
                 logger.warning(f"[WEBHOOK] Could not find account_id for checkout session {session.get('id')}")
@@ -453,22 +424,21 @@ class CheckoutHandler:
                 logger.warning(f"[WEBHOOK] Unknown price_id {price_id} for subscription {subscription_id}")
                 return
             
-            credit_account = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
+            credit_account = await billing_repo.get_credit_account(account_id)
             
-            if credit_account.data:
-                current = credit_account.data[0]
-                current_subscription_id = current.get('stripe_subscription_id')
+            if credit_account:
+                current_subscription_id = credit_account.get('stripe_subscription_id')
                 
                 # Check if this is an upgrade via checkout (old subscription was cancelled, new one created)
                 upgrade_from_subscription = session.get('metadata', {}).get('upgrade_from_subscription')
                 if upgrade_from_subscription and current_subscription_id == upgrade_from_subscription:
                     logger.info(f"[WEBHOOK DEFAULT] Processing upgrade via checkout: {upgrade_from_subscription} -> {subscription_id}")
                     # This is an upgrade - proceed with processing
-                elif current_subscription_id == subscription_id and current.get('tier') == tier_info.name:
+                elif current_subscription_id == subscription_id and credit_account.get('tier') == tier_info.name:
                     logger.info(f"[WEBHOOK] Subscription already set up for {account_id}, skipping")
                     return
                 
-                if current.get('trial_status') == 'cancelled':
+                if credit_account.get('trial_status') == 'cancelled':
                     logger.info(f"[WEBHOOK DEFAULT] User {account_id} with cancelled trial is subscribing - handling as new subscription")
             
             lock_key = f"credit_grant:checkout:{account_id}"
@@ -497,7 +467,7 @@ class CheckoutHandler:
                     next_grant_date = datetime.fromtimestamp(subscription['current_period_end'], tz=timezone.utc)
                     logger.info(f"[WEBHOOK DEFAULT] Monthly plan - setting next_credit_grant to period end: {next_grant_date}")
              
-                current_tier = credit_account.data[0].get('tier') if credit_account.data else 'none'
+                current_tier = credit_account.get('tier') if credit_account else 'none'
                 is_tier_upgrade = (current_tier and current_tier != 'none' and 
                                   current_tier != tier_info.name)
                 
@@ -547,12 +517,11 @@ class CheckoutHandler:
                     'last_processed_invoice_id': f"checkout_processed_{subscription['id']}"  # Mark to prevent invoice duplication
                 }
                 
-                if credit_account.data and credit_account.data[0].get('trial_status') == 'cancelled':
+                if credit_account and credit_account.get('trial_status') == 'cancelled':
                     update_data['trial_status'] = 'none'
                 
-                await client.from_('credit_accounts').update(update_data).eq('account_id', account_id).execute()
+                await billing_repo.update_credit_account(account_id, update_data)
                 
-                # Invalidate account-state cache to refresh subscription and limits
                 from core.billing.shared.cache_utils import invalidate_account_state_cache
                 await invalidate_account_state_cache(account_id)
                 
@@ -562,12 +531,10 @@ class CheckoutHandler:
                         session.get('customer'), subscription_id, account_id
                     )
                 
-                # Cancel old subscription if this was a trial/free tier conversion
                 cancel_after_checkout = subscription.get('metadata', {}).get('cancel_after_checkout')
                 if cancel_after_checkout:
                     logger.info(f"[WEBHOOK DEFAULT] Cancelling old subscription {cancel_after_checkout} after checkout completion")
                     try:
-                        from core.billing.external.stripe import StripeAPIWrapper
                         await StripeAPIWrapper.cancel_subscription(cancel_after_checkout, cancel_immediately=True)
                         logger.info(f"[WEBHOOK DEFAULT] ✅ Successfully cancelled old subscription {cancel_after_checkout}")
                     except Exception as e:
