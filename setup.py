@@ -1788,7 +1788,7 @@ class SetupWizard:
         try:
             print_info("Installing frontend dependencies with pnpm...")
             subprocess.run(
-                ["pnpm", "install"], cwd="frontend", check=True, shell=IS_WINDOWS
+                ["pnpm", "install"], cwd="apps/frontend", check=True, shell=IS_WINDOWS
             )
             print_success("Frontend dependencies installed.")
 
@@ -1952,7 +1952,7 @@ class SetupWizard:
 
             print(
                 f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
-            print(f"{Colors.CYAN}   cd frontend && pnpm run dev{Colors.ENDC}")
+            print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
             step_num += 1
 
             print(
