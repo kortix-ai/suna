@@ -139,7 +139,7 @@ class AgentEvalRunner:
         and collects the output.
         """
         from core.agentpress.thread_manager import ThreadManager
-        from core.run import run_agent
+        from core.agents.runner import run_agent
         
         start_time = datetime.now()
         tools_called = []

@@ -4,11 +4,17 @@ import asyncio
 if TYPE_CHECKING:
     from langfuse.client import StatefulTraceClient
 
-from core.run.config import AgentConfig
-from core.run.tool_manager import ToolManager
-from core.run.mcp_manager import MCPManager
-from core.run.prompt_manager import PromptManager
-from core.run.agent_runner import AgentRunner
+from core.agents.runner.config import AgentConfig
+from core.agents.runner.tool_manager import ToolManager
+from core.agents.runner.mcp_manager import MCPManager
+from core.agents.runner.prompt_manager import PromptManager
+from core.agents.runner.agent_runner import (
+    AgentRunner,
+    execute_agent_run,
+    stream_status_message,
+    ensure_project_metadata_cached,
+    update_agent_run_status,
+)
 
 __all__ = [
     'AgentConfig',
@@ -16,7 +22,11 @@ __all__ = [
     'MCPManager',
     'PromptManager',
     'AgentRunner',
-    'run_agent'
+    'run_agent',
+    'execute_agent_run',
+    'stream_status_message',
+    'ensure_project_metadata_cached',
+    'update_agent_run_status',
 ]
 
 async def run_agent(

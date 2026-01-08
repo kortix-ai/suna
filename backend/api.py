@@ -23,7 +23,7 @@ import uuid
 
 
 from core.versioning.api import router as versioning_router
-from core.agents.runs import router as agent_runs_router
+from core.agents.api import router as agent_runs_router
 from core.agents.agent_crud import router as agent_crud_router
 from core.agents.agent_tools import router as agent_tools_router
 from core.agents.agent_json import router as agent_json_router
@@ -52,10 +52,9 @@ if sys.platform == "win32":
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 db = DBConnection()
-# Generate unique instance ID per process/worker
-# This is critical for distributed locking - each worker needs a unique ID
-import uuid
-instance_id = str(uuid.uuid4())[:8]
+# Use shared instance ID for distributed deployments
+from core.utils.instance import get_instance_id, INSTANCE_ID
+instance_id = INSTANCE_ID  # Keep backward compatibility
 
 
 # Rate limiter state
@@ -136,8 +135,8 @@ async def lifespan(app: FastAPI):
         await asyncio.sleep(2)
         
         # ===== CRITICAL: Stop all running agent runs on this instance =====
-        from core.agents.runs import _cancellation_events
-        from core.agents.executor import update_agent_run_status
+        from core.agents.api import _cancellation_events
+        from core.agents.runner.agent_runner import update_agent_run_status
         
         active_run_ids = list(_cancellation_events.keys())
         if active_run_ids:
@@ -398,7 +397,7 @@ async def metrics_endpoint():
 @api_router.get("/debug", summary="Debug Information", operation_id="debug", tags=["system"])
 async def debug_endpoint():
     """Get basic debug information for troubleshooting."""
-    from core.agents.runs import _cancellation_events
+    from core.agents.api import _cancellation_events
     
     return {
         "instance_id": instance_id,

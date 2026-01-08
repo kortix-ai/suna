@@ -37,12 +37,12 @@ def check_imports():
     
     imports = [
         "from core.services.supabase import DBConnection",
-        "from core.agents.runs import router",
+        "from core.agents.api import router",
         "from core.threads.api import router",
-        "from core.worker.background_tasks import start_memory_extraction",
-        "from core.agents.runs import _load_agent_config",
+        "from core.memory.background_jobs import start_memory_extraction",
+        "from core.agents.api import _load_agent_config",
         "from core.agents.agent_loader import get_agent_loader",
-        "from core.agents.runs import start_agent_run",
+        "from core.agents.api import start_agent_run",
     ]
     
     errors = []
@@ -177,19 +177,19 @@ except Exception as e:
     finally:
         os.unlink(temp_file)
 
-def test_worker_import():
-    """Test if worker can be imported."""
-    print("\n🔍 Step 6: Testing worker module import...")
+def test_background_jobs_import():
+    """Test if background jobs can be imported."""
+    print("\n🔍 Step 6: Testing background jobs import...")
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
         f.write("""
 import sys
 sys.path.insert(0, '.')
 try:
-    from core.worker.background_tasks import start_memory_extraction
-    print('✅ Worker module imports successfully')
+    from core.memory.background_jobs import start_memory_extraction
+    print('✅ Background jobs module imports successfully')
 except Exception as e:
-    print(f'❌ Worker import failed: {e}')
+    print(f'❌ Background jobs import failed: {e}')
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -203,10 +203,10 @@ except Exception as e:
         )
         
         if success and "✅" in output:
-            print("✅ Worker can be imported!")
+            print("✅ Background jobs can be imported!")
             return True
         else:
-            print(f"❌ Worker import failed:\n{output[:500]}")
+            print(f"❌ Background jobs import failed:\n{output[:500]}")
             return False
     finally:
         os.unlink(temp_file)
@@ -223,7 +223,7 @@ def main():
         ("Syntax", check_syntax),
         ("Ruff Undefined Names", check_with_ruff),
         ("API Import", test_api_import),
-        ("Worker Import", test_worker_import),
+        ("Background Jobs Import", test_background_jobs_import),
     ]
     
     results = []

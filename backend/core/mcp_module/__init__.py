@@ -2,7 +2,8 @@ from .mcp_service import (
     MCPService,
     mcp_service,
 
-    MCPConnection, 
+    MCPServerInfo,  # New: metadata-only, no active session
+    MCPConnection,  # Backwards compat alias for MCPServerInfo
     ToolExecutionResult,
     CustomMCPConnectionResult,
 
@@ -19,7 +20,8 @@ from .mcp_service import (
 __all__ = [
     "MCPService",
     "mcp_service",
-    "MCPConnection",
+    "MCPServerInfo",
+    "MCPConnection",  # Backwards compat
     "ToolExecutionResult",
     "CustomMCPConnectionResult",
     "MCPException",

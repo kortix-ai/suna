@@ -41,3 +41,4 @@ async def initialize() -> str:
     _initialized = True
     logger.info(f"✅ Background task resources initialized (instance: {_instance_id})")
     return _instance_id
+
