@@ -40,6 +40,7 @@ from core.admin.billing_admin_api import router as billing_admin_router
 from core.admin.feedback_admin_api import router as feedback_admin_router
 from core.admin.notification_admin_api import router as notification_admin_router
 from core.admin.analytics_admin_api import router as analytics_admin_router
+from core.admin.stress_test_admin_api import router as stress_test_admin_router
 from core.services import transcription as transcription_api
 import sys
 from core.triggers import api as triggers_api
@@ -306,6 +307,7 @@ api_router.include_router(admin_router)
 api_router.include_router(feedback_admin_router)
 api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
+api_router.include_router(stress_test_admin_router)
 
 from core.mcp_module import api as mcp_api
 from core.credentials import api as credentials_api
