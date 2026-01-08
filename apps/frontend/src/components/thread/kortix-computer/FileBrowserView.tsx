@@ -59,6 +59,8 @@ import JSZip from 'jszip';
 import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useFileViewerStore } from '@/stores/file-viewer-store';
+import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { Badge } from '@/components/ui/badge';
 import { VersionBanner } from './VersionBanner';
 import { KortixComputerHeader } from './KortixComputerHeader';
@@ -461,6 +463,12 @@ export function FileBrowserView({
     setSelectedVersion,
     clearSelectedVersion,
   } = useKortixComputerStore();
+
+  // File viewer store (for library view - opens fullscreen modal)
+  const openFileViewer = useFileViewerStore((state) => state.openFile);
+  
+  // Presentation viewer store (for library view - opens fullscreen presentation)
+  const openPresentation = usePresentationViewerStore((state) => state.openPresentation);
   
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
@@ -500,6 +508,9 @@ export function FileBrowserView({
   const [revertCommitInfo, setRevertCommitInfo] = useState<any | null>(null);
   const [revertLoadingInfo, setRevertLoadingInfo] = useState(false);
   const [revertInProgress, setRevertInProgress] = useState(false);
+
+  // Other files visibility state (for library views)
+  const [showOtherFiles, setShowOtherFiles] = useState(false);
 
   // Check computer status
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
@@ -587,18 +598,37 @@ export function FileBrowserView({
             toast.info('Cannot view presentations from historical versions');
             return;
           }
-          // Open presentation in viewer
-          openFile(file.path);
+          
+          // In library view, open presentation in fullscreen viewer modal
+          if (isLibraryView && project?.sandbox?.sandbox_url) {
+            const presentationName = file.path.split('/').pop() || 'presentation';
+            openPresentation(presentationName, project.sandbox.sandbox_url, 1);
+          } else {
+            // In side panel view, use kortix computer store
+            openFile(file.path);
+          }
         } else {
           // Navigate to folder (works in both current and version view)
           navigateToPath(file.path);
         }
       } else {
-        // Open file in viewer (FileViewerView will detect selectedVersion from store)
-        openFile(file.path);
+        // In library view, open file in fullscreen viewer modal
+        if (isLibraryView && sandboxId && session?.access_token) {
+          const fileName = file.path.split('/').pop() || 'file';
+          openFileViewer({
+            sandboxId,
+            filePath: file.path,
+            fileName,
+            accessToken: session.access_token,
+          });
+        } else {
+          // In side panel view, use kortix computer store
+          // FileViewerView will detect selectedVersion from store
+          openFile(file.path);
+        }
       }
     },
-    [navigateToPath, openFile, isPresentationFolder, selectedVersion],
+    [navigateToPath, openFile, isPresentationFolder, selectedVersion, isLibraryView, sandboxId, session?.access_token, openFileViewer, openPresentation, project?.sandbox?.sandbox_url],
   );
 
   // Recursive function to discover all files from the current path
@@ -894,9 +924,49 @@ export function FileBrowserView({
     [sandboxId, refetchFiles],
   );
 
-  // Get file icon - supports 'default', 'large', and 'header' variants
+  // Get file icon - supports 'default', 'large', 'header', 'small', and 'medium' variants
   // 'header' variant returns a gray, small icon (for card headers in library view)
-  const getFileIcon = useCallback((file: FileInfo, variant: 'default' | 'large' | 'header' = 'default') => {
+  // 'small' variant returns tiny icons for compact cards (h-3 w-3)
+  // 'medium' variant returns medium-small icons for compact cards (h-5 w-5)
+  const getFileIcon = useCallback((file: FileInfo, variant: 'default' | 'large' | 'header' | 'small' | 'medium' = 'default') => {
+    // Small and medium variants: tiny gray icons for compact cards
+    if (variant === 'small' || variant === 'medium') {
+      const iconClass = variant === 'small' ? "h-3 w-3 text-muted-foreground" : "h-5 w-5 text-muted-foreground";
+      const extension = file.name.split('.').pop()?.toLowerCase() || '';
+      
+      if (file.is_dir) {
+        if (isPresentationFolder(file)) {
+          return <Presentation className={iconClass} />;
+        }
+        return <Folder className={iconClass} />;
+      }
+      
+      if (['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'ico', 'bmp', 'tiff'].includes(extension)) {
+        return <Image className={iconClass} />;
+      }
+      if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(extension)) {
+        return <Film className={iconClass} />;
+      }
+      if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma'].includes(extension)) {
+        return <Music className={iconClass} />;
+      }
+      if (['zip', 'tar', 'gz', 'rar', '7z', 'bz2', 'xz', 'tgz'].includes(extension)) {
+        return <FileArchive className={iconClass} />;
+      }
+      if (['csv', 'xls', 'xlsx', 'ods'].includes(extension)) {
+        return <FileSpreadsheet className={iconClass} />;
+      }
+      if (['js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 
+           'css', 'scss', 'sass', 'less', 'html', 'htm', 'vue', 'svelte', 'php', 'swift',
+           'kt', 'scala', 'sh', 'bash', 'zsh', 'sql', 'json', 'yaml', 'yml', 'xml', 'toml'].includes(extension)) {
+        return <FileCode className={iconClass} />;
+      }
+      if (['md', 'txt', 'rtf', 'doc', 'docx', 'odt', 'pdf'].includes(extension)) {
+        return <FileText className={iconClass} />;
+      }
+      return <File className={iconClass} />;
+    }
+    
     // Header variant: small gray icons matching thread icon style
     if (variant === 'header') {
       const iconClass = "h-4 w-4 text-muted-foreground";
@@ -942,9 +1012,9 @@ export function FileBrowserView({
     
     if (file.is_dir) {
       if (isPresentationFolder(file)) {
-        return <Presentation className={`${largeSizeClass} text-orange-500`} />;
+        return <Presentation className={`${largeSizeClass} text-zinc-500 dark:text-zinc-400`} />;
       }
-      return <Folder className={`${largeSizeClass} text-blue-500`} />;
+      return <Folder className={`${largeSizeClass} text-zinc-500 dark:text-zinc-400`} />;
     }
     
     const extension = file.name.split('.').pop()?.toLowerCase() || '';
@@ -956,29 +1026,29 @@ export function FileBrowserView({
     
     // Videos
     if (['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv'].includes(extension)) {
-      return <Film className={`${sizeClass} text-purple-500`} />;
+      return <Film className={`${sizeClass} text-zinc-500 dark:text-zinc-400`} />;
     }
     
     // Audio
     if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a', 'wma'].includes(extension)) {
-      return <Music className={`${sizeClass} text-pink-500`} />;
+      return <Music className={`${sizeClass} text-zinc-500 dark:text-zinc-400`} />;
     }
     
     // Archives
     if (['zip', 'tar', 'gz', 'rar', '7z', 'bz2', 'xz', 'tgz'].includes(extension)) {
-      return <FileArchive className={`${sizeClass} text-amber-500`} />;
+      return <FileArchive className={`${sizeClass} text-zinc-500 dark:text-zinc-400`} />;
     }
     
     // Spreadsheets
     if (['csv', 'xls', 'xlsx', 'ods'].includes(extension)) {
-      return <FileSpreadsheet className={`${sizeClass} text-green-600`} />;
+      return <FileSpreadsheet className={`${sizeClass} text-zinc-500 dark:text-zinc-400`} />;
     }
     
     // Code files
     if (['js', 'ts', 'jsx', 'tsx', 'py', 'rb', 'go', 'rs', 'java', 'c', 'cpp', 'h', 'hpp', 
          'css', 'scss', 'sass', 'less', 'html', 'htm', 'vue', 'svelte', 'php', 'swift',
          'kt', 'scala', 'sh', 'bash', 'zsh', 'sql', 'json', 'yaml', 'yml', 'xml', 'toml'].includes(extension)) {
-      return <FileCode className={`${sizeClass} text-sky-500`} />;
+      return <FileCode className={`${sizeClass} text-zinc-500 dark:text-zinc-400`} />;
     }
     
     // Documents
@@ -1433,8 +1503,9 @@ export function FileBrowserView({
   // Library view layout
   if (isLibraryView) {
     const allFiles = selectedVersion ? versionFiles : files;
-    // Filter to only show main outputs (presentations, images, documents, etc.)
-    const displayFiles = allFiles.filter(file => isMainOutput(file, isPresentationFolder));
+    // Split files into main outputs and other files
+    const mainOutputFiles = allFiles.filter(file => isMainOutput(file, isPresentationFolder));
+    const otherFiles = allFiles.filter(file => !isMainOutput(file, isPresentationFolder));
     
     return (
       <div className="flex flex-col min-h-screen bg-background">
@@ -1516,7 +1587,7 @@ export function FileBrowserView({
             <div className="flex-1 flex items-center justify-center">
               <KortixLoader size="medium" />
             </div>
-          ) : displayFiles.length === 0 ? (
+          ) : mainOutputFiles.length === 0 && otherFiles.length === 0 ? (
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
                 <div className="w-14 h-14 flex items-center justify-center rounded-xl bg-muted/50">
@@ -1542,60 +1613,112 @@ export function FileBrowserView({
           ) : (
             <ScrollArea className="h-full">
               <div className="px-8 pb-8">
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                  {displayFiles.map((file) => {
-                    const isPresentation = isPresentationFolder(file);
-                    return (
-                      <div
-                        key={file.path}
-                        className="bg-card rounded-2xl border border-border overflow-hidden cursor-pointer group hover:border-border/80 transition-colors"
-                        onClick={() => handleItemClick(file)}
-                      >
-                        {/* Header with icon, title and menu - thread icon style */}
-                        <div className="flex items-center gap-3 p-4 border-b border-border/50">
-                          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
-                            {getFileIcon(file, 'header')}
-                          </div>
-                          <span className="flex-1 font-medium truncate text-sm">{file.name}</span>
-                          {isPresentation && (
-                            <Badge 
-                              variant="secondary" 
-                              className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
-                            >
-                              Slides
-                            </Badge>
-                          )}
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <button 
-                                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground opacity-0 group-hover:opacity-100"
-                                onClick={(e) => e.stopPropagation()}
+                {/* Main outputs - large cards */}
+                {mainOutputFiles.length > 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    {mainOutputFiles.map((file) => {
+                      const isPresentation = isPresentationFolder(file);
+                      return (
+                        <div
+                          key={file.path}
+                          className="bg-card rounded-2xl border border-border overflow-hidden cursor-pointer group hover:border-border/80 transition-colors"
+                          onClick={() => handleItemClick(file)}
+                        >
+                          {/* Header with icon, title and menu - thread icon style */}
+                          <div className="flex items-center gap-3 p-4 border-b border-border/50">
+                            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                              {getFileIcon(file, 'header')}
+                            </div>
+                            <span className="flex-1 font-medium truncate text-sm">{file.name}</span>
+                            {isPresentation && (
+                              <Badge 
+                                variant="secondary" 
+                                className="text-[10px] px-1.5 py-0 bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                               >
-                                <MoreHorizontal className="h-4 w-4" />
-                              </button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleItemClick(file); }}>
-                                {file.is_dir ? 'Open folder' : 'Open file'}
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
+                                Slides
+                              </Badge>
+                            )}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button 
+                                  className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground opacity-0 group-hover:opacity-100"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleItemClick(file); }}>
+                                  {file.is_dir ? 'Open folder' : 'Open file'}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                          
+                          {/* Preview - show thumbnail for images and presentations */}
+                          <div className="w-full aspect-[16/10] relative overflow-hidden">
+                            <ThumbnailPreview
+                              file={file}
+                              sandboxId={sandboxId}
+                              project={project}
+                              isPresentationFolder={isPresentation}
+                              fallbackIcon={getFileIcon(file, 'large')}
+                            />
+                          </div>
                         </div>
-                        
-                        {/* Preview - show thumbnail for images and presentations */}
-                        <div className="w-full aspect-[16/10] relative overflow-hidden">
-                          <ThumbnailPreview
-                            file={file}
-                            sandboxId={sandboxId}
-                            project={project}
-                            isPresentationFolder={isPresentation}
-                            fallbackIcon={getFileIcon(file, 'large')}
-                          />
-                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Other files - collapsible section with smaller cards */}
+                {otherFiles.length > 0 && (
+                  <div className={cn("mt-8", mainOutputFiles.length === 0 && "mt-0")}>
+                    <button
+                      onClick={() => setShowOtherFiles(!showOtherFiles)}
+                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-4"
+                    >
+                      <ChevronRight className={cn(
+                        "h-4 w-4 transition-transform",
+                        showOtherFiles && "rotate-90"
+                      )} />
+                      <span>Other files ({otherFiles.length})</span>
+                    </button>
+                    
+                    {showOtherFiles && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                        {otherFiles.map((file) => (
+                          <div
+                            key={file.path}
+                            className="bg-card/50 rounded-xl border border-border/60 overflow-hidden cursor-pointer group hover:border-border/80 hover:bg-card transition-colors"
+                            onClick={() => handleItemClick(file)}
+                          >
+                            {/* Compact header */}
+                            <div className="flex items-center gap-2 p-2.5 border-b border-border/30">
+                              <div className="flex items-center justify-center w-6 h-6 rounded-lg bg-muted/50 flex-shrink-0">
+                                {getFileIcon(file, 'small')}
+                              </div>
+                              <span className="flex-1 text-xs font-medium truncate text-muted-foreground group-hover:text-foreground transition-colors">
+                                {file.name}
+                              </span>
+                            </div>
+                            
+                            {/* Smaller preview */}
+                            <div className="w-full aspect-[4/3] relative overflow-hidden bg-muted/20">
+                              <ThumbnailPreview
+                                file={file}
+                                sandboxId={sandboxId}
+                                project={project}
+                                isPresentationFolder={false}
+                                fallbackIcon={getFileIcon(file, 'medium')}
+                              />
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    );
-                  })}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             </ScrollArea>
           )}
@@ -1610,9 +1733,9 @@ export function FileBrowserView({
                 This will restore all files from this version snapshot.
               </DialogDescription>
             </DialogHeader>
-            <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30">
-              <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500 mt-0.5 shrink-0" />
-              <span className="text-xs text-red-700 dark:text-red-400">This will replace current files with the selected version snapshot.</span>
+            <div className="flex items-start gap-2 p-2 rounded-lg bg-zinc-50 dark:bg-zinc-950/20 border border-zinc-200 dark:border-zinc-800">
+              <AlertTriangle className="h-4 w-4 text-zinc-600 dark:text-zinc-500 mt-0.5 shrink-0" />
+              <span className="text-xs text-zinc-700 dark:text-zinc-400">This will replace current files with the selected version snapshot.</span>
             </div>
             {revertLoadingInfo ? (
               <div className="py-6 flex items-center justify-center"><KortixLoader size="medium" /></div>
@@ -1647,11 +1770,14 @@ export function FileBrowserView({
   }
 
   // Default side-panel layout (also handles inline-library variant)
-  // For inline-library, filter to main outputs only
+  // For inline-library, split into main outputs and other files
   const allPanelFiles = selectedVersion ? versionFiles : files;
-  const displayPanelFiles = isInlineLibrary 
+  const mainPanelFiles = isInlineLibrary 
     ? allPanelFiles.filter(file => isMainOutput(file, isPresentationFolder))
     : allPanelFiles;
+  const otherPanelFiles = isInlineLibrary
+    ? allPanelFiles.filter(file => !isMainOutput(file, isPresentationFolder))
+    : [];
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -1688,7 +1814,7 @@ export function FileBrowserView({
               </p>
             )}
           </div>
-        ) : displayPanelFiles.length === 0 ? (
+        ) : (mainPanelFiles.length === 0 && otherPanelFiles.length === 0) ? (
           <div className="h-full w-full flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
             <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
               <div className="w-16 h-16 bg-zinc-100 dark:bg-zinc-800 rounded-full flex items-center justify-center border-2 border-zinc-200 dark:border-zinc-700">
@@ -1735,98 +1861,152 @@ export function FileBrowserView({
         ) : isInlineLibrary ? (
           /* Inline Library: Card layout with thumbnails */
           <ScrollArea className="h-full w-full max-w-full min-w-0">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 max-w-full min-w-0">
-              {displayPanelFiles.map((file) => {
-                const isPresentation = isPresentationFolder(file);
-                return (
-                  <div
-                    key={file.path}
-                    className="bg-card rounded-2xl border border-border overflow-hidden cursor-pointer group hover:border-border/80 transition-colors"
-                    onClick={() => handleItemClick(file)}
-                  >
-                    {/* Header with icon, title and action buttons */}
-                    <div className="flex items-center gap-2.5 p-3 border-b border-border/50">
-                      <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-card border border-border flex-shrink-0">
-                        {getFileIcon(file, 'header')}
-                      </div>
-                      <span className="flex-1 font-medium truncate text-sm">{file.name}</span>
-                      {isPresentation && (
-                        <Badge 
-                          variant="secondary" 
-                          className="text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
-                        >
-                          Slides
-                        </Badge>
-                      )}
-                      
-                      {/* Action buttons - visible on hover */}
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                        {/* Open button */}
-                        <button
-                          className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                          onClick={(e) => { e.stopPropagation(); handleItemClick(file); }}
-                          title={file.is_dir ? 'Open folder' : 'Open file'}
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </button>
-                        
-                        {/* Download button (for files only) */}
-                        {!file.is_dir && (
-                          <button
-                            className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                            onClick={(e) => { e.stopPropagation(); handleDownloadFile(file.path); }}
-                            title="Download"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                        
-                        {/* More options dropdown */}
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <button 
-                              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                              onClick={(e) => e.stopPropagation()}
+            <div className="p-4 max-w-full min-w-0">
+              {/* Main outputs - large cards */}
+              {mainPanelFiles.length > 0 && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-full min-w-0">
+                  {mainPanelFiles.map((file) => {
+                    const isPresentation = isPresentationFolder(file);
+                    return (
+                      <div
+                        key={file.path}
+                        className="bg-card rounded-2xl border border-border overflow-hidden cursor-pointer group hover:border-border/80 transition-colors"
+                        onClick={() => handleItemClick(file)}
+                      >
+                        {/* Header with icon, title and action buttons */}
+                        <div className="flex items-center gap-2.5 p-3 border-b border-border/50">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-card border border-border flex-shrink-0">
+                            {getFileIcon(file, 'header')}
+                          </div>
+                          <span className="flex-1 font-medium truncate text-sm">{file.name}</span>
+                          {isPresentation && (
+                            <Badge 
+                              variant="secondary" 
+                              className="text-[10px] px-1.5 py-0 bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                             >
-                              <MoreHorizontal className="h-3.5 w-3.5" />
+                              Slides
+                            </Badge>
+                          )}
+                          
+                          {/* Action buttons - visible on hover */}
+                          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {/* Open button */}
+                            <button
+                              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                              onClick={(e) => { e.stopPropagation(); handleItemClick(file); }}
+                              title={file.is_dir ? 'Open folder' : 'Open file'}
+                            >
+                              <Eye className="h-3.5 w-3.5" />
                             </button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleItemClick(file); }}>
-                              <Eye className="mr-2 h-4 w-4" />
-                              {file.is_dir ? 'Open folder' : 'Open file'}
-                            </DropdownMenuItem>
+                            
+                            {/* Download button (for files only) */}
                             {!file.is_dir && (
-                              <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDownloadFile(file.path); }}>
-                                <Download className="mr-2 h-4 w-4" />
-                                Download
-                              </DropdownMenuItem>
+                              <button
+                                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                onClick={(e) => { e.stopPropagation(); handleDownloadFile(file.path); }}
+                                title="Download"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                              </button>
                             )}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                            
+                            {/* More options dropdown */}
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button 
+                                  className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="h-3.5 w-3.5" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleItemClick(file); }}>
+                                  <Eye className="mr-2 h-4 w-4" />
+                                  {file.is_dir ? 'Open folder' : 'Open file'}
+                                </DropdownMenuItem>
+                                {!file.is_dir && (
+                                  <DropdownMenuItem onClick={(e) => { e.stopPropagation(); handleDownloadFile(file.path); }}>
+                                    <Download className="mr-2 h-4 w-4" />
+                                    Download
+                                  </DropdownMenuItem>
+                                )}
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </div>
+                        </div>
+                        
+                        {/* Thumbnail preview */}
+                        <div className="w-full aspect-[16/10] relative overflow-hidden">
+                          <ThumbnailPreview
+                            file={file}
+                            sandboxId={sandboxId}
+                            project={project}
+                            isPresentationFolder={isPresentation}
+                            fallbackIcon={getFileIcon(file, 'large')}
+                          />
+                        </div>
                       </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Other files - collapsible section with smaller cards */}
+              {otherPanelFiles.length > 0 && (
+                <div className={cn("mt-6", mainPanelFiles.length === 0 && "mt-0")}>
+                  <button
+                    onClick={() => setShowOtherFiles(!showOtherFiles)}
+                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+                  >
+                    <ChevronRight className={cn(
+                      "h-3.5 w-3.5 transition-transform",
+                      showOtherFiles && "rotate-90"
+                    )} />
+                    <span>Other files ({otherPanelFiles.length})</span>
+                  </button>
+                  
+                  {showOtherFiles && (
+                    <div className="grid grid-cols-3 gap-2">
+                      {otherPanelFiles.map((file) => (
+                        <div
+                          key={file.path}
+                          className="bg-card/50 rounded-lg border border-border/50 overflow-hidden cursor-pointer group hover:border-border/70 hover:bg-card transition-colors"
+                          onClick={() => handleItemClick(file)}
+                        >
+                          {/* Compact header */}
+                          <div className="flex items-center gap-1.5 p-2 border-b border-border/30">
+                            <div className="flex items-center justify-center w-5 h-5 rounded bg-muted/50 flex-shrink-0">
+                              {getFileIcon(file, 'small')}
+                            </div>
+                            <span className="flex-1 text-[10px] font-medium truncate text-muted-foreground group-hover:text-foreground transition-colors">
+                              {file.name}
+                            </span>
+                          </div>
+                          
+                          {/* Smaller preview */}
+                          <div className="w-full aspect-square relative overflow-hidden bg-muted/20">
+                            <ThumbnailPreview
+                              file={file}
+                              sandboxId={sandboxId}
+                              project={project}
+                              isPresentationFolder={false}
+                              fallbackIcon={getFileIcon(file, 'small')}
+                            />
+                          </div>
+                        </div>
+                      ))}
                     </div>
-                    
-                    {/* Thumbnail preview */}
-                    <div className="w-full aspect-[16/10] relative overflow-hidden">
-                      <ThumbnailPreview
-                        file={file}
-                        sandboxId={sandboxId}
-                        project={project}
-                        isPresentationFolder={isPresentation}
-                        fallbackIcon={getFileIcon(file, 'large')}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+                  )}
+                </div>
+              )}
             </div>
           </ScrollArea>
         ) : (
           /* Default: Simple icon grid */
           <ScrollArea className="h-full w-full max-w-full p-2 min-w-0">
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 p-4 max-w-full min-w-0">
-              {displayPanelFiles.map((file) => (
+              {mainPanelFiles.map((file) => (
                 <button
                   key={file.path}
                   className={cn(
@@ -1838,7 +2018,7 @@ export function FileBrowserView({
                   {isPresentationFolder(file) && (
                     <Badge 
                       variant="secondary" 
-                      className="absolute top-1 right-1 text-[10px] px-1.5 py-0 bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400"
+                      className="absolute top-1 right-1 text-[10px] px-1.5 py-0 bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                     >
                       Presentation
                     </Badge>
@@ -1862,7 +2042,7 @@ export function FileBrowserView({
         <div className="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
           <Badge variant="outline" className="py-0.5 h-6">
             <Folder className="h-3 w-3 mr-1" />
-            {displayPanelFiles.length} {displayPanelFiles.length === 1 ? 'item' : 'items'}
+            {mainPanelFiles.length + otherPanelFiles.length} {(mainPanelFiles.length + otherPanelFiles.length) === 1 ? 'item' : 'items'}
           </Badge>
         </div>
         <div className="text-xs text-zinc-500 dark:text-zinc-400 truncate max-w-[200px]">
@@ -1880,9 +2060,9 @@ export function FileBrowserView({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex items-start gap-2 p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-900/30">
-            <AlertTriangle className="h-4 w-4 text-red-600 dark:text-red-500 mt-0.5 shrink-0" />
-            <span className="text-xs text-red-700 dark:text-red-400">This will replace current files with the selected version snapshot. Your current changes will be overwritten.</span>
+          <div className="flex items-start gap-2 p-2 rounded-lg bg-zinc-50 dark:bg-zinc-950/20 border border-zinc-200 dark:border-zinc-800">
+            <AlertTriangle className="h-4 w-4 text-zinc-600 dark:text-zinc-500 mt-0.5 shrink-0" />
+            <span className="text-xs text-zinc-700 dark:text-zinc-400">This will replace current files with the selected version snapshot. Your current changes will be overwritten.</span>
           </div>
 
           {revertLoadingInfo ? (
