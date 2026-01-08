@@ -2,14 +2,17 @@ from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
-from typing import List, Dict, Optional, Union
+from core.services.http_client import get_http_client
+from typing import List, Dict, Optional, Union, TYPE_CHECKING
 import json
 import os
 from datetime import datetime
 import re
 import asyncio
-import httpx
 from urllib.parse import unquote
+
+if TYPE_CHECKING:
+    import httpx
 
 @tool_metadata(
     display_name="Presentations",
@@ -1360,7 +1363,7 @@ class SandboxPresentationTool(SandboxToolsBase):
         presentation_path: str, 
         format_type: str,
         store_locally: bool,
-        client: httpx.AsyncClient
+        client: "httpx.AsyncClient"
     ) -> Dict:
         """Internal helper to export to a specific format (pptx or pdf)"""
         try:
@@ -1465,7 +1468,7 @@ class SandboxPresentationTool(SandboxToolsBase):
             total_slides = len(metadata.get("slides", {}))
             
             # Run both exports in parallel
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with get_http_client() as client:
                 pptx_task = self._export_to_format(
                     presentation_name, safe_name, presentation_path, "pptx", store_locally, client
                 )

@@ -32,6 +32,7 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
     logger.info(f"Starting background task to generate name and icon for project: {project_id}")
     
     try:
+        # Use singleton - already initialized at startup
         db_conn = DBConnection()
         client = await db_conn.client
 

@@ -63,9 +63,8 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
     try:
         logger.info(f"[SETUP] Initializing account for {account_id}")
         
+        # Use singleton - already initialized at startup
         db = DBConnection()
-        await db.initialize()
-
         user_name = None
         if user_record and email:
             user_name = _extract_user_name(user_record, email)
@@ -189,8 +188,8 @@ def _send_welcome_email_async(email: str, user_name: str):
 async def initialize_account(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    # Use singleton - already initialized at startup
     db = DBConnection()
-    await db.initialize()
     client = await db.client
     
     email = None

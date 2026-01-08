@@ -2,7 +2,7 @@ from typing import Optional
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-import httpx
+from core.services.http_client import get_http_client
 from io import BytesIO
 import uuid
 from litellm import aimage_generation, aimage_edit
@@ -336,7 +336,7 @@ class SandboxDesignerTool(SandboxToolsBase):
 
     async def _download_image_from_url(self, url: str) -> bytes | ToolResult:
         try:
-            async with httpx.AsyncClient() as client:
+            async with get_http_client() as client:
                 response = await client.get(url)
                 response.raise_for_status()
                 return response.content

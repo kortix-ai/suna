@@ -17,8 +17,8 @@ async def ensure_suna_installed(account_id: str) -> None:
     try:
         _installation_in_progress.add(account_id)
         
+        # Use singleton - already initialized at startup
         db = DBConnection()
-        await db.initialize()
         client = await db.client
         
         existing = await client.from_('agents').select('agent_id').eq(

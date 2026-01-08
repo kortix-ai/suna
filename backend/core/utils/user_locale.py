@@ -28,8 +28,8 @@ async def get_user_locale(user_id: str, client=None) -> str:
     """
     try:
         if client is None:
+            # Use singleton - already initialized at startup
             db = DBConnection()
-            await db.initialize()
             client = await db.client
         
         # Use RPC function to get user metadata

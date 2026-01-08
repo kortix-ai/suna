@@ -1,8 +1,9 @@
 import os
 import httpx
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from fastapi import HTTPException
 from core.utils.logger import logger
+from core.services.http_client import get_http_client
 
 class TriggerSchemaService:
     def __init__(self):
@@ -17,8 +18,8 @@ class TriggerSchemaService:
             headers = {"x-api-key": self.api_key}
             url = f"{self.api_base}/api/v3/triggers_types/{trigger_slug}"
             
-            async with httpx.AsyncClient(timeout=10) as http_client:
-                response = await http_client.get(url, headers=headers)
+            async with get_http_client() as http_client:
+                response = await http_client.get(url, headers=headers, timeout=10.0)
                 
                 if response.status_code == 404:
                     raise HTTPException(status_code=404, detail=f"Trigger {trigger_slug} not found")

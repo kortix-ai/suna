@@ -7,10 +7,8 @@ from typing import Dict, Any, Optional, List
 
 import croniter
 import pytz
-import httpx
 from core.services.supabase import DBConnection
-
-from core.services.supabase import DBConnection
+from core.services.http_client import get_http_client
 from core.utils.logger import logger
 from core.utils.config import config as app_config, EnvMode
 from .trigger_service import Trigger, TriggerEvent, TriggerResult, TriggerType
@@ -596,12 +594,12 @@ class ComposioEventProvider(TriggerProvider):
                 {"status": "enabled"},
                 {"enabled": True},
             ]
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with get_http_client() as client:
                 for api_base in self._api_bases():
                     url = f"{api_base}/api/v3/trigger_instances/manage/{composio_trigger_id}"
                     for body in payload_candidates:
                         try:
-                            resp = await client.patch(url, headers=self._headers(), json=body)
+                            resp = await client.patch(url, headers=self._headers(), json=body, timeout=10.0)
                             if resp.status_code in (200, 204):
                                 logger.debug(f"Successfully enabled trigger in Composio: {composio_trigger_id}")
                                 return True
@@ -634,12 +632,12 @@ class ComposioEventProvider(TriggerProvider):
                 {"status": "disabled"},
                 {"enabled": False},
             ]
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with get_http_client() as client:
                 for api_base in self._api_bases():
                     url = f"{api_base}/api/v3/trigger_instances/manage/{composio_trigger_id}"
                     for body in payload_candidates:
                         try:
-                            resp = await client.patch(url, headers=self._headers(), json=body)
+                            resp = await client.patch(url, headers=self._headers(), json=body, timeout=10.0)
                             if resp.status_code in (200, 204):
                                 return True
                         except Exception as e:
@@ -665,11 +663,11 @@ class ComposioEventProvider(TriggerProvider):
                 return True
             
             # We're the last trigger, permanently delete from Composio
-            async with httpx.AsyncClient(timeout=10) as client:
+            async with get_http_client() as client:
                 for api_base in self._api_bases():
                     url = f"{api_base}/api/v3/trigger_instances/manage/{composio_trigger_id}"
                     try:
-                        resp = await client.delete(url, headers=self._headers())
+                        resp = await client.delete(url, headers=self._headers(), timeout=10.0)
                         if resp.status_code in (200, 204):
                             return True
                     except Exception:

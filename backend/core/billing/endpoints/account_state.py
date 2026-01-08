@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict
+from typing import Dict, Optional
 from datetime import datetime, timezone, timedelta
 import asyncio
 import httpx
@@ -24,14 +24,66 @@ router = APIRouter(tags=["billing-account-state"])
 
 from ..shared.cache_utils import ACCOUNT_STATE_CACHE_TTL, invalidate_account_state_cache
 
+# Stripe subscription cache TTL (5 minutes - Stripe data rarely changes)
+STRIPE_SUBSCRIPTION_CACHE_TTL = 300
+
+
+async def _get_cached_stripe_subscription(subscription_id: str) -> Optional[Dict]:
+    """Get Stripe subscription from cache to avoid slow API calls."""
+    if not subscription_id:
+        return None
+    
+    cache_key = f"stripe_sub:{subscription_id}"
+    try:
+        cached = await Cache.get(cache_key)
+        if cached:
+            logger.debug(f"⚡ Stripe subscription cache hit: {subscription_id[:8]}...")
+            return cached
+    except Exception:
+        pass
+    
+    # Cache miss - fetch from Stripe
+    try:
+        subscription_data = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+        if subscription_data:
+            try:
+                await Cache.set(cache_key, subscription_data, ttl=STRIPE_SUBSCRIPTION_CACHE_TTL)
+            except Exception:
+                pass
+        return subscription_data
+    except Exception as e:
+        logger.warning(f"[ACCOUNT_STATE] Failed to retrieve Stripe subscription: {e}")
+        return None
+
 
 async def _build_account_state(account_id: str) -> Dict:
-    credit_account = await get_credit_account(account_id) or {}
+    """
+    Build complete account state.
     
-    tier_name = credit_account.get('tier', 'none')
+    PERFORMANCE OPTIMIZATIONS:
+    - Fetches tier info ONCE and passes to all limit checkers
+    - Caches Stripe subscription data (5 min TTL)
+    - Runs all limit checks in parallel
+    """
+    import time
+    t_start = time.time()
+    
+    # Fetch credit account and tier info in parallel
+    credit_account_task = get_credit_account(account_id)
+    tier_info_task = subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+    
+    credit_account, subscription_tier_info = await asyncio.gather(
+        credit_account_task,
+        tier_info_task
+    )
+    credit_account = credit_account or {}
+    
+    tier_name = subscription_tier_info.get('name', 'none')
     tier_info = get_tier_by_name(tier_name)
     if not tier_info:
         tier_info = TIERS['none']
+    
+    logger.debug(f"[ACCOUNT_STATE] Fetched credit account + tier in {(time.time() - t_start) * 1000:.1f}ms")
     
     # Trial status
     trial_status = credit_account.get('trial_status')
@@ -39,7 +91,6 @@ async def _build_account_state(account_id: str) -> Dict:
     is_trial = trial_status == 'active'
     
     # Balance calculations (stored in dollars, convert to credits)
-    balance_dollars = float(credit_account.get('balance', 0) or 0)
     daily_dollars = float(credit_account.get('daily_credits_balance', 0) or 0)
     monthly_dollars = float(credit_account.get('expiring_credits', 0) or 0)
     extra_dollars = float(credit_account.get('non_expiring_credits', 0) or 0)
@@ -49,7 +100,6 @@ async def _build_account_state(account_id: str) -> Dict:
     daily_credits = daily_dollars * CREDITS_PER_DOLLAR
     monthly_credits = monthly_dollars * CREDITS_PER_DOLLAR
     extra_credits = extra_dollars * CREDITS_PER_DOLLAR
-    # Total = sum of all credit types (daily + monthly + extra)
     total_credits = daily_credits + monthly_credits + extra_credits
     
     # Daily credits refresh info
@@ -82,26 +132,23 @@ async def _build_account_state(account_id: str) -> Dict:
             'seconds_until_refresh': seconds_until_refresh
         }
     
-    # Get subscription info
+    # Get subscription info - use cached Stripe data
     subscription_data = None
     billing_period = credit_account.get('plan_type')
     provider = credit_account.get('provider', 'stripe')
     
     stripe_subscription_id = credit_account.get('stripe_subscription_id')
     if stripe_subscription_id and provider == 'stripe':
-        try:
-            # Use async wrapper with timeout instead of sync call
-            subscription_data = await StripeAPIWrapper.retrieve_subscription(stripe_subscription_id)
-            
-            # Get billing period from subscription if not in credit_account
-            if not billing_period and subscription_data:
-                items_data = subscription_data.get('items', {}).get('data', [])
-                if items_data:
-                    price_id = items_data[0].get('price', {}).get('id')
-                    if price_id:
-                        billing_period = get_price_type(price_id)
-        except Exception as e:
-            logger.warning(f"[ACCOUNT_STATE] Failed to retrieve Stripe subscription: {e}")
+        # Use cached Stripe subscription (avoids 200-800ms API call)
+        subscription_data = await _get_cached_stripe_subscription(stripe_subscription_id)
+        
+        # Get billing period from subscription if not in credit_account
+        if not billing_period and subscription_data:
+            items_data = subscription_data.get('items', {}).get('data', [])
+            if items_data:
+                price_id = items_data[0].get('price', {}).get('id')
+                if price_id:
+                    billing_period = get_price_type(price_id)
     
     # RevenueCat billing period
     if provider == 'revenuecat' and credit_account.get('revenuecat_product_id'):
@@ -199,6 +246,7 @@ async def _build_account_state(account_id: str) -> Dict:
         })
     
     # Get tier limits with detailed usage info
+    # PERFORMANCE: Pass subscription_tier_info to all checkers to avoid N+1 queries
     from core.utils.limits_checker import (
         check_thread_limit,
         check_agent_run_limit,
@@ -208,15 +256,18 @@ async def _build_account_state(account_id: str) -> Dict:
         check_custom_mcp_limit
     )
     
-    # Fetch all detailed limits in parallel (client parameter is now optional/unused)
+    # Fetch all detailed limits in parallel, passing pre-fetched tier_info to avoid N+1 queries
+    # This reduces DB round trips from 6+ to 1 (tier info already fetched above)
     thread_limit, concurrent_runs_limit, agent_count_limit, project_count_limit, trigger_limit, custom_mcp_limit = await asyncio.gather(
-        check_thread_limit(account_id),
-        check_agent_run_limit(account_id),
-        check_agent_count_limit(account_id),
-        check_project_count_limit(account_id),
-        check_trigger_limit(account_id),
-        check_custom_mcp_limit(account_id)
+        check_thread_limit(account_id, tier_info=subscription_tier_info),
+        check_agent_run_limit(account_id, tier_info=subscription_tier_info),
+        check_agent_count_limit(account_id, tier_info=subscription_tier_info),
+        check_project_count_limit(account_id, tier_info=subscription_tier_info),
+        check_trigger_limit(account_id, tier_info=subscription_tier_info),
+        check_custom_mcp_limit(account_id, tier_info=subscription_tier_info)
     )
+    
+    logger.debug(f"[ACCOUNT_STATE] Built complete state in {(time.time() - t_start) * 1000:.1f}ms")
     
     # Build response
     return {

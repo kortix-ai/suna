@@ -31,33 +31,37 @@ set_json_loads(_json_deserialize)
 from core.utils.config import config, EnvMode
 
 def _get_db_config():
-
-    if config.ENV_MODE == EnvMode.PRODUCTION:
+    """
+    Database connection pool configuration.
+    
+    UNIFIED CONFIG for staging/production to avoid environment-specific issues.
+    Pool sizes are conservative because:
+    - Supavisor (port 6543) uses NullPool anyway (auto-detected)
+    - Direct connections (port 5432) need small pools to stay within Supabase limits
+    
+    With 8-16 workers per container:
+    - pool_size=3 × 16 workers = 48 base connections
+    - max_overflow=5 × 16 workers = 80 overflow
+    - Total max = 128 connections (safe for Supabase Pro limits ~200)
+    """
+    if config.ENV_MODE == EnvMode.LOCAL:
         return {
-            "pool_size": 90,
-            "max_overflow": 180,
-            "pool_timeout": 45,
-            "pool_recycle": 3600,
-            "statement_timeout": 45000,
-            "connect_timeout": 15,
-        }
-    elif config.ENV_MODE == EnvMode.STAGING:
-        return {
-            "pool_size": 10,
-            "max_overflow": 15,
-            "pool_timeout": 30,
-            "pool_recycle": 1800,
-            "statement_timeout": 30000,
-            "connect_timeout": 10,
-        }
-    else:
-        return {
-            "pool_size": 5,
-            "max_overflow": 10,
-            "pool_timeout": 20,
-            "pool_recycle": 600,
+            "pool_size": 3,
+            "max_overflow": 5,
+            "pool_timeout": 10,
+            "pool_recycle": 300,
             "statement_timeout": 15000,
             "connect_timeout": 5,
+        }
+    else:
+        # Unified config for staging AND production
+        return {
+            "pool_size": 3,           # 3 per worker (conservative)
+            "max_overflow": 5,        # Allow burst to 8 per worker
+            "pool_timeout": 10,       # Fail fast on pool exhaustion
+            "pool_recycle": 300,      # Recycle connections every 5 min
+            "statement_timeout": 30000,  # 30s query timeout
+            "connect_timeout": 10,    # 10s connection timeout
         }
 
 _db_config = _get_db_config()

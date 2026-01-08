@@ -7,10 +7,10 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 from core.services.supabase import DBConnection
+from core.services.http_client import get_http_client
 from datetime import datetime
 import os
 import hmac
-import httpx
 import asyncio
 import json
 import hashlib
@@ -729,8 +729,8 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         coerced_config = dict(req.trigger_config or {})
         try:
             type_url = f"{COMPOSIO_API_BASE}/api/v3/triggers_types/{req.slug}"
-            async with httpx.AsyncClient(timeout=10) as http_client:
-                tr = await http_client.get(type_url, headers=headers)
+            async with get_http_client() as http_client:
+                tr = await http_client.get(type_url, headers=headers, timeout=10.0)
                 if tr.status_code == 200:
                     tdata = tr.json()
                     schema = tdata.get("config") or {}
@@ -771,8 +771,8 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         if req.connected_account_id:
             body["connected_account_id"] = req.connected_account_id
 
-        async with httpx.AsyncClient(timeout=20) as http_client:
-            resp = await http_client.post(url, headers=headers, json=body)
+        async with get_http_client() as http_client:
+            resp = await http_client.post(url, headers=headers, json=body, timeout=20.0)
             try:
                 resp.raise_for_status()
             except httpx.HTTPStatusError:

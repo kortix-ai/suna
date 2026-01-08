@@ -2,7 +2,7 @@ from typing import Optional
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-import httpx
+from core.services.http_client import get_http_client
 from io import BytesIO
 import uuid
 import replicate
@@ -596,7 +596,7 @@ Generate, edit, upscale, or remove background from images. Video generation supp
             else:
                 # Fetch from URL if it's a URL string
                 url = str(first_output.url) if hasattr(first_output, 'url') else str(first_output)
-                async with httpx.AsyncClient() as client:
+                async with get_http_client() as client:
                     response = await client.get(url)
                     response.raise_for_status()
                     result_bytes = response.content
@@ -722,15 +722,15 @@ Generate, edit, upscale, or remove background from images. Video generation supp
                 result_bytes = output.read()
             elif hasattr(output, 'url'):
                 url = str(output.url)
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    response = await client.get(url)
+                async with get_http_client() as client:
+                    response = await client.get(url, timeout=120.0)
                     response.raise_for_status()
                     result_bytes = response.content
             else:
                 # Try to fetch from string URL
                 url = str(output)
-                async with httpx.AsyncClient(timeout=120.0) as client:
-                    response = await client.get(url)
+                async with get_http_client() as client:
+                    response = await client.get(url, timeout=120.0)
                     response.raise_for_status()
                     result_bytes = response.content
             
@@ -930,7 +930,7 @@ Generate, edit, upscale, or remove background from images. Video generation supp
     async def _download_image_from_url(self, url: str) -> bytes | ToolResult:
         """Download image from URL."""
         try:
-            async with httpx.AsyncClient() as client:
+            async with get_http_client() as client:
                 response = await client.get(url)
                 response.raise_for_status()
                 return response.content
@@ -990,7 +990,7 @@ Generate, edit, upscale, or remove background from images. Video generation supp
             placeholder_url = f"https://picsum.photos/1024/1024?random={random_id}"
             
             # Download the image
-            async with httpx.AsyncClient() as client:
+            async with get_http_client() as client:
                 response = await client.get(placeholder_url, follow_redirects=True)
                 response.raise_for_status()
                 image_data = response.content

@@ -31,7 +31,7 @@ async def upload_base64_image(base64_data: str, bucket_name: str = "image-upload
         unique_id = str(uuid.uuid4())[:8]
         filename = f"image_{timestamp}_{unique_id}.png"
         
-        # Upload to Supabase storage
+        # Upload to Supabase storage - use singleton, already initialized
         db = DBConnection()
         client = await db.client
         storage_response = await client.storage.from_(bucket_name).upload(
@@ -63,6 +63,7 @@ async def upload_image_bytes(image_bytes: bytes, content_type: str = "image/png"
             ext = "gif"
         filename = f"agent_profile_{timestamp}_{unique_id}.{ext}"
 
+        # Use singleton - already initialized at startup
         db = DBConnection()
         client = await db.client
         await client.storage.from_(bucket_name).upload(

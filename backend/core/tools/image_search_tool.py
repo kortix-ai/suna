@@ -1,9 +1,9 @@
-import httpx
 from dotenv import load_dotenv
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
+from core.services.http_client import get_http_client
 import json
 import logging
 from typing import Union, List
@@ -151,7 +151,7 @@ class SandboxImageSearchTool(SandboxToolsBase):
                 payload = {"q": queries[0], "num": num_results}
             
             # SERPER API request
-            async with httpx.AsyncClient() as client:
+            async with get_http_client() as client:
                 headers = {
                     "X-API-KEY": self.serper_api_key,
                     "Content-Type": "application/json"

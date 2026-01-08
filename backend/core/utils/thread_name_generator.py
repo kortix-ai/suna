@@ -23,6 +23,7 @@ async def generate_and_update_thread_name(thread_id: str, prompt: str):
     logger.info(f"Starting background task to generate name for thread: {thread_id}")
     
     try:
+        # Use singleton - already initialized at startup
         db_conn = DBConnection()
         client = await db_conn.client
 

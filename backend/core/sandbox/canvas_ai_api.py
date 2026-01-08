@@ -7,7 +7,6 @@ Supports multiple models: GPT Image (via Replicate), Gemini (via OpenRouter), an
 import os
 import base64
 import asyncio
-import httpx
 import replicate
 from io import BytesIO
 from typing import Optional, Literal
@@ -17,6 +16,7 @@ from pydantic import BaseModel
 from core.utils.logger import logger
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.config import get_config
+from core.services.http_client import get_http_client
 from core.billing.credits.media_integration import media_billing
 
 router = APIRouter(prefix="/canvas-ai", tags=["Canvas AI"])
@@ -218,11 +218,12 @@ async def process_with_gemini(
         "app": "Kortix.com"
     }
     
-    async with httpx.AsyncClient(timeout=120.0) as client:
+    async with get_http_client() as client:
         response = await client.post(
             f"{OPENROUTER_BASE_URL}/chat/completions",
             headers=headers,
-            json=payload
+            json=payload,
+            timeout=120.0
         )
         
         if response.status_code != 200:
@@ -690,8 +691,8 @@ async def _convert_with_recraft(image_data_url: str) -> Optional[str]:
         )
         # Output is a FileOutput URL to the SVG
         if output:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                resp = await client.get(str(output))
+            async with get_http_client() as client:
+                resp = await client.get(str(output), timeout=30.0)
                 if resp.status_code == 200:
                     return resp.text
         return None

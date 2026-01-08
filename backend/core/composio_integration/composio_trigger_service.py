@@ -1,9 +1,9 @@
 import os
 import json
-import httpx
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 from core.utils.logger import logger
+from core.services.http_client import get_http_client
 from .toolkit_service import ToolkitService
 
 
@@ -47,9 +47,9 @@ class ComposioTriggerService:
         url = f"{self.api_base}/api/v3/triggers_types"
         params = {"limit": 1000}
         items = []
-        async with httpx.AsyncClient(timeout=20) as client_http:
+        async with get_http_client() as client_http:
             while True:
-                resp = await client_http.get(url, headers=headers, params=params)
+                resp = await client_http.get(url, headers=headers, params=params, timeout=20.0)
                 resp.raise_for_status()
                 data = resp.json()
                 page_items = data.get("items") if isinstance(data, dict) else data
@@ -139,10 +139,10 @@ class ComposioTriggerService:
         headers = {"x-api-key": self.api_key}
         url = f"{self.api_base}/api/v3/triggers_types"
         items = []
-        async with httpx.AsyncClient(timeout=20) as client_http:
+        async with get_http_client() as client_http:
             # Try param filter
             params = {"limit": 1000, "toolkits": toolkit_slug}
-            resp = await client_http.get(url, headers=headers, params=params)
+            resp = await client_http.get(url, headers=headers, params=params, timeout=20.0)
             resp.raise_for_status()
             data = resp.json()
             items = data.get("items") if isinstance(data, dict) else data
@@ -154,7 +154,7 @@ class ComposioTriggerService:
                 params_all = {"limit": 1000}
                 items = []
                 while True:
-                    resp_all = await client_http.get(url, headers=headers, params=params_all)
+                    resp_all = await client_http.get(url, headers=headers, params=params_all, timeout=20.0)
                     resp_all.raise_for_status()
                     data_all = resp_all.json()
                     page_items = data_all.get("items") if isinstance(data_all, dict) else data_all

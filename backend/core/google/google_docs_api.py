@@ -1,4 +1,3 @@
-import httpx
 import tempfile
 from pathlib import Path
 from typing import Optional
@@ -10,6 +9,7 @@ from pydantic import BaseModel, Field
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
+from core.services.http_client import get_http_client
 from .google_docs_service import GoogleDocsService
 from .google_slides_service import OAuthTokenService
 
@@ -28,8 +28,8 @@ class ConvertToDocsResponse(BaseModel):
 
 
 async def get_db_connection() -> DBConnection:
+    # Use singleton - already initialized at startup
     db = DBConnection()
-    await db.initialize()
     return db
 
 
@@ -77,10 +77,11 @@ async def convert_and_upload_to_google_docs(
         logger.info(f"Calling sandbox conversion endpoint: POST {convert_url}")
         logger.debug(f"Conversion payload: {convert_payload}")
         
-        async with httpx.AsyncClient(timeout=120.0) as client:
+        async with get_http_client() as client:
             convert_response = await client.post(
                 convert_url,
-                json=convert_payload
+                json=convert_payload,
+                timeout=120.0
             )
             
             logger.debug(f"Sandbox response status: {convert_response.status_code}")

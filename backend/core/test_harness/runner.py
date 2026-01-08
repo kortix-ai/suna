@@ -12,7 +12,6 @@ Executes E2E benchmark tests by:
 import asyncio
 import json
 import time
-import httpx
 import jwt
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
@@ -469,7 +468,8 @@ class TestHarnessRunner:
             timeout_seconds = 30.0 if model == 'mock-ai' else 120.0
             
             # Call /agent/start
-            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            from core.services.http_client import get_http_client
+            async with get_http_client() as client:
                 # Start agent with JWT authentication
                 auth_headers = self._get_auth_headers()
                 
@@ -479,7 +479,8 @@ class TestHarnessRunner:
                         'prompt': prompt.text,
                         'model_name': model,
                     },
-                    headers=auth_headers
+                    headers=auth_headers,
+                    timeout=timeout_seconds
                 )
                 
                 if start_response.status_code != 200:

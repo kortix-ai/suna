@@ -149,6 +149,7 @@ async def retry_db_operation(
         max_delay = DB_RETRY_MAX_DELAY
     
     last_exception: Optional[Exception] = None
+    # Use singleton - already initialized at startup
     db = DBConnection()
     op_name = operation_name or "Database operation"
     

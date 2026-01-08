@@ -1,7 +1,6 @@
 from typing import Optional, Dict, Any, List
 import json
 import asyncio
-import httpx
 import phonenumbers
 from phonenumbers import NumberParseException, geocoder
 import structlog
@@ -10,6 +9,7 @@ from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
+from core.services.http_client import get_http_client
 from core.config.vapi_config import vapi_config, DEFAULT_SYSTEM_PROMPT, DEFAULT_FIRST_MESSAGE
 from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
 
@@ -437,8 +437,8 @@ class VapiVoiceTool(Tool):
                 "assistant": assistant_config
             }
             
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
+            async with get_http_client() as http_client:
+                response = await http_client.post(
                     f"{self.base_url}/call/phone",
                     headers=self._get_headers(),
                     json=payload,
@@ -559,8 +559,8 @@ class VapiVoiceTool(Tool):
             return self.fail_response("VAPI_PRIVATE_KEY not configured")
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.patch(
+            async with get_http_client() as http_client:
+                response = await http_client.patch(
                     f"{self.base_url}/call/{call_id}",
                     headers=self._get_headers(),
                     json={"status": "ended"},
@@ -613,8 +613,8 @@ class VapiVoiceTool(Tool):
             return self.fail_response("VAPI_PRIVATE_KEY not configured")
         
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.get(
+            async with get_http_client() as http_client:
+                response = await http_client.get(
                     f"{self.base_url}/call/{call_id}",
                     headers=self._get_headers(),
                     timeout=30.0

@@ -414,8 +414,7 @@ async def health_check_docker():
     try:
         client = await redis.get_client()
         await client.ping()
-        db = DBConnection()
-        await db.initialize()
+        # Use the global db singleton instead of creating a new instance
         db_client = await db.client
         await db_client.table("threads").select("thread_id").limit(1).execute()
         logger.debug("Health docker check complete")

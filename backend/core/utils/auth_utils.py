@@ -123,8 +123,8 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
         structlog.get_logger().warning(f"Redis cache lookup failed for account {account_id}: {e}")
     
     try:
+        # Use singleton - no need to initialize, it's already initialized at startup
         db = DBConnection()
-        await db.initialize()
         client = await db.client
         
         user_result = await client.schema('basejump').table('accounts').select(
@@ -162,8 +162,8 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
             public_key, secret_key = x_api_key.split(':', 1)
             
             from core.services.api_keys import APIKeyService
+            # Use singleton - no need to initialize, it's already initialized at startup
             db = DBConnection()
-            await db.initialize()
             api_key_service = APIKeyService(db)
             
             validation_result = await api_key_service.validate_api_key(public_key, secret_key)
@@ -431,7 +431,7 @@ async def get_authorized_user_for_thread(
     # First, authenticate the user
     user_id = await verify_and_get_user_id_from_jwt(request)
     
-    # Then, authorize thread access
+    # Then, authorize thread access - use singleton, already initialized
     db = DBConnection()
     client = await db.client
     await verify_and_authorize_thread_access(client, thread_id, user_id)
@@ -460,7 +460,7 @@ async def get_authorized_user_for_agent(
     # First, authenticate the user
     user_id = await verify_and_get_user_id_from_jwt(request)
     
-    # Then, authorize agent access and get agent data
+    # Then, authorize agent access and get agent data - use singleton, already initialized
     db = DBConnection()
     client = await db.client
     agent_data = await verify_and_get_agent_authorization(client, agent_id, user_id)

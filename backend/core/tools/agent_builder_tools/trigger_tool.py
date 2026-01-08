@@ -8,9 +8,9 @@ from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 from datetime import datetime
 from core.services.supabase import DBConnection
+from core.services.http_client import get_http_client
 from core.triggers import get_trigger_service
 import os
-import httpx
 from core.composio_integration.composio_profile_service import ComposioProfileService
 from core.composio_integration.composio_trigger_service import ComposioTriggerService
 
@@ -497,8 +497,8 @@ class TriggerTool(AgentBuilderBaseTool):
             coerced_config = dict(trigger_config or {})
             try:
                 type_url = f"{api_base}/api/v3/triggers_types/{slug}"
-                async with httpx.AsyncClient(timeout=10) as http_client:
-                    tr = await http_client.get(type_url, headers=headers)
+                async with get_http_client() as http_client:
+                    tr = await http_client.get(type_url, headers=headers, timeout=10.0)
                     if tr.status_code == 200:
                         tdata = tr.json()
                         schema = tdata.get("config") or {}
@@ -543,8 +543,8 @@ class TriggerTool(AgentBuilderBaseTool):
 
             # Upsert trigger instance
             upsert_url = f"{api_base}/api/v3/trigger_instances/{slug}/upsert"
-            async with httpx.AsyncClient(timeout=20) as http_client:
-                resp = await http_client.post(upsert_url, headers=headers, json=body)
+            async with get_http_client() as http_client:
+                resp = await http_client.post(upsert_url, headers=headers, json=body, timeout=20.0)
                 try:
                     resp.raise_for_status()
                 except httpx.HTTPStatusError as e:

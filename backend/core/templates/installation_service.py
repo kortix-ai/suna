@@ -4,10 +4,10 @@ from typing import Dict, List, Any, Optional
 from uuid import uuid4
 import os
 import json
-import httpx
 import re
 
 from core.services.supabase import DBConnection
+from core.services.http_client import get_http_client
 from core.utils.logger import logger
 from .template_service import AgentTemplate, MCPRequirementValue, ConfigType, ProfileId, QualifiedName
 from core.triggers.api import sync_triggers_to_version_config
@@ -709,8 +709,8 @@ class InstallationService:
             logger.debug(f"Creating Composio trigger with URL: {url}")
             logger.debug(f"Request body: {json.dumps(body, indent=2)}")
             
-            async with httpx.AsyncClient(timeout=20) as http_client:
-                resp = await http_client.post(url, headers=headers, json=body)
+            async with get_http_client() as http_client:
+                resp = await http_client.post(url, headers=headers, json=body, timeout=20.0)
                 
                 if resp.status_code != 200:
                     logger.error(f"Composio API error response: {resp.status_code} - {resp.text}")

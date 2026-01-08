@@ -161,7 +161,7 @@ async def get_memory_stats(
         if memories_by_type is None:
             memories_by_type = {}
         
-        await db.initialize()
+        # Use singleton - already initialized at startup
         client = await db.client
         memory_enabled_result = await client.rpc('get_user_memory_enabled', {'p_account_id': user_id}).execute()
         memory_enabled = memory_enabled_result.data if memory_enabled_result.data is not None else True
@@ -258,7 +258,7 @@ async def create_memory(
         memory_config = get_memory_config(tier_name)
         max_memories = memory_config.get('max_memories', 0)
         
-        await db.initialize()
+        # Use singleton - already initialized at startup
         client = await db.client
         
         current_count_result = await client.table('user_memories').select('memory_id', count='exact').eq('account_id', user_id).execute()
@@ -317,7 +317,7 @@ async def get_memory_settings(
         return MemorySettingsResponse(memory_enabled=False)
     
     try:
-        await db.initialize()
+        # Use singleton - already initialized at startup
         client = await db.client
         
         result = await client.rpc('get_user_memory_enabled', {'p_account_id': user_id}).execute()
@@ -338,7 +338,7 @@ async def update_memory_settings(
         raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
     
     try:
-        await db.initialize()
+        # Use singleton - already initialized at startup
         client = await db.client
         
         await client.rpc('set_user_memory_enabled', {
@@ -363,7 +363,7 @@ async def get_thread_memory_settings(
         return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=False)
     
     try:
-        await db.initialize()
+        # Use singleton - already initialized at startup
         client = await db.client
         
         result = await client.rpc('get_thread_memory_enabled', {'p_thread_id': thread_id}).execute()
@@ -385,7 +385,7 @@ async def update_thread_memory_settings(
         raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
     
     try:
-        await db.initialize()
+        # Use singleton - already initialized at startup
         client = await db.client
         
         await client.rpc('set_thread_memory_enabled', {

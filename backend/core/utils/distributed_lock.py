@@ -106,6 +106,7 @@ class RenewalLock:
         processed_by: str,
         stripe_event_id: Optional[str] = None
     ) -> bool:
+        # Use singleton - already initialized at startup
         db = DBConnection()
         client = await db.client
         
@@ -151,6 +152,7 @@ class WebhookLock:
         payload: dict = None,
         force_reprocess: bool = False
     ) -> tuple[bool, Optional[str]]:
+        # Use singleton - already initialized at startup
         db = DBConnection()
         client = await db.client
         
@@ -282,6 +284,7 @@ class WebhookLock:
     
     @staticmethod
     async def mark_webhook_completed(event_id: str):
+        # Use singleton - already initialized at startup
         db = DBConnection()
         client = await db.client
         
@@ -294,6 +297,7 @@ class WebhookLock:
     
     @staticmethod
     async def mark_webhook_failed(event_id: str, error_message: str):
+        # Use singleton - already initialized at startup
         db = DBConnection()
         client = await db.client
         

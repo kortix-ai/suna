@@ -1,10 +1,10 @@
 from tavily import AsyncTavilyClient
-import httpx
 from dotenv import load_dotenv
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
+from core.services.http_client import get_http_client
 import json
 import datetime
 import asyncio
@@ -465,7 +465,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         try:
             # ---------- Firecrawl scrape endpoint ----------
             logging.info(f"Sending request to Firecrawl for URL: {url}")
-            async with httpx.AsyncClient() as client:
+            async with get_http_client() as client:
                 headers = {
                     "Authorization": f"Bearer {self.firecrawl_api_key}",
                     "Content-Type": "application/json",

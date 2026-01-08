@@ -22,6 +22,13 @@ services:
     environment:
       - LOG_LEVEL=DEBUG
       - WORKERS=${WORKERS:-16}
+    # DNS configuration to reduce DNS lookup latency for third-party services
+    # Using Google and Cloudflare DNS for reliability
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    dns_search:
+      - .
     logging:
       driver: "json-file"
       options:

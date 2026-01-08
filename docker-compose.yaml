@@ -54,6 +54,13 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_SSL=False
+    # DNS configuration to reduce DNS lookup latency for third-party services
+    # Using Google and Cloudflare DNS for reliability
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    dns_search:
+      - .
     depends_on:
       redis:
         condition: service_healthy
@@ -74,6 +81,12 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_SSL=False
+    # DNS configuration to reduce DNS lookup latency for third-party services
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    dns_search:
+      - .
     depends_on:
       redis:
         condition: service_healthy

@@ -19,10 +19,10 @@ from pathlib import Path
 from typing import Dict, Any, Optional, List
 from urllib.parse import urlencode
 
-import httpx
 from fastapi import HTTPException
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
+from core.services.http_client import get_http_client
 from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
@@ -329,7 +329,7 @@ class GoogleSlidesService:
                 "code": code
             }
             
-            async with httpx.AsyncClient() as client:
+            async with get_http_client() as client:
                 response = await client.post(
                     "https://oauth2.googleapis.com/token",
                     data=token_data,
@@ -393,7 +393,7 @@ class GoogleSlidesService:
                 "refresh_token": refresh_token
             }
             
-            async with httpx.AsyncClient() as client:
+            async with get_http_client() as client:
                 response = await client.post(
                     "https://oauth2.googleapis.com/token",
                     data=refresh_data,
