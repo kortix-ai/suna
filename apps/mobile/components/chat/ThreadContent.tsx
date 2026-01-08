@@ -49,6 +49,7 @@ import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedF
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { isKortixDefaultAgentId } from '@/lib/agents';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -665,8 +666,6 @@ interface MessageGroup {
   key: string;
 }
 
-// Default Kortix agent ID - when null or this ID, show logomark only
-const KORTIX_DEFAULT_AGENT_ID = '55e65f0e-b598-4dbc-a185-8b904849da44';
 
 export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
   ({
@@ -691,7 +690,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     // Helper to render agent indicator based on agent type
     const renderAgentIndicator = useCallback((agentId: string | null | undefined) => {
       // Default Kortix agent or no agent ID - show full logomark
-      const isKortixDefault = !agentId || agentId === KORTIX_DEFAULT_AGENT_ID;
+      const isKortixDefault = isKortixDefaultAgentId(agentId, agents);
       
       if (isKortixDefault) {
         // Full Kortix logomark (icon + text) - same height as symbol+text combo

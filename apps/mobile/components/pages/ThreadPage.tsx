@@ -343,7 +343,18 @@ export function ThreadPage({
       scrollViewRef.current?.scrollTo({ y: maxY, animated: false });
       scrollLockActiveRef.current = false;
     }
-  }, []);
+    
+    // Check if content overflows and we're not at the bottom - show scroll button
+    const actualContentHeight = contentHeight - extraPushPadding;
+    const hasOverflow = actualContentHeight > viewportHeightRef.current;
+    const currentScrollY = lastScrollYRef.current;
+    const actualMaxScrollY = Math.max(0, actualContentHeight - viewportHeightRef.current);
+    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
+    
+    if (hasOverflow && !isAtActualBottom && !isUserScrolling) {
+      setShowScrollToBottom(true);
+    }
+  }, [extraPushPadding, isUserScrolling]);
 
   // Scroll to bottom when thread first opens
   React.useEffect(() => {
@@ -430,41 +441,71 @@ export function ThreadPage({
 
   // Track significant scroll changes for debugging
   const lastLoggedScrollY = React.useRef(0);
+  
+  // Animation for scroll button
+  const scrollButtonOpacity = useSharedValue(0);
+  const scrollButtonScale = useSharedValue(0.8);
+  
+  const scrollButtonAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: scrollButtonOpacity.value,
+    transform: [{ scale: scrollButtonScale.value }],
+  }));
+  
+  // Show/hide scroll button with animation
+  React.useEffect(() => {
+    if (showScrollToBottom) {
+      scrollButtonOpacity.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.ease) });
+      scrollButtonScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.5)) });
+    } else {
+      scrollButtonOpacity.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.ease) });
+      scrollButtonScale.value = withTiming(0.8, { duration: 150, easing: Easing.in(Easing.ease) });
+    }
+  }, [showScrollToBottom, scrollButtonOpacity, scrollButtonScale]);
 
   const handleScroll = React.useCallback((event: any) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const currentScrollY = contentOffset.y;
-    const maxScrollY = contentSize.height - layoutMeasurement.height;
     
     // Calculate the ACTUAL content bottom (excluding extra push padding)
     const actualContentHeight = contentSize.height - extraPushPadding;
     const actualMaxScrollY = Math.max(0, actualContentHeight - layoutMeasurement.height);
     
+    // Check if content is larger than viewport
+    const hasOverflow = actualContentHeight > layoutMeasurement.height;
+    
     // User is at bottom of ACTUAL content (not counting padding)
-    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 100;
-    const isScrollingUp = currentScrollY < lastScrollYRef.current - 5;
+    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
 
     // Track for calculations
     contentHeightRef.current = contentSize.height;
     viewportHeightRef.current = layoutMeasurement.height;
     lastScrollYRef.current = currentScrollY;
 
-    // Show "scroll to bottom" button only when there's ACTUAL content below
-    // Not just extra padding space
-    if (isScrollingUp && !isAtActualBottom) {
+    // Show "scroll to bottom" button when:
+    // 1. Content overflows the viewport
+    // 2. User is NOT at the bottom of actual content
+    if (hasOverflow && !isAtActualBottom) {
       setIsUserScrolling(true);
       setShowScrollToBottom(true);
-    } else if (isAtActualBottom) {
+    } else {
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
   }, [extraPushPadding]);
 
   const scrollToBottom = React.useCallback(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+    if (pushToTop && extraPushPadding > 0) {
+      // In pushToTop mode, scroll to actual content bottom (not the extra padding)
+      const actualContentHeight = contentHeightRef.current - extraPushPadding;
+      const targetY = Math.max(0, actualContentHeight - viewportHeightRef.current);
+      scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+    } else {
+      // Normal mode - scroll to very end
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
-  }, []);
+  }, [pushToTop, extraPushPadding]);
 
   const handleRefresh = React.useCallback(async () => {
     if (chat.isStreaming || chat.isAgentRunning) {
@@ -643,16 +684,26 @@ export function ThreadPage({
           </ScrollView>
         )}
       </View>
-      {showScrollToBottom && hasMessages && (
-        <Pressable
-          onPress={scrollToBottom}
-          className="absolute right-6 h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
-          style={{
-            bottom: baseBottomPadding + 16,
-            zIndex: 150,
-          }}>
-          <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
-        </Pressable>
+      {hasMessages && (
+        <Animated.View
+          style={[
+            {
+              position: 'absolute',
+              right: 24,
+              bottom: baseBottomPadding + 16,
+              zIndex: 150,
+            },
+            scrollButtonAnimatedStyle,
+          ]}
+          pointerEvents={showScrollToBottom ? 'auto' : 'none'}
+        >
+          <Pressable
+            onPress={scrollToBottom}
+            className="h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
+          >
+            <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
+          </Pressable>
+        </Animated.View>
       )}
 
       <ThreadHeader

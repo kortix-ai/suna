@@ -12,6 +12,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { useColorScheme } from 'nativewind';
+import { isKortixDefaultAgent } from '@/lib/agents';
 
 // NOTE: AnimatedPressable blocks touches on Android - use TouchableOpacity instead
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -71,6 +72,8 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
     );
   }
 
+  const isKortixDefault = isKortixDefaultAgent(agent);
+
   if (compact) {
     return (
       <TouchableOpacity
@@ -78,7 +81,11 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
         hitSlop={ANDROID_HIT_SLOP}
         activeOpacity={0.7}
       >
-        <AgentAvatar agent={agent} size={26} />
+        {isKortixDefault ? (
+          <KortixLogo size={14} variant="symbol" color={isDark ? 'dark' : 'light'} />
+        ) : (
+          <AgentAvatar agent={agent} size={26} />
+        )}
         <View className="absolute -bottom-0.5 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
           <Icon
             as={ChevronDown}
@@ -98,8 +105,14 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
       hitSlop={ANDROID_HIT_SLOP}
       activeOpacity={0.7}
     >
-      <AgentAvatar agent={agent} size={19} />
-      <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
+      {isKortixDefault ? (
+        <KortixLogo size={11} variant="logomark" color={isDark ? 'dark' : 'light'} />
+      ) : (
+        <>
+          <AgentAvatar agent={agent} size={19} />
+          <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
+        </>
+      )}
       <Icon
         as={ChevronDown}
         size={15}
