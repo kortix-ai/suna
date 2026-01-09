@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
-  withTiming,
   useSharedValue,
+  withTiming,
   withDelay,
   Easing,
 } from 'react-native-reanimated';
@@ -26,6 +26,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { AgentLoader } from '../chat/AgentLoader';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -208,7 +209,6 @@ export function ThreadPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const [selectedToolData, setSelectedToolData] = React.useState<{
     toolMessages: ToolMessagePair[];
@@ -269,180 +269,90 @@ export function ThreadPage({
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
   const scrollViewRef = React.useRef<ScrollView>(null);
   
-  // Calculate bottom padding for content to account for input section + safe area
   const baseBottomPadding = CHAT_INPUT_SECTION_HEIGHT.THREAD_PAGE + insets.bottom;
-  const [isUserScrolling, setIsUserScrolling] = React.useState(false);
+  const [isUserScrolledUp, setIsUserScrolledUp] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
-  const [pushToTop, setPushToTop] = React.useState(false);
   const hasScrolledToBottomOnOpenRef = React.useRef(false);
-  const lastUserMessageCountRef = React.useRef(0);
   const contentHeightRef = React.useRef(0);
   const viewportHeightRef = React.useRef(0);
-  const scrollLockActiveRef = React.useRef(false);
-  const agentWasRunningRef = React.useRef(false);
+  const lastScrollTimeRef = React.useRef(0);
+  const currentScrollY = React.useRef(0);
+  const isAutoScrollingRef = React.useRef(false);
+  const userScrollTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Count user messages
-  const userMessageCount = React.useMemo(() => 
-    messages.filter(m => m.type === 'user').length,
-    [messages]
-  );
-
-  // Calculate extra padding - ONLY based on pushToTop state to avoid re-renders from streaming changes
-  const extraPushPadding = React.useMemo(() => {
-    if (pushToTop) {
-      const headerHeight = Math.max(insets.top, 16) + 80;
-      const availableHeight = windowHeight - headerHeight - baseBottomPadding;
-      // Leave room for user message (~100px) + 10% buffer from top
-      const userMessageHeight = 100;
-      const topBuffer = availableHeight * 0.10;
-      return availableHeight - userMessageHeight - topBuffer;
-    }
-    return 0;
-  }, [pushToTop, windowHeight, insets.top, baseBottomPadding]);
-
-  const contentBottomPadding = baseBottomPadding + extraPushPadding;
-
-  // DEBUG: Track state changes
-  const prevStreamingRef = React.useRef(false);
-  const prevAgentRunningRef = React.useRef(false);
-
-  React.useEffect(() => {
-    if (chat.isStreaming !== prevStreamingRef.current) {
-      console.log(`[SCROLL DEBUG] isStreaming changed: ${prevStreamingRef.current} → ${chat.isStreaming}`);
-      prevStreamingRef.current = chat.isStreaming;
-    }
-    if (chat.isAgentRunning !== prevAgentRunningRef.current) {
-      console.log(`[SCROLL DEBUG] isAgentRunning changed: ${prevAgentRunningRef.current} → ${chat.isAgentRunning}`);
-      prevAgentRunningRef.current = chat.isAgentRunning;
-    }
-  }, [chat.isStreaming, chat.isAgentRunning]);
-
-  // Track viewport size
-  const handleLayout = React.useCallback((event: any) => {
-    const newHeight = event.nativeEvent.layout.height;
-    if (newHeight !== viewportHeightRef.current) {
-      console.log(`[SCROLL DEBUG] viewport height: ${viewportHeightRef.current} → ${newHeight}`);
-    }
-    viewportHeightRef.current = newHeight;
+  const scrollToBottomSmooth = React.useCallback(() => {
+    const now = Date.now();
+    if (now - lastScrollTimeRef.current < 50) return;
+    lastScrollTimeRef.current = now;
+    
+    isAutoScrollingRef.current = true;
+    scrollViewRef.current?.scrollToEnd({ animated: true });
+    
+    setTimeout(() => {
+      isAutoScrollingRef.current = false;
+    }, 300);
   }, []);
 
-  // Track content size changes
+  const handleLayout = React.useCallback((event: any) => {
+    viewportHeightRef.current = event.nativeEvent.layout.height;
+  }, []);
+
   const handleContentSizeChange = React.useCallback((_contentWidth: number, contentHeight: number) => {
     const prevHeight = contentHeightRef.current;
     contentHeightRef.current = contentHeight;
     
-    if (Math.abs(contentHeight - prevHeight) > 10) {
-      console.log(`[SCROLL DEBUG] content height: ${prevHeight} → ${contentHeight} (diff: ${contentHeight - prevHeight}), scrollLock: ${scrollLockActiveRef.current}`);
+    const isStreaming = chat.isStreaming || chat.isAgentRunning;
+    const contentGrew = contentHeight > prevHeight;
+    
+    if (isStreaming && contentGrew && !isUserScrolledUp) {
+      scrollToBottomSmooth();
     }
     
-    // Scroll when padding is applied (content grew significantly)
-    if (scrollLockActiveRef.current && contentHeight > prevHeight + 100) {
-      const maxY = Math.max(0, contentHeight - viewportHeightRef.current);
-      console.log(`[SCROLL DEBUG] 🎯 Scrolling to maxY: ${maxY} (content: ${contentHeight}, viewport: ${viewportHeightRef.current})`);
-      scrollViewRef.current?.scrollTo({ y: maxY, animated: false });
-      scrollLockActiveRef.current = false;
-    }
+    const hasOverflow = contentHeight > viewportHeightRef.current;
+    const scrollY = currentScrollY.current;
+    const maxScrollY = Math.max(0, contentHeight - viewportHeightRef.current);
+    const distanceFromBottom = maxScrollY - scrollY;
     
-    // Check if content overflows and we're not at the bottom - show scroll button
-    const actualContentHeight = contentHeight - extraPushPadding;
-    const hasOverflow = actualContentHeight > viewportHeightRef.current;
-    const currentScrollY = lastScrollYRef.current;
-    const actualMaxScrollY = Math.max(0, actualContentHeight - viewportHeightRef.current);
-    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
-    
-    if (hasOverflow && !isAtActualBottom && !isUserScrolling) {
+    if (hasOverflow && distanceFromBottom > 150 && isUserScrolledUp) {
       setShowScrollToBottom(true);
     }
-  }, [extraPushPadding, isUserScrolling]);
+  }, [isUserScrolledUp, chat.isStreaming, chat.isAgentRunning, scrollToBottomSmooth]);
 
-  // Scroll to bottom when thread first opens
   React.useEffect(() => {
-    if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current && !pushToTop) {
+    if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current) {
       setTimeout(() => {
-        console.log('[SCROLL DEBUG] Thread opened - scrolling to end');
         scrollViewRef.current?.scrollToEnd({ animated: false });
         hasScrolledToBottomOnOpenRef.current = true;
       }, 150);
     }
-  }, [messages.length, pushToTop]);
+  }, [messages.length]);
 
-  // Reset when thread changes
   React.useEffect(() => {
-    console.log('[SCROLL DEBUG] Thread changed - resetting state');
     hasScrolledToBottomOnOpenRef.current = false;
-    lastUserMessageCountRef.current = userMessageCount;
-    setPushToTop(false);
-    scrollLockActiveRef.current = false;
-    agentWasRunningRef.current = false;
   }, [chat.activeThread?.id]);
 
-  // When user sends a NEW message - activate push to top
-  // Only trigger for ACTUAL new messages (count increases by 1-2), NOT bulk thread loads
   React.useEffect(() => {
-    const prevCount = lastUserMessageCountRef.current;
-    const diff = userMessageCount - prevCount;
+    const isStreaming = chat.isStreaming || chat.isAgentRunning;
+    const hasContent = streamingContent.length > 0 || streamingToolCall !== null;
     
-    // Only trigger if:
-    // 1. Count increased by 1-2 (actual new message, not bulk load)
-    // 2. Previous count was > 0 (thread was already loaded, not initial load)
-    const isActualNewMessage = diff > 0 && diff <= 2 && prevCount > 0;
-    
-    if (isActualNewMessage) {
-      console.log(`[SCROLL DEBUG] 📤 User sent NEW message! userMessageCount: ${prevCount} → ${userMessageCount}`);
-      console.log('[SCROLL DEBUG] Setting pushToTop=true, scrollLockActive=true');
-      
-      setPushToTop(true);
-      scrollLockActiveRef.current = true;
-      setIsUserScrolling(false);
-      
-      // Multiple scroll attempts
-      const scrollAttempt = (ms: number) => {
-        setTimeout(() => {
-          scrollViewRef.current?.scrollToEnd({ animated: false });
-        }, ms);
-      };
-      
-      scrollAttempt(0);
-      scrollAttempt(30);
-      scrollAttempt(60);
-      scrollAttempt(100);
-      scrollAttempt(150);
-      scrollAttempt(200);
-    } else if (diff > 2) {
-      console.log(`[SCROLL DEBUG] Thread loaded with ${userMessageCount} user messages (bulk load, not triggering pushToTop)`);
+    if (isStreaming && !isUserScrolledUp) {
+      scrollToBottomSmooth();
     }
     
-    lastUserMessageCountRef.current = userMessageCount;
-  }, [userMessageCount]);
-
-  // DEBUG: Log pushToTop changes
-  React.useEffect(() => {
-    console.log(`[SCROLL DEBUG] pushToTop changed to: ${pushToTop}, extraPushPadding: ${extraPushPadding}`);
-  }, [pushToTop, extraPushPadding]);
-
-  // Track when agent is running (for future use if needed)
-  React.useEffect(() => {
-    const isRunning = chat.isStreaming || chat.isAgentRunning;
-    
-    if (isRunning) {
-      agentWasRunningRef.current = true;
-      console.log('[SCROLL DEBUG] Agent started running');
-    } else if (agentWasRunningRef.current) {
-      console.log('[SCROLL DEBUG] Agent finished');
-      agentWasRunningRef.current = false;
-      // DON'T remove pushToTop - keep the padding to avoid scroll jump
-      // The extra space at bottom is fine, user can scroll naturally
+    if (!isStreaming && !chat.isAgentRunning) {
+      setIsUserScrolledUp(false);
     }
-  }, [chat.isStreaming, chat.isAgentRunning]);
+  }, [streamingContent, streamingToolCall, chat.isStreaming, chat.isAgentRunning, isUserScrolledUp, scrollToBottomSmooth]);
 
+  React.useEffect(() => {
+    return () => {
+      if (userScrollTimeoutRef.current) {
+        clearTimeout(userScrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
-  const lastScrollYRef = React.useRef(0);
-
-  // Track significant scroll changes for debugging
-  const lastLoggedScrollY = React.useRef(0);
-  
-  // Animation for scroll button
   const scrollButtonOpacity = useSharedValue(0);
   const scrollButtonScale = useSharedValue(0.8);
   
@@ -462,50 +372,44 @@ export function ThreadPage({
     }
   }, [showScrollToBottom, scrollButtonOpacity, scrollButtonScale]);
 
-  const handleScroll = React.useCallback((event: any) => {
+  const handleScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const currentScrollY = contentOffset.y;
-    
-    // Calculate the ACTUAL content bottom (excluding extra push padding)
-    const actualContentHeight = contentSize.height - extraPushPadding;
-    const actualMaxScrollY = Math.max(0, actualContentHeight - layoutMeasurement.height);
-    
-    // Check if content is larger than viewport
-    const hasOverflow = actualContentHeight > layoutMeasurement.height;
-    
-    // User is at bottom of ACTUAL content (not counting padding)
-    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
+    const scrollY = contentOffset.y;
+    const maxScrollY = Math.max(0, contentSize.height - layoutMeasurement.height);
+    const hasOverflow = contentSize.height > layoutMeasurement.height;
+    const distanceFromBottom = maxScrollY - scrollY;
+    const isNearBottom = distanceFromBottom < 150;
 
-    // Track for calculations
     contentHeightRef.current = contentSize.height;
     viewportHeightRef.current = layoutMeasurement.height;
-    lastScrollYRef.current = currentScrollY;
+    currentScrollY.current = scrollY;
 
-    // Show "scroll to bottom" button when:
-    // 1. Content overflows the viewport
-    // 2. User is NOT at the bottom of actual content
-    if (hasOverflow && !isAtActualBottom) {
-      setIsUserScrolling(true);
-      setShowScrollToBottom(true);
+    if (isAutoScrollingRef.current) {
+      return;
+    }
+
+    if (hasOverflow && !isNearBottom) {
+      if (userScrollTimeoutRef.current) {
+        clearTimeout(userScrollTimeoutRef.current);
+      }
+      userScrollTimeoutRef.current = setTimeout(() => {
+        setIsUserScrolledUp(true);
+        setShowScrollToBottom(true);
+      }, 50);
     } else {
-      setIsUserScrolling(false);
+      if (userScrollTimeoutRef.current) {
+        clearTimeout(userScrollTimeoutRef.current);
+      }
+      setIsUserScrolledUp(false);
       setShowScrollToBottom(false);
     }
-  }, [extraPushPadding]);
+  }, []);
 
   const scrollToBottom = React.useCallback(() => {
-    if (pushToTop && extraPushPadding > 0) {
-      // In pushToTop mode, scroll to actual content bottom (not the extra padding)
-      const actualContentHeight = contentHeightRef.current - extraPushPadding;
-      const targetY = Math.max(0, actualContentHeight - viewportHeightRef.current);
-      scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
-    } else {
-      // Normal mode - scroll to very end
     scrollViewRef.current?.scrollToEnd({ animated: true });
-    }
-    setIsUserScrolling(false);
+    setIsUserScrolledUp(false);
     setShowScrollToBottom(false);
-  }, [pushToTop, extraPushPadding]);
+  }, []);
 
   const handleRefresh = React.useCallback(async () => {
     if (chat.isStreaming || chat.isAgentRunning) {
@@ -574,7 +478,6 @@ export function ThreadPage({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Main content area - positioned below header but above nothing */}
       <View className="flex-1" style={{ zIndex: 1 }}>
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
@@ -603,7 +506,7 @@ export function ThreadPage({
               alignItems: 'center',
               paddingHorizontal: 32,
               paddingTop: Math.max(insets.top, 16) + 80,
-              paddingBottom: contentBottomPadding,
+              paddingBottom: baseBottomPadding,
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -638,8 +541,9 @@ export function ThreadPage({
             showsVerticalScrollIndicator={true}
             contentContainerStyle={{
               flexGrow: 1,
+              justifyContent: 'flex-end',
               paddingTop: Math.max(insets.top, 16) + 80,
-              paddingBottom: contentBottomPadding,
+              paddingBottom: baseBottomPadding,
               paddingHorizontal: 16,
             }}
             keyboardShouldPersistTaps="handled"
@@ -679,6 +583,7 @@ export function ThreadPage({
                 onFilePress={handleFilePress}
                 onPromptFill={chat.setInputValue}
                 isSendingMessage={chat.isSendingMessage}
+                onRequestScroll={isUserScrolledUp ? undefined : scrollToBottomSmooth}
               />
             )}
           </ScrollView>
