@@ -182,7 +182,7 @@ export default function AboutPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
         >
-          <div className="relative aspect-[16/9] w-full overflow-hidden">
+          <div className="relative aspect-[16/9] w-full overflow-hidden rounded-sm border border-foreground/10">
             <Image
               src="/images/team.webp"
               alt="The Kortix team"

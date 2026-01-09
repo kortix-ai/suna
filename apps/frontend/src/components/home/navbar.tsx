@@ -3,7 +3,7 @@
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { X } from 'lucide-react';
+import { X, Menu } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -170,20 +170,16 @@ export function Navbar() {
                 </Link>
                 
                 {/* QR Code Popover - appears on hover */}
-                <div className="absolute top-full left-1/2 -translate-x-1/2 pt-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                  <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-border/60 dark:border-[#2a2a2a] p-4 min-w-[200px]">
-                    {/* Arrow */}
-                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white dark:bg-[#1a1a1a] border-l border-t border-border/60 dark:border-[#2a2a2a] rotate-45" />
-                    
-                    <div className="relative">
-                      <AppDownloadQR size={160} logoSize={24} className="rounded-xl p-3 shadow-md" />
-                      <p className="text-xs text-muted-foreground text-center mt-3">
-                        Scan to download
-                      </p>
-                      <p className="text-[10px] text-muted-foreground/60 text-center mt-0.5">
-                        iOS & Android
-                      </p>
-                    </div>
+                <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                  
+                  <div className="relative bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-border/60 dark:border-[#2a2a2a] p-4 min-w-[200px]">
+                    <AppDownloadQR size={160} logoSize={24} className="rounded-xl p-3 shadow-md" />
+                    <p className="text-xs text-muted-foreground text-center mt-3">
+                      Scan to download
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/60 text-center mt-0.5">
+                      iOS & Android
+                    </p>
                   </div>
                 </div>
               </div>
@@ -194,7 +190,7 @@ export function Navbar() {
               {user ? (
                 <Link
                   href="/dashboard"
-                  className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                  className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-backgroun d hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
                 >
                   Dashboard
                 </Link>
@@ -207,6 +203,15 @@ export function Navbar() {
                   {t('tryFree')}
                 </Link>
               )}
+              
+              {/* Mobile Menu Button */}
+              <button
+                onClick={toggleDrawer}
+                className="md:hidden p-2 rounded-lg hover:bg-accent transition-colors"
+                aria-label="Open menu"
+              >
+                <Menu className="size-5" />
+              </button>
             </div>
           </div>
         </div>

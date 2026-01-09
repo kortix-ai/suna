@@ -79,26 +79,26 @@ export default function AppDownloadPage() {
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="flex flex-col items-center mb-16"
+            className="flex flex-col items-center mb-12"
           >
             {/* App icon with glow effect */}
-            <div className="relative mb-8 z-10">
-              <div className="absolute inset-0 bg-foreground/30 rounded-[32px] blur-3xl scale-150 pointer-events-none" />
-              <div className="relative w-32 h-32 bg-foreground rounded-[32px] flex items-center justify-center shadow-2xl">
-                <KortixSymbol size={64} className="text-background" />
+            <div className="relative mb-6 z-10">
+              <div className="absolute inset-0 bg-foreground/30 rounded-[24px] blur-2xl scale-150 pointer-events-none" />
+              <div className="relative w-20 h-20 bg-foreground rounded-[20px] flex items-center justify-center shadow-xl">
+                <KortixSymbol size={40} className="text-background" />
               </div>
             </div>
             
-            <h1 className="text-5xl md:text-6xl font-bold text-foreground text-center tracking-tight mb-4">
+            <h1 className="text-2xl md:text-3xl font-semibold text-foreground text-center tracking-tight mb-3">
               Kortix for Mobile
             </h1>
-            <p className="text-xl text-muted-foreground text-center max-w-2xl leading-relaxed">
+            <p className="text-base text-muted-foreground text-center max-w-xl leading-relaxed">
               Your AI Worker, in your pocket. Download the app and take Kortix with you everywhere.
             </p>
           </motion.div>
 
           {/* Main Content Grid */}
-          <div className="grid md:grid-cols-2 gap-12 items-center">
+          <div className="grid md:grid-cols-2 gap-10 items-center">
             {/* Left: QR Code Card */}
             <motion.div
               initial={{ opacity: 0, x: -30 }}
@@ -113,11 +113,11 @@ export default function AppDownloadPage() {
                 </div>
 
                 {/* Info area */}
-                <div className="p-8 bg-muted/30 dark:bg-[#161618]">
-                  <h3 className="text-foreground dark:text-white text-lg font-semibold mb-2 text-center">
+                <div className="p-6 bg-muted/30 dark:bg-[#161618]">
+                  <h3 className="text-foreground dark:text-white text-sm font-medium mb-1 text-center">
                     Scan to download
                   </h3>
-                  <p className="text-muted-foreground dark:text-white/60 text-sm text-center mb-6">
+                  <p className="text-muted-foreground dark:text-white/60 text-xs text-center mb-5">
                     Automatically opens the right store for your device
                   </p>
                   
@@ -165,9 +165,9 @@ export default function AppDownloadPage() {
               initial={{ opacity: 0, x: 30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="space-y-6"
+              className="space-y-4"
             >
-              <h2 className="text-3xl font-bold text-foreground mb-8">
+              <h2 className="text-lg font-semibold text-foreground mb-6">
                 Why you'll love it
               </h2>
               
@@ -179,14 +179,14 @@ export default function AppDownloadPage() {
                   transition={{ delay: 0.4 + index * 0.1, duration: 0.5 }}
                   className="flex items-start gap-4 group"
                 >
-                  <div className="w-12 h-12 bg-foreground/10 dark:bg-foreground/5 rounded-2xl flex items-center justify-center group-hover:bg-foreground/20 dark:group-hover:bg-foreground/10 transition-colors flex-shrink-0">
-                    <feature.icon className="h-6 w-6 text-foreground" />
+                  <div className="w-10 h-10 bg-foreground/10 dark:bg-foreground/5 rounded-xl flex items-center justify-center group-hover:bg-foreground/20 dark:group-hover:bg-foreground/10 transition-colors flex-shrink-0">
+                    <feature.icon className="h-5 w-5 text-foreground" />
                   </div>
-                  <div className="flex-1 pt-2">
-                    <h3 className="text-lg font-semibold text-foreground mb-1">
+                  <div className="flex-1 pt-1.5">
+                    <h3 className="text-sm font-medium text-foreground mb-0.5">
                       {feature.label}
                     </h3>
-                    <p className="text-muted-foreground text-sm leading-relaxed">
+                    <p className="text-muted-foreground text-xs leading-relaxed">
                       {feature.label === 'Always on the go' && 'Access your AI worker from anywhere, anytime. Your tasks never stop.'}
                       {feature.label === 'Push notifications' && 'Get instant updates when your agents complete tasks or need your input.'}
                       {feature.label === 'Secure & private' && 'Your data is encrypted and secure. Privacy-first, always.'}
