@@ -40,13 +40,18 @@ jobs:
       - name: Run E2E Benchmark
         env:
           API_URL: ${{ inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so' }}
-          ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
+          ADMIN_API_KEY: ${{ inputs.environment == 'production' && secrets.PRODUCTION_KORTIX_ADMIN_API_KEY || secrets.STAGING_KORTIX_ADMIN_API_KEY }}
+          ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -e
           
           # Validate admin API key is configured
           if [ -z "$ADMIN_API_KEY" ]; then
-            echo "❌ Error: KORTIX_ADMIN_API_KEY is not set"
+            if [ "$ENVIRONMENT" = "production" ]; then
+              echo "❌ Error: PRODUCTION_KORTIX_ADMIN_API_KEY is not set"
+            else
+              echo "❌ Error: STAGING_KORTIX_ADMIN_API_KEY is not set"
+            fi
             echo "Please add it at: https://github.com/${{ github.repository }}/settings/secrets/actions"
             exit 1
           fi
@@ -128,7 +133,7 @@ jobs:
             echo ""
             echo "🔍 Troubleshooting:"
             echo "  1. Verify API URL is correct: $API_URL"
-            echo "  2. Check that KORTIX_ADMIN_API_KEY is valid"
+            echo "  2. Check that STAGING_KORTIX_ADMIN_API_KEY or PRODUCTION_KORTIX_ADMIN_API_KEY is valid"
             echo "  3. Ensure the API server is running and accessible"
             echo "  4. Check API server logs for more details"
             exit 1
