@@ -179,15 +179,15 @@ export default function DashboardLayoutContent({
       }
     >
       <div className="relative h-full">
-        {/* Technical issue banner */}
-        {technicalIssue?.enabled && (
+        {/* Technical issue banner - commented out */}
+        {/* {technicalIssue?.enabled && (
           <Suspense fallback={null}>
             <TechnicalIssueBanner 
               message={technicalIssue.message}
               statusUrl={technicalIssue.statusUrl}
             />
           </Suspense>
-        )}
+        )} */}
         
         {/* Site-wide promo banner for free tier users */}
         <Suspense fallback={null}>
