@@ -298,7 +298,7 @@ function WelcomeContent({ onOAuth, onEmail }: WelcomeContentProps) {
     >
         {/* Logo */}
         <View style={{ marginBottom: SPACING.logoToTitle }}>
-          <KortixLogo variant="logomark" size={100} color={isDark ? 'dark' : 'light'} />
+          <KortixLogo variant="logomark" size={24} color={isDark ? 'dark' : 'light'} />
         </View>
         
         {/* Title */}

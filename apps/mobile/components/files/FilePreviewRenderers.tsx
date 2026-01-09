@@ -3,8 +3,8 @@
  * Components for previewing different file types
  */
 
-import React, { useState, useMemo } from 'react';
-import { View, Image, ScrollView, Dimensions } from 'react-native';
+import React, { useState, useMemo, useEffect } from 'react';
+import { View, Image, ScrollView, Dimensions, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -13,6 +13,7 @@ import { AlertCircle, FileText } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -531,6 +532,137 @@ function CsvPreview({ content }: { content: string }) {
 }
 
 /**
+ * PDF Preview Component using WebView
+ * Writes PDF to a temp file and loads it in WebView
+ * iOS WebView natively supports PDF rendering from file:// URLs
+ */
+function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasError, setHasError] = useState(false);
+  const [pdfFileUri, setPdfFileUri] = useState<string | null>(null);
+
+  // Write the PDF data URL to a temp file for WebView to load
+  useEffect(() => {
+    if (!blobUrl) return;
+
+    const writePdfToFile = async () => {
+      try {
+        setIsLoading(true);
+        setHasError(false);
+
+        // Extract base64 data from data URL
+        const base64Match = blobUrl.match(/^data:[^;]+;base64,(.+)$/);
+        if (!base64Match) {
+          console.error('Invalid PDF data URL format');
+          setHasError(true);
+          setIsLoading(false);
+          return;
+        }
+
+        const base64Data = base64Match[1];
+        const tempFilePath = `${FileSystem.cacheDirectory}temp_${Date.now()}_${fileName}`;
+
+        // Write base64 data to file
+        await FileSystem.writeAsStringAsync(tempFilePath, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        setPdfFileUri(tempFilePath);
+        setIsLoading(false);
+      } catch (error) {
+        console.error('Failed to write PDF to file:', error);
+        setHasError(true);
+        setIsLoading(false);
+      }
+    };
+
+    writePdfToFile();
+
+    // Cleanup temp file on unmount
+    return () => {
+      if (pdfFileUri) {
+        FileSystem.deleteAsync(pdfFileUri, { idempotent: true }).catch(() => {});
+      }
+    };
+  }, [blobUrl, fileName]);
+
+  if (!blobUrl) {
+    return (
+      <View className="flex-1 items-center justify-center p-8">
+        <KortixLoader size="large" />
+        <Text className="text-sm text-muted-foreground mt-4">
+          Loading PDF...
+        </Text>
+      </View>
+    );
+  }
+
+  if (isLoading) {
+    return (
+      <View className="flex-1 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+        <KortixLoader size="large" />
+        <Text className="text-sm text-muted-foreground mt-4">
+          Preparing PDF...
+        </Text>
+      </View>
+    );
+  }
+
+  if (hasError || !pdfFileUri) {
+    return (
+      <View className="flex-1 items-center justify-center p-8">
+        <Icon
+          as={AlertCircle}
+          size={48}
+          className="text-destructive mb-4"
+          strokeWidth={1.5}
+        />
+        <Text className="text-sm text-muted-foreground text-center mb-2">
+          Failed to load PDF
+        </Text>
+        <Text className="text-xs text-muted-foreground text-center">
+          Try downloading the file instead
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+      <WebView
+        source={{ uri: pdfFileUri }}
+        style={{ flex: 1, backgroundColor: 'transparent' }}
+        originWhitelist={['*']}
+        javaScriptEnabled={true}
+        domStorageEnabled={true}
+        allowFileAccess={true}
+        allowFileAccessFromFileURLs={true}
+        allowUniversalAccessFromFileURLs={true}
+        startInLoadingState={true}
+        renderLoading={() => (
+          <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+            <KortixLoader size="large" />
+            <Text className="text-sm text-muted-foreground mt-4">
+              Rendering PDF...
+            </Text>
+          </View>
+        )}
+        onError={(e) => {
+          console.error('WebView PDF error:', e.nativeEvent);
+          setHasError(true);
+        }}
+        onHttpError={(e) => {
+          console.error('WebView PDF HTTP error:', e.nativeEvent);
+          setHasError(true);
+        }}
+      />
+    </View>
+  );
+}
+
+/**
  * Fallback Preview Component
  */
 function FallbackPreview({ fileName, previewType }: { fileName: string; previewType: FilePreviewType }) {
@@ -538,9 +670,7 @@ function FallbackPreview({ fileName, previewType }: { fileName: string; previewT
   const isDark = colorScheme === 'dark';
 
   let message = 'Preview not available';
-  if (previewType === FilePreviewType.PDF) {
-    message = 'PDF preview requires download';
-  } else if (previewType === FilePreviewType.XLSX) {
+  if (previewType === FilePreviewType.XLSX) {
     message = 'Spreadsheet preview requires download';
   }
 
@@ -579,6 +709,11 @@ export function FilePreview({
     return <ImagePreview blobUrl={blobUrl} fileName={fileName} />;
   }
 
+  // For PDFs, we need the blob URL
+  if (previewType === FilePreviewType.PDF) {
+    return <PdfPreview blobUrl={blobUrl} fileName={fileName} />;
+  }
+
   // For other types, we need text content
   if (!content || typeof content !== 'string') {
     return <FallbackPreview fileName={fileName} previewType={previewType} />;
@@ -603,7 +738,6 @@ export function FilePreview({
     case FilePreviewType.CSV:
       return <CsvPreview content={content} />;
 
-    case FilePreviewType.PDF:
     case FilePreviewType.XLSX:
     case FilePreviewType.BINARY:
     default:
