@@ -150,6 +150,8 @@ def load_existing_env_vars():
                 "SUPABASE_SERVICE_ROLE_KEY", ""
             ),
             "SUPABASE_JWT_SECRET": backend_env.get("SUPABASE_JWT_SECRET", ""),
+            "DATABASE_URL": backend_env.get("DATABASE_URL", ""),
+            "POSTGRES_PASSWORD": backend_env.get("POSTGRES_PASSWORD", ""),
         },
         "daytona": {
             "DAYTONA_API_KEY": backend_env.get("DAYTONA_API_KEY", ""),
@@ -451,10 +453,10 @@ class SetupWizard:
         # Check Composio configuration
         if self.env_vars["composio"]["COMPOSIO_API_KEY"]:
             config_items.append(
-                f"{Colors.GREEN}✓{Colors.ENDC} Composio (optional)")
+                f"{Colors.GREEN}✓{Colors.ENDC} Composio")
         else:
             config_items.append(
-                f"{Colors.CYAN}○{Colors.ENDC} Composio (optional)")
+                f"{Colors.YELLOW}○{Colors.ENDC} Composio (required)")
 
         # Check Webhook configuration
         if self.env_vars["webhook"]["WEBHOOK_BASE_URL"]:
@@ -571,7 +573,7 @@ class SetupWizard:
             # Supabase Cron does not require keys; ensure DB migrations enable cron functions
             self.run_step_optional(10, self.collect_webhook_keys, "Webhook Configuration (Optional)")
             self.run_step_optional(11, self.collect_mcp_keys, "MCP Configuration (Optional)")
-            self.run_step_optional(12, self.collect_composio_keys, "Composio Integration (Optional)")
+            self.run_step(12, self.collect_composio_keys)
             # Removed duplicate webhook collection step
             self.run_step(13, self.configure_env_files)
             self.run_step(14, self.setup_supabase_database)
@@ -634,17 +636,17 @@ class SetupWizard:
         
         # Important note about Supabase compatibility
         print(f"\n{Colors.YELLOW}⚠️  IMPORTANT - Supabase Compatibility:{Colors.ENDC}")
-        print(f"  • {Colors.GREEN}Docker Compose{Colors.ENDC} → Only supports {Colors.CYAN}Cloud Supabase{Colors.ENDC}")
-        print(f"  • {Colors.GREEN}Manual Setup{Colors.ENDC} → Supports both {Colors.CYAN}Cloud and Local Supabase{Colors.ENDC}")
+        print(f"  • {Colors.GREEN}Docker Compose{Colors.ENDC} → Only supports {Colors.CYAN}Cloud Supabase{Colors.ENDC} (Local Supabase not supported)")
+        print(f"  • {Colors.GREEN}Manual Setup{Colors.ENDC} → Only supports {Colors.CYAN}Cloud Supabase{Colors.ENDC} (Local Supabase not supported)")
         print(f"\n  Why? Docker networking can't easily reach local Supabase containers.")
         print(f"  Want to fix this? See: {Colors.CYAN}https://github.com/kortix-ai/suna/issues/1920{Colors.ENDC}")
         
         print(f"\n{Colors.CYAN}How would you like to set up Kortix Super Worker?{Colors.ENDC}")
         print(
-            f"{Colors.CYAN}[1] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(supports both Cloud and Local Supabase){Colors.ENDC}"
+            f"{Colors.CYAN}[1] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(Cloud Supabase only - Local not supported){Colors.ENDC}"
         )
         print(
-            f"{Colors.CYAN}[2] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(requires Cloud Supabase){Colors.ENDC}\n"
+            f"{Colors.CYAN}[2] {Colors.GREEN}Docker Compose{Colors.ENDC} {Colors.CYAN}(Cloud Supabase only - Local not supported){Colors.ENDC}\n"
         )
 
         while True:
@@ -787,28 +789,13 @@ class SetupWizard:
         """Collects Supabase project information from the user."""
         print_step(3, self.total_steps, "Collecting Supabase Information")
 
-        # Always ask user to choose between local and cloud Supabase
         print_info("Kortix Super Worker REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
-        print_info("You can choose between:")
-        print_info("  1. Local Supabase (automatic setup, recommended for development & local use - runs in Docker)")
-        print_info("  2. Cloud Supabase (hosted on supabase.com - requires manual setup)")
         
-        while True:
-            choice = input("Choose your Supabase setup (1 for local, 2 for cloud): ").strip()
-            if choice == "1":
-                self.env_vars["supabase_setup_method"] = "local"
-                break
-            elif choice == "2":
-                self.env_vars["supabase_setup_method"] = "cloud"
-                break
-            else:
-                print_error("Please enter 1 for local or 2 for cloud.")
-
-        # Handle local Supabase setup
-        if self.env_vars["supabase_setup_method"] == "local":
-            self._setup_local_supabase()
-        else:
-            self._setup_cloud_supabase()
+        # Local Supabase is not supported for either setup method
+        print_warning("Local Supabase is not supported at this time.")
+        print_info("Proceeding with Cloud Supabase setup...")
+        self.env_vars["supabase_setup_method"] = "cloud"
+        self._setup_cloud_supabase()
 
     def _setup_local_supabase(self):
         """Sets up local Supabase using Docker."""
@@ -964,12 +951,17 @@ class SetupWizard:
         """Sets up cloud Supabase configuration."""
         print_info("Setting up cloud Supabase...")
         print_info("Visit https://supabase.com/dashboard/projects to create one.")
-        print_info("In your project settings, go to 'API' to find the required information:")
-        print_info("  - Project URL (at the top)")
-        print_info("  - anon public key (under 'Project API keys')")
-        print_info("  - service_role secret key (under 'Project API keys')")
-        print_info("  - JWT Secret (under 'JWT Settings' - critical for security!)")
-        input("Press Enter to continue once you have your project details...")
+        print_info("\n📍 Where to find each value:")
+        print_info("  In Project Settings > API:")
+        print_info("    • Project URL (shown at the top)")
+        print_info("    • anon public key (under 'Project API keys')")
+        print_info("    • service_role secret key (under 'Project API keys')")
+        print_info("    • JWT Secret (under 'JWT Settings' - CRITICAL! Copy EXACTLY)")
+        print_info("  In Project Settings > Database:")
+        print_info("    • Database password (under 'Database Settings') OR")
+        print_info("    • Connection string (under 'Connection string' - URI format)")
+        print_warning("⚠️  IMPORTANT: The JWT Secret must match EXACTLY or authentication will fail!")
+        input("\nPress Enter to continue once you have your project details...")
 
         self.env_vars["supabase"]["SUPABASE_URL"] = self._get_input(
             "Enter your Supabase Project URL (e.g., https://xyz.supabase.co): ",
@@ -1005,11 +997,48 @@ class SetupWizard:
             validate_api_key,
             "This does not look like a valid key. It should be at least 10 characters.",
         )
+        
+        print_info("\n⚠️  JWT Secret (CRITICAL):")
+        print_info("The JWT secret must EXACTLY match your Supabase project's JWT secret.")
+        print_info("Find it in: Project Settings > API > JWT Settings > JWT Secret")
+        print_info("Copy it EXACTLY as shown (it's a long base64-encoded string, usually 100+ characters)")
+        print_warning("If the JWT secret doesn't match exactly, you'll get 'alg value is not allowed' errors!")
+        
         self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = self._get_input(
-            "Enter your Supabase JWT secret (for signature verification): ",
-            validate_api_key,
-            "This does not look like a valid JWT secret. It should be at least 10 characters.",
+            "Enter your Supabase JWT secret (copy EXACTLY from Supabase dashboard): ",
+            lambda x, allow_empty=False: bool(x and len(x) >= 32),
+            "Invalid JWT secret format. It should be at least 32 characters long (usually 100+ characters for Supabase).",
         )
+        
+        # Collect database connection info (DATABASE_URL or POSTGRES_PASSWORD)
+        print_info("\nDatabase Connection:")
+        print_info("You can provide either:")
+        print_info("  1. DATABASE_URL (full connection string) - Recommended")
+        print_info("     Format: postgresql://postgres.[project-ref]:[password]@[host]:[port]/postgres")
+        print_info("     Example: postgresql://postgres.lqpzbjelskdqxkvnkfbu:password@db.lqpzbjelskdqxkvnkfbu.supabase.co:5432/postgres")
+        print_info("  2. POSTGRES_PASSWORD (database password) - Alternative")
+        print_info("Find these in: Project Settings > Database")
+        
+        database_url = self._get_input(
+            "Enter your DATABASE_URL (or press Enter to skip and provide password instead): ",
+            lambda x, allow_empty=True: allow_empty or (x.startswith("postgresql://") or x.startswith("postgres://")),
+            "Invalid URL format. Must start with postgresql:// or postgres://",
+            allow_empty=True,
+        )
+        
+        if database_url:
+            self.env_vars["supabase"]["DATABASE_URL"] = database_url
+            print_success("DATABASE_URL saved.")
+        else:
+            # Fallback to password
+            postgres_password = self._get_input(
+                "Enter your Supabase database password: ",
+                validate_api_key,
+                "Invalid password format. It should be at least 10 characters.",
+            )
+            self.env_vars["supabase"]["POSTGRES_PASSWORD"] = postgres_password
+            print_success("Database password saved.")
+        
         # Validate that all required Supabase configuration is present
         if not self.env_vars["supabase"]["SUPABASE_URL"]:
             print_error("SUPABASE_URL is required for database connectivity.")
@@ -1425,9 +1454,9 @@ class SetupWizard:
         print_success("MCP configuration saved.")
 
     def collect_composio_keys(self):
-        """Collects the optional Composio configuration."""
+        """Collects the Composio configuration (required)."""
         print_step(12, self.total_steps,
-                   "Collecting Composio Configuration (Optional)")
+                   "Collecting Composio Configuration")
 
         # Check if we already have values configured
         has_existing = any(self.env_vars["composio"].values())
@@ -1437,7 +1466,9 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Composio provides extra tools and integrations for Kortix Super Worker agents.")
+                "Composio is REQUIRED for Kortix Super Worker. Without this key, Composio features will fail.")
+            print_info(
+                "Composio provides tools and integrations for Kortix Super Worker agents.")
             print_info(
                 "With Composio, your agents can interact with 200+ external services including:")
             print_info("  • Email services (Gmail, Outlook, SendGrid)")
@@ -1448,36 +1479,29 @@ class SetupWizard:
             print_info("  • And many more integrations for workflow automation")
             print_info(
                 "Get your API key from: https://app.composio.dev/settings/api-keys")
-            print_info("You can skip this step and configure Composio later.")
-
-        # Ask if user wants to configure Composio
-        if not has_existing:
-            configure_composio = input(
-                "Do you want to configure Composio integration? (y/N): ").lower().strip()
-            if configure_composio != 'y':
-                print_info("Skipping Composio configuration.")
-                return
+            input("Press Enter to continue once you have your API key...")
 
         self.env_vars["composio"]["COMPOSIO_API_KEY"] = self._get_input(
-            "Enter your Composio API Key (or press Enter to skip): ",
+            "Enter your Composio API Key: ",
             validate_api_key,
-            "Invalid Composio API Key format. It should be a valid API key.",
-            allow_empty=True,
+            "Invalid Composio API Key format. It should be at least 10 characters long.",
             default_value=self.env_vars["composio"]["COMPOSIO_API_KEY"],
         )
+        
+        # Validate that Composio API key is provided
+        if not self.env_vars["composio"]["COMPOSIO_API_KEY"]:
+            print_error("COMPOSIO_API_KEY is required. Without this, Composio features will fail.")
+            sys.exit(1)
 
-        if self.env_vars["composio"]["COMPOSIO_API_KEY"]:
-            self.env_vars["composio"]["COMPOSIO_WEBHOOK_SECRET"] = self._get_input(
-                "Enter your Composio Webhook Secret (or press Enter to skip): ",
-                validate_api_key,
-                "Invalid Composio Webhook Secret format. It should be a valid secret.",
-                allow_empty=True,
-                default_value=self.env_vars["composio"]["COMPOSIO_WEBHOOK_SECRET"],
-            )
+        self.env_vars["composio"]["COMPOSIO_WEBHOOK_SECRET"] = self._get_input(
+            "Enter your Composio Webhook Secret (or press Enter to skip): ",
+            validate_api_key,
+            "Invalid Composio Webhook Secret format. It should be a valid secret.",
+            allow_empty=True,
+            default_value=self.env_vars["composio"]["COMPOSIO_WEBHOOK_SECRET"],
+        )
 
-            print_success("Composio configuration saved.")
-        else:
-            print_info("Skipping Composio configuration.")
+        print_success("Composio configuration saved.")
 
     def collect_webhook_keys(self):
         """Collects the webhook configuration."""
@@ -1553,6 +1577,9 @@ class SetupWizard:
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
             "SUPABASE_SERVICE_ROLE_KEY": self.env_vars["supabase"].get("SUPABASE_SERVICE_ROLE_KEY", ""),
             "SUPABASE_JWT_SECRET": self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", ""),
+            # Database connection (required for cloud Supabase)
+            "DATABASE_URL": self.env_vars["supabase"].get("DATABASE_URL", ""),
+            "POSTGRES_PASSWORD": self.env_vars["supabase"].get("POSTGRES_PASSWORD", ""),
             "REDIS_HOST": redis_host,
             "REDIS_PORT": "6379",
             "REDIS_PASSWORD": "",
