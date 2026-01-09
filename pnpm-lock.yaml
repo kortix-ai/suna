@@ -8,14 +8,6 @@ overrides:
   '@types/react': ^19.2.7
   '@types/react-dom': ^19.1.7
 
-patchedDependencies:
-  '@expensify/react-native-live-markdown@0.1.317':
-    hash: 6d8192518f27ab1e0d86f2af85efd577f20259368c9448ee23a86d2fddda0d10
-    path: patches/@expensify+react-native-live-markdown@0.1.317.patch
-  html-entities@2.5.3:
-    hash: 90c29037f7f0760c34f990d7d17bda8960d86bd2dc6ff68823fb5fb683f08f59
-    path: patches/html-entities@2.5.3.patch
-
 importers:
 
   .: {}
@@ -724,7 +716,7 @@ importers:
         version: 3.0.6
       '@expensify/react-native-live-markdown':
         specifier: 0.1.317
-        version: 0.1.317(patch_hash=6d8192518f27ab1e0d86f2af85efd577f20259368c9448ee23a86d2fddda0d10)(expensify-common@2.0.169)(react-native-worklets@0.6.0(@babel/core@7.28.5)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0)
+        version: 0.1.317(expensify-common@2.0.169)(react-native-worklets@0.6.0(@babel/core@7.28.5)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0)
       '@gorhom/bottom-sheet':
         specifier: ^5.2.6
         version: 5.2.8(@types/react@19.2.7)(react-native-gesture-handler@2.28.0(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0))(react-native-reanimated@4.1.6(@babel/core@7.28.5)(react-native-worklets@0.6.0(@babel/core@7.28.5)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0)
@@ -919,7 +911,7 @@ importers:
         version: 7.1.0
       html-entities:
         specifier: 2.5.3
-        version: 2.5.3(patch_hash=90c29037f7f0760c34f990d7d17bda8960d86bd2dc6ff68823fb5fb683f08f59)
+        version: 2.5.3
       i18next:
         specifier: ^25.6.0
         version: 25.7.4(typescript@5.9.3)
@@ -13438,7 +13430,7 @@ snapshots:
       '@eslint/core': 0.17.0
       levn: 0.4.1
 
-  '@expensify/react-native-live-markdown@0.1.317(patch_hash=6d8192518f27ab1e0d86f2af85efd577f20259368c9448ee23a86d2fddda0d10)(expensify-common@2.0.169)(react-native-worklets@0.6.0(@babel/core@7.28.5)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0)':
+  '@expensify/react-native-live-markdown@0.1.317(expensify-common@2.0.169)(react-native-worklets@0.6.0(@babel/core@7.28.5)(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.5)(@types/react@19.2.7)(react@19.1.0))(react@19.1.0)':
     dependencies:
       expensify-common: 2.0.169
       react: 19.1.0
@@ -20334,7 +20326,7 @@ snapshots:
       awesome-phonenumber: 5.11.0
       classnames: 2.5.0
       clipboard: 2.0.11
-      html-entities: 2.5.3(patch_hash=90c29037f7f0760c34f990d7d17bda8960d86bd2dc6ff68823fb5fb683f08f59)
+      html-entities: 2.5.3
       jquery: 3.6.0
       localforage: 1.10.0
       lodash: 4.17.21
@@ -21319,7 +21311,7 @@ snapshots:
 
   hsl-to-rgb-for-reals@1.1.1: {}
 
-  html-entities@2.5.3(patch_hash=90c29037f7f0760c34f990d7d17bda8960d86bd2dc6ff68823fb5fb683f08f59): {}
+  html-entities@2.5.3: {}
 
   html-parse-stringify@3.0.1:
     dependencies:
