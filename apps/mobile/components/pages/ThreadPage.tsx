@@ -443,7 +443,7 @@ export function ThreadPage({
     // 2. User is NOT at the bottom of actual content
     if (hasOverflow && !isAtActualBottom) {
       setIsUserScrolling(true);
-      setShowScrollToBottom(true);
+        setShowScrollToBottom(true);
     } else {
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
@@ -458,7 +458,7 @@ export function ThreadPage({
       scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
     } else {
       // Normal mode - scroll to very end
-      scrollViewRef.current?.scrollToEnd({ animated: true });
+    scrollViewRef.current?.scrollToEnd({ animated: true });
     }
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
