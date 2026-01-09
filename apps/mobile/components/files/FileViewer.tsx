@@ -87,6 +87,17 @@ export function FileViewer({
                        previewType === FilePreviewType.BINARY;
   const shouldFetchText = file && !isBinaryFile;
   const shouldFetchBlob = file && isBinaryFile;
+  
+  console.log('[FileViewer] File info:', {
+    fileName: file?.name,
+    filePath: file?.path,
+    previewType,
+    isImage,
+    isBinaryFile,
+    shouldFetchText,
+    shouldFetchBlob,
+    sandboxId,
+  });
 
   // Can show raw view for non-binary files
   const canShowRaw =
@@ -114,11 +125,31 @@ export function FileViewer({
 
   // Convert blob to data URL for binary files (images, PDFs, etc.)
   useEffect(() => {
+    console.log('[FileViewer] Blob effect triggered', {
+      hasBlob: !!imageBlob,
+      blobSize: imageBlob?.size,
+      blobType: imageBlob?.type,
+      filePath: file?.path,
+      shouldFetchBlob,
+      isLoadingImage,
+    });
+    
     if (imageBlob && file?.path) {
-      blobToDataURL(imageBlob, file.path).then(setBlobUrl);
+      console.log('[FileViewer] Converting blob to data URL...');
+      blobToDataURL(imageBlob, file.path)
+        .then((url) => {
+          console.log('[FileViewer] Blob converted to data URL', {
+            urlLength: url.length,
+            urlPrefix: url.substring(0, 50),
+          });
+          setBlobUrl(url);
+        })
+        .catch((err) => {
+          console.error('[FileViewer] Failed to convert blob:', err);
+        });
     }
     return () => setBlobUrl(undefined);
-  }, [imageBlob, file?.path]);
+  }, [imageBlob, file?.path, shouldFetchBlob, isLoadingImage]);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -130,10 +161,25 @@ export function FileViewer({
   };
 
   const handleDownload = async () => {
-    if (!file) return;
+    console.log('[FileViewer] handleDownload called', {
+      file: file?.name,
+      hasFreeTier,
+      blobUrl: blobUrl ? `${blobUrl.substring(0, 50)}...` : null,
+      textContent: textContent ? `${textContent.substring(0, 50)}...` : null,
+      imageBlob: imageBlob ? `Blob(${imageBlob.size} bytes)` : null,
+      isBinaryFile,
+      shouldFetchBlob,
+      isLoadingImage,
+    });
+    
+    if (!file) {
+      console.log('[FileViewer] No file, returning');
+      return;
+    }
 
     // Block downloads for free tier users
     if (hasFreeTier) {
+      console.log('[FileViewer] Free tier user, showing upgrade prompt');
       handleUpgradePrompt();
       return;
     }
@@ -143,6 +189,7 @@ export function FileViewer({
 
       // For binary files (images, PDFs, etc.) use blob URL
       if (blobUrl) {
+        console.log('[FileViewer] Sharing blob URL');
         await Share.share({
           url: blobUrl,
           title: file.name,
@@ -152,6 +199,7 @@ export function FileViewer({
       
       // For text files, share the content directly
       if (textContent) {
+        console.log('[FileViewer] Sharing text content');
         await Share.share({
           message: textContent,
           title: file.name,
@@ -159,9 +207,9 @@ export function FileViewer({
         return;
       }
       
-      console.warn('No content available to download');
+      console.warn('[FileViewer] No content available to download');
     } catch (error) {
-      console.error('Download failed:', error);
+      console.error('[FileViewer] Download failed:', error);
     }
   };
 
@@ -287,7 +335,13 @@ export function FileViewer({
                   </AnimatedPressable>
                 </>
               )}
-              <AnimatedPressable onPress={handleDownload} className="relative p-2">
+              <AnimatedPressable onPress={() => {
+                console.log('>>> DOWNLOAD BUTTON PRESSED <<<');
+                console.log('blobUrl:', blobUrl ? 'exists' : 'undefined');
+                console.log('textContent:', textContent ? 'exists' : 'undefined');
+                console.log('imageBlob:', imageBlob ? `Blob(${imageBlob.size})` : 'undefined');
+                handleDownload();
+              }} className="relative p-2">
                 <Icon
                   as={hasFreeTier ? Lock : Download}
                   size={22}
