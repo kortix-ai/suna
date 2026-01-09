@@ -109,8 +109,13 @@ export function FileViewerView({
   const isText = previewType === FilePreviewType.TEXT || previewType === FilePreviewType.CODE;
   const canEdit = (isMarkdown || isText) && !selectedVersion;
 
-  const shouldFetchText = !isImage && !selectedVersion;
-  const shouldFetchBlob = isImage && !selectedVersion;
+  // Binary file types that should be fetched as blob, not text
+  const isBinaryFile = previewType === FilePreviewType.IMAGE || 
+                       previewType === FilePreviewType.PDF ||
+                       previewType === FilePreviewType.XLSX ||
+                       previewType === FilePreviewType.BINARY;
+  const shouldFetchText = !isBinaryFile && !selectedVersion;
+  const shouldFetchBlob = isBinaryFile && !selectedVersion;
 
   // Current file content
   const {

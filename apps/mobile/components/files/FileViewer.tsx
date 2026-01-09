@@ -80,8 +80,13 @@ export function FileViewer({
 
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
   const isImage = previewType === FilePreviewType.IMAGE;
-  const shouldFetchText = file && !isImage;
-  const shouldFetchBlob = file && isImage;
+  // Binary file types that should be fetched as blob, not text
+  const isBinaryFile = previewType === FilePreviewType.IMAGE || 
+                       previewType === FilePreviewType.PDF ||
+                       previewType === FilePreviewType.XLSX ||
+                       previewType === FilePreviewType.BINARY;
+  const shouldFetchText = file && !isBinaryFile;
+  const shouldFetchBlob = file && isBinaryFile;
 
   // Can show raw view for non-binary files
   const canShowRaw =
@@ -107,13 +112,13 @@ export function FileViewer({
     shouldFetchBlob ? file?.path : undefined
   );
 
-  // Convert blob to data URL for images
+  // Convert blob to data URL for binary files (images, PDFs, etc.)
   useEffect(() => {
-    if (imageBlob) {
-      blobToDataURL(imageBlob).then(setBlobUrl);
+    if (imageBlob && file?.path) {
+      blobToDataURL(imageBlob, file.path).then(setBlobUrl);
     }
     return () => setBlobUrl(undefined);
-  }, [imageBlob]);
+  }, [imageBlob, file?.path]);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -136,26 +141,25 @@ export function FileViewer({
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // For now, use share functionality as download on mobile
-      let contentToShare: string;
-
-      if (isImage && blobUrl) {
-        contentToShare = blobUrl;
-      } else if (textContent) {
-        // For text files, just share the content directly
+      // For binary files (images, PDFs, etc.) use blob URL
+      if (blobUrl) {
+        await Share.share({
+          url: blobUrl,
+          title: file.name,
+        });
+        return;
+      }
+      
+      // For text files, share the content directly
+      if (textContent) {
         await Share.share({
           message: textContent,
           title: file.name,
         });
         return;
-      } else {
-        return;
       }
-
-      await Share.share({
-        url: contentToShare,
-        title: file.name,
-      });
+      
+      console.warn('No content available to download');
     } catch (error) {
       console.error('Download failed:', error);
     }
@@ -173,12 +177,17 @@ export function FileViewer({
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      if (isImage && blobUrl) {
+      // For binary files (images, PDFs, etc.) use blob URL
+      if (blobUrl) {
         await Share.share({
           url: blobUrl,
           title: file.name,
         });
-      } else if (textContent) {
+        return;
+      }
+      
+      // For text files, share the content
+      if (textContent) {
         await Share.share({
           message: textContent,
           title: file.name,
