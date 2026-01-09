@@ -273,46 +273,36 @@ async def start_agent_run(
     
     # Create project/thread for new threads
     if is_new_thread:
-        project_created_here = False
-        
         if not project_id:
             project_id = str(uuid.uuid4())
-        
-        step_start = time.time()
-        placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
-        await threads_repo.create_project(project_id=project_id, account_id=account_id, name=placeholder_name)
-        timing_breakdown["create_project_ms"] = round((time.time() - step_start) * 1000, 1)
-        project_created_here = True
-        
-        try:
-            from core.cache.runtime_cache import set_cached_project_metadata
-            await set_cached_project_metadata(project_id, {})
-        except Exception:
-            pass
-        
-        asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
-        
         if not thread_id:
             thread_id = str(uuid.uuid4())
         
-        try:
-            step_start = time.time()
-            await threads_repo.create_thread_full(
-                thread_id=thread_id,
-                project_id=project_id,
-                account_id=account_id,
-                name="New Chat",
-                status="pending",
-                memory_enabled=memory_enabled
-            )
-            timing_breakdown["create_thread_ms"] = round((time.time() - step_start) * 1000, 1)
-            
-            if prompt:
-                from core.utils.thread_name_generator import generate_and_update_thread_name
-                asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
-            
-            # Migrate file cache
-            if project_id != thread_id:
+        placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
+        
+        step_start = time.time()
+        await threads_repo.create_project_and_thread(
+            project_id=project_id,
+            thread_id=thread_id,
+            account_id=account_id,
+            project_name=placeholder_name,
+            thread_name="New Chat",
+            status="pending",
+            memory_enabled=memory_enabled
+        )
+        timing_breakdown["create_project_and_thread_ms"] = round((time.time() - step_start) * 1000, 1)
+        
+        from core.cache.runtime_cache import set_cached_project_metadata, increment_thread_count_cache
+        from core.utils.thread_name_generator import generate_and_update_thread_name
+        
+        asyncio.create_task(set_cached_project_metadata(project_id, {}))
+        asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
+        if prompt:
+            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
+        asyncio.create_task(increment_thread_count_cache(account_id))
+        
+        if project_id != thread_id:
+            async def migrate_file_cache():
                 try:
                     old_key = f"file_context:{project_id}"
                     new_key = f"file_context:{thread_id}"
@@ -322,23 +312,10 @@ async def start_agent_run(
                         await redis.delete(old_key)
                 except Exception:
                     pass
-        except Exception as e:
-            if project_created_here:
-                try:
-                    await threads_repo.delete_project(project_id)
-                except Exception:
-                    pass
-            raise e
+            asyncio.create_task(migrate_file_cache())
         
         structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
         
-        try:
-            from core.cache.runtime_cache import increment_thread_count_cache
-            asyncio.create_task(increment_thread_count_cache(account_id))
-        except Exception:
-            pass
-        
-        # Process files for new threads
         if staged_files:
             final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
                 staged_files=staged_files,
@@ -350,7 +327,6 @@ async def start_agent_run(
         elif files:
             final_message_content = await handle_file_uploads_fast(files, project_id, prompt, thread_id)
     
-    # Process files for existing threads
     elif not is_new_thread and (staged_files or files):
         if staged_files:
             final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
@@ -363,7 +339,6 @@ async def start_agent_run(
         elif files:
             final_message_content = await handle_file_uploads_fast(files, project_id, prompt or "", thread_id)
     
-    # Create message, agent run, update status in parallel
     async def create_message():
         if not final_message_content or not final_message_content.strip():
             return
@@ -427,7 +402,8 @@ async def start_agent_run(
                 model_name=effective_model,
                 agent_config=agent_config,
                 account_id=account_id,
-                cancellation_event=cancellation_event
+                cancellation_event=cancellation_event,
+                is_new_thread=is_new_thread
             )
         finally:
             _cancellation_events.pop(agent_run_id, None)
@@ -695,9 +671,10 @@ async def stream_agent_run(
                 yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
                 return
 
-            # Polling loop
-            BLOCK_MS = 100
-            POLLS_PER_PING = 50
+            # Polling loop - increased block time to reduce Redis load
+            # 500ms block = 2 Redis calls/second per client (was 10/second with 100ms)
+            BLOCK_MS = 500
+            POLLS_PER_PING = 10  # Adjusted to maintain ~5 second ping interval
             polls = 0
             pings = 0
             received_data = bool(entries)

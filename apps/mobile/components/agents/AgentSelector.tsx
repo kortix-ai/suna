@@ -1,70 +1,64 @@
-import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ChevronDown } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, View, Platform, TouchableOpacity } from 'react-native';
-import Animated, {
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring
-} from 'react-native-reanimated';
-import { AgentAvatar } from './AgentAvatar';
+import { Platform, TouchableOpacity, View } from 'react-native';
 import { useAgent } from '@/contexts/AgentContext';
-import { KortixLogo } from '@/components/ui/KortixLogo';
-import { useColorScheme } from 'nativewind';
-import { isKortixDefaultAgent } from '@/lib/agents';
-
-// NOTE: AnimatedPressable blocks touches on Android - use TouchableOpacity instead
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { ModeLogo } from '@/components/models/ModeLogo';
 
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
+
+/**
+ * Helper to determine if a model ID is "advanced" (power) mode
+ */
+function isAdvancedModel(modelId: string | undefined): boolean {
+  if (!modelId) return false;
+  return (
+    modelId === 'kortix/power' ||
+    modelId === 'kortix-power' ||
+    modelId.includes('claude-sonnet-4-5') ||
+    modelId.includes('sonnet')
+  );
+}
 
 interface AgentSelectorProps {
   onPress?: () => void;
   compact?: boolean;
 }
 
+/**
+ * AgentSelector - Shows Basic or Advanced mode toggle
+ * 
+ * Displays the current mode (Basic/Advanced) based on selected model.
+ * Tapping opens the agent drawer where user can switch modes.
+ */
 export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
-  const { getCurrentAgent, isLoading, agents, hasInitialized, error } = useAgent();
-  const agent = getCurrentAgent();
-  const scale = useSharedValue(1);
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  const { selectedModelId, isLoading, hasInitialized } = useAgent();
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  // Show loading until initialization is complete
-  // Don't wait for agents.length > 0 in case of errors
+  // Show loading state until initialization is complete
   if (isLoading || !hasInitialized) {
     return (
-      <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2 ">
-        <View className="w-6 h-6 bg-muted rounded-full animate-pulse" />
-        <Text className="text-muted-foreground text-sm font-roobert-medium">Loading...</Text>
+      <View className="flex-row items-center gap-1.5 rounded-full px-3.5 py-2">
+        <View className="w-16 h-4 bg-muted rounded animate-pulse" />
       </View>
     );
   }
 
-  // If initialization is complete but no agent (error or no agents), show select UI
-  if (!agent) {
+  const isAdvanced = isAdvancedModel(selectedModelId);
+  const mode = isAdvanced ? 'advanced' : 'basic';
+
+  if (compact) {
     return (
       <TouchableOpacity
         onPress={onPress}
-        style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 18, paddingHorizontal: 14, paddingVertical: 8 }}
+        style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}
         hitSlop={ANDROID_HIT_SLOP}
         activeOpacity={0.7}
       >
-        <View className="w-6 h-6 bg-muted rounded-full items-center justify-center">
-          <Text className="text-muted-foreground text-xs font-roobert-bold">?</Text>
-        </View>
-        <Text className="text-muted-foreground text-sm font-roobert-medium">
-          {error ? 'Error loading' : 'Select Worker'}
-        </Text>
+        <ModeLogo mode={mode} height={10} />
         <Icon
           as={ChevronDown}
-          size={13}
+          size={9}
           className="text-foreground/60"
           strokeWidth={2}
         />
@@ -72,55 +66,20 @@ export function AgentSelector({ onPress, compact = true }: AgentSelectorProps) {
     );
   }
 
-  const isKortixDefault = isKortixDefaultAgent(agent);
-
-  if (compact) {
-    return (
-      <TouchableOpacity
-        onPress={onPress}
-        hitSlop={ANDROID_HIT_SLOP}
-        activeOpacity={0.7}
-      >
-        {isKortixDefault ? (
-          <KortixLogo size={14} variant="symbol" color={isDark ? 'dark' : 'light'} />
-        ) : (
-        <AgentAvatar agent={agent} size={26} />
-        )}
-        <View className="absolute -bottom-1 -right-0.5 rounded-full items-center justify-center" style={{ width: 13, height: 13 }}>
-          <Icon
-            as={ChevronDown}
-            size={8}
-            className="text-foreground"
-            strokeWidth={2.5}
-          />
-        </View>
-      </TouchableOpacity>
-    );
-  }
-
   return (
     <TouchableOpacity
       onPress={onPress}
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 }}
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 5, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 }}
       hitSlop={ANDROID_HIT_SLOP}
       activeOpacity={0.7}
     >
-      {isKortixDefault ? (
-        <KortixLogo size={11} variant="logomark" color={isDark ? 'dark' : 'light'} />
-      ) : (
-        <>
-      <AgentAvatar agent={agent} size={19} />
-      <Text className="text-foreground text-sm font-roobert-medium">{agent.name}</Text>
-        </>
-      )}
+      <ModeLogo mode={mode} height={13} />
       <Icon
         as={ChevronDown}
-        size={13}
+        size={10}
         className="text-foreground/60"
         strokeWidth={2}
-        style={{ marginTop: 2 }}
       />
     </TouchableOpacity>
   );
 }
-

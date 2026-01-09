@@ -408,6 +408,43 @@ async def debug_endpoint():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+@api_router.get("/debug/redis", summary="Redis Health & Diagnostics", operation_id="redis_health", tags=["system"])
+async def redis_health_endpoint():
+    """
+    Get detailed Redis health and pool diagnostics.
+    
+    Returns:
+        - status: healthy, degraded, or unhealthy
+        - latency_ms: ping latency in milliseconds
+        - pool: connection pool statistics
+        - timeouts: configured timeout values
+    """
+    try:
+        health_data = await redis.health_check()
+        
+        # Add instance info
+        health_data["instance_id"] = instance_id
+        health_data["timestamp"] = datetime.now(timezone.utc).isoformat()
+        
+        # Return appropriate status code
+        if health_data.get("status") == "unhealthy":
+            return JSONResponse(status_code=503, content=health_data)
+        elif health_data.get("status") == "degraded":
+            return JSONResponse(status_code=200, content=health_data)
+        else:
+            return health_data
+    except Exception as e:
+        logger.error(f"Redis health check failed: {e}")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "error": str(e),
+                "instance_id": instance_id,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+        )
+
 @api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
 async def health_check_docker():
     logger.debug("Health docker check endpoint called")

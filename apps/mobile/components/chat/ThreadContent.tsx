@@ -45,6 +45,7 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { AgentLoader } from './AgentLoader';
 import { StreamingToolCard } from './StreamingToolCard';
+import { CompactToolCard, CompactStreamingToolCard } from './CompactToolCard';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
@@ -294,7 +295,6 @@ const MarkdownContent = React.memo(function MarkdownContent({
                 messageId={messageId || ''}
                 samplePromptsTitle="Sample prompts"
                 onFollowUpClick={(prompt) => {
-                  console.log('📝 Inline follow-up clicked:', prompt);
                   onPromptFill?.(prompt);
                 }}
               />
@@ -651,13 +651,11 @@ interface ThreadContentProps {
   onToolPress?: (toolMessages: ToolMessagePair[], initialIndex: number) => void;
   streamHookStatus?: string;
   sandboxId?: string;
-  /** Sandbox URL for direct file access (used for presentations and HTML previews) */
   sandboxUrl?: string;
   agentName?: string;
-  /** Handler to auto-fill chat input with a prompt (for follow-up prompts) */
   onPromptFill?: (prompt: string) => void;
-  /** Whether a message is currently being sent (optimistic state) */
   isSendingMessage?: boolean;
+  onRequestScroll?: () => void;
 }
 
 interface MessageGroup {
@@ -682,6 +680,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     agentName = 'Kortix',
     onPromptFill,
     isSendingMessage = false,
+    onRequestScroll,
   }) => {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
@@ -732,12 +731,22 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       return extractTextFromArguments(toolArgs);
     }, [streamingToolCall]);
 
-    // Apply smooth text animation to ask/complete streaming content
     const { text: smoothAskCompleteText, isAnimating: isAskCompleteAnimating } = useSmoothText(
       rawAskCompleteText,
       120,
       true
     );
+
+    const prevScrollTriggerLengthRef = React.useRef(0);
+    const SCROLL_TRIGGER_CHARS = 80;
+    React.useEffect(() => {
+      const currentLength = (smoothStreamingText?.length || 0) + (smoothAskCompleteText?.length || 0);
+      const charsSinceLastScroll = currentLength - prevScrollTriggerLengthRef.current;
+      if (charsSinceLastScroll >= SCROLL_TRIGGER_CHARS && onRequestScroll) {
+        onRequestScroll();
+        prevScrollTriggerLengthRef.current = currentLength;
+      }
+    }, [smoothStreamingText, smoothAskCompleteText, onRequestScroll]);
 
     const displayMessages = useMemo(() => {
       const displayableTypes = ['user', 'assistant', 'tool', 'system', 'status', 'browser_state'];
@@ -862,31 +871,17 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       [allToolMessages, onToolPress, navigateToToolCall]
     );
 
-    // Handler for clicking streaming tool calls - finds or creates tool message pairs
     const handleStreamingToolCallPress = useCallback(
       (toolCall: any, assistantMessageId: string | null) => {
-        console.log(`[ThreadContent] 🔘 Tool call card clicked: ${toolCall?.tool_call_id} (${toolCall?.function_name})`, {
-          hasToolResult: !!toolCall?.tool_result,
-          toolResultType: typeof toolCall?.tool_result,
-          toolResultKeys: toolCall?.tool_result && typeof toolCall.tool_result === 'object' 
-            ? Object.keys(toolCall.tool_result) 
-            : null,
-          completed: toolCall?.completed,
-        });
-        
         if (!toolCall?.tool_call_id || !onToolPress) {
-          console.log(`[ThreadContent] ❌ Early return: missing tool_call_id or onToolPress`);
           return;
         }
 
-        // First, try to find existing tool message in messages array
         const existingToolMessage = messages.find((msg) => {
           if (msg.type !== 'tool') return false;
           const metadata = safeJsonParse<ParsedMetadata>(msg.metadata, {});
           return metadata.tool_call_id === toolCall.tool_call_id;
         });
-        
-        console.log(`[ThreadContent] 🔍 Existing tool message found: ${!!existingToolMessage}`);
 
         if (existingToolMessage) {
           // Tool message exists - find or create the pair
@@ -951,17 +946,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               toolMessage: existingToolMessage,
             };
             
-            const toolMetadataForLog = safeJsonParse<ParsedMetadata>(existingToolMessage.metadata, {});
-            console.log(`[ThreadContent] 🎯 Creating pair from existing messages:`, {
-              hasAssistantMsg: !!assistantMsg,
-              assistantMsgId: assistantMsg?.message_id,
-              assistantToolCalls: assistantMsg ? safeJsonParse<ParsedMetadata>(assistantMsg.metadata, {}).tool_calls?.length : 0,
-              toolMessageId: existingToolMessage.message_id,
-              toolCallId: toolCallId,
-              toolMessageHasResult: !!toolMetadataForLog.result,
-              toolMessageResultKeys: toolMetadataForLog.result ? Object.keys(toolMetadataForLog.result) : null,
-            });
-            
             onToolPress([newPair], 0);
             navigateToToolCall(0);
           }
@@ -1023,31 +1007,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             }
           }
 
-          // Extract tool result - tool_result is already the result object from metadata
           const toolResult = toolCall.tool_result;
-          console.log(`[ThreadContent] 📦 Extracting tool result:`, {
-            toolResult,
-            toolResultType: typeof toolResult,
-            hasOutput: toolResult?.output !== undefined,
-            hasSuccess: toolResult?.success !== undefined,
-            toolResultKeys: toolResult && typeof toolResult === 'object' ? Object.keys(toolResult) : null,
-          });
-          
-          // tool_result should already have { output, success } structure from useAgentStream
           const resultOutput = toolResult?.output !== undefined 
             ? toolResult.output 
             : (typeof toolResult === 'object' && toolResult !== null && !toolResult.output && !toolResult.success
-                ? toolResult  // If it's an object without output/success, use it as output
+                ? toolResult
                 : toolResult);
           const resultSuccess = toolResult?.success !== undefined 
             ? toolResult.success 
             : true;
-          
-          console.log(`[ThreadContent] ✅ Extracted result:`, {
-            resultOutput,
-            resultOutputType: typeof resultOutput,
-            resultSuccess,
-          });
           
           // Create content in legacy format for tools that might parse from content
           // Some tools parse from content, so include both formats
@@ -1086,16 +1054,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             assistantMessage: assistantMsg,
             toolMessage: syntheticToolMessage,
           };
-          
-          console.log(`[ThreadContent] 🎯 Creating synthetic pair:`, {
-            hasAssistantMsg: !!assistantMsg,
-            assistantMsgId: assistantMsg?.message_id,
-            assistantToolCalls: assistantMsg ? safeJsonParse<ParsedMetadata>(assistantMsg.metadata, {}).tool_calls?.length : 0,
-            syntheticToolMessageId: syntheticToolMessage.message_id,
-            syntheticToolMessageType: syntheticToolMessage.type,
-            syntheticToolMessageContent: syntheticToolMessage.content?.substring(0, 100),
-            syntheticToolMessageMetadata: syntheticToolMessage.metadata?.substring(0, 200),
-          });
           
           onToolPress([syntheticPair], 0);
           navigateToToolCall(0);
@@ -1259,6 +1217,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
+                                fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>
                               {cleanContent}
@@ -1283,6 +1242,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
+                                fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>
                               {cleanContent}
@@ -1305,7 +1265,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
             return (
               <View key={group.key} className="mb-6">
-                <View className="mb-2 flex-row items-center">
+                <View className="mb-4 flex-row items-center">
                   {renderAgentIndicator(groupAgentId)}
                 </View>
 
@@ -1350,9 +1310,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         {renderedContent && <View className="gap-2">{renderedContent}</View>}
 
                         {linkedTools && linkedTools.length > 0 && (
-                          <View className="mt-2 gap-1">
+                          <View className="mt-2 flex-row flex-wrap gap-2">
                             {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => (
-                              <ToolCard
+                              <CompactToolCard
                                 key={`tool-${toolMsg.message_id || toolIdx}`}
                                 message={toolMsg}
                                 onPress={() => handleToolPressInternal(toolMsg)}
@@ -1502,26 +1462,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       }
 
                       if (visibleToolCalls.length > 0) {
-                        // Get assistant message ID from streamingToolCall or find from group
                         const assistantMsgId = streamingToolCall?.message_id || 
                           group.messages.find(m => m.type === 'assistant')?.message_id || 
                           null;
                         
                         return (
-                          <View className="flex-col gap-2">
+                          <View className="flex-row flex-wrap gap-2">
                             {visibleToolCalls.map((tc: any, tcIndex: number) => {
-                              const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                              const toolName = (tc.function_name || tc.name || '')?.replace(/_/g, '-');
                               const isCompleted = tc.completed === true || 
                                 (tc.tool_result !== undefined && 
                                  tc.tool_result !== null &&
                                  (typeof tc.tool_result === 'object' || Boolean(tc.tool_result)));
                               
                               return (
-                                <StreamingToolCallIndicator
+                                <CompactStreamingToolCard
                                   key={tc.tool_call_id || `streaming-tool-${tcIndex}`}
                                   toolCall={tc}
                                   toolName={toolName}
-                                  showExpanded={false}
                                   onPress={isCompleted ? () => handleStreamingToolCallPress(tc, assistantMsgId) : undefined}
                                 />
                               );
@@ -1530,8 +1488,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         );
                       }
 
-                      // Fallback if no tool calls found
-                      return <StreamingToolCallIndicator toolCall={null} toolName="" />;
+                      return <CompactStreamingToolCard toolCall={null} toolName="" />;
                     })()}
 
                   {/* Show loader when agent is running but not streaming, inside the last assistant group */}
@@ -1595,13 +1552,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               <View className="mb-2 flex-row items-center">
                 {renderAgentIndicator(null)}
               </View>
+              <View className="h-6 justify-center">
               {isContemplating ? (
-                <View className="flex-row py-2 items-center">
+                  <View className="flex-row items-center">
                   <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
                 </View>
               ) : (
                 <AgentLoader />
               )}
+              </View>
             </View>
           );
         })()}

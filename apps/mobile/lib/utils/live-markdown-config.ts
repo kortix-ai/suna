@@ -140,6 +140,10 @@ export function markdownParser(input: string) {
 /**
  * Font family configuration
  */
+const FONT_FAMILY_BASE = 'Roobert-Regular';
+const FONT_FAMILY_BOLD = 'Roobert-SemiBold';
+const FONT_FAMILY_HEADING = 'Roobert-Bold';
+
 const FONT_FAMILY_MONOSPACE = Platform.select({
   ios: 'Courier',
   default: 'monospace',
@@ -220,15 +224,17 @@ if (__DEV__) {
 export const lightMarkdownStyle: MarkdownStyle = {
   syntax: {
     color: 'transparent',
-    fontSize: 0.01, // Make syntax characters nearly invisible (collapses width)
+    fontSize: 0.01, // 0.01px on Android (int cast), iOS handles float fine
   } as any,
   link: {
     color: '#2563eb', // blue-600
+    fontFamily: FONT_FAMILY_BASE,
     get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; }, // Dynamic value
   } as any,
   h1: {
     fontSize: 26,
     lineHeight: 36, // Increased for better readability
+    fontFamily: FONT_FAMILY_HEADING,
     get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value
     paddingLeft: 0,
     paddingTop: 4, // Small top padding for visual separation
@@ -245,7 +251,8 @@ export const lightMarkdownStyle: MarkdownStyle = {
     borderWidth: 4,
     marginLeft: 6,
     paddingLeft: 6,
-  },
+    fontFamily: FONT_FAMILY_BASE,
+  } as any,
   code: {
     fontFamily: FONT_FAMILY_MONOSPACE,
     fontSize: 14,
@@ -266,15 +273,17 @@ export const lightMarkdownStyle: MarkdownStyle = {
 export const darkMarkdownStyle: MarkdownStyle = {
   syntax: {
     color: 'transparent',
-    fontSize: 0.01, // Make syntax characters nearly invisible (collapses width)
+    fontSize: 0.01, // 0.01px on Android (int cast), iOS handles float fine
   } as any,
   link: {
     color: '#3b82f6', // blue-500
+    fontFamily: FONT_FAMILY_BASE,
     get textDecorationLine() { return LINK_UNDERLINE_ENABLED ? 'underline' : 'none'; }, // Dynamic value
   } as any,
   h1: {
     fontSize: 26,
     lineHeight: 36, // Increased for better readability
+    fontFamily: FONT_FAMILY_HEADING,
     get marginLeft() { return HEADING_MARGIN_LEFT; }, // Dynamic value
     paddingLeft: 0,
     paddingTop: 4, // Small top padding for visual separation
@@ -291,7 +300,8 @@ export const darkMarkdownStyle: MarkdownStyle = {
     borderWidth: 4,
     marginLeft: 6,
     paddingLeft: 6,
-  },
+    fontFamily: FONT_FAMILY_BASE,
+  } as any,
   code: {
     fontFamily: FONT_FAMILY_MONOSPACE,
     fontSize: 14,

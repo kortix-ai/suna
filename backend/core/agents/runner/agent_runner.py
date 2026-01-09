@@ -448,8 +448,27 @@ class AgentRunner:
             await self._cleanup()
     
     async def _prepare_execution(self) -> dict:
-        """Prepare: setup, tools, prompt."""
         await self.setup()
+        
+        from core.threads import repo as threads_repo
+        
+        async def safe_prefetch_messages():
+            try:
+                return await self.thread_manager.get_llm_messages(self.config.thread_id)
+            except Exception as e:
+                logger.warning(f"Prefetch messages failed (will retry): {e}")
+                return None
+        
+        async def safe_prefetch_llm_end():
+            try:
+                return await threads_repo.get_last_llm_response_end(self.config.thread_id)
+            except Exception as e:
+                logger.warning(f"Prefetch llm_end failed (will retry): {e}")
+                return None
+        
+        self._prefetch_messages_task = asyncio.create_task(safe_prefetch_messages())
+        self._prefetch_llm_end_task = asyncio.create_task(safe_prefetch_llm_end())
+        self._prefetch_consumed = False
         
         await stream_status_message("initializing", "Registering tools...")
         
@@ -539,6 +558,18 @@ class AgentRunner:
             await stream_status_message("llm_call", f"Starting LLM API call (turn {self.turn_number})...")
             llm_call_start = time.time()
             
+            can_use_prefetch = (
+                self.turn_number == 1 and 
+                not getattr(self, '_prefetch_consumed', True)
+            )
+            
+            prefetch_msgs = None
+            prefetch_end = None
+            if can_use_prefetch:
+                prefetch_msgs = getattr(self, '_prefetch_messages_task', None)
+                prefetch_end = getattr(self, '_prefetch_llm_end_task', None)
+                self._prefetch_consumed = True
+            
             response = await self.thread_manager.run_thread(
                 thread_id=self.config.thread_id,
                 system_prompt=system_message,
@@ -558,7 +589,9 @@ class AgentRunner:
                 ),
                 native_max_auto_continues=self.config.native_max_auto_continues,
                 generation=generation,
-                cancellation_event=cancellation_event
+                cancellation_event=cancellation_event,
+                prefetch_messages_task=prefetch_msgs,
+                prefetch_llm_end_task=prefetch_end
             )
 
             async for chunk in self._process_response(response, generation, cancellation_event):
@@ -675,7 +708,15 @@ class AgentRunner:
         return False, False, None
     
     async def _cleanup(self) -> None:
-        """Cleanup resources."""
+        for task_name in ('_prefetch_messages_task', '_prefetch_llm_end_task'):
+            task = getattr(self, task_name, None)
+            if task and not task.done():
+                task.cancel()
+                try:
+                    await task
+                except (asyncio.CancelledError, Exception):
+                    pass
+        
         try:
             if hasattr(self, 'thread_manager') and self.thread_manager:
                 await self.thread_manager.cleanup()
@@ -699,7 +740,8 @@ async def execute_agent_run(
     model_name: str,
     agent_config: dict,
     account_id: str,
-    cancellation_event: asyncio.Event
+    cancellation_event: asyncio.Event,
+    is_new_thread: bool = False
 ) -> None:
     """
     Execute an agent run with full streaming to Redis.
@@ -735,8 +777,10 @@ async def execute_agent_run(
             metadata={"project_id": project_id}
         )
         
-        # Stop signal checker
+        # Stop signal checker - reduced frequency to minimize Redis load
+        # Check every 2 seconds instead of 0.5s (reduces Redis calls by 4x)
         stop_state = {'received': False, 'reason': None}
+        STOP_CHECK_INTERVAL = float(os.getenv("AGENT_STOP_CHECK_INTERVAL", "2.0"))
         
         async def check_stop():
             while not stop_state['received']:
@@ -746,11 +790,12 @@ async def execute_agent_run(
                         stop_state['reason'] = 'stop_signal'
                         cancellation_event.set()
                         break
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(STOP_CHECK_INTERVAL)
                 except asyncio.CancelledError:
                     break
                 except Exception:
-                    await asyncio.sleep(1)
+                    # Longer backoff on errors to reduce load during Redis issues
+                    await asyncio.sleep(5.0)
         
         stop_checker = asyncio.create_task(check_stop())
         
@@ -763,7 +808,8 @@ async def execute_agent_run(
             model_name=effective_model,
             agent_config=agent_config,
             trace=trace,
-            account_id=account_id
+            account_id=account_id,
+            is_new_thread=is_new_thread
         )
         
         runner = AgentRunner(runner_config)

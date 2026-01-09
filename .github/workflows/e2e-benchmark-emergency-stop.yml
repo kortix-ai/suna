@@ -31,7 +31,7 @@ jobs:
       - name: Emergency Stop All Tests
         env:
           API_URL: ${{ inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so' }}
-          ADMIN_API_KEY: ${{ secrets.KORTIX_ADMIN_API_KEY }}
+          ADMIN_API_KEY: ${{ inputs.environment == 'production' && secrets.PRODUCTION_KORTIX_ADMIN_API_KEY || secrets.STAGING_KORTIX_ADMIN_API_KEY }}
         run: |
           set -e
           

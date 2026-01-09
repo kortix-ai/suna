@@ -14,3 +14,4 @@ class AgentConfig:
     agent_config: Optional[dict] = None
     trace: Optional['StatefulTraceClient'] = None
     account_id: Optional[str] = None
+    is_new_thread: bool = False

@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, NativeScrollEvent, NativeSyntheticEvent, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
-  withTiming,
   useSharedValue,
+  withTiming,
   withDelay,
   Easing,
 } from 'react-native-reanimated';
@@ -26,6 +26,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { AgentLoader } from '../chat/AgentLoader';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -208,7 +209,6 @@ export function ThreadPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const [selectedToolData, setSelectedToolData] = React.useState<{
     toolMessages: ToolMessagePair[];
@@ -269,7 +269,7 @@ export function ThreadPage({
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
   const scrollViewRef = React.useRef<ScrollView>(null);
   
-  // Calculate bottom padding for content to account for input section + safe area
+  const windowHeight = Dimensions.get('window').height;
   const baseBottomPadding = CHAT_INPUT_SECTION_HEIGHT.THREAD_PAGE + insets.bottom;
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
@@ -303,28 +303,9 @@ export function ThreadPage({
 
   const contentBottomPadding = baseBottomPadding + extraPushPadding;
 
-  // DEBUG: Track state changes
-  const prevStreamingRef = React.useRef(false);
-  const prevAgentRunningRef = React.useRef(false);
-
-  React.useEffect(() => {
-    if (chat.isStreaming !== prevStreamingRef.current) {
-      console.log(`[SCROLL DEBUG] isStreaming changed: ${prevStreamingRef.current} → ${chat.isStreaming}`);
-      prevStreamingRef.current = chat.isStreaming;
-    }
-    if (chat.isAgentRunning !== prevAgentRunningRef.current) {
-      console.log(`[SCROLL DEBUG] isAgentRunning changed: ${prevAgentRunningRef.current} → ${chat.isAgentRunning}`);
-      prevAgentRunningRef.current = chat.isAgentRunning;
-    }
-  }, [chat.isStreaming, chat.isAgentRunning]);
-
   // Track viewport size
   const handleLayout = React.useCallback((event: any) => {
-    const newHeight = event.nativeEvent.layout.height;
-    if (newHeight !== viewportHeightRef.current) {
-      console.log(`[SCROLL DEBUG] viewport height: ${viewportHeightRef.current} → ${newHeight}`);
-    }
-    viewportHeightRef.current = newHeight;
+    viewportHeightRef.current = event.nativeEvent.layout.height;
   }, []);
 
   // Track content size changes
@@ -332,14 +313,9 @@ export function ThreadPage({
     const prevHeight = contentHeightRef.current;
     contentHeightRef.current = contentHeight;
     
-    if (Math.abs(contentHeight - prevHeight) > 10) {
-      console.log(`[SCROLL DEBUG] content height: ${prevHeight} → ${contentHeight} (diff: ${contentHeight - prevHeight}), scrollLock: ${scrollLockActiveRef.current}`);
-    }
-    
     // Scroll when padding is applied (content grew significantly)
     if (scrollLockActiveRef.current && contentHeight > prevHeight + 100) {
       const maxY = Math.max(0, contentHeight - viewportHeightRef.current);
-      console.log(`[SCROLL DEBUG] 🎯 Scrolling to maxY: ${maxY} (content: ${contentHeight}, viewport: ${viewportHeightRef.current})`);
       scrollViewRef.current?.scrollTo({ y: maxY, animated: false });
       scrollLockActiveRef.current = false;
     }
@@ -360,7 +336,6 @@ export function ThreadPage({
   React.useEffect(() => {
     if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current && !pushToTop) {
       setTimeout(() => {
-        console.log('[SCROLL DEBUG] Thread opened - scrolling to end');
         scrollViewRef.current?.scrollToEnd({ animated: false });
         hasScrolledToBottomOnOpenRef.current = true;
       }, 150);
@@ -369,7 +344,6 @@ export function ThreadPage({
 
   // Reset when thread changes
   React.useEffect(() => {
-    console.log('[SCROLL DEBUG] Thread changed - resetting state');
     hasScrolledToBottomOnOpenRef.current = false;
     lastUserMessageCountRef.current = userMessageCount;
     setPushToTop(false);
@@ -389,9 +363,6 @@ export function ThreadPage({
     const isActualNewMessage = diff > 0 && diff <= 2 && prevCount > 0;
     
     if (isActualNewMessage) {
-      console.log(`[SCROLL DEBUG] 📤 User sent NEW message! userMessageCount: ${prevCount} → ${userMessageCount}`);
-      console.log('[SCROLL DEBUG] Setting pushToTop=true, scrollLockActive=true');
-      
       setPushToTop(true);
       scrollLockActiveRef.current = true;
       setIsUserScrolling(false);
@@ -409,40 +380,26 @@ export function ThreadPage({
       scrollAttempt(100);
       scrollAttempt(150);
       scrollAttempt(200);
-    } else if (diff > 2) {
-      console.log(`[SCROLL DEBUG] Thread loaded with ${userMessageCount} user messages (bulk load, not triggering pushToTop)`);
     }
     
     lastUserMessageCountRef.current = userMessageCount;
   }, [userMessageCount]);
 
-  // DEBUG: Log pushToTop changes
-  React.useEffect(() => {
-    console.log(`[SCROLL DEBUG] pushToTop changed to: ${pushToTop}, extraPushPadding: ${extraPushPadding}`);
-  }, [pushToTop, extraPushPadding]);
-
-  // Track when agent is running (for future use if needed)
+  // Track when agent is running - DON'T reset pushToTop, keep the padding
   React.useEffect(() => {
     const isRunning = chat.isStreaming || chat.isAgentRunning;
     
     if (isRunning) {
       agentWasRunningRef.current = true;
-      console.log('[SCROLL DEBUG] Agent started running');
     } else if (agentWasRunningRef.current) {
-      console.log('[SCROLL DEBUG] Agent finished');
       agentWasRunningRef.current = false;
       // DON'T remove pushToTop - keep the padding to avoid scroll jump
       // The extra space at bottom is fine, user can scroll naturally
     }
   }, [chat.isStreaming, chat.isAgentRunning]);
 
-
   const lastScrollYRef = React.useRef(0);
 
-  // Track significant scroll changes for debugging
-  const lastLoggedScrollY = React.useRef(0);
-  
-  // Animation for scroll button
   const scrollButtonOpacity = useSharedValue(0);
   const scrollButtonScale = useSharedValue(0.8);
   
@@ -462,7 +419,7 @@ export function ThreadPage({
     }
   }, [showScrollToBottom, scrollButtonOpacity, scrollButtonScale]);
 
-  const handleScroll = React.useCallback((event: any) => {
+  const handleScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const currentScrollY = contentOffset.y;
     
@@ -486,7 +443,7 @@ export function ThreadPage({
     // 2. User is NOT at the bottom of actual content
     if (hasOverflow && !isAtActualBottom) {
       setIsUserScrolling(true);
-      setShowScrollToBottom(true);
+        setShowScrollToBottom(true);
     } else {
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
@@ -574,7 +531,6 @@ export function ThreadPage({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Main content area - positioned below header but above nothing */}
       <View className="flex-1" style={{ zIndex: 1 }}>
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
@@ -638,6 +594,7 @@ export function ThreadPage({
             showsVerticalScrollIndicator={true}
             contentContainerStyle={{
               flexGrow: 1,
+              justifyContent: 'flex-end',
               paddingTop: Math.max(insets.top, 16) + 80,
               paddingBottom: contentBottomPadding,
               paddingHorizontal: 16,

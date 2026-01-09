@@ -240,12 +240,15 @@ async def set_cached_agent_config(
 
 
 async def invalidate_agent_config_cache(agent_id: str) -> None:
-    """Invalidate cached configs for an agent in Redis."""
+    """Invalidate cached configs for an agent in Redis using batch delete."""
     try:
-        from core.services import redis as redis_service
-        await redis_service.delete(f"agent_config:{agent_id}:current")
-        await redis_service.delete(f"agent_mcps:{agent_id}")
-        logger.info(f"🗑️ Invalidated Redis cache for agent: {agent_id}")
+        from core.services.redis import delete_multiple
+        keys = [
+            f"agent_config:{agent_id}:current",
+            f"agent_mcps:{agent_id}"
+        ]
+        deleted = await delete_multiple(keys, timeout=5.0)
+        logger.info(f"🗑️ Invalidated Redis cache for agent: {agent_id} ({deleted} keys)")
     except Exception as e:
         logger.warning(f"Failed to invalidate cache: {e}")
 

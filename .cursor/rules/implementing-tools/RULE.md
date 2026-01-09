@@ -168,6 +168,63 @@ Utility Tools:
 
 **Note:** Tools are allowed by default unless explicitly disabled. If your tool needs special conditional logic, modify `is_tool_allowed()` method, but prefer keeping it simple and using conditional registration in `tool_manager.py` instead.
 
+### 9. Code Style & Architecture Standards
+
+#### Architecture
+- All code must follow a modular, scalable, and extensible design
+- Enforce single responsibility principle
+- Favor composition over inheritance
+- Separate concerns clearly:
+  - Configuration
+  - Business logic
+  - Tool registration
+  - Execution/runtime logic
+  - Database calls (use a repo directory)
+- No god-classes, no god-modules
+
+#### Documentation & Comments
+**Docstrings Only:**
+- All documentation must be written using docstrings
+- Inline comments are strongly discouraged
+
+
+**Rules:**
+- Docstrings must explain why, not just what
+- Public functions, classes, and modules must have docstrings
+- Private helpers require docstrings if intent is non-obvious
+
+#### Naming Conventions
+- Functions: `snake_case`
+- Classes: `PascalCase`
+- Constants: `UPPER_SNAKE_CASE`
+- Names must be descriptive and intention-revealing
+- Avoid abbreviations unless universally understood
+
+#### Code Quality
+- No dead code
+- No commented-out code
+- No speculative "might need this later" logic
+- Keep functions small and focused
+- Fail fast with explicit, meaningful errors
+
+#### Scalability Expectations
+**Assume:**
+- More tools will be added
+- More contributors will touch the code
+- The code will be read more often than it is written
+
+**Therefore:**
+- Optimize for readability and predictability
+- Make extension straightforward and safe
+- Avoid cleverness in favor of clarity
+
+#### Non-Negotiables
+- No ugly inline comments
+- No hidden side effects
+- No tight coupling between tools
+- No violation of the established structure
+
+
 ## Frontend Implementation
 
 ### 1. Tool View Component

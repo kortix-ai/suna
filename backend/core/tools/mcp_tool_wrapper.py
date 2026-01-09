@@ -18,16 +18,6 @@ class MCPSchemaRedisCache:
     def __init__(self, ttl_seconds: int = 3600, key_prefix: str = "mcp_schema:"):
         self._ttl = ttl_seconds
         self._key_prefix = key_prefix
-        self._redis_client = None
-    
-    async def _ensure_redis(self):
-        if not self._redis_client:
-            try:
-                self._redis_client = await redis_service.get_client()
-            except Exception as e:
-                logger.warning(f"Redis not available for MCP cache: {e}")
-                return False
-        return True
     
     def _get_cache_key(self, config: Dict[str, Any]) -> str:
         config_str = json.dumps(config, sort_keys=True)
@@ -35,12 +25,10 @@ class MCPSchemaRedisCache:
         return f"{self._key_prefix}{config_hash}"
     
     async def get(self, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        if not await self._ensure_redis():
-            return None
-            
         try:
             key = self._get_cache_key(config)
-            cached_data = await self._redis_client.get(key)
+            # Use module-level function with timeout protection
+            cached_data = await redis_service.get(key, timeout=5.0)
             
             if cached_data:
                 logger.debug(f"⚡ Redis cache hit for MCP: {config.get('name', config.get('qualifiedName', 'Unknown'))}")
@@ -54,46 +42,41 @@ class MCPSchemaRedisCache:
             return None
     
     async def set(self, config: Dict[str, Any], data: Dict[str, Any]):
-        if not await self._ensure_redis():
-            return
-            
         try:
             key = self._get_cache_key(config)
             serialized_data = json.dumps(data)
             
-            await self._redis_client.setex(key, self._ttl, serialized_data)
+            # Use module-level function with timeout protection
+            await redis_service.setex(key, self._ttl, serialized_data, timeout=5.0)
             logger.debug(f"✅ Cached MCP schema in Redis for {config.get('name', config.get('qualifiedName', 'Unknown'))} (TTL: {self._ttl}s)")
             
         except Exception as e:
             logger.warning(f"Error writing to Redis cache: {e}")
     
     async def clear_pattern(self, pattern: Optional[str] = None):
-        if not await self._ensure_redis():
-            return
         try:
             if pattern:
                 search_pattern = f"{self._key_prefix}{pattern}*"
             else:
                 search_pattern = f"{self._key_prefix}*"
             
-            keys = []
-            async for key in self._redis_client.scan_iter(match=search_pattern):
-                keys.append(key)
+            # Use scan_keys with timeout protection
+            keys = await redis_service.scan_keys(search_pattern, count=100, timeout=10.0)
             
             if keys:
-                await self._redis_client.delete(*keys)
-                logger.debug(f"Cleared {len(keys)} MCP schema cache entries from Redis")
+                # Use batch delete for efficiency
+                from core.services.redis import delete_multiple
+                deleted = await delete_multiple(keys, timeout=5.0)
+                logger.debug(f"Cleared {deleted}/{len(keys)} MCP schema cache entries from Redis")
             
         except Exception as e:
             logger.warning(f"Error clearing Redis cache: {e}")
     
     async def get_stats(self) -> Dict[str, Any]:
-        if not await self._ensure_redis():
-            return {"available": False}
         try:
-            count = 0
-            async for _ in self._redis_client.scan_iter(match=f"{self._key_prefix}*"):
-                count += 1
+            # Use scan_keys with timeout protection
+            keys = await redis_service.scan_keys(f"{self._key_prefix}*", count=100, timeout=10.0)
+            count = len(keys)
             
             return {
                 "available": True,

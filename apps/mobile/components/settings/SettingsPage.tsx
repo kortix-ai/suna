@@ -232,11 +232,11 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
               onPress={handleUsage}
             />
 
-            <SettingsItem
+            {/* <SettingsItem
               icon={Plug}
               label={t('integrations.title', 'Integrations')}
               onPress={handleIntegrations}
-            />
+            /> */}
 
             <SettingsItem
               icon={colorScheme === 'dark' ? Sun : Moon}
@@ -348,12 +348,11 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         onClose={() => setIsAccountDeletionPageVisible(false)}>
         <AccountDeletionPage visible onClose={() => setIsAccountDeletionPageVisible(false)} />
       </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
+      {/* <AnimatedPageWrapper
         visible={isIntegrationsPageVisible}
         onClose={() => setIsIntegrationsPageVisible(false)}>
         <IntegrationsPage visible onClose={() => setIsIntegrationsPageVisible(false)} />
-      </AnimatedPageWrapper>
+      </AnimatedPageWrapper> */}
     </View>
   );
 }
