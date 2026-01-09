@@ -1217,6 +1217,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
+                                fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>
                               {cleanContent}
@@ -1241,6 +1242,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
+                                fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>
                               {cleanContent}

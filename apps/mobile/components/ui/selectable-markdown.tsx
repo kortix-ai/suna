@@ -202,21 +202,21 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
   // Headings
   heading1: (node: any, children: any, parent: any, styles: any) => (
     <View key={node.key} style={styles.heading1}>
-      <RNText style={[styles.heading1, { fontSize: 26, fontWeight: 'bold' }]} selectable={true}>
+      <RNText style={[styles.heading1, { fontSize: 26, fontFamily: 'Roobert-Bold' }]} selectable={true}>
         {children}
       </RNText>
     </View>
   ),
   heading2: (node: any, children: any, parent: any, styles: any) => (
     <View key={node.key} style={styles.heading2}>
-      <RNText style={[styles.heading2, { fontSize: 22, fontWeight: 'bold' }]} selectable={true}>
+      <RNText style={[styles.heading2, { fontSize: 22, fontFamily: 'Roobert-Bold' }]} selectable={true}>
         {children}
       </RNText>
     </View>
   ),
   heading3: (node: any, children: any, parent: any, styles: any) => (
     <View key={node.key} style={styles.heading3}>
-      <RNText style={[styles.heading3, { fontSize: 18, fontWeight: 'bold' }]} selectable={true}>
+      <RNText style={[styles.heading3, { fontSize: 18, fontFamily: 'Roobert-SemiBold' }]} selectable={true}>
         {children}
       </RNText>
     </View>
@@ -231,12 +231,15 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     color: isDark ? '#fafafa' : '#18181b',
     fontSize: MARKDOWN_FONT_SIZE,
     lineHeight: MARKDOWN_LINE_HEIGHT,
+    fontFamily: 'Roobert-Regular',
   },
   text: {
     color: isDark ? '#fafafa' : '#18181b',
+    fontFamily: 'Roobert-Regular',
   },
   textgroup: {
     color: isDark ? '#fafafa' : '#18181b',
+    fontFamily: 'Roobert-Regular',
   },
   paragraph: {
     marginVertical: 0,
@@ -244,10 +247,11 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     flexWrap: 'wrap',
   },
   strong: {
-    fontWeight: 'bold',
+    fontFamily: 'Roobert-SemiBold',
   },
   em: {
     fontStyle: 'italic',
+    fontFamily: 'Roobert-Regular',
   },
   s: {
     textDecorationLine: 'line-through',
@@ -263,17 +267,17 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
   heading1: {
     fontSize: 26,
-    fontWeight: 'bold',
+    fontFamily: 'Roobert-Bold',
     marginVertical: 4,
   },
   heading2: {
     fontSize: 22,
-    fontWeight: 'bold',
+    fontFamily: 'Roobert-Bold',
     marginVertical: 4,
   },
   heading3: {
     fontSize: 18,
-    fontWeight: 'bold',
+    fontFamily: 'Roobert-SemiBold',
     marginVertical: 4,
   },
   blockquote: {
@@ -982,7 +986,7 @@ const styles = StyleSheet.create({
   base: {
     fontSize: MARKDOWN_FONT_SIZE,
     lineHeight: MARKDOWN_LINE_HEIGHT,
-    fontFamily: 'System',
+    fontFamily: 'Roobert-Regular',
     padding: 0,
     margin: 0,
     paddingLeft: 0,
