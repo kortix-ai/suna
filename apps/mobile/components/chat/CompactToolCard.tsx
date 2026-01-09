@@ -174,12 +174,6 @@ export const CompactToolCard = React.memo(function CompactToolCard({
       <Text className="text-sm font-roobert-medium text-muted-foreground" numberOfLines={1}>
         {displayName}
       </Text>
-
-      <Icon
-        as={isError ? AlertCircle : CheckCircle2}
-        size={12}
-        className={isError ? 'text-destructive ml-2' : 'text-emerald-500 ml-2'}
-      />
     </AnimatedPressable>
   );
 });
