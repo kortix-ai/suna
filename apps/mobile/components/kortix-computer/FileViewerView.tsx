@@ -29,6 +29,8 @@ import {
 import { HybridMarkdownEditor } from './HybridMarkdownEditor';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { FilePreview, FilePreviewType, getFilePreviewType } from '@/components/files/FilePreviewRenderers';
 import {
   useSandboxFileContent,
@@ -109,8 +111,13 @@ export function FileViewerView({
   const isText = previewType === FilePreviewType.TEXT || previewType === FilePreviewType.CODE;
   const canEdit = (isMarkdown || isText) && !selectedVersion;
 
-  const shouldFetchText = !isImage && !selectedVersion;
-  const shouldFetchBlob = isImage && !selectedVersion;
+  // Binary file types that should be fetched as blob, not text
+  const isBinaryFile = previewType === FilePreviewType.IMAGE || 
+                       previewType === FilePreviewType.PDF ||
+                       previewType === FilePreviewType.XLSX ||
+                       previewType === FilePreviewType.BINARY;
+  const shouldFetchText = !isBinaryFile && !selectedVersion;
+  const shouldFetchBlob = isBinaryFile && !selectedVersion;
 
   // Current file content
   const {
@@ -253,29 +260,73 @@ export function FileViewerView({
     }
   }, [filePath, sandboxId, localContent, canEdit, clearUnsavedContent, setUnsavedState, refetchFile]);
 
+  const [isDownloading, setIsDownloading] = useState(false);
+  
   const handleDownload = useCallback(async () => {
+    setIsDownloading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      const currentBlobUrl = selectedVersion ? versionBlobUrl : blobUrl;
+      const currentBlob = selectedVersion ? versionBlob : imageBlob;
       const currentContent = selectedVersion ? localContent : (localContent || textContent);
 
-      if (isImage && currentBlobUrl) {
-        await Share.share({
-          url: currentBlobUrl,
-          title: fileName,
+      // For binary files (images, PDFs, etc.) write to file and share
+      if (currentBlob && isBinaryFile) {
+        // Convert blob to base64
+        const reader = new FileReader();
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            // Extract base64 data from data URL
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(currentBlob);
         });
+
+        // Write to temporary file
+        const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Share the file
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${fileName}`,
+          });
+        } else {
+          Alert.alert('Error', 'Sharing is not available on this device');
+        }
       } else if (currentContent) {
-        await Share.share({
-          message: currentContent,
-          title: fileName,
-        });
+        // For text files, write to file and share
+        const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+        await FileSystem.writeAsStringAsync(fileUri, currentContent);
+        
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${fileName}`,
+          });
+        } else {
+          // Fallback to Share API for text
+          await Share.share({
+            message: currentContent,
+            title: fileName,
+          });
+        }
+      } else {
+        Alert.alert('Error', 'No content available to download');
       }
     } catch (error) {
       console.error('Download failed:', error);
       Alert.alert('Error', 'Failed to download file');
+    } finally {
+      setIsDownloading(false);
     }
-  }, [isImage, blobUrl, versionBlobUrl, textContent, localContent, fileName, selectedVersion]);
+  }, [imageBlob, versionBlob, textContent, localContent, fileName, selectedVersion, isBinaryFile]);
 
   const handleDiscard = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -610,14 +661,19 @@ export function FileViewerView({
             {!canEdit && (
               <Pressable
                 onPress={handleDownload}
-                className="h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70"
+                disabled={isDownloading}
+                className={`h-9 w-9 items-center justify-center rounded-xl bg-card border border-border active:opacity-70 ${isDownloading ? 'opacity-60' : ''}`}
               >
-                <Icon
-                  as={Download}
-                  size={17}
-                  className="text-primary"
-                  strokeWidth={2}
-                />
+                {isDownloading ? (
+                  <KortixLoader size="small" customSize={17} />
+                ) : (
+                  <Icon
+                    as={Download}
+                    size={17}
+                    className="text-primary"
+                    strokeWidth={2}
+                  />
+                )}
               </Pressable>
             )}
           </View>

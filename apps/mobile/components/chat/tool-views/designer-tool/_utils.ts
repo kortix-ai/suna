@@ -51,14 +51,18 @@ export function extractDesignerData({ toolCall, toolResult }: { toolCall: ToolCa
         success = output.success;
       }
     } else if (typeof output === 'string') {
-      const pathMatch = output.match(/Design saved at:\s*([^\s]+)/i);
+      // Match patterns like "Design saved at: /workspace/designs/Modern Design.png" (with spaces)
+      // or legacy format like "Design saved at: /workspace/designs/design_1920x1080_abc123.png"
+      const pathMatch = output.match(/Design saved at:\s*(.+\.png)/i);
       if (pathMatch) {
-        generatedImagePath = pathMatch[1];
+        generatedImagePath = pathMatch[1].trim();
       } else {
-        const anyPathMatch = output.match(/(\/workspace\/designs\/[^\s]+\.png)/i);
+        // Match any path ending in .png under /workspace/designs/ (supports spaces)
+        const anyPathMatch = output.match(/(\/workspace\/designs\/.+\.png)/i);
         if (anyPathMatch) {
-          generatedImagePath = anyPathMatch[1];
+          generatedImagePath = anyPathMatch[1].trim();
         } else {
+          // Legacy format with underscores
           const filenameMatch = output.match(/design_\d+x\d+_[\w]+\.png/i);
           if (filenameMatch) {
             generatedImagePath = `/workspace/designs/${filenameMatch[0]}`;

@@ -46,6 +46,7 @@ import { KortixLogo } from '@/components/ui/KortixLogo';
 import { AgentLoader } from './AgentLoader';
 import { StreamingToolCard } from './StreamingToolCard';
 import { CompactToolCard, CompactStreamingToolCard } from './CompactToolCard';
+import { MediaGenerationInline } from './MediaGenerationInline';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
@@ -1310,14 +1311,41 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         {renderedContent && <View className="gap-2">{renderedContent}</View>}
 
                         {linkedTools && linkedTools.length > 0 && (
-                          <View className="mt-2 flex-row flex-wrap gap-2">
-                            {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => (
-                              <CompactToolCard
-                                key={`tool-${toolMsg.message_id || toolIdx}`}
-                                message={toolMsg}
-                                onPress={() => handleToolPressInternal(toolMsg)}
-                              />
-                            ))}
+                          <View className="mt-2 gap-2">
+                            {linkedTools.map((toolMsg: UnifiedMessage, toolIdx: number) => {
+                              // Check if this is a media generation tool
+                              const parsed = parseToolMessage(toolMsg);
+                              const toolName = parsed?.toolName?.replace(/_/g, '-') || '';
+                              
+                              if (toolName === 'image-edit-or-generate') {
+                                // Render inline media generation with shimmer/image
+                                return (
+                                  <MediaGenerationInline
+                                    key={`media-gen-${toolMsg.message_id || toolIdx}`}
+                                    toolCall={{
+                                      function_name: toolName,
+                                      arguments: parsed?.call?.arguments || {},
+                                      tool_call_id: parsed?.call?.tool_call_id,
+                                    }}
+                                    toolResult={parsed?.result ? {
+                                      output: parsed.result.output,
+                                      success: parsed.result.success,
+                                    } : undefined}
+                                    onToolClick={() => handleToolPressInternal(toolMsg)}
+                                    sandboxId={sandboxId}
+                                  />
+                                );
+                              }
+                              
+                              // Regular tool card for other tools
+                              return (
+                                <CompactToolCard
+                                  key={`tool-${toolMsg.message_id || toolIdx}`}
+                                  message={toolMsg}
+                                  onPress={() => handleToolPressInternal(toolMsg)}
+                                />
+                              );
+                            })}
                           </View>
                         )}
                       </View>
@@ -1467,13 +1495,35 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           null;
                         
                         return (
-                          <View className="flex-row flex-wrap gap-2">
+                          <View className="gap-2">
                             {visibleToolCalls.map((tc: any, tcIndex: number) => {
                               const toolName = (tc.function_name || tc.name || '')?.replace(/_/g, '-');
                               const isCompleted = tc.completed === true || 
                                 (tc.tool_result !== undefined && 
                                  tc.tool_result !== null &&
                                  (typeof tc.tool_result === 'object' || Boolean(tc.tool_result)));
+                              
+                              // Special handling for media generation tools - show inline with shimmer
+                              if (toolName === 'image-edit-or-generate') {
+                                return (
+                                  <MediaGenerationInline
+                                    key={tc.tool_call_id || `streaming-media-${tcIndex}`}
+                                    toolCall={{
+                                      function_name: toolName,
+                                      arguments: typeof tc.arguments === 'string' 
+                                        ? (() => { try { return JSON.parse(tc.arguments); } catch { return {}; } })()
+                                        : (tc.arguments || {}),
+                                      tool_call_id: tc.tool_call_id,
+                                    }}
+                                    toolResult={isCompleted && tc.tool_result ? {
+                                      output: tc.tool_result,
+                                      success: tc.tool_result?.success !== false,
+                                    } : undefined}
+                                    onToolClick={() => isCompleted && handleStreamingToolCallPress(tc, assistantMsgId)}
+                                    sandboxId={sandboxId}
+                                  />
+                                );
+                              }
                               
                               return (
                                 <CompactStreamingToolCard

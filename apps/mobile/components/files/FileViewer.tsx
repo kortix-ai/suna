@@ -19,6 +19,8 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
 import { useSandboxFileContent, useSandboxImageBlob, blobToDataURL } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
@@ -57,6 +59,7 @@ export function FileViewer({
   const closeScale = useSharedValue(1);
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
+  const [isDownloading, setIsDownloading] = useState(false);
   const { hasFreeTier } = useBillingContext();
 
   // Handle upgrade prompt for free tier users
@@ -80,9 +83,14 @@ export function FileViewer({
 
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
   const isImage = previewType === FilePreviewType.IMAGE;
-  const shouldFetchText = file && !isImage;
-  const shouldFetchBlob = file && isImage;
-
+  // Binary file types that should be fetched as blob, not text
+  const isBinaryFile = previewType === FilePreviewType.IMAGE || 
+                       previewType === FilePreviewType.PDF ||
+                       previewType === FilePreviewType.XLSX ||
+                       previewType === FilePreviewType.BINARY;
+  const shouldFetchText = file && !isBinaryFile;
+  const shouldFetchBlob = file && isBinaryFile;
+  
   // Can show raw view for non-binary files
   const canShowRaw =
     file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
@@ -107,13 +115,13 @@ export function FileViewer({
     shouldFetchBlob ? file?.path : undefined
   );
 
-  // Convert blob to data URL for images
+  // Convert blob to data URL for binary files (images, PDFs, etc.)
   useEffect(() => {
-    if (imageBlob) {
-      blobToDataURL(imageBlob).then(setBlobUrl);
+    if (imageBlob && file?.path) {
+      blobToDataURL(imageBlob, file.path).then(setBlobUrl);
     }
     return () => setBlobUrl(undefined);
-  }, [imageBlob]);
+  }, [imageBlob, file?.path]);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -133,31 +141,62 @@ export function FileViewer({
       return;
     }
 
+    setIsDownloading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // For now, use share functionality as download on mobile
-      let contentToShare: string;
-
-      if (isImage && blobUrl) {
-        contentToShare = blobUrl;
-      } else if (textContent) {
-        // For text files, just share the content directly
-        await Share.share({
-          message: textContent,
-          title: file.name,
+      // For binary files (images, PDFs, etc.) write to file and share
+      if (imageBlob && isBinaryFile) {
+        // Convert blob to base64
+        const reader = new FileReader();
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(imageBlob);
         });
-        return;
-      } else {
+
+        // Write to temporary file
+        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Share the file
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${file.name}`,
+          });
+        }
         return;
       }
-
-      await Share.share({
-        url: contentToShare,
-        title: file.name,
-      });
+      
+      // For text files, write to file and share
+      if (textContent) {
+        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+        await FileSystem.writeAsStringAsync(fileUri, textContent);
+        
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${file.name}`,
+          });
+        } else {
+          await Share.share({
+            message: textContent,
+            title: file.name,
+          });
+        }
+        return;
+      }
     } catch (error) {
       console.error('Download failed:', error);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -173,12 +212,17 @@ export function FileViewer({
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      if (isImage && blobUrl) {
+      // For binary files (images, PDFs, etc.) use blob URL
+      if (blobUrl) {
         await Share.share({
           url: blobUrl,
           title: file.name,
         });
-      } else if (textContent) {
+        return;
+      }
+      
+      // For text files, share the content
+      if (textContent) {
         await Share.share({
           message: textContent,
           title: file.name,
@@ -278,15 +322,23 @@ export function FileViewer({
                   </AnimatedPressable>
                 </>
               )}
-              <AnimatedPressable onPress={handleDownload} className="relative p-2">
-                <Icon
-                  as={hasFreeTier ? Lock : Download}
-                  size={22}
-                  color={
-                    hasFreeTier ? (isDark ? '#a78bfa' : '#7c3aed') : isDark ? '#f8f8f8' : '#121215'
-                  }
-                  strokeWidth={2}
-                />
+              <AnimatedPressable 
+                onPress={handleDownload} 
+                disabled={isDownloading}
+                className="relative p-2"
+                style={{ opacity: isDownloading ? 0.6 : 1 }}>
+                {isDownloading ? (
+                  <KortixLoader size={22} />
+                ) : (
+                  <Icon
+                    as={hasFreeTier ? Lock : Download}
+                    size={22}
+                    color={
+                      hasFreeTier ? (isDark ? '#a78bfa' : '#7c3aed') : isDark ? '#f8f8f8' : '#121215'
+                    }
+                    strokeWidth={2}
+                  />
+                )}
               </AnimatedPressable>
               <AnimatedPressable onPress={handleShare} className="relative p-2">
                 <Icon

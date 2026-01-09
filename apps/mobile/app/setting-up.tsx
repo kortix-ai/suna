@@ -74,7 +74,7 @@ export default function SettingUpScreen() {
     // This handles: webhook failed, network issues, or users who signed up before this change
     console.log('⚠️ No subscription detected - initializing manually (fallback)');
     setStatus('initializing');
-    
+
     initializeMutation.mutate(undefined, {
       onSuccess: async (data) => {
         console.log('✅ Initialization successful:', data.message);
@@ -91,12 +91,12 @@ export default function SettingUpScreen() {
       onError: async (error: any) => {
         // Check if error indicates account is already initialized
         const errorMessage = error?.message || '';
-        const isAlreadyInitialized = 
+        const isAlreadyInitialized =
           errorMessage.includes('already') ||
           errorMessage.includes('Already') ||
           errorMessage.includes('already initialized') ||
           errorMessage.includes('Failed to initialize free tier');
-        
+
         if (isAlreadyInitialized) {
           console.log('✅ Account already initialized, treating as success');
           setStatus('success');
@@ -145,8 +145,8 @@ export default function SettingUpScreen() {
                   <View className="flex-row items-center justify-between">
                     <View className="flex-1">
                       <View className="flex-row items-center mb-2">
-                        <View className="h-2.5 w-2.5 bg-blue-500 rounded-full mr-2" 
-                          style={{ opacity: 1 }} 
+                        <View className="h-2.5 w-2.5 bg-blue-500 rounded-full mr-2"
+                          style={{ opacity: 1 }}
                         />
                         <Text className="text-base font-roobert-medium text-blue-400">
                           Initializing
@@ -222,8 +222,8 @@ export default function SettingUpScreen() {
                       <Icon as={AlertCircle} size={24} className="text-red-500" />
                     </View>
                   </View>
-                  
-                  <View 
+
+                  <View
                     onTouchEnd={handleContinue}
                     className="bg-foreground h-12 rounded-xl items-center justify-center active:opacity-80"
                   >
