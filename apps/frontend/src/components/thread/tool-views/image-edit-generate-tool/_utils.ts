@@ -68,20 +68,21 @@ function extractGeneratedImages(output: unknown): string[] {
   
   if (typeof output === 'string') {
     // Pattern 1: "Image saved as: /workspace/filename.png" or "Image saved as: filename.png"
-    const singleMatch = output.match(/Image saved as:\s*(?:\/workspace\/)?([^\s\n]+\.(?:png|jpg|jpeg|webp|gif))/i);
+    // Supports filenames with spaces (e.g., "Geometric Glass Facade.png")
+    const singleMatch = output.match(/Image saved as:\s*(?:\/workspace\/)?(.+\.(?:png|jpg|jpeg|webp|gif))/i);
     if (singleMatch?.[1]) {
       images.push(singleMatch[1].trim());
     }
     
-    // Pattern 2: "- filename.png" (batch mode list)
-    const batchMatches = output.matchAll(/^- (?:\/workspace\/)?([^\n]+\.(?:png|jpg|jpeg|webp|gif))/gim);
+    // Pattern 2: "- filename.png" (batch mode list) - supports spaces in filenames
+    const batchMatches = output.matchAll(/^- (?:\/workspace\/)?(.+\.(?:png|jpg|jpeg|webp|gif))\s*$/gim);
     for (const match of batchMatches) {
       if (match[1] && !images.includes(match[1].trim())) {
         images.push(match[1].trim());
       }
     }
     
-    // Pattern 3: Direct generated_image_xxx.png pattern (with or without /workspace/)
+    // Pattern 3: Direct generated_image_xxx.png pattern (legacy format with underscores)
     if (images.length === 0) {
       const directMatches = output.matchAll(/(?:\/workspace\/)?(generated_image_[a-z0-9]+\.(?:png|jpg|jpeg|webp|gif))/gi);
       for (const match of directMatches) {
@@ -127,12 +128,13 @@ function extractGeneratedVideos(output: unknown): string[] {
   
   if (typeof output === 'string') {
     // Pattern 1: "Video saved as: /workspace/filename.mp4" or "Video saved as: filename.mp4"
-    const singleMatch = output.match(/Video saved as:\s*(?:\/workspace\/)?([^\s\n]+\.(?:mp4|webm|mov))/i);
+    // Supports filenames with spaces (e.g., "Mock Video abc123.mp4")
+    const singleMatch = output.match(/Video saved as:\s*(?:\/workspace\/)?(.+\.(?:mp4|webm|mov))/i);
     if (singleMatch?.[1]) {
       videos.push(singleMatch[1].trim());
     }
     
-    // Pattern 2: Direct generated_video_xxx.mp4 pattern (with or without /workspace/)
+    // Pattern 2: Direct generated_video_xxx.mp4 pattern (legacy format with underscores)
     if (videos.length === 0) {
       const directMatches = output.matchAll(/(?:\/workspace\/)?(generated_video_[a-z0-9]+\.(?:mp4|webm|mov))/gi);
       for (const match of directMatches) {

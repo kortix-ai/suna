@@ -30,14 +30,18 @@ function extractGeneratedMedia(output: string | undefined): { path: string; type
   if (!output) return null;
   
   // Check for video first - handle /workspace/ prefix
-  const videoMatch = output.match(/Video saved as:\s*(?:\/workspace\/)?([^\s\n]+\.(?:mp4|webm|mov))/i);
+  // Supports filenames with spaces (e.g., "Mock Video abc123.mp4")
+  const videoMatch = output.match(/Video saved as:\s*(?:\/workspace\/)?(.+\.(?:mp4|webm|mov))/i);
   if (videoMatch?.[1]) return { path: videoMatch[1].trim(), type: 'video' };
+  // Legacy format with underscores
   const directVideoMatch = output.match(/(?:\/workspace\/)?(generated_video_[a-z0-9]+\.(?:mp4|webm|mov))/i);
   if (directVideoMatch?.[1]) return { path: directVideoMatch[1].trim(), type: 'video' };
   
   // Check for image - handle /workspace/ prefix
-  const imageMatch = output.match(/Image saved as:\s*(?:\/workspace\/)?([^\s\n]+\.(?:png|jpg|jpeg|webp|gif))/i);
+  // Supports filenames with spaces (e.g., "Geometric Glass Facade.png")
+  const imageMatch = output.match(/Image saved as:\s*(?:\/workspace\/)?(.+\.(?:png|jpg|jpeg|webp|gif))/i);
   if (imageMatch?.[1]) return { path: imageMatch[1].trim(), type: 'image' };
+  // Legacy format with underscores
   const directImageMatch = output.match(/(?:\/workspace\/)?(generated_image_[a-z0-9]+\.(?:png|jpg|jpeg|webp|gif))/i);
   if (directImageMatch?.[1]) return { path: directImageMatch[1].trim(), type: 'image' };
   
