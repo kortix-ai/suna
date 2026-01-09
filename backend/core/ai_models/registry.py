@@ -59,18 +59,18 @@ class ModelRegistry:
         self._litellm_id_to_pricing["minimax/minimax-m2.1"] = minimax_m2_pricing
         self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = minimax_m2_pricing
         
-        # Kortix Basic - using Anthropic Claude Haiku 4.5 Bedrock
-        basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        # Kortix Basic - using MiniMax M2.1
+        # Anthropic: basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
         
         self.register(Model(
             id="kortix/basic",
             name="Kortix Basic",
             litellm_model_id=basic_litellm_id,
-            # MiniMax vision fallback (only enable when using MiniMax as primary model):
-            # vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            # vision_context_window=200_000,
-            # vision_pricing=HAIKU_PRICING,
-            provider=ModelProvider.ANTHROPIC,
+            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            vision_context_window=200_000,
+            vision_pricing=HAIKU_PRICING,
+            provider=ModelProvider.OPENROUTER,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
             capabilities=[
@@ -80,47 +80,32 @@ class ModelRegistry:
                 ModelCapability.PROMPT_CACHING,
             ],
             pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=5.00,
-                cached_read_cost_per_million_tokens=0.10,
-                cache_write_5m_cost_per_million_tokens=1.25,
-                cache_write_1h_cost_per_million_tokens=2.00
+                input_cost_per_million_tokens=0.30,
+                output_cost_per_million_tokens=1.20,
+                cached_read_cost_per_million_tokens=0.03,
+                cache_write_5m_cost_per_million_tokens=0.375,
             ),
             tier_availability=["free", "paid"],
             priority=102,
             recommended=True,
             enabled=True,
-            config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
-                },
-            )
+            config=ModelConfig()
         ))
         
-        # Kortix Power - using Anthropic Claude Haiku 4.5
-        # MiniMax M2.1: power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
-        power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        # Kortix Power - using MiniMax M2.1
+        # Anthropic: power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
         
         self.register(Model(
             id="kortix/power",
             name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
-            # MiniMax vision fallback (only enable when using MiniMax as primary model):
-            # vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            # vision_context_window=200_000,
-            # vision_pricing=HAIKU_PRICING,
-            # MiniMax: provider=ModelProvider.OPENROUTER,
-            provider=ModelProvider.ANTHROPIC,
+            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
+            vision_context_window=200_000,
+            vision_pricing=HAIKU_PRICING,
+            provider=ModelProvider.OPENROUTER,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
             context_window=200_000,
-            # MiniMax capabilities (includes THINKING):
-            # capabilities=[
-            #     ModelCapability.CHAT,
-            #     ModelCapability.FUNCTION_CALLING,
-            #     ModelCapability.VISION,
-            #     ModelCapability.THINKING,
-            #     ModelCapability.PROMPT_CACHING,
-            # ],
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
@@ -128,30 +113,17 @@ class ModelRegistry:
                 ModelCapability.THINKING,
                 ModelCapability.PROMPT_CACHING,
             ],
-            # MiniMax pricing:
-            # pricing=ModelPricing(
-            #     input_cost_per_million_tokens=0.30,
-            #     output_cost_per_million_tokens=1.20,
-            #     cached_read_cost_per_million_tokens=0.03,
-            #     cache_write_5m_cost_per_million_tokens=0.375,
-            # ),
             pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=5.00,
-                cached_read_cost_per_million_tokens=0.10,
-                cache_write_5m_cost_per_million_tokens=1.25,
-                cache_write_1h_cost_per_million_tokens=2.00
+                input_cost_per_million_tokens=0.30,
+                output_cost_per_million_tokens=1.20,
+                cached_read_cost_per_million_tokens=0.03,
+                cache_write_5m_cost_per_million_tokens=0.375,
             ),
             tier_availability=["paid"],
             priority=101,
             recommended=True,
             enabled=True,
-            # MiniMax: config=ModelConfig()
-            config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
-                },
-            )
+            config=ModelConfig()
         ))
         
         # Kortix Test - uses MiniMax M2.1 via direct API (only in LOCAL and STAGING, not PRODUCTION)

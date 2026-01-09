@@ -463,13 +463,18 @@ class ThreadManager:
         cache_key = f"thread_has_images:{thread_id}"
         
         try:
-            # Check Redis first (fast path)
+            # Check Redis first (fast path) - cache stores "1" for True, "0" for False
             try:
                 cached = await asyncio.wait_for(redis.get(cache_key), timeout=0.5)
                 if cached == "1":
                     elapsed = (time.time() - start) * 1000
                     logger.info(f"🖼️ Thread {thread_id} has_images: True (from Redis, {elapsed:.1f}ms)")
                     return True
+                elif cached == "0":
+                    # Cached "no images" - skip DB query entirely
+                    elapsed = (time.time() - start) * 1000
+                    logger.debug(f"🖼️ Thread {thread_id} has_images: False (from Redis, {elapsed:.1f}ms)")
+                    return False
             except Exception:
                 pass  # Redis miss or error, fall through to DB
             
@@ -477,22 +482,26 @@ class ThreadManager:
             try:
                 has_images = await asyncio.wait_for(
                     threads_repo.check_thread_has_images(thread_id),
-                    timeout=2.0
+                    timeout=5.0  # 5s timeout for slow connections (e.g., local dev to remote Supabase)
                 )
             except asyncio.TimeoutError:
                 elapsed = (time.time() - start) * 1000
                 logger.warning(f"⚠️ thread_has_images QUERY timeout after {elapsed:.1f}ms for {thread_id} - assuming no images")
                 return False
             
-            # Cache in Redis if True (2 hour TTL, refreshed on each access)
-            if has_images:
-                try:
+            # Cache result in Redis
+            # has_images=True: 2 hour TTL (images don't disappear)
+            # has_images=False: 5 min TTL (image might be added soon, check again later)
+            try:
+                if has_images:
                     await redis.set(cache_key, "1", ex=7200)
-                except Exception:
-                    pass  # Best effort caching
+                else:
+                    await redis.set(cache_key, "0", ex=300)
+            except Exception:
+                pass  # Best effort caching
             
             elapsed = (time.time() - start) * 1000
-            logger.info(f"🖼️ Thread {thread_id} has_images: {has_images} (from DB, {elapsed:.1f}ms)")
+            logger.debug(f"🖼️ Thread {thread_id} has_images: {has_images} (from DB, {elapsed:.1f}ms)")
             return has_images
         except Exception as e:
             elapsed = (time.time() - start) * 1000
