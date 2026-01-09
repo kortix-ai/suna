@@ -2615,7 +2615,7 @@ DEPENDENCIES:
   - "RNCMaskedView (from `../../../node_modules/.pnpm/@react-native-masked-view+masked-view@0.3.2_react-native@0.81.5_@babel+core@7.28.5_@typ_9a7d6d48ec00c3d08419d84b2f61681c/node_modules/@react-native-masked-view/masked-view`)"
   - "RNCPicker (from `../../../node_modules/.pnpm/@react-native-picker+picker@2.11.1_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/@react-native-picker/picker`)"
   - "RNGestureHandler (from `../../../node_modules/.pnpm/react-native-gesture-handler@2.28.0_react-native@0.81.5_@babel+core@7.28.5_@types+react_369a98627f022a8f18b21ea0a7bdadaa/node_modules/react-native-gesture-handler`)"
-  - "RNLiveMarkdown (from `../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_patch_hash=6d8192518f27ab1e0d86f2af85efd5_1bf474d7b2a9fe03d266cdfdd62c9b21/node_modules/@expensify/react-native-live-markdown`)"
+  - "RNLiveMarkdown (from `../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_expensify-common@2.0.169_react-native-wor_53e5876c1fd7cb8860cb9e17f88afb02/node_modules/@expensify/react-native-live-markdown`)"
   - "RNPaywalls (from `../../../node_modules/.pnpm/react-native-purchases-ui@9.6.13_react-native-purchases@9.6.13_react-native-web@0.21.2__628ae5312f42ee7c271da02a6764f62b/node_modules/react-native-purchases-ui`)"
   - "RNPurchases (from `../../../node_modules/.pnpm/react-native-purchases@9.6.13_react-native-web@0.21.2_encoding@0.1.13_react-dom@19.1.0__3fd444776cafe2f7b31ec0f65adf5acf/node_modules/react-native-purchases`)"
   - "RNReanimated (from `../../../node_modules/.pnpm/react-native-reanimated@4.1.6_@babel+core@7.28.5_react-native-worklets@0.6.0_@babel+cor_266d3ab125ae28a76971d9dad1d23008/node_modules/react-native-reanimated`)"
@@ -2866,7 +2866,7 @@ EXTERNAL SOURCES:
   RNGestureHandler:
     :path: "../../../node_modules/.pnpm/react-native-gesture-handler@2.28.0_react-native@0.81.5_@babel+core@7.28.5_@types+react_369a98627f022a8f18b21ea0a7bdadaa/node_modules/react-native-gesture-handler"
   RNLiveMarkdown:
-    :path: "../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_patch_hash=6d8192518f27ab1e0d86f2af85efd5_1bf474d7b2a9fe03d266cdfdd62c9b21/node_modules/@expensify/react-native-live-markdown"
+    :path: "../../../node_modules/.pnpm/@expensify+react-native-live-markdown@0.1.317_expensify-common@2.0.169_react-native-wor_53e5876c1fd7cb8860cb9e17f88afb02/node_modules/@expensify/react-native-live-markdown"
   RNPaywalls:
     :path: "../../../node_modules/.pnpm/react-native-purchases-ui@9.6.13_react-native-purchases@9.6.13_react-native-web@0.21.2__628ae5312f42ee7c271da02a6764f62b/node_modules/react-native-purchases-ui"
   RNPurchases:

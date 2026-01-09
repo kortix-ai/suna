@@ -327,8 +327,7 @@ export default function OnboardingScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background">
         {/* Header */}
-        <View className="pt-14 px-6 pb-2 flex-row justify-between items-center">
-          <KortixLogo variant="logomark" size={64} color={isDark ? 'dark' : 'light'} />
+        <View className="pt-20 px-6 pb-2 flex-row justify-between items-center">
           <TouchableOpacity
             onPress={handleLogout}
             disabled={isSigningOut}
