@@ -13,6 +13,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { isMobileDevice } from '@/lib/utils/is-mobile-device';
+import { AppDownloadQR } from '@/components/common/app-download-qr';
 
 // Scroll threshold with hysteresis to prevent flickering
 const SCROLL_THRESHOLD_DOWN = 50;
@@ -153,6 +154,39 @@ export function Navbar() {
                   {item.name}
                 </Link>
               ))}
+              
+              {/* Mobile App Download with QR Popover */}
+              <div className="relative group">
+                <Link
+                  href="/app"
+                  className={cn(
+                    "px-3 py-1.5 text-sm font-medium rounded-lg transition-colors",
+                    pathname === '/app'
+                      ? "text-foreground"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  Mobile
+                </Link>
+                
+                {/* QR Code Popover - appears on hover */}
+                <div className="absolute top-full left-1/2 -translate-x-1/2 pt-3 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
+                  <div className="bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-border/60 dark:border-[#2a2a2a] p-4 min-w-[200px]">
+                    {/* Arrow */}
+                    <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white dark:bg-[#1a1a1a] border-l border-t border-border/60 dark:border-[#2a2a2a] rotate-45" />
+                    
+                    <div className="relative">
+                      <AppDownloadQR size={160} logoSize={24} className="rounded-xl p-3 shadow-md" />
+                      <p className="text-xs text-muted-foreground text-center mt-3">
+                        Scan to download
+                      </p>
+                      <p className="text-[10px] text-muted-foreground/60 text-center mt-0.5">
+                        iOS & Android
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </nav>
 
             {/* Right Section - Actions */}
@@ -258,6 +292,23 @@ export function Navbar() {
                         </a>
                       </motion.li>
                     ))}
+                    {/* Mobile App Link */}
+                    <motion.li
+                      className="p-2.5"
+                      variants={drawerMenuVariants}
+                    >
+                      <Link
+                        href="/app"
+                        onClick={() => setIsDrawerOpen(false)}
+                        className={`underline-offset-4 hover:text-primary/80 transition-colors ${
+                          pathname === '/app'
+                            ? 'text-primary font-medium'
+                            : 'text-primary/60'
+                        }`}
+                      >
+                        Mobile App
+                      </Link>
+                    </motion.li>
                   </AnimatePresence>
                 </motion.ul>
 

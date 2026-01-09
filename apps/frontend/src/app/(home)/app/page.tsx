@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Smartphone, Bell, Shield, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
+import { AppDownloadQR, APP_DOWNLOAD_URL } from '@/components/common/app-download-qr';
 
 // Mobile users are redirected at the edge by middleware (hyper-fast)
 // This page only renders for desktop users
@@ -27,6 +28,23 @@ function KortixSymbol({ size = 24, className }: { size?: number; className?: str
   );
 }
 
+// Apple logo SVG
+function AppleLogo({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+    </svg>
+  );
+}
+
+// Google Play logo SVG
+function GooglePlayLogo({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.198l2.807 1.626a1 1 0 0 1 0 1.73l-2.808 1.626L15.206 12l2.492-2.491zM5.864 2.658L16.8 8.99l-2.302 2.302-8.634-8.634z"/>
+    </svg>
+  );
+}
 
 const FEATURES = [
   { icon: Smartphone, label: 'Always on the go' },
@@ -35,29 +53,26 @@ const FEATURES = [
   { icon: Zap, label: 'Lightning fast' },
 ];
 
-type MobilePlatform = 'ios' | 'android';
-
 export default function AppDownloadPage() {
-  const [selectedPlatform, setSelectedPlatform] = useState<MobilePlatform>('ios');
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const currentStoreUrl = STORE_LINKS[selectedPlatform];
-
   if (!mounted) {
     return null;
   }
 
   return (
-    <main className="w-full min-h-screen bg-gradient-to-b from-background via-background to-foreground/5 relative overflow-hidden">
-      {/* Decorative circles */}
-      <div className="absolute -top-48 -right-48 w-96 h-96 bg-foreground/5 rounded-full blur-3xl" />
-      <div className="absolute -bottom-48 -left-48 w-96 h-96 bg-foreground/5 rounded-full blur-3xl" />
+    <main className="w-full min-h-screen bg-gradient-to-b from-background via-background to-foreground/5 relative">
+      {/* Decorative glows - fixed to viewport, no scroll impact */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-foreground/10 rounded-full blur-3xl" />
+        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-foreground/10 rounded-full blur-3xl" />
+      </div>
 
-      <div className="relative flex flex-col items-center justify-center min-h-screen px-6 py-16">
+      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 py-16">
         <div className="w-full max-w-5xl mx-auto">
           {/* Header */}
           <motion.div
@@ -67,10 +82,10 @@ export default function AppDownloadPage() {
             className="flex flex-col items-center mb-16"
           >
             {/* App icon with glow effect */}
-            <div className="relative mb-8">
-              <div className="absolute inset-0 bg-foreground/20 rounded-[32px] blur-3xl scale-150" />
+            <div className="relative mb-8 z-10">
+              <div className="absolute inset-0 bg-foreground/30 rounded-[32px] blur-3xl scale-150 pointer-events-none" />
               <div className="relative w-32 h-32 bg-foreground rounded-[32px] flex items-center justify-center shadow-2xl">
-                <KortixSymbol size={64} className="text-background dark:text-foreground" />
+                <KortixSymbol size={64} className="text-background" />
               </div>
             </div>
             
@@ -84,98 +99,62 @@ export default function AppDownloadPage() {
 
           {/* Main Content Grid */}
           <div className="grid md:grid-cols-2 gap-12 items-center">
-            {/* Left: QR Code & Platform Selection */}
+            {/* Left: QR Code Card */}
             <motion.div
               initial={{ opacity: 0, x: -30 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.2, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
               className="flex flex-col items-center"
             >
-              {/* QR Code Card */}
               <div className="relative bg-white dark:bg-[#2a2a2a] rounded-3xl shadow-2xl overflow-hidden border border-border/60 dark:border-[#232324] w-full max-w-md">
                 {/* QR Code area */}
                 <div className="relative bg-muted dark:bg-[#e8e4df] flex items-center justify-center p-12">
-                  <div className="relative bg-white rounded-2xl p-4 shadow-lg">
-                    <img 
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(currentStoreUrl)}&format=svg&ecc=H`}
-                      alt={`QR Code to download Kortix on ${selectedPlatform === 'ios' ? 'App Store' : 'Play Store'}`}
-                      width={200}
-                      height={200}
-                      className="block"
-                    />
-                    {/* Kortix logo in center */}
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <div className="bg-white p-2 rounded-xl shadow-md">
-                        <KortixSymbol size={32} className="text-black" />
-                      </div>
-                    </div>
-                  </div>
+                  <AppDownloadQR size={200} logoSize={32} />
                 </div>
 
-                {/* Platform Selection */}
+                {/* Info area */}
                 <div className="p-8 bg-muted/30 dark:bg-[#161618]">
-                  <h3 className="text-foreground dark:text-white text-lg font-semibold mb-4 text-center">
+                  <h3 className="text-foreground dark:text-white text-lg font-semibold mb-2 text-center">
                     Scan to download
                   </h3>
+                  <p className="text-muted-foreground dark:text-white/60 text-sm text-center mb-6">
+                    Automatically opens the right store for your device
+                  </p>
                   
-                  {/* Store badges */}
+                  {/* Direct store links for desktop users */}
                   <div className="flex gap-3 max-w-sm mx-auto">
-                    <div className="flex-1">
-                      <button
-                        onClick={() => {
-                          setSelectedPlatform('ios');
-                          window.open(STORE_LINKS.ios, '_blank');
-                        }}
-                        className={`w-full block hover:scale-[1.02] active:scale-[0.98] transition-all rounded-md overflow-hidden ${
-                          selectedPlatform === 'ios' ? 'ring-2 ring-offset-2 ring-foreground/30' : ''
-                        }`}
-                      >
-                        {/* White button on white background for light mode */}
-                        <div className="bg-white p-1 dark:hidden">
-                          <img 
-                            src="/stores/app store white button.svg"
-                            alt="Download on the App Store"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                        {/* Black button on black background for dark mode */}
-                        <div className="bg-black p-1 hidden dark:block">
-                          <img 
-                            src="/stores/app store black button.svg"
-                            alt="Download on the App Store"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </button>
-                    </div>
-                    <div className="flex-1">
-                      <button
-                        onClick={() => {
-                          setSelectedPlatform('android');
-                          window.open(STORE_LINKS.android, '_blank');
-                        }}
-                        className={`w-full block hover:scale-[1.02] active:scale-[0.98] transition-all rounded-md overflow-hidden ${
-                          selectedPlatform === 'android' ? 'ring-2 ring-offset-2 ring-foreground/30' : ''
-                        }`}
-                      >
-                        {/* White button on white background for light mode */}
-                        <div className="bg-white p-1 dark:hidden">
-                          <img 
-                            src="/stores/google play white button.svg"
-                            alt="Get it on Google Play"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                        {/* Black button on black background for dark mode */}
-                        <div className="bg-black p-1 hidden dark:block">
-                          <img 
-                            src="/stores/google play black button.svg"
-                            alt="Get it on Google Play"
-                            className="w-full h-auto"
-                          />
-                        </div>
-                      </button>
-                    </div>
+                    <a
+                      href={STORE_LINKS.ios}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 h-12 bg-black dark:bg-white rounded-xl flex items-center justify-center gap-2.5 hover:opacity-90 active:scale-[0.98] transition-all"
+                    >
+                      <AppleLogo className="h-6 w-6 text-white dark:text-black" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-[9px] text-white/70 dark:text-black/70 leading-none">
+                          App Store
+                        </span>
+                        <span className="text-sm font-semibold text-white dark:text-black leading-tight">
+                          iOS
+                        </span>
+                      </div>
+                    </a>
+                    <a
+                      href={STORE_LINKS.android}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 h-12 bg-black dark:bg-white rounded-xl flex items-center justify-center gap-2.5 hover:opacity-90 active:scale-[0.98] transition-all"
+                    >
+                      <GooglePlayLogo className="h-5 w-5 text-white dark:text-black" />
+                      <div className="flex flex-col items-start">
+                        <span className="text-[9px] text-white/70 dark:text-black/70 leading-none">
+                          Google Play
+                        </span>
+                        <span className="text-sm font-semibold text-white dark:text-black leading-tight">
+                          Android
+                        </span>
+                      </div>
+                    </a>
                   </div>
                 </div>
               </div>
@@ -235,4 +214,3 @@ export default function AppDownloadPage() {
     </main>
   );
 }
-

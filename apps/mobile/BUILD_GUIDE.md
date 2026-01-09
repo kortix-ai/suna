@@ -2,7 +2,7 @@
 
 ## Setup
 ```bash
-npm install -g eas-cli
+pnpm install -g eas-cli
 eas login
 ```
 
@@ -11,9 +11,9 @@ eas login
 **Default workflow (cloud build - recommended):**
 ```bash
 cd apps/mobile
-npm run android:setup
-npm run android:build    
-npm run android:dev      
+pnpm run android:setup
+pnpm run android:build    
+pnpm run android:dev      
 ```
 
 ## IOS Development Setup
