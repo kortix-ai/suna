@@ -1553,13 +1553,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 {renderAgentIndicator(null)}
               </View>
               <View className="h-6 justify-center">
-                {isContemplating ? (
+              {isContemplating ? (
                   <View className="flex-row items-center">
-                    <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
-                  </View>
-                ) : (
-                  <AgentLoader />
-                )}
+                  <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
+                </View>
+              ) : (
+                <AgentLoader />
+              )}
               </View>
             </View>
           );

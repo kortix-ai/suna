@@ -12,7 +12,7 @@
  * so we estimate wrapping based on character width and screen width.
  */
 
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   TextStyle,
@@ -24,9 +24,17 @@ import {
   Platform,
   Dimensions,
   Linking,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
 } from 'react-native';
+import { ScrollView as GHScrollView } from 'react-native-gesture-handler';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
 import Markdown from 'react-native-markdown-display';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
+import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import * as Haptics from 'expo-haptics';
+import { Copy, X } from 'lucide-react-native';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -34,6 +42,7 @@ import {
 } from '@/lib/utils/live-markdown-config';
 import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -47,6 +56,15 @@ const MARKDOWN_FONT_SIZE = 16;
 
 // Debug mode to see height calculations
 let DEBUG_HEIGHTS = false;
+
+// Config: Disable special block rendering (tables, code blocks, separators)
+// When true, everything renders as plain markdown without splitting
+let DISABLE_BLOCK_SPLITTING = true;
+
+export function setBlockSplitting(enabled: boolean) {
+  DISABLE_BLOCK_SPLITTING = !enabled;
+  console.log(`[MD] Block splitting ${enabled ? 'enabled' : 'disabled'}`);
+}
 
 // Runtime tunable values  
 // CHAR_WIDTH_FACTOR: Lower = more chars per line = fewer visual lines = shorter (less over-estimation)
@@ -221,6 +239,102 @@ const createAndroidMarkdownRules = (isDark: boolean) => ({
       </RNText>
     </View>
   ),
+  // Table - horizontal scroll with rounded border (using gesture handler ScrollView)
+  table: (node: any, children: any, parent: any, styles: any) => (
+    <View
+      key={node.key}
+      style={{
+        marginVertical: 8,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: isDark ? '#3f3f46' : '#e4e4e7',
+        overflow: 'hidden',
+      }}
+    >
+      <GHScrollView 
+        horizontal={true} 
+        showsHorizontalScrollIndicator={true}
+      >
+        <View>
+          {children}
+        </View>
+      </GHScrollView>
+    </View>
+  ),
+  // Table header section
+  thead: (node: any, children: any, parent: any, styles: any) => (
+    <View 
+      key={node.key} 
+      style={{ backgroundColor: isDark ? '#27272a' : '#f4f4f5' }}
+    >
+      {children}
+    </View>
+  ),
+  // Table body
+  tbody: (node: any, children: any, parent: any, styles: any) => (
+    <View key={node.key}>
+      {children}
+    </View>
+  ),
+  // Table row - horizontal layout
+  tr: (node: any, children: any, parent: any, styles: any) => (
+    <View 
+      key={node.key} 
+      style={{
+        flexDirection: 'row',
+        borderBottomWidth: 1,
+        borderBottomColor: isDark ? '#3f3f46' : '#e4e4e7',
+      }}
+    >
+      {children}
+    </View>
+  ),
+  // Table header cell
+  th: (node: any, children: any, parent: any, styles: any) => (
+    <View 
+      key={node.key} 
+      style={{
+        width: 140,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+      }}
+    >
+      <RNText 
+        style={{
+          fontFamily: 'Roobert-SemiBold',
+          fontSize: 12,
+          textTransform: 'uppercase',
+          letterSpacing: 0.5,
+          color: isDark ? '#fafafa' : '#18181b',
+        }}
+        selectable={true}
+      >
+        {children}
+      </RNText>
+    </View>
+  ),
+  // Table data cell
+  td: (node: any, children: any, parent: any, styles: any) => (
+    <View 
+      key={node.key} 
+      style={{
+        width: 140,
+        paddingVertical: 12,
+        paddingHorizontal: 14,
+      }}
+    >
+      <RNText 
+        style={{
+          fontFamily: 'Roobert-Regular',
+          fontSize: 14,
+          color: isDark ? '#fafafa' : '#18181b',
+        }}
+        selectable={true}
+      >
+        {children}
+      </RNText>
+    </View>
+  ),
 });
 
 /**
@@ -264,6 +378,20 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     fontSize: 14,
     paddingHorizontal: 4,
     borderRadius: 4,
+    backgroundColor: isDark ? '#27272a' : '#f4f4f5',
+    color: isDark ? '#fca5a5' : '#dc2626',
+  },
+  fence: {
+    backgroundColor: isDark ? '#1e1e20' : '#f4f4f5',
+    borderRadius: 8,
+    padding: 12,
+  },
+  code_block: {
+    backgroundColor: isDark ? '#1e1e20' : '#f4f4f5',
+    borderRadius: 8,
+    padding: 12,
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+    fontSize: 14,
   },
   heading1: {
     fontSize: 26,
@@ -285,6 +413,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     borderLeftColor: isDark ? '#a1a1aa' : '#71717a',
     paddingLeft: 12,
     marginLeft: 0,
+    backgroundColor: 'transparent',
   },
   bullet_list: {
     marginVertical: 4,
@@ -301,13 +430,49 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
     backgroundColor: isDark ? '#3f3f46' : '#e4e4e7',
     marginVertical: 12,
   },
+  // Table styles - proper column widths
+  table: {
+    borderWidth: 0,
+  },
+  thead: {
+    backgroundColor: isDark ? '#27272a' : '#f4f4f5',
+  },
+  tbody: {
+    backgroundColor: 'transparent',
+  },
+  tr: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: isDark ? '#3f3f46' : '#e4e4e7',
+  },
+  th: {
+    width: 140,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontFamily: 'Roobert-SemiBold',
+    fontWeight: '600',
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    color: isDark ? '#fafafa' : '#18181b',
+    textAlign: 'left',
+  },
+  td: {
+    width: 140,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    fontFamily: 'Roobert-Regular',
+    fontSize: 14,
+    color: isDark ? '#fafafa' : '#18181b',
+    textAlign: 'left',
+  },
 });
 
 /**
- * Android-specific markdown renderer using react-native-markdown-display
+ * Cross-platform markdown renderer using react-native-markdown-display
  * with selectable text support
  */
-function AndroidMarkdownText({
+function CrossPlatformMarkdownText({
   text,
   isDark,
   style,
@@ -329,6 +494,183 @@ function AndroidMarkdownText({
     </Markdown>
   );
 }
+
+// Keep old name as alias for backwards compatibility
+const AndroidMarkdownText = CrossPlatformMarkdownText;
+
+/**
+ * iOS Text Selection Modal
+ * Opens on double-tap to allow text selection from raw content
+ * Uses BottomSheetModal for consistent styling with rest of app
+ */
+interface TextSelectionModalProps {
+  sheetRef: React.RefObject<BottomSheetModal>;
+  text: string;
+  isDark: boolean;
+  onDismiss: () => void;
+}
+
+function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelectionModalProps) {
+  const insets = useSafeAreaInsets();
+  const snapPoints = useMemo(() => ['70%', '95%'], []);
+  const [copied, setCopied] = useState(false);
+  const [currentSnapIndex, setCurrentSnapIndex] = useState(0);
+  const screenHeight = Dimensions.get('window').height;
+  
+  // Calculate available height based on current snap point
+  const snapPercent = currentSnapIndex === 1 ? 0.95 : 0.70;
+  const textInputHeight = screenHeight * snapPercent - 100 - insets.bottom;
+
+  const handleSheetChange = useCallback((index: number) => {
+    if (index >= 0) {
+      setCurrentSnapIndex(index);
+    }
+  }, []);
+
+  const colors = {
+    bg: isDark ? '#161618' : '#FFFFFF',
+    text: isDark ? '#f8f8f8' : '#121215',
+    muted: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+    card: isDark ? '#1e1e20' : '#f5f5f5',
+  };
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        disappearsOnIndex={-1}
+        appearsOnIndex={0}
+        opacity={0.5}
+        pressBehavior="close"
+      />
+    ),
+    []
+  );
+
+  const handleCopyAll = useCallback(async () => {
+    try {
+      await Clipboard.setStringAsync(text);
+      setCopied(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  }, [text]);
+
+  return (
+    <BottomSheetModal
+      ref={sheetRef}
+      snapPoints={snapPoints}
+      index={0}
+      enablePanDownToClose
+      enableDynamicSizing={false}
+      onChange={handleSheetChange}
+      onDismiss={onDismiss}
+      backdropComponent={renderBackdrop}
+      backgroundStyle={{
+        backgroundColor: colors.bg,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
+      }}
+      handleIndicatorStyle={{
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+        marginTop: 8,
+      }}
+      style={{
+        zIndex: 999,
+        elevation: Platform.OS === 'android' ? 50 : undefined,
+      }}
+    >
+      <BottomSheetView style={{ flex: 1 }}>
+        {/* Header - fixed at top */}
+        <View style={[drawerStyles.header, { paddingHorizontal: 24 }]}>
+          <RNText style={[drawerStyles.title, { color: colors.text }]}>
+            Select Text
+          </RNText>
+          <BottomSheetTouchable 
+            onPress={handleCopyAll} 
+            style={[drawerStyles.copyButton, { 
+              backgroundColor: 'transparent',
+              borderColor: isDark ? 'rgba(255,255,255,0.15)' : 'rgba(0,0,0,0.1)',
+            }]}
+          >
+            <Copy size={16} color={colors.text} strokeWidth={2} />
+            <RNText style={[drawerStyles.copyButtonText, { color: colors.text }]}>
+              {copied ? 'Copied!' : 'Copy All'}
+            </RNText>
+          </BottomSheetTouchable>
+        </View>
+
+        {/* Hint */}
+        <RNText style={[drawerStyles.hint, { color: colors.muted, paddingHorizontal: 24 }]}>
+          Tap and hold text to select
+        </RNText>
+
+        {/* Scrollable + selectable using Expensify MarkdownTextInput */}
+        <View style={{ paddingHorizontal: 24 }}>
+          <MarkdownTextInput
+            value={text}
+            onChangeText={() => {}}
+            parser={markdownParser}
+            markdownStyle={isDark ? darkMarkdownStyle : lightMarkdownStyle}
+            editable={false}
+            multiline={true}
+            scrollEnabled={true}
+            style={[
+              drawerStyles.textContent, 
+              { 
+                height: textInputHeight,
+                color: colors.text,
+                textAlignVertical: 'top',
+              }
+            ]}
+          />
+        </View>
+      </BottomSheetView>
+    </BottomSheetModal>
+  );
+}
+
+const drawerStyles = StyleSheet.create({
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  title: {
+    fontSize: 20,
+    fontFamily: 'Roobert-SemiBold',
+  },
+  hint: {
+    fontSize: 13,
+    fontFamily: 'Roobert-Regular',
+    marginBottom: 16,
+  },
+  copyButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+  },
+  copyButtonText: {
+    fontSize: 14,
+    fontFamily: 'Roobert-Medium',
+  },
+  textContent: {
+    fontSize: 16,
+    lineHeight: 26,
+    fontFamily: 'Roobert-Regular',
+  },
+});
 
 /**
  * Check if text contains markdown tables
@@ -723,9 +1065,12 @@ function MeasuredMarkdownInput({
 }
 
 /**
- * Render markdown - simplified approach without splitting by links
- * Uses MeasuredMarkdownInput for iOS (accurate height-constrained text)
- * Uses AndroidMarkdownText for Android (react-native-markdown-display with selectable text)
+ * Render markdown - uses react-native-markdown-display for both platforms
+ * On iOS: double-tap opens text selection modal
+ * On Android: text is directly selectable
+ * 
+ * Note: MeasuredMarkdownInput (expensify library) is kept but not used by default.
+ * It can be enabled for iOS if needed for specific use cases.
  */
 function MarkdownWithLinkHandling({
   text,
@@ -738,22 +1083,43 @@ function MarkdownWithLinkHandling({
   style?: TextStyle;
   needsSpacing?: boolean;
 }) {
+  const bottomSheetRef = useRef<BottomSheetModal>(null);
+  const lastTapRef = useRef<number>(0);
   const blocks = useMemo(() => splitIntoBlocks(text), [text]);
+  const hasAnySeparators = blocks.some((b) => b.type === 'separator');
 
-  // Android: Use react-native-markdown-display with selectable text
-  if (Platform.OS === 'android') {
-    const hasAnySeparators = blocks.some((b) => b.type === 'separator');
-    
+  // iOS: Double tap opens selection modal
+  const handlePress = useCallback(() => {
+    if (Platform.OS === 'ios') {
+      const now = Date.now();
+      const DOUBLE_TAP_DELAY = 300;
+      
+      if (now - lastTapRef.current < DOUBLE_TAP_DELAY) {
+        // Double tap detected
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        bottomSheetRef.current?.present();
+        lastTapRef.current = 0; // Reset
+      } else {
+        lastTapRef.current = now;
+      }
+    }
+  }, []);
+
+  const handleDismiss = useCallback(() => {
+    // Modal dismissed
+  }, []);
+
+  const renderContent = () => {
     if (!hasAnySeparators) {
       return (
-        <View style={needsSpacing && styles.partSpacing}>
-          <AndroidMarkdownText text={text} isDark={isDark} style={style} />
+        <View style={needsSpacing ? styles.partSpacing : undefined}>
+          <CrossPlatformMarkdownText text={text} isDark={isDark} style={style} />
         </View>
       );
     }
 
     return (
-      <View style={needsSpacing && styles.partSpacing}>
+      <View style={needsSpacing ? styles.partSpacing : undefined}>
         {blocks.map((block, idx) => {
           if (!block.content.trim() && block.type !== 'separator') return null;
 
@@ -762,44 +1128,37 @@ function MarkdownWithLinkHandling({
           } else {
             return (
               <View key={`txt-${idx}`}>
-                <AndroidMarkdownText text={block.content} isDark={isDark} style={style} />
+                <CrossPlatformMarkdownText text={block.content} isDark={isDark} style={style} />
               </View>
             );
           }
         })}
       </View>
     );
-  }
+  };
 
-  // iOS: Use MeasuredMarkdownInput (expensify library)
-  const hasAnySeparators = blocks.some((b) => b.type === 'separator');
-
-  if (!hasAnySeparators) {
+  // On iOS: wrap in TouchableOpacity for double-tap detection (no visual feedback)
+  // On Android: just render content directly (text is natively selectable)
+  if (Platform.OS === 'ios') {
     return (
-      <View style={needsSpacing && styles.partSpacing} pointerEvents="box-none">
-        <MeasuredMarkdownInput text={text} isDark={isDark} style={style} />
-      </View>
+      <>
+        <TouchableOpacity 
+          onPress={handlePress} 
+          activeOpacity={1}
+        >
+          {renderContent()}
+        </TouchableOpacity>
+        <TextSelectionModal
+          sheetRef={bottomSheetRef}
+          text={text}
+          isDark={isDark}
+          onDismiss={handleDismiss}
+        />
+      </>
     );
   }
 
-  // Render blocks with separators
-  return (
-    <View style={needsSpacing && styles.partSpacing}>
-      {blocks.map((block, idx) => {
-        if (!block.content.trim() && block.type !== 'separator') return null;
-
-        if (block.type === 'separator') {
-          return <Separator key={`sep-${idx}`} isDark={isDark} />;
-        } else {
-          return (
-            <View key={`txt-${idx}`} pointerEvents="box-none">
-              <MeasuredMarkdownInput text={block.content} isDark={isDark} style={style} />
-            </View>
-          );
-        }
-      })}
-    </View>
-  );
+  return renderContent();
 }
 
 /**
@@ -823,6 +1182,11 @@ export const SelectableMarkdownText: React.FC<SelectableMarkdownTextProps> = ({
 
   // Split content by code blocks and tables
   const contentParts = useMemo(() => {
+    // If block splitting is disabled, render everything as plain markdown
+    if (DISABLE_BLOCK_SPLITTING) {
+      return [{ type: 'markdown', content: text }];
+    }
+    
     if (!hasMarkdownTable(text) && !hasCodeBlocks(text)) {
       return [{ type: 'markdown', content: text }];
     }
