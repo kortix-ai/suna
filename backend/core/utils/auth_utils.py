@@ -607,7 +607,7 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
             t.thread_id,
             t.account_id,
             p.is_public as project_is_public,
-            COALESCE(ur.role, '') as user_role,
+            COALESCE(ur.role::text, '') as user_role,
             CASE WHEN au.user_id IS NOT NULL THEN true ELSE false END as is_team_member
         FROM threads t
         LEFT JOIN projects p ON t.project_id = p.project_id
@@ -830,7 +830,7 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
         p.sandbox_resource_id,
         p.created_at as project_created_at,
         p.updated_at as project_updated_at,
-        COALESCE(ur.role, '') as user_role,
+        COALESCE(ur.role::text, '') as user_role,
         CASE WHEN au_resource.user_id IS NOT NULL THEN true ELSE false END as is_resource_team_member,
         CASE WHEN au_project.user_id IS NOT NULL THEN true ELSE false END as is_project_team_member
     FROM resources r
@@ -949,7 +949,7 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
         p.sandbox_resource_id,
         p.created_at as project_created_at,
         p.updated_at as project_updated_at,
-        COALESCE(ur.role, '') as user_role,
+        COALESCE(ur.role::text, '') as user_role,
         CASE WHEN au_resource.user_id IS NOT NULL THEN true ELSE false END as is_resource_team_member,
         CASE WHEN au_project.user_id IS NOT NULL THEN true ELSE false END as is_project_team_member
     FROM resources r
