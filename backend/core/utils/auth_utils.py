@@ -1,6 +1,6 @@
 import hmac
 from fastapi import HTTPException, Request, Header
-from typing import Optional
+from typing import Optional, Dict
 import jwt
 from jwt.exceptions import PyJWTError
 from core.utils.logger import structlog
@@ -8,11 +8,117 @@ from core.utils.config import config
 from core.services.supabase import DBConnection
 from core.services import redis
 from core.utils.logger import logger, structlog
+import httpx
+import json
+import base64
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.backends import default_backend
+import time
 
 
 def _constant_time_compare(a: str, b: str) -> bool:
     """Constant-time string comparison to prevent timing attacks."""
     return hmac.compare_digest(a.encode('utf-8'), b.encode('utf-8'))
+
+
+# JWKS cache for ES256 tokens
+_jwks_cache: Optional[Dict] = None
+_jwks_cache_time: float = 0
+_jwks_cache_ttl: int = 3600  # Cache for 1 hour
+
+
+async def _fetch_jwks() -> Dict:
+    """
+    Fetch JWKS (JSON Web Key Set) from Supabase for ES256 token verification.
+    Caches the result to avoid excessive API calls.
+    
+    Supabase's JWKS endpoint requires the anon key in the 'apikey' header.
+    """
+    global _jwks_cache, _jwks_cache_time
+    
+    # Return cached JWKS if still valid
+    if _jwks_cache and (time.time() - _jwks_cache_time) < _jwks_cache_ttl:
+        return _jwks_cache
+    
+    supabase_url = config.SUPABASE_URL
+    supabase_anon_key = config.SUPABASE_ANON_KEY
+    
+    if not supabase_url:
+        raise ValueError("SUPABASE_URL not configured")
+    if not supabase_anon_key:
+        raise ValueError("SUPABASE_ANON_KEY not configured")
+    
+    # Supabase JWKS endpoint (standard OAuth2/OIDC .well-known path)
+    jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            # Supabase requires the anon key in the 'apikey' header
+            response = await client.get(
+                jwks_url,
+                headers={
+                    "apikey": supabase_anon_key,
+                    "Accept": "application/json"
+                }
+            )
+            response.raise_for_status()
+            jwks = response.json()
+            
+            # Cache the result
+            _jwks_cache = jwks
+            _jwks_cache_time = time.time()
+            
+            logger.debug(f"Fetched JWKS from {jwks_url}")
+            return jwks
+    except Exception as e:
+        logger.error(f"Failed to fetch JWKS from {jwks_url}: {e}")
+        # Return cached JWKS if available, even if expired
+        if _jwks_cache:
+            logger.warning("Using expired JWKS cache due to fetch failure")
+            return _jwks_cache
+        raise
+
+
+def _get_public_key_from_jwks(jwks: Dict, kid: str):
+    """
+    Extract the public key from JWKS for a given key ID (kid).
+    Converts JWK format to PEM format for PyJWT.
+    """
+    for key in jwks.get('keys', []):
+        if key.get('kid') == kid:
+            # Convert JWK to PEM format
+            if key.get('kty') == 'EC':
+                # Extract curve and coordinates
+                crv = key.get('crv')
+                x = key.get('x')
+                y = key.get('y')
+                
+                if crv != 'P-256':
+                    raise ValueError(f"Unsupported curve: {crv}")
+                
+                # Decode base64url encoded coordinates
+                x_bytes = base64.urlsafe_b64decode(x + '==')
+                y_bytes = base64.urlsafe_b64decode(y + '==')
+                
+                # Create public key from coordinates
+                public_numbers = ec.EllipticCurvePublicNumbers(
+                    int.from_bytes(x_bytes, 'big'),
+                    int.from_bytes(y_bytes, 'big'),
+                    ec.SECP256R1()
+                )
+                public_key = public_numbers.public_key(default_backend())
+                
+                # Serialize to PEM format
+                pem = public_key.public_bytes(
+                    encoding=serialization.Encoding.PEM,
+                    format=serialization.PublicFormat.SubjectPublicKeyInfo
+                )
+                return pem.decode('utf-8')
+            else:
+                raise ValueError(f"Unsupported key type: {key.get('kty')}")
+    
+    raise ValueError(f"Key ID {kid} not found in JWKS")
 
 
 async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
@@ -38,12 +144,150 @@ async def verify_admin_api_key(x_admin_api_key: Optional[str] = Header(None)):
     return True
 
 
+async def _decode_jwt_with_verification_async(token: str) -> dict:
+    """
+    Decode and verify JWT token using Supabase JWT secret or JWKS.
+    
+    Supports both HS256 (legacy) and ES256 (new JWT Signing Keys) algorithms.
+    This function validates the JWT signature to prevent token forgery.
+    """
+    # First, decode header without verification to check algorithm
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+        algorithm = unverified_header.get('alg')
+        kid = unverified_header.get('kid')
+    except Exception as e:
+        logger.warning(f"Failed to decode JWT header: {e}")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token format",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # Try ES256 first (new Supabase JWT Signing Keys)
+    if algorithm == 'ES256' and kid:
+        try:
+            jwks = await _fetch_jwks()
+            public_key = _get_public_key_from_jwks(jwks, kid)
+            
+            return jwt.decode(
+                token,
+                public_key,
+                algorithms=["ES256"],
+                options={
+                    "verify_signature": True,
+                    "verify_exp": True,
+                    "verify_aud": False,  # Supabase doesn't always set audience
+                    "verify_iss": False,  # Issuer varies by project
+                }
+            )
+        except ValueError as e:
+            logger.warning(f"JWKS error: {e}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token signature",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=401,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        except jwt.InvalidSignatureError:
+            logger.warning("JWT signature verification failed (ES256) - possible token forgery attempt")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token signature",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        except PyJWTError as e:
+            logger.warning(f"JWT decode error (ES256): {e}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+    
+    # Fallback to HS256 (legacy Supabase JWT secret)
+    if algorithm == 'HS256':
+        jwt_secret = config.SUPABASE_JWT_SECRET
+        
+        if not jwt_secret:
+            logger.error("SUPABASE_JWT_SECRET is not configured - JWT verification disabled!")
+            raise HTTPException(
+                status_code=500,
+                detail="Server authentication configuration error"
+            )
+        
+        try:
+            return jwt.decode(
+                token,
+                jwt_secret,
+                algorithms=["HS256"],
+                options={
+                    "verify_signature": True,
+                    "verify_exp": True,
+                    "verify_aud": False,  # Supabase doesn't always set audience
+                    "verify_iss": False,  # Issuer varies by project
+                }
+            )
+        except jwt.ExpiredSignatureError:
+            raise HTTPException(
+                status_code=401,
+                detail="Token has expired",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        except jwt.InvalidSignatureError:
+            logger.warning("JWT signature verification failed (HS256) - possible token forgery attempt")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token signature",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+        except PyJWTError as e:
+            logger.warning(f"JWT decode error (HS256): {e}")
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid token",
+                headers={"WWW-Authenticate": "Bearer"}
+            )
+    
+    # Unsupported algorithm
+    logger.warning(f"Unsupported JWT algorithm: {algorithm}")
+    raise HTTPException(
+        status_code=401,
+        detail=f"Token uses unsupported algorithm: {algorithm}. Supported: HS256, ES256.",
+        headers={"WWW-Authenticate": "Bearer"}
+    )
+
+
 def _decode_jwt_with_verification(token: str) -> dict:
     """
-    Decode and verify JWT token using Supabase JWT secret.
-    
-    This function properly validates the JWT signature to prevent token forgery.
+    Synchronous wrapper for JWT verification.
+    For ES256 tokens, this will fail and the caller should use the async version.
+    For HS256 tokens, this works synchronously.
     """
+    # Try to decode header to check algorithm
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+        algorithm = unverified_header.get('alg')
+    except Exception:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid token format",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # If ES256, we need async - raise error to force async path
+    if algorithm == 'ES256':
+        raise HTTPException(
+            status_code=500,
+            detail="ES256 tokens require async verification. Use async endpoint.",
+            headers={"WWW-Authenticate": "Bearer"}
+        )
+    
+    # For HS256, proceed synchronously
     jwt_secret = config.SUPABASE_JWT_SECRET
     
     if not jwt_secret:
@@ -54,8 +298,6 @@ def _decode_jwt_with_verification(token: str) -> dict:
         )
     
     try:
-        # Verify signature with the Supabase JWT secret
-        # Supabase uses HS256 algorithm by default
         return jwt.decode(
             token,
             jwt_secret,
@@ -63,8 +305,8 @@ def _decode_jwt_with_verification(token: str) -> dict:
             options={
                 "verify_signature": True,
                 "verify_exp": True,
-                "verify_aud": False,  # Supabase doesn't always set audience
-                "verify_iss": False,  # Issuer varies by project
+                "verify_aud": False,
+                "verify_iss": False,
             }
         )
     except jwt.ExpiredSignatureError:
@@ -81,7 +323,7 @@ def _decode_jwt_with_verification(token: str) -> dict:
             headers={"WWW-Authenticate": "Bearer"}
         )
     except PyJWTError as e:
-        logger.warning(f"JWT decode error: {str(e)}")
+        logger.warning(f"JWT decode error: {e}")
         raise HTTPException(
             status_code=401,
             detail="Invalid token",
@@ -217,7 +459,8 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
     token = auth_header.split(' ')[1]
     
     try:
-        payload = _decode_jwt_with_verification(token)
+        # Use async version to support both HS256 and ES256
+        payload = await _decode_jwt_with_verification_async(token)
         user_id = payload.get('sub')
         
         if not user_id:
@@ -274,7 +517,7 @@ async def get_user_id_from_stream_auth(
         # Try token query param (for SSE/EventSource which can't set headers)
         if token:
             try:
-                payload = _decode_jwt_with_verification(token)
+                payload = await _decode_jwt_with_verification_async(token)
                 user_id = payload.get('sub')
                 if user_id:
                     structlog.contextvars.bind_contextvars(
@@ -310,7 +553,7 @@ async def get_optional_user_id(request: Request) -> Optional[str]:
     token = auth_header.split(' ')[1]
     
     try:
-        payload = _decode_jwt_with_verification(token)
+        payload = await _decode_jwt_with_verification_async(token)
         
         user_id = payload.get('sub')
         if user_id:
@@ -356,6 +599,7 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
     try:
         # Single optimized query that fetches thread + project + access info in one round-trip
         # This replaces 3-4 sequential Supabase API calls with a single SQL query
+        # Use NULL instead of empty string for user_id to avoid UUID type errors
         sql = """
         SELECT 
             t.thread_id,
@@ -369,7 +613,8 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
         LEFT JOIN basejump.account_user au ON au.account_id = t.account_id AND au.user_id = :user_id
         WHERE t.thread_id = :thread_id
         """
-        result = await execute_one(sql, {"thread_id": thread_id, "user_id": user_id or ''})
+        # Use None instead of empty string to properly handle NULL in SQL
+        result = await execute_one(sql, {"thread_id": thread_id, "user_id": user_id})
         
         if not result:
             raise HTTPException(status_code=404, detail="Thread not found")
@@ -714,7 +959,8 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
     WHERE r.external_id = :sandbox_id AND r.type = 'sandbox'
     """
     
-    result = await execute_one(sql, {"sandbox_id": sandbox_id, "user_id": user_id or ''})
+    # Use None instead of empty string to properly handle NULL in SQL
+    result = await execute_one(sql, {"sandbox_id": sandbox_id, "user_id": user_id})
     
     if not result:
         raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox")

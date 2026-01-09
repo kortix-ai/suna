@@ -8,6 +8,7 @@ import re
 import json
 import secrets
 import base64
+from urllib.parse import quote, urlparse, urlunparse
 
 # --- Constants ---
 IS_WINDOWS = platform.system() == "Windows"
@@ -314,6 +315,110 @@ def generate_webhook_secret():
     """Generates a secure shared secret for trigger webhooks."""
     # 32 random bytes as hex (64 hex chars)
     return secrets.token_hex(32)
+
+
+def validate_database_url(url, allow_empty=False):
+    """Validates a PostgreSQL database URL format."""
+    if allow_empty and not url:
+        return True
+    
+    if not url:
+        return False
+    
+    # Must start with postgresql:// or postgres://
+    if not (url.startswith("postgresql://") or url.startswith("postgres://")):
+        return False
+    
+    try:
+        # Parse the URL to validate structure
+        parsed = urlparse(url)
+        
+        # Check required components
+        if not parsed.scheme or not parsed.hostname:
+            return False
+        
+        # Check for valid port if specified
+        if parsed.port is not None and (parsed.port < 1 or parsed.port > 65535):
+            return False
+        
+        # Check for database name in path
+        if not parsed.path or parsed.path == "/":
+            return False
+        
+        return True
+    except Exception:
+        return False
+
+
+def normalize_database_url(url):
+    """
+    Normalizes a database URL:
+    - Converts postgres:// to postgresql://
+    - Ensures password is properly URL-encoded
+    - Validates structure
+    """
+    if not url:
+        return url
+    
+    # Convert postgres:// to postgresql://
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql://", 1)
+    
+    try:
+        parsed = urlparse(url)
+        
+        # URL-encode the password if present
+        if parsed.password:
+            # Reconstruct with URL-encoded password
+            encoded_password = quote(parsed.password, safe='')
+            netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            
+            normalized = urlunparse((
+                parsed.scheme,
+                netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+            return normalized
+        
+        return url
+    except Exception as e:
+        # If parsing fails, return original (will be caught by validation)
+        return url
+
+
+def construct_database_url(project_ref, password, host, port=5432, dbname="postgres", use_pooler=False):
+    """
+    Constructs a properly formatted DATABASE_URL with URL-encoded password.
+    
+    Args:
+        project_ref: Supabase project reference
+        password: Database password (will be URL-encoded)
+        host: Database hostname
+        port: Database port (default: 5432)
+        dbname: Database name (default: postgres)
+        use_pooler: If True, uses pooler format with postgres.[ref] username
+    
+    Returns:
+        Properly formatted DATABASE_URL string
+    """
+    # URL-encode the password to handle special characters
+    encoded_password = quote(password, safe='')
+    
+    # Determine username based on connection type
+    if use_pooler:
+        username = f"postgres.{project_ref}"
+    else:
+        username = "postgres"
+    
+    # Construct the URL
+    database_url = f"postgresql://{username}:{encoded_password}@{host}:{port}/{dbname}"
+    
+    return database_url
 
 
 # --- Main Setup Class ---
@@ -1015,29 +1120,119 @@ class SetupWizard:
         print_info("You can provide either:")
         print_info("  1. DATABASE_URL (full connection string) - Recommended")
         print_info("     Format: postgresql://postgres.[project-ref]:[password]@[host]:[port]/postgres")
-        print_info("     Example: postgresql://postgres.lqpzbjelskdqxkvnkfbu:password@db.lqpzbjelskdqxkvnkfbu.supabase.co:5432/postgres")
+        print_info("     Example (Direct): postgresql://postgres.lqpzbjelskdqxkvnkfbu:password@db.lqpzbjelskdqxkvnkfbu.supabase.co:5432/postgres")
+        print_info("     Example (Pooler): postgresql://postgres.lqpzbjelskdqxkvnkfbu:password@aws-1-eu-west-1.pooler.supabase.com:5432/postgres")
+        print_info("     Note: Special characters in password (like @, :, /) will be automatically URL-encoded")
         print_info("  2. POSTGRES_PASSWORD (database password) - Alternative")
-        print_info("Find these in: Project Settings > Database")
+        print_info("     We'll construct the URL automatically (requires project ref and host info)")
+        print_info("Find these in: Project Settings > Database > Connection string")
         
         database_url = self._get_input(
             "Enter your DATABASE_URL (or press Enter to skip and provide password instead): ",
-            lambda x, allow_empty=True: allow_empty or (x.startswith("postgresql://") or x.startswith("postgres://")),
-            "Invalid URL format. Must start with postgresql:// or postgres://",
+            lambda x, allow_empty=True: allow_empty or validate_database_url(x),
+            "Invalid URL format. Must be a valid postgresql:// URL with host, port, and database name.",
             allow_empty=True,
         )
         
         if database_url:
-            self.env_vars["supabase"]["DATABASE_URL"] = database_url
-            print_success("DATABASE_URL saved.")
+            # Normalize the URL (URL-encode password, convert postgres:// to postgresql://)
+            normalized_url = normalize_database_url(database_url)
+            
+            # Validate the normalized URL
+            if not validate_database_url(normalized_url):
+                print_error("The DATABASE_URL format is invalid. Please check:")
+                print_error("  - Must start with postgresql:// or postgres://")
+                print_error("  - Must include hostname, port, and database name")
+                print_error("  - Format: postgresql://[username]:[password]@[host]:[port]/[database]")
+                sys.exit(1)
+            
+            self.env_vars["supabase"]["DATABASE_URL"] = normalized_url
+            print_success("DATABASE_URL saved and normalized (password URL-encoded if needed).")
+            
+            # Show masked version for confirmation
+            try:
+                parsed = urlparse(normalized_url)
+                if parsed.password:
+                    masked = normalized_url.replace(parsed.password, "*" * min(len(parsed.password), 8), 1)
+                    print_info(f"Connection: {parsed.scheme}://{parsed.username}:***@{parsed.hostname}:{parsed.port}{parsed.path}")
+            except Exception:
+                pass
         else:
-            # Fallback to password
+            # Fallback to password - construct URL automatically
+            print_info("\nConstructing DATABASE_URL from components...")
+            print_info("We'll need a few more details to build the connection string.")
+            
             postgres_password = self._get_input(
                 "Enter your Supabase database password: ",
                 validate_api_key,
                 "Invalid password format. It should be at least 10 characters.",
             )
-            self.env_vars["supabase"]["POSTGRES_PASSWORD"] = postgres_password
-            print_success("Database password saved.")
+            
+            # Ask for connection type
+            print_info("\nConnection Type:")
+            print_info("  [1] Direct Connection (port 5432) - Recommended for most cases")
+            print_info("  [2] Session Pooler (port 5432) - For connection pooling")
+            print_info("  [3] Transaction Pooler (port 6543) - For Supavisor")
+            
+            connection_type = input("Select connection type (1-3, default: 1): ").strip() or "1"
+            
+            if connection_type == "2":
+                # Session pooler
+                print_info("Using Session Pooler format")
+                host = self._get_input(
+                    f"Enter pooler hostname (e.g., aws-1-eu-west-1.pooler.supabase.com): ",
+                    lambda x: bool(x and "." in x),
+                    "Invalid hostname format.",
+                )
+                port = 5432
+                use_pooler = True
+            elif connection_type == "3":
+                # Transaction pooler
+                print_info("Using Transaction Pooler (Supavisor) format")
+                host = self._get_input(
+                    f"Enter pooler hostname (e.g., aws-1-eu-west-1.pooler.supabase.com): ",
+                    lambda x: bool(x and "." in x),
+                    "Invalid hostname format.",
+                )
+                port = 6543
+                use_pooler = True
+            else:
+                # Direct connection
+                print_info("Using Direct Connection format")
+                host = self._get_input(
+                    f"Enter database hostname (e.g., db.{project_ref}.supabase.co): ",
+                    lambda x: bool(x and "." in x),
+                    "Invalid hostname format.",
+                    default_value=f"db.{project_ref}.supabase.co",
+                )
+                port_input = self._get_input(
+                    "Enter database port (default: 5432): ",
+                    lambda x, allow_empty=True: allow_empty or (x.isdigit() and 1 <= int(x) <= 65535),
+                    "Invalid port number. Must be between 1 and 65535.",
+                    allow_empty=True,
+                )
+                port = int(port_input) if port_input else 5432
+                use_pooler = False
+            
+            # Construct the DATABASE_URL with proper URL encoding
+            constructed_url = construct_database_url(
+                project_ref=project_ref,
+                password=postgres_password,
+                host=host,
+                port=port,
+                dbname="postgres",
+                use_pooler=use_pooler
+            )
+            
+            self.env_vars["supabase"]["DATABASE_URL"] = constructed_url
+            print_success("DATABASE_URL constructed and saved (password automatically URL-encoded).")
+            
+            # Show masked version for confirmation
+            try:
+                parsed = urlparse(constructed_url)
+                print_info(f"Connection: {parsed.scheme}://{parsed.username}:***@{parsed.hostname}:{parsed.port}{parsed.path}")
+            except Exception:
+                pass
         
         # Validate that all required Supabase configuration is present
         if not self.env_vars["supabase"]["SUPABASE_URL"]:
@@ -1059,6 +1254,47 @@ class SetupWizard:
             print_error("SUPABASE_JWT_SECRET is required for authentication security.")
             print_error("Without this, authentication will fail.")
             sys.exit(1)
+        
+        # Collect OPENAI_API_KEY - Required for background tasks (project naming, icon generation, etc.)
+        print_info("\n" + "="*60)
+        print_info("OpenAI API Key (Required for Background Tasks)")
+        print_info("="*60)
+        print_info("Background tasks require OpenAI API key for:")
+        print_info("  • Generating project names and icons")
+        print_info("  • Generating thread names")
+        print_info("  • Generating file names")
+        print_info("  • Agent setup and configuration")
+        print_info("\nThese tasks use 'openai/gpt-5-nano-2025-08-07' model.")
+        print_info("Get your API key from: https://platform.openai.com/api-keys")
+        print_warning("⚠️  This is MANDATORY - background tasks will fail without it!")
+        
+        # Check if already exists in llm section
+        existing_openai_key = self.env_vars["llm"].get("OPENAI_API_KEY", "")
+        
+        self.env_vars["llm"]["OPENAI_API_KEY"] = self._get_input(
+            "Enter your OpenAI API key (required): ",
+            validate_api_key,
+            "Invalid API key format. It should be at least 10 characters long (OpenAI keys typically start with 'sk-').",
+            default_value=existing_openai_key,
+        )
+        
+        if not self.env_vars["llm"]["OPENAI_API_KEY"]:
+            print_error("OPENAI_API_KEY is REQUIRED for background tasks.")
+            print_error("Without this, project naming, icon generation, and other background tasks will fail.")
+            print_error("Get your API key from: https://platform.openai.com/api-keys")
+            sys.exit(1)
+        
+        print_success("OpenAI API key saved for background tasks.")
+        
+        # Explain Bedrock configuration for cloud Supabase users
+        print_info("\n" + "="*60)
+        print_info("LLM Model Configuration")
+        print_info("="*60)
+        print_info("Default model provider: AWS Bedrock")
+        print_info("  • USE_BEDROCK_FOR_LOCAL=true will be set in backend/.env")
+        print_info("  • All LLM calls will use AWS Bedrock (Claude models)")
+        print_info("  • Make sure your AWS credentials are configured")
+        print_info("\nTo use a different LLM provider, configure it in backend/.env after setup.")
         
         print_success("Supabase information saved.")
 
@@ -1570,15 +1806,31 @@ class SetupWizard:
         # Always use localhost for the base .env file
         supabase_url = self.env_vars["supabase"].get("SUPABASE_URL", "")
 
+        # Validate DATABASE_URL if provided (should already be normalized, but double-check)
+        database_url = self.env_vars["supabase"].get("DATABASE_URL", "")
+        if database_url:
+            # Ensure it's normalized (URL-encoded password, postgresql:// scheme)
+            database_url = normalize_database_url(database_url)
+            if not validate_database_url(database_url):
+                print_warning("DATABASE_URL format validation failed. Please check your connection string.")
+                print_warning("Expected format: postgresql://[username]:[password]@[host]:[port]/[database]")
+                # Don't exit - let user fix manually if needed
+        
+        # Determine if using cloud Supabase (indicates Bedrock usage)
+        is_cloud_supabase = self.env_vars["setup_method"] == "cloud"
+        
         backend_env = {
             "ENV_MODE": "local",
+            # Use Bedrock in LOCAL mode if using cloud Supabase (since cloud setup typically uses Bedrock)
+            "USE_BEDROCK_FOR_LOCAL": "true" if is_cloud_supabase else "false",
             # Backend only needs these Supabase variables
             "SUPABASE_URL": supabase_url,
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
             "SUPABASE_SERVICE_ROLE_KEY": self.env_vars["supabase"].get("SUPABASE_SERVICE_ROLE_KEY", ""),
             "SUPABASE_JWT_SECRET": self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", ""),
             # Database connection (required for cloud Supabase)
-            "DATABASE_URL": self.env_vars["supabase"].get("DATABASE_URL", ""),
+            # DATABASE_URL is normalized with URL-encoded password
+            "DATABASE_URL": database_url,
             "POSTGRES_PASSWORD": self.env_vars["supabase"].get("POSTGRES_PASSWORD", ""),
             "REDIS_HOST": redis_host,
             "REDIS_PORT": "6379",
@@ -1611,9 +1863,14 @@ class SetupWizard:
         with open(os.path.join("backend", ".env"), "w") as f:
             f.write(backend_env_content)
         print_success("Created backend/.env file with ENCRYPTION_KEY.")
+        
+        # Confirm Bedrock configuration if using cloud Supabase
+        if is_cloud_supabase:
+            print_info(f"  → USE_BEDROCK_FOR_LOCAL=true (Bedrock enabled for LOCAL mode)")
 
         # --- Frontend .env.local ---
-        # Always use localhost for base .env files - Docker override handled separately
+        # Always use localhost for base .env files
+        # For Docker Compose, a root .env file is also created (see below)
         frontend_supabase_url = self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"]
         backend_url = "http://localhost:8000/v1"
         
@@ -1653,6 +1910,28 @@ class SetupWizard:
         with open(os.path.join("apps", "mobile", ".env"), "w") as f:
             f.write(mobile_env_content)
         print_success("Created apps/mobile/.env file.")
+
+        # --- Root .env file for Docker Compose ---
+        # Docker Compose reads environment variables from a .env file in the project root
+        # This is only needed when using Docker Compose setup
+        if is_docker:
+            # Docker Compose needs NEXT_PUBLIC_* variables for frontend build args and runtime env
+            root_env = {
+                "NEXT_PUBLIC_BACKEND_URL": "http://localhost:8000/v1",
+                "NEXT_PUBLIC_URL": "http://localhost:3000",
+                "NEXT_PUBLIC_ENV_MODE": "LOCAL",
+                "NEXT_PUBLIC_SUPABASE_URL": frontend_supabase_url,
+                "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
+            }
+
+            root_env_content = "# Generated by Kortix Super Worker install script for Docker Compose\n"
+            root_env_content += "# This file is read by docker-compose.yaml to pass environment variables to containers\n\n"
+            for key, value in root_env.items():
+                root_env_content += f"{key}={value or ''}\n"
+
+            with open(".env", "w") as f:
+                f.write(root_env_content)
+            print_success("Created root .env file for Docker Compose.")
 
 
     def setup_supabase_database(self):
