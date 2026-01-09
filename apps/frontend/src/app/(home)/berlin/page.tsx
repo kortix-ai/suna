@@ -18,6 +18,9 @@ const SunaModesPanel = lazy(() =>
   import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
 
+// Mobile users are redirected at the edge by middleware (hyper-fast)
+// This page only renders for desktop users
+
 export default function BerlinPage() {
   const isMobile = useIsMobile();
   const [isSubmitting, setIsSubmitting] = useState(false);

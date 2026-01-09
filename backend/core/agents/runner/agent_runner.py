@@ -535,6 +535,10 @@ class AgentRunner:
         generation = self.config.trace.generation(name="thread_manager.run_thread") if self.config.trace else None
         
         try:
+            # Emit status before LLM call for debugging
+            await stream_status_message("llm_call", f"Starting LLM API call (turn {self.turn_number})...")
+            llm_call_start = time.time()
+            
             response = await self.thread_manager.run_thread(
                 thread_id=self.config.thread_id,
                 system_prompt=system_message,
@@ -575,12 +579,23 @@ class AgentRunner:
         last_tool_call = None
         agent_should_terminate = False
         error_detected = False
+        first_chunk_received = False
         
         try:
             if hasattr(response, '__aiter__') and not isinstance(response, dict):
                 async for chunk in response:
                     if cancellation_event and cancellation_event.is_set():
                         break
+                    
+                    # Emit status on first chunk (TTFT)
+                    if not first_chunk_received:
+                        first_chunk_received = True
+                        # Check if this is the special llm_ttft chunk from response_processor
+                        if isinstance(chunk, dict) and chunk.get('type') == 'llm_ttft':
+                            ttft = chunk.get('ttft_seconds', 0)
+                            await stream_status_message("llm_streaming", f"First token received (TTFT: {ttft:.2f}s)")
+                        else:
+                            await stream_status_message("llm_streaming", "LLM stream started")
                     
                     should_terminate, error, tool_call = self._process_chunk(chunk)
                     

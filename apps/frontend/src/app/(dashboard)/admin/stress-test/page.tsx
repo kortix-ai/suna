@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   Play,
   Square,
@@ -29,9 +30,8 @@ import { useStressTest, StressTestResult } from '@/hooks/admin/use-stress-test';
 import { cn } from '@/lib/utils';
 
 export default function AdminStressTestPage() {
-  const [numRequests, setNumRequests] = useState(5);
-  const [batchSize, setBatchSize] = useState(20);
-  const [measureTtft, setMeasureTtft] = useState(true);
+  const [numRequestsInput, setNumRequestsInput] = useState('5');
+  const numRequests = Math.min(200, Math.max(1, parseInt(numRequestsInput) || 5));
   
   const { state, runStressTest, cancelTest, resetTest } = useStressTest();
   
@@ -50,8 +50,7 @@ export default function AdminStressTestPage() {
   const handleStart = () => {
     runStressTest({
       num_requests: numRequests,
-      batch_size: batchSize,
-      measure_ttft: measureTtft,
+      measure_ttft: true,
     });
   };
 
@@ -86,7 +85,7 @@ export default function AdminStressTestPage() {
     const running = state.results.filter(r => r.status === 'running');
     const completed = state.results
       .filter(r => r.status === 'done' || r.status === 'error')
-      .sort((a, b) => (b.total_ttft || b.thread_creation_time || 0) - (a.total_ttft || a.thread_creation_time || 0));
+      .sort((a, b) => (b.total_ttft || b.request_time || 0) - (a.total_ttft || a.request_time || 0));
     
     const combined = [...running, ...completed.slice(0, Math.max(0, 20 - running.length))];
     return combined.sort((a, b) => a.request_id - b.request_id).slice(0, 20);
@@ -96,20 +95,6 @@ export default function AdminStressTestPage() {
   const getThreadUrl = (result: StressTestResult) => {
     if (!result.thread_id || !result.project_id) return null;
     return `/projects/${result.project_id}/thread/${result.thread_id}`;
-  };
-
-  // Format timing breakdown labels
-  const formatTimingLabel = (key: string): string => {
-    const labels: Record<string, string> = {
-      load_config: 'Load Config',
-      get_model: 'Get Model',
-      create_project: 'Create Project',
-      create_thread: 'Create Thread',
-      create_message: 'Create Message',
-      create_agent_run: 'Create Agent Run',
-      start_background_task: 'Start Background',
-    };
-    return labels[key] || key;
   };
 
   return (
@@ -152,17 +137,17 @@ export default function AdminStressTestPage() {
                     <div className="flex items-center gap-2 mb-1">
                       <span className="text-xs font-medium text-purple-600 dark:text-purple-400 w-32">Total TTFT</span>
                       <div className="flex-1 h-8 bg-purple-100 dark:bg-purple-500/20 border border-purple-300 dark:border-purple-500/40 rounded flex items-center justify-center">
-                        <span className="text-xs text-purple-700 dark:text-purple-300">Thread Creation + First Response</span>
+                        <span className="text-xs text-purple-700 dark:text-purple-300">Request Time + First Response</span>
                       </div>
                     </div>
                   </div>
                   
-                  {/* Thread Creation + First Response breakdown */}
+                  {/* Request Time + First Response breakdown */}
                   <div className="flex gap-1 mb-3">
                     <div className="w-32" />
-                    {/* Thread Creation */}
+                    {/* Request Time */}
                     <div className="flex-1 h-8 bg-blue-100 dark:bg-blue-500/20 border border-blue-300 dark:border-blue-500/40 rounded flex items-center justify-center">
-                      <span className="text-xs text-blue-700 dark:text-blue-300">Thread Creation</span>
+                      <span className="text-xs text-blue-700 dark:text-blue-300">Request Time</span>
                     </div>
                     {/* First Response */}
                     <div className="flex-1 h-8 bg-orange-100 dark:bg-orange-500/20 border border-orange-300 dark:border-orange-500/40 rounded flex items-center justify-center">
@@ -173,19 +158,19 @@ export default function AdminStressTestPage() {
                   {/* Detailed breakdown */}
                   <div className="flex gap-1 mb-4">
                     <div className="w-32" />
-                    {/* Thread Creation details */}
+                    {/* Request Time details */}
                     <div className="flex-1 flex gap-0.5">
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Config</span>
+                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">HTTP Call</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Project</span>
+                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Setup</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
                         <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Thread</span>
                       </div>
                       <div className="flex-1 h-6 bg-blue-200 dark:bg-blue-900/40 rounded-sm flex items-center justify-center border border-blue-300 dark:border-blue-800/50">
-                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Message</span>
+                        <span className="text-[10px] text-blue-700 dark:text-blue-300 truncate px-1">Agent</span>
                       </div>
                     </div>
                     {/* First Response details */}
@@ -203,8 +188,8 @@ export default function AdminStressTestPage() {
                   <div className="flex flex-wrap gap-4 pt-3 border-t border-border text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 rounded-sm bg-blue-400 dark:bg-blue-500/40 border border-blue-500 dark:border-blue-500/60" />
-                      <span className="text-muted-foreground">Thread Creation</span>
-                      <span className="text-blue-600 dark:text-blue-400 font-mono">DB operations</span>
+                      <span className="text-muted-foreground">Request Time</span>
+                      <span className="text-blue-600 dark:text-blue-400 font-mono">HTTP + setup</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 rounded-sm bg-orange-400 dark:bg-orange-500/40 border border-orange-500 dark:border-orange-500/60" />
@@ -229,7 +214,7 @@ export default function AdminStressTestPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div className="bg-muted/50 rounded-lg p-3 border border-border">
                   <p className="text-muted-foreground mb-1">Key Formula:</p>
-                  <p className="font-mono text-purple-600 dark:text-purple-400">Total TTFT = Thread Creation + First Response</p>
+                  <p className="font-mono text-purple-600 dark:text-purple-400">Total TTFT = Request Time + First Response</p>
                 </div>
                 <div className="bg-muted/50 rounded-lg p-3 border border-border">
                   <p className="text-muted-foreground mb-1">Agent Overhead:</p>
@@ -254,39 +239,19 @@ export default function AdminStressTestPage() {
                   type="number"
                   min={1}
                   max={200}
-                  value={numRequests}
-                  onChange={(e) => setNumRequests(Math.min(200, Math.max(1, parseInt(e.target.value) || 1)))}
+                  value={numRequestsInput}
+                  onChange={(e) => setNumRequestsInput(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  onBlur={() => {
+                    // Normalize to valid value on blur
+                    const val = Math.min(200, Math.max(1, parseInt(numRequestsInput) || 5));
+                    setNumRequestsInput(String(val));
+                  }}
                   disabled={state.isRunning}
                   className="w-32"
                 />
               </div>
               
-              <div className="space-y-2">
-                <Label htmlFor="batchSize">Batch Size (Concurrent)</Label>
-                <Input
-                  id="batchSize"
-                  type="number"
-                  min={1}
-                  max={50}
-                  value={batchSize}
-                  onChange={(e) => setBatchSize(Math.min(50, Math.max(1, parseInt(e.target.value) || 1)))}
-                  disabled={state.isRunning}
-                  className="w-32"
-                />
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <Switch
-                  id="measureTtft"
-                  checked={measureTtft}
-                  onCheckedChange={setMeasureTtft}
-                  disabled={state.isRunning}
-                />
-                <Label htmlFor="measureTtft" className="cursor-pointer">
-                  Measure TTFT (waits for LLM response)
-                </Label>
-              </div>
-
               <div className="flex gap-2">
                 {!state.isRunning ? (
                   <Button onClick={handleStart} className="gap-2">
@@ -321,7 +286,7 @@ export default function AdminStressTestPage() {
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
                       {state.isRunning ? (
-                        <>Batch {state.currentBatch}/{state.totalBatches} {state.measureTtft && '(waiting for LLM response...)'}</>
+                        <>Batch {state.currentBatch}/{state.totalBatches} (waiting for LLM response...)</>
                       ) : (
                         'Completed'
                       )}
@@ -369,16 +334,12 @@ export default function AdminStressTestPage() {
                         <th className="h-10 px-4 text-left text-sm font-medium">#</th>
                         <th className="h-10 px-4 text-left text-sm font-medium">Status</th>
                         <th className="h-10 px-4 text-left text-sm font-medium">Thread</th>
-                        <th className="h-10 px-4 text-right text-sm font-medium">Thread Creation</th>
-                        {state.measureTtft && (
-                          <>
-                            <th className="h-10 px-4 text-right text-sm font-medium">First Response</th>
-                            <th className="h-10 px-4 text-right text-sm font-medium">
-                              <span className="text-green-600">LLM TTFT</span>
-                            </th>
-                            <th className="h-10 px-4 text-right text-sm font-medium">Total TTFT</th>
-                          </>
-                        )}
+                        <th className="h-10 px-4 text-right text-sm font-medium">Request Time</th>
+                        <th className="h-10 px-4 text-right text-sm font-medium">First Response</th>
+                        <th className="h-10 px-4 text-right text-sm font-medium">
+                          <span className="text-green-600">LLM TTFT</span>
+                        </th>
+                        <th className="h-10 px-4 text-right text-sm font-medium">Total TTFT</th>
                         <th className="h-10 px-4 text-left text-sm font-medium">Error</th>
                       </tr>
                     </thead>
@@ -409,48 +370,59 @@ export default function AdminStressTestPage() {
                               )}
                             </td>
                             <td className="h-12 px-4 text-sm text-right font-mono">
-                              {result.thread_creation_time > 0 ? `${result.thread_creation_time.toFixed(2)}s` : '-'}
+                              {result.request_time > 0 ? `${result.request_time.toFixed(2)}s` : '-'}
                             </td>
-                            {state.measureTtft && (
-                              <>
-                                <td className="h-12 px-4 text-sm text-right font-mono">
-                                  {result.time_to_first_response != null ? (
-                                    <span className="text-orange-500">{result.time_to_first_response.toFixed(2)}s</span>
-                                  ) : result.status === 'running' ? (
-                                    <Loader2 className="h-4 w-4 animate-spin inline" />
-                                  ) : (
-                                    '-'
-                                  )}
-                                </td>
-                                <td className="h-12 px-4 text-sm text-right font-mono">
-                                  {result.llm_ttft != null ? (
-                                    <span className="text-green-500 font-semibold">{result.llm_ttft.toFixed(2)}s</span>
-                                  ) : result.status === 'running' ? (
-                                    <Loader2 className="h-4 w-4 animate-spin inline" />
-                                  ) : (
-                                    '-'
-                                  )}
-                                </td>
-                                <td className="h-12 px-4 text-sm text-right font-mono">
-                                  {result.total_ttft != null ? (
-                                    <span className="text-purple-500 font-semibold">{result.total_ttft.toFixed(2)}s</span>
-                                  ) : result.status === 'running' ? (
-                                    <Loader2 className="h-4 w-4 animate-spin inline" />
-                                  ) : (
-                                    '-'
-                                  )}
-                                </td>
-                              </>
-                            )}
-                            <td className="h-12 px-4 text-sm text-red-500 truncate max-w-[200px]">
-                              {result.error || '-'}
+                            <td className="h-12 px-4 text-sm text-right font-mono">
+                              {result.time_to_first_response != null ? (
+                                <span className="text-orange-500">{result.time_to_first_response.toFixed(2)}s</span>
+                              ) : result.status === 'running' ? (
+                                <Loader2 className="h-4 w-4 animate-spin inline" />
+                              ) : (
+                                '-'
+                              )}
+                            </td>
+                            <td className="h-12 px-4 text-sm text-right font-mono">
+                              {result.llm_ttft != null ? (
+                                <span className="text-green-500 font-semibold">{result.llm_ttft.toFixed(2)}s</span>
+                              ) : result.status === 'running' ? (
+                                <Loader2 className="h-4 w-4 animate-spin inline" />
+                              ) : (
+                                '-'
+                              )}
+                            </td>
+                            <td className="h-12 px-4 text-sm text-right font-mono">
+                              {result.total_ttft != null ? (
+                                <span className="text-purple-500 font-semibold">{result.total_ttft.toFixed(2)}s</span>
+                              ) : result.status === 'running' ? (
+                                <Loader2 className="h-4 w-4 animate-spin inline" />
+                              ) : (
+                                '-'
+                              )}
+                            </td>
+                            <td className="h-12 px-4 text-sm text-red-500 max-w-[300px]">
+                              {result.error ? (
+                                <TooltipProvider>
+                                  <Tooltip delayDuration={0}>
+                                    <TooltipTrigger asChild>
+                                      <span className="block truncate cursor-help">
+                                        {result.error}
+                                      </span>
+                                    </TooltipTrigger>
+                                    <TooltipContent side="left" className="max-w-md break-all text-xs">
+                                      {result.error}
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
+                              ) : (
+                                '-'
+                              )}
                             </td>
                           </tr>
                         );
                       })}
                       {visibleResults.length === 0 && (
                         <tr>
-                          <td colSpan={state.measureTtft ? 8 : 5} className="h-24 text-center text-muted-foreground">
+                          <td colSpan={8} className="h-24 text-center text-muted-foreground">
                             No results yet
                           </td>
                         </tr>
@@ -507,27 +479,27 @@ export default function AdminStressTestPage() {
                 </div>
               </div>
 
-              {/* Thread Creation Times */}
+              {/* Request Times */}
               <div className="border-t mt-6 pt-6">
                 <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
                   <Clock className="h-4 w-4" />
-                  Thread Creation Times
+                  Request Times
                 </h4>
                 <p className="text-xs text-muted-foreground mb-4">
-                  Time to load config, create project/thread/message, and start background agent task
+                  Time for HTTP request to complete (distributed across workers like real traffic)
                 </p>
                 <div className="grid grid-cols-3 gap-6">
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Min</p>
-                    <p className="text-xl font-semibold">{state.summary.min_thread_creation_time}s</p>
+                    <p className="text-xl font-semibold">{state.summary.min_request_time}s</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Average</p>
-                    <p className="text-xl font-semibold">{state.summary.avg_thread_creation_time}s</p>
+                    <p className="text-xl font-semibold">{state.summary.avg_request_time}s</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-sm text-muted-foreground">Max</p>
-                    <p className="text-xl font-semibold">{state.summary.max_thread_creation_time}s</p>
+                    <p className="text-xl font-semibold">{state.summary.max_request_time}s</p>
                   </div>
                 </div>
               </div>
@@ -608,7 +580,7 @@ export default function AdminStressTestPage() {
                     Total TTFT (End-to-End)
                   </h4>
                   <p className="text-xs text-muted-foreground mb-4">
-                    Complete time from user request until first response = Thread Creation + Time to First Response
+                    Complete time from user request until first response = Request Time + Time to First Response
                   </p>
                   <div className="grid grid-cols-3 gap-6">
                     <div className="space-y-1">
@@ -633,41 +605,6 @@ export default function AdminStressTestPage() {
                 </div>
               )}
 
-              {/* Detailed Timing Breakdown */}
-              {state.summary.timing_breakdown && Object.keys(state.summary.timing_breakdown).length > 0 && (
-                <div className="border-t mt-6 pt-6">
-                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    Thread Creation Breakdown (ms)
-                  </h4>
-                  <p className="text-xs text-muted-foreground mb-4">
-                    Detailed timing for each step in thread creation
-                  </p>
-                  <div className="rounded-md border overflow-x-auto">
-                    <table className="w-full">
-                      <thead>
-                        <tr className="border-b bg-muted/50">
-                          <th className="h-10 px-4 text-left text-sm font-medium">Step</th>
-                          <th className="h-10 px-4 text-right text-sm font-medium">Min</th>
-                          <th className="h-10 px-4 text-right text-sm font-medium">Avg</th>
-                          <th className="h-10 px-4 text-right text-sm font-medium">Max</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Object.entries(state.summary.timing_breakdown).map(([key, timing]) => (
-                          <tr key={key} className="border-b">
-                            <td className="h-10 px-4 text-sm">{formatTimingLabel(key)}</td>
-                            <td className="h-10 px-4 text-sm text-right font-mono">{timing.min.toFixed(1)}</td>
-                            <td className="h-10 px-4 text-sm text-right font-mono font-semibold">{timing.avg.toFixed(1)}</td>
-                            <td className="h-10 px-4 text-sm text-right font-mono">{timing.max.toFixed(1)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-
               <div className="border-t mt-6 pt-6">
                 <h4 className="text-sm font-medium mb-4">Throughput</h4>
                 <p className="text-xl font-semibold">{state.summary.throughput} req/s</p>
@@ -686,6 +623,81 @@ export default function AdminStressTestPage() {
                         <span className="text-muted-foreground break-all">{error}</span>
                       </div>
                     ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Timing Breakdown Table */}
+              {state.summary.timing_breakdown && Object.keys(state.summary.timing_breakdown).length > 0 && (
+                <div className="border-t mt-6 pt-6">
+                  <h4 className="text-sm font-medium mb-2 flex items-center gap-2">
+                    <Timer className="h-4 w-4 text-blue-500" />
+                    Request Timing Breakdown
+                  </h4>
+                  <p className="text-xs text-muted-foreground mb-4">
+                    Detailed breakdown of time spent in each phase during thread/project creation
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left py-2 px-2 font-medium">Phase</th>
+                          <th className="text-right py-2 px-2 font-medium">Min (ms)</th>
+                          <th className="text-right py-2 px-2 font-medium">Avg (ms)</th>
+                          <th className="text-right py-2 px-2 font-medium">Max (ms)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {state.summary.timing_breakdown.load_config_ms && (
+                          <tr className="border-b border-border/50">
+                            <td className="py-2 px-2">Load Config</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.load_config_ms.min}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.load_config_ms.avg}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.load_config_ms.max}</td>
+                          </tr>
+                        )}
+                        {state.summary.timing_breakdown.get_model_ms && (
+                          <tr className="border-b border-border/50">
+                            <td className="py-2 px-2">Get Model</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.get_model_ms.min}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.get_model_ms.avg}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.get_model_ms.max}</td>
+                          </tr>
+                        )}
+                        {state.summary.timing_breakdown.create_project_ms && (
+                          <tr className="border-b border-border/50">
+                            <td className="py-2 px-2">Create Project</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_project_ms.min}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_project_ms.avg}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_project_ms.max}</td>
+                          </tr>
+                        )}
+                        {state.summary.timing_breakdown.create_thread_ms && (
+                          <tr className="border-b border-border/50">
+                            <td className="py-2 px-2">Create Thread</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_thread_ms.min}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_thread_ms.avg}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_thread_ms.max}</td>
+                          </tr>
+                        )}
+                        {state.summary.timing_breakdown.create_message_and_run_ms && (
+                          <tr className="border-b border-border/50">
+                            <td className="py-2 px-2">Create Message + Run</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_message_and_run_ms.min}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_message_and_run_ms.avg}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.create_message_and_run_ms.max}</td>
+                          </tr>
+                        )}
+                        {state.summary.timing_breakdown.total_setup_ms && (
+                          <tr className="bg-muted/30 font-medium">
+                            <td className="py-2 px-2">Total Setup</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.total_setup_ms.min}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.total_setup_ms.avg}</td>
+                            <td className="text-right py-2 px-2 font-mono">{state.summary.timing_breakdown.total_setup_ms.max}</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               )}

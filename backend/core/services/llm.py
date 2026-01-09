@@ -2,6 +2,13 @@ from typing import Union, Dict, Any, Optional, AsyncGenerator, List
 import os
 import json
 import asyncio
+
+# Set aiohttp connection pool limits BEFORE importing litellm (reads env at import time)
+# Default limits (300 total, 50 per host) cause pool exhaustion with concurrent LLM calls
+# Setting to 0 = unlimited, Node.js-like behavior (connections created on-demand)
+os.environ.setdefault("AIOHTTP_CONNECTOR_LIMIT", "0")
+os.environ.setdefault("AIOHTTP_CONNECTOR_LIMIT_PER_HOST", "0")
+
 import litellm
 from litellm.files.main import ModelResponse
 from core.utils.logger import logger
@@ -28,15 +35,15 @@ import logging
 #     handler.setFormatter(logging.Formatter('[LITELLM] %(levelname)s - %(message)s'))
 #     litellm.verbose_logger.addHandler(handler)
 
-# Retries: Keep low to fail fast. Each retry waits stream_timeout (60s)
-# 1 retry = max 120s delay, 2 retries = max 180s delay
+# Retries: Keep low to fail fast. Each retry waits stream_timeout
+# 1 retry = max 2x stream_timeout delay
 litellm.num_retries = int(os.environ.get("LITELLM_NUM_RETRIES", 1))
 
 # Timeout for complete request (high for long streams)
 litellm.request_timeout = 1800  # 30 min for long streams
 
-# LiteLLM will use its default HTTP client (httpx)
-# This is simpler and works fine for most use cases
+# Stream timeout: max time to wait between stream chunks (prevents indefinite hangs)
+litellm.stream_timeout = int(os.environ.get("LITELLM_STREAM_TIMEOUT", 120))
 
 # Custom callback to track LiteLLM retries and timing
 from litellm.integrations.custom_logger import CustomLogger
@@ -378,7 +385,7 @@ async def _wrap_streaming_response(response, start_time: float, model_name: str,
             logger.info(f"[LLM] stream completed: {call_duration:.2f}s, {chunk_count} chunks for {model_name}")
 
 setup_api_keys()
-logger.info(f"[LLM] ✅ Module initialized (DIRECT MODE - no Router): debug={LLM_DEBUG}, retries={litellm.num_retries}, timeout={litellm.request_timeout}s")
+logger.info(f"[LLM] ✅ Module initialized (DIRECT MODE): retries={litellm.num_retries}, timeout={litellm.request_timeout}s, stream_timeout={litellm.stream_timeout}s")
 
 
 

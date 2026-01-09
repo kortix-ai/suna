@@ -427,6 +427,8 @@
     "emptyActionsDescription": "Worker actions will appear here",
     "toolIsRunning": "Tool is running",
     "toolCurrentlyExecuting": "{toolName} is currently executing. Results will appear here when complete.",
+    "thinkingTitle": "Thinking",
+    "thinkingDescription": "Preparing to execute actions...",
     "rateThisResult": "Rate this result",
     "feedbackHelpsImprove": "Your feedback helps us improve",
     "additionalFeedbackOptional": "Additional feedback (optional)",

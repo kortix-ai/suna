@@ -2,16 +2,21 @@
 Supabase Database Connection - Production Configuration
 
 Architecture:
-- Gunicorn runs 16 workers (separate processes)
+- Gunicorn runs 8-16 workers (separate processes)
 - Each worker has its own DBConnection singleton
 - Each singleton creates one HTTP/2 connection to Supabase
 - HTTP/2 supports 100 concurrent streams per connection
-- Total capacity: 16 workers × 100 streams = 1,600 concurrent requests
+- Total capacity: 8 workers × 100 streams = 800 concurrent requests (per container)
+
+PERFORMANCE OPTIMIZATIONS (Jan 2026):
+- Increased pool timeout to handle burst traffic
+- Added connection stats for monitoring
+- Optimized keepalive settings for cloud deployments
 
 Configuration is simple and explicit via environment variables.
 """
 
-from typing import Optional
+from typing import Optional, Dict, Any
 from supabase import create_async_client, AsyncClient
 from core.utils.logger import logger
 from core.utils.config import config
@@ -19,17 +24,19 @@ import os
 import threading
 import httpx
 import asyncio
+import time
 
 # Connection pool settings (per worker)
+# These are conservative for cloud Supabase (HTTP/2 multiplexing handles concurrency)
 SUPABASE_MAX_CONNECTIONS = int(os.getenv('SUPABASE_MAX_CONNECTIONS', '50'))
 SUPABASE_MAX_KEEPALIVE = int(os.getenv('SUPABASE_MAX_KEEPALIVE', '30'))
-SUPABASE_KEEPALIVE_EXPIRY = 30.0
+SUPABASE_KEEPALIVE_EXPIRY = float(os.getenv('SUPABASE_KEEPALIVE_EXPIRY', '60.0'))  # Increased from 30
 
 # Timeout settings (seconds)
-SUPABASE_CONNECT_TIMEOUT = 10.0
-SUPABASE_READ_TIMEOUT = 60.0
-SUPABASE_WRITE_TIMEOUT = 60.0
-SUPABASE_POOL_TIMEOUT = 30.0
+SUPABASE_CONNECT_TIMEOUT = float(os.getenv('SUPABASE_CONNECT_TIMEOUT', '15.0'))  # Increased from 10
+SUPABASE_READ_TIMEOUT = float(os.getenv('SUPABASE_READ_TIMEOUT', '60.0'))
+SUPABASE_WRITE_TIMEOUT = float(os.getenv('SUPABASE_WRITE_TIMEOUT', '60.0'))
+SUPABASE_POOL_TIMEOUT = float(os.getenv('SUPABASE_POOL_TIMEOUT', '45.0'))  # Increased from 30
 
 # Transport settings
 SUPABASE_HTTP2_ENABLED = True
@@ -37,10 +44,19 @@ SUPABASE_RETRIES = 3
 
 
 class DBConnection:
-    """Singleton database connection per worker process."""
+    """
+    Singleton database connection per worker process.
+    
+    Provides connection pooling stats for monitoring and diagnostics.
+    """
     
     _instance: Optional['DBConnection'] = None
     _lock = threading.Lock()
+    
+    # Connection stats for monitoring
+    _init_time: Optional[float] = None
+    _request_count: int = 0
+    _error_count: int = 0
 
     def __new__(cls):
         if cls._instance is None:
@@ -50,10 +66,40 @@ class DBConnection:
                     cls._instance._initialized = False
                     cls._instance._client = None
                     cls._instance._async_lock = None
+                    cls._instance._init_time = None
+                    cls._instance._request_count = 0
+                    cls._instance._error_count = 0
         return cls._instance
 
     def __init__(self):
         pass
+    
+    def get_connection_stats(self) -> Dict[str, Any]:
+        """Get connection pool statistics for monitoring."""
+        uptime = time.time() - self._init_time if self._init_time else 0
+        return {
+            'initialized': self._initialized,
+            'uptime_seconds': round(uptime, 1),
+            'request_count': self._request_count,
+            'error_count': self._error_count,
+            'config': {
+                'max_connections': SUPABASE_MAX_CONNECTIONS,
+                'max_keepalive': SUPABASE_MAX_KEEPALIVE,
+                'keepalive_expiry': SUPABASE_KEEPALIVE_EXPIRY,
+                'connect_timeout': SUPABASE_CONNECT_TIMEOUT,
+                'read_timeout': SUPABASE_READ_TIMEOUT,
+                'pool_timeout': SUPABASE_POOL_TIMEOUT,
+                'http2_enabled': SUPABASE_HTTP2_ENABLED,
+            }
+        }
+    
+    def increment_request_count(self):
+        """Increment request counter (call on each DB request)."""
+        self._request_count += 1
+    
+    def increment_error_count(self):
+        """Increment error counter (call on each DB error)."""
+        self._error_count += 1
 
     def _create_transport(self) -> httpx.AsyncHTTPTransport:
         """Create HTTP transport with connection pooling."""
@@ -122,9 +168,16 @@ class DBConnection:
         self._client = await create_async_client(supabase_url, supabase_key, options=options)
         self._configure_clients()
         self._initialized = True
+        self._init_time = time.time()
+        self._request_count = 0
+        self._error_count = 0
         
         key_type = "SERVICE_ROLE" if config.SUPABASE_SERVICE_ROLE_KEY else "ANON"
-        logger.info(f"Database initialized | key={key_type} pool={SUPABASE_MAX_CONNECTIONS} http2={SUPABASE_HTTP2_ENABLED}")
+        logger.info(
+            f"Database initialized | key={key_type} pool={SUPABASE_MAX_CONNECTIONS} "
+            f"http2={SUPABASE_HTTP2_ENABLED} connect_timeout={SUPABASE_CONNECT_TIMEOUT}s "
+            f"pool_timeout={SUPABASE_POOL_TIMEOUT}s"
+        )
 
     async def force_reconnect(self):
         """Force reconnection on errors."""

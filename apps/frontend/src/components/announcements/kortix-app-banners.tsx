@@ -4,7 +4,6 @@ import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { X, Smartphone, Monitor } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { isElectron } from '@/lib/utils/is-electron';
 import { featureFlags } from '@/lib/feature-flags';
 
@@ -53,6 +52,21 @@ function PlayStoreLogo({ className }: { className?: string }) {
   );
 }
 
+// Kortix symbol SVG (inline to avoid loading issues)
+function KortixSymbol({ size = 24, className }: { size?: number; className?: string }) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 30 25" 
+      fill="currentColor" 
+      className={className}
+    >
+      <path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z"/>
+    </svg>
+  );
+}
+
 function detectDesktopPlatform(): DesktopPlatform {
   if (typeof window === 'undefined') return 'mac';
   
@@ -64,6 +78,21 @@ function detectDesktopPlatform(): DesktopPlatform {
   }
   
   return 'mac';
+}
+
+// Detect mobile platform from user agent
+function detectMobilePlatform(): MobilePlatform {
+  if (typeof window === 'undefined') return 'ios';
+  
+  const userAgent = window.navigator.userAgent.toLowerCase();
+  
+  // Check for Android devices
+  if (/android/.test(userAgent)) {
+    return 'android';
+  }
+  
+  // Default to iOS (more common for this use case)
+  return 'ios';
 }
 
 
@@ -87,8 +116,12 @@ export function KortixAppBanners(props: KortixAppBannersProps) {
     setMounted(true);
     setDesktopPlatform(detectDesktopPlatform());
     
+    // Auto-detect mobile platform for QR code
+    const detectedMobilePlatform = detectMobilePlatform();
+    setSelectedMobilePlatform(detectedMobilePlatform);
+    
     if (process.env.NODE_ENV !== 'production') {
-      console.log('[KortixAppBanners] flags', { disableMobileAdvertising });
+      console.log('[KortixAppBanners] flags', { disableMobileAdvertising, detectedMobilePlatform });
     }
 
     const desktopDismissed = localStorage.getItem(DESKTOP_STORAGE_KEY);
@@ -189,7 +222,7 @@ export function KortixAppBanners(props: KortixAppBannersProps) {
                   </p>
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-foreground dark:bg-white flex items-center justify-center shadow-sm">
-                  <KortixLogo size={20} className="invert dark:invert-0" />
+                  <KortixSymbol size={20} className="text-background dark:text-black" />
                 </div>
               </div>
             </motion.div>
@@ -234,7 +267,7 @@ export function KortixAppBanners(props: KortixAppBannersProps) {
                 {/* Kortix logo in center */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <div className="bg-white p-1.5 rounded-lg">
-                    <KortixLogo size={24} />
+                    <KortixSymbol size={24} className="text-black" />
                   </div>
                 </div>
                       </button>
@@ -323,7 +356,7 @@ export function KortixAppBanners(props: KortixAppBannersProps) {
                         </div>
                         
                         <div className="w-8 h-8 bg-foreground dark:bg-[#1a1a1a] rounded-lg flex items-center justify-center">
-                          <KortixLogo size={16} className="invert dark:invert" />
+                          <KortixSymbol size={16} className="text-background dark:text-white" />
                         </div>
                         
                         <div className="flex gap-1 absolute bottom-1.5 right-2">

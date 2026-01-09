@@ -419,6 +419,8 @@
     "emptyActionsDescription": "Worker 操作将显示在此处",
     "toolIsRunning": "工具正在运行",
     "toolCurrentlyExecuting": "{toolName} 正在执行。完成后结果将显示在这里。",
+    "thinkingTitle": "思考中",
+    "thinkingDescription": "正在准备执行操作...",
     "rateThisResult": "评价此结果",
     "feedbackHelpsImprove": "您的反馈帮助我们改进",
     "additionalFeedbackOptional": "附加反馈（可选）",

@@ -24,12 +24,23 @@ router = APIRouter(tags=["billing-account-state"])
 
 from ..shared.cache_utils import ACCOUNT_STATE_CACHE_TTL, invalidate_account_state_cache
 
-# Stripe subscription cache TTL (5 minutes - Stripe data rarely changes)
-STRIPE_SUBSCRIPTION_CACHE_TTL = 300
+# Stripe subscription cache TTL (10 minutes - Stripe data rarely changes)
+# Increased from 5 min to reduce Stripe API calls in production
+STRIPE_SUBSCRIPTION_CACHE_TTL = 600
+
+# Timeout for Stripe API calls when building account state
+STRIPE_FETCH_TIMEOUT = 8.0  # 8 seconds max
 
 
-async def _get_cached_stripe_subscription(subscription_id: str) -> Optional[Dict]:
-    """Get Stripe subscription from cache to avoid slow API calls."""
+async def _get_cached_stripe_subscription(subscription_id: str, timeout: float = STRIPE_FETCH_TIMEOUT) -> Optional[Dict]:
+    """
+    Get Stripe subscription from cache to avoid slow API calls.
+    
+    PERFORMANCE OPTIMIZATIONS (Jan 2026):
+    - Extended cache TTL (10 min) to reduce Stripe API calls
+    - Timeout protection to prevent slow requests from blocking
+    - Graceful fallback on timeout/error (returns None, caller handles)
+    """
     if not subscription_id:
         return None
     
@@ -42,15 +53,30 @@ async def _get_cached_stripe_subscription(subscription_id: str) -> Optional[Dict
     except Exception:
         pass
     
-    # Cache miss - fetch from Stripe
+    # Cache miss - fetch from Stripe with timeout protection
     try:
-        subscription_data = await StripeAPIWrapper.retrieve_subscription(subscription_id)
+        subscription_data = await asyncio.wait_for(
+            StripeAPIWrapper.retrieve_subscription(subscription_id),
+            timeout=timeout
+        )
         if subscription_data:
+            # Convert Stripe object to dict for caching
+            if hasattr(subscription_data, 'to_dict'):
+                subscription_dict = subscription_data.to_dict()
+            elif hasattr(subscription_data, '__dict__'):
+                subscription_dict = dict(subscription_data)
+            else:
+                subscription_dict = subscription_data
+            
             try:
-                await Cache.set(cache_key, subscription_data, ttl=STRIPE_SUBSCRIPTION_CACHE_TTL)
+                await Cache.set(cache_key, subscription_dict, ttl=STRIPE_SUBSCRIPTION_CACHE_TTL)
             except Exception:
                 pass
+            return subscription_dict
         return subscription_data
+    except asyncio.TimeoutError:
+        logger.warning(f"[ACCOUNT_STATE] Stripe subscription fetch timed out after {timeout}s: {subscription_id[:8]}...")
+        return None
     except Exception as e:
         logger.warning(f"[ACCOUNT_STATE] Failed to retrieve Stripe subscription: {e}")
         return None

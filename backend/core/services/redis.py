@@ -13,20 +13,16 @@ REDIS_KEY_TTL = 3600 * 2
 
 
 def _calculate_max_connections() -> int:
-    """Calculate optimal Redis pool size based on worker count.
+    """
+    Calculate optimal Redis pool size based on worker count.
     
-    Each gunicorn worker gets its own connection pool. We use conservative 
-    defaults suitable for cloud Redis (Upstash has 10K limit even on free tier).
+    Each gunicorn worker gets its own connection pool.
+    15-20 connections per worker handles both local and cloud Redis well.
     
-    The pool handles transient operations (cache get/set, stream writes).
-    SSE streaming uses polling (not PubSub) so no long-held connections.
-    
-    Default: ~6 connections per worker (16 workers = 96 total)
     Override via REDIS_MAX_CONNECTIONS env var if needed.
     """
     workers = int(os.getenv("WORKERS", "16"))
-    # 5-10 per worker based on worker count, minimum 5
-    per_worker = max(5, min(10, 100 // workers))
+    per_worker = max(15, min(20, 160 // workers))
     return per_worker
 
 
@@ -91,21 +87,22 @@ class RedisClient:
             
             workers = int(os.getenv("WORKERS", "16"))
             calculated_default = _calculate_max_connections()
+            
             logger.info(
                 f"Initializing Redis to {config['host']}:{config['port']} "
-                f"with max {max_connections} connections (workers={workers}, calculated_default={calculated_default})"
+                f"with max {max_connections} connections (workers={workers})"
             )
             
-            retry = Retry(ExponentialBackoff(), 1)
+            retry = Retry(ExponentialBackoff(), 2)
             
             self._pool = ConnectionPool.from_url(
                 config["url"],
                 decode_responses=True,
-                socket_timeout=15.0,
-                socket_connect_timeout=10.0,
+                socket_timeout=30.0,
+                socket_connect_timeout=15.0,
                 socket_keepalive=True,
-                retry_on_timeout=False,
-                health_check_interval=30,
+                retry_on_timeout=True,
+                health_check_interval=60,
                 max_connections=max_connections,
             )
             self._client = Redis(

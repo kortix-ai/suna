@@ -10,12 +10,12 @@ export const featureFlags = {
   /**
    * When true, hide any mobile app download / install advertising across the web app.
    *
-   * Default: true (hidden)
-   * Set NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING=false to show again.
+   * Default: false (shown)
+   * Set NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING=true to hide.
    */
   disableMobileAdvertising: parseEnvBoolean(
     process.env.NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING,
-    true,
+    false,
   ),
 } as const;
 
