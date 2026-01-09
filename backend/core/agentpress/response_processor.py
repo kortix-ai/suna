@@ -549,6 +549,11 @@ class ResponseProcessor:
         streaming_tool_result_ids = []  # Track tool result message IDs for batch update after streaming
         partial_assistant_message_id = None  # Track partial assistant message ID for updates
         tool_results_buffer = []  # Buffer for tool results that need final processing
+        
+        # Buffer for deferred image context saves - these must be saved AFTER all tool_results
+        # to prevent image_context messages from being inserted between tool_results
+        # which breaks Bedrock's requirement that all tool_results immediately follow assistant
+        deferred_image_contexts: List[ToolResult] = []
 
         # Store the complete LiteLLM response object as received
         final_llm_response = None
@@ -1033,12 +1038,13 @@ class ResponseProcessor:
                                         result = execution["task"].result()
                                         execution["context"].result = result
                                         
-                                        # Save immediately
+                                        # Save immediately (pass deferred_image_contexts buffer for deferred image saving)
                                         updated_id, saved_result, saved_assistant = await self._handle_tool_execution_completion(
                                             thread_id, thread_run_id,
                                             execution["tool_call"], result, execution["tool_index"],
                                             execution["context"], tool_calls_buffer, accumulated_content,
-                                            xml_tool_calls_with_ids, config, partial_assistant_message_id
+                                            xml_tool_calls_with_ids, config, partial_assistant_message_id,
+                                            deferred_image_contexts=deferred_image_contexts
                                         )
                                         
                                         if updated_id:
@@ -1143,7 +1149,8 @@ class ResponseProcessor:
                             last_assistant_message_object,
                             yielded_tool_indices,
                             agent_should_terminate,
-                            frontend_debug_file
+                            frontend_debug_file,
+                            deferred_image_contexts=deferred_image_contexts
                         ):
                             if isinstance(item, tuple):
                                 # Final state tuple - extract and update state atomically
@@ -1260,7 +1267,8 @@ class ResponseProcessor:
                     thread_run_id,
                     last_assistant_message_object,
                     yielded_tool_indices,
-                    agent_should_terminate
+                    agent_should_terminate,
+                    deferred_image_contexts=deferred_image_contexts
                 ):
                     if isinstance(item, tuple):
                         # Final state tuple - extract and update state atomically
@@ -1592,9 +1600,9 @@ class ResponseProcessor:
                             context.assistant_message_id
                         )
                         
-                        # Save deferred image context if present (after tool result)
+                        # Collect deferred image context for later saving (after ALL tool_results)
                         if saved_tool_result_object:
-                            await self._save_deferred_image_context(thread_id, result)
+                            self._collect_deferred_image_context(result, deferred_image_contexts)
 
                         # Yield completed/failed status (linked to saved result ID if available)
                         completed_msg_obj = await self._yield_and_save_tool_completed(
@@ -1677,6 +1685,15 @@ class ResponseProcessor:
                         status_message=(f"Error batch-updating streaming tool results: {str(batch_update_error)}")
                     )
                     # Don't fail the entire operation - tool results are still saved, just not visible to LLM yet
+
+            # --- Save deferred image contexts AFTER all tool results are saved and visible ---
+            # This is the fix for Bedrock tool pairing: image_context messages must come AFTER
+            # all tool_results from the same assistant message, not interleaved between them.
+            # Without this fix, the message sequence could become:
+            #   assistant -> tool_result_1 -> image_context_1 -> tool_result_2
+            # Which breaks Bedrock's requirement that tool_results immediately follow assistant.
+            if deferred_image_contexts:
+                await self._save_all_deferred_image_contexts(thread_id, deferred_image_contexts)
 
             # --- Re-check auto-continue after tool executions ---
             # The should_auto_continue flag was set earlier, but tool executions may have set agent_should_terminate
@@ -2095,6 +2112,9 @@ class ResponseProcessor:
         assistant_message_object = None
         tool_result_message_objects = {}
         finish_reason = None
+        
+        # Buffer for deferred image context saves - same fix as streaming path
+        deferred_image_contexts: List[ToolResult] = []
         native_tool_calls_for_message = []
 
         # Setup frontend message logging (only if DEBUG_SAVE_LLM_IO is enabled)
@@ -2258,9 +2278,9 @@ class ResponseProcessor:
                         current_assistant_id
                     )
                     
-                    # Save deferred image context if present (after tool result)
+                    # Collect deferred image context for later saving (after ALL tool_results)
                     if saved_tool_result_object:
-                        await self._save_deferred_image_context(thread_id, result)
+                        self._collect_deferred_image_context(result, deferred_image_contexts)
 
                     # Save and Yield completed/failed status
                     completed_msg_obj = await self._yield_and_save_tool_completed(
@@ -2282,6 +2302,11 @@ class ResponseProcessor:
                          self.trace.event(name="failed_to_save_tool_result_for_index", level="ERROR", status_message=(f"Failed to save tool result for index {tool_index}"))
 
                     tool_index += 1
+
+            # --- Save deferred image contexts AFTER all tool results (non-streaming path) ---
+            # Same fix as streaming path for Bedrock tool pairing
+            if deferred_image_contexts:
+                await self._save_all_deferred_image_contexts(thread_id, deferred_image_contexts)
 
             # --- Save and Yield Final Status ---
             if finish_reason:
@@ -2972,11 +2997,16 @@ class ResponseProcessor:
         accumulated_content: str,
         xml_tool_calls_with_ids: List[Dict[str, Any]],
         config: ProcessorConfig,
-        partial_assistant_message_id: Optional[str]
+        partial_assistant_message_id: Optional[str],
+        deferred_image_contexts: Optional[List[ToolResult]] = None
     ) -> Tuple[Optional[str], Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """
         Handle immediate saving when a tool execution completes during streaming.
         Returns: (updated_partial_assistant_message_id, saved_tool_result_object, saved_assistant_message_object)
+        
+        Args:
+            deferred_image_contexts: Buffer to collect image contexts for deferred saving.
+                                    If provided, image contexts are collected instead of saved immediately.
         """
         try:
             # Step 1: Save or update partial assistant message to ensure it exists
@@ -3020,9 +3050,14 @@ class ResponseProcessor:
                 context.saved_during_streaming = True
                 context.saved_result_object = saved_tool_result_object
                 
-                # Step 5: Check if tool result contains image_context data that needs to be saved
-                # This is used by the vision tool to defer image_context saving until after tool result
-                await self._save_deferred_image_context(thread_id, result)
+                # Step 5: Collect image_context data for deferred saving (if buffer provided)
+                # This is the fix for Bedrock tool pairing - we now collect image contexts
+                # and save them AFTER all tool_results are saved and made visible to LLM
+                if deferred_image_contexts is not None:
+                    self._collect_deferred_image_context(result, deferred_image_contexts)
+                else:
+                    # Fallback: save immediately if no buffer provided (legacy behavior)
+                    await self._save_deferred_image_context(thread_id, result)
             else:
                 logger.error(f"Failed to save tool result for tool {tool_idx}")
             
@@ -3374,6 +3409,70 @@ class ResponseProcessor:
         except Exception as e:
             logger.error(f"Error saving deferred image context: {str(e)}", exc_info=True)
 
+    def _collect_deferred_image_context(self, result: ToolResult, deferred_image_contexts: List[ToolResult]) -> None:
+        """
+        Collect image_context data from a tool result to be saved LATER.
+        
+        This is the FIX for the Bedrock tool pairing bug. Previously, image_context messages
+        were saved immediately after each tool_result, which could cause them to be inserted
+        BETWEEN tool_results when multiple tools are executed in parallel. This breaks Bedrock's
+        requirement that all tool_results must immediately follow the assistant message.
+        
+        Example of the bug:
+        - assistant (tool_use_1, tool_use_2) -> tool_result_1 -> image_context_1 -> tool_result_2
+        - Bedrock expects: assistant -> tool_result_1 -> tool_result_2 -> image_context_1
+        
+        Now we collect image contexts and save them AFTER all tool_results are batch-updated.
+        
+        Args:
+            result: The tool result that may contain _image_context_data
+            deferred_image_contexts: Buffer to collect results with image context for later saving
+        """
+        try:
+            # Extract output from the result
+            output = result.output if hasattr(result, 'output') else None
+            if not output:
+                return
+            
+            # Parse if it's a JSON string
+            if isinstance(output, str):
+                try:
+                    output = json.loads(output)
+                except (json.JSONDecodeError, ValueError):
+                    return
+            
+            # Check if this result contains deferred image context data
+            if not isinstance(output, dict) or '_image_context_data' not in output:
+                return
+            
+            # Collect for later saving
+            logger.debug(f"[DeferredImageContext] Collected image_context for deferred save (total collected: {len(deferred_image_contexts) + 1})")
+            deferred_image_contexts.append(result)
+            
+        except Exception as e:
+            logger.error(f"Error collecting deferred image context: {str(e)}", exc_info=True)
+
+    async def _save_all_deferred_image_contexts(self, thread_id: str, deferred_image_contexts: List[ToolResult]) -> None:
+        """
+        Save all collected image_context messages AFTER all tool_results have been saved and made visible.
+        
+        This ensures proper message ordering for Bedrock:
+        - assistant (with tool_use blocks) -> all tool_results -> all image_contexts
+        
+        Args:
+            thread_id: The thread ID
+            deferred_image_contexts: List of tool results containing image context data
+        """
+        if not deferred_image_contexts:
+            return
+        
+        logger.info(f"[DeferredImageContext] Saving {len(deferred_image_contexts)} deferred image_context messages AFTER all tool_results")
+        
+        for result in deferred_image_contexts:
+            await self._save_deferred_image_context(thread_id, result)
+        
+        logger.info(f"[DeferredImageContext] Successfully saved all {len(deferred_image_contexts)} deferred image_context messages")
+
     def _create_tool_context(self, tool_call: Dict[str, Any], tool_index: int, assistant_message_id: Optional[str] = None) -> ToolExecutionContext:
         """Create a tool execution context with display name populated."""
         context = ToolExecutionContext(
@@ -3395,11 +3494,15 @@ class ResponseProcessor:
         last_assistant_message_object: Optional[Dict[str, Any]],
         yielded_tool_indices: set,
         agent_should_terminate: bool,
-        frontend_debug_file: Optional[Path] = None
+        frontend_debug_file: Optional[Path] = None,
+        deferred_image_contexts: Optional[List[ToolResult]] = None
     ):
         """
         Process any completed tool executions in real-time during streaming.
         Uses asyncio.wait() with FIRST_COMPLETED to yield results immediately as each tool completes.
+        
+        Args:
+            deferred_image_contexts: Buffer to collect image contexts for deferred saving.
         
         Yields:
             Dict: Tool result messages and status messages (yielded immediately)
@@ -3458,6 +3561,13 @@ class ResponseProcessor:
                     
                     # Task completed successfully - get result and process
                     try:
+                        # Skip if already saved during streaming (prevents duplicate saves)
+                        if execution.get("saved", False):
+                            logger.debug(f"Tool {tool_idx} already saved during streaming, skipping")
+                            updated_yielded_indices.add(tool_idx)
+                            tasks.remove(task)
+                            continue
+                        
                         result = task.result()
                         context.result = result
                         
@@ -3473,9 +3583,13 @@ class ResponseProcessor:
                             thread_id, tool_call, result, assistant_message_id
                         )
                         
-                        # Save deferred image context if present (after tool result)
+                        # Collect deferred image context for later saving (after ALL tool_results)
                         if saved_tool_result_object:
-                            await self._save_deferred_image_context(thread_id, result)
+                            if deferred_image_contexts is not None:
+                                self._collect_deferred_image_context(result, deferred_image_contexts)
+                            else:
+                                # Fallback: save immediately if no buffer provided (legacy behavior)
+                                await self._save_deferred_image_context(thread_id, result)
                         
                         # Get tool_message_id from saved result
                         tool_message_id = saved_tool_result_object['message_id'] if saved_tool_result_object else None
