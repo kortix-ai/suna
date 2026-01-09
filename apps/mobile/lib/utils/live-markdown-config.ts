@@ -219,8 +219,8 @@ if (__DEV__) {
  */
 export const lightMarkdownStyle: MarkdownStyle = {
   syntax: {
-    color: 'transparent',
-    fontSize: 1, // 1px on Android (int cast), iOS handles float fine
+    color: 'transpar  ent',
+    fontSize: 0.01, // 0.01px on Android (int cast), iOS handles float fine
   } as any,
   link: {
     color: '#2563eb', // blue-600
@@ -266,7 +266,7 @@ export const lightMarkdownStyle: MarkdownStyle = {
 export const darkMarkdownStyle: MarkdownStyle = {
   syntax: {
     color: 'transparent',
-    fontSize: 1, // 1px on Android (int cast), iOS handles float fine
+    fontSize: 0.01, // 1px on Android (int cast), iOS handles float fine
   } as any,
   link: {
     color: '#3b82f6', // blue-500
