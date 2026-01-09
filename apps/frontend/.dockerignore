@@ -8,6 +8,13 @@ README.md
 
 .prettierrc
 .prettierignore
-*.env
+# Allow .env file for Docker builds (needed for Next.js NEXT_PUBLIC_* variables)
+# Exclude other env files
+.env.local
+.env.development
+.env.production
+.env.test
+*.env.local
+*.env.*
 env.*
 README.md
