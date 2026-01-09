@@ -8,6 +8,8 @@ import re
 import json
 import secrets
 import base64
+import shutil
+import tempfile
 
 # --- Constants ---
 IS_WINDOWS = platform.system() == "Windows"
@@ -137,7 +139,7 @@ def parse_env_file(filepath):
 def load_existing_env_vars():
     """Loads existing environment variables from .env files."""
     backend_env = parse_env_file(os.path.join("backend", ".env"))
-    frontend_env = parse_env_file(os.path.join("apps", "frontend", ".env.local"))
+    frontend_env = parse_env_file(os.path.join("apps", "frontend", ".env"))
 
     # Organize the variables by category
     existing_vars = {
@@ -167,6 +169,8 @@ def load_existing_env_vars():
             "OPENAI_COMPATIBLE_API_KEY": backend_env.get("OPENAI_COMPATIBLE_API_KEY", ""),
             "OPENAI_COMPATIBLE_API_BASE": backend_env.get("OPENAI_COMPATIBLE_API_BASE", ""),
             "AWS_BEARER_TOKEN_BEDROCK": backend_env.get("AWS_BEARER_TOKEN_BEDROCK", ""),
+            "MINIMAX_API_KEY": backend_env.get("MINIMAX_API_KEY", ""),
+            "MINIMAX_API_BASE": backend_env.get("MINIMAX_API_BASE", ""),
         },
         "search": {
             "TAVILY_API_KEY": backend_env.get("TAVILY_API_KEY", ""),
@@ -223,6 +227,15 @@ def load_existing_env_vars():
         "storage": {
         },
         "email": {
+            "MAILTRAP_API_TOKEN": backend_env.get("MAILTRAP_API_TOKEN", ""),
+        },
+        "google": {
+            "GOOGLE_CLIENT_ID": backend_env.get("GOOGLE_CLIENT_ID", ""),
+            "GOOGLE_CLIENT_SECRET": backend_env.get("GOOGLE_CLIENT_SECRET", ""),
+            "GOOGLE_REDIRECT_URI": backend_env.get("GOOGLE_REDIRECT_URI", ""),
+        },
+        "redis": {
+            "REDIS_PORT": backend_env.get("REDIS_PORT", "6379"),
         },
         "frontend": {
             "NEXT_PUBLIC_SUPABASE_URL": frontend_env.get(
@@ -238,6 +251,13 @@ def load_existing_env_vars():
             "NEXT_PUBLIC_SENTRY_DSN": frontend_env.get("NEXT_PUBLIC_SENTRY_DSN", ""),
             "NEXT_PUBLIC_PHONE_NUMBER_MANDATORY": frontend_env.get("NEXT_PUBLIC_PHONE_NUMBER_MANDATORY", ""),
             "NEXT_PUBLIC_APP_URL": frontend_env.get("NEXT_PUBLIC_APP_URL", ""),
+            "NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING": frontend_env.get("NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING", ""),
+            "NEXT_PUBLIC_GOOGLE_CLIENT_ID": frontend_env.get("NEXT_PUBLIC_GOOGLE_CLIENT_ID", ""),
+            "EDGE_CONFIG": frontend_env.get("EDGE_CONFIG", ""),
+            "NEXT_PUBLIC_GTM_ID": frontend_env.get("NEXT_PUBLIC_GTM_ID", ""),
+            "NEXT_PUBLIC_GA_ID_1": frontend_env.get("NEXT_PUBLIC_GA_ID_1", ""),
+            "NEXT_PUBLIC_GA_ID_2": frontend_env.get("NEXT_PUBLIC_GA_ID_2", ""),
+            "NEXT_PUBLIC_FACEBOOK_PIXEL_ID": frontend_env.get("NEXT_PUBLIC_FACEBOOK_PIXEL_ID", ""),
         },
     }
 
@@ -344,6 +364,9 @@ class SetupWizard:
             "monitoring": existing_env_vars.get("monitoring", {}),
             "storage": existing_env_vars.get("storage", {}),
             "email": existing_env_vars.get("email", {}),
+            "google": existing_env_vars.get("google", {}),
+            "redis": existing_env_vars.get("redis", {"REDIS_PORT": "6379"}),
+            "frontend": existing_env_vars.get("frontend", {}),
         }
 
         # Override with any progress data (in case user is resuming)
@@ -354,7 +377,7 @@ class SetupWizard:
             else:
                 self.env_vars[key] = value
 
-        self.total_steps = 17
+        self.total_steps = 23  # Updated to include new optional steps
         self.compose_cmd = None
 
     def get_compose_command(self):
@@ -498,11 +521,11 @@ class SetupWizard:
                 if "SUPABASE_URL" not in backend_content or "ENCRYPTION_KEY" not in backend_content:
                     return False
             
-            # Check frontend .env.local
-            if not os.path.exists("apps/frontend/.env.local"):
+            # Check frontend .env
+            if not os.path.exists("apps/frontend/.env"):
                 return False
             
-            with open("apps/frontend/.env.local", "r") as f:
+            with open("apps/frontend/.env", "r") as f:
                 frontend_content = f.read()
                 if "NEXT_PUBLIC_SUPABASE_URL" not in frontend_content:
                     return False
@@ -547,7 +570,7 @@ class SetupWizard:
                 if os.path.exists(PROGRESS_FILE):
                     os.remove(PROGRESS_FILE)
                 self.env_vars = {}
-                self.total_steps = 17
+                self.total_steps = 23
                 self.current_step = 0
                 # Continue with normal setup
             elif choice == "4":
@@ -572,11 +595,19 @@ class SetupWizard:
             self.run_step_optional(10, self.collect_webhook_keys, "Webhook Configuration (Optional)")
             self.run_step_optional(11, self.collect_mcp_keys, "MCP Configuration (Optional)")
             self.run_step_optional(12, self.collect_composio_keys, "Composio Integration (Optional)")
-            # Removed duplicate webhook collection step
-            self.run_step(13, self.configure_env_files)
-            self.run_step(14, self.setup_supabase_database)
-            self.run_step(15, self.install_dependencies)
-            self.run_step(16, self.start_suna)
+            # New optional service configurations
+            self.run_step_optional(13, self.collect_langfuse_keys, "Langfuse Configuration (Optional)")
+            self.run_step_optional(14, self.collect_stripe_keys, "Stripe Configuration (Optional)")
+            self.run_step_optional(15, self.collect_mailtrap_keys, "Mailtrap Configuration (Optional)")
+            self.run_step_optional(16, self.collect_freestyle_keys, "Freestyle Configuration (Optional)")
+            self.run_step_optional(17, self.collect_google_oauth_keys, "Google OAuth Configuration (Optional)")
+            self.run_step_optional(18, self.collect_frontend_analytics_keys, "Frontend Analytics Configuration (Optional)")
+            # Redis configuration (manual setup only)
+            self.run_step(19, self.collect_redis_config)
+            self.run_step(20, self.configure_env_files)
+            self.run_step(21, self.setup_supabase_database)
+            self.run_step(22, self.install_dependencies)
+            self.run_step(23, self.start_suna)
 
             self.final_instructions()
 
@@ -804,6 +835,29 @@ class SetupWizard:
             else:
                 print_error("Please enter 1 for local or 2 for cloud.")
 
+        # Validate compatibility: Docker setup does not support local Supabase
+        if self.env_vars["setup_method"] == "docker" and self.env_vars["supabase_setup_method"] == "local":
+            print_error("\n" + "="*70)
+            print_error("INCOMPATIBLE CONFIGURATION DETECTED")
+            print_error("="*70)
+            print_error("Docker Compose setup does NOT support Local Supabase.")
+            print_error("\nThis is due to network configuration complexity:")
+            print_error("  • Docker containers cannot easily reach local Supabase (via npx supabase start)")
+            print_error("  • Local Supabase runs in separate Docker containers")
+            print_error("  • Network isolation prevents proper communication")
+            print_error("\n" + "="*70)
+            print(f"\n{Colors.BOLD}RECOMMENDED OPTIONS:{Colors.ENDC}")
+            print(f"\n{Colors.GREEN}Option 1 (Recommended):{Colors.ENDC} Switch to Cloud Supabase")
+            print("  • Re-run setup and choose Cloud Supabase")
+            print("  • Works seamlessly with Docker Compose")
+            print(f"\n{Colors.GREEN}Option 2:{Colors.ENDC} Switch to Manual Setup")
+            print("  • Re-run setup and choose Manual setup")
+            print("  • Local Supabase works perfectly with manual setup")
+            print(f"\n{Colors.CYAN}Future:{Colors.ENDC} We plan to integrate Supabase directly into docker-compose.yaml")
+            print("="*70 + "\n")
+            print_error("Please re-run the setup script and choose a compatible configuration.")
+            sys.exit(1)
+
         # Handle local Supabase setup
         if self.env_vars["supabase_setup_method"] == "local":
             self._setup_local_supabase()
@@ -880,39 +934,404 @@ class SetupWizard:
             
             # Now run 'supabase status' to get the connection details
             print_info("Retrieving connection details...")
-            status_result = subprocess.run(
-                ["npx", "supabase", "status"],
-                cwd="backend",
-                check=True,
-                capture_output=True,
-                text=True,
-                shell=IS_WINDOWS,
-            )
             
-            # Extract keys from the status output
-            output = status_result.stdout
-            print_info(f"Parsing Supabase status output...")
+            # Try JSON output first (more reliable)
+            url_found = False
+            anon_key_found = False
+            service_key_found = False
+            jwt_secret_found = False
+            output = ""
             
-            for line in output.split('\n'):
-                line = line.strip()
-                if 'API URL:' in line:
-                    url = line.split('API URL:')[1].strip()
-                    self.env_vars["supabase"]["SUPABASE_URL"] = url
-                    self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = url
-                    self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
-                    print_success(f"✓ Found API URL: {url}")
-                elif 'Publishable key:' in line or 'anon key:' in line:
-                    # Supabase status uses "Publishable key" which is the anon key
-                    anon_key = line.split(':')[1].strip()
-                    self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
-                    print_success(f"✓ Found Anon Key: {anon_key[:20]}...")
-                elif 'Secret key:' in line or 'service_role key:' in line:
-                    # Supabase status uses "Secret key" which is the service role key
-                    service_key = line.split(':')[1].strip()
-                    self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
-                    print_success(f"✓ Found Service Role Key: {service_key[:20]}...")
+            try:
+                status_result_json = subprocess.run(
+                    ["npx", "supabase", "status", "--output", "json"],
+                    cwd="backend",
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                    shell=IS_WINDOWS,
+                )
+                status_data = json.loads(status_result_json.stdout)
+                
+                # Extract from JSON structure
+                if isinstance(status_data, dict):
+                    # Try common JSON structure patterns
+                    api_info = status_data.get("API URL") or status_data.get("api_url") or status_data.get("apiUrl")
+                    if api_info:
+                        if isinstance(api_info, dict):
+                            url = api_info.get("external") or api_info.get("url") or str(api_info)
+                        else:
+                            url = str(api_info)
+                        self.env_vars["supabase"]["SUPABASE_URL"] = url
+                        self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = url
+                        self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
+                        print_success(f"✓ Found API URL from JSON: {url}")
+                        url_found = True
+                    
+                    # Try to find keys in JSON
+                    keys = status_data.get("keys") or status_data.get("Keys") or {}
+                    if isinstance(keys, dict):
+                        if not anon_key_found:
+                            anon_key = keys.get("anon_key") or keys.get("anonKey") or keys.get("anon")
+                            if anon_key:
+                                self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = str(anon_key)
+                                print_success(f"✓ Found Anon Key from JSON: {str(anon_key)[:20]}...")
+                                anon_key_found = True
+                        if not service_key_found:
+                            service_key = keys.get("service_role_key") or keys.get("serviceRoleKey") or keys.get("service_role")
+                            if service_key:
+                                self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = str(service_key)
+                                print_success(f"✓ Found Service Role Key from JSON: {str(service_key)[:20]}...")
+                                service_key_found = True
+                    
+                    # Extract JWT secret from JSON
+                    jwt_secret = status_data.get("JWT_SECRET") or status_data.get("jwt_secret")
+                    if jwt_secret:
+                        self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = str(jwt_secret)
+                        print_success(f"✓ Found JWT Secret from JSON: {str(jwt_secret)[:20]}...")
+                        jwt_secret_found = True
+            except (subprocess.SubprocessError, json.JSONDecodeError, KeyError, AttributeError):
+                # JSON parsing failed, fall back to text parsing
+                pass
             
-            print_success("Supabase keys configured from CLI output!")
+            # If JSON didn't work, try text output
+            if not url_found or not anon_key_found or not service_key_found:
+                try:
+                    status_result = subprocess.run(
+                        ["npx", "supabase", "status"],
+                        cwd="backend",
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                        shell=IS_WINDOWS,
+                    )
+                    output = status_result.stdout
+                    print_info(f"Parsing Supabase status output...")
+                    
+                    # Try multiple parsing strategies to handle different output formats
+                    for line in output.split('\n'):
+                        line = line.strip()
+                        # Try various patterns for API URL
+                        if not url_found:
+                            # Handle table format: "│ Project URL │ http://127.0.0.1:54321 │"
+                            if '│' in line and ('Project URL' in line or 'API URL' in line) and 'http' in line:
+                                parts = [p.strip() for p in line.split('│')]
+                                for part in parts:
+                                    if part.startswith('http'):
+                                        url = part
+                                        self.env_vars["supabase"]["SUPABASE_URL"] = url
+                                        self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = url
+                                        self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
+                                        print_success(f"✓ Found API URL: {url}")
+                                        url_found = True
+                                        break
+                            elif 'API URL:' in line:
+                                url = line.split('API URL:')[1].strip()
+                                self.env_vars["supabase"]["SUPABASE_URL"] = url
+                                self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = url
+                                self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
+                                print_success(f"✓ Found API URL: {url}")
+                                url_found = True
+                            elif 'API URL' in line and 'http' in line:
+                                # Handle format like "API URL    http://..."
+                                parts = line.split('http')
+                                if len(parts) > 1:
+                                    url = 'http' + parts[1].strip()
+                                    self.env_vars["supabase"]["SUPABASE_URL"] = url
+                                    self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = url
+                                    self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
+                                    print_success(f"✓ Found API URL: {url}")
+                                    url_found = True
+                        
+                        # Try various patterns for anon key
+                        if not anon_key_found:
+                            # Handle table format: "│ Publishable │ sb_publishable_... │"
+                            if '│' in line and 'Publishable' in line:
+                                parts = [p.strip() for p in line.split('│')]
+                                for part in parts:
+                                    if part.startswith('sb_') or part.startswith('eyJ'):
+                                        anon_key = part
+                                        self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
+                                        print_success(f"✓ Found Anon Key: {anon_key[:20]}...")
+                                        anon_key_found = True
+                                        break
+                            elif 'Publishable key:' in line or 'anon key:' in line or 'anon/public key:' in line:
+                                # Handle format like "Publishable key: eyJ..." or "Publishable key: sb_..."
+                                if ':' in line:
+                                    anon_key = line.split(':', 1)[1].strip()
+                                    self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
+                                    print_success(f"✓ Found Anon Key: {anon_key[:20]}...")
+                                    anon_key_found = True
+                            elif 'anon' in line.lower() and ('eyJ' in line or 'sb_' in line):
+                                # Handle format where key is on the same line
+                                if 'sb_' in line:
+                                    # Extract sb_ key
+                                    parts = line.split('sb_')
+                                    if len(parts) > 1:
+                                        anon_key = 'sb_' + parts[1].strip().split()[0]
+                                        self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
+                                        print_success(f"✓ Found Anon Key: {anon_key[:20]}...")
+                                        anon_key_found = True
+                                elif 'eyJ' in line:
+                                    parts = line.split('eyJ')
+                                    if len(parts) > 1:
+                                        anon_key = 'eyJ' + parts[1].strip().split()[0]
+                                        self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
+                                        print_success(f"✓ Found Anon Key: {anon_key[:20]}...")
+                                        anon_key_found = True
+                        
+                        # Try various patterns for service role key
+                        if not service_key_found:
+                            # Handle table format: "│ Secret │ sb_secret_... │"
+                            if '│' in line and ('Secret' in line or 'service' in line.lower()):
+                                parts = [p.strip() for p in line.split('│')]
+                                for part in parts:
+                                    if part.startswith('sb_') or part.startswith('eyJ'):
+                                        service_key = part
+                                        self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+                                        print_success(f"✓ Found Service Role Key: {service_key[:20]}...")
+                                        service_key_found = True
+                                        break
+                            elif 'Secret key:' in line or 'service_role key:' in line or 'service role key:' in line:
+                                # Handle format like "Secret key: eyJ..." or "Secret key: sb_..."
+                                if ':' in line:
+                                    service_key = line.split(':', 1)[1].strip()
+                                    self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+                                    print_success(f"✓ Found Service Role Key: {service_key[:20]}...")
+                                    service_key_found = True
+                            elif ('service' in line.lower() or 'secret' in line.lower()) and ('eyJ' in line or 'sb_' in line):
+                                # Handle format where key is on the same line
+                                if 'sb_' in line:
+                                    # Extract sb_ key
+                                    parts = line.split('sb_')
+                                    if len(parts) > 1:
+                                        service_key = 'sb_' + parts[1].strip().split()[0]
+                                        self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+                                        print_success(f"✓ Found Service Role Key: {service_key[:20]}...")
+                                        service_key_found = True
+                                elif 'eyJ' in line:
+                                    parts = line.split('eyJ')
+                                    if len(parts) > 1:
+                                        service_key = 'eyJ' + parts[1].strip().split()[0]
+                                        self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+                                        print_success(f"✓ Found Service Role Key: {service_key[:20]}...")
+                                        service_key_found = True
+                        
+                        # Try various patterns for JWT secret
+                        if not jwt_secret_found:
+                            # Handle table format: "│ JWT Secret │ super-secret-jwt-token... │"
+                            if '│' in line and ('JWT Secret' in line or 'jwt secret' in line.lower()):
+                                parts = [p.strip() for p in line.split('│')]
+                                for part in parts:
+                                    if part and part != 'JWT Secret' and 'secret' not in part.lower():
+                                        jwt_secret = part
+                                        self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = jwt_secret
+                                        print_success(f"✓ Found JWT Secret: {jwt_secret[:20]}...")
+                                        jwt_secret_found = True
+                                        break
+                            elif 'JWT Secret:' in line or 'jwt secret:' in line.lower():
+                                # Handle format like "JWT Secret: super-secret-jwt-token..."
+                                if ':' in line:
+                                    jwt_secret = line.split(':', 1)[1].strip()
+                                    self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = jwt_secret
+                                    print_success(f"✓ Found JWT Secret: {jwt_secret[:20]}...")
+                                    jwt_secret_found = True
+                except subprocess.SubprocessError:
+                    pass
+            
+            # Verify all keys were found
+            if not url_found or not anon_key_found or not service_key_found or not jwt_secret_found:
+                missing_items = []
+                if not url_found:
+                    missing_items.append("API URL")
+                if not anon_key_found:
+                    missing_items.append("Anon Key")
+                if not service_key_found:
+                    missing_items.append("Service Role Key")
+                if not jwt_secret_found:
+                    missing_items.append("JWT Secret")
+                
+                print_warning(f"Could not parse all Supabase keys from status output. Missing: {', '.join(missing_items)}")
+                print_info("Attempting to read from Supabase config files...")
+                
+                # Try to read from Supabase's .env file if it exists
+                supabase_env_path = os.path.join("backend", "supabase", ".env")
+                if os.path.exists(supabase_env_path):
+                    print_info(f"Reading from {supabase_env_path}...")
+                    supabase_env = parse_env_file(supabase_env_path)
+                    if not url_found and supabase_env.get("API_URL"):
+                        url = supabase_env["API_URL"]
+                        self.env_vars["supabase"]["SUPABASE_URL"] = url
+                        self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = url
+                        self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = url
+                        print_success(f"✓ Found API URL from config: {url}")
+                        url_found = True
+                    if not anon_key_found and supabase_env.get("ANON_KEY"):
+                        anon_key = supabase_env["ANON_KEY"]
+                        self.env_vars["supabase"]["SUPABASE_ANON_KEY"] = anon_key
+                        print_success(f"✓ Found Anon Key from config: {anon_key[:20]}...")
+                        anon_key_found = True
+                    if not service_key_found and supabase_env.get("SERVICE_ROLE_KEY"):
+                        service_key = supabase_env["SERVICE_ROLE_KEY"]
+                        self.env_vars["supabase"]["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+                        print_success(f"✓ Found Service Role Key from config: {service_key[:20]}...")
+                        service_key_found = True
+                    if not jwt_secret_found and supabase_env.get("JWT_SECRET"):
+                        jwt_secret = supabase_env["JWT_SECRET"]
+                        self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = jwt_secret
+                        print_success(f"✓ Found JWT Secret from config: {jwt_secret[:20]}...")
+                        jwt_secret_found = True
+                else:
+                    print_info(f"Config file not found: {supabase_env_path}")
+                
+                # Additional method: Try to extract JWT secret from config.toml
+                if not jwt_secret_found:
+                    config_path = os.path.join("backend", "supabase", "config.toml")
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, "r") as f:
+                                config_content = f.read()
+                                # Look for JWT secret in config.toml (though it's usually not stored there)
+                                import re
+                                # Check for any JWT-related configuration
+                                jwt_match = re.search(r'jwt[_\s]*secret\s*=\s*["\']?([^"\'\n]+)["\']?', config_content, re.IGNORECASE)
+                                if jwt_match:
+                                    jwt_secret = jwt_match.group(1).strip()
+                                    self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = jwt_secret
+                                    print_success(f"✓ Found JWT Secret from config.toml: {jwt_secret[:20]}...")
+                                    jwt_secret_found = True
+                        except Exception as e:
+                            print_warning(f"Could not read JWT secret from config.toml: {e}")
+                
+                # Additional method: Try to query Supabase database directly for JWT secret
+                if not jwt_secret_found and service_key_found:
+                    try:
+                        # Try to get JWT secret from Supabase's internal configuration
+                        # This queries the auth.config table in Supabase
+                        import psycopg
+                        database_url = f"postgresql://postgres:postgres@127.0.0.1:54322/postgres"
+                        try:
+                            conn = psycopg.connect(database_url)
+                            cur = conn.cursor()
+                            # Query for JWT secret from auth.config
+                            cur.execute("SELECT value FROM auth.config WHERE key = 'jwt_secret' LIMIT 1;")
+                            result = cur.fetchone()
+                            if result:
+                                jwt_secret = result[0]
+                                self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = jwt_secret
+                                print_success(f"✓ Found JWT Secret from database: {jwt_secret[:20]}...")
+                                jwt_secret_found = True
+                            cur.close()
+                            conn.close()
+                        except Exception as db_error:
+                            # Database query failed, skip this method
+                            pass
+                    except ImportError:
+                        # psycopg not available, skip database query
+                        pass
+                    except Exception as e:
+                        # Any other error, skip this method
+                        pass
+                
+                # If URL still not found, construct from config.toml as fallback
+                if not url_found:
+                    # Read port from config.toml (default is 54321)
+                    config_path = os.path.join("backend", "supabase", "config.toml")
+                    api_port = "54321"  # Default port
+                    if os.path.exists(config_path):
+                        try:
+                            with open(config_path, "r") as f:
+                                config_content = f.read()
+                                # Try to extract port from [api] section
+                                import re
+                                port_match = re.search(r'\[api\]\s+port\s*=\s*(\d+)', config_content)
+                                if port_match:
+                                    api_port = port_match.group(1)
+                                    print_info(f"Found API port {api_port} in config.toml")
+                        except Exception as e:
+                            print_warning(f"Could not read config.toml: {e}")
+                    
+                    default_url = f"http://localhost:{api_port}"
+                    self.env_vars["supabase"]["SUPABASE_URL"] = default_url
+                    self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = default_url
+                    self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"] = default_url
+                    print_info(f"Using default local Supabase URL: {default_url}")
+                    print_warning("Note: If your Supabase uses a different port, update backend/.env manually")
+                    url_found = True
+                
+                # If still missing keys, provide helpful instructions
+                if not anon_key_found or not service_key_found or not jwt_secret_found:
+                    print_warning("\n" + "="*70)
+                    print_warning("COULD NOT EXTRACT ALL SUPABASE KEYS")
+                    print_warning("="*70)
+                    print_warning("The setup script could not automatically extract all required keys.")
+                    print_warning("\nMissing keys:")
+                    if not anon_key_found:
+                        print_warning("  • SUPABASE_ANON_KEY (Publishable key)")
+                    if not service_key_found:
+                        print_warning("  • SUPABASE_SERVICE_ROLE_KEY (Secret key)")
+                    if not jwt_secret_found:
+                        print_warning("  • SUPABASE_JWT_SECRET (JWT Secret)")
+                    
+                    print_info("\nTo get your keys manually:")
+                    print_info("  1. Run: cd backend && npx supabase status --output json")
+                    print_info("  2. Look for the following in the JSON output:")
+                    print_info("     - 'anon_key' or 'anonKey' → SUPABASE_ANON_KEY")
+                    print_info("     - 'service_role_key' → SUPABASE_SERVICE_ROLE_KEY")
+                    print_info("     - 'JWT_SECRET' → SUPABASE_JWT_SECRET")
+                    print_info("  3. Add them to backend/.env manually")
+                    
+                    if output:
+                        print_info("\nStatus output (for debugging):")
+                        print(output[:800])  # Show more of the output for debugging
+                    
+                    print_warning("\nThe setup will continue, but you MUST add these keys to backend/.env")
+                    print_warning("before starting the backend, or it will crash on startup.")
+                    print_warning("="*70 + "\n")
+                else:
+                    print_success("✓ All Supabase keys configured from config files!")
+            else:
+                print_success("✓ All Supabase keys configured from CLI output!")
+            
+            # Set JWT secret if not found yet (fallback to default local Supabase value)
+            if not jwt_secret_found:
+                # Default JWT secret for local Supabase (from Supabase CLI default)
+                default_jwt_secret = "super-secret-jwt-token-with-at-least-32-characters-long"
+                self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = default_jwt_secret
+                print_warning(f"Using default JWT secret for local Supabase. If this doesn't work, extract it from 'npx supabase status --output json'")
+            
+            # Verify JWT secret format
+            jwt_secret = self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", "")
+            if jwt_secret:
+                # Try to use the validate_jwt_secret function from auth_utils if available
+                try:
+                    import sys
+                    import os
+                    backend_path = os.path.join(os.path.dirname(__file__), "backend")
+                    if backend_path not in sys.path:
+                        sys.path.insert(0, backend_path)
+                    from core.utils.auth_utils import validate_jwt_secret
+                    
+                    is_valid, error_msg = validate_jwt_secret(jwt_secret)
+                    if is_valid:
+                        print_success(f"✓ JWT secret validated successfully (length: {len(jwt_secret)} chars)")
+                    else:
+                        print_warning(f"⚠ JWT secret validation warning: {error_msg}")
+                except ImportError:
+                    # Fallback to basic validation if auth_utils not available
+                    if len(jwt_secret) < 32:
+                        print_warning(f"⚠ JWT secret is shorter than recommended (32 chars). Current length: {len(jwt_secret)}")
+                    else:
+                        print_success(f"✓ JWT secret format validated (length: {len(jwt_secret)} chars)")
+                except Exception as e:
+                    # If validation fails for any reason, just do basic check
+                    if len(jwt_secret) < 32:
+                        print_warning(f"⚠ JWT secret is shorter than recommended (32 chars). Current length: {len(jwt_secret)}")
+                    else:
+                        print_info(f"JWT secret extracted (length: {len(jwt_secret)} chars)")
+            
+            # Save progress immediately after extracting keys
+            save_progress(self.current_step, self.env_vars)
             
         except subprocess.SubprocessError as e:
             print_error(f"Failed to start Supabase services: {e}")
@@ -924,9 +1343,6 @@ class SetupWizard:
         print_info("Waiting for services to be ready...")
         import time
         time.sleep(5)
-
-        # Set JWT secret (this is usually a fixed value for local development)
-        self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = "your-super-secret-jwt-token-with-at-least-32-characters-long"
     
     def _configure_local_supabase_settings(self):
         """Configures local Supabase settings for development (disables email confirmations)."""
@@ -1121,9 +1537,9 @@ class SetupWizard:
             print_info(
                 "LLM providers are OPTIONAL tools that enable AI features in Kortix Super Worker.")
             print_info(
-                "Supported: Anthropic (Recommended), OpenAI, Groq, OpenRouter, xAI, Google Gemini, OpenAI Compatible, AWS Bedrock."
+                "Supported: Anthropic (Recommended), OpenAI, Groq, OpenRouter, xAI, Google Gemini, OpenAI Compatible, AWS Bedrock (Recommended), Minimax."
             )
-            print_warning("RECOMMENDED: Start with Anthropic Claude for the best experience.")
+            print_warning("RECOMMENDED: Start with Anthropic Claude or AWS Bedrock for the best experience.")
 
         # Don't clear existing keys if we're updating
         if not has_existing:
@@ -1142,7 +1558,8 @@ class SetupWizard:
                 "5": ("xAI", "XAI_API_KEY"),
                 "6": ("Google Gemini", "GEMINI_API_KEY"),
                 "7": ("OpenAI Compatible", "OPENAI_COMPATIBLE_API_KEY"),
-                "8": ("AWS Bedrock", "AWS_BEARER_TOKEN_BEDROCK"),
+                "8": ("AWS Bedrock (Recommended)", "AWS_BEARER_TOKEN_BEDROCK"),
+                "9": ("Minimax", "MINIMAX_API_KEY"),
             }
             print(
                 f"\n{Colors.CYAN}Select LLM providers to configure (e.g., 1,3):{Colors.ENDC}"
@@ -1184,6 +1601,18 @@ class SetupWizard:
                     default_value=existing_value,
                 )
                 self.env_vars["llm"][key] = api_key
+                
+                # For Minimax, also set the API base URL
+                if key == "MINIMAX_API_KEY":
+                    existing_base = self.env_vars["llm"].get("MINIMAX_API_BASE", "")
+                    minimax_base = self._get_input(
+                        "Enter your Minimax API Base URL (or press Enter for default): ",
+                        validate_url,
+                        "Invalid URL format.",
+                        allow_empty=True,
+                        default_value=existing_base or "https://api.minimax.io/anthropic/v1/messages",
+                    )
+                    self.env_vars["llm"]["MINIMAX_API_BASE"] = minimax_base or "https://api.minimax.io/anthropic/v1/messages"
 
         # Validate that at least one LLM provider is configured
         configured_providers = [k for k in self.env_vars["llm"] if self.env_vars["llm"][k]]
@@ -1448,6 +1877,10 @@ class SetupWizard:
             print_info("  • And many more integrations for workflow automation")
             print_info(
                 "Get your API key from: https://app.composio.dev/settings/api-keys")
+            print_warning(
+                "⚠️  IMPORTANT: COMPOSIO_API_KEY is MANDATORY if you want to use Composio integrations.")
+            print_warning(
+                "   Without it, Composio features will fail. You can skip now and add it later.")
             print_info("You can skip this step and configure Composio later.")
 
         # Ask if user wants to configure Composio
@@ -1456,10 +1889,11 @@ class SetupWizard:
                 "Do you want to configure Composio integration? (y/N): ").lower().strip()
             if configure_composio != 'y':
                 print_info("Skipping Composio configuration.")
+                print_warning("Remember: COMPOSIO_API_KEY is MANDATORY for Composio features to work.")
                 return
 
         self.env_vars["composio"]["COMPOSIO_API_KEY"] = self._get_input(
-            "Enter your Composio API Key (or press Enter to skip): ",
+            "Enter your Composio API Key (MANDATORY for Composio features, or press Enter to skip): ",
             validate_api_key,
             "Invalid Composio API Key format. It should be a valid API key.",
             allow_empty=True,
@@ -1478,6 +1912,275 @@ class SetupWizard:
             print_success("Composio configuration saved.")
         else:
             print_info("Skipping Composio configuration.")
+            print_warning("⚠️  COMPOSIO_API_KEY is MANDATORY for Composio features. Add it to backend/.env later if needed.")
+
+    def collect_langfuse_keys(self):
+        """Collects the optional Langfuse configuration."""
+        print_step(13, self.total_steps, "Collecting Langfuse Configuration (Optional)")
+
+        # Check if we already have values configured
+        has_existing = any(self.env_vars["langfuse"].values())
+        if has_existing:
+            print_info(
+                "Found existing Langfuse configuration. Press Enter to keep current values or type new ones."
+            )
+        else:
+            print_info(
+                "Langfuse provides LLM observability and analytics for Kortix Super Worker.")
+            print_info(
+                "Get your keys from: https://cloud.langfuse.com/settings/api-keys")
+            print_info("You can skip this step and configure Langfuse later.")
+
+        self.env_vars["langfuse"]["LANGFUSE_PUBLIC_KEY"] = self._get_input(
+            "Enter your Langfuse Public Key (or press Enter to skip): ",
+            validate_api_key,
+            "Invalid Langfuse Public Key format.",
+            allow_empty=True,
+            default_value=self.env_vars["langfuse"]["LANGFUSE_PUBLIC_KEY"],
+        )
+
+        if self.env_vars["langfuse"]["LANGFUSE_PUBLIC_KEY"]:
+            self.env_vars["langfuse"]["LANGFUSE_SECRET_KEY"] = self._get_input(
+                "Enter your Langfuse Secret Key (or press Enter to skip): ",
+                validate_api_key,
+                "Invalid Langfuse Secret Key format.",
+                allow_empty=True,
+                default_value=self.env_vars["langfuse"]["LANGFUSE_SECRET_KEY"],
+            )
+            self.env_vars["langfuse"]["LANGFUSE_HOST"] = self._get_input(
+                "Enter your Langfuse Host URL (or press Enter to skip): ",
+                validate_url,
+                "Invalid Langfuse Host URL format.",
+                allow_empty=True,
+                default_value=self.env_vars["langfuse"]["LANGFUSE_HOST"],
+            )
+            print_success("Langfuse configuration saved.")
+        else:
+            print_info("Skipping Langfuse configuration.")
+
+    def collect_stripe_keys(self):
+        """Collects the optional Stripe configuration."""
+        print_step(14, self.total_steps, "Collecting Stripe Configuration (Optional)")
+
+        # Check if we already have values configured
+        has_existing = any(self.env_vars["stripe"].values())
+        if has_existing:
+            print_info(
+                "Found existing Stripe configuration. Press Enter to keep current values or type new ones."
+            )
+        else:
+            print_info(
+                "Stripe enables payment processing for Kortix Super Worker.")
+            print_info(
+                "Get your keys from: https://dashboard.stripe.com/apikeys")
+            print_info("You can skip this step and configure Stripe later.")
+
+        self.env_vars["stripe"]["STRIPE_SECRET_KEY"] = self._get_input(
+            "Enter your Stripe Secret Key (or press Enter to skip): ",
+            validate_api_key,
+            "Invalid Stripe Secret Key format.",
+            allow_empty=True,
+            default_value=self.env_vars["stripe"]["STRIPE_SECRET_KEY"],
+        )
+
+        if self.env_vars["stripe"]["STRIPE_SECRET_KEY"]:
+            self.env_vars["stripe"]["STRIPE_WEBHOOK_SECRET"] = self._get_input(
+                "Enter your Stripe Webhook Secret (or press Enter to skip): ",
+                validate_api_key,
+                "Invalid Stripe Webhook Secret format.",
+                allow_empty=True,
+                default_value=self.env_vars["stripe"]["STRIPE_WEBHOOK_SECRET"],
+            )
+            print_success("Stripe configuration saved.")
+        else:
+            print_info("Skipping Stripe configuration.")
+
+    def collect_mailtrap_keys(self):
+        """Collects the optional Mailtrap configuration."""
+        print_step(15, self.total_steps, "Collecting Mailtrap Configuration (Optional)")
+
+        # Check if we already have a value configured
+        existing_key = self.env_vars["email"].get("MAILTRAP_API_TOKEN", "")
+        if existing_key:
+            print_info(
+                f"Found existing Mailtrap API token: {mask_sensitive_value(existing_key)}"
+            )
+            print_info("Press Enter to keep current value or type a new one.")
+        else:
+            print_info(
+                "Mailtrap provides email testing and debugging for Kortix Super Worker.")
+            print_info(
+                "Get your API token from: https://mailtrap.io/api-tokens")
+            print_info("You can skip this step and configure Mailtrap later.")
+
+        mailtrap_token = self._get_input(
+            "Enter your Mailtrap API Token (or press Enter to skip): ",
+            validate_api_key,
+            "Invalid Mailtrap API Token format.",
+            allow_empty=True,
+            default_value=existing_key,
+        )
+        self.env_vars["email"]["MAILTRAP_API_TOKEN"] = mailtrap_token
+        if mailtrap_token:
+            print_success("Mailtrap API token saved.")
+        else:
+            print_info("Skipping Mailtrap configuration.")
+
+    def collect_freestyle_keys(self):
+        """Collects the optional Freestyle configuration."""
+        print_step(16, self.total_steps, "Collecting Freestyle Configuration (Optional)")
+
+        # Check if we already have a value configured
+        existing_key = self.env_vars["monitoring"].get("FREESTYLE_API_KEY", "")
+        if existing_key:
+            print_info(
+                f"Found existing Freestyle API key: {mask_sensitive_value(existing_key)}"
+            )
+            print_info("Press Enter to keep current value or type a new one.")
+        else:
+            print_info(
+                "Freestyle provides monitoring and analytics for Kortix Super Worker.")
+            print_info(
+                "Get your API key from: https://freestyle.dev")
+            print_info("You can skip this step and configure Freestyle later.")
+
+        freestyle_key = self._get_input(
+            "Enter your Freestyle API Key (or press Enter to skip): ",
+            validate_api_key,
+            "Invalid Freestyle API Key format.",
+            allow_empty=True,
+            default_value=existing_key,
+        )
+        self.env_vars["monitoring"]["FREESTYLE_API_KEY"] = freestyle_key
+        if freestyle_key:
+            print_success("Freestyle API key saved.")
+        else:
+            print_info("Skipping Freestyle configuration.")
+
+    def collect_google_oauth_keys(self):
+        """Collects the optional Google OAuth configuration."""
+        print_step(17, self.total_steps, "Collecting Google OAuth Configuration (Optional)")
+
+        # Check if we already have values configured
+        has_existing = any(self.env_vars["google"].values())
+        if has_existing:
+            print_info(
+                "Found existing Google OAuth configuration. Press Enter to keep current values or type new ones."
+            )
+        else:
+            print_info(
+                "Google OAuth enables Google sign-in for Kortix Super Worker.")
+            print_info(
+                "Get your credentials from: https://console.cloud.google.com/apis/credentials")
+            print_info("You can skip this step and configure Google OAuth later.")
+
+        self.env_vars["google"]["GOOGLE_CLIENT_ID"] = self._get_input(
+            "Enter your Google Client ID (or press Enter to skip): ",
+            validate_api_key,
+            "Invalid Google Client ID format.",
+            allow_empty=True,
+            default_value=self.env_vars["google"]["GOOGLE_CLIENT_ID"],
+        )
+
+        if self.env_vars["google"]["GOOGLE_CLIENT_ID"]:
+            self.env_vars["google"]["GOOGLE_CLIENT_SECRET"] = self._get_input(
+                "Enter your Google Client Secret (or press Enter to skip): ",
+                validate_api_key,
+                "Invalid Google Client Secret format.",
+                allow_empty=True,
+                default_value=self.env_vars["google"]["GOOGLE_CLIENT_SECRET"],
+            )
+            self.env_vars["google"]["GOOGLE_REDIRECT_URI"] = self._get_input(
+                "Enter your Google Redirect URI (or press Enter to skip): ",
+                validate_url,
+                "Invalid Google Redirect URI format.",
+                allow_empty=True,
+                default_value=self.env_vars["google"]["GOOGLE_REDIRECT_URI"],
+            )
+            # Also set frontend variable
+            self.env_vars["frontend"]["NEXT_PUBLIC_GOOGLE_CLIENT_ID"] = self.env_vars["google"]["GOOGLE_CLIENT_ID"]
+            print_success("Google OAuth configuration saved.")
+        else:
+            print_info("Skipping Google OAuth configuration.")
+
+    def collect_redis_config(self):
+        """Collects Redis configuration for manual setup."""
+        if self.env_vars["setup_method"] != "manual":
+            return  # Only for manual setup
+        
+        print_step(19, self.total_steps, "Collecting Redis Configuration")
+
+        existing_port = self.env_vars["redis"].get("REDIS_PORT", "6379")
+        print_info(f"Default Redis port is 6379.")
+        
+        redis_port = self._get_input(
+            "Enter Redis port (or press Enter to use default 6379): ",
+            lambda x, allow_empty=True: allow_empty and not x or (x.isdigit() and 1 <= int(x) <= 65535),
+            "Invalid port number. Must be between 1 and 65535.",
+            allow_empty=True,
+            default_value=existing_port,
+        )
+        self.env_vars["redis"]["REDIS_PORT"] = redis_port or "6379"
+        print_success(f"Redis port set to {self.env_vars['redis']['REDIS_PORT']}.")
+
+    def collect_frontend_analytics_keys(self):
+        """Collects optional frontend analytics and tracking keys."""
+        print_step(18, self.total_steps, "Collecting Frontend Analytics Configuration (Optional)")
+
+        print_info(
+            "These are optional analytics and tracking keys for production deployments.")
+        print_info(
+            "Leave empty if you're self-hosting and don't want analytics.")
+
+        self.env_vars["frontend"]["NEXT_PUBLIC_POSTHOG_KEY"] = self._get_input(
+            "Enter your PostHog Key (or press Enter to skip): ",
+            validate_api_key,
+            "Invalid PostHog Key format.",
+            allow_empty=True,
+            default_value=self.env_vars["frontend"].get("NEXT_PUBLIC_POSTHOG_KEY", ""),
+        )
+
+        self.env_vars["frontend"]["EDGE_CONFIG"] = self._get_input(
+            "Enter your Edge Config (or press Enter to skip): ",
+            lambda x, allow_empty=True: True,  # Accept any value
+            "",
+            allow_empty=True,
+            default_value=self.env_vars["frontend"].get("EDGE_CONFIG", ""),
+        )
+
+        self.env_vars["frontend"]["NEXT_PUBLIC_GTM_ID"] = self._get_input(
+            "Enter your Google Tag Manager ID (e.g., GTM-XXXXXXX) (or press Enter to skip): ",
+            lambda x, allow_empty=True: allow_empty and not x or len(x) > 0,
+            "",
+            allow_empty=True,
+            default_value=self.env_vars["frontend"].get("NEXT_PUBLIC_GTM_ID", ""),
+        )
+
+        self.env_vars["frontend"]["NEXT_PUBLIC_GA_ID_1"] = self._get_input(
+            "Enter your Google Analytics ID 1 (e.g., G-XXXXXXXXXX) (or press Enter to skip): ",
+            lambda x, allow_empty=True: allow_empty and not x or len(x) > 0,
+            "",
+            allow_empty=True,
+            default_value=self.env_vars["frontend"].get("NEXT_PUBLIC_GA_ID_1", ""),
+        )
+
+        self.env_vars["frontend"]["NEXT_PUBLIC_GA_ID_2"] = self._get_input(
+            "Enter your Google Analytics ID 2 (optional) (or press Enter to skip): ",
+            lambda x, allow_empty=True: allow_empty and not x or len(x) > 0,
+            "",
+            allow_empty=True,
+            default_value=self.env_vars["frontend"].get("NEXT_PUBLIC_GA_ID_2", ""),
+        )
+
+        self.env_vars["frontend"]["NEXT_PUBLIC_FACEBOOK_PIXEL_ID"] = self._get_input(
+            "Enter your Facebook Pixel ID (e.g., 1234567890) (or press Enter to skip): ",
+            lambda x, allow_empty=True: allow_empty and not x or (x.isdigit() and len(x) > 0),
+            "",
+            allow_empty=True,
+            default_value=self.env_vars["frontend"].get("NEXT_PUBLIC_FACEBOOK_PIXEL_ID", ""),
+        )
+
+        print_success("Frontend analytics configuration saved.")
 
     def collect_webhook_keys(self):
         """Collects the webhook configuration."""
@@ -1531,11 +2234,16 @@ class SetupWizard:
 
     def configure_env_files(self):
         """Configures and writes the .env files for frontend and backend."""
-        print_step(14, self.total_steps, "Configuring Environment Files")
+        print_step(20, self.total_steps, "Configuring Environment Files")
+        
+        # Get project root directory (where setup.py is located)
+        # This ensures we write to the correct locations regardless of current working directory
+        project_root = os.path.dirname(os.path.abspath(__file__))
 
         # --- Backend .env ---
         is_docker = self.env_vars["setup_method"] == "docker"
         redis_host = "redis" if is_docker else "localhost"
+        redis_port = self.env_vars.get("redis", {}).get("REDIS_PORT", "6379") if not is_docker else "6379"
 
         # Generate ENCRYPTION_KEY using the same logic as generate_encryption_key()
         import base64
@@ -1545,6 +2253,12 @@ class SetupWizard:
 
         # Always use localhost for the base .env file
         supabase_url = self.env_vars["supabase"].get("SUPABASE_URL", "")
+        
+        # For local Supabase, set DATABASE_URL to connect directly to PostgreSQL
+        database_url = ""
+        if self.env_vars.get("supabase_setup_method") == "local":
+            # Local Supabase uses default postgres:postgres credentials on port 54322
+            database_url = "postgresql+psycopg://postgres:postgres@127.0.0.1:54322/postgres"
 
         backend_env = {
             "ENV_MODE": "local",
@@ -1553,8 +2267,10 @@ class SetupWizard:
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
             "SUPABASE_SERVICE_ROLE_KEY": self.env_vars["supabase"].get("SUPABASE_SERVICE_ROLE_KEY", ""),
             "SUPABASE_JWT_SECRET": self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", ""),
+            # Database connection URL (required for db.py)
+            "DATABASE_URL": database_url,
             "REDIS_HOST": redis_host,
-            "REDIS_PORT": "6379",
+            "REDIS_PORT": redis_port,
             "REDIS_PASSWORD": "",
             "REDIS_SSL": "false",
             **self.env_vars["llm"],
@@ -1573,7 +2289,9 @@ class SetupWizard:
             **self.env_vars.get("monitoring", {}),
             **self.env_vars.get("storage", {}),
             **self.env_vars.get("email", {}),
+            **self.env_vars.get("google", {}),
             "ENCRYPTION_KEY": encryption_key,
+            "FRONTEND_URL": "http://localhost:3000",
             "NEXT_PUBLIC_URL": "http://localhost:3000",
         }
 
@@ -1581,40 +2299,133 @@ class SetupWizard:
         for key, value in backend_env.items():
             backend_env_content += f"{key}={value or ''}\n"
 
-        with open(os.path.join("backend", ".env"), "w") as f:
+        # Ensure backend directory exists (using absolute path from project root)
+        backend_dir = os.path.join(project_root, "backend")
+        os.makedirs(backend_dir, exist_ok=True)
+        
+        # Write to backend/.env (NOT root .env) - using absolute path
+        backend_env_path = os.path.join(backend_dir, ".env")
+        with open(backend_env_path, "w") as f:
             f.write(backend_env_content)
-        print_success("Created backend/.env file with ENCRYPTION_KEY.")
+        
+        # Verify the file was written to the correct location
+        if not os.path.exists(backend_env_path):
+            print_error(f"Failed to create backend/.env file at {os.path.abspath(backend_env_path)}")
+            sys.exit(1)
+        
+        # Verify critical keys were written
+        missing_keys = []
+        if not backend_env.get("SUPABASE_URL"):
+            missing_keys.append("SUPABASE_URL")
+        if not backend_env.get("SUPABASE_ANON_KEY"):
+            missing_keys.append("SUPABASE_ANON_KEY")
+        if not backend_env.get("SUPABASE_SERVICE_ROLE_KEY"):
+            missing_keys.append("SUPABASE_SERVICE_ROLE_KEY")
+        if not backend_env.get("SUPABASE_JWT_SECRET"):
+            missing_keys.append("SUPABASE_JWT_SECRET")
+        
+        if missing_keys:
+            print_error(f"WARNING: Missing critical Supabase keys in .env file: {', '.join(missing_keys)}")
+            print_warning("The backend will not start without these keys.")
+            print_info("Please run the setup wizard again or manually add these keys to backend/.env")
+        else:
+            print_success(f"Created backend/.env file at {os.path.abspath(backend_env_path)} with ENCRYPTION_KEY and all Supabase keys.")
 
-        # --- Frontend .env.local ---
+        # --- Frontend .env ---
         # Always use localhost for base .env files - Docker override handled separately
-        frontend_supabase_url = self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"]
+        # Validate and set NEXT_PUBLIC_SUPABASE_URL if missing
+        if not self.env_vars["supabase"].get("NEXT_PUBLIC_SUPABASE_URL"):
+            if not self.env_vars["supabase"].get("SUPABASE_URL"):
+                print_error("SUPABASE_URL must be set before configuring environment files.")
+                sys.exit(1)
+            # Use SUPABASE_URL as fallback
+            self.env_vars["supabase"]["NEXT_PUBLIC_SUPABASE_URL"] = self.env_vars["supabase"]["SUPABASE_URL"]
+        
+        frontend_supabase_url = self.env_vars["supabase"].get("NEXT_PUBLIC_SUPABASE_URL", 
+            self.env_vars["supabase"].get("SUPABASE_URL", ""))
         backend_url = "http://localhost:8000/v1"
         
+        # Get frontend vars, ensuring defaults are set
+        frontend_vars = self.env_vars.get("frontend", {})
+        
         frontend_env = {
+            # Fixed values - always set these
             "NEXT_PUBLIC_ENV_MODE": "local",  # production, staging, or local
-            "NEXT_PUBLIC_SUPABASE_URL": frontend_supabase_url,
-            "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
+            "NEXT_PUBLIC_DISABLE_MOBILE_ADVERTISING": "true",  # Always true
             "NEXT_PUBLIC_BACKEND_URL": backend_url,
             "NEXT_PUBLIC_URL": "http://localhost:3000",
-            "KORTIX_ADMIN_API_KEY": self.env_vars["kortix"]["KORTIX_ADMIN_API_KEY"],
-            **self.env_vars.get("frontend", {}),
+            # Supabase (already collected)
+            "NEXT_PUBLIC_SUPABASE_URL": frontend_supabase_url,
+            "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
+            # Kortix Admin (already collected)
+            "KORTIX_ADMIN_API_KEY": self.env_vars["kortix"].get("KORTIX_ADMIN_API_KEY", ""),
+            # Optional frontend variables (from collection steps)
+            "NEXT_PUBLIC_GOOGLE_CLIENT_ID": frontend_vars.get("NEXT_PUBLIC_GOOGLE_CLIENT_ID", ""),
+            "NEXT_PUBLIC_POSTHOG_KEY": frontend_vars.get("NEXT_PUBLIC_POSTHOG_KEY", ""),
+            "EDGE_CONFIG": frontend_vars.get("EDGE_CONFIG", ""),
+            "NEXT_PUBLIC_GTM_ID": frontend_vars.get("NEXT_PUBLIC_GTM_ID", ""),
+            "NEXT_PUBLIC_GA_ID_1": frontend_vars.get("NEXT_PUBLIC_GA_ID_1", ""),
+            "NEXT_PUBLIC_GA_ID_2": frontend_vars.get("NEXT_PUBLIC_GA_ID_2", ""),
+            "NEXT_PUBLIC_FACEBOOK_PIXEL_ID": frontend_vars.get("NEXT_PUBLIC_FACEBOOK_PIXEL_ID", ""),
         }
 
         frontend_env_content = "# Generated by Kortix Super Worker install script\n\n"
         for key, value in frontend_env.items():
             frontend_env_content += f"{key}={value or ''}\n"
 
-        with open(os.path.join("apps", "frontend", ".env.local"), "w") as f:
+        # Ensure apps/frontend directory exists (using absolute path from project root)
+        frontend_dir = os.path.join(project_root, "apps", "frontend")
+        os.makedirs(frontend_dir, exist_ok=True)
+        
+        # Remove any existing .env.local file that might override .env
+        # Next.js loads .env.local with higher priority than .env, which can cause conflicts
+        env_local_path = os.path.join(frontend_dir, ".env.local")
+        if os.path.exists(env_local_path):
+            print_info("Removing existing .env.local file to prevent conflicts with .env")
+            os.remove(env_local_path)
+        
+        # Write to apps/frontend/.env (NOT root .env) - using absolute path
+        frontend_env_path = os.path.join(frontend_dir, ".env")
+        with open(frontend_env_path, "w") as f:
             f.write(frontend_env_content)
-        print_success("Created apps/frontend/.env.local file.")
+        
+        # Verify the file was written to the correct location
+        if not os.path.exists(frontend_env_path):
+            print_error(f"Failed to create apps/frontend/.env file at {os.path.abspath(frontend_env_path)}")
+            sys.exit(1)
+        
+        print_success(f"Created apps/frontend/.env file at {os.path.abspath(frontend_env_path)}")
+        
+        # Verify frontend and backend Supabase URLs match
+        backend_supabase_url = backend_env.get("SUPABASE_URL", "")
+        frontend_supabase_url_check = frontend_env.get("NEXT_PUBLIC_SUPABASE_URL", "")
+        if backend_supabase_url and frontend_supabase_url_check:
+            if backend_supabase_url == frontend_supabase_url_check:
+                print_success("✓ Frontend and backend Supabase URLs match")
+            else:
+                print_warning(f"⚠ Frontend and backend Supabase URLs differ:")
+                print_warning(f"  Backend: {backend_supabase_url}")
+                print_warning(f"  Frontend: {frontend_supabase_url_check}")
+                print_warning("This may cause authentication issues. They should match.")
+        
+        # Verify frontend and backend anon keys match
+        backend_anon_key = backend_env.get("SUPABASE_ANON_KEY", "")
+        frontend_anon_key_check = frontend_env.get("NEXT_PUBLIC_SUPABASE_ANON_KEY", "")
+        if backend_anon_key and frontend_anon_key_check:
+            if backend_anon_key == frontend_anon_key_check:
+                print_success("✓ Frontend and backend Supabase anon keys match")
+            else:
+                print_warning(f"⚠ Frontend and backend Supabase anon keys differ")
+                print_warning("This will cause authentication failures. They must match.")
 
         # --- Mobile App .env ---
         # Mobile will access from the device, so it should use localhost (not Docker host)
         # Users would need to update this based on their network setup
         mobile_env = {
             "EXPO_PUBLIC_ENV_MODE": "local",  # production, staging, or local
-            "EXPO_PUBLIC_SUPABASE_URL": self.env_vars["supabase"]["EXPO_PUBLIC_SUPABASE_URL"],
-            "EXPO_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
+            "EXPO_PUBLIC_SUPABASE_URL": self.env_vars["supabase"].get("EXPO_PUBLIC_SUPABASE_URL",
+                self.env_vars["supabase"].get("SUPABASE_URL", "")),
+            "EXPO_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
             "EXPO_PUBLIC_BACKEND_URL": "http://localhost:8000/v1",
             "EXPO_PUBLIC_URL": "http://localhost:3000",
         }
@@ -1623,14 +2434,26 @@ class SetupWizard:
         for key, value in mobile_env.items():
             mobile_env_content += f"{key}={value or ''}\n"
 
-        with open(os.path.join("apps", "mobile", ".env"), "w") as f:
+        # Ensure apps/mobile directory exists (using absolute path from project root)
+        mobile_dir = os.path.join(project_root, "apps", "mobile")
+        os.makedirs(mobile_dir, exist_ok=True)
+        
+        # Write to apps/mobile/.env (NOT root .env) - using absolute path
+        mobile_env_path = os.path.join(mobile_dir, ".env")
+        with open(mobile_env_path, "w") as f:
             f.write(mobile_env_content)
-        print_success("Created apps/mobile/.env file.")
+        
+        # Verify the file was written to the correct location
+        if not os.path.exists(mobile_env_path):
+            print_error(f"Failed to create apps/mobile/.env file at {os.path.abspath(mobile_env_path)}")
+            sys.exit(1)
+        
+        print_success(f"Created apps/mobile/.env file at {os.path.abspath(mobile_env_path)}")
 
 
     def setup_supabase_database(self):
         """Applies database migrations to Supabase (local or cloud)."""
-        print_step(15, self.total_steps, "Setting up Supabase Database")
+        print_step(21, self.total_steps, "Setting up Supabase Database")
 
         print_info(
             "This step will apply database migrations to your Supabase instance."
@@ -1654,6 +2477,88 @@ class SetupWizard:
             self._apply_local_migrations()
         else:
             self._apply_cloud_migrations()
+
+    def _preprocess_migrations_for_local(self):
+        """
+        Preprocesses migration files for local setup by removing CONCURRENTLY keywords.
+        
+        CREATE INDEX CONCURRENTLY cannot execute inside transactions, but supabase db reset
+        runs migrations in a transaction pipeline. This function creates preprocessed copies
+        of migrations with CONCURRENTLY removed.
+        
+        Returns:
+            tuple: (temp_dir_path, modified_files_list) or (None, []) on error
+        """
+        migrations_dir = os.path.join("backend", "supabase", "migrations")
+        
+        if not os.path.exists(migrations_dir):
+            print_warning(f"Migrations directory not found: {migrations_dir}")
+            return None, []
+        
+        # Pattern to match CREATE INDEX CONCURRENTLY (case-insensitive, handles various whitespace)
+        concurrently_pattern = re.compile(
+            r'\bCREATE\s+INDEX\s+CONCURRENTLY\b',
+            re.IGNORECASE | re.MULTILINE
+        )
+        
+        modified_files = []
+        temp_dir = None
+        
+        try:
+            # Create temporary directory for preprocessed migrations
+            temp_dir = tempfile.mkdtemp(prefix="supabase_migrations_")
+            print_info(f"Preprocessing migrations for local setup...")
+            
+            # Scan all SQL files in migrations directory
+            migration_files = sorted([f for f in os.listdir(migrations_dir) if f.endswith('.sql')])
+            
+            for filename in migration_files:
+                source_path = os.path.join(migrations_dir, filename)
+                dest_path = os.path.join(temp_dir, filename)
+                
+                try:
+                    with open(source_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                    
+                    # Check if file contains CONCURRENTLY
+                    if concurrently_pattern.search(content):
+                        # Remove CONCURRENTLY keyword
+                        preprocessed_content = concurrently_pattern.sub('CREATE INDEX', content)
+                        
+                        # Write preprocessed content to temp directory
+                        with open(dest_path, 'w', encoding='utf-8') as f:
+                            f.write(preprocessed_content)
+                        
+                        modified_files.append(filename)
+                        print_info(f"  ✓ Preprocessed: {filename} (removed CONCURRENTLY)")
+                    else:
+                        # Copy file as-is if no CONCURRENTLY found
+                        shutil.copy2(source_path, dest_path)
+                        
+                except Exception as e:
+                    print_warning(f"Failed to preprocess {filename}: {e}")
+                    # Copy original file on error
+                    try:
+                        shutil.copy2(source_path, dest_path)
+                    except:
+                        pass
+            
+            if modified_files:
+                print_success(f"Preprocessed {len(modified_files)} migration file(s) with CONCURRENTLY removed")
+            else:
+                print_info("No migrations with CONCURRENTLY found - using original migrations")
+            
+            return temp_dir, modified_files
+            
+        except Exception as e:
+            print_error(f"Failed to preprocess migrations: {e}")
+            # Cleanup temp directory on error
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    shutil.rmtree(temp_dir)
+                except:
+                    pass
+            return None, []
 
     def _apply_local_migrations(self):
         """Applies migrations to local Supabase using Supabase CLI."""
@@ -1691,10 +2596,57 @@ class SetupWizard:
             print_info("Please start Supabase services first with: npx supabase start")
             return
 
+        # Preprocess migrations to remove CONCURRENTLY keywords
+        migrations_dir = os.path.join("backend", "supabase", "migrations")
+        temp_migrations_dir = None
+        original_migrations_backup = None
+        modified_files = []
+        
+        try:
+            # Preprocess migrations
+            temp_migrations_dir, modified_files = self._preprocess_migrations_for_local()
+            
+            if temp_migrations_dir and modified_files:
+                # Validate that CONCURRENTLY was found
+                print_info(f"Found CREATE INDEX CONCURRENTLY in {len(modified_files)} migration(s) - automatically removing for local setup")
+                print_info(f"  Files: {', '.join(modified_files)}")
+                
+                # Create backup location for original migrations
+                original_migrations_backup = migrations_dir + "_backup"
+                
+                # Temporarily replace migrations directory with preprocessed version
+                if os.path.exists(original_migrations_backup):
+                    shutil.rmtree(original_migrations_backup)
+                
+                # Move original migrations to backup
+                shutil.move(migrations_dir, original_migrations_backup)
+                
+                # Move preprocessed migrations to migrations location
+                shutil.move(temp_migrations_dir, migrations_dir)
+                temp_migrations_dir = None  # Prevent cleanup since we moved it
+                
+                print_info("Using preprocessed migrations (CONCURRENTLY removed)")
+            elif temp_migrations_dir:
+                # No CONCURRENTLY found, but temp dir was created - clean it up
+                shutil.rmtree(temp_migrations_dir)
+                temp_migrations_dir = None
+
+        except Exception as e:
+            print_warning(f"Failed to preprocess migrations: {e}")
+            print_info("Continuing with original migrations (may fail if CONCURRENTLY is present)")
+            # Cleanup temp directory if it exists
+            if temp_migrations_dir and os.path.exists(temp_migrations_dir):
+                try:
+                    shutil.rmtree(temp_migrations_dir)
+                except:
+                    pass
+
         # Apply migrations using Supabase CLI for local development
         # For local Supabase, we use 'db reset' which applies all migrations
         print_info("Resetting local database and applying all migrations...")
         print_info("This will recreate the database schema from scratch.")
+        
+        migration_success = False
         try:
             subprocess.run(
                 ["npx", "supabase", "db", "reset"],
@@ -1704,6 +2656,7 @@ class SetupWizard:
             )
             print_success("All migrations applied successfully!")
             print_success("Local Supabase database is ready!")
+            migration_success = True
             
             print_info(
                 "Note: For local Supabase, the 'basejump' schema is already exposed in config.toml")
@@ -1712,6 +2665,27 @@ class SetupWizard:
             print_error(f"Failed to apply migrations: {e}")
             print_warning("You may need to apply migrations manually.")
             print_info("Try running: cd backend && npx supabase db reset")
+        
+        finally:
+            # Restore original migrations directory
+            if original_migrations_backup and os.path.exists(original_migrations_backup):
+                try:
+                    # Remove preprocessed migrations directory
+                    if os.path.exists(migrations_dir):
+                        shutil.rmtree(migrations_dir)
+                    # Restore original migrations
+                    shutil.move(original_migrations_backup, migrations_dir)
+                    print_info("Restored original migration files")
+                except Exception as e:
+                    print_warning(f"Failed to restore original migrations: {e}")
+                    print_warning("You may need to manually restore migrations from backup")
+            
+            # Cleanup temp directory if it still exists (shouldn't happen, but safety check)
+            if temp_migrations_dir and os.path.exists(temp_migrations_dir):
+                try:
+                    shutil.rmtree(temp_migrations_dir)
+                except:
+                    pass
 
     def _apply_cloud_migrations(self):
         """Applies migrations to cloud Supabase using Supabase CLI."""
@@ -1734,7 +2708,11 @@ class SetupWizard:
         # Get project reference from stored value or extract from URL
         project_ref = self.env_vars["supabase"].get("SUPABASE_PROJECT_REF")
         if not project_ref:
-            supabase_url = self.env_vars["supabase"]["SUPABASE_URL"]
+            supabase_url = self.env_vars["supabase"].get("SUPABASE_URL")
+            if not supabase_url:
+                print_error("SUPABASE_URL is required for cloud migrations.")
+                print_error("Please configure Supabase settings first.")
+                return
             match = re.search(r"https://([^.]+)\.supabase\.co", supabase_url)
             if not match:
                 print_error(
@@ -1778,7 +2756,7 @@ class SetupWizard:
 
     def install_dependencies(self):
         """Installs frontend and backend dependencies for manual setup."""
-        print_step(16, self.total_steps, "Installing Dependencies")
+        print_step(22, self.total_steps, "Installing Dependencies")
         if self.env_vars["setup_method"] == "docker":
             print_info(
                 "Skipping dependency installation for Docker setup (will be handled by Docker Compose)."
@@ -1821,7 +2799,7 @@ class SetupWizard:
 
     def start_suna(self):
         """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup."""
-        print_step(17, self.total_steps, "Starting Kortix Super Worker")
+        print_step(23, self.total_steps, "Starting Kortix Super Worker")
         if self.env_vars["setup_method"] == "docker":
             print_info("Starting Kortix Super Worker with Docker Compose...")
             compose_cmd = self.get_compose_command()
@@ -1958,14 +2936,7 @@ class SetupWizard:
             print(
                 f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
-            step_num += 1
-
-            print(
-                f"\n{Colors.BOLD}{step_num}. Start Background Worker (in a new terminal):{Colors.ENDC}"
-            )
-            print(
-                f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}"
-            )
+            print_info("   Note: Background tasks (agent runs, memory, categorization) run automatically in the API process.")
             
             # Show stop commands for local Supabase
             if self.env_vars.get("supabase_setup_method") == "local":
