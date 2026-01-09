@@ -1217,6 +1217,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
+                                fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>
                               {cleanContent}
@@ -1241,6 +1242,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               style={{
                                 fontSize: 16,
                                 lineHeight: 24,
+                                fontFamily: 'Roobert-Regular',
                                 color: isDark ? '#fafafa' : '#18181b',
                               }}>
                               {cleanContent}
@@ -1550,13 +1552,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               <View className="mb-2 flex-row items-center">
                 {renderAgentIndicator(null)}
               </View>
-              {isContemplating ? (
-                <View className="flex-row py-2 items-center">
-                  <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
-                </View>
-              ) : (
-                <AgentLoader />
-              )}
+              <View className="h-6 justify-center">
+                {isContemplating ? (
+                  <View className="flex-row items-center">
+                    <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
+                  </View>
+                ) : (
+                  <AgentLoader />
+                )}
+              </View>
             </View>
           );
         })()}

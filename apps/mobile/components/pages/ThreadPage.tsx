@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
+import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, NativeScrollEvent, NativeSyntheticEvent, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import Animated, {
@@ -269,89 +269,136 @@ export function ThreadPage({
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
   const scrollViewRef = React.useRef<ScrollView>(null);
   
+  const windowHeight = Dimensions.get('window').height;
   const baseBottomPadding = CHAT_INPUT_SECTION_HEIGHT.THREAD_PAGE + insets.bottom;
-  const [isUserScrolledUp, setIsUserScrolledUp] = React.useState(false);
+  const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
   const [isRefreshing, setIsRefreshing] = React.useState(false);
+  const [pushToTop, setPushToTop] = React.useState(false);
   const hasScrolledToBottomOnOpenRef = React.useRef(false);
+  const lastUserMessageCountRef = React.useRef(0);
   const contentHeightRef = React.useRef(0);
   const viewportHeightRef = React.useRef(0);
-  const lastScrollTimeRef = React.useRef(0);
-  const currentScrollY = React.useRef(0);
-  const isAutoScrollingRef = React.useRef(false);
-  const userScrollTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollLockActiveRef = React.useRef(false);
+  const agentWasRunningRef = React.useRef(false);
 
-  const scrollToBottomSmooth = React.useCallback(() => {
-    const now = Date.now();
-    if (now - lastScrollTimeRef.current < 50) return;
-    lastScrollTimeRef.current = now;
-    
-    isAutoScrollingRef.current = true;
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-    
-    setTimeout(() => {
-      isAutoScrollingRef.current = false;
-    }, 300);
-  }, []);
+  // Count user messages
+  const userMessageCount = React.useMemo(() => 
+    messages.filter(m => m.type === 'user').length,
+    [messages]
+  );
 
+  // Calculate extra padding - ONLY based on pushToTop state to avoid re-renders from streaming changes
+  const extraPushPadding = React.useMemo(() => {
+    if (pushToTop) {
+      const headerHeight = Math.max(insets.top, 16) + 80;
+      const availableHeight = windowHeight - headerHeight - baseBottomPadding;
+      // Leave room for user message (~100px) + 10% buffer from top
+      const userMessageHeight = 100;
+      const topBuffer = availableHeight * 0.10;
+      return availableHeight - userMessageHeight - topBuffer;
+    }
+    return 0;
+  }, [pushToTop, windowHeight, insets.top, baseBottomPadding]);
+
+  const contentBottomPadding = baseBottomPadding + extraPushPadding;
+
+  // Track viewport size
   const handleLayout = React.useCallback((event: any) => {
     viewportHeightRef.current = event.nativeEvent.layout.height;
   }, []);
 
+  // Track content size changes
   const handleContentSizeChange = React.useCallback((_contentWidth: number, contentHeight: number) => {
     const prevHeight = contentHeightRef.current;
     contentHeightRef.current = contentHeight;
     
-    const isStreaming = chat.isStreaming || chat.isAgentRunning;
-    const contentGrew = contentHeight > prevHeight;
-    
-    if (isStreaming && contentGrew && !isUserScrolledUp) {
-      scrollToBottomSmooth();
+    // Scroll when padding is applied (content grew significantly)
+    if (scrollLockActiveRef.current && contentHeight > prevHeight + 100) {
+      const maxY = Math.max(0, contentHeight - viewportHeightRef.current);
+      scrollViewRef.current?.scrollTo({ y: maxY, animated: false });
+      scrollLockActiveRef.current = false;
     }
     
-    const hasOverflow = contentHeight > viewportHeightRef.current;
-    const scrollY = currentScrollY.current;
-    const maxScrollY = Math.max(0, contentHeight - viewportHeightRef.current);
-    const distanceFromBottom = maxScrollY - scrollY;
+    // Check if content overflows and we're not at the bottom - show scroll button
+    const actualContentHeight = contentHeight - extraPushPadding;
+    const hasOverflow = actualContentHeight > viewportHeightRef.current;
+    const currentScrollY = lastScrollYRef.current;
+    const actualMaxScrollY = Math.max(0, actualContentHeight - viewportHeightRef.current);
+    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
     
-    if (hasOverflow && distanceFromBottom > 150 && isUserScrolledUp) {
+    if (hasOverflow && !isAtActualBottom && !isUserScrolling) {
       setShowScrollToBottom(true);
     }
-  }, [isUserScrolledUp, chat.isStreaming, chat.isAgentRunning, scrollToBottomSmooth]);
+  }, [extraPushPadding, isUserScrolling]);
 
+  // Scroll to bottom when thread first opens
   React.useEffect(() => {
-    if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current) {
+    if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current && !pushToTop) {
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: false });
         hasScrolledToBottomOnOpenRef.current = true;
       }, 150);
     }
-  }, [messages.length]);
+  }, [messages.length, pushToTop]);
 
+  // Reset when thread changes
   React.useEffect(() => {
     hasScrolledToBottomOnOpenRef.current = false;
+    lastUserMessageCountRef.current = userMessageCount;
+    setPushToTop(false);
+    scrollLockActiveRef.current = false;
+    agentWasRunningRef.current = false;
   }, [chat.activeThread?.id]);
 
+  // When user sends a NEW message - activate push to top
+  // Only trigger for ACTUAL new messages (count increases by 1-2), NOT bulk thread loads
   React.useEffect(() => {
-    const isStreaming = chat.isStreaming || chat.isAgentRunning;
-    const hasContent = streamingContent.length > 0 || streamingToolCall !== null;
+    const prevCount = lastUserMessageCountRef.current;
+    const diff = userMessageCount - prevCount;
     
-    if (isStreaming && !isUserScrolledUp) {
-      scrollToBottomSmooth();
+    // Only trigger if:
+    // 1. Count increased by 1-2 (actual new message, not bulk load)
+    // 2. Previous count was > 0 (thread was already loaded, not initial load)
+    const isActualNewMessage = diff > 0 && diff <= 2 && prevCount > 0;
+    
+    if (isActualNewMessage) {
+      setPushToTop(true);
+      scrollLockActiveRef.current = true;
+      setIsUserScrolling(false);
+      
+      // Multiple scroll attempts
+      const scrollAttempt = (ms: number) => {
+        setTimeout(() => {
+          scrollViewRef.current?.scrollToEnd({ animated: false });
+        }, ms);
+      };
+      
+      scrollAttempt(0);
+      scrollAttempt(30);
+      scrollAttempt(60);
+      scrollAttempt(100);
+      scrollAttempt(150);
+      scrollAttempt(200);
     }
     
-    if (!isStreaming && !chat.isAgentRunning) {
-      setIsUserScrolledUp(false);
-    }
-  }, [streamingContent, streamingToolCall, chat.isStreaming, chat.isAgentRunning, isUserScrolledUp, scrollToBottomSmooth]);
+    lastUserMessageCountRef.current = userMessageCount;
+  }, [userMessageCount]);
 
+  // Track when agent is running - DON'T reset pushToTop, keep the padding
   React.useEffect(() => {
-    return () => {
-      if (userScrollTimeoutRef.current) {
-        clearTimeout(userScrollTimeoutRef.current);
-      }
-    };
-  }, []);
+    const isRunning = chat.isStreaming || chat.isAgentRunning;
+    
+    if (isRunning) {
+      agentWasRunningRef.current = true;
+    } else if (agentWasRunningRef.current) {
+      agentWasRunningRef.current = false;
+      // DON'T remove pushToTop - keep the padding to avoid scroll jump
+      // The extra space at bottom is fine, user can scroll naturally
+    }
+  }, [chat.isStreaming, chat.isAgentRunning]);
+
+  const lastScrollYRef = React.useRef(0);
 
   const scrollButtonOpacity = useSharedValue(0);
   const scrollButtonScale = useSharedValue(0.8);
@@ -374,42 +421,48 @@ export function ThreadPage({
 
   const handleScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    const scrollY = contentOffset.y;
-    const maxScrollY = Math.max(0, contentSize.height - layoutMeasurement.height);
-    const hasOverflow = contentSize.height > layoutMeasurement.height;
-    const distanceFromBottom = maxScrollY - scrollY;
-    const isNearBottom = distanceFromBottom < 150;
+    const currentScrollY = contentOffset.y;
+    
+    // Calculate the ACTUAL content bottom (excluding extra push padding)
+    const actualContentHeight = contentSize.height - extraPushPadding;
+    const actualMaxScrollY = Math.max(0, actualContentHeight - layoutMeasurement.height);
+    
+    // Check if content is larger than viewport
+    const hasOverflow = actualContentHeight > layoutMeasurement.height;
+    
+    // User is at bottom of ACTUAL content (not counting padding)
+    const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
 
+    // Track for calculations
     contentHeightRef.current = contentSize.height;
     viewportHeightRef.current = layoutMeasurement.height;
-    currentScrollY.current = scrollY;
+    lastScrollYRef.current = currentScrollY;
 
-    if (isAutoScrollingRef.current) {
-      return;
-    }
-
-    if (hasOverflow && !isNearBottom) {
-      if (userScrollTimeoutRef.current) {
-        clearTimeout(userScrollTimeoutRef.current);
-      }
-      userScrollTimeoutRef.current = setTimeout(() => {
-        setIsUserScrolledUp(true);
-        setShowScrollToBottom(true);
-      }, 50);
+    // Show "scroll to bottom" button when:
+    // 1. Content overflows the viewport
+    // 2. User is NOT at the bottom of actual content
+    if (hasOverflow && !isAtActualBottom) {
+      setIsUserScrolling(true);
+      setShowScrollToBottom(true);
     } else {
-      if (userScrollTimeoutRef.current) {
-        clearTimeout(userScrollTimeoutRef.current);
-      }
-      setIsUserScrolledUp(false);
+      setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
-  }, []);
+  }, [extraPushPadding]);
 
   const scrollToBottom = React.useCallback(() => {
-    scrollViewRef.current?.scrollToEnd({ animated: true });
-    setIsUserScrolledUp(false);
+    if (pushToTop && extraPushPadding > 0) {
+      // In pushToTop mode, scroll to actual content bottom (not the extra padding)
+      const actualContentHeight = contentHeightRef.current - extraPushPadding;
+      const targetY = Math.max(0, actualContentHeight - viewportHeightRef.current);
+      scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
+    } else {
+      // Normal mode - scroll to very end
+      scrollViewRef.current?.scrollToEnd({ animated: true });
+    }
+    setIsUserScrolling(false);
     setShowScrollToBottom(false);
-  }, []);
+  }, [pushToTop, extraPushPadding]);
 
   const handleRefresh = React.useCallback(async () => {
     if (chat.isStreaming || chat.isAgentRunning) {
@@ -506,7 +559,7 @@ export function ThreadPage({
               alignItems: 'center',
               paddingHorizontal: 32,
               paddingTop: Math.max(insets.top, 16) + 80,
-              paddingBottom: baseBottomPadding,
+              paddingBottom: contentBottomPadding,
             }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -543,7 +596,7 @@ export function ThreadPage({
               flexGrow: 1,
               justifyContent: 'flex-end',
               paddingTop: Math.max(insets.top, 16) + 80,
-              paddingBottom: baseBottomPadding,
+              paddingBottom: contentBottomPadding,
               paddingHorizontal: 16,
             }}
             keyboardShouldPersistTaps="handled"
@@ -583,7 +636,6 @@ export function ThreadPage({
                 onFilePress={handleFilePress}
                 onPromptFill={chat.setInputValue}
                 isSendingMessage={chat.isSendingMessage}
-                onRequestScroll={isUserScrolledUp ? undefined : scrollToBottomSmooth}
               />
             )}
           </ScrollView>
