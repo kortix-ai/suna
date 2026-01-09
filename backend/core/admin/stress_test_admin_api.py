@@ -27,6 +27,18 @@ from core.services.redis import redis
 router = APIRouter(prefix="/admin/stress-test", tags=["admin-stress-test"])
 
 # ============================================================================
+# ALB MODE (for bypassing Cloudflare in production)
+# ============================================================================
+# Set STRESS_TEST_ALB_URL to hit ALB directly (bypasses Cloudflare, distributes across ECS).
+# Leave unset for local/staging where Cloudflare isn't in the way.
+#
+# Example for prod:
+#   STRESS_TEST_ALB_URL=https://your-alb-name.region.elb.amazonaws.com
+#   STRESS_TEST_HOST_HEADER=api.yourdomain.com  (optional, defaults to api.kortix.com)
+STRESS_TEST_ALB_URL = os.getenv("STRESS_TEST_ALB_URL")
+STRESS_TEST_HOST_HEADER = os.getenv("STRESS_TEST_HOST_HEADER", "api.kortix.com")
+
+# ============================================================================
 # MODELS
 # ============================================================================
 
@@ -118,12 +130,18 @@ async def run_single_request_via_http(
     base_url: str,
     auth_token: str,
     prompt: str,
+    host_header: Optional[str] = None,
+    skip_ssl_verify: bool = False,
     measure_ttft: bool = True,
     ttft_timeout: float = 120.0,
 ) -> Dict[str, Any]:
     """
     Run a single agent request by making an actual HTTP call.
     This gets distributed across workers like real traffic.
+    
+    Args:
+        host_header: If set, adds Host header (for ALB routing)
+        skip_ssl_verify: If True, skip SSL verification (for ALB with AWS domain)
     """
     result = {
         "request_id": request_id,
@@ -141,16 +159,21 @@ async def run_single_request_via_http(
     start_time = time.time()
     
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=60.0, verify=not skip_ssl_verify) as client:
+            # Build headers
+            headers = {
+                "Authorization": f"Bearer {auth_token}",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-Skip-Limits": "true",  # Bypass limits for stress testing (verified server-side)
+                "X-Emit-Timing": "true",  # Emit detailed timing breakdown to Redis
+            }
+            if host_header:
+                headers["Host"] = host_header
+            
             # Make actual HTTP call to /v1/agent/start with mock-ai model
             response = await client.post(
                 f"{base_url}/v1/agent/start",
-                headers={
-                    "Authorization": f"Bearer {auth_token}",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                    "X-Skip-Limits": "true",  # Bypass limits for stress testing (verified server-side)
-                    "X-Emit-Timing": "true",  # Emit detailed timing breakdown to Redis
-                },
+                headers=headers,
                 data={
                     "prompt": prompt,
                     "model_name": "mock-ai",  # Always use mock to avoid token costs
@@ -219,13 +242,25 @@ async def run_stress_test(
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     auth_token = auth_header.split(" ", 1)[1]
     
-    # Construct base URL from request headers (works through load balancers)
-    # Safe because only super admins can call this endpoint
-    base_url = os.getenv("STRESS_TEST_BASE_URL")
-    if not base_url:
-        scheme = request.headers.get("x-forwarded-proto", "http")
-        host = request.headers.get("host", "localhost:8000")
-        base_url = f"{scheme}://{host}"
+    # Determine target URL and mode
+    # ALB mode: bypass Cloudflare, hit ALB directly with Host header (for prod ECS)
+    # Normal mode: use request headers (for local/staging without Cloudflare)
+    alb_url = STRESS_TEST_ALB_URL
+    if alb_url:
+        # ALB mode: bypass Cloudflare
+        base_url = alb_url
+        host_header = STRESS_TEST_HOST_HEADER
+        skip_ssl_verify = True
+        logger.info(f"Stress test using ALB mode: {base_url} with Host: {host_header}")
+    else:
+        # Normal mode: use incoming request headers
+        base_url = os.getenv("STRESS_TEST_BASE_URL")
+        if not base_url:
+            scheme = request.headers.get("x-forwarded-proto", "http")
+            host = request.headers.get("host", "localhost:8000")
+            base_url = f"{scheme}://{host}"
+        host_header = None
+        skip_ssl_verify = False
     
     prompts = config.prompts or DEFAULT_PROMPTS
     num_requests = min(config.num_requests, 200)
@@ -283,6 +318,8 @@ async def run_stress_test(
                     base_url=base_url,
                     auth_token=auth_token,
                     prompt=random.choice(prompts),
+                    host_header=host_header,
+                    skip_ssl_verify=skip_ssl_verify,
                     measure_ttft=measure_ttft,
                     ttft_timeout=ttft_timeout,
                 )
