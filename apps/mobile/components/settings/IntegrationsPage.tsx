@@ -149,7 +149,7 @@ export function IntegrationsPageContent({
         className="flex-1"
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}>
-        <View className={noPadding ? 'pb-6 px-6' : 'pb-6 px-6'}>
+        <View className={noPadding ? 'pb-6' : 'pb-6'}>
           {/* Header with back button, title, and description */}
           <View className="mb-4 flex-row items-center">
             {onBack && (
