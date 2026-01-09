@@ -13,7 +13,12 @@ async def validate_account_exists(account_id: str) -> bool:
 
 async def get_presence_session(session_id: str) -> Optional[Dict[str, Any]]:
     """Get a presence session by session_id."""
-    sql = "SELECT * FROM user_presence_sessions WHERE session_id = :session_id"
+    sql = """
+    SELECT session_id, account_id, active_thread_id, last_seen, 
+           platform, device_info, client_timestamp, created_at, updated_at
+    FROM user_presence_sessions 
+    WHERE session_id = :session_id
+    """
     result = await execute_one(sql, {"session_id": session_id})
     return dict(result) if result else None
 
@@ -105,7 +110,9 @@ async def get_sessions_by_account_and_thread(
 ) -> List[Dict[str, Any]]:
     """Get all sessions for an account viewing a specific thread."""
     sql = """
-    SELECT * FROM user_presence_sessions 
+    SELECT session_id, account_id, active_thread_id, last_seen, 
+           platform, device_info, client_timestamp, created_at, updated_at
+    FROM user_presence_sessions 
     WHERE account_id = :account_id AND active_thread_id = :thread_id
     """
     rows = await execute(sql, {"account_id": account_id, "thread_id": thread_id})

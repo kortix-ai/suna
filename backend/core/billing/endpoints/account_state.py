@@ -272,26 +272,17 @@ async def _build_account_state(account_id: str) -> Dict:
         })
     
     # Get tier limits with detailed usage info
-    # PERFORMANCE: Pass subscription_tier_info to all checkers to avoid N+1 queries
-    from core.utils.limits_checker import (
-        check_thread_limit,
-        check_agent_run_limit,
-        check_agent_count_limit,
-        check_project_count_limit,
-        check_trigger_limit,
-        check_custom_mcp_limit
-    )
+    from core.utils.limits_checker import get_all_limits_fast
     
-    # Fetch all detailed limits in parallel, passing pre-fetched tier_info to avoid N+1 queries
-    # This reduces DB round trips from 6+ to 1 (tier info already fetched above)
-    thread_limit, concurrent_runs_limit, agent_count_limit, project_count_limit, trigger_limit, custom_mcp_limit = await asyncio.gather(
-        check_thread_limit(account_id, tier_info=subscription_tier_info),
-        check_agent_run_limit(account_id, tier_info=subscription_tier_info),
-        check_agent_count_limit(account_id, tier_info=subscription_tier_info),
-        check_project_count_limit(account_id, tier_info=subscription_tier_info),
-        check_trigger_limit(account_id, tier_info=subscription_tier_info),
-        check_custom_mcp_limit(account_id, tier_info=subscription_tier_info)
-    )
+    all_limits = await get_all_limits_fast(account_id, tier_info=subscription_tier_info)
+    
+    # Extract individual limits from combined result
+    thread_limit = all_limits['threads']
+    concurrent_runs_limit = all_limits['concurrent_runs']
+    agent_count_limit = all_limits['agents']
+    project_count_limit = all_limits['projects']
+    trigger_limit = all_limits['triggers']
+    custom_mcp_limit = all_limits['custom_mcps']
     
     logger.debug(f"[ACCOUNT_STATE] Built complete state in {(time.time() - t_start) * 1000:.1f}ms")
     

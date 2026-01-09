@@ -72,6 +72,51 @@ async def count_user_projects(account_id: str) -> int:
     return result["count"] if result else 0
 
 
+async def get_all_limits_counts(account_id: str) -> Dict[str, Any]:
+    """
+    Get all limit counts in a SINGLE query instead of 6 separate queries.
+    This reduces DB round-trips from 6 to 1 for the account-state endpoint.
+    
+    Returns counts for: agents, threads, projects, running_runs, triggers (scheduled/app)
+    """
+    sql = """
+    SELECT 
+        (SELECT COUNT(*) FROM agents 
+         WHERE account_id = :account_id 
+           AND (metadata->>'is_suna_default')::boolean IS NOT TRUE) as agent_count,
+        (SELECT COUNT(*) FROM threads WHERE account_id = :account_id) as thread_count,
+        (SELECT COUNT(*) FROM projects WHERE account_id = :account_id) as project_count,
+        (SELECT COUNT(*) FROM agent_runs ar 
+         INNER JOIN threads t ON ar.thread_id = t.thread_id
+         WHERE t.account_id = :account_id AND ar.status = 'running') as running_runs_count,
+        (SELECT COALESCE(
+            SUM(JSONB_ARRAY_LENGTH(
+                COALESCE(av.config->'tools'->'custom_mcp', '[]'::jsonb)
+            )), 0)
+         FROM agents a
+         LEFT JOIN agent_versions av ON a.current_version_id = av.version_id
+         WHERE a.account_id = :account_id) as custom_mcp_count
+    """
+    result = await execute_one(sql, {"account_id": account_id})
+    
+    if not result:
+        return {
+            "agent_count": 0,
+            "thread_count": 0,
+            "project_count": 0,
+            "running_runs_count": 0,
+            "custom_mcp_count": 0
+        }
+    
+    return {
+        "agent_count": result["agent_count"] or 0,
+        "thread_count": result["thread_count"] or 0,
+        "project_count": result["project_count"] or 0,
+        "running_runs_count": result["running_runs_count"] or 0,
+        "custom_mcp_count": result["custom_mcp_count"] or 0
+    }
+
+
 async def check_agent_exists(agent_id: str, account_id: str) -> bool:
     sql = """
     SELECT agent_id FROM agents 

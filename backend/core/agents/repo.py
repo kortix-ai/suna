@@ -138,14 +138,25 @@ async def list_agents(
 
 
 async def get_agent_by_id(agent_id: str, account_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    columns = """
+        agent_id, account_id, name, description, is_default, is_public, tags,
+        icon_name, icon_color, icon_background, created_at, updated_at,
+        current_version_id, version_count, metadata
+    """
+    
     if account_id:
-        sql = """
-        SELECT * FROM agents 
+        sql = f"""
+        SELECT {columns}
+        FROM agents 
         WHERE agent_id = :agent_id AND account_id = :account_id
         """
         params = {"agent_id": agent_id, "account_id": account_id}
     else:
-        sql = "SELECT * FROM agents WHERE agent_id = :agent_id"
+        sql = f"""
+        SELECT {columns}
+        FROM agents 
+        WHERE agent_id = :agent_id
+        """
         params = {"agent_id": agent_id}
     
     result = await execute_one(sql, params)

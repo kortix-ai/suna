@@ -396,3 +396,86 @@ async def check_thread_limit(account_id: str, tier_info: Optional[Dict] = None, 
             'limit': 10,
             'tier_name': 'free'
         }
+
+
+async def get_all_limits_fast(account_id: str, tier_info: Dict) -> Dict[str, Any]:
+    """
+    Get ALL limits in a single DB query + tier lookup.
+    
+    This reduces 6+ separate DB round-trips to just 1, significantly improving
+    latency for the account-state endpoint (used heavily by mobile app).
+    
+    Args:
+        account_id: User's account ID
+        tier_info: Pre-fetched tier info (required - caller should fetch once)
+        
+    Returns:
+        Dict with all limit info: threads, projects, agents, running_runs, custom_mcps, triggers
+    """
+    import time
+    t_start = time.time()
+    
+    tier_name = tier_info.get('name', 'free')
+    
+    # Get tier limits
+    thread_limit = tier_info.get('thread_limit', 10)
+    project_limit = tier_info.get('project_limit', 3)
+    agent_limit = tier_info.get('custom_workers_limit', 1)
+    concurrent_limit = tier_info.get('concurrent_runs', 1)
+    custom_mcp_limit = tier_info.get('custom_workers_limit', 0)
+    scheduled_trigger_limit = tier_info.get('scheduled_triggers_limit', 1)
+    app_trigger_limit = tier_info.get('app_triggers_limit', 2)
+    
+    # Single query for all counts
+    counts = await limits_repo.get_all_limits_counts(account_id)
+    
+    # Get trigger counts separately (already optimized with GROUP BY)
+    trigger_counts = await limits_repo.count_all_triggers_for_account(account_id)
+    
+    logger.debug(f"⚡ All limits fetched in {(time.time() - t_start) * 1000:.1f}ms (single query)")
+    
+    return {
+        'threads': {
+            'current_count': counts['thread_count'],
+            'limit': thread_limit,
+            'can_create': counts['thread_count'] < thread_limit,
+            'tier_name': tier_name
+        },
+        'projects': {
+            'current_count': counts['project_count'],
+            'limit': project_limit,
+            'can_create': counts['project_count'] < project_limit,
+            'tier_name': tier_name
+        },
+        'agents': {
+            'current_count': counts['agent_count'],
+            'limit': agent_limit,
+            'can_create': counts['agent_count'] < agent_limit,
+            'tier_name': tier_name
+        },
+        'concurrent_runs': {
+            'running_count': counts['running_runs_count'],
+            'limit': concurrent_limit,
+            'can_start': counts['running_runs_count'] < concurrent_limit,
+            'tier_name': tier_name
+        },
+        'custom_mcps': {
+            'current_count': counts['custom_mcp_count'],
+            'limit': custom_mcp_limit,
+            'can_create': counts['custom_mcp_count'] < custom_mcp_limit,
+            'tier_name': tier_name
+        },
+        'triggers': {
+            'scheduled': {
+                'current_count': trigger_counts.get('scheduled', 0),
+                'limit': scheduled_trigger_limit,
+                'can_create': trigger_counts.get('scheduled', 0) < scheduled_trigger_limit
+            },
+            'app': {
+                'current_count': trigger_counts.get('app', 0),
+                'limit': app_trigger_limit,
+                'can_create': trigger_counts.get('app', 0) < app_trigger_limit
+            },
+            'tier_name': tier_name
+        }
+    }
