@@ -410,7 +410,7 @@ export function PresentationToolView({
     >
       <View className="flex-1">
         <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-          <View className="px-4 gap-4 pb-4">
+          <View className="px-4 gap-4 py-4">
             {error ? (
               <View className="py-8 items-center">
                 <View 
