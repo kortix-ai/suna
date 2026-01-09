@@ -438,6 +438,47 @@ async def create_thread_full(
     return serialize_row(dict(result)) if result else None
 
 
+async def create_project_and_thread(
+    project_id: str,
+    thread_id: str,
+    account_id: str,
+    project_name: str,
+    thread_name: str = "New Chat",
+    status: str = "pending",
+    memory_enabled: Optional[bool] = None
+) -> Dict[str, Any]:
+    from datetime import datetime, timezone
+    from core.services.db import execute_one
+    
+    sql = """
+    WITH new_project AS (
+        INSERT INTO projects (project_id, account_id, name, created_at)
+        VALUES (:project_id, :account_id, :project_name, :created_at)
+        RETURNING project_id
+    )
+    INSERT INTO threads (thread_id, project_id, account_id, name, status, memory_enabled, created_at, updated_at)
+    SELECT :thread_id, project_id, :account_id, :thread_name, :status, :memory_enabled, :created_at, :updated_at
+    FROM new_project
+    RETURNING thread_id, project_id
+    """
+    
+    now = datetime.now(timezone.utc)
+    
+    result = await execute_one(sql, {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "account_id": account_id,
+        "project_name": project_name,
+        "thread_name": thread_name,
+        "status": status,
+        "memory_enabled": memory_enabled,
+        "created_at": now,
+        "updated_at": now
+    }, commit=True)
+    
+    return serialize_row(dict(result)) if result else None
+
+
 async def update_thread_status(
     thread_id: str,
     status: str,

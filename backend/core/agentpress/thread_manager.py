@@ -514,6 +514,8 @@ class ThreadManager:
         generation: Optional[StatefulGenerationClient] = None,
         latest_user_message_content: Optional[str] = None,
         cancellation_event: Optional[asyncio.Event] = None,
+        prefetch_messages_task: Optional[asyncio.Task] = None,
+        prefetch_llm_end_task: Optional[asyncio.Task] = None,
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Run a conversation thread with LLM integration and tool execution."""
         logger.debug(f"🚀 Starting thread execution for {thread_id} with model {llm_model}")
@@ -539,21 +541,20 @@ class ThreadManager:
                 thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
                 tool_choice, config, stream,
                 generation, auto_continue_state, temporary_message, latest_user_message_content,
-                cancellation_event
+                cancellation_event, prefetch_messages_task, prefetch_llm_end_task
             )
             
-            # If result is an error dict, convert it to a generator that yields the error
             if isinstance(result, dict) and result.get("status") == "error":
                 return self._create_single_error_generator(result)
             
             return result
 
-        # Auto-continue execution
         return self._auto_continue_generator(
             thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
             tool_choice, config, stream,
             generation, auto_continue_state, temporary_message,
-            native_max_auto_continues, latest_user_message_content, cancellation_event
+            native_max_auto_continues, latest_user_message_content, cancellation_event,
+            prefetch_messages_task, prefetch_llm_end_task
         )
 
     async def _execute_run(
@@ -561,7 +562,8 @@ class ThreadManager:
         llm_temperature: float, llm_max_tokens: Optional[int], tool_choice: ToolChoice,
         config: ProcessorConfig, stream: bool, generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]] = None,
-        latest_user_message_content: Optional[str] = None, cancellation_event: Optional[asyncio.Event] = None
+        latest_user_message_content: Optional[str] = None, cancellation_event: Optional[asyncio.Event] = None,
+        prefetch_messages_task: Optional[asyncio.Task] = None, prefetch_llm_end_task: Optional[asyncio.Task] = None
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Execute a single LLM run."""
         # Simple run counter - increments with each call
@@ -605,6 +607,12 @@ class ThreadManager:
             
             is_auto_continue = auto_continue_state.get('count', 0) > 0
             
+            openapi_tool_schemas_task = None
+            if config.native_tool_calling:
+                openapi_tool_schemas_task = asyncio.create_task(
+                    asyncio.to_thread(self.tool_registry.get_openapi_schemas)
+                )
+            
             if ENABLE_PROMPT_CACHING:
                 try:
                     from litellm.utils import token_counter
@@ -612,17 +620,44 @@ class ThreadManager:
                     import time as _time
                     
                     _t2 = _time.time()
-                    llm_end_task = asyncio.create_task(
-                        asyncio.wait_for(threads_repo.get_last_llm_response_end(thread_id), timeout=5.0)
-                    )
-                    messages_task = asyncio.create_task(
-                        self.get_llm_messages(thread_id)
-                    )
+                    prefetch_succeeded = False
+                    llm_end_content = None
                     
-                    llm_end_content, messages = await asyncio.gather(llm_end_task, messages_task)
-                    _query_time = (_time.time() - _t2) * 1000
-                    if _query_time > 500:
-                        logger.info(f"⚡ [PARALLEL] llm_response_end + messages fetch took {_query_time:.1f}ms (parallelized)")
+                    if prefetch_messages_task and prefetch_llm_end_task:
+                        try:
+                            if not prefetch_messages_task.done():
+                                await asyncio.wait_for(asyncio.shield(prefetch_messages_task), timeout=10.0)
+                            if not prefetch_llm_end_task.done():
+                                await asyncio.wait_for(asyncio.shield(prefetch_llm_end_task), timeout=5.0)
+                            
+                            prefetch_messages_result = prefetch_messages_task.result()
+                            prefetch_llm_end_result = prefetch_llm_end_task.result()
+                            
+                            if prefetch_messages_result is not None:
+                                messages = prefetch_messages_result
+                                llm_end_content = prefetch_llm_end_result
+                                prefetch_succeeded = True
+                                _query_time = (_time.time() - _t2) * 1000
+                                logger.info(f"⚡ [PREFETCH] Used prefetched data in {_query_time:.1f}ms ({len(messages)} msgs)")
+                        except asyncio.CancelledError:
+                            logger.warning("Prefetch tasks were cancelled, falling back to fresh fetch")
+                        except asyncio.TimeoutError:
+                            logger.warning("Prefetch tasks timed out, falling back to fresh fetch")
+                        except Exception as e:
+                            logger.warning(f"Prefetch failed ({type(e).__name__}), falling back to fresh fetch: {e}")
+                    
+                    if not prefetch_succeeded:
+                        llm_end_task = asyncio.create_task(
+                            asyncio.wait_for(threads_repo.get_last_llm_response_end(thread_id), timeout=5.0)
+                        )
+                        messages_task = asyncio.create_task(
+                            self.get_llm_messages(thread_id)
+                        )
+                        
+                        llm_end_content, messages = await asyncio.gather(llm_end_task, messages_task)
+                        _query_time = (_time.time() - _t2) * 1000
+                        if _query_time > 500:
+                            logger.info(f"⚡ [PARALLEL] llm_response_end + messages fetch took {_query_time:.1f}ms")
                     
                     if llm_end_content:
                         if isinstance(llm_end_content, str):
@@ -810,10 +845,12 @@ class ThreadManager:
                     logger.debug(f"First message: Skipping caching and validation ({len(messages_with_context)} messages)")
                 prepared_messages = [system_prompt] + messages_with_context
 
-            # Get tool schemas for LLM API call (after compression)
             schema_start = time.time()
-            openapi_tool_schemas = self.tool_registry.get_openapi_schemas() if config.native_tool_calling else None
-            logger.debug(f"⏱️ [TIMING] Get tool schemas: {(time.time() - schema_start) * 1000:.1f}ms")
+            if openapi_tool_schemas_task:
+                openapi_tool_schemas = await openapi_tool_schemas_task
+                logger.debug(f"⏱️ [TIMING] Get tool schemas (parallel): {(time.time() - schema_start) * 1000:.1f}ms")
+            else:
+                openapi_tool_schemas = None
 
             # Update generation tracking
             if generation:
@@ -974,7 +1011,8 @@ class ThreadManager:
         config: ProcessorConfig, stream: bool, generation: Optional[StatefulGenerationClient],
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]],
         native_max_auto_continues: int, latest_user_message_content: Optional[str] = None,
-        cancellation_event: Optional[asyncio.Event] = None
+        cancellation_event: Optional[asyncio.Event] = None,
+        prefetch_messages_task: Optional[asyncio.Task] = None, prefetch_llm_end_task: Optional[asyncio.Task] = None
     ) -> AsyncGenerator:
         """Generator that handles auto-continue logic."""
         logger.debug(f"Starting auto-continue generator, max: {native_max_auto_continues}")
@@ -1015,13 +1053,16 @@ class ThreadManager:
                         logger.error(f"Error checking credits in auto-continue: {e}")
                         # Continue execution if credit check fails (don't block on billing errors)
                 
+                is_first_turn = auto_continue_state['count'] == 0
                 response_gen = await self._execute_run(
                     thread_id, system_prompt, llm_model, llm_temperature, llm_max_tokens,
                     tool_choice, config, stream,
                     generation, auto_continue_state,
-                    temporary_message if auto_continue_state['count'] == 0 else None,
-                    latest_user_message_content if auto_continue_state['count'] == 0 else None,
-                    cancellation_event
+                    temporary_message if is_first_turn else None,
+                    latest_user_message_content if is_first_turn else None,
+                    cancellation_event,
+                    prefetch_messages_task if is_first_turn else None,
+                    prefetch_llm_end_task if is_first_turn else None
                 )
 
                 # Handle error responses
