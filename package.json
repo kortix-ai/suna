@@ -10,6 +10,9 @@
     "overrides": {
       "@types/react": "^19.2.7",
       "@types/react-dom": "^19.1.7"
+    },
+    "patchedDependencies": {
+      "html-entities@2.5.3": "patches/html-entities@2.5.3.patch"
     }
   }
 }
