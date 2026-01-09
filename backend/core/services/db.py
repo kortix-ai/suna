@@ -149,22 +149,10 @@ def _get_dsn() -> str:
     if not config.SUPABASE_URL:
         raise RuntimeError("No database connection configured")
     
-    # Check if this is local Supabase (localhost or 127.0.0.1)
-    supabase_url = config.SUPABASE_URL
-    if "localhost" in supabase_url or "127.0.0.1" in supabase_url:
-        # For local Supabase, construct DATABASE_URL automatically
-        # Default local Supabase uses postgres:postgres on port 54322
-        return "postgresql+psycopg://postgres:postgres@127.0.0.1:54322/postgres"
-    
-    # For cloud Supabase, try to construct from project ref and password
-    project_ref = supabase_url.replace("https://", "").split(".")[0]
+    project_ref = config.SUPABASE_URL.replace("https://", "").split(".")[0]
     password = os.getenv("POSTGRES_PASSWORD")
     if not password:
-        raise RuntimeError(
-            "DATABASE_URL, DATABASE_POOLER_URL, or POSTGRES_PASSWORD required. "
-            "For local Supabase, DATABASE_URL should be set automatically. "
-            "For cloud Supabase, set POSTGRES_PASSWORD environment variable."
-        )
+        raise RuntimeError("DATABASE_URL, DATABASE_POOLER_URL, or POSTGRES_PASSWORD required")
     
     return f"postgresql+psycopg://postgres.{project_ref}:{password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
 

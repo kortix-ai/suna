@@ -35,23 +35,6 @@ RUN \
 FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-
-# Accept build args as fallback (from docker-compose.yaml)
-# These are used if .env file doesn't exist
-ARG NEXT_PUBLIC_BACKEND_URL=http://localhost:8000/v1
-ARG NEXT_PUBLIC_URL=http://localhost:3000
-ARG NEXT_PUBLIC_ENV_MODE=LOCAL
-
-# Convert ARG to ENV so Next.js can read them during build
-# (Next.js reads from process.env, not ARG)
-ENV NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL}
-ENV NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL}
-ENV NEXT_PUBLIC_ENV_MODE=${NEXT_PUBLIC_ENV_MODE}
-
-# Copy all files including .env (if it exists and is not in .dockerignore)
-# Next.js reads NEXT_PUBLIC_* variables from .env file during build
-# (standalone mode embeds these variables at build time)
-# .env file takes precedence over build args if both exist
 COPY . .
 
 # Next.js collects completely anonymous telemetry data about general usage.

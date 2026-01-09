@@ -15,9 +15,19 @@ docker compose up redis
 redis-server
 ```
 
-**1.2 Running the API**
+**1.2 Running the Worker**
 
-Background tasks (agent runs, memory, categorization) run automatically in the API process - no separate worker needed.
+**NOTE: Worker process removed** - Agent runs now execute directly in the API process as async background tasks. Memory/categorization tasks also run directly.
+
+No separate worker process needed - just run the API:
+```bash
+uv run python api.py
+```
+📡 Consumer loop started
+```
+
+
+**1.3 Running the API**
 
 ```bash
 uv run api.py
@@ -42,6 +52,7 @@ Run `make verify` or `uv run python core/utils/scripts/verify_build.py` to check
 - No syntax errors
 - No undefined names
 - API can be imported
+- Worker can be imported
 
 See `core/utils/scripts/README.md` for more details on available scripts.
 
