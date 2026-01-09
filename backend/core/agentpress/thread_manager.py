@@ -598,12 +598,11 @@ class ThreadManager:
                         logger.info(f"🖼️ Thread has images - switching model from {registry_model_id} to vision model: {llm_model}")
             # ======================================
             
-            # Fast path: Check stored token count + new message tokens
             skip_fetch = False
             need_compression = False
-            estimated_total_tokens = None  # Will be passed to response processor to avoid recalculation
+            estimated_total_tokens = None
+            messages = None
             
-            # CRITICAL: Check if this is an auto-continue iteration FIRST (before any token counting)
             is_auto_continue = auto_continue_state.get('count', 0) > 0
             
             if ENABLE_PROMPT_CACHING:
@@ -612,15 +611,18 @@ class ThreadManager:
                     from core.threads import repo as threads_repo
                     import time as _time
                     
-                    # Query last llm_response_end message from messages table (using direct SQL)
                     _t2 = _time.time()
-                    llm_end_content = await asyncio.wait_for(
-                        threads_repo.get_last_llm_response_end(thread_id),
-                        timeout=5.0
+                    llm_end_task = asyncio.create_task(
+                        asyncio.wait_for(threads_repo.get_last_llm_response_end(thread_id), timeout=5.0)
                     )
+                    messages_task = asyncio.create_task(
+                        self.get_llm_messages(thread_id)
+                    )
+                    
+                    llm_end_content, messages = await asyncio.gather(llm_end_task, messages_task)
                     _query_time = (_time.time() - _t2) * 1000
                     if _query_time > 500:
-                        logger.warning(f"⚠️ [SLOW] llm_response_end query took {_query_time:.1f}ms")
+                        logger.info(f"⚡ [PARALLEL] llm_response_end + messages fetch took {_query_time:.1f}ms (parallelized)")
                     
                     if llm_end_content:
                         if isinstance(llm_end_content, str):
@@ -727,13 +729,13 @@ class ThreadManager:
                         logger.debug(f"Fast check skipped - no last llm_response_end message found")
                 except Exception as e:
                     logger.debug(f"Fast path check failed, falling back to full fetch: {e}")
+                    messages = None
             
-            # Always fetch messages (needed for LLM call)
-            # Fast path just skips compression, not fetching!
             import time
-            fetch_start = time.time()
-            messages = await self.get_llm_messages(thread_id)
-            logger.debug(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
+            if messages is None:
+                fetch_start = time.time()
+                messages = await self.get_llm_messages(thread_id)
+                logger.debug(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
             
             # Note: We no longer need to manually append partial assistant messages
             # because we now save complete assistant messages with tool calls before auto-continuing
