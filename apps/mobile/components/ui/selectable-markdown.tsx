@@ -23,8 +23,10 @@ import {
   Keyboard,
   Platform,
   Dimensions,
+  Linking,
 } from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
+import Markdown from 'react-native-markdown-display';
 import {
   markdownParser,
   lightMarkdownStyle,
@@ -123,6 +125,206 @@ export interface SelectableMarkdownTextProps {
   style?: TextStyle;
   /** Whether to use dark mode (if not provided, will use color scheme hook) */
   isDark?: boolean;
+}
+
+/**
+ * ANDROID-SPECIFIC: Custom render rules for react-native-markdown-display
+ * Makes all text components selectable for proper text selection on Android
+ */
+const createAndroidMarkdownRules = (isDark: boolean) => ({
+  // Make all text selectable
+  text: (node: any, children: any, parent: any, styles: any, inheritedStyles: any = {}) => (
+    <RNText 
+      key={node.key} 
+      style={[inheritedStyles, styles.text]}
+      selectable={true}
+    >
+      {node.content}
+    </RNText>
+  ),
+  // Wrap textgroup with selectable
+  textgroup: (node: any, children: any, parent: any, styles: any) => (
+    <RNText key={node.key} style={styles.textgroup} selectable={true}>
+      {children}
+    </RNText>
+  ),
+  // Paragraph - keep View but children will be selectable
+  paragraph: (node: any, children: any, parent: any, styles: any) => (
+    <View key={node.key} style={styles.paragraph}>
+      {children}
+    </View>
+  ),
+  // Strong/bold text
+  strong: (node: any, children: any, parent: any, styles: any) => (
+    <RNText key={node.key} style={styles.strong} selectable={true}>
+      {children}
+    </RNText>
+  ),
+  // Italic text
+  em: (node: any, children: any, parent: any, styles: any) => (
+    <RNText key={node.key} style={styles.em} selectable={true}>
+      {children}
+    </RNText>
+  ),
+  // Strikethrough
+  s: (node: any, children: any, parent: any, styles: any) => (
+    <RNText key={node.key} style={styles.s} selectable={true}>
+      {children}
+    </RNText>
+  ),
+  // Links - selectable and pressable
+  link: (node: any, children: any, parent: any, styles: any) => (
+    <RNText
+      key={node.key}
+      style={[styles.link, { color: isDark ? '#3b82f6' : '#2563eb' }]}
+      selectable={true}
+      onPress={() => {
+        if (node.attributes?.href) {
+          Linking.openURL(node.attributes.href);
+        }
+      }}
+    >
+      {children}
+    </RNText>
+  ),
+  // Inline code
+  code_inline: (node: any, children: any, parent: any, styles: any) => (
+    <RNText 
+      key={node.key} 
+      style={[styles.code_inline, { 
+        backgroundColor: isDark ? '#27272a' : '#f4f4f5',
+        color: isDark ? '#fca5a5' : '#dc2626',
+      }]}
+      selectable={true}
+    >
+      {node.content}
+    </RNText>
+  ),
+  // Headings
+  heading1: (node: any, children: any, parent: any, styles: any) => (
+    <View key={node.key} style={styles.heading1}>
+      <RNText style={[styles.heading1, { fontSize: 26, fontWeight: 'bold' }]} selectable={true}>
+        {children}
+      </RNText>
+    </View>
+  ),
+  heading2: (node: any, children: any, parent: any, styles: any) => (
+    <View key={node.key} style={styles.heading2}>
+      <RNText style={[styles.heading2, { fontSize: 22, fontWeight: 'bold' }]} selectable={true}>
+        {children}
+      </RNText>
+    </View>
+  ),
+  heading3: (node: any, children: any, parent: any, styles: any) => (
+    <View key={node.key} style={styles.heading3}>
+      <RNText style={[styles.heading3, { fontSize: 18, fontWeight: 'bold' }]} selectable={true}>
+        {children}
+      </RNText>
+    </View>
+  ),
+});
+
+/**
+ * Android markdown styles for react-native-markdown-display
+ */
+const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
+  body: {
+    color: isDark ? '#fafafa' : '#18181b',
+    fontSize: MARKDOWN_FONT_SIZE,
+    lineHeight: MARKDOWN_LINE_HEIGHT,
+  },
+  text: {
+    color: isDark ? '#fafafa' : '#18181b',
+  },
+  textgroup: {
+    color: isDark ? '#fafafa' : '#18181b',
+  },
+  paragraph: {
+    marginVertical: 0,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  strong: {
+    fontWeight: 'bold',
+  },
+  em: {
+    fontStyle: 'italic',
+  },
+  s: {
+    textDecorationLine: 'line-through',
+  },
+  link: {
+    textDecorationLine: 'none',
+  },
+  code_inline: {
+    fontFamily: Platform.select({ ios: 'Courier', default: 'monospace' }),
+    fontSize: 14,
+    paddingHorizontal: 4,
+    borderRadius: 4,
+  },
+  heading1: {
+    fontSize: 26,
+    fontWeight: 'bold',
+    marginVertical: 4,
+  },
+  heading2: {
+    fontSize: 22,
+    fontWeight: 'bold',
+    marginVertical: 4,
+  },
+  heading3: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginVertical: 4,
+  },
+  blockquote: {
+    borderLeftWidth: 4,
+    borderLeftColor: isDark ? '#a1a1aa' : '#71717a',
+    paddingLeft: 12,
+    marginLeft: 0,
+  },
+  bullet_list: {
+    marginVertical: 4,
+  },
+  ordered_list: {
+    marginVertical: 4,
+  },
+  list_item: {
+    flexDirection: 'row',
+    marginVertical: 2,
+  },
+  hr: {
+    height: 1,
+    backgroundColor: isDark ? '#3f3f46' : '#e4e4e7',
+    marginVertical: 12,
+  },
+});
+
+/**
+ * Android-specific markdown renderer using react-native-markdown-display
+ * with selectable text support
+ */
+function AndroidMarkdownText({
+  text,
+  isDark,
+  style,
+}: {
+  text: string;
+  isDark: boolean;
+  style?: TextStyle;
+}) {
+  const rules = useMemo(() => createAndroidMarkdownRules(isDark), [isDark]);
+  const markdownStyles = useMemo(() => createAndroidMarkdownStyles(isDark), [isDark]);
+
+  return (
+    <Markdown
+      style={markdownStyles}
+      rules={rules}
+      mergeStyle={true}
+    >
+      {text}
+    </Markdown>
+  );
 }
 
 /**
@@ -519,7 +721,8 @@ function MeasuredMarkdownInput({
 
 /**
  * Render markdown - simplified approach without splitting by links
- * Uses MeasuredMarkdownInput for accurate height-constrained text
+ * Uses MeasuredMarkdownInput for iOS (accurate height-constrained text)
+ * Uses AndroidMarkdownText for Android (react-native-markdown-display with selectable text)
  */
 function MarkdownWithLinkHandling({
   text,
@@ -534,7 +737,38 @@ function MarkdownWithLinkHandling({
 }) {
   const blocks = useMemo(() => splitIntoBlocks(text), [text]);
 
-  // If no separators, just render as single measured input
+  // Android: Use react-native-markdown-display with selectable text
+  if (Platform.OS === 'android') {
+    const hasAnySeparators = blocks.some((b) => b.type === 'separator');
+    
+    if (!hasAnySeparators) {
+      return (
+        <View style={needsSpacing && styles.partSpacing}>
+          <AndroidMarkdownText text={text} isDark={isDark} style={style} />
+        </View>
+      );
+    }
+
+    return (
+      <View style={needsSpacing && styles.partSpacing}>
+        {blocks.map((block, idx) => {
+          if (!block.content.trim() && block.type !== 'separator') return null;
+
+          if (block.type === 'separator') {
+            return <Separator key={`sep-${idx}`} isDark={isDark} />;
+          } else {
+            return (
+              <View key={`txt-${idx}`}>
+                <AndroidMarkdownText text={block.content} isDark={isDark} style={style} />
+              </View>
+            );
+          }
+        })}
+      </View>
+    );
+  }
+
+  // iOS: Use MeasuredMarkdownInput (expensify library)
   const hasAnySeparators = blocks.some((b) => b.type === 'separator');
 
   if (!hasAnySeparators) {
