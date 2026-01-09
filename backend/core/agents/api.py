@@ -671,9 +671,10 @@ async def stream_agent_run(
                 yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
                 return
 
-            # Polling loop
-            BLOCK_MS = 100
-            POLLS_PER_PING = 50
+            # Polling loop - increased block time to reduce Redis load
+            # 500ms block = 2 Redis calls/second per client (was 10/second with 100ms)
+            BLOCK_MS = 500
+            POLLS_PER_PING = 10  # Adjusted to maintain ~5 second ping interval
             polls = 0
             pings = 0
             received_data = bool(entries)

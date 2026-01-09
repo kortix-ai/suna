@@ -777,8 +777,10 @@ async def execute_agent_run(
             metadata={"project_id": project_id}
         )
         
-        # Stop signal checker
+        # Stop signal checker - reduced frequency to minimize Redis load
+        # Check every 2 seconds instead of 0.5s (reduces Redis calls by 4x)
         stop_state = {'received': False, 'reason': None}
+        STOP_CHECK_INTERVAL = float(os.getenv("AGENT_STOP_CHECK_INTERVAL", "2.0"))
         
         async def check_stop():
             while not stop_state['received']:
@@ -788,11 +790,12 @@ async def execute_agent_run(
                         stop_state['reason'] = 'stop_signal'
                         cancellation_event.set()
                         break
-                    await asyncio.sleep(0.5)
+                    await asyncio.sleep(STOP_CHECK_INTERVAL)
                 except asyncio.CancelledError:
                     break
                 except Exception:
-                    await asyncio.sleep(1)
+                    # Longer backoff on errors to reduce load during Redis issues
+                    await asyncio.sleep(5.0)
         
         stop_checker = asyncio.create_task(check_stop())
         

@@ -477,18 +477,17 @@ class APIKeyService:
         throttle_interval = config.API_KEY_LAST_USED_THROTTLE_SECONDS
         current_time = time.time()
 
-        # Try Redis first
+        # Try Redis first - optimized to use SET NX pattern (1 call instead of 2)
         try:
             throttle_key = f"last_used_throttle:{key_id}"
 
-            # Check if we've updated this key recently
-            last_update = await redis.get(throttle_key)
-            if last_update:
-                # Already updated within throttle interval, skip
+            # Use SET with NX (set-if-not-exists) to atomically check and set
+            # This reduces from 2 Redis calls (GET + SETEX) to 1 call
+            # Returns False if key already exists (throttled), True if set successfully
+            was_set = await redis.set(throttle_key, "1", ex=throttle_interval, nx=True, timeout=2.0)
+            if not was_set:
+                # Key already exists - already updated within throttle interval, skip
                 return
-
-            # Set throttle flag first to prevent race conditions
-            await redis.setex(throttle_key, throttle_interval, "1")
 
         except Exception as redis_error:
             # Fallback to in-memory throttling when Redis unavailable
