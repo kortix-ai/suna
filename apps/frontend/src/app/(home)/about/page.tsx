@@ -220,31 +220,31 @@ export default function AboutPage() {
             {/* Stamps grid - 2 columns on mobile */}
             <div className="grid grid-cols-2 gap-4 place-items-center">
               {/* Belgrade */}
-              <div className="rotate-[-8deg] opacity-70 [filter:grayscale(100%)]">
+              <div className="rotate-[-8deg] opacity-70 [filter:grayscale(100%)] dark:invert">
                 <Image src="/images/stamps/bg.svg" alt="Belgrade stamp" width={120} height={78} className="w-[120px]" />
               </div>
               {/* Lisbon */}
-              <div className="rotate-[12deg] opacity-70 [filter:grayscale(100%)]">
+              <div className="rotate-[12deg] opacity-70 [filter:grayscale(100%)] dark:invert">
                 <Image src="/images/stamps/lisbon.svg" alt="Lisbon stamp" width={110} height={71} className="w-[110px]" />
               </div>
               {/* NYC */}
-              <div className="rotate-[-5deg] opacity-70 [filter:grayscale(100%)]">
+              <div className="rotate-[-5deg] opacity-70 [filter:grayscale(100%)] dark:invert">
                 <Image src="/images/stamps/nyc.svg" alt="New York City stamp" width={130} height={84} className="w-[130px]" />
               </div>
               {/* San Francisco */}
-              <div className="rotate-[6deg] opacity-70 [filter:grayscale(100%)]">
+              <div className="rotate-[6deg] opacity-70 [filter:grayscale(100%)] dark:invert">
                 <Image src="/images/stamps/sf.svg" alt="San Francisco stamp" width={115} height={75} className="w-[115px]" />
               </div>
               {/* London */}
-              <div className="rotate-[8deg] opacity-70 [filter:grayscale(100%)]">
+              <div className="rotate-[8deg] opacity-70 [filter:grayscale(100%)] dark:invert">
                 <Image src="/images/stamps/london.svg" alt="London stamp" width={115} height={75} className="w-[115px]" />
               </div>
               {/* Malaga */}
-              <div className="rotate-[-10deg] opacity-70 [filter:grayscale(100%)]">
+              <div className="rotate-[-10deg] opacity-70 [filter:grayscale(100%)] dark:invert">
                 <Image src="/images/stamps/malaga.svg" alt="Malaga stamp" width={130} height={84} className="w-[130px]" />
               </div>
               {/* Bali */}
-              <div className="rotate-[10deg] opacity-70 [filter:grayscale(100%)]">
+              <div className="rotate-[10deg] opacity-70 [filter:grayscale(100%)] dark:invert">
                 <Image src="/images/stamps/bali.svg" alt="Bali stamp" width={100} height={100} className="w-[100px]" />
               </div>
             </div>
@@ -267,19 +267,19 @@ export default function AboutPage() {
               {/* Stamps on left page */}
               <div className="relative flex-1">
                 {/* Belgrade */}
-                <div className="absolute left-[5%] top-[2%] rotate-[-12deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(320deg)_saturate(300%)_brightness(0.9)]">
+                <div className="absolute left-[5%] top-[2%] rotate-[-12deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] dark:[filter:grayscale(100%)_invert(1)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(320deg)_saturate(300%)_brightness(0.9)] dark:hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(320deg)_saturate(300%)_brightness(1.1)_invert(1)]">
                   <Image src="/images/stamps/bg.svg" alt="Belgrade stamp" width={160} height={104} className="w-[160px]" />
                 </div>
                 {/* Lisbon */}
-                <div className="absolute right-[0%] top-[0%] rotate-[15deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(90deg)_saturate(400%)_brightness(0.85)]">
+                <div className="absolute right-[0%] top-[0%] rotate-[15deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] dark:[filter:grayscale(100%)_invert(1)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(90deg)_saturate(400%)_brightness(0.85)] dark:hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(90deg)_saturate(400%)_brightness(1.1)_invert(1)]">
                   <Image src="/images/stamps/lisbon.svg" alt="Lisbon stamp" width={145} height={94} className="w-[145px]" />
                 </div>
                 {/* NYC */}
-                <div className="absolute left-[0%] bottom-[25%] rotate-[-7deg] opacity-70 hover:opacity-100 transition-all duration-300 z-10 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(130deg)_saturate(500%)_brightness(0.85)]">
+                <div className="absolute left-[0%] bottom-[25%] rotate-[-7deg] opacity-70 hover:opacity-100 transition-all duration-300 z-10 [filter:grayscale(100%)] dark:[filter:grayscale(100%)_invert(1)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(130deg)_saturate(500%)_brightness(0.85)] dark:hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(130deg)_saturate(500%)_brightness(1.1)_invert(1)]">
                   <Image src="/images/stamps/nyc.svg" alt="New York City stamp" width={175} height={114} className="w-[175px]" />
                 </div>
                 {/* San Francisco */}
-                <div className="absolute right-[0%] bottom-[0%] rotate-[8deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(180deg)_saturate(400%)_brightness(0.9)]">
+                <div className="absolute right-[0%] bottom-[0%] rotate-[8deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] dark:[filter:grayscale(100%)_invert(1)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(180deg)_saturate(400%)_brightness(0.9)] dark:hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(180deg)_saturate(400%)_brightness(1.1)_invert(1)]">
                   <Image src="/images/stamps/sf.svg" alt="San Francisco stamp" width={150} height={97} className="w-[150px]" />
                 </div>
               </div>
@@ -300,15 +300,15 @@ export default function AboutPage() {
               {/* Stamps on right page */}
               <div className="relative flex-1">
                 {/* London */}
-                <div className="absolute left-[0%] top-[0%] rotate-[11deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(330deg)_saturate(350%)_brightness(0.9)]">
+                <div className="absolute left-[0%] top-[0%] rotate-[11deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] dark:[filter:grayscale(100%)_invert(1)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(330deg)_saturate(350%)_brightness(0.9)] dark:hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(330deg)_saturate(350%)_brightness(1.1)_invert(1)]">
                   <Image src="/images/stamps/london.svg" alt="London stamp" width={150} height={97} className="w-[150px]" />
                 </div>
                 {/* Malaga */}
-                <div className="absolute right-[-5%] top-[12%] rotate-[-14deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(350deg)_saturate(400%)_brightness(0.95)]">
+                <div className="absolute right-[-5%] top-[12%] rotate-[-14deg] opacity-65 hover:opacity-95 transition-all duration-300 [filter:grayscale(100%)] dark:[filter:grayscale(100%)_invert(1)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(350deg)_saturate(400%)_brightness(0.95)] dark:hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(350deg)_saturate(400%)_brightness(1.1)_invert(1)]">
                   <Image src="/images/stamps/malaga.svg" alt="Malaga stamp" width={170} height={110} className="w-[170px]" />
                 </div>
                 {/* Bali */}
-                <div className="absolute left-[15%] bottom-[8%] rotate-[13deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(30deg)_saturate(350%)_brightness(0.95)]">
+                <div className="absolute left-[15%] bottom-[8%] rotate-[13deg] opacity-60 hover:opacity-90 transition-all duration-300 [filter:grayscale(100%)] dark:[filter:grayscale(100%)_invert(1)] hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(30deg)_saturate(350%)_brightness(0.95)] dark:hover:[filter:grayscale(0%)_sepia(100%)_hue-rotate(30deg)_saturate(350%)_brightness(1.1)_invert(1)]">
                   <Image src="/images/stamps/bali.svg" alt="Bali stamp" width={130} height={130} className="w-[130px]" />
                 </div>
               </div>
