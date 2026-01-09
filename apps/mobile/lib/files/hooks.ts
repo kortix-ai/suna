@@ -144,38 +144,22 @@ export function useSandboxImageBlob(
   filePath: string | undefined,
   options?: Omit<UseQueryOptions<Blob, Error>, 'queryKey' | 'queryFn'>
 ) {
-  console.log('[useSandboxImageBlob] Hook called', {
-    sandboxId,
-    filePath,
-    enabled: !!sandboxId && !!filePath,
-  });
-  
   return useQuery({
     queryKey: [...fileKeys.sandboxFile(sandboxId || '', filePath || ''), 'blob'],
     queryFn: async () => {
-      console.log('[useSandboxImageBlob] queryFn executing', { sandboxId, filePath });
       if (!filePath) throw new Error('File path required');
 
       const normalizedPath = filePath.startsWith('/workspace')
         ? filePath
         : `/workspace/${filePath.replace(/^\//, '')}`;
 
-      console.log('[useSandboxImageBlob] Fetching blob from:', normalizedPath);
-      
       const token = await getAuthToken();
       const res = await fetch(
         `${API_URL}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(normalizedPath)}`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
-      console.log('[useSandboxImageBlob] Response:', { status: res.status, ok: res.ok });
-      
       if (!res.ok) throw new Error(`Failed to load image: ${res.status}`);
-      
-      const blob = await res.blob();
-      console.log('[useSandboxImageBlob] Blob received:', { size: blob.size, type: blob.type });
-      
-      return blob;
+      return res.blob();
     },
     enabled: !!sandboxId && !!filePath,
     staleTime: 10 * 60 * 1000,

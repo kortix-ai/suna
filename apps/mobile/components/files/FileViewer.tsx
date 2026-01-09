@@ -19,6 +19,8 @@ import Animated, {
   FadeOut,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { FilePreview, FilePreviewType, getFilePreviewType } from './FilePreviewRenderers';
 import { useSandboxFileContent, useSandboxImageBlob, blobToDataURL } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
@@ -57,6 +59,7 @@ export function FileViewer({
   const closeScale = useSharedValue(1);
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [viewMode, setViewMode] = useState<'preview' | 'raw'>('preview');
+  const [isDownloading, setIsDownloading] = useState(false);
   const { hasFreeTier } = useBillingContext();
 
   // Handle upgrade prompt for free tier users
@@ -88,17 +91,6 @@ export function FileViewer({
   const shouldFetchText = file && !isBinaryFile;
   const shouldFetchBlob = file && isBinaryFile;
   
-  console.log('[FileViewer] File info:', {
-    fileName: file?.name,
-    filePath: file?.path,
-    previewType,
-    isImage,
-    isBinaryFile,
-    shouldFetchText,
-    shouldFetchBlob,
-    sandboxId,
-  });
-
   // Can show raw view for non-binary files
   const canShowRaw =
     file && previewType !== FilePreviewType.BINARY && previewType !== FilePreviewType.OTHER;
@@ -125,31 +117,11 @@ export function FileViewer({
 
   // Convert blob to data URL for binary files (images, PDFs, etc.)
   useEffect(() => {
-    console.log('[FileViewer] Blob effect triggered', {
-      hasBlob: !!imageBlob,
-      blobSize: imageBlob?.size,
-      blobType: imageBlob?.type,
-      filePath: file?.path,
-      shouldFetchBlob,
-      isLoadingImage,
-    });
-    
     if (imageBlob && file?.path) {
-      console.log('[FileViewer] Converting blob to data URL...');
-      blobToDataURL(imageBlob, file.path)
-        .then((url) => {
-          console.log('[FileViewer] Blob converted to data URL', {
-            urlLength: url.length,
-            urlPrefix: url.substring(0, 50),
-          });
-          setBlobUrl(url);
-        })
-        .catch((err) => {
-          console.error('[FileViewer] Failed to convert blob:', err);
-        });
+      blobToDataURL(imageBlob, file.path).then(setBlobUrl);
     }
     return () => setBlobUrl(undefined);
-  }, [imageBlob, file?.path, shouldFetchBlob, isLoadingImage]);
+  }, [imageBlob, file?.path]);
 
   const closeAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: closeScale.value }],
@@ -161,55 +133,70 @@ export function FileViewer({
   };
 
   const handleDownload = async () => {
-    console.log('[FileViewer] handleDownload called', {
-      file: file?.name,
-      hasFreeTier,
-      blobUrl: blobUrl ? `${blobUrl.substring(0, 50)}...` : null,
-      textContent: textContent ? `${textContent.substring(0, 50)}...` : null,
-      imageBlob: imageBlob ? `Blob(${imageBlob.size} bytes)` : null,
-      isBinaryFile,
-      shouldFetchBlob,
-      isLoadingImage,
-    });
-    
-    if (!file) {
-      console.log('[FileViewer] No file, returning');
-      return;
-    }
+    if (!file) return;
 
     // Block downloads for free tier users
     if (hasFreeTier) {
-      console.log('[FileViewer] Free tier user, showing upgrade prompt');
       handleUpgradePrompt();
       return;
     }
 
+    setIsDownloading(true);
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // For binary files (images, PDFs, etc.) use blob URL
-      if (blobUrl) {
-        console.log('[FileViewer] Sharing blob URL');
-        await Share.share({
-          url: blobUrl,
-          title: file.name,
+      // For binary files (images, PDFs, etc.) write to file and share
+      if (imageBlob && isBinaryFile) {
+        // Convert blob to base64
+        const reader = new FileReader();
+        const base64Data = await new Promise<string>((resolve, reject) => {
+          reader.onloadend = () => {
+            const result = reader.result as string;
+            const base64 = result.split(',')[1];
+            resolve(base64);
+          };
+          reader.onerror = reject;
+          reader.readAsDataURL(imageBlob);
         });
+
+        // Write to temporary file
+        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+        await FileSystem.writeAsStringAsync(fileUri, base64Data, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+
+        // Share the file
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${file.name}`,
+          });
+        }
         return;
       }
       
-      // For text files, share the content directly
+      // For text files, write to file and share
       if (textContent) {
-        console.log('[FileViewer] Sharing text content');
-        await Share.share({
-          message: textContent,
-          title: file.name,
-        });
+        const fileUri = `${FileSystem.cacheDirectory}${file.name}`;
+        await FileSystem.writeAsStringAsync(fileUri, textContent);
+        
+        const canShare = await Sharing.isAvailableAsync();
+        if (canShare) {
+          await Sharing.shareAsync(fileUri, {
+            dialogTitle: `Download ${file.name}`,
+          });
+        } else {
+          await Share.share({
+            message: textContent,
+            title: file.name,
+          });
+        }
         return;
       }
-      
-      console.warn('[FileViewer] No content available to download');
     } catch (error) {
-      console.error('[FileViewer] Download failed:', error);
+      console.error('Download failed:', error);
+    } finally {
+      setIsDownloading(false);
     }
   };
 
@@ -335,21 +322,23 @@ export function FileViewer({
                   </AnimatedPressable>
                 </>
               )}
-              <AnimatedPressable onPress={() => {
-                console.log('>>> DOWNLOAD BUTTON PRESSED <<<');
-                console.log('blobUrl:', blobUrl ? 'exists' : 'undefined');
-                console.log('textContent:', textContent ? 'exists' : 'undefined');
-                console.log('imageBlob:', imageBlob ? `Blob(${imageBlob.size})` : 'undefined');
-                handleDownload();
-              }} className="relative p-2">
-                <Icon
-                  as={hasFreeTier ? Lock : Download}
-                  size={22}
-                  color={
-                    hasFreeTier ? (isDark ? '#a78bfa' : '#7c3aed') : isDark ? '#f8f8f8' : '#121215'
-                  }
-                  strokeWidth={2}
-                />
+              <AnimatedPressable 
+                onPress={handleDownload} 
+                disabled={isDownloading}
+                className="relative p-2"
+                style={{ opacity: isDownloading ? 0.6 : 1 }}>
+                {isDownloading ? (
+                  <KortixLoader size={22} />
+                ) : (
+                  <Icon
+                    as={hasFreeTier ? Lock : Download}
+                    size={22}
+                    color={
+                      hasFreeTier ? (isDark ? '#a78bfa' : '#7c3aed') : isDark ? '#f8f8f8' : '#121215'
+                    }
+                    strokeWidth={2}
+                  />
+                )}
               </AnimatedPressable>
               <AnimatedPressable onPress={handleShare} className="relative p-2">
                 <Icon
