@@ -288,7 +288,7 @@ export function AgentDrawer({
       <Pressable
         onPress={handleIntegrationsPress}
         style={({ pressed }) => [
-          styles.integrationsRow,
+          styles.integrationsContainer,
           {
             backgroundColor: pressed 
               ? isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
@@ -297,22 +297,24 @@ export function AgentDrawer({
           },
         ]}
       >
-        <View style={[styles.integrationsIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
-          {hasFreeTier ? (
-            <Lock size={18} color={colors.muted} strokeWidth={2} />
-          ) : (
-            <Plug size={18} color={colors.text} strokeWidth={2} />
-          )}
+        <View style={styles.integrationsRow}>
+          <View style={[styles.integrationsIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
+            {hasFreeTier ? (
+              <Lock size={18} color={colors.muted} strokeWidth={2} />
+            ) : (
+              <Plug size={18} color={colors.text} strokeWidth={2} />
+            )}
+          </View>
+          <View style={styles.integrationsTextContainer}>
+            <Text style={[styles.integrationsTitle, { color: colors.text }]}>
+              Connect your Apps
+            </Text>
+            <Text style={[styles.integrationsSubtitle, { color: colors.muted }]}>
+              {hasFreeTier ? 'Upgrade to unlock' : 'Google, Slack, GitHub & more'}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={colors.muted} />
         </View>
-        <View style={styles.integrationsTextContainer}>
-          <Text style={[styles.integrationsTitle, { color: colors.text }]}>
-            Connect your Apps
-          </Text>
-          <Text style={[styles.integrationsSubtitle, { color: colors.muted }]}>
-            {hasFreeTier ? 'Upgrade to unlock' : 'Google, Slack, GitHub & more'}
-          </Text>
-        </View>
-        <ChevronRight size={18} color={colors.muted} />
       </Pressable>
 
       {/* Worker Section - ONLY visible in beta mode */}
@@ -702,13 +704,15 @@ const styles = StyleSheet.create({
     height: 1,
     marginVertical: 4,
   },
+  integrationsContainer: {
+    borderRadius: 14,
+    borderWidth: 1,
+  },
   integrationsRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 14,
-    borderRadius: 14,
-    borderWidth: 1,
     gap: 12,
   },
   integrationsIcon: {

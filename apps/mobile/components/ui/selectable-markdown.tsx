@@ -55,10 +55,9 @@ let HEADING_CHAR_FACTOR = 0.46;    // Was 0.52
 let EMPTY_LINE_FACTOR = 0.5;
 let BOLD_WIDTH_FACTOR = 1.10;      // Was 1.15, reduced slightly
 
-// PHANTOM SPACE: Solid base + small per-line with cap
-let BASE_PHANTOM = 24;             // Increased - prevents cutoff
-let LINE_PHANTOM_PX = 0.8;
-let MAX_LINE_PHANTOM = 10;         // Total max = 34px
+let BASE_PHANTOM = 8;
+let LINE_PHANTOM_PX = 0.5;
+let MAX_LINE_PHANTOM = 8;
 
 export function enableMarkdownDebug(enabled: boolean = true) {
   DEBUG_HEIGHTS = enabled;
@@ -515,7 +514,7 @@ function Separator({ isDark }: { isDark: boolean }) {
       style={{
         height: 1,
         backgroundColor: isDark ? '#3f3f46' : '#e4e4e7',
-        marginVertical: 12, // Consistent with code blocks and tables
+        marginVertical: 8,
       }}
     />
   );
@@ -1004,9 +1003,9 @@ const styles = StyleSheet.create({
   },
   table: {
     borderWidth: 1,
-    borderRadius: 24, // 2xl
+    borderRadius: 24,
     overflow: 'hidden',
-    marginVertical: 12, // Consistent vertical spacing with code blocks and separators
+    marginVertical: 8,
   },
   tableLight: {
     borderColor: '#e4e4e7', // zinc-200
@@ -1055,10 +1054,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   codeBlock: {
-    borderRadius: 24, // 2xl
+    borderRadius: 24,
     borderWidth: 1,
     overflow: 'hidden',
-    marginVertical: 12, // Consistent vertical spacing with tables and separators
+    marginVertical: 8,
   },
   codeBlockLight: {
     borderColor: '#DCDDDE',

@@ -53,6 +53,7 @@ import { ListPresentationsToolView } from './list-presentations-tool/ListPresent
 import { ExportToolView } from './export-tool/ExportToolView';
 import { RealityDefenderToolView } from './reality-defender-tool/RealityDefenderToolView';
 import { ApifyToolView } from './apify-tool/ApifyToolView';
+import { InitializeToolsToolView } from './initialize-tools-tool/InitializeToolsToolView';
 
 /**
  * Registry mapping tool names to their view components
@@ -261,6 +262,10 @@ const toolViewRegistry: Record<string, ToolViewComponent> = {
   'run_apify_actor': ApifyToolView,
   'get-actor-run-results': ApifyToolView,
   'get_actor_run_results': ApifyToolView,
+  
+  // Initialize tools (Mode activation)
+  'initialize-tools': InitializeToolsToolView,
+  'initialize_tools': InitializeToolsToolView,
   
   // Default fallback
   'default': GenericToolView,
