@@ -1,24 +1,54 @@
 'use client';
 
-import React, { memo, useCallback, useMemo } from 'react';
-import { Button } from '@/components/ui/button';
+import React, { memo, useCallback, useMemo, useState, useEffect } from 'react';
+import { useTheme } from 'next-themes';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { ChevronDown, Check, Lock } from 'lucide-react';
+import { Check, Lock, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModelSelection } from '@/hooks/agents';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
+// Logo component for mode display with theme support
+const ModeLogo = memo(function ModeLogo({ 
+  mode, 
+  height = 12
+}: { 
+  mode: 'basic' | 'advanced'; 
+  height?: number;
+}) {
+  const { theme, systemTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Determine if dark mode
+  const isDark = mounted && (
+    theme === 'dark' || (theme === 'system' && systemTheme === 'dark')
+  );
+
+  // Use light variant on dark mode, dark variant on light mode
+  const src = mode === 'advanced' 
+    ? (isDark ? '/Advanced-Light.svg' : '/Advanced-Dark.svg')
+    : (isDark ? '/Basic-Light.svg' : '/Basic-Dark.svg');
+
+  return (
+    <img
+      src={src}
+      alt={mode === 'advanced' ? 'Kortix Advanced' : 'Kortix Basic'}
+      className="flex-shrink-0"
+      style={{ height: `${height}px`, width: 'auto' }}
+    />
+  );
+});
+
 export const ModeIndicator = memo(function ModeIndicator() {
+  const [isOpen, setIsOpen] = useState(false);
   const {
     selectedModel,
     allModels: modelOptions,
@@ -43,6 +73,7 @@ export const ModeIndicator = memo(function ModeIndicator() {
   const handleBasicClick = useCallback(() => {
     if (basicModel) {
       handleModelChange(basicModel.id);
+      setIsOpen(false);
     }
   }, [basicModel, handleModelChange]);
 
@@ -50,7 +81,9 @@ export const ModeIndicator = memo(function ModeIndicator() {
     if (powerModel) {
       if (canAccessPower) {
         handleModelChange(powerModel.id);
+        setIsOpen(false);
       } else {
+        setIsOpen(false);
         usePricingModalStore.getState().openPricingModal({
           isAlert: true,
           alertTitle: 'Upgrade to access Kortix Advanced mode',
@@ -59,70 +92,70 @@ export const ModeIndicator = memo(function ModeIndicator() {
     }
   }, [powerModel, canAccessPower, handleModelChange]);
 
-  // Determine current mode label
-  const currentModeLabel = isPowerSelected ? 'Advanced' : 'Basic';
-
   return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="outline"
-              className="h-10 px-3 bg-transparent border-[1.5px] border-border rounded-2xl cursor-pointer gap-1.5 text-muted-foreground hover:text-foreground hover:bg-accent/50"
-            >
-              {isPowerSelected && <KortixLogo size={12} variant="symbol" />}
-              <span className="text-sm font-medium">{currentModeLabel}</span>
-              {!canAccessPower && !isPowerSelected && (
-                <Lock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2} />
-              )}
-              <ChevronDown className="h-3.5 w-3.5 opacity-60" strokeWidth={2} />
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          <p>Switch mode</p>
-        </TooltipContent>
-      </Tooltip>
+    <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
+      <DropdownMenuTrigger asChild>
+        <button
+          className={cn(
+            'flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-150 cursor-pointer',
+            'hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+          )}
+        >
+          <ModeLogo mode={isPowerSelected ? 'advanced' : 'basic'} height={14} />
+          <ChevronDown className={cn(
+            "h-4 w-4 text-muted-foreground transition-transform duration-200",
+            isOpen && "rotate-180"
+          )} strokeWidth={2} />
+        </button>
+      </DropdownMenuTrigger>
 
-      <DropdownMenuContent align="end" className="w-[200px] p-2">
+      <DropdownMenuContent 
+        align="start" 
+        className="w-[320px] p-2 rounded-xl border border-border/50 shadow-lg"
+        sideOffset={8}
+      >
         {/* Basic Mode */}
         <div
           className={cn(
-            'flex items-center justify-between px-3 py-2 text-sm cursor-pointer rounded-lg transition-colors',
-            isBasicSelected ? 'bg-muted' : 'hover:bg-muted/50'
+            'flex items-start gap-3 px-3 py-3 cursor-pointer rounded-lg transition-all duration-150 mb-1.5',
+            isBasicSelected 
+              ? 'bg-accent' 
+              : 'hover:bg-accent/50 active:bg-accent/70'
           )}
           onClick={handleBasicClick}
         >
-          <span className="font-medium">Basic</span>
-          {isBasicSelected && <Check className="h-4 w-4 text-primary" strokeWidth={2} />}
+          <div className="flex-1 min-w-0">
+            <div className="mb-1">
+              <ModeLogo mode="basic" height={14} />
+            </div>
+            <div className="text-xs text-muted-foreground leading-relaxed">Fast and efficient for quick tasks</div>
+          </div>
+          {isBasicSelected && (
+            <Check className="h-4 w-4 text-foreground flex-shrink-0 mt-0.5" strokeWidth={2} />
+          )}
         </div>
 
         {/* Advanced Mode */}
         <div
           className={cn(
-            'flex items-center justify-between px-3 py-2 text-sm cursor-pointer rounded-lg transition-colors',
-            isPowerSelected
-              ? 'bg-muted'
-              : canAccessPower
-              ? 'hover:bg-muted/50'
-              : 'hover:bg-muted/50 cursor-pointer'
+            'flex items-start gap-3 px-3 py-3 cursor-pointer rounded-lg transition-all duration-150',
+            isPowerSelected 
+              ? 'bg-accent' 
+              : 'hover:bg-accent/50 active:bg-accent/70'
           )}
           onClick={handleAdvancedClick}
         >
-          <div className="flex items-center gap-1.5">
-            <KortixLogo size={12} variant="symbol" />
-            <span
-              className={cn(
-                'font-medium',
-                isPowerSelected ? 'text-primary' : ''
-              )}
-            >
-              Advanced
-            </span>
+          <div className="flex-1 min-w-0">
+            <div className="mb-1">
+              <ModeLogo mode="advanced" height={14} />
+            </div>
+            <div className="text-xs text-muted-foreground leading-relaxed">Maximum intelligence for complex work</div>
           </div>
-          {isPowerSelected && <Check className="h-4 w-4 text-primary" strokeWidth={2} />}
-          {!canAccessPower && <Lock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={2} />}
+          {isPowerSelected ? (
+            <Check className="h-4 w-4 text-foreground flex-shrink-0 mt-0.5" strokeWidth={2} />
+          ) : !canAccessPower ? (
+            <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={2} />
+          ) : null}
         </div>
       </DropdownMenuContent>
     </DropdownMenu>

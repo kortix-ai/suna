@@ -42,7 +42,6 @@ import { isStagingMode, isLocalMode } from '@/lib/config';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
-import { ModeIndicator } from '@/components/thread/mode-indicator';
 
 import posthog from 'posthog-js';
 import { trackCtaUpgrade } from '@/lib/analytics/gtm';
@@ -1250,7 +1249,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     // Controls are split into left and right to minimize re-renders
     // Memoized to prevent recreation on every keystroke
     const leftControls = useMemo(() => (
-      <div className="flex items-center gap-2 min-w-0 flex-shrink overflow-visible">
+      <div className="flex items-center gap-1.5 min-w-0 flex-shrink overflow-visible">
         {!hideAttachments && (
           <FileUploadHandler
             ref={fileInputRef}
@@ -1279,8 +1278,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           onOpenRegistry={handleOpenRegistry}
           onOpenPlanModal={handleOpenPlanModal}
         />
-
-        <ModeIndicator />
 
         <div className="hidden sm:block">
           <SunaAgentModeSwitcher

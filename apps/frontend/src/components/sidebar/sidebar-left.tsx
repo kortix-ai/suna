@@ -280,21 +280,16 @@ export function SidebarLeft({
       className="border-r border-border/50 bg-background [&::-webkit-scrollbar]:hidden [-ms-overflow-style:'none'] [scrollbar-width:'none']"
       {...props}
     >
-      <SidebarHeader className={cn(
-        "pt-7 overflow-visible transition-[padding] duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
-        state === 'collapsed' ? "px-0" : "px-6"
-      )}>
-        <div className={cn(
-          "flex h-[32px] items-center transition-all duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
-          state === 'collapsed' ? "justify-center" : "justify-between pl-2"
-        )}>
-          {/* Logo - stays visually centered when collapsed, left-aligned when expanded */}
-          <div className="relative flex items-center justify-center group/logo">
+      <SidebarHeader className="pt-4 overflow-visible">
+        <div className="relative flex h-[32px] items-center">
+          {/* Logo - fixed position at 32px from left, never moves */}
+          <div className="absolute left-6 flex items-center justify-center group/logo">
+
             <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)} className="flex items-center justify-center">
               <KortixLogo 
                 size={20} 
                 className={cn(
-                  "flex-shrink-0 transition-[transform,opacity] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)] hover:rotate-180 hover:duration-700",
+                  "flex-shrink-0 transition-[transform,opacity] duration-300 ease-out hover:rotate-180 hover:duration-700 transform-gpu",
                   state === 'collapsed' && "group-hover/logo:opacity-0 group-hover/logo:scale-90"
                 )} 
               />
@@ -302,7 +297,7 @@ export function SidebarLeft({
             {/* Expand button - only shows on hover when collapsed */}
             {state === 'collapsed' && (
               <button
-                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center cursor-pointer opacity-0 scale-75 group-hover/logo:opacity-100 group-hover/logo:scale-100 transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.32,0.72,0,1)]"
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex items-center justify-center cursor-pointer opacity-0 scale-75 group-hover/logo:opacity-100 group-hover/logo:scale-100 transition-[opacity,transform] duration-300 ease-out transform-gpu"
                 onClick={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
@@ -315,12 +310,12 @@ export function SidebarLeft({
             )}
           </div>
           
-          {/* Right side buttons - fade in/out */}
+          {/* Right side buttons - fade in/out, positioned at the right */}
           <div 
             className={cn(
-              "flex items-center gap-1 transition-opacity duration-[350ms] ease-[cubic-bezier(0.32,0.72,0,1)]",
+              "absolute right-6 flex items-center gap-1 transition-[opacity,right] duration-300 ease-out transform-gpu",
               state === 'collapsed' 
-                ? "opacity-0 pointer-events-none w-0 overflow-hidden" 
+                ? "opacity-0 pointer-events-none right-0" 
                 : "opacity-100 pointer-events-auto"
             )}
           >

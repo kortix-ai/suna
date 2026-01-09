@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   Frown,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { ThreadIcon } from './thread-icon';
@@ -57,6 +58,8 @@ import { useThreads } from '@/hooks/threads/use-threads';
 import { useTranslations } from 'next-intl';
 import { useDeleteOperation } from '@/stores/delete-operation-store';
 import { useStartNavigation } from '@/stores/thread-navigation-store';
+import { useUpdateProject } from '@/hooks/threads/use-project';
+import { RenameProjectDialog } from '@/components/sidebar/rename-project-dialog';
 
 // Date group header component - shared across tabs
 const DateGroupHeader: React.FC<{ dateGroup: string }> = ({ dateGroup }) => {
@@ -78,6 +81,7 @@ interface ThreadItemCardProps {
   isAgentRunning: boolean;
   onClick: (e: React.MouseEvent<HTMLAnchorElement | HTMLDivElement>, threadId: string, url: string) => void;
   onDelete: (threadId: string, threadName: string) => void;
+  onRename: (projectId: string, currentName: string) => void;
   onCreateNewChat?: (projectId: string) => Promise<void>;
   isCreatingChat?: boolean;
   mode: 'chats' | 'library';
@@ -92,6 +96,7 @@ const ThreadItemCard: React.FC<ThreadItemCardProps> = ({
   isAgentRunning,
   onClick,
   onDelete,
+  onRename,
   onCreateNewChat,
   isCreatingChat = false,
   mode,
@@ -207,6 +212,17 @@ const ThreadItemCard: React.FC<ThreadItemCardProps> = ({
                   onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
+                    onRename(projectGroup.projectId, projectGroup.projectName);
+                  }}
+                >
+                  <Pencil className="mr-2 h-4 w-4" />
+                  Rename
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
                     onDelete(thread.threadId, thread.projectName);
                   }}
                 >
@@ -247,6 +263,12 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
   const [isMultiSelectMode, setIsMultiSelectMode] = useState(false);
   const [expandedProjects, setExpandedProjects] = useState<Set<string>>(new Set());
   const [isCreatingChat, setIsCreatingChat] = useState(false);
+  
+  // Rename state
+  const [renameDialogOpen, setRenameDialogOpen] = useState(false);
+  const [renameProjectId, setRenameProjectId] = useState<string | null>(null);
+  const [renameProjectName, setRenameProjectName] = useState('');
+  const updateProjectMutation = useUpdateProject();
 
   // Pagination state
   const [currentPage, setCurrentPage] = useState(1);
@@ -374,6 +396,34 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
     } finally {
       setTimeout(() => setIsCreatingChat(false), 1000);
     }
+  };
+
+  // Handle rename
+  const handleStartRename = (projectId: string, currentName: string) => {
+    setRenameProjectId(projectId);
+    setRenameProjectName(currentName);
+    setRenameDialogOpen(true);
+  };
+
+  const handleSaveRename = async (projectId: string, newName: string) => {
+    try {
+      await updateProjectMutation.mutateAsync({
+        projectId,
+        data: { name: newName }
+      });
+      await queryClient.invalidateQueries({ queryKey: threadKeys.all });
+      toast.success('Renamed successfully');
+    } catch (error) {
+      console.error('Failed to rename:', error);
+      toast.error('Failed to rename');
+      throw error;
+    }
+  };
+
+  const handleCloseRenameDialog = () => {
+    setRenameDialogOpen(false);
+    setRenameProjectId(null);
+    setRenameProjectName('');
   };
 
   // Pagination helpers
@@ -758,6 +808,7 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
                                 isAgentRunning={isAgentRunning}
                                 onClick={handleItemClick}
                                 onDelete={handleDeleteThread}
+                                onRename={handleStartRename}
                                 onCreateNewChat={mode === 'chats' ? handleCreateNewChat : undefined}
                                 isCreatingChat={isCreatingChat}
                                 mode={mode}
@@ -808,27 +859,45 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
                                     {/* Actions */}
                                     <div className="flex items-center gap-1 flex-shrink-0">
                                       {mode === 'chats' && (
-                                        <Tooltip>
-                                          <TooltipTrigger asChild>
-                                            <button
-                                              className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground opacity-0 group-hover/project:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
-                                              disabled={isCreatingChat}
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleCreateNewChat(projectGroup.projectId);
-                                              }}
-                                            >
-                                              {isCreatingChat ? (
-                                                <KortixLoader size="small" />
-                                              ) : (
-                                                <Plus className="h-3.5 w-3.5" />
-                                              )}
-                                            </button>
-                                          </TooltipTrigger>
-                                          <TooltipContent side="right">
-                                            {isCreatingChat ? 'Creating...' : 'New chat'}
-                                          </TooltipContent>
-                                        </Tooltip>
+                                        <>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <button
+                                                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground opacity-0 group-hover/project:opacity-100"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleStartRename(projectGroup.projectId, projectGroup.projectName);
+                                                }}
+                                              >
+                                                <Pencil className="h-3.5 w-3.5" />
+                                              </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right">
+                                              Rename
+                                            </TooltipContent>
+                                          </Tooltip>
+                                          <Tooltip>
+                                            <TooltipTrigger asChild>
+                                              <button
+                                                className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground opacity-0 group-hover/project:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed"
+                                                disabled={isCreatingChat}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleCreateNewChat(projectGroup.projectId);
+                                                }}
+                                              >
+                                                {isCreatingChat ? (
+                                                  <KortixLoader size="small" />
+                                                ) : (
+                                                  <Plus className="h-3.5 w-3.5" />
+                                                )}
+                                              </button>
+                                            </TooltipTrigger>
+                                            <TooltipContent side="right">
+                                              {isCreatingChat ? 'Creating...' : 'New chat'}
+                                            </TooltipContent>
+                                          </Tooltip>
+                                        </>
                                       )}
 
                                       <ChevronDown
@@ -1036,6 +1105,14 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
           isDeleting={isDeletingSingle || isDeletingMultiple}
         />
       )}
+
+      <RenameProjectDialog
+        isOpen={renameDialogOpen}
+        projectId={renameProjectId}
+        currentName={renameProjectName}
+        onClose={handleCloseRenameDialog}
+        onSave={handleSaveRename}
+      />
     </div>
   );
 }

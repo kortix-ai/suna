@@ -51,6 +51,9 @@ const AgentConfigurationDialog = lazy(() =>
 const CreditsDisplay = lazy(() => 
   import('@/components/billing/credits-display').then(mod => ({ default: mod.CreditsDisplay }))
 );
+const ModeIndicator = lazy(() => 
+  import('@/components/thread/mode-indicator').then(mod => ({ default: mod.ModeIndicator }))
+);
 
 const PENDING_PROMPT_KEY = 'pendingAgentPrompt';
 
@@ -472,11 +475,22 @@ export function DashboardContent() {
       {/* PlanSelectionModal is rendered globally in layout.tsx - no duplicate needed here */}
 
       <div className="flex flex-col h-screen w-full overflow-hidden relative">
+        {/* Left side - Mode Selector */}
+        <div className={cn(
+          "absolute flex items-center gap-2 left-4 transition-[top] duration-200",
+          isWelcomeBannerVisible ? "top-14" : "top-4"
+        )}>
+          <Suspense fallback={<div className="h-9 w-32 bg-muted/30 rounded-lg animate-pulse" />}>
+            <ModeIndicator />
+          </Suspense>
+        </div>
+
+        {/* Right side - Notifications & Credits */}
         <div className={cn(
           "absolute flex items-center gap-2 right-4 transition-[top] duration-200",
           isWelcomeBannerVisible ? "top-14" : "top-4"
         )}>
-        <NotificationDropdown />
+          <NotificationDropdown />
           <Suspense fallback={<div className="h-8 w-20 bg-muted/30 rounded animate-pulse" />}>
             <CreditsDisplay />
           </Suspense>
