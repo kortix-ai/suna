@@ -12,6 +12,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
+import { isMobileDevice } from '@/lib/utils/is-mobile-device';
 
 // Scroll threshold with hysteresis to prevent flickering
 const SCROLL_THRESHOLD_DOWN = 50;
@@ -57,6 +58,7 @@ export function Navbar() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
+  const [isMobile, setIsMobile] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -64,6 +66,15 @@ export function Navbar() {
   const lastScrollY = useRef(0);
 
   const filteredNavLinks = siteConfig.nav.links;
+
+  // Detect if user is on an actual mobile device (iOS/Android)
+  // Mobile users clicking "Try Free" will be redirected to /app which then redirects to app stores
+  useEffect(() => {
+    setIsMobile(isMobileDevice());
+  }, []);
+
+  // Get the appropriate CTA link based on device type
+  const ctaLink = isMobile ? '/app' : '/auth';
 
   // Single unified scroll handler with hysteresis
   const handleScroll = useCallback(() => {
@@ -155,7 +166,7 @@ export function Navbar() {
                 </Link>
               ) : (
                 <Link
-                  href="/auth"
+                  href={ctaLink}
                   onClick={() => trackCtaSignup()}
                   className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
                 >
@@ -262,7 +273,7 @@ export function Navbar() {
                     </Link>
                   ) : (
                     <Link
-                      href="/auth"
+                      href={ctaLink}
                       onClick={() => {
                         trackCtaSignup();
                         setIsDrawerOpen(false);

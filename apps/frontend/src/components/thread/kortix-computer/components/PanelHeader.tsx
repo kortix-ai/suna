@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { ViewToggle } from './ViewToggle';
 import { ToolbarButtons } from './ToolbarButtons';
 import Image from 'next/image';
+import { motion } from 'framer-motion';
 
 function useBatteryStatus() {
   const [batteryInfo, setBatteryInfo] = useState<{ level: number; charging: boolean } | null>(null);
@@ -108,37 +109,61 @@ function ActionLibrarySwitcher({ currentView, onViewChange, size = 'md' }: Actio
   const isLibrary = currentView === 'files';
   
   const buttonClasses = size === 'sm' 
-    ? "px-2.5 py-1 text-[11px] gap-1"
-    : "px-3 py-1.5 text-xs gap-1.5";
+    ? "px-3 py-1.5 text-[11px] gap-1.5"
+    : "px-4 py-2 text-xs gap-2";
   
   const iconSize = size === 'sm' ? "h-3 w-3" : "h-3.5 w-3.5";
+  
+  const containerHeight = size === 'sm' ? 'h-8' : 'h-9';
+  const indicatorHeight = size === 'sm' ? 'h-7' : 'h-8';
 
   return (
-    <div className="flex items-center bg-muted/50 rounded-lg p-0.5 border border-border/50">
+    <div className={cn(
+      "relative flex items-center gap-0.5 bg-muted/30 backdrop-blur-sm rounded-lg p-0.5",
+      containerHeight
+    )}>
+      <motion.div
+        className={cn(
+          "absolute top-0.5 left-0.5 bg-background shadow-sm border border-border/50 rounded-md",
+          indicatorHeight
+        )}
+        initial={false}
+        animate={{
+          x: isAction ? 0 : '100%',
+          width: isAction ? 'calc(50% - 1px)' : 'calc(50% - 1px)',
+        }}
+        transition={{
+          type: "spring",
+          stiffness: 350,
+          damping: 30
+        }}
+      />
+      
       <button
         onClick={() => onViewChange('tools')}
         className={cn(
-          "flex items-center rounded-md font-medium transition-all duration-200",
+          "relative z-10 flex items-center justify-center rounded-md font-medium transition-all duration-200 flex-1",
           buttonClasses,
           isAction
-            ? "bg-background text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground"
+            ? "text-foreground"
+            : "text-muted-foreground hover:text-foreground/80"
         )}
       >
-        <Zap className={iconSize} />
+        <Zap className={cn(iconSize, isAction && "fill-current")} />
         <span>Action</span>
       </button>
+      
       <button
         onClick={() => onViewChange('files')}
         className={cn(
-          "flex items-center rounded-md font-medium transition-all duration-200",
+          "relative z-10 flex items-center justify-center rounded-md font-medium transition-all duration-200 flex-1",
           buttonClasses,
           isLibrary
-            ? "bg-background text-foreground shadow-sm"
-            : "text-muted-foreground hover:text-foreground"
+            ? "text-foreground"
+            : "text-muted-foreground hover:text-foreground/80"
         )}
       >
-        <Library className={iconSize} />
+        <Library className={cn(iconSize)} />
         <span>Library</span>
       </button>
     </div>

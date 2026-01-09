@@ -37,6 +37,7 @@ const PUBLIC_ROUTES = [
   '/about', // About page should be public 
   '/milano', // Milano page should be public
   '/berlin', // Berlin page should be public
+  '/app', // App download page should be public
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
@@ -73,9 +74,9 @@ function detectMobilePlatformFromUA(userAgent: string | null): 'ios' | 'android'
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
   
-  // 🚀 HYPER-FAST: Mobile app store redirect for /milano and /berlin
+  // 🚀 HYPER-FAST: Mobile app store redirect for /milano, /berlin, and /app
   // This runs at the edge before ANY page rendering
-  if (pathname === '/milano' || pathname === '/berlin') {
+  if (pathname === '/milano' || pathname === '/berlin' || pathname === '/app') {
     const userAgent = request.headers.get('user-agent');
     const platform = detectMobilePlatformFromUA(userAgent);
     
