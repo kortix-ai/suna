@@ -55,13 +55,14 @@ export function extractImageEditData({ toolCall, toolResult }: { toolCall: ToolC
         generatedImagePath = `/workspace/${generatedImagePath}`;
       }
     } else if (typeof output === 'string') {
-      // Match patterns like "Image saved as: generated_image_966956f9.png"
-      const imagePathMatch = output.match(/Image saved as:\s*([^\s.]+\.(png|jpg|jpeg|webp|gif))/i) ||
-                            output.match(/saved as:\s*([^\s.]+\.(png|jpg|jpeg|webp|gif))/i) ||
-                            output.match(/(\/workspace\/[^\s]+\.(png|jpg|jpeg|webp))/i) ||
+      // Match patterns like "Image saved as: Geometric Glass Facade.png" (with spaces)
+      // or legacy format like "Image saved as: generated_image_966956f9.png"
+      const imagePathMatch = output.match(/Image saved as:\s*(?:\/workspace\/)?(.+\.(png|jpg|jpeg|webp|gif))/i) ||
+                            output.match(/saved as:\s*(?:\/workspace\/)?(.+\.(png|jpg|jpeg|webp|gif))/i) ||
+                            output.match(/(\/workspace\/.+\.(png|jpg|jpeg|webp))/i) ||
                             output.match(/(generated_image_[\w]+\.(png|jpg|jpeg|webp))/i);
       if (imagePathMatch) {
-        const path = imagePathMatch[1] || imagePathMatch[0];
+        const path = (imagePathMatch[1] || imagePathMatch[0]).trim();
         generatedImagePath = path.startsWith('/') ? path : `/workspace/${path}`;
       }
       
