@@ -1,7 +1,3 @@
-/**
- * ModelToggle - Mode switcher between Basic and Advanced
- */
-
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -31,10 +27,12 @@ export function ModelToggle({
 
   const colors = {
     bg: isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
-    selected: isDark ? '#1f1f21' : '#ffffff',
+    bgPressed: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
+    selected: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)',
     text: isDark ? '#f8f8f8' : '#121215',
     muted: isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)',
     border: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)',
+    accent: isDark ? '#ffffff' : '#000000',
   };
 
   const basicModel = React.useMemo(() => {
@@ -81,54 +79,68 @@ export function ModelToggle({
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.bg }]}>
-      {/* Basic */}
+    <View style={styles.container}>
       <Pressable
         onPress={handleBasicPress}
-        style={({ pressed }) => [
+        style={[
           styles.option,
-          isBasicSelected && [
-            styles.optionSelected,
-            { backgroundColor: colors.selected, borderColor: colors.border },
-          ],
-          pressed && !isBasicSelected && { opacity: 0.7 },
+          isBasicSelected && { backgroundColor: colors.selected, borderColor: colors.border },
         ]}
       >
-        <View style={styles.content}>
-          <ModeLogo mode="basic" height={14} />
-          <Text style={[styles.description, { color: colors.muted }]}>
-            Fast & efficient
-          </Text>
+        <View style={styles.row}>
+          <View style={styles.content}>
+            <ModeLogo mode="basic" height={15} />
+            <Text style={[styles.subtitle, { color: colors.muted }]}>
+              Fast & efficient
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.radio,
+              {
+                borderColor: isBasicSelected ? colors.accent : colors.border,
+                backgroundColor: isBasicSelected ? colors.accent : 'transparent',
+              },
+            ]}
+          >
+            {isBasicSelected && (
+              <Check size={14} strokeWidth={3} color={isDark ? '#000000' : '#ffffff'} />
+            )}
+          </View>
         </View>
-        {isBasicSelected && (
-          <Check size={16} strokeWidth={2.5} color={colors.text} />
-        )}
       </Pressable>
 
-      {/* Advanced */}
       <Pressable
         onPress={handleAdvancedPress}
-        style={({ pressed }) => [
+        style={[
           styles.option,
-          isAdvancedSelected && [
-            styles.optionSelected,
-            { backgroundColor: colors.selected, borderColor: colors.border },
-          ],
-          !canAccessAdvanced && styles.optionLocked,
-          pressed && !isAdvancedSelected && { opacity: 0.7 },
+          isAdvancedSelected && { backgroundColor: colors.selected, borderColor: colors.border },
+          !canAccessAdvanced && styles.locked,
         ]}
       >
-        <View style={styles.content}>
-          <ModeLogo mode="advanced" height={14} />
-          <Text style={[styles.description, { color: colors.muted }]}>
-            Maximum intelligence
-          </Text>
+        <View style={styles.row}>
+          <View style={styles.content}>
+            <ModeLogo mode="advanced" height={15} />
+            <Text style={[styles.subtitle, { color: colors.muted }]}>
+              Maximum intelligence
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.radio,
+              {
+                borderColor: isAdvancedSelected ? colors.accent : !canAccessAdvanced ? 'transparent' : colors.border,
+                backgroundColor: isAdvancedSelected ? colors.accent : 'transparent',
+              },
+            ]}
+          >
+            {isAdvancedSelected ? (
+              <Check size={14} strokeWidth={3} color={isDark ? '#000000' : '#ffffff'} />
+            ) : !canAccessAdvanced ? (
+              <Lock size={14} strokeWidth={2} color={colors.muted} />
+            ) : null}
+          </View>
         </View>
-        {isAdvancedSelected ? (
-          <Check size={16} strokeWidth={2.5} color={colors.text} />
-        ) : !canAccessAdvanced ? (
-          <Lock size={14} strokeWidth={2} color={colors.muted} />
-        ) : null}
       </Pressable>
     </View>
   );
@@ -136,37 +148,38 @@ export function ModelToggle({
 
 const styles = StyleSheet.create({
   container: {
-    borderRadius: 14,
-    padding: 4,
-    gap: 4,
+    gap: 8,
   },
   option: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 14,
     paddingVertical: 14,
-    borderRadius: 10,
     gap: 12,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  optionSelected: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 1,
-  },
-  optionLocked: {
-    opacity: 0.5,
   },
   content: {
     flex: 1,
-    gap: 4,
+    gap: 2,
   },
-  description: {
-    fontSize: 12,
+  subtitle: {
+    fontSize: 13,
     fontFamily: 'Roobert',
+  },
+  radio: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  locked: {
+    opacity: 0.5,
   },
 });
 
