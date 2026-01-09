@@ -3,11 +3,11 @@
  * Shows a shimmer loading effect while generating, then the actual image/video
  */
 
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Pressable, Image, StyleSheet, Dimensions } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Play, Pause, Image as ImageIcon, Video, AlertCircle } from 'lucide-react-native';
+import { Image as ImageIcon, Video, AlertCircle, CheckCircle2 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useSharedValue,
@@ -78,14 +78,13 @@ function extractGeneratedMedia(output: string | Record<string, any> | undefined)
 }
 
 /**
- * Shimmer loading box for media generation
+ * Shimmer loading box for media generation - full width
  */
 function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
   const shimmerPosition = useSharedValue(0);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const screenWidth = Dimensions.get('window').width;
-  const boxWidth = Math.min(screenWidth * 0.75, 320);
 
   useEffect(() => {
     shimmerPosition.value = withRepeat(
@@ -99,7 +98,7 @@ function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
     const translateX = interpolate(
       shimmerPosition.value,
       [0, 1],
-      [-boxWidth * 2, boxWidth * 2]
+      [-screenWidth * 2, screenWidth * 2]
     );
     return {
       transform: [{ translateX }],
@@ -111,7 +110,7 @@ function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
       style={[
         styles.shimmerContainer,
         {
-          width: boxWidth,
+          width: '100%',
           aspectRatio: aspectVideo ? 16 / 9 : 1,
           backgroundColor: isDark ? '#27272a' : '#f4f4f5',
           borderColor: isDark ? '#3f3f46' : '#e4e4e7',
@@ -134,7 +133,7 @@ function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
             isDark ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.5)',
             'transparent',
           ]}
-          style={[StyleSheet.absoluteFill, { width: boxWidth * 2 }]}
+          style={[StyleSheet.absoluteFill, { width: screenWidth * 2 }]}
           start={{ x: 0, y: 0.5 }}
           end={{ x: 1, y: 0.5 }}
         />
@@ -153,15 +152,14 @@ function ShimmerBox({ aspectVideo = false }: { aspectVideo?: boolean }) {
 }
 
 /**
- * Inline image display with loading state
+ * Inline image display with loading state - full width, pressable
  */
-function InlineImage({ filePath, sandboxId }: { filePath: string; sandboxId?: string }) {
+function InlineImage({ filePath, sandboxId, onPress }: { filePath: string; sandboxId?: string; onPress?: () => void }) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  const screenWidth = Dimensions.get('window').width;
-  const imageWidth = Math.min(screenWidth * 0.75, 320);
   const [imageError, setImageError] = useState(false);
   const [imageUri, setImageUri] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState(1);
 
   // Normalize path
   const normalizedPath = useMemo(() => {
@@ -178,7 +176,14 @@ function InlineImage({ filePath, sandboxId }: { filePath: string; sandboxId?: st
     if (imageBlob instanceof Blob) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        setImageUri(reader.result as string);
+        const uri = reader.result as string;
+        setImageUri(uri);
+        // Get image dimensions
+        Image.getSize(uri, (width, height) => {
+          if (width && height) {
+            setAspectRatio(width / height);
+          }
+        }, () => {});
       };
       reader.onerror = () => {
         setImageError(true);
@@ -201,7 +206,6 @@ function InlineImage({ filePath, sandboxId }: { filePath: string; sandboxId?: st
         style={[
           styles.errorContainer,
           {
-            width: imageWidth,
             backgroundColor: isDark ? '#27272a' : '#f4f4f5',
             borderColor: isDark ? '#3f3f46' : '#e4e4e7',
           },
@@ -214,22 +218,22 @@ function InlineImage({ filePath, sandboxId }: { filePath: string; sandboxId?: st
   }
 
   return (
-    <View
+    <Pressable
+      onPress={onPress}
       style={[
         styles.imageContainer,
         {
-          width: imageWidth,
           borderColor: isDark ? '#3f3f46' : '#e4e4e7',
         },
       ]}
     >
       <Image
         source={{ uri: imageUri }}
-        style={styles.image}
+        style={[styles.image, { aspectRatio }]}
         resizeMode="contain"
         onError={() => setImageError(true)}
       />
-    </View>
+    </Pressable>
   );
 }
 
@@ -242,9 +246,6 @@ export function MediaGenerationInline({
   onToolClick,
   sandboxId,
 }: MediaGenerationInlineProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  
   const isComplete = !!toolResult;
   const media = isComplete ? extractGeneratedMedia(toolResult?.output) : null;
   
@@ -257,65 +258,44 @@ export function MediaGenerationInline({
 
   return (
     <View style={styles.container}>
-      {/* Tool button - compact style */}
+      {/* Tool button - matches CompactToolCard exactly */}
       <Pressable
         onPress={onToolClick}
-        style={[
-          styles.toolButton,
-          {
-            backgroundColor: isDark ? '#27272a' : '#fafafa',
-            borderColor: isDark ? '#3f3f46' : '#e4e4e7',
-          },
-        ]}
+        disabled={!isComplete}
+        style={styles.toolButton}
       >
-        <View style={styles.toolButtonContent}>
-          <Icon as={IconComponent} size={14} className="text-muted-foreground" />
-          <Text className="font-mono text-xs text-foreground ml-1.5" numberOfLines={1}>
-            {displayName}
-          </Text>
-          {!isComplete && (
-            <View style={styles.loaderContainer}>
-              <KortixLoader size="small" />
-            </View>
-          )}
+        <View className="w-5 h-5 rounded-md items-center justify-center">
+          <Icon as={IconComponent} size={16} className="text-muted-foreground" />
         </View>
+        <Text className="text-sm font-roobert-medium text-muted-foreground ml-1" numberOfLines={1}>
+          {displayName}
+        </Text>
+        {!isComplete ? (
+          <KortixLoader size="small" />
+        ) : (
+          <Icon as={CheckCircle2} size={12} className="text-emerald-500 ml-2" />
+        )}
       </Pressable>
 
-      {/* Media preview below */}
-      <View style={styles.mediaContainer}>
-        {!isComplete ? (
-          <ShimmerBox aspectVideo={isVideoGeneration} />
-        ) : media?.type === 'image' ? (
-          <InlineImage filePath={media.path} sandboxId={sandboxId} />
-        ) : media?.type === 'video' ? (
-          // For now, show image placeholder for video - full video player can be added later
-          <InlineImage filePath={media.path} sandboxId={sandboxId} />
-        ) : null}
-      </View>
+      {/* Media preview below - full width, clickable to open tool */}
+      {!isComplete ? (
+        <ShimmerBox aspectVideo={isVideoGeneration} />
+      ) : media?.type === 'image' ? (
+        <InlineImage filePath={media.path} sandboxId={sandboxId} onPress={onToolClick} />
+      ) : media?.type === 'video' ? (
+        <InlineImage filePath={media.path} sandboxId={sandboxId} onPress={onToolClick} />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginVertical: 6,
     gap: 8,
   },
   toolButton: {
-    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 6,
-    borderRadius: 8,
-    borderWidth: 1,
-  },
-  toolButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  loaderContainer: {
-    marginLeft: 6,
   },
   shimmerContainer: {
     borderRadius: 16,
@@ -333,14 +313,15 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     overflow: 'hidden',
+    width: '100%',
   },
   image: {
     width: '100%',
-    aspectRatio: 1,
   },
   errorContainer: {
     borderRadius: 16,
     borderWidth: 1,
+    width: '100%',
     aspectRatio: 1,
     justifyContent: 'center',
     alignItems: 'center',
