@@ -347,7 +347,9 @@ class BrowserTool(SandboxToolsBase):
                         clean_result["screenshot_issue"] = f"Screenshot processing issue: {result['image_validation_error']}"
                     if result.get("image_upload_error"):
                         clean_result["screenshot_issue"] = f"Screenshot upload issue: {result['image_upload_error']}"
-                    clean_result["message_id"] = added_message.get("message_id")
+                    # Convert message_id to string to ensure JSON serialization works
+                    message_id = added_message.get("message_id")
+                    clean_result["message_id"] = str(message_id) if message_id else None
 
                     if clean_result.get("success"):
                         return self.success_response(clean_result)
