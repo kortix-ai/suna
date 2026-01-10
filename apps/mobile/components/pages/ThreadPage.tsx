@@ -16,6 +16,7 @@ import {
   ChatDrawers,
   type ToolMessagePair,
   CHAT_INPUT_SECTION_HEIGHT,
+  CompactToolCard,
 } from '@/components/chat';
 import { ThreadHeader } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
@@ -27,6 +28,7 @@ import { Icon } from '@/components/ui/icon';
 import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AgentLoader } from '../chat/AgentLoader';
+import { ParsedContent } from '@/api/types';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -531,6 +533,9 @@ export function ThreadPage({
 
   return (
     <View className="flex-1 bg-background">
+      <View className="mx-4">
+        <CompactToolCard message={messages[0] || undefined} isLoading={isLoading} toolCall={streamingToolCall as ParsedContent | undefined} onPress={() => {}} />
+      </View>
       <View className="flex-1" style={{ zIndex: 1 }}>
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
