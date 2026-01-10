@@ -111,16 +111,20 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const sendScale = useSharedValue(1);
   const pulseOpacity = useSharedValue(1);
   const rotation = useSharedValue(0);
+  // Instant height updates using Reanimated (no React state delay)
+  const animatedContentHeight = useSharedValue(0);
+  // INSTANT button icon switch - shared value updated synchronously, no React render
+  const hasContentShared = useSharedValue(!!(value && value.trim()) || attachments.length > 0 ? 1 : 0);
 
   // TextInput ref for programmatic focus
   const textInputRef = React.useRef<TextInput>(null);
-  const contentHeightRef = React.useRef(0);
 
   // State
-  const [contentHeight, setContentHeight] = React.useState(0);
   const [isFocused, setIsFocused] = React.useState(false);
   const [selection, setSelection] = React.useState({ start: 0, end: 0 });
   const [isStopping, setIsStopping] = React.useState(false);
+  // Track hasText locally for button press logic (React state for callbacks)
+  const [localHasText, setLocalHasText] = React.useState(!!(value && value.trim()));
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
 
@@ -151,7 +155,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     , [dismissKeyboard]);
 
   // Derived values - computed once per render
-  const hasText = !!(value && value.trim());
+  // Use localHasText for instant response on BOTH platforms (avoids prop round-trip delay)
+  const hasText = localHasText;
   const hasAttachments = attachments.length > 0;
   const hasContent = hasText || hasAttachments;
   const hasAgent = !!agent?.agent_id;
@@ -165,6 +170,11 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     }
   }, [isAgentRunning, isSendingMessage, isTranscribing]);
 
+  // Sync localHasText when value prop changes from outside (e.g., after send clears input)
+  React.useEffect(() => {
+    setLocalHasText(!!(value && value.trim()));
+  }, [value]);
+
 
   // Memoized placeholder
   const effectivePlaceholder = React.useMemo(
@@ -172,13 +182,14 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [placeholder, t]
   );
 
-  // Memoized dynamic height - cap at ~4-5 lines of text
-  const dynamicHeight = React.useMemo(() => {
+  // Animated container height style - instant updates via Reanimated (no React state delay)
+  const animatedContainerStyle = useAnimatedStyle(() => {
     const baseHeight = 120;
     const maxHeight = 160; // ~4-5 lines max
-    const calculatedHeight = contentHeight + 80;
-    return Math.max(baseHeight, Math.min(calculatedHeight, maxHeight));
-  }, [contentHeight]);
+    const calculatedHeight = animatedContentHeight.value + 80;
+    const height = Math.max(baseHeight, Math.min(calculatedHeight, maxHeight));
+    return { height };
+  });
 
   // Recording status text
   const recordingStatusText = isTranscribing ? 'Transcribing...' : formatDuration(recordingDuration);
@@ -248,6 +259,17 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   const rotationAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ rotate: `${rotation.value}deg` }],
+  }));
+
+  // INSTANT icon switch - voice icon visible when no content, send icon when has content
+  const voiceIconStyle = useAnimatedStyle(() => ({
+    opacity: hasContentShared.value === 0 ? 1 : 0,
+    position: 'absolute' as const,
+  }));
+
+  const sendIconStyle = useAnimatedStyle(() => ({
+    opacity: hasContentShared.value === 1 ? 1 : 0,
+    position: 'absolute' as const,
   }));
 
   // Memoized press handlers using useCallback
@@ -364,17 +386,14 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     onAudioRecord?.();
   }, [isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
-  // Content size change handler - debounced via ref comparison
+  // Content size change handler - uses Reanimated with ultra-fast timing for instant height
   const handleContentSizeChange = React.useCallback(
     (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
       const newHeight = e.nativeEvent.contentSize.height;
-      // Only update state if height changed significantly (reduces renders)
-      if (Math.abs(newHeight - contentHeightRef.current) >= 5) {
-        contentHeightRef.current = newHeight;
-        setContentHeight(newHeight);
-      }
+      // Ultra-fast timing (50ms) - feels instant but avoids jarring jump
+      animatedContentHeight.value = withTiming(newHeight, { duration: 50 });
     },
-    []
+    [animatedContentHeight]
   );
 
   // Selection change handler to track cursor position
@@ -419,10 +438,20 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [value, selection, onChangeText]
   );
 
-  // Memoized container style
-  const containerStyle = React.useMemo(
-    () => ({ height: dynamicHeight, ...(style as ViewStyle) }),
-    [dynamicHeight, style]
+  // Wrapped onChangeText - updates shared value INSTANTLY (no React render cycle)
+  const handleChangeText = React.useCallback((text: string) => {
+    const hasText = !!(text && text.trim());
+    // Update shared value synchronously - UI thread updates INSTANTLY
+    hasContentShared.value = (hasText || attachments.length > 0) ? 1 : 0;
+    // Also update React state for button press logic
+    setLocalHasText(hasText);
+    onChangeText?.(text);
+  }, [onChangeText, hasContentShared, attachments.length]);
+
+  // Container style (without height - height is handled by animated style)
+  const containerBaseStyle = React.useMemo(
+    () => (style as ViewStyle),
+    [style]
   );
 
   // Memoized attach button style
@@ -431,21 +460,11 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [attachAnimatedStyle, isDisabled]
   );
 
-  // Determine button icon
-  const ButtonIcon = React.useMemo(() => {
-    if (isAgentRunning) return StopIcon;
-    if (hasContent) return CornerDownLeft;
-    return AudioLines;
-  }, [isAgentRunning, hasContent]);
-
-  const buttonIconSize = isAgentRunning ? 14 : 18;
-  const buttonIconClass = isAgentRunning ? "text-background" : "text-primary-foreground";
-
   return (
     <GestureDetector gesture={swipeDownGesture}>
-      <View
+      <AnimatedView
         className="relative rounded-[30px] overflow-hidden bg-card border border-border"
-        style={containerStyle}
+        style={[containerBaseStyle, animatedContainerStyle]}
         collapsable={false}
         {...props}
       >
@@ -468,7 +487,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             <NormalMode
               textInputRef={textInputRef}
               value={value}
-              onChangeText={onChangeText}
+              onChangeText={handleChangeText}
               effectivePlaceholder={effectivePlaceholder}
               placeholderTextColor={placeholderTextColor}
               isDisabled={isDisabled}
@@ -481,6 +500,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
               onAgentPress={onAgentPress}
               sendAnimatedStyle={sendAnimatedStyle}
               rotationAnimatedStyle={rotationAnimatedStyle}
+              voiceIconStyle={voiceIconStyle}
+              sendIconStyle={sendIconStyle}
               onSendPressIn={handleSendPressIn}
               onSendPressOut={handleSendPressOut}
               onButtonPress={handleButtonPress}
@@ -488,15 +509,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
               isTranscribing={isTranscribing}
               isAgentRunning={isAgentRunning}
               isStopping={isStopping}
-              ButtonIcon={ButtonIcon}
-              buttonIconSize={buttonIconSize}
-              buttonIconClass={buttonIconClass}
               isAuthenticated={isAuthenticated}
               hasAgent={hasAgent}
             />
           )}
         </View>
-      </View>
+      </AnimatedView>
     </GestureDetector>
   );
 }));
@@ -582,6 +600,8 @@ interface NormalModeProps {
   onAgentPress?: () => void;
   sendAnimatedStyle: any;
   rotationAnimatedStyle: any;
+  voiceIconStyle: any;
+  sendIconStyle: any;
   onSendPressIn: () => void;
   onSendPressOut: () => void;
   onButtonPress: () => void;
@@ -589,9 +609,6 @@ interface NormalModeProps {
   isTranscribing: boolean;
   isAgentRunning: boolean;
   isStopping: boolean;
-  ButtonIcon: React.ComponentType<any>;
-  buttonIconSize: number;
-  buttonIconClass: string;
   isAuthenticated: boolean;
   hasAgent: boolean;
 }
@@ -612,6 +629,8 @@ const NormalMode = React.memo(({
   onAgentPress,
   sendAnimatedStyle,
   rotationAnimatedStyle,
+  voiceIconStyle,
+  sendIconStyle,
   onSendPressIn,
   onSendPressOut,
   onButtonPress,
@@ -619,9 +638,6 @@ const NormalMode = React.memo(({
   isTranscribing,
   isAgentRunning,
   isStopping,
-  ButtonIcon,
-  buttonIconSize,
-  buttonIconClass,
   isAuthenticated,
   hasAgent,
 }: NormalModeProps) => (
@@ -683,7 +699,7 @@ const NormalMode = React.memo(({
           compact={false}
         />
 
-        {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
+        {/* Main action button - INSTANT icon switching via Reanimated */}
         <TouchableOpacity
           onPress={() => {
             onButtonPress();
@@ -697,11 +713,15 @@ const NormalMode = React.memo(({
           {(isSendingMessage || isTranscribing || isAgentRunning || isStopping) ? (
             <StopIcon size={14} className="text-background" />
           ) : (
-            ButtonIcon === StopIcon ? (
-              <StopIcon size={buttonIconSize} className={buttonIconClass} />
-            ) : (
-              <Icon as={ButtonIcon as any} size={buttonIconSize} className={buttonIconClass} strokeWidth={2} />
-            )
+            <>
+              {/* Both icons rendered - opacity controlled by Reanimated for INSTANT switching */}
+              <AnimatedView style={voiceIconStyle}>
+                <Icon as={AudioLines} size={18} className="text-primary-foreground" strokeWidth={2} />
+              </AnimatedView>
+              <AnimatedView style={sendIconStyle}>
+                <Icon as={CornerDownLeft} size={18} className="text-primary-foreground" strokeWidth={2} />
+              </AnimatedView>
+            </>
           )}
         </TouchableOpacity>
       </View>
