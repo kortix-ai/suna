@@ -386,6 +386,7 @@ export function ThreadPage({
   const viewportHeightRef = React.useRef(0);
   const scrollLockActiveRef = React.useRef(false);
   const agentWasRunningRef = React.useRef(false);
+  const pushActivatedContentHeightRef = React.useRef<number | null>(null);
 
   // Count user messages
   const userMessageCount = React.useMemo(() =>
@@ -435,7 +436,23 @@ export function ThreadPage({
     if (hasOverflow && !isAtActualBottom && !isUserScrolling) {
       setShowScrollToBottom(true);
     }
-  }, [extraPushPadding, isUserScrolling]);
+
+    // Track content height when push is activated, remove push only when AI adds enough content
+    if (pushToTop) {
+      // Capture initial height when push is first activated
+      if (pushActivatedContentHeightRef.current === null) {
+        pushActivatedContentHeightRef.current = contentHeight;
+      }
+
+      // Only remove push when content has grown by at least 200px (AI added content)
+      // AND actual content overflows the viewport
+      const contentGrowth = contentHeight - pushActivatedContentHeightRef.current;
+      if (hasOverflow && contentGrowth > 200) {
+        setPushToTop(false);
+        pushActivatedContentHeightRef.current = null;
+      }
+    }
+  }, [extraPushPadding, isUserScrolling, pushToTop]);
 
   // Scroll to bottom when thread first opens
   React.useEffect(() => {
@@ -454,6 +471,7 @@ export function ThreadPage({
     setPushToTop(false);
     scrollLockActiveRef.current = false;
     agentWasRunningRef.current = false;
+    pushActivatedContentHeightRef.current = null;
   }, [chat.activeThread?.id]);
 
   // When user sends a NEW message - activate push to top
