@@ -108,33 +108,36 @@ function ActionLibrarySwitcher({ currentView, onViewChange, size = 'md' }: Actio
   const isAction = currentView === 'tools';
   const isLibrary = currentView === 'files';
   
-  const buttonClasses = size === 'sm' 
-    ? "px-3 py-1.5 text-[11px] gap-1.5"
-    : "px-4 py-2 text-xs gap-2";
-  
-  const iconSize = size === 'sm' ? "h-3 w-3" : "h-3.5 w-3.5";
-  
-  const containerHeight = size === 'sm' ? 'h-8' : 'h-9';
+  // Responsive sizing
+  const containerPadding = size === 'sm' ? 'p-1' : 'p-1';
+  const buttonPadding = size === 'sm' ? 'px-3 py-1.5' : 'px-4 py-2';
+  const fontSize = size === 'sm' ? 'text-[11px]' : 'text-xs';
+  const iconSize = size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5';
   const indicatorHeight = size === 'sm' ? 'h-7' : 'h-8';
+  const gap = size === 'sm' ? 'gap-1.5' : 'gap-2';
 
   return (
     <div className={cn(
-      "relative flex items-center gap-0.5 bg-muted/30 backdrop-blur-sm rounded-lg p-0.5",
-      containerHeight
+      "relative flex items-center bg-muted rounded-2xl",
+      containerPadding
     )}>
+      {/* Sliding indicator */}
       <motion.div
         className={cn(
-          "absolute top-0.5 left-0.5 bg-background shadow-sm border border-border/50 rounded-md",
+          "absolute top-1 bg-white dark:bg-zinc-700 rounded-xl shadow-sm",
           indicatorHeight
         )}
+        style={{
+          left: 4,
+          width: 'calc(50% - 4px)',
+        }}
         initial={false}
         animate={{
-          x: isAction ? 0 : '100%',
-          width: isAction ? 'calc(50% - 1px)' : 'calc(50% - 1px)',
+          x: isAction ? 0 : 'calc(100% + 0px)',
         }}
         transition={{
           type: "spring",
-          stiffness: 350,
+          stiffness: 400,
           damping: 30
         }}
       />
@@ -142,11 +145,13 @@ function ActionLibrarySwitcher({ currentView, onViewChange, size = 'md' }: Actio
       <button
         onClick={() => onViewChange('tools')}
         className={cn(
-          "relative z-10 flex items-center justify-center rounded-md font-medium transition-all duration-200 flex-1",
-          buttonClasses,
+          "relative z-10 flex items-center justify-center rounded-xl font-medium transition-colors duration-150 flex-1",
+          buttonPadding,
+          fontSize,
+          gap,
           isAction
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground/80"
+            ? "text-zinc-900 dark:text-white"
+            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
         )}
       >
         <Zap className={cn(iconSize, isAction && "fill-current")} />
@@ -156,11 +161,13 @@ function ActionLibrarySwitcher({ currentView, onViewChange, size = 'md' }: Actio
       <button
         onClick={() => onViewChange('files')}
         className={cn(
-          "relative z-10 flex items-center justify-center rounded-md font-medium transition-all duration-200 flex-1",
-          buttonClasses,
+          "relative z-10 flex items-center justify-center rounded-xl font-medium transition-colors duration-150 flex-1",
+          buttonPadding,
+          fontSize,
+          gap,
           isLibrary
-            ? "text-foreground"
-            : "text-muted-foreground hover:text-foreground/80"
+            ? "text-zinc-900 dark:text-white"
+            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
         )}
       >
         <Library className={cn(iconSize)} />

@@ -36,10 +36,13 @@ export function ImagePreview({
     const IconComponent = getFileIcon('image');
     const fileUrl = sandboxId ? getFileUrl(sandboxId, filepath) : filepath;
     
+    // Skip sandbox fetch if we have a local preview
+    const needsSandboxFetch = !localPreviewUrl && !!sandboxId;
+    
     const { data: imageUrl, isLoading, error, retryCount } = useFileData(
-        sandboxId,
-        filepath,
-        { enabled: !localPreviewUrl, showPreview: true }
+        needsSandboxFetch ? sandboxId : undefined,
+        needsSandboxFetch ? filepath : undefined,
+        { enabled: needsSandboxFetch, showPreview: true }
     );
     
     const [imageLoaded, setImageLoaded] = React.useState(false);
@@ -49,13 +52,16 @@ export function ImagePreview({
         setImageLoaded(false);
     }, [imageUrl, localPreviewUrl, filepath]);
     
-    const isSandboxFile = !filepath.startsWith('http://') && !filepath.startsWith('https://') && !localPreviewUrl;
+    // If we have a local preview, show it immediately - no loading needed
+    const hasLocalPreview = !!localPreviewUrl;
+    
+    const isSandboxFile = !filepath.startsWith('http://') && !filepath.startsWith('https://') && !hasLocalPreview;
     const waitingForSandboxId = isSandboxFile && !sandboxId;
     const isStillRetrying = retryCount < 15;
     const hasError = error && !isStillRetrying;
     
-    // Show loading state during retries
-    if ((isLoading || waitingForSandboxId) && isStillRetrying) {
+    // Only show loading state if we DON'T have a local preview and we're waiting for sandbox
+    if (!hasLocalPreview && (isLoading || waitingForSandboxId) && isStillRetrying) {
         return (
             <div
                 className={cn(
@@ -144,8 +150,8 @@ export function ImagePreview({
                 </div>
             )}
             
-            {/* Loading spinner overlay */}
-            {!imageLoaded && isGridLayout && !uploadStatus && (
+            {/* Loading spinner overlay - only show when no local preview and image not loaded */}
+            {!imageLoaded && isGridLayout && !uploadStatus && !hasLocalPreview && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-black/5 to-black/10 dark:from-white/5 dark:to-white/10 z-10">
                     <KortixLoader size="small" />
                     {retryCount > 0 && (

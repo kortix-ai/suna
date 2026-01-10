@@ -151,25 +151,21 @@ export function useOptimisticAgentStart(
     const projectId = crypto.randomUUID();
 
     try {
-      // Normalize file names
+      // Normalize file names for upload
       const normalizedFiles = files.map((file) => {
         const normalizedName = normalizeFilenameToNFC(file.name);
         return new File([file], normalizedName, { type: file.type });
       });
 
-      // Build prompt with file references
-      let promptWithFiles = trimmedMessage;
+      // Store optimistic files for UI preview (file references already added by ChatInput)
       if (normalizedFiles.length > 0 && fileIds.length === 0) {
         addOptimisticFiles(threadId, projectId, normalizedFiles);
         sessionStorage.setItem('optimistic_files', 'true');
-        const fileRefs = normalizedFiles.map((f) => 
-          `[Uploaded File: uploads/${f.name}]`
-        ).join('\n');
-        promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
       }
 
       // Store optimistic data for the thread component to pick up
-      sessionStorage.setItem('optimistic_prompt', promptWithFiles);
+      // Note: message already contains file references from ChatInput
+      sessionStorage.setItem('optimistic_prompt', message);
       sessionStorage.setItem('optimistic_thread', threadId);
 
       if (process.env.NODE_ENV !== 'production') {
@@ -178,8 +174,8 @@ export function useOptimisticAgentStart(
           threadId,
           agent_id: agentId || undefined,
           model_name: modelName,
-          promptLength: promptWithFiles.length,
-          promptPreview: promptWithFiles.slice(0, 140),
+          promptLength: message.length,
+          promptPreview: message.slice(0, 140),
           files: normalizedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
           fileIds: fileIds.length,
         });
@@ -192,7 +188,8 @@ export function useOptimisticAgentStart(
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
-        prompt: promptWithFiles,
+        prompt: message,
+        files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
         file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: modelName,
         agent_id: agentId || undefined,
