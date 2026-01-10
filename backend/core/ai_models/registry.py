@@ -119,7 +119,7 @@ class ModelRegistry:
             name="Claude Haiku 4.5",
             litellm_model_id=haiku_litellm_id,
             provider=ModelProvider.BEDROCK if SHOULD_USE_BEDROCK else ModelProvider.ANTHROPIC,
-            aliases=["claude-haiku", "haiku", "claude-haiku-4-5"],
+            aliases=[haiku_litellm_id],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
