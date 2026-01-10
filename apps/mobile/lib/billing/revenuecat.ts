@@ -13,6 +13,9 @@ import { API_URL, getAuthHeaders } from '@/api/config';
 const REVENUECAT_API_KEY_IOS = 'appl_UpcFYduOZYUgSqKPNvtzgXkPCeh';
 const REVENUECAT_API_KEY_ANDROID = 'goog_wckzzdVDdOjbVHemqCsuFckMrMQ';
 
+// Enable verbose logging for debugging (set to false in production)
+const DEBUG_REVENUECAT = __DEV__;
+
 export interface RevenueCatProduct {
   identifier: string;
   description: string;
@@ -251,6 +254,40 @@ export async function initializeRevenueCat(
       lastSetUserId = userId;
       currentInitializationParams = null;
       console.log('[RevenueCat] ✅ Initialized successfully for user:', userId);
+
+      // Debug: Log available offerings and customer info after init
+      if (DEBUG_REVENUECAT) {
+        try {
+          const customerInfo = await Purchases.getCustomerInfo();
+          console.log('[RevenueCat] 🔍 Customer Info:', {
+            appUserId: customerInfo.originalAppUserId,
+            activeSubscriptions: customerInfo.activeSubscriptions,
+            entitlements: Object.keys(customerInfo.entitlements.active),
+            allPurchasedProducts: customerInfo.allPurchasedProductIdentifiers,
+          });
+
+          const offerings = await Purchases.getOfferings();
+          const offeringIds = Object.keys(offerings.all);
+          console.log('[RevenueCat] 📦 Available Offerings:', offeringIds.length ? offeringIds : 'NONE');
+          console.log('[RevenueCat] 📦 Current Offering:', offerings.current?.identifier || 'NONE');
+          
+          if (offerings.current) {
+            console.log('[RevenueCat] 📦 Packages:', offerings.current.availablePackages.map(p => ({
+              id: p.identifier,
+              product: p.product.identifier,
+              price: p.product.priceString,
+            })));
+          }
+
+          // Check for paywall templates
+          for (const [id, offering] of Object.entries(offerings.all)) {
+            const hasPaywall = (offering as any).paywall != null;
+            console.log(`[RevenueCat] 🎨 Offering "${id}" has paywall template: ${hasPaywall}`);
+          }
+        } catch (debugError) {
+          console.warn('[RevenueCat] Debug logging failed:', debugError);
+        }
+      }
     } catch (error) {
       console.error('[RevenueCat] ❌ Initialization failed:', error);
       isConfigured = false;
@@ -587,6 +624,10 @@ export async function presentPaywall(
   try {
     ensureLogHandler();
     
+    if (DEBUG_REVENUECAT) {
+      console.log('[RevenueCat] 🎯 presentPaywall called with:', paywallName || 'default');
+    }
+    
     let offering: PurchasesOffering | null = null;
 
     if (paywallName) {
@@ -595,6 +636,7 @@ export async function presentPaywall(
       if (!offering) {
         const allOfferings = await Purchases.getOfferings();
         const availableOfferingIds = Object.keys(allOfferings.all);
+        console.error('[RevenueCat] ❌ Paywall not found:', paywallName, 'Available:', availableOfferingIds);
         const error: any = new Error(`Paywall '${paywallName}' not found. Available: ${availableOfferingIds.join(', ')}`);
         error.code = 'PAYWALL_NOT_FOUND';
         throw error;
@@ -604,6 +646,7 @@ export async function presentPaywall(
     }
 
     if (!offering) {
+      console.error('[RevenueCat] ❌ No offerings available');
       const error: any = new Error('No offerings available to display');
       error.code = 'NO_OFFERINGS';
       throw error;
@@ -613,7 +656,16 @@ export async function presentPaywall(
     const offeringAny = offering as any;
     const hasPaywall = offeringAny.paywall !== null && offeringAny.paywall !== undefined;
     
+    if (DEBUG_REVENUECAT) {
+      console.log('[RevenueCat] 📦 Presenting offering:', {
+        id: offering.identifier,
+        packages: offering.availablePackages.map(p => p.identifier),
+        hasPaywallTemplate: hasPaywall,
+      });
+    }
+    
     if (!hasPaywall) {
+      console.error('[RevenueCat] ❌ No paywall template for offering:', offering.identifier);
       const error: any = new Error(
         `No paywall template configured for offering '${offering.identifier}'.`
       );
@@ -622,6 +674,7 @@ export async function presentPaywall(
       throw error;
     }
 
+    console.log('[RevenueCat] 🚀 Launching native paywall UI...');
     const result = await RevenueCatUI.presentPaywall({ offering });
 
     const purchased = result === RevenueCatUI.PAYWALL_RESULT.PURCHASED;
@@ -650,3 +703,4 @@ export async function presentCustomerInfo(): Promise<void> {
     throw error;
   }
 }
+
