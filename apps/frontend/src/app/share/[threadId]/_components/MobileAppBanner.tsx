@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { X, Smartphone } from 'lucide-react';
+import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 // Detect if user is on mobile device
 function isMobileDevice(): boolean {
@@ -101,48 +101,39 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
 
   return (
     <div
-      className={`fixed bottom-0 left-0 right-0 z-50 transform transition-transform duration-300 ease-out ${isVisible ? 'translate-y-0' : 'translate-y-full'
+      className={`fixed top-0 left-0 right-0 z-50 transform transition-transform duration-300 ease-out ${isVisible ? 'translate-y-0' : '-translate-y-full'
         }`}
     >
-      <div className="mx-4 mb-4 rounded-2xl bg-background border border-border shadow-lg p-4">
-        <div className="flex items-start gap-3">
+      <div className="bg-background/95 backdrop-blur-md border-b border-border/50 px-3 py-2.5 safe-area-top">
+        <div className="flex items-center gap-3">
           {/* App icon */}
-          <div className="flex-shrink-0 w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
-            <Smartphone className="w-6 h-6 text-primary" />
+          <div className="shrink-0 w-10 h-10 rounded-xl bg-foreground flex items-center justify-center">
+            <KortixLogo size={20} className="invert dark:invert-0" />
           </div>
 
           {/* Content */}
           <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-foreground text-sm">
-              Open in Kortix App
+            <h3 className="font-semibold text-foreground text-sm leading-tight">
+              Kortix
             </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Get the full experience with the native app
+            <p className="text-xs text-muted-foreground leading-tight">
+              Open this content in app
             </p>
-
-            <div className="flex gap-2 mt-3">
-              <Button
-                onClick={handleOpenInApp}
-                size="sm"
-                className="flex-1 h-10 text-sm font-medium"
-              >
-                Open App
-              </Button>
-              <Button
-                onClick={handleDismiss}
-                variant="outline"
-                size="sm"
-                className="flex-1 h-10 text-sm font-medium"
-              >
-                Continue in Browser
-              </Button>
-            </div>
           </div>
+
+          {/* Open button */}
+          <Button
+            onClick={handleOpenInApp}
+            size="sm"
+            className="h-8 px-4 text-xs font-semibold rounded-full"
+          >
+            Open
+          </Button>
 
           {/* Close button */}
           <button
             onClick={handleDismiss}
-            className="flex-shrink-0 p-1 rounded-full hover:bg-muted transition-colors"
+            className="shrink-0 p-1.5 -mr-1 rounded-full hover:bg-muted/80 transition-colors"
             aria-label="Dismiss"
           >
             <X className="w-4 h-4 text-muted-foreground" />
