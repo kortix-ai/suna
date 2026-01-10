@@ -26,6 +26,7 @@ SONNET_BEDROCK_ARN = build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID)
 # Default model IDs
 FREE_MODEL_ID = "kortix/basic"
 PREMIUM_MODEL_ID = "kortix/power"
+IMAGE_MODEL_ID = "kortix/haiku"  # Model to use when thread has images
 
 # Haiku 4.5 pricing (used for billing resolution)
 HAIKU_PRICING = ModelPricing(
@@ -67,24 +68,16 @@ class ModelRegistry:
             id="kortix/basic",
             name="Kortix Basic",
             litellm_model_id=basic_litellm_id,
-            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            vision_context_window=200_000,
-            vision_pricing=HAIKU_PRICING,
             provider=ModelProvider.OPENROUTER,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
-                ModelCapability.VISION,
+                # ModelCapability.VISION,
                 ModelCapability.PROMPT_CACHING,
             ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=0.30,
-                output_cost_per_million_tokens=1.20,
-                cached_read_cost_per_million_tokens=0.03,
-                cache_write_5m_cost_per_million_tokens=0.375,
-            ),
+            pricing=minimax_m2_pricing,
             tier_availability=["free", "paid"],
             priority=102,
             recommended=True,
@@ -100,28 +93,44 @@ class ModelRegistry:
             id="kortix/power",
             name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
-            vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            vision_context_window=200_000,
-            vision_pricing=HAIKU_PRICING,
             provider=ModelProvider.OPENROUTER,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
-                ModelCapability.VISION,
+                # ModelCapability.VISION,
                 ModelCapability.THINKING,
                 ModelCapability.PROMPT_CACHING,
             ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=0.30,
-                output_cost_per_million_tokens=1.20,
-                cached_read_cost_per_million_tokens=0.03,
-                cache_write_5m_cost_per_million_tokens=0.375,
-            ),
+            pricing=minimax_m2_pricing,
             tier_availability=["paid"],
             priority=101,
             recommended=True,
+            enabled=True,
+            config=ModelConfig()
+        ))
+        
+        # Claude Haiku 4.5 - can be used as a fallback for vision tasks
+        haiku_litellm_id = HAIKU_BEDROCK_ARN if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+        
+        self.register(Model(
+            id="kortix/haiku",
+            name="Claude Haiku 4.5",
+            litellm_model_id=haiku_litellm_id,
+            provider=ModelProvider.BEDROCK if SHOULD_USE_BEDROCK else ModelProvider.ANTHROPIC,
+            aliases=["claude-haiku", "haiku", "claude-haiku-4-5"],
+            context_window=200_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=HAIKU_PRICING,
+            tier_availability=["free", "paid"],
+            priority=50,
+            recommended=False,
             enabled=True,
             config=ModelConfig()
         ))
@@ -151,7 +160,6 @@ class ModelRegistry:
                 capabilities=[
                     ModelCapability.CHAT,
                     ModelCapability.FUNCTION_CALLING,
-                    ModelCapability.VISION,
                     ModelCapability.THINKING,
                     ModelCapability.PROMPT_CACHING,
                 ],
@@ -228,34 +236,18 @@ class ModelRegistry:
             
         return model_id
     
-    def get_litellm_model_id(self, model_id: str, has_images: bool = False) -> str:
-        """Get the LiteLLM model ID for a given registry model ID or alias.
-        
-        Args:
-            model_id: Registry model ID or alias
-            has_images: Whether the context has images (uses vision model if available)
-        """
+    def get_litellm_model_id(self, model_id: str) -> str:
+        """Get the LiteLLM model ID for a given registry model ID or alias."""
         model = self.get(model_id)
         if model:
-            return model.get_litellm_model_id_for_context(has_images)
+            return model.litellm_model_id
         return model_id
     
-    def needs_vision_model_check(self, model_id: str) -> bool:
-        """Check if a model has a separate vision model configured.
-        
-        Use this to avoid expensive thread_has_images() lookups for models
-        that don't need to switch to a different model for vision tasks.
-        
-        Args:
-            model_id: Registry model ID or alias
-            
-        Returns:
-            True if the model has vision_litellm_model_id set (e.g., MiniMax models),
-            False otherwise (model handles images natively or no vision fallback configured)
-        """
+    def supports_vision(self, model_id: str) -> bool:
+        """Check if a model supports vision natively."""
         model = self.get(model_id)
         if model:
-            return model.vision_litellm_model_id is not None
+            return model.supports_vision
         return False
     
     def get_litellm_params(self, model_id: str, **override_params) -> Dict[str, Any]:
@@ -369,17 +361,16 @@ class ModelRegistry:
             return True
         return False
     
-    def get_context_window(self, model_id: str, default: int = 31_000, has_images: bool = False) -> int:
+    def get_context_window(self, model_id: str, default: int = 31_000) -> int:
         """Get context window for a model.
         
         Args:
             model_id: Registry model ID or alias
             default: Default context window if model not found
-            has_images: Whether context has images (uses vision context window if available)
         """
         model = self.get(model_id)
         if model:
-            return model.get_context_window_for_context(has_images)
+            return model.context_window
         return default
     
     def get_pricing(self, model_id: str) -> Optional[ModelPricing]:

@@ -591,22 +591,16 @@ class ThreadManager:
             ENABLE_PROMPT_CACHING = True    # Set to False to disable prompt caching
             # ==================================
             
-            # Store registry model ID for lookups (before any switching)
             registry_model_id = llm_model
             
             # ===== MODEL SWITCHING FOR IMAGES =====
-            # Only check for images if the model has a separate vision model configured
-            # (e.g., MiniMax models use Haiku Bedrock for vision). Skip expensive lookup
-            # for models that handle images natively (e.g., Anthropic, OpenAI models).
+            # Switch to image model only if current model doesn't support vision natively
             from core.ai_models import model_manager
-            has_images = False
-            if model_manager.needs_vision_model_check(registry_model_id):
-                has_images = await self.thread_has_images(thread_id)
-                if has_images:
-                    # Get the vision-specific LLM model ID from registry
-                    llm_model = model_manager.get_litellm_model_id(registry_model_id, has_images=True)
-                    if llm_model != registry_model_id:
-                        logger.info(f"🖼️ Thread has images - switching model from {registry_model_id} to vision model: {llm_model}")
+            from core.ai_models.registry import IMAGE_MODEL_ID
+            if not model_manager.supports_vision(registry_model_id) and await self.thread_has_images(thread_id):
+                registry_model_id = IMAGE_MODEL_ID
+                llm_model = model_manager.get_litellm_model_id(IMAGE_MODEL_ID)
+                logger.info(f"🖼️ Thread has images - switching to image model: {llm_model}")
             # ======================================
             
             skip_fetch = False
@@ -741,8 +735,7 @@ class ThreadManager:
                             estimated_total_tokens = estimated_total  # Store for response processor
                             
                             # Calculate threshold (same logic as context_manager.py)
-                            # Use registry_model_id with has_images to get correct context window
-                            context_window = model_manager.get_context_window(registry_model_id, has_images=has_images)
+                            context_window = model_manager.get_context_window(registry_model_id)
                             
                             if context_window >= 1_000_000:
                                 max_tokens = context_window - 300_000
@@ -920,7 +913,7 @@ class ThreadManager:
                 logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (no fast check available)")
             
             # Calculate threshold (same logic as fast check)
-            context_window = model_manager.get_context_window(registry_model_id, has_images=has_images)
+            context_window = model_manager.get_context_window(registry_model_id)
             if context_window >= 1_000_000:
                 safety_threshold = context_window - 300_000
             elif context_window >= 400_000:
