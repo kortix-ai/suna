@@ -128,7 +128,7 @@ class ContextManager:
         messages_to_count = messages
         system_to_count = system_prompt
         
-        if apply_caching and ('claude' in model.lower() or 'anthropic' in model.lower()):
+        if apply_caching and ('claude' in model.lower() or 'anthropic' in model.lower() or 'bedrock' in model.lower()):
             try:
                 # Temporarily apply caching transformation
                 prepared = await apply_anthropic_caching_strategy(
