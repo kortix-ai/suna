@@ -927,6 +927,11 @@ class SetupWizard:
 
         # Set JWT secret (this is usually a fixed value for local development)
         self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = "your-super-secret-jwt-token-with-at-least-32-characters-long"
+
+        # Set DATABASE_URL for local Supabase (different format than cloud).
+        # NOTE: These are the default Supabase local development credentials provided by the Supabase CLI.
+        # Not intended for production use - cloud deployments will prompt for their own DATABASE_URL.
+        self.env_vars["supabase"]["DATABASE_URL"] = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
     
     def _configure_local_supabase_settings(self):
         """Configures local Supabase settings for development (disables email confirmations)."""
@@ -1010,6 +1015,19 @@ class SetupWizard:
             validate_api_key,
             "This does not look like a valid JWT secret. It should be at least 10 characters.",
         )
+
+        print_info("\nFor database connectivity, you need the Database URL.")
+        print_info("Go to: Project Settings -> Database -> Connection string")
+        print_info("Choose connection type (Session pooler recommended for most cases):")
+        print_info("  - Session pooler: Best for long-lived connections (recommended)")
+        print_info("  - Transaction pooler: Best for serverless/short-lived connections")
+        print_info("Copy the URI (starts with postgresql://)")
+        self.env_vars["supabase"]["DATABASE_URL"] = self._get_input(
+            "Enter your Database URL: ",
+            lambda url, allow_empty=False: url.startswith("postgresql://") or url.startswith("postgres://"),
+            "Invalid Database URL. It should start with postgresql:// or postgres://",
+        )
+
         # Validate that all required Supabase configuration is present
         if not self.env_vars["supabase"]["SUPABASE_URL"]:
             print_error("SUPABASE_URL is required for database connectivity.")
@@ -1553,6 +1571,7 @@ class SetupWizard:
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
             "SUPABASE_SERVICE_ROLE_KEY": self.env_vars["supabase"].get("SUPABASE_SERVICE_ROLE_KEY", ""),
             "SUPABASE_JWT_SECRET": self.env_vars["supabase"].get("SUPABASE_JWT_SECRET", ""),
+            "DATABASE_URL": self.env_vars["supabase"].get("DATABASE_URL", ""),
             "REDIS_HOST": redis_host,
             "REDIS_PORT": "6379",
             "REDIS_PASSWORD": "",
@@ -1958,15 +1977,7 @@ class SetupWizard:
             print(
                 f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
-            step_num += 1
 
-            print(
-                f"\n{Colors.BOLD}{step_num}. Start Background Worker (in a new terminal):{Colors.ENDC}"
-            )
-            print(
-                f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}"
-            )
-            
             # Show stop commands for local Supabase
             if self.env_vars.get("supabase_setup_method") == "local":
                 print(
