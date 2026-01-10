@@ -15,7 +15,6 @@ import Animated, {
   withSpring,
   Easing,
   interpolate,
-  runOnJS,
 } from 'react-native-reanimated';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaskedView from '@react-native-masked-view/masked-view';
@@ -67,18 +66,18 @@ interface CompactToolCardProps {
   onPress?: () => void;
 }
 
-interface ShimmerWrapperProps {
-  children: React.ReactNode;
+interface ShimmerTextProps {
+  text: string;
 }
 
-const ShimmerWrapper = ({ children }: ShimmerWrapperProps) => {
+const ShimmerText = ({ text }: ShimmerTextProps) => {
   const shimmerPosition = useSharedValue(0);
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
   useEffect(() => {
     shimmerPosition.value = withRepeat(
-      withTiming(1, { duration: 1200, easing: Easing.linear }),
+      withTiming(1, { duration: 1000, easing: Easing.linear }),
       -1,
       false
     );
@@ -91,29 +90,26 @@ const ShimmerWrapper = ({ children }: ShimmerWrapperProps) => {
     };
   });
 
-  const baseColor = isDark ? '#a1a1aa' : '#71717a';
-  const shimmerColor = isDark ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.8)';
+  const textColor = isDark ? '#a1a1aa' : '#71717a';
+  const shimmerColor = isDark ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.7)';
 
   return (
     <MaskedView
-      style={{ flexDirection: 'row', alignItems: 'center' }}
       maskElement={
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {children}
-        </View>
+        <Text className="text-sm font-roobert-medium" style={{ color: '#000' }}>{text}</Text>
       }
     >
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        {children}
+      <View style={{ width: 160, height: 18 }}>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: textColor }]} />
+        <Animated.View style={[StyleSheet.absoluteFill, { width: 200 }, animatedGradientStyle]}>
+          <LinearGradient
+            colors={[textColor, shimmerColor, textColor]}
+            start={{ x: 0, y: 0.5 }}
+            end={{ x: 1, y: 0.5 }}
+            style={{ flex: 1, width: 200 }}
+          />
+        </Animated.View>
       </View>
-      <Animated.View style={[StyleSheet.absoluteFill, animatedGradientStyle]}>
-        <LinearGradient
-          colors={[baseColor, shimmerColor, baseColor]}
-          start={{ x: 0, y: 0.5 }}
-          end={{ x: 1, y: 0.5 }}
-          style={StyleSheet.absoluteFill}
-        />
-      </Animated.View>
     </MaskedView>
   );
 };
@@ -217,14 +213,14 @@ export const CompactStreamingToolCard = React.memo(function CompactStreamingTool
           <Icon as={CheckCircle2} size={12} className="text-emerald-500 ml-2" />
         </>
       ) : (
-        <ShimmerWrapper>
+        <>
           <View className="w-5 h-5 rounded-md items-center justify-center">
-            <IconComponent size={16} color="#000" />
+            <Icon as={IconComponent} size={16} className="text-muted-foreground" />
           </View>
-          <Text className="text-sm font-roobert-medium ml-1" style={{ color: '#000' }}>
-            {displayName}
-          </Text>
-        </ShimmerWrapper>
+          <View className="ml-1">
+            <ShimmerText text={displayName} />
+          </View>
+        </>
       )}
     </View>
   );
