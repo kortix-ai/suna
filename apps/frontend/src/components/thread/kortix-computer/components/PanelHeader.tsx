@@ -98,15 +98,15 @@ function StatusBar() {
   );
 }
 
-interface ActionLibrarySwitcherProps {
+interface ActionFilesSwitcherProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
   size?: 'sm' | 'md';
 }
 
-function ActionLibrarySwitcher({ currentView, onViewChange, size = 'md' }: ActionLibrarySwitcherProps) {
+function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionFilesSwitcherProps) {
   const isAction = currentView === 'tools';
-  const isLibrary = currentView === 'files';
+  const isFiles = currentView === 'files';
   
   // Responsive sizing
   const containerPadding = size === 'sm' ? 'p-1' : 'p-1';
@@ -165,13 +165,13 @@ function ActionLibrarySwitcher({ currentView, onViewChange, size = 'md' }: Actio
           buttonPadding,
           fontSize,
           gap,
-          isLibrary
+          isFiles
             ? "text-zinc-900 dark:text-white"
             : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
         )}
       >
         <Library className={cn(iconSize)} />
-        <span>Library</span>
+        <span>Files</span>
       </button>
     </div>
   );
@@ -231,7 +231,7 @@ export const PanelHeader = memo(function PanelHeader({
           <DrawerTitle className="sr-only">Kortix Computer</DrawerTitle>
         </div>
         <div className="flex items-center gap-2">
-          <ActionLibrarySwitcher 
+          <ActionFilesSwitcher 
             currentView={currentView} 
             onViewChange={onViewChange} 
             size="sm"
@@ -286,7 +286,7 @@ export const PanelHeader = memo(function PanelHeader({
       </div>
       
       <div className="flex items-center justify-end gap-2">
-        <ActionLibrarySwitcher 
+        <ActionFilesSwitcher 
           currentView={currentView} 
           onViewChange={onViewChange} 
           size={isMaximized ? 'sm' : 'md'}

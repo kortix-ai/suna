@@ -115,6 +115,26 @@ export function ImagePreview({
     
     const imageSrc = localPreviewUrl || (sandboxId && session?.access_token ? imageUrl : fileUrl);
     
+    // Don't render if no valid image source
+    if (!imageSrc) {
+        return (
+            <div
+                className={cn(
+                    "relative rounded-2xl",
+                    "border border-border/50",
+                    "bg-muted/20",
+                    "flex flex-col items-center justify-center gap-2",
+                    isGridLayout ? "w-full aspect-[4/3] min-h-[200px]" : "h-[54px] w-[54px]",
+                    className
+                )}
+                style={customStyle}
+                title="Loading file..."
+            >
+                <KortixLoader size="medium" />
+            </div>
+        );
+    }
+    
     return (
         <button
             onClick={uploadStatus === 'uploading' ? undefined : onClick}
@@ -163,7 +183,7 @@ export function ImagePreview({
             )}
             
             <img
-                src={imageSrc || ''}
+                src={imageSrc}
                 alt={filename}
                 className={cn(
                     isGridLayout ? "w-full h-auto" : "h-full w-auto",

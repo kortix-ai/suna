@@ -111,16 +111,23 @@ const UserMessageRow = memo(function UserMessageRow({
   }, [message.content]);
 
   const { cleanContent, attachments } = useMemo(() => {
-    const attachmentsMatch = messageContent.match(/\[Uploaded File: (.*?)\]/g);
+    // Parse all file reference formats: [Uploaded File: ...], [Attached: ...], [Image: ...]
+    const attachmentsMatch = messageContent.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/g);
     const attachmentsList = attachmentsMatch
       ? (attachmentsMatch
           .map((match: string) => {
-            const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
-            return pathMatch ? pathMatch[1] : null;
+            const pathMatch = match.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/);
+            if (!pathMatch) return null;
+            // Extract just the path, removing size info if present
+            const fullMatch = pathMatch[1];
+            const pathOnly = fullMatch.includes(' -> ') 
+              ? fullMatch.split(' -> ')[1] 
+              : fullMatch;
+            return pathOnly;
           })
           .filter(Boolean) as string[])
       : [];
-    const clean = messageContent.replace(/\[Uploaded File: .*?\]/g, "").trim();
+    const clean = messageContent.replace(/\[(?:Uploaded File|Attached|Image): .*?\]/g, "").trim();
     return { cleanContent: clean, attachments: attachmentsList };
   }, [messageContent]);
 
@@ -1082,12 +1089,17 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           try {
             const content =
               typeof message.content === "string" ? message.content : "";
-            const attachmentsMatch = content.match(/\[Uploaded File: (.*?)\]/g);
+            const attachmentsMatch = content.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/g);
             if (attachmentsMatch) {
               attachmentsMatch.forEach((match) => {
-                const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
+                const pathMatch = match.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/);
                 if (pathMatch && pathMatch[1]) {
-                  allAttachments.push(pathMatch[1]);
+                  // Extract just the path, removing size info if present
+                  const fullMatch = pathMatch[1];
+                  const pathOnly = fullMatch.includes(' -> ') 
+                    ? fullMatch.split(' -> ')[1] 
+                    : fullMatch;
+                  allAttachments.push(pathOnly);
                 }
               });
             }

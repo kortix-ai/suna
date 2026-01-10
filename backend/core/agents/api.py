@@ -33,7 +33,6 @@ from core.services.supabase import DBConnection
 # Import from new modules
 from core.agents.runner import execute_agent_run
 from core.files import (
-    handle_file_uploads_fast,
     handle_staged_files_for_thread,
     get_staged_files_for_thread,
 )
@@ -225,7 +224,6 @@ async def start_agent_run(
     project_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     skip_limits_check: bool = False,
-    files: Optional[List[UploadFile]] = None,
     staged_files: Optional[List[Dict[str, Any]]] = None,
     memory_enabled: Optional[bool] = None,
     is_optimistic: bool = False,
@@ -324,20 +322,15 @@ async def start_agent_run(
                 prompt=prompt,
                 account_id=account_id
             )
-        elif files:
-            final_message_content = await handle_file_uploads_fast(files, project_id, prompt, thread_id)
     
-    elif not is_new_thread and (staged_files or files):
-        if staged_files:
-            final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
-                staged_files=staged_files,
-                thread_id=thread_id,
-                project_id=project_id,
-                prompt=prompt,
-                account_id=account_id
-            )
-        elif files:
-            final_message_content = await handle_file_uploads_fast(files, project_id, prompt or "", thread_id)
+    elif not is_new_thread and staged_files:
+        final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
+            staged_files=staged_files,
+            thread_id=thread_id,
+            project_id=project_id,
+            prompt=prompt,
+            account_id=account_id
+        )
     
     async def create_message():
         if not final_message_content or not final_message_content.strip():
@@ -435,13 +428,12 @@ async def unified_agent_start(
     prompt: Optional[str] = Form(None),
     model_name: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[]),
     file_ids: List[str] = Form(default=[]),
     optimistic: Optional[str] = Form(None),
     memory_enabled: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Start an agent run."""
+    """Start an agent run. Files must be staged via /files/stage first."""
     client = await db.client
     account_id = user_id
     is_optimistic = optimistic and optimistic.lower() == 'true'
@@ -456,16 +448,17 @@ async def unified_agent_start(
     if is_optimistic:
         if not thread_id or not project_id:
             raise HTTPException(status_code=400, detail="thread_id and project_id required for optimistic mode")
-        if not prompt or not prompt.strip():
-            raise HTTPException(status_code=400, detail="prompt required for optimistic mode")
+        # Allow empty prompt if file_ids provided (file-only submission)
+        if (not prompt or not prompt.strip()) and not file_ids:
+            raise HTTPException(status_code=400, detail="prompt or file_ids required for optimistic mode")
         try:
             uuid.UUID(thread_id)
             uuid.UUID(project_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid UUID format")
     
-    if not is_optimistic and not thread_id and (not prompt or not prompt.strip()):
-        raise HTTPException(status_code=400, detail="prompt required when creating new thread")
+    if not is_optimistic and not thread_id and (not prompt or not prompt.strip()) and not file_ids:
+        raise HTTPException(status_code=400, detail="prompt or file_ids required when creating new thread")
     
     # Resolve model
     if model_name is None:
@@ -505,7 +498,6 @@ async def unified_agent_start(
             model_name=model_name,
             thread_id=thread_id,
             project_id=project_id,
-            files=files if files else None,
             staged_files=staged_files_data,
             memory_enabled=memory_enabled_bool,
             is_optimistic=is_optimistic,

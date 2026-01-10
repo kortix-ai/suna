@@ -1065,18 +1065,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
       let message = currentValue;
 
-      if (currentUploadedFiles.length > 0) {
-        const fileInfo = currentUploadedFiles
-          .map((file) => {
-            // Convert absolute path to relative (strip /workspace/ prefix)
-            const relativePath = file.path.startsWith('/workspace/') 
-              ? file.path.replace('/workspace/', '') 
-              : file.path;
-            return `[Uploaded File: ${relativePath}]`;
-          })
-          .join('\n');
-        message = message ? `${message}\n\n${fileInfo}` : fileInfo;
-      }
+      // File references are now built by backend - frontend just passes file_ids
+      // No need to add file references here
 
       // Append Markdown for data visualization options
       const dataOptionsMarkdown = generateDataOptionsMarkdown();

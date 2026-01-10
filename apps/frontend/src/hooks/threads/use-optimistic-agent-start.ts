@@ -19,7 +19,6 @@ import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
 
 export interface OptimisticAgentStartOptions {
   message: string;
-  files?: File[];
   fileIds?: string[];
   modelName?: string;
   agentId?: string;
@@ -137,10 +136,10 @@ export function useOptimisticAgentStart(
   const startAgent = useCallback(async (
     options: OptimisticAgentStartOptions
   ): Promise<OptimisticAgentStartResult | null> => {
-    const { message, files = [], fileIds = [], modelName, agentId } = options;
+    const { message, fileIds = [], modelName, agentId } = options;
     
     const trimmedMessage = message.trim();
-    if (!trimmedMessage && files.length === 0 && fileIds.length === 0) {
+    if (!trimmedMessage && fileIds.length === 0) {
       toast.error('Please enter a message or attach files');
       return null;
     }
@@ -151,20 +150,8 @@ export function useOptimisticAgentStart(
     const projectId = crypto.randomUUID();
 
     try {
-      // Normalize file names for upload
-      const normalizedFiles = files.map((file) => {
-        const normalizedName = normalizeFilenameToNFC(file.name);
-        return new File([file], normalizedName, { type: file.type });
-      });
-
-      // Store optimistic files for UI preview (file references already added by ChatInput)
-      if (normalizedFiles.length > 0 && fileIds.length === 0) {
-        addOptimisticFiles(threadId, projectId, normalizedFiles);
-        sessionStorage.setItem('optimistic_files', 'true');
-      }
-
       // Store optimistic data for the thread component to pick up
-      // Note: message already contains file references from ChatInput
+      // Backend will build file references from staged files
       sessionStorage.setItem('optimistic_prompt', message);
       sessionStorage.setItem('optimistic_thread', threadId);
 
@@ -176,7 +163,6 @@ export function useOptimisticAgentStart(
           model_name: modelName,
           promptLength: message.length,
           promptPreview: message.slice(0, 140),
-          files: normalizedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
           fileIds: fileIds.length,
         });
       }
@@ -184,12 +170,11 @@ export function useOptimisticAgentStart(
       // Navigate immediately for optimistic UX
       router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
 
-      // Start agent in background
+      // Start agent in background - only pass file_ids, backend handles everything
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
         prompt: message,
-        files: normalizedFiles.length > 0 ? normalizedFiles : undefined,
         file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: modelName,
         agent_id: agentId || undefined,
@@ -281,7 +266,6 @@ export function useOptimisticAgentStart(
   }, [
     router,
     queryClient,
-    addOptimisticFiles,
     redirectOnError,
     handleBillingError,
     handleAgentRunLimitError,
