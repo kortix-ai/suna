@@ -20,6 +20,11 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.kortix.app",
       "usesAppleSignIn": true,
+      "associatedDomains": [
+        "applinks:kortix.com",
+        "applinks:www.kortix.com",
+        "applinks:staging.suna.so"
+      ],
       "infoPlist": {
         "NSCameraUsageDescription": "Kortix needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
         "NSPhotoLibraryUsageDescription": "Kortix needs access to your photo library so you can select and share images in your saved conversations with the AI Worker. For example, you can attach screenshots, documents, or images for review—all stored in your personalized conversation history.",
@@ -54,6 +59,31 @@
               "scheme": "https",
               "host": "staging.suna.so",
               "pathPrefix": "/auth/callback"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "kortix.com",
+              "pathPrefix": "/share"
+            },
+            {
+              "scheme": "https",
+              "host": "www.kortix.com",
+              "pathPrefix": "/share"
+            },
+            {
+              "scheme": "https",
+              "host": "staging.suna.so",
+              "pathPrefix": "/share"
             }
           ],
           "category": [

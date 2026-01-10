@@ -49,25 +49,21 @@ export interface ToolSnackData {
  * Filters out ask/complete tools which render as text, not snack.
  */
 export function extractLastToolFromMessages(messages: UnifiedMessage[]): ToolSnackData | null {
-  console.log('[extractLastTool] Checking', messages.length, 'messages');
-  
+
   // Iterate from end to find the last tool message
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
-    
+
     if (msg.type === 'tool') {
-      console.log('[extractLastTool] Found tool message at index', i);
       const parsed = parseToolMessage(msg);
-      
+
       if (parsed) {
         const toolName = parsed.toolName.toLowerCase();
         // Skip ask/complete tools
         if (toolName.includes('ask') || toolName.includes('complete')) {
-          console.log('[extractLastTool] Skipping ask/complete tool:', parsed.toolName);
           continue;
         }
-        
-        console.log('[extractLastTool] Found visible tool:', parsed.toolName, 'success:', parsed.result.success, 'toolCallId:', parsed.toolCallId);
+
         return {
           toolName: parsed.toolName,
           functionName: parsed.functionName,
@@ -78,8 +74,7 @@ export function extractLastToolFromMessages(messages: UnifiedMessage[]): ToolSna
       }
     }
   }
-  
-  console.log('[extractLastTool] No visible tool found');
+
   return null;
 }
 
@@ -91,24 +86,21 @@ export function extractToolFromStreamingMessage(message: UnifiedMessage | null):
   if (!message) {
     return null;
   }
-  
-  console.log('[extractStreamingTool] message type:', message.type);
-  
+
+
   try {
     const metadata = JSON.parse(message.metadata || '{}');
     const toolCalls = metadata.tool_calls || [];
-    console.log('[extractStreamingTool] found', toolCalls.length, 'tool_calls');
-    
+
     // Filter out ask/complete tools and get the last visible one
     for (let i = toolCalls.length - 1; i >= 0; i--) {
       const tc = toolCalls[i];
       const name = (tc.function_name || tc.name || '').toLowerCase();
-      
+
       if (name.includes('ask') || name.includes('complete')) {
         continue;
       }
-      
-      console.log('[extractStreamingTool] Found streaming tool:', tc.function_name || tc.name);
+
       return {
         toolName: (tc.function_name || tc.name || 'Tool').replace(/_/g, '-'),
         functionName: tc.function_name || tc.name || 'Tool',
@@ -120,7 +112,7 @@ export function extractToolFromStreamingMessage(message: UnifiedMessage | null):
   } catch (e) {
     console.log('[extractStreamingTool] Error parsing metadata:', e);
   }
-  
+
   return null;
 }
 
@@ -133,39 +125,37 @@ export const ToolSnack = React.memo(function ToolSnack({
 }: ToolSnackProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
-  
+
   // Animation values
   const translateY = useSharedValue(20);
   const translateX = useSharedValue(0);
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
-  
+
   // Snack is visible whenever we have tool data to show (persisted by parent)
   const isVisible = !!toolData;
-  
+
   // Debug logging
-  console.log('[ToolSnack] Render - toolData:', toolData?.toolName || 'null', 'isVisible:', isVisible, 'isAgentRunning:', isAgentRunning);
-  
+
   const toolName = toolData?.toolName || 'Tool';
   const displayName = getUserFriendlyToolName(toolName);
   const ToolIcon = getToolIcon(toolName);
-  
+
   // Determine status - if streaming, show as in progress
   const isStreaming = toolData?.isStreaming ?? false;
   const isSuccess = toolData?.success ?? true;
-  
+
   // Haptic feedback helper
   const triggerHaptic = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
-  
+
   // Dismiss handler
   const handleDismiss = () => {
-    console.log('[ToolSnack] 👋 Dismissed by swipe');
     triggerHaptic();
     onDismiss?.();
   };
-  
+
   // Pan gesture for swipe to dismiss
   const panGesture = Gesture.Pan()
     .activeOffsetX([-10, 10]) // Start detecting after 10px horizontal movement
@@ -177,7 +167,7 @@ export const ToolSnack = React.memo(function ToolSnack({
     })
     .onEnd((event) => {
       const shouldDismiss = Math.abs(event.translationX) > SWIPE_THRESHOLD;
-      
+
       if (shouldDismiss) {
         // Animate out in swipe direction
         const direction = event.translationX > 0 ? 1 : -1;
@@ -190,7 +180,7 @@ export const ToolSnack = React.memo(function ToolSnack({
         opacity.value = withSpring(1, { damping: 20, stiffness: 300 });
       }
     });
-  
+
   // Animate in/out
   useEffect(() => {
     if (isVisible) {
@@ -205,7 +195,7 @@ export const ToolSnack = React.memo(function ToolSnack({
       scale.value = withTiming(0.95, { duration: 150 });
     }
   }, [isVisible, translateY, translateX, opacity, scale]);
-  
+
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: translateX.value },
@@ -214,37 +204,37 @@ export const ToolSnack = React.memo(function ToolSnack({
     ],
     opacity: opacity.value,
   }));
-  
+
   // Don't render if not visible
   if (!toolData) {
     return null;
   }
-  
+
   // Status colors
   const statusBgColor = isStreaming
     ? 'rgba(59, 130, 246, 0.1)' // blue
     : isSuccess
       ? 'rgba(34, 197, 94, 0.1)' // green
       : 'rgba(239, 68, 68, 0.1)'; // red
-  
+
   const statusDotColor = isStreaming
     ? '#3B82F6'
     : isSuccess
       ? '#22C55E'
       : '#EF4444';
-  
+
   const statusTextColor = isStreaming
     ? '#3B82F6'
     : isSuccess
       ? '#22C55E'
       : '#EF4444';
-  
+
   const statusText = isStreaming
     ? `${agentName} is working...`
     : isSuccess
       ? 'Success'
       : 'Failed';
-  
+
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle} className="mx-3 mb-2">
@@ -253,7 +243,7 @@ export const ToolSnack = React.memo(function ToolSnack({
           className="flex-row items-center gap-3 rounded-3xl p-2 border border-border bg-card active:opacity-80"
         >
           {/* Tool Icon */}
-          <View 
+          <View
             className="w-10 h-10 rounded-2xl items-center justify-center"
             style={{
               backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
@@ -277,28 +267,28 @@ export const ToolSnack = React.memo(function ToolSnack({
               <Icon as={ToolIcon} size={20} className="text-muted-foreground" />
             )}
           </View>
-          
+
           {/* Tool Info */}
           <View className="flex-1 min-w-0">
-            <Text 
-              className="text-sm font-roobert-medium text-foreground" 
+            <Text
+              className="text-sm font-roobert-medium text-foreground"
               numberOfLines={1}
             >
               {displayName}
             </Text>
           </View>
-          
+
           {/* Status Badge */}
-          <View 
+          <View
             className="flex-row items-center gap-1.5 px-2 py-1 rounded-full"
             style={{ backgroundColor: statusBgColor }}
           >
-            <View 
+            <View
               key={isStreaming ? 'streaming' : 'static'}
               className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'animate-pulse' : ''}`}
               style={{ backgroundColor: statusDotColor }}
             />
-            <Text 
+            <Text
               className="text-xs font-roobert-medium"
               style={{ color: statusTextColor }}
               numberOfLines={1}
@@ -306,7 +296,7 @@ export const ToolSnack = React.memo(function ToolSnack({
               {statusText}
             </Text>
           </View>
-          
+
           {/* Expand Icon */}
           <View className="pr-1">
             <Icon as={Maximize2} size={16} className="text-muted-foreground" />
