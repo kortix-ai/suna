@@ -9,6 +9,7 @@ import { FileAttachmentsGrid } from '@/components/chat/FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './TaskCompletedFeedback';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
+import { log } from '@/lib/logger';
 
 // Utility functions
 function formatTimestamp(isoString?: string): string {
@@ -149,7 +150,7 @@ export function CompleteToolView({ toolCall, toolResult, isStreaming = false, pr
               threadId={assistantMessage?.thread_id}
               messageId={assistantMessage?.message_id}
               onFollowUpClick={(prompt) => {
-                console.log('📝 Follow-up clicked:', prompt);
+                log.log('📝 Follow-up clicked:', prompt);
                 onPromptFill?.(prompt);
               }}
             />

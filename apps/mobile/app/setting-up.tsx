@@ -15,6 +15,7 @@ import LogomarkWhite from '@/assets/brand/Logomark-White.svg';
 import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';
 import { agentKeys } from '@/lib/agents/hooks';
+import { log } from '@/lib/logger';
 
 export default function SettingUpScreen() {
   const router = useRouter();
@@ -30,7 +31,7 @@ export default function SettingUpScreen() {
 
   React.useEffect(() => {
     if (!isAuthenticated) {
-      console.log('⚠️ User not authenticated in setup screen, redirecting to splash...');
+      log.log('⚠️ User not authenticated in setup screen, redirecting to splash...');
       router.replace('/');
     }
   }, [isAuthenticated, router]);
@@ -39,7 +40,7 @@ export default function SettingUpScreen() {
   // This prevents showing "Initializing Account" to returning users
   React.useEffect(() => {
     if (!onboardingLoading && hasCompletedOnboarding) {
-      console.log('✅ User already completed onboarding, skipping setup screen → /home');
+      log.log('✅ User already completed onboarding, skipping setup screen → /home');
       router.replace('/home');
     }
   }, [onboardingLoading, hasCompletedOnboarding, router]);
@@ -49,20 +50,20 @@ export default function SettingUpScreen() {
 
     // Wait for billing and onboarding data to load before checking
     if (subscriptionLoading || onboardingLoading) {
-      console.log('⏳ Waiting for billing/onboarding data to load...');
+      log.log('⏳ Waiting for billing/onboarding data to load...');
       return;
     }
 
     // If onboarding is already completed, don't do anything - the other effect handles redirect
     if (hasCompletedOnboarding) {
-      console.log('✅ Onboarding already completed, skipping initialization');
+      log.log('✅ Onboarding already completed, skipping initialization');
       return;
     }
 
     // Check if account was already initialized via webhook
     // Most users will have a subscription by now (webhook succeeded)
     if (hasActiveSubscription) {
-      console.log('✅ Account already initialized via webhook, redirecting to onboarding');
+      log.log('✅ Account already initialized via webhook, redirecting to onboarding');
       setStatus('success');
       setTimeout(() => {
         router.replace('/onboarding');
@@ -72,17 +73,17 @@ export default function SettingUpScreen() {
 
     // No subscription found - initialize manually (fallback case)
     // This handles: webhook failed, network issues, or users who signed up before this change
-    console.log('⚠️ No subscription detected - initializing manually (fallback)');
+    log.log('⚠️ No subscription detected - initializing manually (fallback)');
     setStatus('initializing');
 
     initializeMutation.mutate(undefined, {
       onSuccess: async (data) => {
-        console.log('✅ Initialization successful:', data.message);
+        log.log('✅ Initialization successful:', data.message);
         setStatus('success');
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        console.log('🔄 Refetching billing data...');
+        log.log('🔄 Refetching billing data...');
         refetchAll();
-        console.log('🔄 Refetching agents data...');
+        log.log('🔄 Refetching agents data...');
         queryClient.invalidateQueries({ queryKey: agentKeys.all });
         setTimeout(() => {
           router.replace('/onboarding');
@@ -98,17 +99,17 @@ export default function SettingUpScreen() {
           errorMessage.includes('Failed to initialize free tier');
 
         if (isAlreadyInitialized) {
-          console.log('✅ Account already initialized, treating as success');
+          log.log('✅ Account already initialized, treating as success');
           setStatus('success');
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           refetchAll();
-          console.log('🔄 Refetching agents data...');
+          log.log('🔄 Refetching agents data...');
           queryClient.invalidateQueries({ queryKey: agentKeys.all });
           setTimeout(() => {
             router.replace('/onboarding');
           }, 500);
         } else {
-          console.error('❌ Initialization failed:', error);
+          log.error('❌ Initialization failed:', error);
           setStatus('error');
           await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         }

@@ -8,6 +8,7 @@ import Purchases, {
 import RevenueCatUI from 'react-native-purchases-ui';
 import { Platform } from 'react-native';
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { log } from '@/lib/logger';
 
 // Public API keys - these are safe to hardcode (designed to be in client apps)
 const REVENUECAT_API_KEY_IOS = 'appl_UpcFYduOZYUgSqKPNvtzgXkPCeh';
@@ -64,28 +65,28 @@ function ensureLogHandler(): void {
       
       switch (logLevel) {
         case LOG_LEVEL.VERBOSE:
-          console.debug('[RC Verbose]', message);
+          log.rcDebug(message);
           break;
         case LOG_LEVEL.DEBUG:
-          console.debug('[RC Debug]', message);
+          log.rcDebug(message);
           break;
         case LOG_LEVEL.INFO:
-          console.info('[RC Info]', message);
+          log.rc(message);
           break;
         case LOG_LEVEL.WARN:
           // Downgrade cancellation warnings to debug level
           if (isCancelledMessage) {
-            console.debug('[RC Debug]', message);
+            log.rcDebug(message);
           } else {
-            console.warn('[RC Warn]', message);
+            log.rcWarn(message);
           }
           break;
         case LOG_LEVEL.ERROR:
           // Downgrade cancellation "errors" to info level - this is expected user behavior
           if (isCancelledMessage) {
-            console.log('[RC Info] User cancelled purchase (expected behavior)');
+            log.rc('User cancelled purchase (expected behavior)');
           } else {
-            console.error('[RC Error]', message);
+            log.rcError(message);
           }
           break;
       }
@@ -118,7 +119,7 @@ export async function logoutRevenueCat(): Promise<void> {
     lastSetUserId = null;
     currentInitializationParams = null;
   } catch (error) {
-    console.error('[RevenueCat] Logout error:', error);
+    log.rcError('Logout error:', error);
     isConfigured = false;
     initializationPromise = null;
     customerInfoListenerAdded = false;
@@ -144,7 +145,7 @@ export async function setRevenueCatAttributes(
       await Purchases.setPhoneNumber(phoneNumber);
     }
   } catch (error) {
-    console.error('[RevenueCat] Error setting attributes:', error);
+    log.rcError('Error setting attributes:', error);
   }
 }
 
@@ -176,7 +177,7 @@ export async function initializeRevenueCat(
         await Purchases.setEmail(email);
         lastSetEmail = email;
       } catch (emailError) {
-        console.warn('[RevenueCat] Could not update email:', emailError);
+        log.rcWarn('Could not update email:', emailError);
       }
     }
 
@@ -192,14 +193,21 @@ export async function initializeRevenueCat(
     if (userId !== lastSetUserId) {
       try {
         const currentInfo = await Purchases.getCustomerInfo();
-        if (currentInfo.originalAppUserId !== userId) {
+        const currentUserId = currentInfo.originalAppUserId;
+        
+        // Only call logIn if the user ID actually changed
+        // RevenueCat SDK will warn if we call logIn with the same cached user ID
+        if (currentUserId !== userId) {
           await Purchases.logIn(userId);
           lastSetUserId = userId;
         } else {
+          // User ID matches, just update our cache
           lastSetUserId = userId;
         }
       } catch (error) {
-        console.warn('[RevenueCat] Could not update user ID:', error);
+        log.rcWarn('Could not update user ID:', error);
+        // Still update our cache even if RevenueCat call failed
+        lastSetUserId = userId;
       }
     }
 
@@ -215,7 +223,7 @@ export async function initializeRevenueCat(
   const apiKey = Platform.OS === 'ios' ? REVENUECAT_API_KEY_IOS : REVENUECAT_API_KEY_ANDROID;
 
   if (!apiKey) {
-    console.error('[RevenueCat] API key not configured for platform:', Platform.OS);
+    log.rcError('API key not configured for platform:', Platform.OS);
     throw new Error('RevenueCat API key not configured');
   }
 
@@ -225,7 +233,7 @@ export async function initializeRevenueCat(
   // Create a promise that will be shared by concurrent calls
   initializationPromise = (async () => {
     try {
-      console.log('[RevenueCat] Initializing...', { userId, platform: Platform.OS, canTrack });
+      log.rc('Initializing...', { userId, platform: Platform.OS, canTrack });
 
       // Ensure log handler is set before configure() to prevent "customLogHandler is not a function" errors
       ensureLogHandler();
@@ -239,7 +247,7 @@ export async function initializeRevenueCat(
           await Purchases.setEmail(email);
           lastSetEmail = email;
         } catch (emailError) {
-          console.error('[RevenueCat] Error setting email:', emailError);
+          log.rcError('Error setting email:', emailError);
         }
       }
 
@@ -253,13 +261,13 @@ export async function initializeRevenueCat(
       isConfigured = true;
       lastSetUserId = userId;
       currentInitializationParams = null;
-      console.log('[RevenueCat] ✅ Initialized successfully for user:', userId);
+      log.rc('✅ Initialized successfully for user:', userId);
 
       // Debug: Log available offerings and customer info after init
       if (DEBUG_REVENUECAT) {
         try {
           const customerInfo = await Purchases.getCustomerInfo();
-          console.log('[RevenueCat] 🔍 Customer Info:', {
+          log.rc('🔍 Customer Info:', {
             appUserId: customerInfo.originalAppUserId,
             activeSubscriptions: customerInfo.activeSubscriptions,
             entitlements: Object.keys(customerInfo.entitlements.active),
@@ -268,11 +276,11 @@ export async function initializeRevenueCat(
 
           const offerings = await Purchases.getOfferings();
           const offeringIds = Object.keys(offerings.all);
-          console.log('[RevenueCat] 📦 Available Offerings:', offeringIds.length ? offeringIds : 'NONE');
-          console.log('[RevenueCat] 📦 Current Offering:', offerings.current?.identifier || 'NONE');
+          log.rc('📦 Available Offerings:', offeringIds.length ? offeringIds : 'NONE');
+          log.rc('📦 Current Offering:', offerings.current?.identifier || 'NONE');
           
           if (offerings.current) {
-            console.log('[RevenueCat] 📦 Packages:', offerings.current.availablePackages.map(p => ({
+            log.rc('📦 Packages:', offerings.current.availablePackages.map(p => ({
               id: p.identifier,
               product: p.product.identifier,
               price: p.product.priceString,
@@ -282,14 +290,14 @@ export async function initializeRevenueCat(
           // Check for paywall templates
           for (const [id, offering] of Object.entries(offerings.all)) {
             const hasPaywall = (offering as any).paywall != null;
-            console.log(`[RevenueCat] 🎨 Offering "${id}" has paywall template: ${hasPaywall}`);
+            log.rc(` 🎨 Offering "${id}" has paywall template: ${hasPaywall}`);
           }
         } catch (debugError) {
-          console.warn('[RevenueCat] Debug logging failed:', debugError);
+          log.rcWarn('Debug logging failed:', debugError);
         }
       }
     } catch (error) {
-      console.error('[RevenueCat] ❌ Initialization failed:', error);
+      log.rcError('❌ Initialization failed:', error);
       isConfigured = false;
       initializationPromise = null;
       currentInitializationParams = null;
@@ -321,7 +329,7 @@ export async function getOfferings(
 
         await new Promise((resolve) => setTimeout(resolve, 300));
       } catch (resetError) {
-        console.warn('[RevenueCat] Cache reset failed:', resetError);
+        log.rcWarn('Cache reset failed:', resetError);
       }
     }
 
@@ -331,10 +339,10 @@ export async function getOfferings(
       return offerings.current;
     }
 
-    console.warn('[RevenueCat] No current offering available');
+    log.rcWarn('No current offering available');
     return null;
   } catch (error) {
-    console.error('[RevenueCat] Error fetching offerings:', error);
+    log.rcError('Error fetching offerings:', error);
     throw error;
   }
 }
@@ -360,7 +368,7 @@ export async function getOfferingById(
 
         await new Promise((resolve) => setTimeout(resolve, 300));
       } catch (resetError) {
-        console.warn('[RevenueCat] Cache reset failed:', resetError);
+        log.rcWarn('Cache reset failed:', resetError);
       }
     }
 
@@ -373,7 +381,7 @@ export async function getOfferingById(
     }
 
     const errorMessage = `Offering '${offeringId}' not found. Available: ${availableOfferingIds.join(', ') || 'none'}`;
-    console.error('[RevenueCat]', errorMessage);
+    log.rcError(errorMessage);
     
     const error: any = new Error(errorMessage);
     error.code = 'OFFERING_NOT_FOUND';
@@ -381,7 +389,7 @@ export async function getOfferingById(
     throw error;
   } catch (error: any) {
     if (error?.code !== 'OFFERING_NOT_FOUND') {
-      console.error('[RevenueCat] Error fetching offering:', offeringId, error);
+      log.rcError('Error fetching offering:', offeringId, error);
     }
     throw error;
   }
@@ -406,8 +414,14 @@ export async function purchasePackage(
     if ((isAnonymous || isMismatched) && expectedUserId) {
       try {
         ensureLogHandler();
-        const loginResult = await Purchases.logIn(expectedUserId);
-        currentCustomerInfo = loginResult.customerInfo;
+        // Check current user ID before logging in to avoid RevenueCat warning
+        const currentInfo = await Purchases.getCustomerInfo();
+        if (currentInfo.originalAppUserId !== expectedUserId) {
+          const loginResult = await Purchases.logIn(expectedUserId);
+          currentCustomerInfo = loginResult.customerInfo;
+        } else {
+          currentCustomerInfo = currentInfo;
+        }
         rcUserId = currentCustomerInfo.originalAppUserId;
 
         // Check if this Apple ID already has an active subscription
@@ -425,7 +439,7 @@ export async function purchasePackage(
         if (loginError.code === 'ALREADY_SUBSCRIBED_DIFFERENT_ACCOUNT') {
           throw loginError;
         }
-        console.error('[RevenueCat] Session fix failed:', loginError);
+        log.rcError('Session fix failed:', loginError);
         const error: any = new Error(
           'Unable to link your account. Please restart the app and try again.'
         );
@@ -439,7 +453,7 @@ export async function purchasePackage(
       try {
         await Purchases.setEmail(email);
       } catch (emailError) {
-        console.warn('[RevenueCat] Could not set email before purchase:', emailError);
+        log.rcWarn('Could not set email before purchase:', emailError);
       }
     }
 
@@ -468,14 +482,14 @@ export async function purchasePackage(
       throw purchaseError;
     }
 
-    console.log('[RevenueCat] ✅ Purchase successful for user:', customerInfo.originalAppUserId);
+    log.rc('✅ Purchase successful for user:', customerInfo.originalAppUserId);
 
     await notifyBackendOfPurchase(customerInfo, onSyncComplete);
 
     return customerInfo;
   } catch (error: any) {
     if (!error.userCancelled && error.code !== 'USER_CANCELLED') {
-      console.error('[RevenueCat] Purchase error:', error);
+      log.rcError('Purchase error:', error);
     }
     throw error;
   }
@@ -486,7 +500,7 @@ export async function getCustomerInfo(): Promise<CustomerInfo> {
     ensureLogHandler();
     return await Purchases.getCustomerInfo();
   } catch (error) {
-    console.error('[RevenueCat] Error fetching customer info:', error);
+    log.rcError('Error fetching customer info:', error);
     throw error;
   }
 }
@@ -567,12 +581,12 @@ async function notifyBackendOfPurchase(
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.warn('[RevenueCat] Backend sync failed:', response.status, errorText);
+      log.rcWarn('Backend sync failed:', response.status, errorText);
       return null;
     }
 
     const result = (await response.json()) as SyncResponse;
-    console.log('[RevenueCat] Sync result:', result.status, result.tier || '');
+    log.rc('Sync result:', result.status, result.tier || '');
 
     if (onSyncComplete) {
       await onSyncComplete(result);
@@ -580,7 +594,7 @@ async function notifyBackendOfPurchase(
 
     return result;
   } catch (error) {
-    console.error('[RevenueCat] Error syncing with backend:', error);
+    log.rcError('Error syncing with backend:', error);
     return null;
   }
 }
@@ -613,7 +627,7 @@ export async function checkSubscriptionStatus(): Promise<{
       expirationDate: subscriptionInfo.expirationDate,
     };
   } catch (error) {
-    console.error('[RevenueCat] Error checking subscription status:', error);
+    log.rcError('Error checking subscription status:', error);
     return { hasActiveSubscription: false };
   }
 }
@@ -625,7 +639,7 @@ export async function presentPaywall(
     ensureLogHandler();
     
     if (DEBUG_REVENUECAT) {
-      console.log('[RevenueCat] 🎯 presentPaywall called with:', paywallName || 'default');
+      log.rc('🎯 presentPaywall called with:', paywallName || 'default');
     }
     
     let offering: PurchasesOffering | null = null;
@@ -636,7 +650,7 @@ export async function presentPaywall(
       if (!offering) {
         const allOfferings = await Purchases.getOfferings();
         const availableOfferingIds = Object.keys(allOfferings.all);
-        console.error('[RevenueCat] ❌ Paywall not found:', paywallName, 'Available:', availableOfferingIds);
+        log.rcError('❌ Paywall not found:', paywallName, 'Available:', availableOfferingIds);
         const error: any = new Error(`Paywall '${paywallName}' not found. Available: ${availableOfferingIds.join(', ')}`);
         error.code = 'PAYWALL_NOT_FOUND';
         throw error;
@@ -646,7 +660,7 @@ export async function presentPaywall(
     }
 
     if (!offering) {
-      console.error('[RevenueCat] ❌ No offerings available');
+      log.rcError('❌ No offerings available');
       const error: any = new Error('No offerings available to display');
       error.code = 'NO_OFFERINGS';
       throw error;
@@ -657,7 +671,7 @@ export async function presentPaywall(
     const hasPaywall = offeringAny.paywall !== null && offeringAny.paywall !== undefined;
     
     if (DEBUG_REVENUECAT) {
-      console.log('[RevenueCat] 📦 Presenting offering:', {
+      log.rc('📦 Presenting offering:', {
         id: offering.identifier,
         packages: offering.availablePackages.map(p => p.identifier),
         hasPaywallTemplate: hasPaywall,
@@ -665,7 +679,7 @@ export async function presentPaywall(
     }
     
     if (!hasPaywall) {
-      console.error('[RevenueCat] ❌ No paywall template for offering:', offering.identifier);
+      log.rcError('❌ No paywall template for offering:', offering.identifier);
       const error: any = new Error(
         `No paywall template configured for offering '${offering.identifier}'.`
       );
@@ -674,7 +688,7 @@ export async function presentPaywall(
       throw error;
     }
 
-    console.log('[RevenueCat] 🚀 Launching native paywall UI...');
+    log.rc('🚀 Launching native paywall UI...');
     const result = await RevenueCatUI.presentPaywall({ offering });
 
     const purchased = result === RevenueCatUI.PAYWALL_RESULT.PURCHASED;
@@ -687,7 +701,7 @@ export async function presentPaywall(
 
     return { purchased, cancelled };
   } catch (error: any) {
-    console.error('[RevenueCat] Error presenting paywall:', error?.message, error?.code);
+    log.rcError('Error presenting paywall:', error?.message, error?.code);
     throw error;
   }
 }
@@ -699,7 +713,7 @@ export async function presentCustomerInfo(): Promise<void> {
   try {
     await RevenueCatUI.presentCustomerCenter();
   } catch (error) {
-    console.error('[RevenueCat] Error presenting customer info portal:', error);
+    log.rcError('Error presenting customer info portal:', error);
     throw error;
   }
 }

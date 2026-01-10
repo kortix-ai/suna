@@ -9,7 +9,7 @@ if (Platform.OS !== 'web') {
   try {
     ContextMenu = require('react-native-context-menu-view').default;
   } catch (e) {
-    console.warn('react-native-context-menu-view not available');
+    log.warn('react-native-context-menu-view not available');
   }
 }
 import { Text } from '@/components/ui/text';
@@ -52,6 +52,7 @@ import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { isKortixDefaultAgentId } from '@/lib/agents';
+import { log } from '@/lib/logger';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;

@@ -8,6 +8,7 @@ import { API_URL, getAuthHeaders } from '@/api/config';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
 import { PromptExamples } from '@/components/shared';
+import { log } from '@/lib/logger';
 
 interface MessageFeedback {
   feedback_id: string;
@@ -229,11 +230,11 @@ export function TaskCompletedFeedback({
         const data: MessageFeedback[] = await response.json();
         if (data && data.length > 0) {
           setSubmittedFeedback(data[0]);
-          console.log('✅ [TaskCompletedFeedback] Fetched feedback:', data[0].rating);
+          log.log('✅ [TaskCompletedFeedback] Fetched feedback:', data[0].rating);
         }
       }
     } catch (error) {
-      console.error('Error fetching feedback:', error);
+      log.error('Error fetching feedback:', error);
     } finally {
       setIsLoadingFeedback(false);
     }
@@ -255,7 +256,7 @@ export function TaskCompletedFeedback({
       lastSubmittedFeedback.threadId === threadId &&
       lastSubmittedFeedback.messageId === messageId
     ) {
-      console.log('🔄 [TaskCompletedFeedback] Feedback submitted, refetching...', {
+      log.log('🔄 [TaskCompletedFeedback] Feedback submitted, refetching...', {
         threadId,
         messageId,
         rating: lastSubmittedFeedback.rating
@@ -282,14 +283,14 @@ export function TaskCompletedFeedback({
   }, [lastSubmittedFeedback, threadId, messageId, fetchFeedback]);
 
   const handleStarClick = useCallback((value: number) => {
-    console.log('⭐ Star clicked:', value, { submittedFeedback, threadId, messageId });
+    log.log('⭐ Star clicked:', value, { submittedFeedback, threadId, messageId });
     if (submittedFeedback) return;
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     // Small delay to let gesture system settle (important when inside another BottomSheet)
     setTimeout(() => {
-      console.log('⭐ Opening feedback drawer with:', { rating: value, threadId, messageId });
+      log.log('⭐ Opening feedback drawer with:', { rating: value, threadId, messageId });
       openFeedbackDrawer({
         rating: value,
         threadId,

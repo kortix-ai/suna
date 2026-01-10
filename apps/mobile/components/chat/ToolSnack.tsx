@@ -18,6 +18,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import LottieView from 'lottie-react-native';
 import type { UnifiedMessage } from '@agentpress/shared';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3; // 30% of screen width to dismiss
@@ -49,25 +50,25 @@ export interface ToolSnackData {
  * Filters out ask/complete tools which render as text, not snack.
  */
 export function extractLastToolFromMessages(messages: UnifiedMessage[]): ToolSnackData | null {
-  console.log('[extractLastTool] Checking', messages.length, 'messages');
+  log.log('[extractLastTool] Checking', messages.length, 'messages');
   
   // Iterate from end to find the last tool message
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     
     if (msg.type === 'tool') {
-      console.log('[extractLastTool] Found tool message at index', i);
+      log.log('[extractLastTool] Found tool message at index', i);
       const parsed = parseToolMessage(msg);
       
       if (parsed) {
         const toolName = parsed.toolName.toLowerCase();
         // Skip ask/complete tools
         if (toolName.includes('ask') || toolName.includes('complete')) {
-          console.log('[extractLastTool] Skipping ask/complete tool:', parsed.toolName);
+          log.log('[extractLastTool] Skipping ask/complete tool:', parsed.toolName);
           continue;
         }
         
-        console.log('[extractLastTool] Found visible tool:', parsed.toolName, 'success:', parsed.result.success, 'toolCallId:', parsed.toolCallId);
+        log.log('[extractLastTool] Found visible tool:', parsed.toolName, 'success:', parsed.result.success, 'toolCallId:', parsed.toolCallId);
         return {
           toolName: parsed.toolName,
           functionName: parsed.functionName,
@@ -79,7 +80,7 @@ export function extractLastToolFromMessages(messages: UnifiedMessage[]): ToolSna
     }
   }
   
-  console.log('[extractLastTool] No visible tool found');
+  log.log('[extractLastTool] No visible tool found');
   return null;
 }
 
@@ -92,12 +93,12 @@ export function extractToolFromStreamingMessage(message: UnifiedMessage | null):
     return null;
   }
   
-  console.log('[extractStreamingTool] message type:', message.type);
+  log.log('[extractStreamingTool] message type:', message.type);
   
   try {
     const metadata = JSON.parse(message.metadata || '{}');
     const toolCalls = metadata.tool_calls || [];
-    console.log('[extractStreamingTool] found', toolCalls.length, 'tool_calls');
+    log.log('[extractStreamingTool] found', toolCalls.length, 'tool_calls');
     
     // Filter out ask/complete tools and get the last visible one
     for (let i = toolCalls.length - 1; i >= 0; i--) {
@@ -108,7 +109,7 @@ export function extractToolFromStreamingMessage(message: UnifiedMessage | null):
         continue;
       }
       
-      console.log('[extractStreamingTool] Found streaming tool:', tc.function_name || tc.name);
+      log.log('[extractStreamingTool] Found streaming tool:', tc.function_name || tc.name);
       return {
         toolName: (tc.function_name || tc.name || 'Tool').replace(/_/g, '-'),
         functionName: tc.function_name || tc.name || 'Tool',
@@ -118,7 +119,7 @@ export function extractToolFromStreamingMessage(message: UnifiedMessage | null):
       };
     }
   } catch (e) {
-    console.log('[extractStreamingTool] Error parsing metadata:', e);
+    log.log('[extractStreamingTool] Error parsing metadata:', e);
   }
   
   return null;
@@ -144,7 +145,7 @@ export const ToolSnack = React.memo(function ToolSnack({
   const isVisible = !!toolData;
   
   // Debug logging
-  console.log('[ToolSnack] Render - toolData:', toolData?.toolName || 'null', 'isVisible:', isVisible, 'isAgentRunning:', isAgentRunning);
+  log.log('[ToolSnack] Render - toolData:', toolData?.toolName || 'null', 'isVisible:', isVisible, 'isAgentRunning:', isAgentRunning);
   
   const toolName = toolData?.toolName || 'Tool';
   const displayName = getUserFriendlyToolName(toolName);
@@ -161,7 +162,7 @@ export const ToolSnack = React.memo(function ToolSnack({
   
   // Dismiss handler
   const handleDismiss = () => {
-    console.log('[ToolSnack] 👋 Dismissed by swipe');
+    log.log('[ToolSnack] 👋 Dismissed by swipe');
     triggerHaptic();
     onDismiss?.();
   };

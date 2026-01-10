@@ -18,6 +18,7 @@ import {
 
 // Import the API functions we need
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { log } from '@/lib/logger';
 
 // ============================================================================
 // API Helper
@@ -40,7 +41,7 @@ async function fetchApi<T>(
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: response.statusText }));
-    console.error('❌ API Error:', {
+    log.error('❌ API Error:', {
       endpoint,
       status: response.status,
       error,
@@ -60,12 +61,12 @@ async function fetchApi<T>(
 
 const checkoutApi = {
   async createCheckoutSession(request: CreateCheckoutSessionRequest): Promise<CreateCheckoutSessionResponse> {
-    console.log('🔄 Creating checkout session via backend...');
+    log.log('🔄 Creating checkout session via backend...');
     const response = await fetchApi<CreateCheckoutSessionResponse>('/billing/create-checkout-session', {
       method: 'POST',
       body: JSON.stringify(request),
     });
-    console.log('✅ Backend returned checkout URLs:', {
+    log.log('✅ Backend returned checkout URLs:', {
       checkout_url: response.checkout_url,
       fe_checkout_url: response.fe_checkout_url,
     });
@@ -73,12 +74,12 @@ const checkoutApi = {
   },
   
   async purchaseCredits(request: PurchaseCreditsRequest): Promise<{ checkout_url: string }> {
-    console.log('🔄 Creating credit purchase via backend...');
+    log.log('🔄 Creating credit purchase via backend...');
     const response = await fetchApi<{ checkout_url: string }>('/billing/purchase-credits', {
       method: 'POST',
       body: JSON.stringify(request),
     });
-    console.log('✅ Backend returned credit checkout URL:', response.checkout_url);
+    log.log('✅ Backend returned credit checkout URL:', response.checkout_url);
     return response;
   },
 };
@@ -118,7 +119,7 @@ async function openCheckoutInBrowser(
   onSuccess?: () => void,
   onCancel?: () => void
 ): Promise<void> {
-  console.log('🌐 Opening checkout in browser:', checkoutUrl);
+  log.log('🌐 Opening checkout in browser:', checkoutUrl);
 
   try {
     // Open the URL in an in-app browser session
@@ -128,20 +129,20 @@ async function openCheckoutInBrowser(
       APP_SCHEME
     );
 
-    console.log('📱 Browser session result:', result.type);
+    log.log('📱 Browser session result:', result.type);
 
     if (result.type === 'success') {
-      console.log('✅ Checkout completed successfully');
+      log.log('✅ Checkout completed successfully');
       onSuccess?.();
     } else if (result.type === 'cancel') {
-      console.log('❌ Checkout cancelled by user');
+      log.log('❌ Checkout cancelled by user');
       onCancel?.();
     } else {
-      console.log('⚠️ Checkout dismissed:', result.type);
+      log.log('⚠️ Checkout dismissed:', result.type);
       onCancel?.();
     }
   } catch (error) {
-    console.error('❌ Error opening checkout:', error);
+    log.error('❌ Error opening checkout:', error);
     throw error;
   }
 }
@@ -151,14 +152,14 @@ async function openCheckoutInBrowser(
  * Used for web billing management, support links, etc.
  */
 export async function openExternalUrl(url: string): Promise<void> {
-  console.log('🌐 Opening external URL:', url);
+  log.log('🌐 Opening external URL:', url);
 
   const supported = await Linking.canOpenURL(url);
   
   if (supported) {
     await Linking.openURL(url);
   } else {
-    console.error('❌ Cannot open URL:', url);
+    log.error('❌ Cannot open URL:', url);
     throw new Error('Cannot open URL');
   }
 }
@@ -184,7 +185,7 @@ export async function startPlanCheckout(
   onSuccess?: () => void,
   onCancel?: () => void
 ): Promise<CreateCheckoutSessionResponse> {
-  console.log('💳 Starting plan checkout...', { tierKey, commitmentType });
+  log.log('💳 Starting plan checkout...', { tierKey, commitmentType });
 
   try {
     // For Stripe web checkout, map 'yearly_commitment' to 'yearly'
@@ -200,7 +201,7 @@ export async function startPlanCheckout(
       commitment_type: stripeCommitmentType,
     };
     
-    console.log('📤 Sending checkout request:', { 
+    log.log('📤 Sending checkout request:', { 
       tier_key: tierKey, 
       commitment_type: stripeCommitmentType,
       original_commitment_type: commitmentType 
@@ -213,15 +214,15 @@ export async function startPlanCheckout(
     
     if (checkoutUrl) {
       // Backend returned checkout URL - open it in browser
-      console.log('🌐 Opening checkout URL:', checkoutUrl);
+      log.log('🌐 Opening checkout URL:', checkoutUrl);
       await openCheckoutInBrowser(checkoutUrl, onSuccess, onCancel);
     } else if (response.status === 'upgraded' || response.status === 'updated') {
       // Immediate upgrade (no checkout needed - e.g., downgrade or same billing cycle)
-      console.log('✅ Plan upgraded immediately (no checkout required)');
+      log.log('✅ Plan upgraded immediately (no checkout required)');
       onSuccess?.();
     } else if (response.status === 'downgrade_scheduled' || response.status === 'scheduled') {
       // Downgrade scheduled for end of billing period
-      console.log('📅 Plan change scheduled for next billing cycle');
+      log.log('📅 Plan change scheduled for next billing cycle');
       onSuccess?.();
     } else {
       // No URL and no known status - something went wrong
@@ -230,7 +231,7 @@ export async function startPlanCheckout(
 
     return response;
   } catch (error) {
-    console.error('❌ Plan checkout error:', error);
+    log.error('❌ Plan checkout error:', error);
     throw error;
   }
 }
@@ -247,7 +248,7 @@ export async function startCreditPurchase(
   onSuccess?: () => void,
   onCancel?: () => void
 ): Promise<void> {
-  console.log('💰 Starting credit purchase...', { amount });
+  log.log('💰 Starting credit purchase...', { amount });
 
   try {
     const request: PurchaseCreditsRequest = {
@@ -264,7 +265,7 @@ export async function startCreditPurchase(
       throw new Error('Backend did not return a checkout URL');
     }
   } catch (error) {
-    console.error('❌ Credit purchase error:', error);
+    log.error('❌ Credit purchase error:', error);
     throw error;
   }
 }
@@ -276,7 +277,7 @@ export async function startCreditPurchase(
  * Used for features not available in mobile (cancel, reactivate, invoices, etc.)
  */
 export async function openBillingPortal(returnUrl?: string): Promise<void> {
-  console.log('🌐 Opening web billing portal...');
+  log.log('🌐 Opening web billing portal...');
 
   try {
     // Direct users to the web app's billing management page
@@ -286,7 +287,7 @@ export async function openBillingPortal(returnUrl?: string): Promise<void> {
 
     await openExternalUrl(webBillingUrl);
   } catch (error) {
-    console.error('❌ Error opening billing portal:', error);
+    log.error('❌ Error opening billing portal:', error);
     throw error;
   }
 }

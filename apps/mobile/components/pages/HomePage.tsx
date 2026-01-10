@@ -11,6 +11,7 @@ import { UsageDrawer } from '@/components/settings/UsageDrawer';
 import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
+import { log } from '@/lib/logger';
 
 const SWIPE_THRESHOLD = 50;
 
@@ -120,7 +121,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleThreadPressFromUsage = React.useCallback(
       (threadId: string, _projectId: string | null) => {
-        console.log('🎯 Loading thread from UsageDrawer:', threadId);
+        log.log('🎯 Loading thread from UsageDrawer:', threadId);
         chat.loadThread(threadId);
       },
       [chat]
@@ -151,7 +152,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleQuickActionThreadPress = React.useCallback(
       (threadId: string) => {
-        console.log('🎯 Loading thread from mode history:', threadId);
+        log.log('🎯 Loading thread from mode history:', threadId);
         chat.showModeThread(threadId);
       },
       [chat]
@@ -171,7 +172,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleOpenWorkerConfig = React.useCallback(
       (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => {
-        console.log('🔧 [HomePage] Opening worker config:', workerId, view);
+        log.log('🔧 [HomePage] Opening worker config:', workerId, view);
         // If external handler is provided, use it to redirect to MenuPage
         if (externalOpenWorkerConfig) {
           externalOpenWorkerConfig(workerId, view);
@@ -186,12 +187,12 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
     );
 
     const handleAgentDrawerDismiss = React.useCallback(() => {
-      console.log('🎭 [HomePage] AgentDrawer dismissed');
+      log.log('🎭 [HomePage] AgentDrawer dismissed');
       // Check if there's a pending worker config to open
       if (pendingWorkerConfigRef.current) {
         const { workerId, view } = pendingWorkerConfigRef.current;
         pendingWorkerConfigRef.current = null;
-        console.log('🔧 [HomePage] Opening pending worker config:', workerId, view);
+        log.log('🔧 [HomePage] Opening pending worker config:', workerId, view);
         setWorkerConfigWorkerId(workerId);
         setWorkerConfigInitialView(view);
         setIsWorkerConfigDrawerVisible(true);

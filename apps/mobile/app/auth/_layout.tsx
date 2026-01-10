@@ -3,6 +3,7 @@ import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
 import { View } from 'react-native';
 import { KortixLoader } from '@/components/ui';
+import { log } from '@/lib/logger';
 
 /**
  * Auth Layout
@@ -34,7 +35,7 @@ export default function AuthLayout() {
   // CRITICAL: Authenticated users should NEVER be on auth screens
   // Redirect them immediately to home
   if (isAuthenticated) {
-    console.log('🚫 Auth layout: user is authenticated, redirecting to /home');
+    log.log('🚫 Auth layout: user is authenticated, redirecting to /home');
     return <Redirect href="/home" />;
   }
 

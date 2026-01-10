@@ -14,6 +14,7 @@ import type { QuickActionOption } from './quickActionViews';
 import { useLanguage } from '@/contexts';
 import { getQuickActionOptionTranslationKey } from './quickActionTranslations';
 import { Check, Eye } from 'lucide-react-native';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -82,8 +83,8 @@ export function QuickActionOptionCard({ option, actionId, onPress, isSelected = 
   const label = t(translationKey, { defaultValue: option.label });
 
   const handlePress = () => {
-    console.log('🎯 Quick action option selected:', label);
-    console.log('📊 Option data:', { id: option.id, label, isSelected });
+    log.log('🎯 Quick action option selected:', label);
+    log.log('📊 Option data:', { id: option.id, label, isSelected });
     onPress(option.id);
   };
 

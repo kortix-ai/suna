@@ -14,6 +14,7 @@ import { Save, AlertCircle } from 'lucide-react-native';
 import { Pressable, ActivityIndicator, Alert } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { log } from '@/lib/logger';
 
 interface InstructionsScreenProps {
   agentId: string;
@@ -70,7 +71,7 @@ export function InstructionsScreen({ agentId, onUpdate }: InstructionsScreenProp
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onUpdate?.();
     } catch (error: any) {
-      console.error('Failed to update system prompt:', error);
+      log.error('Failed to update system prompt:', error);
       Alert.alert(t('common.error'), error?.message || t('workers.instructions.errorUpdatePrompt'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }

@@ -17,6 +17,7 @@ import {
 import type { ToolViewProps } from './types';
 import { ToolViewCard, StatusBadge } from './shared';
 import { getToolMetadata } from './tool-metadata';
+import { log } from '@/lib/logger';
 
 function formatTimestamp(isoString?: string): string {
   if (!isoString) return '';
@@ -62,7 +63,7 @@ export function ExposePortToolView({ toolCall, toolResult, assistantTimestamp, t
           await Linking.openURL(publicUrl);
         }
       } catch (err) {
-        console.error('Failed to open URL:', err);
+        log.error('Failed to open URL:', err);
       }
     }
   };

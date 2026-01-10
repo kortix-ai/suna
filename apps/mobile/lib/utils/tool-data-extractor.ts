@@ -7,6 +7,7 @@
 
 import type { UnifiedMessage, ParsedMetadata } from '@/api/types';
 import { safeJsonParse } from '@agentpress/shared/utils';
+import { log } from '@/lib/logger';
 
 /**
  * Structured tool call data from metadata
@@ -203,13 +204,13 @@ export function extractToolCallAndResult(
   assistantTimestamp?: string;
   toolTimestamp?: string;
 } {
-  console.log('[extractToolCallAndResult] assistantMessage:', assistantMessage?.message_id || 'null');
-  console.log('[extractToolCallAndResult] toolMessage:', toolMessage?.message_id || 'null');
+  log.log('[extractToolCallAndResult] assistantMessage:', assistantMessage?.message_id || 'null');
+  log.log('[extractToolCallAndResult] toolMessage:', toolMessage?.message_id || 'null');
   
   const { toolCall, toolResult } = extractToolData(assistantMessage, toolMessage);
   
-  console.log('[extractToolCallAndResult] Extracted toolCall:', toolCall?.function_name || 'null');
-  console.log('[extractToolCallAndResult] Extracted toolResult:', toolResult ? 'has result' : 'null');
+  log.log('[extractToolCallAndResult] Extracted toolCall:', toolCall?.function_name || 'null');
+  log.log('[extractToolCallAndResult] Extracted toolResult:', toolResult ? 'has result' : 'null');
   
   return {
     toolCall,

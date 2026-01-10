@@ -1,4 +1,5 @@
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
+import { log } from '@/lib/logger';
 
 export interface DesignerData {
   mode?: string;
@@ -77,7 +78,7 @@ export function extractDesignerData({ toolCall, toolResult }: { toolCall: ToolCa
     }
   }
   
-  console.log('🎨 [Designer Utils] Extracted data:', {
+  log.log('🎨 [Designer Utils] Extracted data:', {
     generatedImagePath,
     designUrl,
     sandboxId,

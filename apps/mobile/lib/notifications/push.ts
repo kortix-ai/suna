@@ -1,3 +1,4 @@
+import { log } from '@/lib/logger';
 /**
  * Push Notification Service
  * 
@@ -106,10 +107,10 @@ export async function sendPushNotification(
       throw new Error(`Push notification error: ${errorMessage}`);
     }
 
-    console.log('✅ Push notification sent successfully:', firstResponse);
+    log.log('✅ Push notification sent successfully:', firstResponse);
     return firstResponse;
   } catch (error) {
-    console.error('❌ Error sending push notification:', error);
+    log.error('❌ Error sending push notification:', error);
     
     if (error instanceof Error) {
       throw error;
@@ -177,15 +178,15 @@ export async function sendPushNotificationsToMultiple(
     
     const errors = responses.filter((r) => r.status === 'error');
     if (errors.length > 0) {
-      console.warn(`⚠️ ${errors.length} push notification(s) failed:`, errors);
+      log.warn(`⚠️ ${errors.length} push notification(s) failed:`, errors);
     }
 
     const successes = responses.filter((r) => r.status === 'ok');
-    console.log(`✅ ${successes.length} push notification(s) sent successfully`);
+    log.log(`✅ ${successes.length} push notification(s) sent successfully`);
 
     return responses;
   } catch (error) {
-    console.error('❌ Error sending push notifications:', error);
+    log.error('❌ Error sending push notifications:', error);
     
     if (error instanceof Error) {
       throw error;

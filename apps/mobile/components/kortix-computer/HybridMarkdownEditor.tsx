@@ -13,6 +13,7 @@ import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { TableEditorModal } from '@/components/chat/TableEditorModal';
 import { CodeBlockEditorModal } from '@/components/chat/CodeBlockEditorModal';
+import { log } from '@/lib/logger';
 
 interface HybridMarkdownEditorProps {
   value: string;
@@ -190,7 +191,7 @@ function CodeBlock({
       setTimeout(() => setCopied(false), 2000);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      console.error('Failed to copy code:', err);
+      log.error('Failed to copy code:', err);
     }
   };
 

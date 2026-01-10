@@ -1,6 +1,7 @@
 import { useMutation } from '@tanstack/react-query';
 import { useAuthContext } from '@/contexts';
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { log } from '@/lib/logger';
 
 /**
  * Account Initialization Hook
@@ -15,8 +16,8 @@ import { API_URL, getAuthHeaders } from '@/api/config';
  * @example
  * const initializeMutation = useAccountInitialization();
  * initializeMutation.mutate(undefined, {
- *   onSuccess: () => console.log('Account initialized'),
- *   onError: (error) => console.error('Failed:', error),
+ *   onSuccess: () => log.log('Account initialized'),
+ *   onError: (error) => log.error('Failed:', error),
  * });
  */
 export function useAccountInitialization() {
@@ -25,11 +26,11 @@ export function useAccountInitialization() {
   return useMutation({
     mutationFn: async (): Promise<{ success: boolean; message: string; subscription_id?: string }> => {
       if (!session) {
-        console.error('❌ No session available for initialization');
+        log.error('❌ No session available for initialization');
         throw new Error('You must be logged in to initialize account');
       }
 
-      console.log('🚀 Initializing account...');
+      log.log('🚀 Initializing account...');
       const headers = await getAuthHeaders();
       
       const response = await fetch(`${API_URL}/setup/initialize`, {
@@ -54,15 +55,15 @@ export function useAccountInitialization() {
         } catch {
         }
         
-        console.error(`❌ Initialization failed: ${errorMessage}`);
+        log.error(`❌ Initialization failed: ${errorMessage}`);
         throw new Error(errorMessage);
       }
 
       const data = await response.json();
-      console.log('📦 Account initialization response:', data);
+      log.log('📦 Account initialization response:', data);
 
       if (data.success) {
-        console.log('✅ Account initialized successfully');
+        log.log('✅ Account initialized successfully');
         return {
           success: true,
           message: data.message || 'Account initialized successfully',
@@ -70,7 +71,7 @@ export function useAccountInitialization() {
         };
       } else {
         if (data.message?.includes('Already subscribed') || data.message?.includes('already')) {
-          console.log('✅ Account already initialized');
+          log.log('✅ Account already initialized');
           return {
             success: true,
             message: 'Account already initialized',

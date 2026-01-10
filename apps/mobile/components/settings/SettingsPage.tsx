@@ -43,6 +43,7 @@ import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -93,24 +94,24 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
 
   // Memoize handlers to prevent unnecessary re-renders
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Settings page closing');
+    log.log('🎯 Settings page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
 
   const handleName = React.useCallback(() => {
-    console.log('🎯 Name/Profile management pressed');
+    log.log('🎯 Name/Profile management pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsNameEditPageVisible(true);
   }, []);
 
   const handlePlan = React.useCallback(async () => {
-    console.log('🎯 Plan pressed');
+    log.log('🎯 Plan pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // If RevenueCat is available, present native paywall directly
     if (useNativePaywall) {
-      console.log('📱 Using native RevenueCat paywall');
+      log.log('📱 Using native RevenueCat paywall');
       await presentUpgradePaywall();
     } else {
       // Otherwise, show the custom PlanPage
@@ -119,44 +120,44 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   }, [useNativePaywall, presentUpgradePaywall]);
 
   const handleBilling = React.useCallback(() => {
-    console.log('🎯 Billing pressed');
+    log.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsBillingPageVisible(true);
   }, []);
 
   const handleUsage = React.useCallback(() => {
-    console.log('🎯 Usage pressed');
+    log.log('🎯 Usage pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsUsagePageVisible(true);
   }, []);
 
   const handleIntegrations = React.useCallback(() => {
-    console.log('🎯 Integrations pressed');
+    log.log('🎯 Integrations pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsIntegrationsPageVisible(true);
   }, []);
 
   const handleTheme = React.useCallback(() => {
-    console.log('🎯 Theme pressed');
+    log.log('🎯 Theme pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsThemePageVisible(true);
   }, []);
 
   const handleLanguage = React.useCallback(() => {
-    console.log('🎯 App Language pressed');
+    log.log('🎯 App Language pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsLanguagePageVisible(true);
   }, []);
 
   const handleBeta = React.useCallback(() => {
-    console.log('🎯 Beta pressed');
+    log.log('🎯 Beta pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     setIsBetaPageVisible(true);
   }, []);
 
   const handleAccountDeletion = React.useCallback(() => {
-    console.log('🎯 Account deletion pressed');
+    log.log('🎯 Account deletion pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     setIsAccountDeletionPageVisible(true);
@@ -165,7 +166,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleSignOut = React.useCallback(async () => {
     if (isSigningOut) return; // Prevent multiple sign out attempts
 
-    console.log('🎯 Sign Out pressed');
+    log.log('🎯 Sign Out pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     Alert.alert(
@@ -175,20 +176,20 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
         {
           text: t('common.cancel'),
           style: 'cancel',
-          onPress: () => console.log('❌ Sign out cancelled'),
+          onPress: () => log.log('❌ Sign out cancelled'),
         },
         {
           text: t('settings.signOut'),
           style: 'destructive',
           onPress: async () => {
-            console.log('🔐 Signing out...');
+            log.log('🔐 Signing out...');
             const result = await signOut();
             if (result.success) {
-              console.log('✅ Signed out successfully - Redirecting to auth');
+              log.log('✅ Signed out successfully - Redirecting to auth');
               onClose();
               router.replace('/');
             } else {
-              console.error('❌ Sign out failed:', result.error);
+              log.error('❌ Sign out failed:', result.error);
               Alert.alert(t('common.error'), 'Failed to sign out. Please try again.');
             }
           },
@@ -291,7 +292,7 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
           currentName={userName}
           onClose={() => setIsNameEditPageVisible(false)}
           onNameUpdated={(newName) => {
-            console.log('✅ Name updated to:', newName);
+            log.log('✅ Name updated to:', newName);
           }}
         />
       </AnimatedPageWrapper>
@@ -324,13 +325,13 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
             setIsBillingPageVisible(false);
             // If RevenueCat is available, present the native paywall directly
             if (useNativePaywall) {
-              console.log('📱 Using RevenueCat paywall from billing');
+              log.log('📱 Using RevenueCat paywall from billing');
               setTimeout(async () => {
                 await presentUpgradePaywall();
               }, 100);
             } else {
               // Otherwise show the custom plan page
-              console.log('📄 Using custom plan page from billing');
+              log.log('📄 Using custom plan page from billing');
               setTimeout(() => setIsPlanPageVisible(true), 100);
             }
           }}

@@ -8,6 +8,7 @@ import { useLanguage } from '@/contexts';
 import { useChat } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
+import { log } from '@/lib/logger';
 
 interface UsagePageProps {
   visible: boolean;
@@ -21,7 +22,7 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
 
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Usage page closing');
+    log.log('🎯 Usage page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
@@ -32,7 +33,7 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
 
     // If RevenueCat is available, present native paywall directly
     if (useNativePaywall) {
-      console.log('📱 Using native RevenueCat paywall from UsagePage');
+      log.log('📱 Using native RevenueCat paywall from UsagePage');
       setTimeout(async () => {
         await presentUpgradePaywall();
       }, 100);
@@ -44,7 +45,7 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
 
   const handleThreadPress = React.useCallback(
     (threadId: string, _projectId: string | null) => {
-      console.log('🎯 Thread pressed from UsagePage:', threadId);
+      log.log('🎯 Thread pressed from UsagePage:', threadId);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       // Load the thread and close the page

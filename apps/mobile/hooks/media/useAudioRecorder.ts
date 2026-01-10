@@ -1,5 +1,6 @@
 import { Audio } from 'expo-av';
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { log } from '@/lib/logger';
 
 type RecorderState = 'idle' | 'recording' | 'recorded' | 'playing';
 
@@ -15,7 +16,7 @@ let globalRecordingInstance: Audio.Recording | null = null;
  */
 async function forceCleanupGlobalRecording(): Promise<void> {
   if (globalRecordingInstance) {
-    console.log('🧹 Force cleaning up global recording instance...');
+    log.log('🧹 Force cleaning up global recording instance...');
     try {
       const status = await globalRecordingInstance.getStatusAsync();
       if (status.isRecording) {
@@ -25,7 +26,7 @@ async function forceCleanupGlobalRecording(): Promise<void> {
       }
     } catch (err) {
       // Recording might already be unloaded, that's fine
-      console.log('⚠️ Global recording cleanup (expected):', err);
+      log.log('⚠️ Global recording cleanup (expected):', err);
     }
     globalRecordingInstance = null;
   }
@@ -34,7 +35,7 @@ async function forceCleanupGlobalRecording(): Promise<void> {
   try {
     await Audio.setAudioModeAsync({ allowsRecordingIOS: false });
   } catch (err) {
-    console.log('⚠️ Could not reset audio mode:', err);
+    log.log('⚠️ Could not reset audio mode:', err);
   }
 }
 
@@ -90,7 +91,7 @@ export function useAudioRecorder() {
   const startRecording = useCallback(async () => {
     // Prevent concurrent starts
     if (isStartingRef.current || globalRecordingLock) {
-      console.log('⚠️ Recording already in progress or starting, skipping...');
+      log.log('⚠️ Recording already in progress or starting, skipping...');
       return;
     }
 
@@ -98,7 +99,7 @@ export function useAudioRecorder() {
     globalRecordingLock = true;
 
     try {
-      console.log('🎤 Requesting audio permissions...');
+      log.log('🎤 Requesting audio permissions...');
       const { granted } = await Audio.requestPermissionsAsync();
       if (!granted) {
         throw new Error('Audio permission not granted');
@@ -123,19 +124,19 @@ export function useAudioRecorder() {
       // Small delay to ensure cleanup is complete
       await new Promise(resolve => setTimeout(resolve, 100));
 
-      console.log('🎤 Setting audio mode for recording...');
+      log.log('🎤 Setting audio mode for recording...');
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
       });
 
-      console.log('🎤 Creating new recording...');
+      log.log('🎤 Creating new recording...');
       const recording = new Audio.Recording();
       
       // Store in global before prepare
       globalRecordingInstance = recording;
       
-      console.log('🎤 Preparing to record...');
+      log.log('🎤 Preparing to record...');
       const recordingOptions = {
         ...Audio.RecordingOptionsPresets.HIGH_QUALITY,
         isMeteringEnabled: true,
@@ -149,7 +150,7 @@ export function useAudioRecorder() {
         return;
       }
       
-      console.log('🎤 Starting async recording...');
+      log.log('🎤 Starting async recording...');
       await recording.startAsync();
       
       if (!mountedRef.current) {
@@ -198,9 +199,9 @@ export function useAudioRecorder() {
         }
       }, 30); // 30ms for responsive updates
 
-      console.log('✅ Recording started successfully');
+      log.log('✅ Recording started successfully');
     } catch (error) {
-      console.error('❌ Failed to start recording:', error);
+      log.error('❌ Failed to start recording:', error);
       
       // Full cleanup on error
       cleanupIntervals();
@@ -237,10 +238,10 @@ export function useAudioRecorder() {
   }, [cleanupIntervals]);
 
   const stopRecording = useCallback(async () => {
-    console.log('🎤 Stopping recording...');
+    log.log('🎤 Stopping recording...');
     
     if (state !== 'recording' || !recordingRef.current) {
-      console.log('❌ Not in recording state or no recording ref');
+      log.log('❌ Not in recording state or no recording ref');
       return null;
     }
 
@@ -256,12 +257,12 @@ export function useAudioRecorder() {
       recordingRef.current = null;
       globalRecordingInstance = null;
 
-      console.log('🛑 Stopping and unloading...');
+      log.log('🛑 Stopping and unloading...');
       await recording.stopAndUnloadAsync();
       const uri = recording.getURI();
       
-      console.log('✅ Recording stopped, URI:', uri);
-      console.log('⏱️ Duration:', currentDuration, 'seconds');
+      log.log('✅ Recording stopped, URI:', uri);
+      log.log('⏱️ Duration:', currentDuration, 'seconds');
 
       if (mountedRef.current) {
         setAudioUri(uri);
@@ -270,7 +271,7 @@ export function useAudioRecorder() {
       
       return { uri, duration: currentDuration };
     } catch (error) {
-      console.error('❌ Failed to stop recording:', error);
+      log.error('❌ Failed to stop recording:', error);
       
       cleanupIntervals();
       globalRecordingInstance = null;
@@ -286,10 +287,10 @@ export function useAudioRecorder() {
   }, [state, recordingDuration, cleanupIntervals]);
 
   const cancelRecording = useCallback(async () => {
-    console.log('🎤 Canceling recording...');
+    log.log('🎤 Canceling recording...');
     
     if (state !== 'recording') {
-      console.log('⚠️ Not recording, nothing to cancel');
+      log.log('⚠️ Not recording, nothing to cancel');
       return;
     }
 
@@ -311,9 +312,9 @@ export function useAudioRecorder() {
         setAudioUri(null);
       }
       
-      console.log('✅ Recording canceled');
+      log.log('✅ Recording canceled');
     } catch (error) {
-      console.error('❌ Failed to cancel recording:', error);
+      log.error('❌ Failed to cancel recording:', error);
       
       cleanupIntervals();
       recordingRef.current = null;
@@ -331,12 +332,12 @@ export function useAudioRecorder() {
 
   const playAudio = useCallback(async () => {
     if (!audioUri) {
-      console.log('❌ No audio to play');
+      log.log('❌ No audio to play');
       return;
     }
 
     try {
-      console.log('▶️ Playing audio:', audioUri);
+      log.log('▶️ Playing audio:', audioUri);
       
       const { sound } = await Audio.Sound.createAsync({ uri: audioUri });
       playbackRef.current = sound;
@@ -347,9 +348,9 @@ export function useAudioRecorder() {
         setState('playing');
       }
 
-      console.log('✅ Playback started');
+      log.log('✅ Playback started');
     } catch (error) {
-      console.error('❌ Failed to play audio:', error);
+      log.error('❌ Failed to play audio:', error);
       if (mountedRef.current) {
         setState('recorded');
       }
@@ -359,14 +360,14 @@ export function useAudioRecorder() {
   const pauseAudio = useCallback(async () => {
     try {
       if (playbackRef.current) {
-        console.log('⏸️ Pausing audio');
+        log.log('⏸️ Pausing audio');
         await playbackRef.current.pauseAsync();
         if (mountedRef.current) {
           setState('recorded');
         }
       }
     } catch (error) {
-      console.error('❌ Failed to pause audio:', error);
+      log.error('❌ Failed to pause audio:', error);
       if (mountedRef.current) {
         setState('recorded');
       }
@@ -382,13 +383,13 @@ export function useAudioRecorder() {
   }, [isPlaying, pauseAudio, playAudio]);
 
   const deleteRecording = useCallback(async () => {
-    console.log('🗑️ Deleting recording');
+    log.log('🗑️ Deleting recording');
 
     if (playbackRef.current) {
       try {
         await playbackRef.current.unloadAsync();
       } catch (error) {
-        console.log('⚠️ Player already cleaned up');
+        log.log('⚠️ Player already cleaned up');
       }
       playbackRef.current = null;
     }
@@ -399,11 +400,11 @@ export function useAudioRecorder() {
       setRecordingDuration(0);
     }
     
-    console.log('✅ Recording deleted');
+    log.log('✅ Recording deleted');
   }, []);
 
   const reset = useCallback(async () => {
-    console.log('🔄 Resetting audio recorder');
+    log.log('🔄 Resetting audio recorder');
     
     cleanupIntervals();
     

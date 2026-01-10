@@ -27,6 +27,7 @@ import { useCreateAgent, useCreateNewAgent } from '@/lib/agents/hooks';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { Loading } from '../loading/loading';
 import type { AgentCreateRequest } from '@/api/types';
+import { log } from '@/lib/logger';
 
 interface WorkerCreationDrawerProps {
   visible: boolean;
@@ -199,7 +200,7 @@ export function WorkerCreationDrawer({
             onWorkerCreated?.(newAgent.agent_id);
           },
           onError: (error: any) => {
-            console.error('Failed to create agent:', error);
+            log.error('Failed to create agent:', error);
             Alert.alert(
               'Error',
               error?.message || 'Failed to create worker. Please try again.'
@@ -230,7 +231,7 @@ export function WorkerCreationDrawer({
       onClose();
       onWorkerCreated?.(result.agent_id);
     } catch (error: any) {
-      console.error('Error creating agent from chat:', error);
+      log.error('Error creating agent from chat:', error);
       Alert.alert(
         'Error',
         error?.message || 'Failed to create worker. Please try again.'

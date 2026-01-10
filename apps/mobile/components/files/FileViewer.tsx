@@ -26,6 +26,7 @@ import { useSandboxFileContent, useSandboxImageBlob, blobToDataURL } from '@/lib
 import type { SandboxFile } from '@/api/types';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useRouter } from 'expo-router';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -194,7 +195,7 @@ export function FileViewer({
         return;
       }
     } catch (error) {
-      console.error('Download failed:', error);
+      log.error('Download failed:', error);
     } finally {
       setIsDownloading(false);
     }
@@ -229,7 +230,7 @@ export function FileViewer({
         });
       }
     } catch (error) {
-      console.error('Share failed:', error);
+      log.error('Share failed:', error);
     }
   };
 

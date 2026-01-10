@@ -42,6 +42,7 @@ import { useOnboarding } from '@/hooks/useOnboarding';
 import { useQueryClient } from '@tanstack/react-query';
 import { agentKeys } from '@/lib/agents';
 import { modelKeys } from '@/lib/models';
+import { log } from '@/lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const DRAWER_COLLAPSED_HEIGHT = 72;
@@ -284,7 +285,7 @@ export default function OnboardingScreen() {
       await loadAgents();
       router.replace('/home');
     } catch (error) {
-      console.error('Failed to complete onboarding:', error);
+      log.error('Failed to complete onboarding:', error);
       router.replace('/home');
     }
   }, [loadAgents, refetchBilling, queryClient, router, markSetupComplete, markAsCompleted]);
@@ -295,7 +296,7 @@ export default function OnboardingScreen() {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await signOut();
     } catch (error) {
-      console.error('Logout error:', error);
+      log.error('Logout error:', error);
     }
   }, [signOut, isSigningOut]);
 

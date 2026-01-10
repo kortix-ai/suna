@@ -21,6 +21,7 @@ import { AgentSelector } from '../agents/AgentSelector';
 import { AudioWaveform } from '../attachments/AudioWaveform';
 import type { Agent } from '@/api/types';
 import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './MarkdownToolbar';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -319,12 +320,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     if (!value?.trim()) return;
 
     if (!isAuthenticated) {
-      console.warn('⚠️ User not authenticated - cannot send message');
+      log.warn('⚠️ User not authenticated - cannot send message');
       return;
     }
 
     if (!agent?.agent_id) {
-      console.warn('⚠️ No agent selected - cannot send message');
+      log.warn('⚠️ No agent selected - cannot send message');
       return;
     }
 
@@ -336,33 +337,33 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Handle sending audio
   const handleSendAudioMessage = React.useCallback(async () => {
     if (!isAuthenticated) {
-      console.warn('⚠️ User not authenticated - cannot send audio');
+      log.warn('⚠️ User not authenticated - cannot send audio');
       onCancelRecording?.();
       return;
     }
 
     if (!onSendAudio) {
-      console.error('❌ onSendAudio handler is not provided');
+      log.error('❌ onSendAudio handler is not provided');
       return;
     }
 
     try {
-      console.log('📤 ChatInput: Calling onSendAudio handler');
+      log.log('📤 ChatInput: Calling onSendAudio handler');
       await onSendAudio();
-      console.log('✅ ChatInput: onSendAudio completed successfully');
+      log.log('✅ ChatInput: onSendAudio completed successfully');
     } catch (error) {
-      console.error('❌ ChatInput: Error in onSendAudio:', error);
+      log.error('❌ ChatInput: Error in onSendAudio:', error);
     }
   }, [isAuthenticated, onCancelRecording, onSendAudio]);
 
   // Main button press handler
   const handleButtonPress = React.useCallback(() => {
     const hasContent = getHasContent(); // Compute from ref at press time
-    console.log('[ChatInput] 🔘 Button pressed!', { isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping });
+    log.log('[ChatInput] 🔘 Button pressed!', { isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping });
 
     // Priority 1: Stop if agent is running OR if we're in sending/transcribing state
     if (isAgentRunning || isSendingMessage || isTranscribing) {
-      console.log('[ChatInput] 🛑 Calling onStopAgentRun (isAgentRunning:', isAgentRunning, ', isSendingMessage:', isSendingMessage, ')');
+      log.log('[ChatInput] 🛑 Calling onStopAgentRun (isAgentRunning:', isAgentRunning, ', isSendingMessage:', isSendingMessage, ')');
       setIsStopping(true);
       onStopAgentRun?.();
       return;
@@ -377,7 +378,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     // Priority 3: Send message if has content
     if (hasContent) {
       if (!hasAgent) {
-        console.warn('⚠️ No agent selected - cannot send message');
+        log.warn('⚠️ No agent selected - cannot send message');
         return;
       }
       handleSendMessage();
@@ -386,11 +387,11 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
     // Priority 4: Start audio recording
     if (!isAuthenticated) {
-      console.warn('⚠️ User not authenticated - cannot record audio');
+      log.warn('⚠️ User not authenticated - cannot record audio');
       return;
     }
     if (!hasAgent) {
-      console.warn('⚠️ No agent selected - cannot record audio');
+      log.warn('⚠️ No agent selected - cannot record audio');
       return;
     }
     onAudioRecord?.();
@@ -697,7 +698,7 @@ const NormalMode = ({
           <TouchableOpacity
             onPress={() => {
               if (!isAuthenticated) {
-                console.warn('⚠️ User not authenticated - cannot attach');
+                log.warn('⚠️ User not authenticated - cannot attach');
                 return;
               }
               onAttachPress?.();

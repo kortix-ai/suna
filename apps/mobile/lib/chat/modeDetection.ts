@@ -1,3 +1,4 @@
+import { log } from '@/lib/logger';
 /**
  * Mode Detection Utility
  * 
@@ -185,11 +186,11 @@ export function detectModeFromContent(prompt: string): ModeId | null {
   
   // Only return if we have confidence above threshold
   if (bestScore >= CONFIDENCE_THRESHOLD) {
-    console.log(`[ModeDetection] Detected mode: ${bestMode} (score: ${bestScore})`, scores);
+    log.log(`[ModeDetection] Detected mode: ${bestMode} (score: ${bestScore})`, scores);
     return bestMode;
   }
   
-  console.log(`[ModeDetection] No confident detection (best: ${bestMode} with score ${bestScore})`, scores);
+  log.log(`[ModeDetection] No confident detection (best: ${bestMode} with score ${bestScore})`, scores);
   return null;
 }
 

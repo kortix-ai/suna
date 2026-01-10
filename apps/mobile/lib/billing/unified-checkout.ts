@@ -1,3 +1,4 @@
+import { log } from '@/lib/logger';
 import { shouldUseRevenueCat } from './provider';
 import { purchasePackage, presentPaywall, getOfferings, getOfferingById, type SyncResponse } from './revenuecat';
 import { findPackageForTier, logAvailableProducts } from './revenuecat-utils';
@@ -15,12 +16,12 @@ export async function startUnifiedPlanCheckout(
   onCancel?: () => void,
   onSyncComplete?: (response: SyncResponse) => void | Promise<void>
 ): Promise<void> {
-  console.log(`💳 Starting checkout for tier: ${tierKey}, period: ${commitmentType}`);
+  log.log(`💳 Starting checkout for tier: ${tierKey}, period: ${commitmentType}`);
 
   // Check if RevenueCat is available
   if (!shouldUseRevenueCat()) {
     const error = new Error('Native checkout is not available on this platform. Please use the web app for subscription management.');
-    console.error('❌ RevenueCat not available:', error.message);
+    log.error('❌ RevenueCat not available:', error.message);
     onCancel?.();
     throw error;
   }
@@ -28,7 +29,7 @@ export async function startUnifiedPlanCheckout(
   // Free tier - not supported via RevenueCat
   if (tierKey === 'free') {
     const error = new Error('Free tier cannot be purchased. Please select a paid plan.');
-    console.error('❌ Free tier checkout:', error.message);
+    log.error('❌ Free tier checkout:', error.message);
     onCancel?.();
     throw error;
   }
@@ -41,7 +42,7 @@ export async function startUnifiedPlanCheckout(
 
   // Only proceed with RevenueCat native checkout
   try {
-    console.log('💳 Using RevenueCat for plan checkout...');
+    log.log('💳 Using RevenueCat for plan checkout...');
     
     // Ensure RevenueCat is initialized before fetching offerings
     const { initializeRevenueCat } = await import('./revenuecat');
@@ -51,7 +52,7 @@ export async function startUnifiedPlanCheckout(
       try {
         await initializeRevenueCat(user.id, user.email, true);
       } catch (initError) {
-        console.warn('⚠️ RevenueCat initialization warning (may already be initialized):', initError);
+        log.warn('⚠️ RevenueCat initialization warning (may already be initialized):', initError);
       }
     }
 
@@ -60,17 +61,17 @@ export async function startUnifiedPlanCheckout(
     
     if (!packageResult) {
       // If package not found, log available products for debugging
-      console.warn('⚠️ RevenueCat package not found for tier:', tierKey);
+      log.warn('⚠️ RevenueCat package not found for tier:', tierKey);
       await logAvailableProducts();
       
       // Try showing paywall as fallback
-      console.log('🔄 Attempting to show paywall as fallback...');
+      log.log('🔄 Attempting to show paywall as fallback...');
       try {
         await presentPaywall();
         onSuccess?.();
         return;
       } catch (paywallError) {
-        console.error('❌ Paywall failed:', paywallError);
+        log.error('❌ Paywall failed:', paywallError);
         const error = new Error(`Plan not available. Please check App Store/Play Store for available plans.`);
         onCancel?.();
         throw error;
@@ -78,16 +79,16 @@ export async function startUnifiedPlanCheckout(
     }
 
     const { package: pkg } = packageResult;
-    console.log(`✅ Found RevenueCat package: ${pkg.identifier} (Product: ${pkg.product.identifier})`);
-    console.log(`💰 Price: ${pkg.product.priceString}`);
+    log.log(`✅ Found RevenueCat package: ${pkg.identifier} (Product: ${pkg.product.identifier})`);
+    log.log(`💰 Price: ${pkg.product.priceString}`);
     
     await purchasePackage(pkg, user?.email, user?.id, onSyncComplete);
     onSuccess?.();
   } catch (error: any) {
-    console.error('❌ RevenueCat checkout error:', error);
+    log.error('❌ RevenueCat checkout error:', error);
     
     if (error.userCancelled) {
-      console.log('ℹ️ User cancelled purchase');
+      log.log('ℹ️ User cancelled purchase');
       onCancel?.();
       return;
     }
@@ -119,19 +120,19 @@ export async function startUnifiedCreditPurchase(
   // Check if RevenueCat is available
   if (!shouldUseRevenueCat()) {
     const error = new Error('Native checkout is not available on this platform. Please use the web app for credit purchases.');
-    console.error('❌ RevenueCat not available:', error.message);
+    log.error('❌ RevenueCat not available:', error.message);
     onCancel?.();
     throw error;
   }
 
   // Only proceed with RevenueCat native checkout
   try {
-    console.log('💰 Using RevenueCat for credit purchase...');
+    log.log('💰 Using RevenueCat for credit purchase...');
     
     let offerings = await getOfferingById('topups', true);
     
     if (!offerings) {
-      console.warn('⚠️ No topups offering found, trying default offering');
+      log.warn('⚠️ No topups offering found, trying default offering');
       try {
         offerings = await getOfferings(true);
         if (!offerings) {
@@ -178,7 +179,7 @@ export async function startUnifiedCreditPurchase(
     } else {
       // Log configuration errors with more context
       if (error?.code === 'CONFIGURATION_ERROR' || error?.code === 'OFFERING_NOT_FOUND') {
-        console.error('❌ RevenueCat configuration issue for credit purchase:', {
+        log.error('❌ RevenueCat configuration issue for credit purchase:', {
           error: error.message,
           availableOfferings: error?.availableOfferings,
           amount,

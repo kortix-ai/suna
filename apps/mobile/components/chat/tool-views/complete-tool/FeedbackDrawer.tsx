@@ -13,6 +13,7 @@ import { CheckCircle2 as CheckIcon } from 'lucide-react-native';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
+import { log } from '@/lib/logger';
 
 /**
  * Half-star rating component that supports clicking left/right halves
@@ -104,12 +105,12 @@ export function FeedbackDrawer() {
   
   // Debug: log on mount and when isOpen changes
   useEffect(() => {
-    console.log('🎭 [FeedbackDrawer] Component mounted');
-    return () => console.log('🎭 [FeedbackDrawer] Component unmounted');
+    log.log('🎭 [FeedbackDrawer] Component mounted');
+    return () => log.log('🎭 [FeedbackDrawer] Component unmounted');
   }, []);
   
   useEffect(() => {
-    console.log('🎭 [FeedbackDrawer] Store state:', { isOpen, initialRating, threadId, messageId });
+    log.log('🎭 [FeedbackDrawer] Store state:', { isOpen, initialRating, threadId, messageId });
   }, [isOpen, initialRating, threadId, messageId]);
   
   // Local state - rating can be half values (0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5)
@@ -133,10 +134,10 @@ export function FeedbackDrawer() {
     const wasOpen = wasOpenRef.current;
     wasOpenRef.current = isOpen;
     
-    console.log('🎭 [FeedbackDrawer] isOpen changed:', isOpen, '| wasOpen:', wasOpen);
+    log.log('🎭 [FeedbackDrawer] isOpen changed:', isOpen, '| wasOpen:', wasOpen);
     
     if (isOpen && !wasOpen) {
-      console.log('✅ [FeedbackDrawer] Opening modal...');
+      log.log('✅ [FeedbackDrawer] Opening modal...');
       
       // Reset form state
       setFeedback('');
@@ -147,14 +148,14 @@ export function FeedbackDrawer() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       bottomSheetModalRef.current?.present();
     } else if (!isOpen && wasOpen) {
-      console.log('❌ [FeedbackDrawer] Closing modal...');
+      log.log('❌ [FeedbackDrawer] Closing modal...');
       bottomSheetModalRef.current?.dismiss();
     }
   }, [isOpen]);
 
   // Modal dismiss handler
   const handleDismiss = useCallback(() => {
-    console.log('🎭 [FeedbackDrawer] Modal dismissed');
+    log.log('🎭 [FeedbackDrawer] Modal dismissed');
     closeFeedbackDrawer();
   }, [closeFeedbackDrawer]);
 
@@ -209,7 +210,7 @@ export function FeedbackDrawer() {
         Alert.alert(t('chat.error', { defaultValue: 'Error' }), errorMessage);
       }
     } catch (error) {
-      console.error('Error submitting feedback:', error);
+      log.error('Error submitting feedback:', error);
       Alert.alert(
         t('chat.error', { defaultValue: 'Error' }), 
         t('chat.feedbackSubmitFailedRetry', { defaultValue: 'Failed to submit feedback. Please try again.' })

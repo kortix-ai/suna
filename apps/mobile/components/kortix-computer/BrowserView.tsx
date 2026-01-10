@@ -4,6 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Globe, RefreshCw, AlertCircle } from 'lucide-react-native';
 import { WebView } from 'react-native-webview';
+import { log } from '@/lib/logger';
 
 interface BrowserViewProps {
   sandbox?: {
@@ -22,7 +23,7 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
   // Construct VNC URL with password, matching frontend implementation
   const vncUrl = useMemo(() => {
     // Log sandbox data for debugging
-    console.log('[BrowserView] Sandbox data:', {
+    log.log('[BrowserView] Sandbox data:', {
       vnc_preview: sandbox?.vnc_preview,
       pass: sandbox?.pass ? '***' : undefined,
       hasPass: !!sandbox?.pass,
@@ -30,12 +31,12 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
     });
 
     if (!sandbox?.vnc_preview || !sandbox?.pass) {
-      console.log('[BrowserView] Missing VNC URL or password');
+      log.log('[BrowserView] Missing VNC URL or password');
       return null;
     }
     // Match frontend URL construction: /vnc_lite.html?password=${pass}&autoconnect=true&scale=local
     const constructedUrl = `${sandbox.vnc_preview}/vnc_lite.html?password=${sandbox.pass}&autoconnect=true&scale=local`;
-    console.log('[BrowserView] Constructed VNC URL:', constructedUrl.replace(/password=[^&]+/, 'password=***'));
+    log.log('[BrowserView] Constructed VNC URL:', constructedUrl.replace(/password=[^&]+/, 'password=***'));
     return constructedUrl;
   }, [sandbox?.vnc_preview, sandbox?.pass]);
 
@@ -64,7 +65,7 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
   // Handle WebView errors
   const handleError = (syntheticEvent: any) => {
     const { nativeEvent } = syntheticEvent;
-    console.error('WebView error:', nativeEvent);
+    log.error('WebView error:', nativeEvent);
     setConnectionError('Failed to load browser connection');
     setIsBrowserLoading(false);
   };
@@ -72,7 +73,7 @@ export function BrowserView({ sandbox }: BrowserViewProps) {
   // Handle HTTP errors
   const handleHttpError = (syntheticEvent: any) => {
     const { nativeEvent } = syntheticEvent;
-    console.error('WebView HTTP error:', nativeEvent);
+    log.error('WebView HTTP error:', nativeEvent);
     if (nativeEvent.statusCode >= 400) {
       setConnectionError(`Connection error (${nativeEvent.statusCode})`);
       setIsBrowserLoading(false);

@@ -14,6 +14,7 @@ import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
 import { autoLinkUrls } from '@/lib/utils/url-autolink';
 import * as FileSystem from 'expo-file-system/legacy';
+import { log } from '@/lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -555,7 +556,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
         // Extract base64 data from data URL
         const base64Match = blobUrl.match(/^data:[^;]+;base64,(.+)$/);
         if (!base64Match) {
-          console.error('Invalid PDF data URL format');
+          log.error('Invalid PDF data URL format');
           setHasError(true);
           setIsLoading(false);
           return;
@@ -572,7 +573,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
         setPdfFileUri(tempFilePath);
         setIsLoading(false);
       } catch (error) {
-        console.error('Failed to write PDF to file:', error);
+        log.error('Failed to write PDF to file:', error);
         setHasError(true);
         setIsLoading(false);
       }
@@ -650,11 +651,11 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           </View>
         )}
         onError={(e) => {
-          console.error('WebView PDF error:', e.nativeEvent);
+          log.error('WebView PDF error:', e.nativeEvent);
           setHasError(true);
         }}
         onHttpError={(e) => {
-          console.error('WebView PDF HTTP error:', e.nativeEvent);
+          log.error('WebView PDF HTTP error:', e.nativeEvent);
           setHasError(true);
         }}
       />

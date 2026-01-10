@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
+import type { Notification } from 'expo-notifications';
 import { notificationsApi } from '@/lib/notifications/api';
 import { useAuthContext } from '@/contexts';
+import { log } from '@/lib/logger';
 
 // Safely import expo-device with fallback
 let Device: typeof import('expo-device') | null = null;
 try {
   Device = require('expo-device');
 } catch (error) {
-  console.warn('expo-device module not available:', error);
+  log.warn('expo-device module not available:', error);
 }
 
 // Safely import expo-notifications with fallback
@@ -17,12 +19,12 @@ let Notifications: typeof import('expo-notifications') | null = null;
 try {
   Notifications = require('expo-notifications');
 } catch (error) {
-  console.warn('expo-notifications module not available:', error);
+  log.warn('expo-notifications module not available:', error);
 }
 
 export interface PushNotificationState {
   expoPushToken?: string;
-  notification?: Notifications.Notification | undefined;
+  notification?: Notification | undefined;
 }
 
 export const usePushNotifications = (): PushNotificationState => {
@@ -36,7 +38,7 @@ export const usePushNotifications = (): PushNotificationState => {
   async function registerForPushNotificationsAsync() {
     // Early return if notifications module is not available
     if (!Notifications) {
-      console.log('Push notifications not available - native module not found');
+      log.log('[PUSH] Push notifications not available - native module not found');
       return undefined;
     }
 
@@ -51,48 +53,72 @@ export const usePushNotifications = (): PushNotificationState => {
           lightColor: '#FF231F7C',
         });
       } catch (error) {
-        console.warn('Failed to set notification channel:', error);
+        log.warn('[PUSH] Failed to set notification channel:', error);
       }
     }
 
     // Check if Device module is available and if running on a physical device
     const isPhysicalDevice = Device && typeof Device.isDevice !== 'undefined' && Device.isDevice;
     
+    log.log('[PUSH] Device check:', {
+      hasDeviceModule: !!Device,
+      isPhysicalDevice,
+      platform: Platform.OS,
+    });
+    
     if (isPhysicalDevice && Notifications.getPermissionsAsync) {
       try {
         const { status: existingStatus } = await Notifications.getPermissionsAsync();
         let finalStatus = existingStatus;
 
+        log.log('[PUSH] Initial permission status:', existingStatus);
+
         if (existingStatus !== 'granted' && Notifications.requestPermissionsAsync) {
           const { status } = await Notifications.requestPermissionsAsync();
           finalStatus = status;
+          log.log('[PUSH] Permission request result:', status);
         }
 
         if (finalStatus !== 'granted') {
-          console.log('Failed to get push token for push notification!');
+          log.log('[PUSH] ❌ Failed to get push token - permissions not granted. Status:', finalStatus);
           return undefined;
         }
 
         const projectId = Constants?.expoConfig?.extra?.eas?.projectId ?? Constants?.easConfig?.projectId;
         
+        log.log('[PUSH] Project ID check:', {
+          projectId: projectId || 'NOT FOUND',
+          fromExpoConfig: !!Constants?.expoConfig?.extra?.eas?.projectId,
+          fromEasConfig: !!Constants?.easConfig?.projectId,
+        });
+        
         if (!projectId) {
-          console.log('Project ID not found');
+          log.log('[PUSH] ❌ Project ID not found - cannot get push token');
           return undefined;
         }
 
         if (Notifications.getExpoPushTokenAsync) {
           try {
             token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-            console.log('Expo Push Token:', token);
+            log.log('[PUSH] ✅ Expo Push Token retrieved:', token);
           } catch (e) {
-            console.log('Error getting push token:', e);
+            log.log('[PUSH] ❌ Error getting push token:', e);
           }
+        } else {
+          log.log('[PUSH] ❌ getExpoPushTokenAsync not available');
         }
       } catch (error) {
-        console.warn('Error registering for push notifications:', error);
+        log.warn('[PUSH] ❌ Error registering for push notifications:', error);
       }
     } else {
-      console.log('Must use physical device for Push Notifications');
+      log.log('[PUSH] ⚠️ Must use physical device for Push Notifications', {
+        isPhysicalDevice,
+        hasPermissionsMethod: !!Notifications?.getPermissionsAsync,
+      });
+    }
+
+    if (!token) {
+      log.log('[PUSH] ⚠️ expoPushToken will be undefined');
     }
 
     return token;
@@ -100,10 +126,19 @@ export const usePushNotifications = (): PushNotificationState => {
 
   useEffect(() => {
     if (!Notifications) {
+      log.log('[PUSH] Notifications module not available, skipping registration');
       return;
     }
 
-    registerForPushNotificationsAsync().then(token => token && setExpoPushToken(token));
+    log.log('[PUSH] Starting push notification registration...');
+    registerForPushNotificationsAsync().then(token => {
+      if (token) {
+        log.log('[PUSH] ✅ Setting expoPushToken:', token);
+        setExpoPushToken(token);
+      } else {
+        log.log('[PUSH] ⚠️ No token received, expoPushToken will remain undefined');
+      }
+    });
 
     if (Notifications.addNotificationReceivedListener) {
       notificationListener.current = Notifications.addNotificationReceivedListener((notification: any) => {
@@ -113,7 +148,7 @@ export const usePushNotifications = (): PushNotificationState => {
 
     if (Notifications.addNotificationResponseReceivedListener) {
       responseListener.current = Notifications.addNotificationResponseReceivedListener((response: any) => {
-        console.log('Notification response:', response);
+        log.log('Notification response:', response);
       });
     }
 
@@ -130,7 +165,7 @@ export const usePushNotifications = (): PushNotificationState => {
   useEffect(() => {
     if (expoPushToken && isAuthenticated) {
       notificationsApi.registerDeviceToken(expoPushToken).catch(error => {
-        console.error('Failed to register device token:', error);
+        log.error('Failed to register device token:', error);
       });
     }
   }, [expoPushToken, isAuthenticated]);

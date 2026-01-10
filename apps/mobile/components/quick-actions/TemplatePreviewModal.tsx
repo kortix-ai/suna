@@ -6,6 +6,7 @@ import { Icon } from '@/components/ui/icon';
 import { X } from 'lucide-react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { log } from '@/lib/logger';
 
 interface TemplatePreviewModalProps {
   visible: boolean;
@@ -78,7 +79,7 @@ export function TemplatePreviewModal({
             source={{ uri: pdfUrl }}
             onError={(syntheticEvent) => {
               const { nativeEvent } = syntheticEvent;
-              console.error('WebView error:', nativeEvent);
+              log.error('WebView error:', nativeEvent);
             }}
             style={{ 
               width: screenWidth, 

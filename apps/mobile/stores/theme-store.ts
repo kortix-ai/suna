@@ -1,6 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { create } from 'zustand';
 import { Appearance } from 'react-native';
+import { log } from '@/lib/logger';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
@@ -41,16 +42,16 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   initialize: async () => {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
-      console.log('🌓 Theme store: Loading preference from storage:', saved);
+      log.log('🌓 Theme store: Loading preference from storage:', saved);
       
       const preference: ThemePreference = (saved as ThemePreference) || 'light';
       const resolvedTheme = resolveTheme(preference);
       
-      console.log('🌓 Theme store: Initialized with:', { preference, resolvedTheme });
+      log.log('🌓 Theme store: Initialized with:', { preference, resolvedTheme });
       
       set({ preference, resolvedTheme, isLoaded: true });
     } catch (error) {
-      console.error('🌓 Theme store: Failed to load preference:', error);
+      log.error('🌓 Theme store: Failed to load preference:', error);
       set({ preference: 'light', resolvedTheme: 'light', isLoaded: true });
     }
   },
@@ -58,15 +59,15 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
   setPreference: async (preference: ThemePreference) => {
     const resolvedTheme = resolveTheme(preference);
     
-    console.log('🌓 Theme store: Setting preference:', { preference, resolvedTheme });
+    log.log('🌓 Theme store: Setting preference:', { preference, resolvedTheme });
     
     set({ preference, resolvedTheme });
     
     try {
       await AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference);
-      console.log('🌓 Theme store: Preference saved to storage');
+      log.log('🌓 Theme store: Preference saved to storage');
     } catch (error) {
-      console.error('🌓 Theme store: Failed to save preference:', error);
+      log.error('🌓 Theme store: Failed to save preference:', error);
     }
   },
 
@@ -82,7 +83,7 @@ Appearance.addChangeListener(({ colorScheme }) => {
   const state = useThemeStore.getState();
   if (state.preference === 'system') {
     const resolvedTheme = colorScheme === 'dark' ? 'dark' : 'light';
-    console.log('🌓 Theme store: System theme changed to:', resolvedTheme);
+    log.log('🌓 Theme store: System theme changed to:', resolvedTheme);
     useThemeStore.setState({ resolvedTheme });
   }
 });

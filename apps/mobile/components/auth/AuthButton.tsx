@@ -4,6 +4,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-na
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ArrowRight } from 'lucide-react-native';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -51,7 +52,7 @@ export function AuthButton({
   }));
 
   const handlePressIn = () => {
-    console.log('🎯 Auth button press in:', label);
+    log.log('🎯 Auth button press in:', label);
     scale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
   };
 
@@ -60,7 +61,7 @@ export function AuthButton({
   };
 
   const handlePress = () => {
-    console.log('🎯 Auth button pressed:', label);
+    log.log('🎯 Auth button pressed:', label);
     onPress();
   };
 

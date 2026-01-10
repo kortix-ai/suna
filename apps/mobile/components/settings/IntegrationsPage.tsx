@@ -15,6 +15,7 @@ import { useComposioToolkitIcon } from '@/hooks/useComposio';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -82,7 +83,7 @@ export function IntegrationsPageContent({
   }, [onUpgradePress, router]);
 
   const handleComposioApps = React.useCallback(() => {
-    console.log('🎯 Composio Apps pressed');
+    log.log('🎯 Composio Apps pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     // Block free tier users
@@ -99,7 +100,7 @@ export function IntegrationsPageContent({
   }, [onNavigate, hasFreeTier, handleUpgradePress]);
 
   const handleCustomMcp = React.useCallback(() => {
-    console.log('🎯 Custom MCP pressed');
+    log.log('🎯 Custom MCP pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     if (onNavigate) {
       onNavigate('customMcp');
@@ -110,7 +111,7 @@ export function IntegrationsPageContent({
 
   React.useEffect(() => {
     const isAnyPageOpen = isComposioPageVisible || showCustomMcpDialog;
-    console.log('🔄 MCP Pages state:', {
+    log.log('🔄 MCP Pages state:', {
       isComposioPageVisible,
       showCustomMcpDialog,
       isAnyPageOpen,
@@ -203,7 +204,7 @@ export function IntegrationsPageContent({
           open={showCustomMcpDialog}
           onOpenChange={setShowCustomMcpDialog}
           onSave={(config: any) => {
-            console.log('Custom MCP saved:', config);
+            log.log('Custom MCP saved:', config);
             setShowCustomMcpDialog(false);
           }}
         />
@@ -217,7 +218,7 @@ export function IntegrationsPage({ visible, onClose }: IntegrationsPageProps) {
   const router = useRouter();
 
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Integrations page closing');
+    log.log('🎯 Integrations page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);

@@ -27,6 +27,7 @@ import { KortixLogo } from '@/components/ui/KortixLogo';
 import { EmailAuthDrawer, type EmailAuthDrawerRef } from '@/components/auth';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
+import { log } from '@/lib/logger';
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 const AnimatedText = Animated.createAnimatedComponent(Text);
@@ -219,7 +220,7 @@ export default function AuthScreen() {
   // Redirect if already authenticated AND close any open drawer
   React.useEffect(() => {
     if (isAuthenticated) {
-      console.log('🔄 Auth page: user authenticated, closing drawer and redirecting to /home');
+      log.log('🔄 Auth page: user authenticated, closing drawer and redirecting to /home');
       emailDrawerRef.current?.close();
       router.replace('/home');
     }

@@ -5,6 +5,7 @@
  */
 
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { log } from '@/lib/logger';
 
 // =============================================================================
 // UNIFIED ACCOUNT STATE
@@ -203,7 +204,7 @@ export interface TokenUsage {
 async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const headers = await getAuthHeaders();
   const fullUrl = `${API_URL}${endpoint}`;
-  console.log('🌐 Fetching:', fullUrl);
+  log.log('🌐 Fetching:', fullUrl);
 
   const response = await fetch(fullUrl, {
     ...options,
@@ -219,7 +220,7 @@ async function fetchApi<T>(endpoint: string, options: RequestInit = {}): Promise
 
     // Only log non-auth errors (401/403 are expected when not authenticated)
     if (response.status !== 401 && response.status !== 403) {
-      console.error('❌ Billing API Error:', {
+      log.error('❌ Billing API Error:', {
         endpoint,
         status: response.status,
         error: errorData,
@@ -247,7 +248,7 @@ export const billingApi = {
     const data = await fetchApi<AccountState>(`/billing/account-state${params}`);
     
     // Log received account state for debugging
-    console.log('📊 [AccountState] Received:', JSON.stringify({
+    log.log('📊 [AccountState] Received:', JSON.stringify({
       subscription: {
         tier_key: data.subscription?.tier_key,
         tier_display_name: data.subscription?.tier_display_name,

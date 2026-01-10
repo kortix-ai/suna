@@ -54,6 +54,7 @@ import { ComposioConnectorContent } from '@/components/settings/integrations/Com
 import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
 import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
 import { CustomMcpToolsContent } from '@/components/settings/integrations/CustomMcpToolsSelector';
+import { log } from '@/lib/logger';
 
 interface AgentDrawerProps {
   visible: boolean;
@@ -166,14 +167,14 @@ export function AgentDrawer({
 
   const handleModelChange = React.useCallback(
     (modelId: string) => {
-      console.log('🎯 Model Changed:', modelId);
+      log.log('🎯 Model Changed:', modelId);
       selectModel?.(modelId);
     },
     [selectModel]
   );
 
   const handleUpgradeRequired = React.useCallback(() => {
-    console.log('🔒 Upgrade required');
+    log.log('🔒 Upgrade required');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     onClose?.();
     setTimeout(() => router.push('/plans'), 100);

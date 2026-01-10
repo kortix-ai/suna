@@ -9,6 +9,7 @@ import { billingKeys } from '@/lib/billing';
 import { useLanguage } from '@/contexts';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { Text } from '@/components/ui/text';
+import { log } from '@/lib/logger';
 
 export default function PlansScreen() {
   const router = useRouter();
@@ -43,7 +44,7 @@ export default function PlansScreen() {
     if (useNativePaywall && !hasPresented && !showCustomPage) {
       setHasPresented(true);
       const presentPaywall = async () => {
-        console.log('📱 Plans screen: Using native RevenueCat paywall');
+        log.log('📱 Plans screen: Using native RevenueCat paywall');
         const result = await presentUpgradePaywall() as any;
 
         if (result.purchased) {
@@ -51,7 +52,7 @@ export default function PlansScreen() {
           handleSubscriptionUpdate();
         } else if (result.needsCustomPage) {
           // RevenueCat paywall not available (no template configured) - show custom page
-          console.log('📱 Plans screen: Falling back to custom plan page');
+          log.log('📱 Plans screen: Falling back to custom plan page');
           setShowCustomPage(true);
         } else {
           // Cancelled or dismissed - go back

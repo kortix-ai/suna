@@ -3,6 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAgents } from '@/lib/agents';
 import { useAuthContext } from './AuthContext';
 import type { Agent } from '@/api/types';
+import { log } from '@/lib/logger';
 
 interface AgentContextType {
   selectedAgentId: string | undefined;
@@ -53,7 +54,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   // Handle error state - if agents fail to load, still mark as initialized
   React.useEffect(() => {
     if (error && !hasInitialized) {
-      console.error('❌ Failed to load agents, marking as initialized to unblock UI:', error);
+      log.error('❌ Failed to load agents, marking as initialized to unblock UI:', error);
       setHasInitialized(true);
     }
   }, [error, hasInitialized]);
@@ -66,7 +67,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
     // Only refetch when user actually changes (login/logout/user switch)
     if ((!hadSession && hasSession) || (hadSession && hasSession && prevUserId !== currentUserId)) {
-      console.log('🔄 Session changed, refetching agents...');
+      log.log('🔄 Session changed, refetching agents...');
       setHasInitialized(false); // Reset initialization when session changes
       refetch();
     }
@@ -92,7 +93,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
           setSelectedModelId(storedModelId);
         }
       } catch (error) {
-        console.error('Failed to load stored selections:', error);
+        log.error('Failed to load stored selections:', error);
       }
     };
 
@@ -103,7 +104,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     // Only auto-select if we have agents loaded and haven't initialized yet
     if (agents.length > 0 && !hasInitialized && !isLoading) {
       const autoSelectDefaultAgent = () => {
-        console.log('🔄 Auto-selecting agent...', {
+        log.log('🔄 Auto-selecting agent...', {
           selectedAgentId,
           agentsCount: agents.length,
           hasInitialized,
@@ -111,7 +112,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
         // If we have a stored agent ID and it exists in our agents list, we're good
         if (selectedAgentId && agents.some(agent => agent.agent_id === selectedAgentId)) {
-          console.log('✅ Stored agent found in agents list:', selectedAgentId);
+          log.log('✅ Stored agent found in agents list:', selectedAgentId);
           setHasInitialized(true);
           return;
         }
@@ -121,9 +122,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         const defaultAgent = sunaAgent || agents[0];
 
         if (defaultAgent) {
-          console.log('✅ Auto-selected default agent:', defaultAgent.name);
+          log.log('✅ Auto-selected default agent:', defaultAgent.name);
           setSelectedAgentId(defaultAgent.agent_id);
-          AsyncStorage.setItem(AGENT_STORAGE_KEY, defaultAgent.agent_id).catch(console.error);
+          AsyncStorage.setItem(AGENT_STORAGE_KEY, defaultAgent.agent_id).catch(log.error);
         }
 
         setHasInitialized(true);
@@ -137,9 +138,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     try {
       setSelectedAgentId(agentId);
       await AsyncStorage.setItem(AGENT_STORAGE_KEY, agentId);
-      console.log('🤖 Agent selected:', agentId);
+      log.log('🤖 Agent selected:', agentId);
     } catch (error) {
-      console.error('Failed to store selected agent:', error);
+      log.error('Failed to store selected agent:', error);
     }
   }, []);
 
@@ -147,9 +148,9 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     try {
       setSelectedModelId(modelId);
       await AsyncStorage.setItem(MODEL_STORAGE_KEY, modelId);
-      console.log('🎯 Model selected:', modelId);
+      log.log('🎯 Model selected:', modelId);
     } catch (error) {
-      console.error('Failed to store selected model:', error);
+      log.error('Failed to store selected model:', error);
     }
   }, []);
 
@@ -157,7 +158,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     try {
       await refetch();
     } catch (error) {
-      console.error('Failed to load agents:', error);
+      log.error('Failed to load agents:', error);
     }
   }, [refetch]);
 
@@ -178,7 +179,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
 
   const clearSelection = React.useCallback(async () => {
     try {
-      console.log('🧹 Clearing agent selection...');
+      log.log('🧹 Clearing agent selection...');
       setSelectedAgentId(undefined);
       setSelectedModelId(undefined);
       setHasInitialized(false);
@@ -187,7 +188,7 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
         AsyncStorage.removeItem(MODEL_STORAGE_KEY),
       ]);
     } catch (error) {
-      console.error('Failed to clear selections:', error);
+      log.error('Failed to clear selections:', error);
     }
   }, []);
 
