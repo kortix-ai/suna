@@ -58,7 +58,7 @@ export default function RootLayout() {
       },
     },
   }));
-  
+
   const queryClientRef = React.useRef(queryClient);
   React.useEffect(() => {
     queryClientRef.current = queryClient;
@@ -77,16 +77,16 @@ export default function RootLayout() {
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const loadSavedTheme = async () => {
       if (themeLoadedRef.current) return;
-      
+
       try {
         const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
         if (!isMounted) return;
-        
+
         themeLoadedRef.current = true;
-        
+
         if (saved === 'system' || saved === 'dark' || saved === 'light') {
           setColorScheme(saved);
         } else if (!colorScheme) {
@@ -99,9 +99,9 @@ export default function RootLayout() {
         }
       }
     };
-    
+
     loadSavedTheme();
-    
+
     return () => {
       isMounted = false;
     };
@@ -152,7 +152,7 @@ export default function RootLayout() {
   // Log update state for debugging
   useEffect(() => {
     if (__DEV__ || !Updates.isEnabled) return;
-    
+
     log.log('📱 OTA State:', {
       isUpdateAvailable,
       isUpdatePending,
@@ -170,7 +170,7 @@ export default function RootLayout() {
     if (isUpdatePending && !hasAppliedUpdate.current) {
       hasAppliedUpdate.current = true;
       log.log('🚀 OTA: Update pending! Reloading app immediately...');
-      
+
       // Small delay to ensure any ongoing operations complete
       setTimeout(async () => {
         try {
@@ -205,11 +205,11 @@ export default function RootLayout() {
 
     try {
       const update = await Updates.checkForUpdateAsync();
-      
+
       if (update.isAvailable) {
         log.log('✅ OTA: Update found, downloading...');
         const fetchResult = await Updates.fetchUpdateAsync();
-        
+
         if (fetchResult.isNew && !hasAppliedUpdate.current) {
           hasAppliedUpdate.current = true;
           log.log('🚀 OTA: Reloading with new update...');
@@ -262,6 +262,26 @@ export default function RootLayout() {
         queryParams: parsedUrl.queryParams,
         scheme: parsedUrl.scheme,
       });
+
+      // Check for universal links (https://kortix.com/share/xxx or https://staging.suna.so/share/xxx)
+      const isUniversalLink = parsedUrl.scheme === 'https' &&
+        (parsedUrl.hostname === 'kortix.com' ||
+          parsedUrl.hostname === 'www.kortix.com' ||
+          parsedUrl.hostname === 'staging.suna.so');
+
+      // Handle universal link share paths first
+      if (isUniversalLink && parsedUrl.path?.startsWith('/share/')) {
+        const threadId = parsedUrl.path.replace('/share/', '');
+        if (threadId) {
+          console.log('📖 Opening shared thread (universal link):', threadId);
+          router.push({
+            pathname: '/share/[threadId]',
+            params: { threadId },
+          });
+        }
+        isHandlingDeepLink = false;
+        return;
+      }
 
       // Handle custom scheme: kortix://auth/callback
       if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
@@ -386,7 +406,7 @@ export default function RootLayout() {
             }
 
             log.log('✅ Session set! User logged in:', data.user?.email);
-            
+
             // Immediately invalidate React Query cache to fetch fresh account state
             log.log('🔄 Invalidating cache to fetch fresh account state');
             queryClientRef.current.invalidateQueries({ queryKey: ['account-state'] });
@@ -431,6 +451,32 @@ export default function RootLayout() {
           isHandlingDeepLink = false;
           router.replace('/auth');
         }
+      } else if (parsedUrl.path?.startsWith('share/') || parsedUrl.hostname === 'share') {
+        // Handle share links: kortix://share/xxx or https://kortix.com/share/xxx
+        console.log('🔗 Share link detected');
+
+        // Extract thread ID from path
+        let threadId: string | null = null;
+
+        if (parsedUrl.path?.startsWith('share/')) {
+          // Path format: share/xxx
+          threadId = parsedUrl.path.replace('share/', '');
+        } else if (parsedUrl.hostname === 'share' && parsedUrl.path) {
+          // Custom scheme format: kortix://share/xxx -> hostname=share, path=xxx
+          threadId = parsedUrl.path.replace(/^\//, '');
+        }
+
+        if (threadId) {
+          console.log('📖 Opening shared thread:', threadId);
+          router.push({
+            pathname: '/share/[threadId]',
+            params: { threadId },
+          });
+        } else {
+          console.warn('⚠️ Share link missing thread ID');
+        }
+
+        isHandlingDeepLink = false;
       } else {
         log.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
         isHandlingDeepLink = false;
@@ -480,33 +526,40 @@ export default function RootLayout() {
                           <BottomSheetModalProvider>
                             <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                               <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-<AuthProtection>
-                                  <Stack
-                                    screenOptions={{
-                                      headerShown: false,
+                              <AuthProtection>
+                                <Stack
+                                  screenOptions={{
+                                    headerShown: false,
+                                    animation: 'fade',
+                                  }}
+                                >
+                                  <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                  <Stack.Screen name="setting-up" />
+                                  <Stack.Screen name="onboarding" />
+                                  <Stack.Screen
+                                    name="home"
+                                    options={{
+                                      gestureEnabled: false,
+                                    }}
+                                  />
+                                  <Stack.Screen
+                                    name="auth"
+                                    options={{
+                                      gestureEnabled: false,
                                       animation: 'fade',
                                     }}
-                                  >
-                                    <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                    <Stack.Screen name="setting-up" />
-                                    <Stack.Screen name="onboarding" />
-                                    <Stack.Screen
-                                      name="home"
-                                      options={{
-                                        gestureEnabled: false,
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="auth"
-                                      options={{
-                                        gestureEnabled: false,
-                                        animation: 'fade',
-                                      }}
-                                    />
-                                    <Stack.Screen name="trigger-detail" />
-                                    <Stack.Screen name="worker-config" />
-                                  </Stack>
-                                </AuthProtection>
+                                  />
+                                  <Stack.Screen name="trigger-detail" />
+                                  <Stack.Screen name="worker-config" />
+                                  <Stack.Screen
+                                    name="share/[threadId]"
+                                    options={{
+                                      animation: 'slide_from_right',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
+                                </Stack>
+                              </AuthProtection>
                               <PortalHost />
                             </ThemeProvider>
                           </BottomSheetModalProvider>

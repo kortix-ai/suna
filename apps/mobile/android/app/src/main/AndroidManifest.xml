@@ -40,10 +40,19 @@
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
+      <intent-filter android:autoVerify="true" data-generated="true">
+        <action android:name="android.intent.action.VIEW"/>
+        <data android:scheme="https" android:host="kortix.com" android:pathPrefix="/share"/>
+        <data android:scheme="https" android:host="www.kortix.com" android:pathPrefix="/share"/>
+        <data android:scheme="https" android:host="staging.suna.so" android:pathPrefix="/share"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+      </intent-filter>
       <intent-filter data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
         <data android:scheme="kortix" android:host="auth" android:pathPrefix="/callback"/>
         <data android:scheme="kortix" android:host="auth" android:pathPrefix="/reset-password"/>
+        <data android:scheme="kortix" android:host="share"/>
         <data android:scheme="exp+kortix"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
