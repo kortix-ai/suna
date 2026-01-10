@@ -24,8 +24,10 @@ import { Platform, LogBox, AppState, AppStateStatus } from 'react-native';
 import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-reanimated';
 import { supabase } from '@/api/supabase';
 import * as Updates from 'expo-updates';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
-// Suppress known warning from react-native-markdown-display library
+const THEME_PREFERENCE_KEY = '@theme_preference';
+
 LogBox.ignoreLogs([
   'A props object containing a "key" prop is being spread into JSX',
 ]);
@@ -56,7 +58,6 @@ export default function RootLayout() {
     },
   }));
   
-  // Store queryClient in ref for deep link handler
   const queryClientRef = React.useRef(queryClient);
   React.useEffect(() => {
     queryClientRef.current = queryClient;
@@ -71,11 +72,40 @@ export default function RootLayout() {
     });
   }, []);
 
+  const themeLoadedRef = useRef(false);
+
   useEffect(() => {
-    if (!colorScheme) {
-      setColorScheme('light');
-    }
+    let isMounted = true;
+    
+    const loadSavedTheme = async () => {
+      if (themeLoadedRef.current) return;
+      
+      try {
+        const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
+        if (!isMounted) return;
+        
+        themeLoadedRef.current = true;
+        
+        if (saved === 'system' || saved === 'dark' || saved === 'light') {
+          setColorScheme(saved);
+        } else if (!colorScheme) {
+          setColorScheme('light');
+        }
+      } catch {
+        if (!isMounted) return;
+        if (!colorScheme) {
+          setColorScheme('light');
+        }
+      }
+    };
+    
+    loadSavedTheme();
+    
+    return () => {
+      isMounted = false;
+    };
   }, []);
+
 
   useEffect(() => {
     if (Platform.OS === 'ios') {
