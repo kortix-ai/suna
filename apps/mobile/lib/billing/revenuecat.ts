@@ -52,6 +52,12 @@ let currentInitializationParams: { userId: string; email?: string; canTrack: boo
 function ensureLogHandler(): void {
   try {
     Purchases.setLogHandler((logLevel, message) => {
+      // User cancellation is expected behavior, not an error - downgrade to info
+      const isCancelledMessage = 
+        message.toLowerCase().includes('cancelled') ||
+        message.toLowerCase().includes('canceled') ||
+        message.toLowerCase().includes('usercancelled');
+      
       switch (logLevel) {
         case LOG_LEVEL.VERBOSE:
           console.debug('[RC Verbose]', message);
@@ -63,10 +69,20 @@ function ensureLogHandler(): void {
           console.info('[RC Info]', message);
           break;
         case LOG_LEVEL.WARN:
-          console.warn('[RC Warn]', message);
+          // Downgrade cancellation warnings to debug level
+          if (isCancelledMessage) {
+            console.debug('[RC Debug]', message);
+          } else {
+            console.warn('[RC Warn]', message);
+          }
           break;
         case LOG_LEVEL.ERROR:
-          console.error('[RC Error]', message);
+          // Downgrade cancellation "errors" to info level - this is expected user behavior
+          if (isCancelledMessage) {
+            console.log('[RC Info] User cancelled purchase (expected behavior)');
+          } else {
+            console.error('[RC Error]', message);
+          }
           break;
       }
     });
@@ -540,6 +556,20 @@ export async function getCustomerInfo(): Promise<CustomerInfo> {
     // Ensure log handler is set before any SDK operations
     ensureLogHandler();
     const customerInfo = await Purchases.getCustomerInfo();
+    
+    // Log customer info for debugging
+    console.log('📊 [RevenueCat] CustomerInfo:', JSON.stringify({
+      originalAppUserId: customerInfo.originalAppUserId,
+      activeSubscriptions: customerInfo.activeSubscriptions,
+      allPurchasedProductIdentifiers: customerInfo.allPurchasedProductIdentifiers,
+      entitlements: {
+        active: Object.keys(customerInfo.entitlements.active),
+        all: Object.keys(customerInfo.entitlements.all),
+      },
+      latestExpirationDate: customerInfo.latestExpirationDate,
+      managementURL: customerInfo.managementURL ? '✓' : '✗',
+    }, null, 2));
+    
     return customerInfo;
   } catch (error) {
     console.error('❌ Error fetching customer info:', error);
@@ -565,17 +595,19 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
   const hasActiveEntitlement = Object.keys(entitlements).length > 0;
 
   if (!hasActiveEntitlement) {
-    return {
+    const info = {
       isActive: false,
       willRenew: false,
-      periodType: 'normal',
+      periodType: 'normal' as const,
       isSandbox: customerInfo.requestDate !== undefined,
     };
+    console.log('📊 [RevenueCat] SubscriptionInfo (no active entitlement):', JSON.stringify(info));
+    return info;
   }
 
   const activeEntitlement = Object.values(entitlements)[0];
 
-  return {
+  const info = {
     isActive: true,
     willRenew: activeEntitlement.willRenew,
     periodType: activeEntitlement.periodType as 'normal' | 'trial' | 'intro',
@@ -583,6 +615,9 @@ export function getSubscriptionInfo(customerInfo: CustomerInfo): RevenueCatSubsc
     productIdentifier: activeEntitlement.productIdentifier,
     isSandbox: customerInfo.requestDate !== undefined,
   };
+  
+  console.log('📊 [RevenueCat] SubscriptionInfo:', JSON.stringify(info));
+  return info;
 }
 
 export interface SyncResponse {
@@ -717,7 +752,9 @@ export async function presentPaywall(
         console.log(`📦 Current offering: ${allOfferings.current?.identifier || 'none'}`);
 
         // Throw error instead of falling back - the paywall names must match RevenueCat
-        throw new Error(`Paywall '${paywallName}' not found. Available: ${availableOfferingIds.join(', ')}`);
+        const error: any = new Error(`Paywall '${paywallName}' not found. Available: ${availableOfferingIds.join(', ')}`);
+        error.code = 'PAYWALL_NOT_FOUND';
+        throw error;
       }
     } else {
       // Default to current offering
@@ -725,13 +762,39 @@ export async function presentPaywall(
     }
 
     if (!offering) {
-      throw new Error('No offerings available to display');
+      const error: any = new Error('No offerings available to display');
+      error.code = 'NO_OFFERINGS';
+      throw error;
     }
 
+    // Log detailed offering info for debugging production issues
     console.log(`📱 Presenting RevenueCat paywall: ${offering.identifier}`);
+    console.log(`📦 Offering packages count: ${offering.availablePackages.length}`);
+    console.log(`📦 Package identifiers: ${offering.availablePackages.map((p) => p.identifier).join(', ')}`);
+    
+    // Check if offering has a paywall configured (required for RevenueCatUI)
+    // Note: 'paywall' property exists at runtime but may not be in TypeScript types
+    const offeringAny = offering as any;
+    const hasPaywall = offeringAny.paywall !== null && offeringAny.paywall !== undefined;
+    console.log(`📱 Offering has paywall template: ${hasPaywall}`);
+    
+    if (!hasPaywall) {
+      console.warn('⚠️ No paywall template configured for this offering in RevenueCat dashboard!');
+      console.warn('⚠️ Please configure a paywall in RevenueCat Dashboard > Paywalls');
+      // Throw a descriptive error so the caller can show the custom plan page instead
+      const error: any = new Error(
+        `No paywall template configured for offering '${offering.identifier}'. ` +
+        'Please configure a paywall in RevenueCat Dashboard > Paywalls.'
+      );
+      error.code = 'NO_PAYWALL_TEMPLATE';
+      error.offeringId = offering.identifier;
+      throw error;
+    }
 
     // Present the paywall using RevenueCatUI
+    console.log('📱 Calling RevenueCatUI.presentPaywall...');
     const result = await RevenueCatUI.presentPaywall({ offering });
+    console.log(`📱 RevenueCatUI.presentPaywall result: ${result}`);
 
     const purchased = result === RevenueCatUI.PAYWALL_RESULT.PURCHASED;
     const cancelled = result === RevenueCatUI.PAYWALL_RESULT.CANCELLED;
@@ -748,8 +811,14 @@ export async function presentPaywall(
     }
 
     return { purchased, cancelled };
-  } catch (error) {
-    console.error('❌ Error presenting paywall:', error);
+  } catch (error: any) {
+    // Log detailed error for debugging
+    console.error('❌ Error presenting paywall:', {
+      message: error?.message,
+      code: error?.code,
+      name: error?.name,
+      stack: error?.stack?.split('\n').slice(0, 3).join('\n'),
+    });
     throw error;
   }
 }

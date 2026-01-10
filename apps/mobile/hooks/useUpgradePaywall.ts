@@ -221,14 +221,27 @@ export function useUpgradePaywall(): UpgradePaywallResult {
     } catch (error: any) {
       // Log detailed error information for debugging
       console.error('❌ Error presenting paywall:', error?.message || error);
-      if (error?.code === 'CONFIGURATION_ERROR' || error?.code === 'OFFERING_NOT_FOUND') {
-        console.error('📋 Configuration details:', {
+      
+      // Check for specific error codes that indicate we should fall back to custom page
+      const shouldFallback = 
+        error?.code === 'NO_PAYWALL_TEMPLATE' ||
+        error?.code === 'CONFIGURATION_ERROR' ||
+        error?.code === 'OFFERING_NOT_FOUND' ||
+        error?.code === 'PAYWALL_NOT_FOUND' ||
+        error?.code === 'NO_OFFERINGS';
+      
+      if (shouldFallback) {
+        console.warn('⚠️ RevenueCat paywall unavailable, should use custom plan page');
+        console.warn('📋 Configuration details:', {
           paywallName: getPaywallForTier(tierKey),
           currentTier: tierKey,
+          errorCode: error?.code,
           availableOfferings: error?.availableOfferings,
-          originalError: error?.originalError,
         });
+        // Return a special result indicating we need the custom page
+        return { purchased: false, cancelled: true, needsCustomPage: true } as any;
       }
+      
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return { purchased: false, cancelled: true };
     }

@@ -244,7 +244,39 @@ export const billingApi = {
    */
   async getAccountState(skipCache = false): Promise<AccountState> {
     const params = skipCache ? '?skip_cache=true' : '';
-    return fetchApi<AccountState>(`/billing/account-state${params}`);
+    const data = await fetchApi<AccountState>(`/billing/account-state${params}`);
+    
+    // Log received account state for debugging
+    console.log('📊 [AccountState] Received:', JSON.stringify({
+      subscription: {
+        tier_key: data.subscription?.tier_key,
+        tier_display_name: data.subscription?.tier_display_name,
+        status: data.subscription?.status,
+        provider: data.subscription?.provider,
+        billing_period: data.subscription?.billing_period,
+        is_trial: data.subscription?.is_trial,
+        is_cancelled: data.subscription?.is_cancelled,
+        has_scheduled_change: data.subscription?.has_scheduled_change,
+        subscription_id: data.subscription?.subscription_id ? '✓' : '✗',
+      },
+      credits: {
+        total: data.credits?.total,
+        daily: data.credits?.daily,
+        monthly: data.credits?.monthly,
+        extra: data.credits?.extra,
+        can_run: data.credits?.can_run,
+      },
+      tier: {
+        name: data.tier?.name,
+        display_name: data.tier?.display_name,
+        monthly_credits: data.tier?.monthly_credits,
+      },
+      models_count: data.models?.length,
+      allowed_models: data.models?.filter(m => m.allowed).map(m => m.id),
+      _cache: data._cache,
+    }, null, 2));
+    
+    return data;
   },
 
   async createCheckoutSession(

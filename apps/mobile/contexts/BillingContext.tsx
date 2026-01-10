@@ -150,6 +150,29 @@ export function BillingProvider({ children }: BillingProviderProps) {
       needsInitialFetch,
       isLoading,
     });
+    
+    // Log full subscription data when available (for debugging)
+    if (subscriptionData) {
+      console.log('📋 [BillingContext] Full subscriptionData:', JSON.stringify({
+        status: subscriptionData.status,
+        plan_name: subscriptionData.plan_name,
+        tier_key: subscriptionData.tier_key,
+        billing_period: subscriptionData.billing_period,
+        provider: subscriptionData.provider,
+        is_trial: subscriptionData.is_trial,
+        trial_status: subscriptionData.trial_status,
+        has_scheduled_change: subscriptionData.has_scheduled_change,
+        subscription: subscriptionData.subscription ? {
+          id: subscriptionData.subscription.id ? '✓' : '✗',
+          status: subscriptionData.subscription.status,
+          tier_key: subscriptionData.subscription.tier_key,
+          cancel_at_period_end: subscriptionData.subscription.cancel_at_period_end,
+        } : null,
+        tier: subscriptionData.tier,
+        credits: subscriptionData.credits,
+        revenuecat_product_id: (subscriptionData as any).revenuecat_product_id,
+      }, null, 2));
+    }
   }, [
     authLoading,
     shouldFetchBilling,
@@ -181,7 +204,9 @@ export function BillingProvider({ children }: BillingProviderProps) {
       // Refetch latest status
       const { data } = await refetchStatus();
 
-      if (data?.can_run) {
+      // can_run is nested under credits in AccountState
+      const canRun = (data as any)?.can_run ?? data?.credits?.can_run;
+      if (canRun) {
         console.log('✅ Billing check passed');
         return true;
       } else {
