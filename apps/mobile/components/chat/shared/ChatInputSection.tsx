@@ -6,6 +6,7 @@ import { useColorScheme } from 'nativewind';
 import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
 import Animated, { useAnimatedStyle, interpolate } from 'react-native-reanimated';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
+import { ToolSnack, type ToolSnackData } from '../ToolSnack';
 import { AttachmentBar } from '@/components/attachments';
 import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/components/quick-actions';
 import { useLanguage } from '@/contexts';
@@ -64,6 +65,16 @@ export interface ChatInputSectionProps {
 
   // Show quick actions (mode selector)
   showQuickActions?: boolean;
+
+  // Tool Snack props (only shown in thread view, not home)
+  /** Current/last tool data for the snack display (persisted by parent) */
+  activeToolData?: ToolSnackData | null;
+  /** Agent name for the snack status text */
+  agentName?: string;
+  /** Callback when pressing the tool snack to expand */
+  onToolSnackPress?: () => void;
+  /** Callback when user swipes to dismiss the tool snack */
+  onToolSnackDismiss?: () => void;
 }
 
 export interface ChatInputSectionRef {
@@ -159,6 +170,10 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   isTranscribing,
   containerClassName = "mx-3 mb-4",
   showQuickActions = false,
+  activeToolData,
+  agentName,
+  onToolSnackPress,
+  onToolSnackDismiss,
 }, ref) => {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
@@ -254,6 +269,21 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           attachments={attachments}
           onRemove={onRemoveAttachment}
         />
+
+        {/* Tool Snack - Above Input (only in thread view, not home) */}
+        {(() => {
+          console.log('[ChatInputSection] ToolSnack check - showQuickActions:', showQuickActions, 'activeToolData:', activeToolData?.toolName || 'null');
+          return null;
+        })()}
+        {!showQuickActions && (
+          <ToolSnack
+            toolData={activeToolData || null}
+            isAgentRunning={isAgentRunning}
+            agentName={agentName}
+            onPress={onToolSnackPress}
+            onDismiss={onToolSnackDismiss}
+          />
+        )}
 
         {/* Quick Action Expanded Content - Above Input (only on home) */}
         {showQuickActions && selectedQuickAction && selectedAction && (
