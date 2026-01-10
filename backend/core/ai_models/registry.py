@@ -132,7 +132,11 @@ class ModelRegistry:
             priority=50,
             recommended=False,
             enabled=True,
-            config=ModelConfig()
+            config=ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19"
+                },
+            )
         ))
         
         # Kortix Test - uses MiniMax M2.1 via direct API (only in LOCAL and STAGING, not PRODUCTION)
