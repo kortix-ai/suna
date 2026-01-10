@@ -1266,7 +1266,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
             return (
               <View key={group.key} className="mb-6">
-                <View className="mb-4 flex-row items-center">
+                <View className="mb-1 flex-row items-center">
                   {renderAgentIndicator(groupAgentId)}
                 </View>
 
@@ -1564,7 +1564,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       });
                       return !hasAskOrComplete;
                     })() && (
-                      <View className="mt-2">
+                      <View className="mt-4">
                         <AgentLoader />
                       </View>
                     )}
@@ -1608,7 +1608,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                   <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
                 </View>
               ) : (
-                <AgentLoader />
+                <View className="mt-4">
+                  <AgentLoader />
+                </View>
               )}
               </View>
             </View>
