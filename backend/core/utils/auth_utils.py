@@ -341,7 +341,7 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         structlog.error(f"Error verifying agent access for agent {agent_id}, user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to verify agent access")
 
-async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Optional[str]):
+async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Optional[str], require_write_access: bool = False):
     """
     Verify that a user has access to a thread.
     Supports both authenticated and anonymous access (for public threads).
@@ -350,6 +350,7 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
         client: Supabase client
         thread_id: Thread ID to check
         user_id: User ID (can be None for anonymous users accessing public threads)
+        require_write_access: If True, public threads only grant read access (default False for backward compatibility)
     """
     from core.services.db import execute_one
     
@@ -387,13 +388,20 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
         if not result:
             raise HTTPException(status_code=404, detail="Thread not found")
         
-        # Check if project is public - allow anonymous access
+        # Check if project is public - allow anonymous READ access only
         if result.get('project_is_public'):
-            structlog.get_logger().debug(f"Public thread access granted: {thread_id}")
-            return True
+            if require_write_access:
+                # Public threads are read-only for non-owners
+                # Continue to check if user is owner/team member/admin
+                structlog.get_logger().debug(f"Public thread write access requested, checking ownership: {thread_id}")
+            else:
+                structlog.get_logger().debug(f"Public thread read access granted: {thread_id}")
+                return True
         
-        # If not public, user must be authenticated
+        # If not public (or write access required), user must be authenticated
         if not user_id:
+            if require_write_access:
+                raise HTTPException(status_code=403, detail="Authentication required to modify this thread")
             raise HTTPException(status_code=403, detail="Authentication required for private threads")
         
         # Check if user is an admin (admins have access to all threads)
@@ -410,6 +418,8 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
         if result.get('is_team_member'):
             return True
         
+        if require_write_access:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this thread")
         raise HTTPException(status_code=403, detail="Not authorized to access this thread")
     except HTTPException:
         raise
@@ -429,7 +439,8 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
 
 async def get_authorized_user_for_thread(
     thread_id: str,
-    request: Request
+    request: Request,
+    require_write_access: bool = False
 ) -> str:
     """
     FastAPI dependency that verifies JWT and authorizes thread access.
@@ -437,6 +448,7 @@ async def get_authorized_user_for_thread(
     Args:
         thread_id: The thread ID to authorize access for
         request: The FastAPI request object
+        require_write_access: If True, requires write access (not just public read access)
         
     Returns:
         str: The authenticated and authorized user ID
@@ -452,7 +464,7 @@ async def get_authorized_user_for_thread(
     # Then, authorize thread access - use singleton, already initialized
     db = DBConnection()
     client = await db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=require_write_access)
     
     return user_id
 
@@ -522,7 +534,8 @@ async def require_thread_access(
     request: Request
 ) -> AuthorizedThreadAccess:
     """
-    FastAPI dependency that verifies JWT and authorizes thread access.
+    FastAPI dependency that verifies JWT and authorizes thread access (read-only).
+    For public threads, allows read access to anyone.
     
     Args:
         thread_id: The thread ID from the path parameter
@@ -534,7 +547,28 @@ async def require_thread_access(
     Raises:
         HTTPException: If authentication fails or user lacks thread access
     """
-    user_id = await get_authorized_user_for_thread(thread_id, request)
+    user_id = await get_authorized_user_for_thread(thread_id, request, require_write_access=False)
+    return AuthorizedThreadAccess(user_id)
+
+async def require_thread_write_access(
+    thread_id: str,
+    request: Request
+) -> AuthorizedThreadAccess:
+    """
+    FastAPI dependency that verifies JWT and authorizes thread WRITE access.
+    Public threads only grant read access - this ensures only owners/team members/admins can modify.
+    
+    Args:
+        thread_id: The thread ID from the path parameter
+        request: The FastAPI request object
+        
+    Returns:
+        AuthorizedThreadAccess: Object containing authenticated user_id
+        
+    Raises:
+        HTTPException: If authentication fails or user lacks write access to thread
+    """
+    user_id = await get_authorized_user_for_thread(thread_id, request, require_write_access=True)
     return AuthorizedThreadAccess(user_id)
 
 async def require_agent_access(

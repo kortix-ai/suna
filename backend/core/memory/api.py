@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from typing import Optional, List
 from pydantic import BaseModel
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, require_thread_write_access, AuthorizedThreadAccess
 from core.utils.logger import logger
 from core.services.supabase import DBConnection
 from core.billing import subscription_service
@@ -379,7 +379,7 @@ async def get_thread_memory_settings(
 async def update_thread_memory_settings(
     thread_id: str,
     enabled: bool = Body(..., embed=True),
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    auth: AuthorizedThreadAccess = Depends(require_thread_write_access)
 ):
     if not config.ENABLE_MEMORY:
         raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
@@ -393,7 +393,7 @@ async def update_thread_memory_settings(
             'p_enabled': enabled
         }).execute()
         
-        logger.info(f"User {user_id} set memory_enabled to {enabled} for thread {thread_id}")
+        logger.info(f"User {auth.user_id} set memory_enabled to {enabled} for thread {thread_id}")
         
         return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=enabled)
     
