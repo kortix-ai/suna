@@ -700,8 +700,9 @@ async def get_llm_messages_paginated(
 
 
 async def get_thread_metadata(thread_id: str) -> Optional[Dict[str, Any]]:
+    from core.services.db import execute_one_read
     sql = "SELECT metadata FROM threads WHERE thread_id = :thread_id"
-    result = await execute_one(sql, {"thread_id": thread_id})
+    result = await execute_one_read(sql, {"thread_id": thread_id})
     return result["metadata"] if result else None
 
 
