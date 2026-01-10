@@ -12,6 +12,7 @@ import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/compon
 import { useLanguage } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
+import { log } from '@/lib/logger';
 
 export interface ChatInputSectionProps {
   // Chat input props
@@ -272,7 +273,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
         {/* Tool Snack - Above Input (only in thread view, not home) */}
         {(() => {
-          console.log('[ChatInputSection] ToolSnack check - showQuickActions:', showQuickActions, 'activeToolData:', activeToolData?.toolName || 'null');
+          log.log('[ChatInputSection] ToolSnack check - showQuickActions:', showQuickActions, 'activeToolData:', activeToolData?.toolName || 'null');
           return null;
         })()}
         {!showQuickActions && (

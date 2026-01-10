@@ -19,6 +19,7 @@ import { useBillingContext } from '@/contexts/BillingContext';
 import { FreeTierBlock } from '@/components/billing/FreeTierBlock';
 import { useRouter } from 'expo-router';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { log } from '@/lib/logger';
 
 interface ComposioAppsContentProps {
   onBack?: () => void;
@@ -106,7 +107,7 @@ export function ComposioAppsContent({
         return;
       }
 
-      console.log('🎯 App selected:', app.name);
+      log.log('🎯 App selected:', app.name);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       if (onAppSelect) {

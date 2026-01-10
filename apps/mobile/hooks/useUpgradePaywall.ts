@@ -9,6 +9,7 @@
  * - Ultra subscription → Topups Paywall (one-time purchases)
  */
 
+import { log } from '@/lib/logger';
 import { useCallback } from 'react';
 import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -28,11 +29,11 @@ export async function logAvailablePaywalls(): Promise<string[]> {
   try {
     const offerings = await Purchases.getOfferings();
     const offeringIds = Object.keys(offerings.all);
-    console.log('📦 Available RevenueCat offerings:', offeringIds);
-    console.log('📦 Current offering:', offerings.current?.identifier || 'none');
+    log.log('📦 Available RevenueCat offerings:', offeringIds);
+    log.log('📦 Current offering:', offerings.current?.identifier || 'none');
     return offeringIds;
   } catch (error) {
-    console.error('❌ Error fetching offerings:', error);
+    log.error('❌ Error fetching offerings:', error);
     return [];
   }
 }
@@ -132,7 +133,7 @@ export function useUpgradePaywall(): UpgradePaywallResult {
 
   // Debug logging to help troubleshoot tier detection
   React.useEffect(() => {
-    console.log('🔍 [UPGRADE_PAYWALL] Tier detection:', {
+    log.log('🔍 [UPGRADE_PAYWALL] Tier detection:', {
       accountStateTier: accountState?.subscription?.tier_key,
       subscriptionDataTier: subscriptionData?.tier_key,
       subscriptionTier: subscriptionData?.subscription?.tier_key,
@@ -154,14 +155,14 @@ export function useUpgradePaywall(): UpgradePaywallResult {
     try {
       // Determine paywall based on current subscription tier
       const paywallToShow = getPaywallForTier(tierKey);
-      console.log(
+      log.log(
         `📱 Presenting RevenueCat paywall: ${paywallToShow} (current tier: ${tierKey || 'none'})`
       );
 
       const result = await presentPaywall(paywallToShow);
 
       if (result.purchased) {
-        console.log('✅ Purchase completed from paywall');
+        log.log('✅ Purchase completed from paywall');
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
         // Force immediate refetch of all billing data
@@ -188,17 +189,17 @@ export function useUpgradePaywall(): UpgradePaywallResult {
               const updatedData = queryClient.getQueryData(accountStateKeys.state());
               if (updatedData) {
                 const tierKey = (updatedData as any)?.subscription?.tier_key;
-                console.log(`🔄 Billing data refreshed after purchase (tier: ${tierKey})`);
+                log.log(`🔄 Billing data refreshed after purchase (tier: ${tierKey})`);
                 break;
               }
 
               // If not updated and we have retries left, wait and try again
               if (i < retries - 1) {
-                console.log(`⏳ Waiting for backend sync, retry ${i + 1}/${retries}...`);
+                log.log(`⏳ Waiting for backend sync, retry ${i + 1}/${retries}...`);
                 await new Promise((resolve) => setTimeout(resolve, 1000));
               }
             } catch (error) {
-              console.warn('⚠️ Error refetching billing data:', error);
+              log.warn('⚠️ Error refetching billing data:', error);
               if (i < retries - 1) {
                 await new Promise((resolve) => setTimeout(resolve, 1000));
               }
@@ -211,16 +212,16 @@ export function useUpgradePaywall(): UpgradePaywallResult {
         // Also trigger BillingContext refetch to update all components
         refetchAllBilling();
       } else if (result.cancelled) {
-        console.log('🚫 User cancelled paywall');
+        log.log('🚫 User cancelled paywall');
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       } else {
-        console.log('ℹ️ Paywall was dismissed without purchase');
+        log.log('ℹ️ Paywall was dismissed without purchase');
       }
 
       return result;
     } catch (error: any) {
       // Log detailed error information for debugging
-      console.error('❌ Error presenting paywall:', error?.message || error);
+      log.error('❌ Error presenting paywall:', error?.message || error);
       
       // Check for specific error codes that indicate we should fall back to custom page
       const shouldFallback = 
@@ -231,8 +232,8 @@ export function useUpgradePaywall(): UpgradePaywallResult {
         error?.code === 'NO_OFFERINGS';
       
       if (shouldFallback) {
-        console.warn('⚠️ RevenueCat paywall unavailable, should use custom plan page');
-        console.warn('📋 Configuration details:', {
+        log.warn('⚠️ RevenueCat paywall unavailable, should use custom plan page');
+        log.warn('📋 Configuration details:', {
           paywallName: getPaywallForTier(tierKey),
           currentTier: tierKey,
           errorCode: error?.code,

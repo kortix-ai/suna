@@ -1,6 +1,7 @@
 import React from 'react';
 import { TextProps } from 'react-native';
 import { UITextView } from 'react-native-uitextview';
+import { log } from '@/lib/logger';
 
 export interface SelectableUITextProps extends TextProps {
     /**
@@ -23,7 +24,7 @@ export interface SelectableUITextProps extends TextProps {
  */
 export const SelectableUIText = React.forwardRef<any, SelectableUITextProps>(
     ({ children, ...props }, ref) => {
-        console.log('[SelectableUIText] Props:', {
+        log.log('[SelectableUIText] Props:', {
             hasChildren: !!children,
             childrenType: typeof children,
             isArray: Array.isArray(children),
@@ -35,7 +36,7 @@ export const SelectableUIText = React.forwardRef<any, SelectableUITextProps>(
 
         if (React.Children.count(children) > 0) {
             const firstChild = React.Children.toArray(children)[0];
-            console.log('[SelectableUIText] First child:', {
+            log.log('[SelectableUIText] First child:', {
                 type: typeof firstChild,
                 isReactElement: React.isValidElement(firstChild),
                 value: typeof firstChild === 'string' ? firstChild.substring(0, 50) : 'not a string',

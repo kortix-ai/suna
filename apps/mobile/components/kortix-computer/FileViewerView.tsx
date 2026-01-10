@@ -47,6 +47,7 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { API_URL, getAuthToken } from '@/api/config';
 import { KortixComputerHeader } from './KortixComputerHeader';
 import { VersionBanner } from './VersionBanner';
+import { log } from '@/lib/logger';
 
 interface FileViewerViewProps {
   sandboxId: string;
@@ -181,7 +182,7 @@ export function FileViewerView({
         versionBlob.text().then((text) => {
           setLocalContent(text);
         }).catch((error) => {
-          console.error('Failed to convert version blob to text:', error);
+          log.error('Failed to convert version blob to text:', error);
           setLocalContent('');
         });
       }
@@ -252,7 +253,7 @@ export function FileViewerView({
         setSaveStatus('idle');
       }, 2000);
     } catch (error) {
-      console.error('Save error:', error);
+      log.error('Save error:', error);
       setSaveStatus('error');
       Alert.alert('Error', 'Failed to save file');
     } finally {
@@ -321,7 +322,7 @@ export function FileViewerView({
         Alert.alert('Error', 'No content available to download');
       }
     } catch (error) {
-      console.error('Download failed:', error);
+      log.error('Download failed:', error);
       Alert.alert('Error', 'Failed to download file');
     } finally {
       setIsDownloading(false);

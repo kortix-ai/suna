@@ -13,6 +13,7 @@ import it from '@/locales/it.json';
 import pt from '@/locales/pt.json';
 import zh from '@/locales/zh.json';
 import ja from '@/locales/ja.json';
+import { log } from '@/lib/logger';
 
 const LANGUAGE_KEY = '@kortix_language';
 
@@ -46,7 +47,7 @@ export const initializeI18n = async () => {
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.user_metadata?.locale && SUPPORTED_LOCALES.includes(user.user_metadata.locale as SupportedLocale)) {
         initialLanguage = user.user_metadata.locale as SupportedLocale;
-        console.log(`✅ Using user metadata locale (highest priority): ${initialLanguage}`);
+        log.log(`✅ Using user metadata locale (highest priority): ${initialLanguage}`);
         
         // Save to AsyncStorage for consistency
         await AsyncStorage.setItem(LANGUAGE_KEY, initialLanguage);
@@ -67,26 +68,26 @@ export const initializeI18n = async () => {
             },
           });
         
-        console.log('✅ i18n initialized with user profile locale:', i18n.language);
+        log.log('✅ i18n initialized with user profile locale:', i18n.language);
         return;
       }
     } catch (error) {
       // User might not be authenticated, continue with other methods
-      console.debug('Could not fetch user locale from profile:', error);
+      log.debug('Could not fetch user locale from profile:', error);
     }
 
     // Priority 2: Get saved language from AsyncStorage (user's explicit preference)
     const savedLanguage = await AsyncStorage.getItem(LANGUAGE_KEY);
-    console.log('🌍 Saved language preference:', savedLanguage);
+    log.log('🌍 Saved language preference:', savedLanguage);
     
     if (savedLanguage && SUPPORTED_LOCALES.includes(savedLanguage as SupportedLocale)) {
       initialLanguage = savedLanguage as SupportedLocale;
-      console.log('✅ Using saved language preference:', initialLanguage);
+      log.log('✅ Using saved language preference:', initialLanguage);
     } else {
       // Priority 3: Geo-detect based on device settings and timezone
       const detectedLocale = detectBestLocale();
       initialLanguage = detectedLocale;
-      console.log('✅ Using geo-detected locale:', initialLanguage);
+      log.log('✅ Using geo-detected locale:', initialLanguage);
       
       // Save the detected locale so we don't detect again
       // User can still change it manually in settings
@@ -108,9 +109,9 @@ export const initializeI18n = async () => {
         },
       });
 
-    console.log('✅ i18n initialized with language:', i18n.language);
+    log.log('✅ i18n initialized with language:', i18n.language);
   } catch (error) {
-    console.error('❌ i18n initialization error:', error);
+    log.error('❌ i18n initialization error:', error);
     // Fallback to default locale on error
     await i18n
       .use(initReactI18next)
@@ -135,11 +136,11 @@ export const initializeI18n = async () => {
  */
 export const changeLanguage = async (languageCode: string) => {
   try {
-    console.log('🌍 Changing language to:', languageCode);
+    log.log('🌍 Changing language to:', languageCode);
     
     // Validate language code
     if (!SUPPORTED_LOCALES.includes(languageCode as SupportedLocale)) {
-      console.warn(`⚠️ Invalid language code: ${languageCode}, using default`);
+      log.warn(`⚠️ Invalid language code: ${languageCode}, using default`);
       languageCode = DEFAULT_LOCALE;
     }
     
@@ -158,19 +159,19 @@ export const changeLanguage = async (languageCode: string) => {
         });
         
         if (error) {
-          console.warn('⚠️ Could not update user profile locale:', error);
+          log.warn('⚠️ Could not update user profile locale:', error);
         } else {
-          console.log('✅ Language updated in user profile:', languageCode);
+          log.log('✅ Language updated in user profile:', languageCode);
         }
       }
     } catch (error) {
       // User might not be authenticated, that's okay
-      console.debug('Could not update user profile locale (user not authenticated):', error);
+      log.debug('Could not update user profile locale (user not authenticated):', error);
     }
     
-    console.log('✅ Language changed and saved:', languageCode);
+    log.log('✅ Language changed and saved:', languageCode);
   } catch (error) {
-    console.error('❌ Language change error:', error);
+    log.error('❌ Language change error:', error);
   }
 };
 

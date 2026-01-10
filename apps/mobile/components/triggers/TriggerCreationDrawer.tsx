@@ -52,6 +52,7 @@ import { ComposioConnectorContent } from '../settings/integrations/ComposioConne
 import type { TriggerApp, ComposioTriggerType } from '@/api/types';
 import { SvgUri } from 'react-native-svg';
 import { useLanguage } from '@/contexts/LanguageContext';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -536,7 +537,7 @@ export function TriggerCreationDrawer({
             },
           });
 
-          console.log('✅ Event trigger updated successfully:', result.trigger_id);
+          log.log('✅ Event trigger updated successfully:', result.trigger_id);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           onTriggerUpdated?.(result.trigger_id);
         } else {
@@ -575,14 +576,14 @@ export function TriggerCreationDrawer({
             },
           });
 
-          console.log('✅ Schedule trigger updated successfully:', result.trigger_id);
+          log.log('✅ Schedule trigger updated successfully:', result.trigger_id);
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           onTriggerUpdated?.(result.trigger_id);
         }
 
         onClose();
       } catch (error: any) {
-        console.error('❌ Error updating trigger:', error);
+        log.error('❌ Error updating trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
 
         // Extract user-friendly error message using utility function
@@ -648,13 +649,13 @@ export function TriggerCreationDrawer({
 
         const result = await createEventTriggerMutation.mutateAsync(payload);
 
-        console.log('✅ Event trigger created successfully:', result.trigger_id);
+        log.log('✅ Event trigger created successfully:', result.trigger_id);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
         onTriggerCreated?.(result.trigger_id);
         onClose();
       } catch (error: any) {
-        console.error('❌ Error creating event trigger:', error);
+        log.error('❌ Error creating event trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
 
         // Extract user-friendly error message using utility function
@@ -711,13 +712,13 @@ export function TriggerCreationDrawer({
           },
         });
 
-        console.log('✅ Trigger created successfully:', result.trigger_id);
+        log.log('✅ Trigger created successfully:', result.trigger_id);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
         onTriggerCreated?.(result.trigger_id);
         onClose();
       } catch (error: any) {
-        console.error('❌ Error creating trigger:', error);
+        log.error('❌ Error creating trigger:', error);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
 
         // Extract user-friendly error message using utility function

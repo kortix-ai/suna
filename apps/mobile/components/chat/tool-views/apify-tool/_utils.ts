@@ -1,4 +1,5 @@
 import { ToolCallData, ToolResultData } from '../types';
+import { log } from '@/lib/logger';
 
 export interface ApifyActor {
   actor_id: string;
@@ -174,7 +175,7 @@ export function extractApifySearchData(
 
     return defaultReturn;
   } catch (error) {
-    console.error('extractApifySearchData error:', error);
+    log.error('extractApifySearchData error:', error);
     return defaultReturn;
   }
 }
@@ -273,7 +274,7 @@ export function extractApifyActorDetails(
 
     return defaultReturn;
   } catch (error) {
-    console.error('extractApifyActorDetails error:', error);
+    log.error('extractApifyActorDetails error:', error);
     return defaultReturn;
   }
 }
@@ -363,7 +364,7 @@ export function extractApifyRunData(
 
     return defaultReturn;
   } catch (error) {
-    console.error('extractApifyRunData error:', error);
+    log.error('extractApifyRunData error:', error);
     return defaultReturn;
   }
 }
@@ -453,7 +454,7 @@ export function extractApifyApprovalData(
 
     return null;
   } catch (error) {
-    console.error('extractApifyApprovalData error:', error);
+    log.error('extractApifyApprovalData error:', error);
     return null;
   }
 }
@@ -532,7 +533,7 @@ export function extractApifyRunResultsData(
 
     return defaultReturn;
   } catch (error) {
-    console.error('extractApifyRunResultsData error:', error);
+    log.error('extractApifyRunResultsData error:', error);
     return defaultReturn;
   }
 }

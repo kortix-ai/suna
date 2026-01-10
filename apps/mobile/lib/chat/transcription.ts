@@ -7,6 +7,7 @@
 
 import { API_URL, getAuthToken } from '@/api/config';
 import * as FileSystem from 'expo-file-system/legacy';
+import { log } from '@/lib/logger';
 
 export interface TranscriptionResult {
   text: string;
@@ -32,25 +33,25 @@ export interface TranscriptionError {
 async function waitForFileToExist(uri: string, maxRetries: number = 10, initialDelay: number = 200): Promise<boolean> {
   for (let i = 0; i < maxRetries; i++) {
     const delay = initialDelay + (i * 100); // Exponential backoff
-    console.log(`🔍 Retry ${i + 1}/${maxRetries}: Waiting ${delay}ms before checking file...`);
+    log.log(`🔍 Retry ${i + 1}/${maxRetries}: Waiting ${delay}ms before checking file...`);
     await new Promise(resolve => setTimeout(resolve, delay));
     
     try {
       const fileInfo = await FileSystem.getInfoAsync(uri);
       if (fileInfo.exists) {
-        console.log(`✅ File exists after retry ${i + 1}!`);
+        log.log(`✅ File exists after retry ${i + 1}!`);
         return true;
       }
-      console.log(`⚠️ File still doesn't exist (attempt ${i + 1}/${maxRetries})`);
+      log.log(`⚠️ File still doesn't exist (attempt ${i + 1}/${maxRetries})`);
     } catch (error) {
-      console.log(`⚠️ Error checking file (attempt ${i + 1}/${maxRetries}):`, error);
+      log.log(`⚠️ Error checking file (attempt ${i + 1}/${maxRetries}):`, error);
     }
   }
   return false;
 }
 
 export async function saveAudioToFileSystem(temporaryUri: string): Promise<string> {
-  console.log('💾 Saving audio to file system:', temporaryUri);
+  log.log('💾 Saving audio to file system:', temporaryUri);
   
   // Validate the URI
   if (!temporaryUri || temporaryUri.trim() === '') {
@@ -58,27 +59,27 @@ export async function saveAudioToFileSystem(temporaryUri: string): Promise<strin
   }
   
   // Wait for file to exist with retries
-  console.log('⏳ Waiting for audio file to be written to disk...');
+  log.log('⏳ Waiting for audio file to be written to disk...');
   const fileExists = await waitForFileToExist(temporaryUri);
   
   if (!fileExists) {
-    console.error('❌ File never appeared on disk after all retries');
+    log.error('❌ File never appeared on disk after all retries');
     throw new Error(`Source audio file does not exist: ${temporaryUri}`);
   }
   
   // Read the file
-  console.log('📖 Reading audio file...');
+  log.log('📖 Reading audio file...');
   const base64Data = await FileSystem.readAsStringAsync(temporaryUri, {
     encoding: FileSystem.EncodingType.Base64,
   });
-  console.log('✅ Audio data read:', base64Data.length, 'chars');
+  log.log('✅ Audio data read:', base64Data.length, 'chars');
   
   // Save to permanent location
   const timestamp = Date.now();
   const filename = `audio-recording-${timestamp}.m4a`;
   const permanentPath = `${FileSystem.cacheDirectory}${filename}`;
   
-  console.log('💾 Writing to permanent file:', permanentPath);
+  log.log('💾 Writing to permanent file:', permanentPath);
   await FileSystem.writeAsStringAsync(permanentPath, base64Data, {
     encoding: FileSystem.EncodingType.Base64,
   });
@@ -89,7 +90,7 @@ export async function saveAudioToFileSystem(temporaryUri: string): Promise<strin
     throw new Error(`Failed to save file. File does not exist: ${permanentPath}`);
   }
   
-  console.log('✅ Audio saved successfully to:', permanentPath);
+  log.log('✅ Audio saved successfully to:', permanentPath);
   
   return permanentPath;
 }
@@ -101,11 +102,11 @@ export async function saveAudioToFileSystem(temporaryUri: string): Promise<strin
  */
 export async function deleteCachedAudio(uri: string): Promise<void> {
   try {
-    console.log('🗑️ Deleting cached audio:', uri);
+    log.log('🗑️ Deleting cached audio:', uri);
     await FileSystem.deleteAsync(uri, { idempotent: true });
-    console.log('✅ Cached audio deleted');
+    log.log('✅ Cached audio deleted');
   } catch (error) {
-    console.warn('⚠️ Failed to delete cached audio:', error);
+    log.warn('⚠️ Failed to delete cached audio:', error);
     // Don't throw - cleanup failures shouldn't break the flow
   }
 }
@@ -122,7 +123,7 @@ export async function transcribeAudio(
   onProgress?: (progress: number) => void
 ): Promise<string> {
   try {
-    console.log('🎤 Transcribing audio:', audioUri);
+    log.log('🎤 Transcribing audio:', audioUri);
     
     // Get auth token
     const token = await getAuthToken();
@@ -147,8 +148,8 @@ export async function transcribeAudio(
     }
     // Note: .m4a files should use 'audio/mp4' not 'audio/m4a'
     
-    console.log('📤 Preparing audio file for upload...');
-    console.log('📊 File:', filename, 'Type:', mimeType);
+    log.log('📤 Preparing audio file for upload...');
+    log.log('📊 File:', filename, 'Type:', mimeType);
     
     // In React Native, we send the file directly as a URI
     // Create FormData with the file URI
@@ -161,22 +162,22 @@ export async function transcribeAudio(
       name: filename,
     } as any);
     
-    console.log('✅ FormData created with audio URI');
+    log.log('✅ FormData created with audio URI');
 
-    console.log('📤 Uploading audio for transcription');
-    console.log('📊 API URL:', `${API_URL}/transcription`);
-    console.log('📊 Auth token (first 20 chars):', token.substring(0, 20) + '...');
+    log.log('📤 Uploading audio for transcription');
+    log.log('📊 API URL:', `${API_URL}/transcription`);
+    log.log('📊 Auth token (first 20 chars):', token.substring(0, 20) + '...');
 
     // Create abort controller for timeout
     const controller = new AbortController();
     const timeoutId = setTimeout(() => {
-      console.error('⏰ Request timeout after 60 seconds');
+      log.error('⏰ Request timeout after 60 seconds');
       controller.abort();
     }, 60000); // 60 second timeout
 
     try {
       // Make API request with timeout
-      console.log('📤 Sending fetch request...');
+      log.log('📤 Sending fetch request...');
       const response = await fetch(`${API_URL}/transcription`, {
         method: 'POST',
         headers: {
@@ -188,13 +189,13 @@ export async function transcribeAudio(
       });
 
       clearTimeout(timeoutId);
-      console.log('📡 Transcription response status:', response.status);
-      console.log('📡 Response headers:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
+      log.log('📡 Transcription response status:', response.status);
+      log.log('📡 Response headers:', JSON.stringify(Object.fromEntries(response.headers.entries()), null, 2));
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Transcription failed with status:', response.status);
-        console.error('❌ Response text:', errorText);
+        log.error('❌ Transcription failed with status:', response.status);
+        log.error('❌ Response text:', errorText);
         
         let errorData: any = {};
         try {
@@ -211,24 +212,24 @@ export async function transcribeAudio(
       }
 
       const result: TranscriptionResult = await response.json();
-      console.log('✅ Transcription successful');
-      console.log('📝 Transcribed text length:', result.text.length);
-      console.log('📝 Transcribed text:', result.text);
+      log.log('✅ Transcription successful');
+      log.log('📝 Transcribed text length:', result.text.length);
+      log.log('📝 Transcribed text:', result.text);
 
       return result.text;
     } catch (fetchError: any) {
       clearTimeout(timeoutId);
       
       if (fetchError.name === 'AbortError') {
-        console.error('❌ Transcription timeout (60s)');
+        log.error('❌ Transcription timeout (60s)');
         throw new Error('Transcription request timed out. Please try a shorter recording.');
       }
       
       throw fetchError;
     }
   } catch (error: any) {
-    console.error('❌ Transcription error:', error);
-    console.error('❌ Error details:', {
+    log.error('❌ Transcription error:', error);
+    log.error('❌ Error details:', {
       name: error?.name,
       message: error?.message,
       stack: error?.stack,

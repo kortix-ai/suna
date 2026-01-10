@@ -31,6 +31,7 @@ import { Icon } from '@/components/ui/icon';
 import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AgentLoader } from '../chat/AgentLoader';
+import { log } from '@/lib/logger';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -283,7 +284,7 @@ export function ThreadPage({
 
   // Handle snack dismiss - user swiped to close
   const handleToolSnackDismiss = React.useCallback(() => {
-    console.log('[ToolSnack] 👋 User dismissed snack for:', activeToolData?.toolCallId);
+    log.log('[ToolSnack] 👋 User dismissed snack for:', activeToolData?.toolCallId);
     if (activeToolData?.toolCallId) {
       setDismissedToolCallId(activeToolData.toolCallId);
     }
@@ -292,15 +293,15 @@ export function ThreadPage({
 
   // Update activeToolData when streamingToolCall changes
   React.useEffect(() => {
-    console.log('[ToolSnack] streamingToolCall changed:', streamingToolCall ? 'has data' : 'null');
+    log.log('[ToolSnack] streamingToolCall changed:', streamingToolCall ? 'has data' : 'null');
     const extracted = extractToolFromStreamingMessage(streamingToolCall);
-    console.log('[ToolSnack] Extracted from streaming:', extracted?.toolName || 'null');
+    log.log('[ToolSnack] Extracted from streaming:', extracted?.toolName || 'null');
     if (extracted) {
       // Check if this is a NEW tool (different from dismissed one)
       if (extracted.toolCallId && extracted.toolCallId !== dismissedToolCallId) {
         // New tool - clear dismissed state and show
         if (dismissedToolCallId) {
-          console.log('[ToolSnack] New tool started, clearing dismissed state');
+          log.log('[ToolSnack] New tool started, clearing dismissed state');
           setDismissedToolCallId(null);
         }
         setActiveToolData(extracted);
@@ -319,21 +320,21 @@ export function ThreadPage({
   // 1. Opening an existing thread with tools (activeToolData is null)
   // 2. When a streaming tool completes (activeToolData.isStreaming is true, tool message appears)
   React.useEffect(() => {
-    console.log('[ToolSnack] Messages effect - count:', messages.length, 'activeToolData:', activeToolData?.toolName || 'null', 'isStreaming:', activeToolData?.isStreaming);
+    log.log('[ToolSnack] Messages effect - count:', messages.length, 'activeToolData:', activeToolData?.toolName || 'null', 'isStreaming:', activeToolData?.isStreaming);
 
     if (messages.length === 0) return;
 
     // Case 1: No active tool data - set from messages (unless dismissed)
     if (!activeToolData) {
       const lastTool = extractLastToolFromMessages(messages);
-      console.log('[ToolSnack] Setting from messages (no active):', lastTool?.toolName || 'null');
+      log.log('[ToolSnack] Setting from messages (no active):', lastTool?.toolName || 'null');
       if (lastTool) {
         // Only show if not the dismissed tool
         if (lastTool.toolCallId !== dismissedToolCallId) {
           setActiveToolData(lastTool);
           lastToolCallIdRef.current = lastTool.toolCallId || null;
         } else {
-          console.log('[ToolSnack] Tool was dismissed, not showing');
+          log.log('[ToolSnack] Tool was dismissed, not showing');
         }
       }
       return;
@@ -344,7 +345,7 @@ export function ThreadPage({
       // Look for this tool in messages to see if it completed
       const completedTool = extractLastToolFromMessages(messages);
       if (completedTool && completedTool.toolCallId === activeToolData.toolCallId && !completedTool.isStreaming) {
-        console.log('[ToolSnack] Tool completed! Updating from streaming to:', completedTool.success ? 'success' : 'failed');
+        log.log('[ToolSnack] Tool completed! Updating from streaming to:', completedTool.success ? 'success' : 'failed');
         setActiveToolData(completedTool);
       }
     }
@@ -355,7 +356,7 @@ export function ThreadPage({
       const lastTool = extractLastToolFromMessages(messages);
       if (lastTool && lastTool.toolCallId !== activeToolData.toolCallId) {
         // New tool found - clear dismissed state and show
-        console.log('[ToolSnack] Newer tool found in messages:', lastTool.toolName);
+        log.log('[ToolSnack] Newer tool found in messages:', lastTool.toolName);
         if (dismissedToolCallId) {
           setDismissedToolCallId(null);
         }
@@ -367,7 +368,7 @@ export function ThreadPage({
 
   // Clear activeToolData and dismissed state when thread changes
   React.useEffect(() => {
-    console.log('[ToolSnack] Thread changed, clearing activeToolData and dismissed state');
+    log.log('[ToolSnack] Thread changed, clearing activeToolData and dismissed state');
     setActiveToolData(null);
     setDismissedToolCallId(null);
     lastToolCallIdRef.current = null;
@@ -585,7 +586,7 @@ export function ThreadPage({
     try {
       await chat.refreshMessages();
     } catch (error) {
-      console.error('Failed to refresh:', error);
+      log.error('Failed to refresh:', error);
     } finally {
       setIsRefreshing(false);
     }
@@ -633,7 +634,7 @@ export function ThreadPage({
 
       if (messages.length === 0 && !isLoading && !chat.isStreaming) {
         chat.refreshMessages().catch((error) => {
-          console.error('Failed to load thread messages:', error);
+          log.error('Failed to load thread messages:', error);
           Alert.alert('Error', 'Failed to load thread messages. Please try again.');
         });
       }
@@ -783,7 +784,7 @@ export function ThreadPage({
           try {
             await chat.updateThreadTitle(newTitle);
           } catch (error) {
-            console.error('Failed to update thread title:', error);
+            log.error('Failed to update thread title:', error);
           }
         }}
         onBackPress={chat.showModeThreadList}
@@ -792,7 +793,7 @@ export function ThreadPage({
           try {
             await shareThreadMutation.mutateAsync(chat.activeThread.id);
           } catch (error) {
-            console.error('Failed to share thread:', error);
+            log.error('Failed to share thread:', error);
           }
         }}
         onFiles={() => {
@@ -807,7 +808,7 @@ export function ThreadPage({
               router.back();
             }
           } catch (error) {
-            console.error('Failed to delete thread:', error);
+            log.error('Failed to delete thread:', error);
           }
         }}
       />
@@ -845,15 +846,15 @@ export function ThreadPage({
         activeToolData={activeToolData}
         agentName={agentManager.selectedAgent?.name}
         onToolSnackPress={() => {
-          console.log('[ToolSnackPress] Pressed! activeToolData:', activeToolData);
-          console.log('[ToolSnackPress] Total messages:', messages.length);
+          log.log('[ToolSnackPress] Pressed! activeToolData:', activeToolData);
+          log.log('[ToolSnackPress] Total messages:', messages.length);
 
           // Build ALL tool message pairs from the thread (same logic as ThreadContent)
           const assistantMessages = messages.filter((m) => m.type === 'assistant');
           const toolMsgs = messages.filter((m) => m.type === 'tool');
 
-          console.log('[ToolSnackPress] Assistant messages:', assistantMessages.length);
-          console.log('[ToolSnackPress] Tool messages:', toolMsgs.length);
+          log.log('[ToolSnackPress] Assistant messages:', assistantMessages.length);
+          log.log('[ToolSnackPress] Tool messages:', toolMsgs.length);
 
           // Map tool messages to their assistant messages
           const toolMap = new Map<string | null, typeof messages>();
@@ -876,11 +877,11 @@ export function ThreadPage({
               const parsed = parseToolMessage(toolMsg);
               const toolName = parsed?.toolName || '';
 
-              console.log('[ToolSnackPress] Processing tool:', toolName, 'assistantId:', assistantId);
+              log.log('[ToolSnackPress] Processing tool:', toolName, 'assistantId:', assistantId);
 
               // Skip ask/complete tools
               if (toolName === 'ask' || toolName === 'complete') {
-                console.log('[ToolSnackPress] Skipping ask/complete tool');
+                log.log('[ToolSnackPress] Skipping ask/complete tool');
                 return;
               }
 
@@ -889,18 +890,18 @@ export function ThreadPage({
               }
               toolMap.get(assistantId)!.push(toolMsg);
             } catch (e) {
-              console.log('[ToolSnackPress] Error processing tool:', e);
+              log.log('[ToolSnackPress] Error processing tool:', e);
             }
           });
 
-          console.log('[ToolSnackPress] ToolMap size:', toolMap.size);
+          log.log('[ToolSnackPress] ToolMap size:', toolMap.size);
 
           // Build pairs from assistant messages
           const allPairs: ToolMessagePair[] = [];
           assistantMessages.forEach((assistantMsg) => {
             const linkedTools = toolMap.get(assistantMsg.message_id || null);
             if (linkedTools && linkedTools.length > 0) {
-              console.log('[ToolSnackPress] Found', linkedTools.length, 'tools for assistant:', assistantMsg.message_id);
+              log.log('[ToolSnackPress] Found', linkedTools.length, 'tools for assistant:', assistantMsg.message_id);
               linkedTools.forEach((toolMsg) => {
                 allPairs.push({
                   assistantMessage: assistantMsg,
@@ -912,7 +913,7 @@ export function ThreadPage({
 
           // Add orphaned tools (no assistant message)
           const orphanedTools = toolMap.get(null);
-          console.log('[ToolSnackPress] Orphaned tools:', orphanedTools?.length || 0);
+          log.log('[ToolSnackPress] Orphaned tools:', orphanedTools?.length || 0);
           if (orphanedTools) {
             orphanedTools.forEach((toolMsg) => {
               allPairs.push({
@@ -922,10 +923,10 @@ export function ThreadPage({
             });
           }
 
-          console.log('[ToolSnackPress] Built', allPairs.length, 'tool pairs from thread');
+          log.log('[ToolSnackPress] Built', allPairs.length, 'tool pairs from thread');
 
           if (allPairs.length === 0) {
-            console.log('[ToolSnackPress] No tool pairs found, just opening panel');
+            log.log('[ToolSnackPress] No tool pairs found, just opening panel');
             openPanel();
             return;
           }
@@ -940,7 +941,7 @@ export function ThreadPage({
             });
             if (foundIndex >= 0) {
               clickedIndex = foundIndex;
-              console.log('[ToolSnackPress] Found tool at index', clickedIndex, 'by toolCallId');
+              log.log('[ToolSnackPress] Found tool at index', clickedIndex, 'by toolCallId');
             }
           } else if (activeToolData?.functionName) {
             // Find by function name (last matching one)
@@ -950,13 +951,13 @@ export function ThreadPage({
               const targetFnName = activeToolData.functionName.replace(/_/g, '-').toLowerCase();
               if (msgFnName === targetFnName) {
                 clickedIndex = i;
-                console.log('[ToolSnackPress] Found tool at index', clickedIndex, 'by functionName');
+                log.log('[ToolSnackPress] Found tool at index', clickedIndex, 'by functionName');
                 break;
               }
             }
           }
 
-          console.log('[ToolSnackPress] Setting selectedToolData with', allPairs.length, 'pairs, initialIndex:', clickedIndex);
+          log.log('[ToolSnackPress] Setting selectedToolData with', allPairs.length, 'pairs, initialIndex:', clickedIndex);
           setSelectedToolData({ toolMessages: allPairs, initialIndex: clickedIndex });
           openPanel();
         }}
@@ -967,7 +968,7 @@ export function ThreadPage({
         isAgentDrawerVisible={agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
         onOpenWorkerConfig={(workerId, view) => {
-          console.log('🔧 [ThreadPage] Opening worker config:', {
+          log.log('🔧 [ThreadPage] Opening worker config:', {
             workerId,
             view,
             isAgentDrawerVisible: agentManager.isDrawerVisible,
@@ -990,12 +991,12 @@ export function ThreadPage({
 
           // If AgentDrawer is visible, close it and wait for dismiss
           if (agentManager.isDrawerVisible) {
-            console.log('🔧 [ThreadPage] AgentDrawer visible, closing first');
+            log.log('🔧 [ThreadPage] AgentDrawer visible, closing first');
             agentManager.closeDrawer();
 
             // Fallback: if onDismiss doesn't fire within 500ms, open anyway
             pendingWorkerConfigTimeoutRef.current = setTimeout(() => {
-              console.log('⏰ [ThreadPage] Fallback timeout - opening WorkerConfigDrawer');
+              log.log('⏰ [ThreadPage] Fallback timeout - opening WorkerConfigDrawer');
               const pending = pendingWorkerConfigRef.current;
               if (pending) {
                 pendingWorkerConfigRef.current = null;
@@ -1007,7 +1008,7 @@ export function ThreadPage({
             }, 500);
           } else {
             // AgentDrawer is not visible, open immediately
-            console.log('✅ [ThreadPage] AgentDrawer not visible, opening immediately');
+            log.log('✅ [ThreadPage] AgentDrawer not visible, opening immediately');
             pendingWorkerConfigRef.current = null;
             setWorkerConfigWorkerId(workerId);
             setWorkerConfigInitialView(view || 'instructions');
@@ -1015,7 +1016,7 @@ export function ThreadPage({
           }
         }}
         onAgentDrawerDismiss={() => {
-          console.log('🎭 [ThreadPage] AgentDrawer dismissed');
+          log.log('🎭 [ThreadPage] AgentDrawer dismissed');
 
           // Clear fallback timeout since dismiss fired
           if (pendingWorkerConfigTimeoutRef.current) {
@@ -1026,7 +1027,7 @@ export function ThreadPage({
           // Check REF (not state) for pending config
           const pending = pendingWorkerConfigRef.current;
           if (pending) {
-            console.log('🎭 [ThreadPage] Opening pending WorkerConfigDrawer');
+            log.log('🎭 [ThreadPage] Opening pending WorkerConfigDrawer');
             pendingWorkerConfigRef.current = null;
             setWorkerConfigWorkerId(pending.workerId);
             setWorkerConfigInitialView(pending.view || 'instructions');

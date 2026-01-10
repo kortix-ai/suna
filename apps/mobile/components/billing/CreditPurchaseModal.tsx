@@ -7,6 +7,7 @@ import { formatCredits } from '@/lib/utils/credit-formatter';
 import { startUnifiedCreditPurchase, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';
+import { log } from '@/lib/logger';
 
 interface CreditPurchaseModalProps {
   open: boolean;
@@ -74,7 +75,7 @@ export function CreditPurchaseModal({
         }
       );
     } catch (err: any) {
-      console.error('Credit purchase error:', err);
+      log.error('Credit purchase error:', err);
       const errorMessage = err?.details?.detail || err?.message || 'Failed to create checkout session';
       setError(errorMessage);
       setIsProcessing(false);

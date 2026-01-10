@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { API_URL } from '@/api/config';
+import { log } from '@/lib/logger';
 
 export interface MaintenanceNotice {
   enabled: boolean;
@@ -33,7 +34,7 @@ async function fetchSystemStatus(): Promise<SystemStatus> {
     
     return await response.json();
   } catch (error) {
-    console.warn('Failed to fetch system status:', error);
+    log.warn('Failed to fetch system status:', error);
     return {
       maintenanceNotice: { enabled: false },
       technicalIssue: { enabled: false },

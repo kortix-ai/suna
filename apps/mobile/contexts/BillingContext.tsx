@@ -17,6 +17,7 @@ import {
 } from '@/lib/billing';
 import { useQueryClient } from '@tanstack/react-query';
 import { useAuthContext } from './AuthContext';
+import { log } from '@/lib/logger';
 
 // ============================================================================
 // Context Types
@@ -81,12 +82,12 @@ export function BillingProvider({ children }: BillingProviderProps) {
 
     if (justLoggedOut) {
       // User logged out - clear all billing data
-      console.log('🚫 User logged out - clearing billing cache');
+      log.log('🚫 User logged out - clearing billing cache');
       queryClient.cancelQueries({ queryKey: billingKeys.all });
       queryClient.removeQueries({ queryKey: billingKeys.all });
     } else if (justLoggedIn) {
       // User just logged in - immediately fetch fresh account state
-      console.log('✅ User logged in - fetching fresh account state immediately');
+      log.log('✅ User logged in - fetching fresh account state immediately');
       queryClient.removeQueries({ queryKey: billingKeys.all });
       // Immediately invalidate and refetch - don't wait
       queryClient.invalidateQueries({ 
@@ -140,7 +141,7 @@ export function BillingProvider({ children }: BillingProviderProps) {
   // Debug logging for billing state
   React.useEffect(() => {
     const tierKey = subscriptionData?.tier_key || subscriptionData?.subscription?.tier_key;
-    console.log('💰 Billing state:', {
+    log.log('💰 Billing state:', {
       authLoading,
       shouldFetchBilling,
       subscriptionData: subscriptionData !== undefined ? 'has data' : 'undefined',
@@ -153,7 +154,7 @@ export function BillingProvider({ children }: BillingProviderProps) {
     
     // // Log full subscription data when available (for debugging)
     // if (subscriptionData) {
-    //   console.log('📋 [BillingContext] Full subscriptionData:', JSON.stringify({
+    //   log.log('📋 [BillingContext] Full subscriptionData:', JSON.stringify({
     //     status: subscriptionData.status,
     //     plan_name: subscriptionData.plan_name,
     //     tier_key: subscriptionData.tier_key,
@@ -187,16 +188,16 @@ export function BillingProvider({ children }: BillingProviderProps) {
 
   // Refetch all billing data
   const refetchAll = useCallback(() => {
-    console.log('🔄 Refetching all billing data...');
+    log.log('🔄 Refetching all billing data...');
     queryClient.invalidateQueries({ queryKey: billingKeys.all });
   }, [queryClient]);
 
   // Check billing status and return whether user can proceed
   const checkBillingStatus = useCallback(async (): Promise<boolean> => {
-    console.log('💳 Checking billing status...');
+    log.log('💳 Checking billing status...');
 
     if (!isAuthenticated) {
-      console.log('❌ User not authenticated');
+      log.log('❌ User not authenticated');
       return false;
     }
 
@@ -207,14 +208,14 @@ export function BillingProvider({ children }: BillingProviderProps) {
       // can_run is nested under credits in AccountState
       const canRun = (data as any)?.can_run ?? data?.credits?.can_run;
       if (canRun) {
-        console.log('✅ Billing check passed');
+        log.log('✅ Billing check passed');
         return true;
       } else {
-        console.log('❌ Insufficient credits');
+        log.log('❌ Insufficient credits');
         return false;
       }
     } catch (err) {
-      console.error('❌ Billing check error:', err);
+      log.error('❌ Billing check error:', err);
       return false;
     }
   }, [isAuthenticated, refetchStatus]);

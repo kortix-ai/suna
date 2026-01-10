@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { log } from '@/lib/logger';
 
 interface AdminRoleResponse {
   isAdmin: boolean;
@@ -22,7 +23,7 @@ export function useAdminRole() {
 
         return await response.json();
       } catch (error) {
-        console.warn('Failed to check admin role:', error);
+        log.warn('Failed to check admin role:', error);
         return { isAdmin: false, role: null };
       }
     },

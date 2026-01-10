@@ -25,6 +25,7 @@ import { configureReanimatedLogger, ReanimatedLogLevel } from 'react-native-rean
 import { supabase } from '@/api/supabase';
 import * as Updates from 'expo-updates';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { log } from '@/lib/logger';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 
@@ -57,7 +58,7 @@ export default function RootLayout() {
       },
     },
   }));
-  
+
   const queryClientRef = React.useRef(queryClient);
   React.useEffect(() => {
     queryClientRef.current = queryClient;
@@ -67,7 +68,7 @@ export default function RootLayout() {
 
   useEffect(() => {
     initializeI18n().then(() => {
-      console.log('✅ i18n initialized in RootLayout');
+      log.log('✅ i18n initialized in RootLayout');
       setI18nInitialized(true);
     });
   }, []);
@@ -76,16 +77,16 @@ export default function RootLayout() {
 
   useEffect(() => {
     let isMounted = true;
-    
+
     const loadSavedTheme = async () => {
       if (themeLoadedRef.current) return;
-      
+
       try {
         const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
         if (!isMounted) return;
-        
+
         themeLoadedRef.current = true;
-        
+
         if (saved === 'system' || saved === 'dark' || saved === 'light') {
           setColorScheme(saved);
         } else if (!colorScheme) {
@@ -98,9 +99,9 @@ export default function RootLayout() {
         }
       }
     };
-    
+
     loadSavedTheme();
-    
+
     return () => {
       isMounted = false;
     };
@@ -151,8 +152,8 @@ export default function RootLayout() {
   // Log update state for debugging
   useEffect(() => {
     if (__DEV__ || !Updates.isEnabled) return;
-    
-    console.log('📱 OTA State:', {
+
+    log.log('📱 OTA State:', {
       isUpdateAvailable,
       isUpdatePending,
       isDownloading,
@@ -168,14 +169,14 @@ export default function RootLayout() {
 
     if (isUpdatePending && !hasAppliedUpdate.current) {
       hasAppliedUpdate.current = true;
-      console.log('🚀 OTA: Update pending! Reloading app immediately...');
-      
+      log.log('🚀 OTA: Update pending! Reloading app immediately...');
+
       // Small delay to ensure any ongoing operations complete
       setTimeout(async () => {
         try {
           await Updates.reloadAsync();
         } catch (error) {
-          console.error('❌ OTA: Failed to reload:', error);
+          log.error('❌ OTA: Failed to reload:', error);
           hasAppliedUpdate.current = false;
         }
       }, 100);
@@ -187,9 +188,9 @@ export default function RootLayout() {
     if (__DEV__ || !Updates.isEnabled) return;
 
     if (isUpdateAvailable && !isDownloading && !isUpdatePending && !hasAppliedUpdate.current) {
-      console.log('✅ OTA: Update available, fetching...');
+      log.log('✅ OTA: Update available, fetching...');
       Updates.fetchUpdateAsync().catch((error) => {
-        console.error('❌ OTA: Failed to fetch update:', error);
+        log.error('❌ OTA: Failed to fetch update:', error);
       });
     }
   }, [isUpdateAvailable, isDownloading, isUpdatePending]);
@@ -200,23 +201,23 @@ export default function RootLayout() {
     if (isCheckingUpdate.current || hasAppliedUpdate.current) return;
 
     isCheckingUpdate.current = true;
-    console.log(`🔄 OTA: Manual check [${source}]`);
+    log.log(`🔄 OTA: Manual check [${source}]`);
 
     try {
       const update = await Updates.checkForUpdateAsync();
-      
+
       if (update.isAvailable) {
-        console.log('✅ OTA: Update found, downloading...');
+        log.log('✅ OTA: Update found, downloading...');
         const fetchResult = await Updates.fetchUpdateAsync();
-        
+
         if (fetchResult.isNew && !hasAppliedUpdate.current) {
           hasAppliedUpdate.current = true;
-          console.log('🚀 OTA: Reloading with new update...');
+          log.log('🚀 OTA: Reloading with new update...');
           await Updates.reloadAsync();
         }
       }
     } catch (error) {
-      console.error('❌ OTA: Check failed:', error);
+      log.error('❌ OTA: Check failed:', error);
     } finally {
       isCheckingUpdate.current = false;
     }
@@ -245,17 +246,17 @@ export default function RootLayout() {
 
     const handleDeepLink = async (event: { url: string }) => {
       if (isHandlingDeepLink) {
-        console.log('⏸️ Already handling deep link, skipping...');
+        log.log('⏸️ Already handling deep link, skipping...');
         return;
       }
       isHandlingDeepLink = true;
 
-      console.log('🔗 Deep link received:', event.url);
+      log.log('🔗 Deep link received:', event.url);
 
       const url = event.url;
       const parsedUrl = Linking.parse(url);
 
-      console.log('🔍 Parsed URL:', {
+      log.log('🔍 Parsed URL:', {
         hostname: parsedUrl.hostname,
         path: parsedUrl.path,
         queryParams: parsedUrl.queryParams,
@@ -263,11 +264,11 @@ export default function RootLayout() {
       });
 
       // Check for universal links (https://kortix.com/share/xxx or https://staging.suna.so/share/xxx)
-      const isUniversalLink = parsedUrl.scheme === 'https' && 
-        (parsedUrl.hostname === 'kortix.com' || 
-         parsedUrl.hostname === 'www.kortix.com' || 
-         parsedUrl.hostname === 'staging.suna.so');
-      
+      const isUniversalLink = parsedUrl.scheme === 'https' &&
+        (parsedUrl.hostname === 'kortix.com' ||
+          parsedUrl.hostname === 'www.kortix.com' ||
+          parsedUrl.hostname === 'staging.suna.so');
+
       // Handle universal link share paths first
       if (isUniversalLink && parsedUrl.path?.startsWith('/share/')) {
         const threadId = parsedUrl.path.replace('/share/', '');
@@ -284,7 +285,7 @@ export default function RootLayout() {
 
       // Handle custom scheme: kortix://auth/callback
       if (parsedUrl.hostname === 'auth' && parsedUrl.path === 'callback') {
-        console.log('📧 Auth callback received, processing...');
+        log.log('📧 Auth callback received, processing...');
 
         try {
           // Extract hash fragment first to check for errors
@@ -303,7 +304,7 @@ export default function RootLayout() {
               const errorDescription = hashParams.get('error_description');
 
               if (error) {
-                console.log('⚠️ Auth callback error detected:', { error, errorCode, errorDescription });
+                log.log('⚠️ Auth callback error detected:', { error, errorCode, errorDescription });
 
                 // Handle expired OTP/link
                 if (errorCode === 'otp_expired' || error === 'access_denied') {
@@ -312,27 +313,27 @@ export default function RootLayout() {
                     : 'This email link has expired. Please request a new one.';
 
                   // Navigate to auth screen - user can try again there
-                  console.log('⚠️ Link expired, redirecting to auth');
+                  log.log('⚠️ Link expired, redirecting to auth');
                   router.replace('/auth');
                   isHandlingDeepLink = false;
                   return;
                 }
 
                 // Other errors - just redirect to auth
-                console.error('❌ Auth callback error:', error);
+                log.error('❌ Auth callback error:', error);
                 isHandlingDeepLink = false;
                 router.replace('/auth');
                 return;
               }
             } catch (hashParseError) {
-              console.warn('⚠️ Error parsing hash fragment for errors:', hashParseError);
+              log.warn('⚠️ Error parsing hash fragment for errors:', hashParseError);
             }
           }
 
           // Check for error in query params
           const errorParam = parsedUrl.queryParams?.error;
           if (errorParam) {
-            console.error('❌ Auth callback error in query params:', errorParam);
+            log.error('❌ Auth callback error in query params:', errorParam);
             isHandlingDeepLink = false;
             router.replace('/auth');
             return;
@@ -352,13 +353,13 @@ export default function RootLayout() {
           if (parsedUrl.queryParams?.access_token && parsedUrl.queryParams?.refresh_token) {
             access_token = parsedUrl.queryParams.access_token as string;
             refresh_token = parsedUrl.queryParams.refresh_token as string;
-            console.log('🔑 Tokens found in query params');
+            log.log('🔑 Tokens found in query params');
           }
 
           // Method 2: Hash fragment (legacy Supabase direct redirect)
           if (!access_token || !refresh_token) {
             if (hashFragment) {
-              console.log('🔍 Checking hash fragment for tokens...');
+              log.log('🔍 Checking hash fragment for tokens...');
 
               try {
                 const hashParams = new URLSearchParams(hashFragment);
@@ -372,7 +373,7 @@ export default function RootLayout() {
                   refresh_token = hashData.refresh_token || hashData.refreshToken;
                 }
               } catch (parseError) {
-                console.warn('⚠️ Error parsing hash fragment:', parseError);
+                log.warn('⚠️ Error parsing hash fragment:', parseError);
                 // Try direct extraction
                 const accessTokenMatch = hashFragment.match(/access_token=([^&]+)/);
                 const refreshTokenMatch = hashFragment.match(/refresh_token=([^&]+)/);
@@ -382,7 +383,7 @@ export default function RootLayout() {
             }
           }
 
-          console.log('🔑 Token extraction result:', {
+          log.log('🔑 Token extraction result:', {
             hasAccessToken: !!access_token,
             hasRefreshToken: !!refresh_token,
             termsAccepted,
@@ -390,7 +391,7 @@ export default function RootLayout() {
           });
 
           if (access_token && refresh_token) {
-            console.log('✅ Setting session with tokens...');
+            log.log('✅ Setting session with tokens...');
 
             const { data, error } = await supabase.auth.setSession({
               access_token,
@@ -398,16 +399,16 @@ export default function RootLayout() {
             });
 
             if (error) {
-              console.error('❌ Failed to set session:', error);
+              log.error('❌ Failed to set session:', error);
               isHandlingDeepLink = false;
               router.replace('/auth');
               return;
             }
 
-            console.log('✅ Session set! User logged in:', data.user?.email);
-            
+            log.log('✅ Session set! User logged in:', data.user?.email);
+
             // Immediately invalidate React Query cache to fetch fresh account state
-            console.log('🔄 Invalidating cache to fetch fresh account state');
+            log.log('🔄 Invalidating cache to fetch fresh account state');
             queryClientRef.current.invalidateQueries({ queryKey: ['account-state'] });
 
             // Save terms acceptance date if terms were accepted and not already saved
@@ -421,9 +422,9 @@ export default function RootLayout() {
                       terms_accepted_at: new Date().toISOString(),
                     },
                   });
-                  console.log('✅ Terms acceptance date saved to metadata');
+                  log.log('✅ Terms acceptance date saved to metadata');
                 } catch (updateError) {
-                  console.warn('⚠️ Failed to save terms acceptance:', updateError);
+                  log.warn('⚠️ Failed to save terms acceptance:', updateError);
                 }
               }
             }
@@ -433,7 +434,7 @@ export default function RootLayout() {
 
             // Always navigate to splash screen - it will determine the correct destination
             // This ensures smooth transition with loader while checking account state
-            console.log('🚀 Navigating to splash screen to determine next step...');
+            log.log('🚀 Navigating to splash screen to determine next step...');
             router.replace('/');
 
             setTimeout(() => {
@@ -441,22 +442,22 @@ export default function RootLayout() {
             }, 1000);
           } else {
             // No tokens found - could be an error we didn't catch or a malformed URL
-            console.warn('⚠️ No tokens found in URL - redirecting to auth');
+            log.warn('⚠️ No tokens found in URL - redirecting to auth');
             isHandlingDeepLink = false;
             router.replace('/auth');
           }
         } catch (err) {
-          console.error('❌ Error handling auth callback:', err);
+          log.error('❌ Error handling auth callback:', err);
           isHandlingDeepLink = false;
           router.replace('/auth');
         }
       } else if (parsedUrl.path?.startsWith('share/') || parsedUrl.hostname === 'share') {
         // Handle share links: kortix://share/xxx or https://kortix.com/share/xxx
         console.log('🔗 Share link detected');
-        
+
         // Extract thread ID from path
         let threadId: string | null = null;
-        
+
         if (parsedUrl.path?.startsWith('share/')) {
           // Path format: share/xxx
           threadId = parsedUrl.path.replace('share/', '');
@@ -464,7 +465,7 @@ export default function RootLayout() {
           // Custom scheme format: kortix://share/xxx -> hostname=share, path=xxx
           threadId = parsedUrl.path.replace(/^\//, '');
         }
-        
+
         if (threadId) {
           console.log('📖 Opening shared thread:', threadId);
           router.push({
@@ -474,10 +475,10 @@ export default function RootLayout() {
         } else {
           console.warn('⚠️ Share link missing thread ID');
         }
-        
+
         isHandlingDeepLink = false;
       } else {
-        console.log('ℹ️ Not an auth callback or share link, path:', parsedUrl.path);
+        log.log('ℹ️ Not an auth callback, path:', parsedUrl.path);
         isHandlingDeepLink = false;
       }
     };
@@ -487,7 +488,7 @@ export default function RootLayout() {
     // Handle initial URL (app opened via deep link)
     Linking.getInitialURL().then((url) => {
       if (url) {
-        console.log('🔗 Initial URL found:', url);
+        log.log('🔗 Initial URL found:', url);
         // Small delay to ensure app is ready
         setTimeout(() => {
           handleDeepLink({ url });
@@ -525,40 +526,40 @@ export default function RootLayout() {
                           <BottomSheetModalProvider>
                             <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                               <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
-<AuthProtection>
-                                  <Stack
-                                    screenOptions={{
-                                      headerShown: false,
+                              <AuthProtection>
+                                <Stack
+                                  screenOptions={{
+                                    headerShown: false,
+                                    animation: 'fade',
+                                  }}
+                                >
+                                  <Stack.Screen name="index" options={{ animation: 'none' }} />
+                                  <Stack.Screen name="setting-up" />
+                                  <Stack.Screen name="onboarding" />
+                                  <Stack.Screen
+                                    name="home"
+                                    options={{
+                                      gestureEnabled: false,
+                                    }}
+                                  />
+                                  <Stack.Screen
+                                    name="auth"
+                                    options={{
+                                      gestureEnabled: false,
                                       animation: 'fade',
                                     }}
-                                  >
-                                    <Stack.Screen name="index" options={{ animation: 'none' }} />
-                                    <Stack.Screen name="setting-up" />
-                                    <Stack.Screen name="onboarding" />
-                                    <Stack.Screen
-                                      name="home"
-                                      options={{
-                                        gestureEnabled: false,
-                                      }}
-                                    />
-                                    <Stack.Screen
-                                      name="auth"
-                                      options={{
-                                        gestureEnabled: false,
-                                        animation: 'fade',
-                                      }}
-                                    />
-                                    <Stack.Screen name="trigger-detail" />
-                                    <Stack.Screen name="worker-config" />
-                                    <Stack.Screen 
-                                      name="share/[threadId]" 
-                                      options={{
-                                        animation: 'slide_from_right',
-                                        gestureEnabled: true,
-                                      }}
-                                    />
-                                  </Stack>
-                                </AuthProtection>
+                                  />
+                                  <Stack.Screen name="trigger-detail" />
+                                  <Stack.Screen name="worker-config" />
+                                  <Stack.Screen
+                                    name="share/[threadId]"
+                                    options={{
+                                      animation: 'slide_from_right',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
+                                </Stack>
+                              </AuthProtection>
                               <PortalHost />
                             </ThemeProvider>
                           </BottomSheetModalProvider>
@@ -600,7 +601,7 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
 
     // RULE 1: Unauthenticated users can only be on auth or splash screens
     if (!isAuthenticated && !inAuthGroup && !onSplashScreen) {
-      console.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
+      log.log('🚫 Unauthenticated user on protected route, redirecting to /auth');
       router.replace('/auth');
       return;
     }
@@ -608,7 +609,7 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // RULE 2: Authenticated users should NEVER see auth screens
     // This prevents back navigation/gestures from showing auth to logged-in users
     if (isAuthenticated && inAuthGroup) {
-      console.log('🚫 Authenticated user on auth screen, redirecting to /home');
+      log.log('🚫 Authenticated user on auth screen, redirecting to /home');
       router.replace('/home');
       return;
     }

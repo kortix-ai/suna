@@ -1,3 +1,4 @@
+import { log } from '@/lib/logger';
 import { Icon } from '@/components/ui/icon';
 import { Moon, Sun } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
@@ -39,7 +40,7 @@ export function ThemeSwitcher() {
     // Toggle the theme
     toggleColorScheme();
     
-    console.log('🌓 Theme toggled to:', colorScheme === 'dark' ? 'light' : 'dark');
+    log.log('🌓 Theme toggled to:', colorScheme === 'dark' ? 'light' : 'dark');
   };
 
   const isDark = colorScheme === 'dark';

@@ -6,6 +6,7 @@ import { ChevronDown, ChevronRight, Copy, Check } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 interface JsonViewerProps {
   data: any;
@@ -32,7 +33,7 @@ export function JsonViewer({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy to clipboard:', err);
+      log.error('Failed to copy to clipboard:', err);
     }
   };
 

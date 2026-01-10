@@ -5,6 +5,7 @@ import { Icon } from '@/components/ui/icon';
 import { Sparkles, Zap } from 'lucide-react-native';
 import { getOfferingById } from '@/lib/billing';
 import type { PurchasesPackage } from 'react-native-purchases';
+import { log } from '@/lib/logger';
 
 const CREDIT_MULTIPLIER = 100;
 const CREDIT_PACKAGES = [
@@ -116,7 +117,7 @@ function CreditPackagesComponent({
   const loadRevenueCatPackages = async () => {
     try {
       setLoading(true);
-      console.log(`💰 Loading credit packages from offering: ${offeringId}`);
+      log.log(`💰 Loading credit packages from offering: ${offeringId}`);
       const offering = await getOfferingById(offeringId, true);
       
       if (offering) {
@@ -143,12 +144,12 @@ function CreditPackagesComponent({
           .sort((a, b) => a.amount - b.amount);
         
         setRcPackages(packages);
-        console.log('✅ Loaded RevenueCat packages:', packages.length);
+        log.log('✅ Loaded RevenueCat packages:', packages.length);
       } else {
-        console.warn(`⚠️ No offering found for: ${offeringId}`);
+        log.warn(`⚠️ No offering found for: ${offeringId}`);
       }
     } catch (error) {
-      console.error('❌ Error loading RevenueCat packages:', error);
+      log.error('❌ Error loading RevenueCat packages:', error);
     } finally {
       setLoading(false);
     }

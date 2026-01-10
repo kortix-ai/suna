@@ -1,4 +1,5 @@
 import type { ToolViewProps } from '../types';
+import { log } from '@/lib/logger';
 
 export interface ExportData {
   presentationName?: string;
@@ -46,7 +47,7 @@ export function extractExportData({
       message = output.message;
       note = output.note;
     } catch (e) {
-      console.error('[extractExportData] Failed to parse output:', e);
+      log.error('[extractExportData] Failed to parse output:', e);
     }
   }
 

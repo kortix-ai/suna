@@ -16,6 +16,7 @@ import type { Conversation } from '@/components/menu/types';
 import { FeedbackDrawer } from '@/components/chat/tool-views/complete-tool/FeedbackDrawer';
 import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
 import { MaintenanceBanner, TechnicalIssueBanner, MaintenancePage } from '@/components/status';
+import { log } from '@/lib/logger';
 
 export default function AppScreen() {
   const insets = useSafeAreaInsets();
@@ -66,27 +67,27 @@ export default function AppScreen() {
   // Load thread from URL parameter - only depend on threadId to prevent infinite loops
   React.useEffect(() => {
     if (threadId && threadId !== chat.activeThread?.id) {
-      console.log('🎯 Loading thread from URL parameter:', threadId);
+      log.log('🎯 Loading thread from URL parameter:', threadId);
       chat.loadThread(threadId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [threadId]);
 
   const handleNewChat = React.useCallback(() => {
-    console.log('🆕 New Chat clicked - Starting new chat');
+    log.log('🆕 New Chat clicked - Starting new chat');
     chat.startNewChat();
     pageNav.closeDrawer();
 
     setTimeout(() => {
-      console.log('🎯 Focusing chat input after new chat');
+      log.log('🎯 Focusing chat input after new chat');
       homePageRef.current?.focusChatInput();
     }, 300);
   }, [chat, pageNav]);
 
   const handleAgentPress = React.useCallback(
     (agent: Agent) => {
-      console.log('🤖 Agent selected:', agent.name);
-      console.log('📊 Starting chat with:', agent);
+      log.log('🤖 Agent selected:', agent.name);
+      log.log('📊 Starting chat with:', agent);
       chat.startNewChat();
       pageNav.closeDrawer();
     },
@@ -98,7 +99,7 @@ export default function AppScreen() {
 
   const handleConversationPress = React.useCallback(
     (conversation: Conversation) => {
-      console.log('📖 Loading thread:', conversation.id);
+      log.log('📖 Loading thread:', conversation.id);
       chat.loadThread(conversation.id);
       pageNav.closeDrawer();
     },
@@ -106,9 +107,9 @@ export default function AppScreen() {
   );
 
   const handleProfilePress = React.useCallback(() => {
-    console.log('🎯 Profile pressed');
+    log.log('🎯 Profile pressed');
     if (!isAuthenticated) {
-      console.log('🔐 User not authenticated, redirecting to auth');
+      log.log('🔐 User not authenticated, redirecting to auth');
       router.push('/auth');
     } else {
       menu.handleProfilePress();
@@ -118,7 +119,7 @@ export default function AppScreen() {
   // Handle opening worker config from AgentDrawer's Worker Settings buttons
   const handleOpenWorkerConfigFromAgentDrawer = React.useCallback(
     (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => {
-      console.log('🔧 [home] Opening worker config from AgentDrawer:', workerId, view);
+      log.log('🔧 [home] Opening worker config from AgentDrawer:', workerId, view);
       // Close agent drawer and side menu drawer
       agentManager.closeDrawer();
       pageNav.closeDrawer();
@@ -136,7 +137,7 @@ export default function AppScreen() {
 
   // Handle closing worker config drawer in MenuPage
   const handleCloseMenuWorkerConfig = React.useCallback(() => {
-    console.log('🔧 [home] Closing worker config in MenuPage');
+    log.log('🔧 [home] Closing worker config in MenuPage');
     setMenuWorkerConfigWorkerId(null);
     setMenuWorkerConfigInitialView(undefined);
   }, []);
@@ -169,11 +170,11 @@ export default function AppScreen() {
             activeTab={menu.activeTab}
             onNewChat={handleNewChat}
             onNewWorker={() => {
-              console.log('🤖 New Worker clicked');
+              log.log('🤖 New Worker clicked');
               pageNav.closeDrawer();
             }}
             onNewTrigger={() => {
-              console.log('⚡ New Trigger clicked');
+              log.log('⚡ New Trigger clicked');
               pageNav.closeDrawer();
             }}
             selectedAgentId={agentManager.selectedAgent?.agent_id}

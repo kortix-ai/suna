@@ -30,6 +30,7 @@ import {
 } from 'lucide-react-native';
 import { useTrigger, useDeleteTrigger, useToggleTrigger } from '@/lib/triggers';
 import { TriggerCreationDrawer } from '@/components/triggers/TriggerCreationDrawer';
+import { log } from '@/lib/logger';
 import {
   getTriggerIcon,
   getTriggerCategory,
@@ -172,10 +173,10 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
         isActive: !trigger.is_active,
       });
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      console.log('🔄 Trigger toggled successfully:', trigger.trigger_id);
+      log.log('🔄 Trigger toggled successfully:', trigger.trigger_id);
       refetch();
     } catch (error) {
-      console.error('Error toggling trigger:', error);
+      log.error('Error toggling trigger:', error);
       Alert.alert('Error', 'Failed to update trigger status. Please try again.');
     }
   };
@@ -204,7 +205,7 @@ export function TriggerDetailPage({ triggerId }: TriggerDetailPageProps) {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               router.back();
             } catch (error) {
-              console.error('Error deleting trigger:', error);
+              log.error('Error deleting trigger:', error);
               Alert.alert('Error', 'Failed to delete trigger. Please try again.');
             }
           },

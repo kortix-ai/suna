@@ -3,6 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { ActionSheetIOS, Platform, Alert } from 'react-native';
+import { log } from '@/lib/logger';
 
 interface AttachmentDrawerProps {
   visible: boolean;
@@ -34,7 +35,7 @@ export function AttachmentDrawer({
 
   const showAttachmentOptions = React.useCallback(() => {
     if (isOpeningRef.current) {
-      console.log('📎 [AttachmentDrawer] Already opening, skipping');
+      log.log('📎 [AttachmentDrawer] Already opening, skipping');
       return;
     }
     isOpeningRef.current = true;
@@ -42,7 +43,7 @@ export function AttachmentDrawer({
     // Safety timeout: reset if ActionSheet doesn't respond within 2 seconds
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      console.log('📎 [AttachmentDrawer] Timeout - resetting guard');
+      log.log('📎 [AttachmentDrawer] Timeout - resetting guard');
       isOpeningRef.current = false;
     }, 2000);
     const options = [
@@ -130,7 +131,7 @@ export function AttachmentDrawer({
   // Handle visibility changes
   React.useEffect(() => {
     if (visible && !isOpeningRef.current) {
-      console.log('📎 [AttachmentDrawer] Opening native action sheet');
+      log.log('📎 [AttachmentDrawer] Opening native action sheet');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       showAttachmentOptions();
     } else if (!visible) {

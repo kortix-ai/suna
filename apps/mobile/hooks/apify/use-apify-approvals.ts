@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apifyApprovalsApi, ApifyApproval, ApifyApprovalRequest } from '@/api/apify-approvals';
+import { log } from '@/lib/logger';
 
 export type { ApifyApproval, ApifyApprovalRequest };
 
@@ -17,7 +18,7 @@ export function useApproveApifyRequest(threadId: string) {
       queryClient.invalidateQueries({ queryKey: ['apify-approval', data.approval_id] });
     },
     onError: (error: Error) => {
-      console.error('Failed to approve request:', error);
+      log.error('Failed to approve request:', error);
     },
   });
 }

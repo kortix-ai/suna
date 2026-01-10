@@ -18,6 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { ThreadActionsDrawer } from './ThreadActionsDrawer';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -91,7 +92,7 @@ export function ThreadHeader({
       try {
         await onTitleChange?.(editedTitle.trim());
       } catch (error) {
-        console.error('Failed to update thread title:', error);
+        log.error('Failed to update thread title:', error);
         setEditedTitle(threadTitle || '');
       } finally {
         setIsUpdating(false);

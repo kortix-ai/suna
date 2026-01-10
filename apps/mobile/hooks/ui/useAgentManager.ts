@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Keyboard } from 'react-native';
 import { useAgent } from '@/contexts/AgentContext';
+import { log } from '@/lib/logger';
 
 /**
  * Custom hook for managing agent selection and operations
@@ -18,17 +19,17 @@ export function useAgentManager() {
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
 
   const openDrawer = () => {
-    console.log('🔽 [useAgentManager] Agent Selector Pressed');
-    console.log('📊 [useAgentManager] Current Agent:', { 
+    log.log('🔽 [useAgentManager] Agent Selector Pressed');
+    log.log('📊 [useAgentManager] Current Agent:', { 
       id: selectedAgentId, 
       name: getCurrentAgent()?.name 
     });
-    console.log('⏰ [useAgentManager] Timestamp:', new Date().toISOString());
-    console.log('👁️ [useAgentManager] Current state:', isDrawerVisible);
+    log.log('⏰ [useAgentManager] Timestamp:', new Date().toISOString());
+    log.log('👁️ [useAgentManager] Current state:', isDrawerVisible);
     
     // If already visible, force a re-render by toggling
     if (isDrawerVisible) {
-      console.log('⚡ [useAgentManager] Drawer already visible - force toggling');
+      log.log('⚡ [useAgentManager] Drawer already visible - force toggling');
       setIsDrawerVisible(false);
       setTimeout(() => {
         setIsDrawerVisible(true);
@@ -36,7 +37,7 @@ export function useAgentManager() {
       return;
     }
     
-    console.log('👁️ [useAgentManager] Setting isDrawerVisible to TRUE');
+    log.log('👁️ [useAgentManager] Setting isDrawerVisible to TRUE');
     
     // Dismiss keyboard first for better UX
     Keyboard.dismiss();
@@ -48,12 +49,12 @@ export function useAgentManager() {
   };
 
   const closeDrawer = () => {
-    console.log('🔽 [useAgentManager] Closing drawer');
+    log.log('🔽 [useAgentManager] Closing drawer');
     setIsDrawerVisible(false);
   };
 
   const selectAgentHandler = async (agentId: string) => {
-    console.log('✅ Agent Changed:', {
+    log.log('✅ Agent Changed:', {
       from: { id: selectedAgentId, name: getCurrentAgent()?.name },
       to: { id: agentId, name: agents.find(a => a.agent_id === agentId)?.name },
       timestamp: new Date().toISOString()
@@ -62,8 +63,8 @@ export function useAgentManager() {
   };
 
   const openAgentSettings = () => {
-    console.log('⚙️ Agent Settings Opened');
-    console.log('⏰ Timestamp:', new Date().toISOString());
+    log.log('⚙️ Agent Settings Opened');
+    log.log('⏰ Timestamp:', new Date().toISOString());
     // TODO: Navigate to agent settings screen or open modal
   };
 

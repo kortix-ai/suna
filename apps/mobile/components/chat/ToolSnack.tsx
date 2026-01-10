@@ -18,6 +18,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import LottieView from 'lottie-react-native';
 import type { UnifiedMessage } from '@agentpress/shared';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3; // 30% of screen width to dismiss
@@ -49,7 +50,6 @@ export interface ToolSnackData {
  * Filters out ask/complete tools which render as text, not snack.
  */
 export function extractLastToolFromMessages(messages: UnifiedMessage[]): ToolSnackData | null {
-
   // Iterate from end to find the last tool message
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
@@ -74,7 +74,6 @@ export function extractLastToolFromMessages(messages: UnifiedMessage[]): ToolSna
       }
     }
   }
-
   return null;
 }
 
@@ -100,7 +99,6 @@ export function extractToolFromStreamingMessage(message: UnifiedMessage | null):
       if (name.includes('ask') || name.includes('complete')) {
         continue;
       }
-
       return {
         toolName: (tc.function_name || tc.name || 'Tool').replace(/_/g, '-'),
         functionName: tc.function_name || tc.name || 'Tool',
@@ -110,7 +108,7 @@ export function extractToolFromStreamingMessage(message: UnifiedMessage | null):
       };
     }
   } catch (e) {
-    console.log('[extractStreamingTool] Error parsing metadata:', e);
+    log.log('[extractStreamingTool] Error parsing metadata:', e);
   }
 
   return null;
@@ -136,7 +134,6 @@ export const ToolSnack = React.memo(function ToolSnack({
   const isVisible = !!toolData;
 
   // Debug logging
-
   const toolName = toolData?.toolName || 'Tool';
   const displayName = getUserFriendlyToolName(toolName);
   const ToolIcon = getToolIcon(toolName);

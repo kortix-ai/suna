@@ -17,6 +17,7 @@ import { useAgent, agentKeys } from '@/lib/agents/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { ToolkitIcon } from './ToolkitIcon';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { log } from '@/lib/logger';
 
 interface ComposioToolsContentProps {
   app: ComposioApp;
@@ -155,7 +156,7 @@ export function ComposioToolsContent({
         setSelectedTools(new Set());
       }
     } catch (error) {
-      console.error('Failed to load current tools:', error);
+      log.error('Failed to load current tools:', error);
       setSelectedTools(new Set());
     }
   }, [agentId, profile?.profile_id, agent, allTools, isLoading]);
