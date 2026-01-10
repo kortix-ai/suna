@@ -151,28 +151,28 @@ export function BillingProvider({ children }: BillingProviderProps) {
       isLoading,
     });
     
-    // Log full subscription data when available (for debugging)
-    if (subscriptionData) {
-      console.log('📋 [BillingContext] Full subscriptionData:', JSON.stringify({
-        status: subscriptionData.status,
-        plan_name: subscriptionData.plan_name,
-        tier_key: subscriptionData.tier_key,
-        billing_period: subscriptionData.billing_period,
-        provider: subscriptionData.provider,
-        is_trial: subscriptionData.is_trial,
-        trial_status: subscriptionData.trial_status,
-        has_scheduled_change: subscriptionData.has_scheduled_change,
-        subscription: subscriptionData.subscription ? {
-          id: subscriptionData.subscription.id ? '✓' : '✗',
-          status: subscriptionData.subscription.status,
-          tier_key: subscriptionData.subscription.tier_key,
-          cancel_at_period_end: subscriptionData.subscription.cancel_at_period_end,
-        } : null,
-        tier: subscriptionData.tier,
-        credits: subscriptionData.credits,
-        revenuecat_product_id: (subscriptionData as any).revenuecat_product_id,
-      }, null, 2));
-    }
+    // // Log full subscription data when available (for debugging)
+    // if (subscriptionData) {
+    //   console.log('📋 [BillingContext] Full subscriptionData:', JSON.stringify({
+    //     status: subscriptionData.status,
+    //     plan_name: subscriptionData.plan_name,
+    //     tier_key: subscriptionData.tier_key,
+    //     billing_period: subscriptionData.billing_period,
+    //     provider: subscriptionData.provider,
+    //     is_trial: subscriptionData.is_trial,
+    //     trial_status: subscriptionData.trial_status,
+    //     has_scheduled_change: subscriptionData.has_scheduled_change,
+    //     subscription: subscriptionData.subscription ? {
+    //       id: subscriptionData.subscription.id ? '✓' : '✗',
+    //       status: subscriptionData.subscription.status,
+    //       tier_key: subscriptionData.subscription.tier_key,
+    //       cancel_at_period_end: subscriptionData.subscription.cancel_at_period_end,
+    //     } : null,
+    //     tier: subscriptionData.tier,
+    //     credits: subscriptionData.credits,
+    //     revenuecat_product_id: (subscriptionData as any).revenuecat_product_id,
+    //   }, null, 2));
+    // }
   }, [
     authLoading,
     shouldFetchBilling,

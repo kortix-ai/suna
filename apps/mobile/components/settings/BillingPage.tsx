@@ -20,7 +20,6 @@ import {
   billingKeys,
   presentCustomerInfo,
   shouldUseRevenueCat,
-  isRevenueCatConfigured,
   isRevenueCatInitialized,
   initializeRevenueCat,
 } from '@/lib/billing';
@@ -151,7 +150,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       // Ensure RevenueCat is initialized before presenting customer info
-      if (user && shouldUseRevenueCat() && isRevenueCatConfigured()) {
+      if (user && shouldUseRevenueCat()) {
         const initialized = await isRevenueCatInitialized();
         if (!initialized) {
           console.log('🔄 RevenueCat not initialized, initializing now...');
@@ -172,24 +171,10 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     }
   }, [user, handleSubscriptionUpdate]);
 
-  // Show button if RevenueCat should be used and is configured
-  // We'll handle initialization when the button is clicked if needed
-  const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
+  // Show button if RevenueCat should be used (iOS/Android only)
+  const useRevenueCat = shouldUseRevenueCat();
 
   // Debug logging to help diagnose button visibility
-  useEffect(() => {
-    if (visible) {
-      console.log('🔍 [BillingPage] RevenueCat button visibility check:', {
-        shouldUseRevenueCat: shouldUseRevenueCat(),
-        isRevenueCatConfigured: isRevenueCatConfigured(),
-        useRevenueCat,
-        platform: Platform.OS,
-        hasIosKey: !!process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
-        hasAndroidKey: !!process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
-        useRevenueCatEnv: process.env.EXPO_PUBLIC_USE_REVENUECAT,
-      });
-    }
-  }, [visible, useRevenueCat]);
 
   if (!visible) return null;
 

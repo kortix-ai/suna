@@ -14,7 +14,7 @@ import * as React from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import * as Haptics from 'expo-haptics';
 import Purchases from 'react-native-purchases';
-import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
+import { shouldUseRevenueCat } from '@/lib/billing/provider';
 import { presentPaywall } from '@/lib/billing/revenuecat';
 import { invalidateAccountState, accountStateKeys, useAccountState } from '@/lib/billing/hooks';
 import { useSubscription } from '@/lib/billing';
@@ -121,7 +121,7 @@ export function useUpgradePaywall(): UpgradePaywallResult {
     enabled: !!user,
   });
 
-  const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
+  const useRevenueCat = shouldUseRevenueCat();
 
   // Get current tier key from backend account-state (source of truth), not RevenueCat
   // This ensures we show the correct upgrade option even if RevenueCat hasn't synced yet
