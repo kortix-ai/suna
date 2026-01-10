@@ -49,7 +49,7 @@ _cancellation_events: Dict[str, asyncio.Event] = {}
 # Helper Functions
 # ============================================================================
 
-async def _get_agent_run_with_access_check(agent_run_id: str, user_id: str):
+async def _get_agent_run_with_access_check(agent_run_id: str, user_id: str, require_write_access: bool = False):
     """Get agent run with access check."""
     from core.agents import repo as agents_repo
     
@@ -66,7 +66,7 @@ async def _get_agent_run_with_access_check(agent_run_id: str, user_id: str):
         return agent_run_data
     
     client = await db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=require_write_access)
     return agent_run_data
 
 
@@ -496,7 +496,7 @@ async def unified_agent_start(
                 raise HTTPException(status_code=404, detail="Thread not found")
             project_id = thread_data['project_id']
             if thread_data['account_id'] != user_id:
-                await verify_and_authorize_thread_access(client, thread_id, user_id)
+                await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=True)
         
         result = await start_agent_run(
             account_id=account_id,
@@ -537,7 +537,7 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     from core.utils.run_management import stop_agent_run_with_helpers as stop_agent_run
     
     structlog.contextvars.bind_contextvars(agent_run_id=agent_run_id)
-    await _get_agent_run_with_access_check(agent_run_id, user_id)
+    await _get_agent_run_with_access_check(agent_run_id, user_id, require_write_access=True)
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
 
