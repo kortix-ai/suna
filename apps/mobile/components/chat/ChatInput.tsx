@@ -5,7 +5,7 @@ import { AudioLines, CornerDownLeft, Paperclip, X } from 'lucide-react-native';
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, Platform, TouchableOpacity, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData, type TextInputSelectionChangeEventData } from 'react-native';
+import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, Platform, TouchableOpacity, LayoutAnimation, UIManager, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData, type TextInputSelectionChangeEventData } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -24,11 +24,24 @@ import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './Ma
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
 
+// Enable LayoutAnimation for Android
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 // Threshold for swipe down to dismiss keyboard (in pixels)
 const SWIPE_DOWN_THRESHOLD = 30;
 
 // Spring config - defined once outside component
 const SPRING_CONFIG = { damping: 15, stiffness: 400 };
+
+// Native spring animation config for smooth transitions
+const NATIVE_SPRING_CONFIG = {
+  duration: 200,
+  create: { type: LayoutAnimation.Types.spring, property: LayoutAnimation.Properties.opacity, springDamping: 0.8 },
+  update: { type: LayoutAnimation.Types.spring, springDamping: 0.8 },
+  delete: { type: LayoutAnimation.Types.spring, property: LayoutAnimation.Properties.opacity, springDamping: 0.8 },
+};
 
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
@@ -114,6 +127,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // TextInput ref for programmatic focus
   const textInputRef = React.useRef<TextInput>(null);
+  // Track text value in ref for instant access (no render cycle)
+  const textValueRef = React.useRef(value || '');
 
   // State - simple React state for both platforms
   const [isFocused, setIsFocused] = React.useState(false);
@@ -121,6 +136,14 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const [isStopping, setIsStopping] = React.useState(false);
   const [localHasText, setLocalHasText] = React.useState(!!(value && value.trim()));
   const [contentHeight, setContentHeight] = React.useState(0);
+
+  // Android: Clear input imperatively when value prop becomes empty
+  React.useEffect(() => {
+    if (Platform.OS === 'android' && value === '' && textValueRef.current !== '') {
+      textInputRef.current?.clear();
+      textValueRef.current = '';
+    }
+  }, [value]);
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
 
@@ -168,8 +191,15 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Sync localHasText when value prop changes from outside (e.g., after send clears input)
   React.useEffect(() => {
-    setLocalHasText(!!(value && value.trim()));
-  }, [value]);
+    const newHasText = !!(value && value.trim());
+    if (newHasText !== localHasText) {
+      // iOS: smooth animation, Android: instant
+      if (Platform.OS === 'ios') {
+        LayoutAnimation.configureNext(NATIVE_SPRING_CONFIG);
+      }
+      setLocalHasText(newHasText);
+    }
+  }, [value, localHasText]);
 
 
   // Memoized placeholder
@@ -370,10 +400,14 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     onAudioRecord?.();
   }, [isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
-  // Content size change handler - simple and fast for both platforms
+  // Content size change handler - iOS smooth, Android instant
   const handleContentSizeChange = React.useCallback(
     (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
       const newHeight = e.nativeEvent.contentSize.height;
+      // iOS: smooth spring animation, Android: instant (no animation delay)
+      if (Platform.OS === 'ios') {
+        LayoutAnimation.configureNext(NATIVE_SPRING_CONFIG);
+      }
       setContentHeight(newHeight);
     },
     []
@@ -421,11 +455,18 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [value, selection, onChangeText]
   );
 
-  // Wrapped onChangeText - updates local state for instant button response
+  // Wrapped onChangeText - instant update for button
   const handleChangeText = React.useCallback((text: string) => {
-    setLocalHasText(!!(text && text.trim()));
+    // Update ref immediately (no render cycle)
+    textValueRef.current = text;
+    const newHasText = !!(text && text.trim());
+    // iOS: smooth animation, Android: instant (no animation delay)
+    if (newHasText !== localHasText && Platform.OS === 'ios') {
+      LayoutAnimation.configureNext(NATIVE_SPRING_CONFIG);
+    }
+    setLocalHasText(newHasText);
     onChangeText?.(text);
-  }, [onChangeText]);
+  }, [onChangeText, localHasText]);
 
   // Container style with dynamic height
   const containerStyle = React.useMemo(
@@ -630,7 +671,9 @@ const NormalMode = React.memo(({
       >
         <TextInput
           ref={textInputRef}
-          value={value}
+          // iOS: controlled for proper state sync
+          // Android: uncontrolled (defaultValue) for instant response - no bridge delay
+          {...(Platform.OS === 'ios' ? { value } : { defaultValue: value })}
           onChangeText={onChangeText}
           onFocus={() => {
             if (!isAuthenticated) {
