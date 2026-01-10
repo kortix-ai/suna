@@ -11,7 +11,6 @@ import {
   Pause, 
   ChevronLeft, 
   ChevronRight,
-  ChevronsRight,
 } from 'lucide-react-native';
 import Animated, { 
   useAnimatedStyle, 
@@ -26,7 +25,9 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { KortixLogo } from '@/components/ui/KortixLogo';
-import { ThreadContent } from '@/components/chat/ThreadContent';
+import { ThreadContent, type ToolMessagePair } from '@/components/chat/ThreadContent';
+import { KortixComputer } from '@/components/kortix-computer';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 // Fetch public thread without requiring auth
 async function fetchPublicThread(threadId: string) {
@@ -332,8 +333,7 @@ function PlaybackControls({
           className="h-9 px-3 flex-row items-center justify-center rounded-full active:bg-muted"
           style={{ opacity: isAtEnd ? 0.4 : 1 }}
         >
-          <Text className="text-xs text-foreground font-roobert-medium mr-1">Skip</Text>
-          <Icon as={ChevronsRight} size={14} className="text-foreground" />
+          <Text className="text-xs text-foreground font-roobert-medium">Skip to end</Text>
         </Pressable>
       </View>
     </Animated.View>
@@ -347,6 +347,22 @@ export default function ShareThreadPage() {
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
   const scrollViewRef = React.useRef<ScrollView>(null);
+  
+  // Kortix Computer for viewing tool calls
+  const { isOpen: isKortixComputerOpen, openPanel } = useKortixComputerStore();
+  const [selectedToolData, setSelectedToolData] = React.useState<{
+    toolMessages: ToolMessagePair[];
+    initialIndex: number;
+  } | null>(null);
+
+  // Handle tool press - open Kortix Computer
+  const handleToolPress = React.useCallback(
+    (toolMessages: ToolMessagePair[], initialIndex: number) => {
+      setSelectedToolData({ toolMessages, initialIndex });
+      openPanel();
+    },
+    [openPanel]
+  );
 
   // Fetch thread data
   const {
@@ -488,6 +504,7 @@ export default function ShareThreadPage() {
               streamHookStatus={playback.isStreaming ? 'streaming' : 'idle'}
               sandboxId={thread?.project?.sandbox?.id}
               sandboxUrl={thread?.project?.sandbox?.sandbox_url}
+              onToolPress={handleToolPress}
             />
           ) : (
             <View className="flex-1 items-center justify-center py-20">
@@ -510,6 +527,32 @@ export default function ShareThreadPage() {
           />
         )}
       </View>
+
+      {/* Kortix Computer for viewing tool calls */}
+      {isKortixComputerOpen && (
+        <KortixComputer
+          toolMessages={selectedToolData?.toolMessages || []}
+          currentIndex={selectedToolData?.initialIndex || 0}
+          onNavigate={(newIndex) => {
+            if (selectedToolData) {
+              setSelectedToolData({ ...selectedToolData, initialIndex: newIndex });
+            }
+          }}
+          messages={playback.visibleMessages}
+          agentStatus="idle"
+          project={
+            thread?.project
+              ? {
+                  id: thread.project.id,
+                  name: thread.project.name,
+                  sandbox: thread.project.sandbox,
+                }
+              : undefined
+          }
+          isLoading={isLoading}
+          sandboxId={thread?.project?.sandbox?.id}
+        />
+      )}
     </>
   );
 }
