@@ -666,40 +666,92 @@ export async function presentPaywall(
       throw error;
     }
     
-    // Check if offering has a paywall configured (required for RevenueCatUI)
-    const offeringAny = offering as any;
-    const hasPaywall = offeringAny.paywall !== null && offeringAny.paywall !== undefined;
-    
+    // Log offering info for debugging
     if (DEBUG_REVENUECAT) {
       log.rc('📦 Presenting offering:', {
         id: offering.identifier,
-        packages: offering.availablePackages.map(p => p.identifier),
-        hasPaywallTemplate: hasPaywall,
+        packages: offering.availablePackages.map(p => ({
+          id: p.identifier,
+          product: p.product.identifier,
+          price: p.product.priceString,
+        })),
       });
     }
     
-    if (!hasPaywall) {
-      log.rcError('❌ No paywall template for offering:', offering.identifier);
+    // Note: The paywall property is not exposed in TypeScript types, but RevenueCat
+    // will handle paywall template checking internally. If no template exists,
+    // presentPaywall() will return NOT_PRESENTED.
+    log.rc('🚀 Presenting paywall for offering:', offering.identifier);
+    log.rc('⏳ Awaiting presentPaywall()...');
+    
+    let result: any;
+    try {
+      result = await RevenueCatUI.presentPaywall({ offering });
+      log.rc('✅ presentPaywall() returned!');
+      log.rc('📱 Raw result value:', result);
+      log.rc('📱 Result type:', typeof result);
+      log.rc('📱 Result equals PURCHASED?', result === RevenueCatUI.PAYWALL_RESULT.PURCHASED);
+      log.rc('📱 Result equals CANCELLED?', result === RevenueCatUI.PAYWALL_RESULT.CANCELLED);
+      log.rc('📱 Result equals NOT_PRESENTED?', result === RevenueCatUI.PAYWALL_RESULT.NOT_PRESENTED);
+      log.rc('📱 Result equals ERROR?', result === RevenueCatUI.PAYWALL_RESULT.ERROR);
+      log.rc('📱 Result equals RESTORED?', result === RevenueCatUI.PAYWALL_RESULT.RESTORED);
+    } catch (paywallError: any) {
+      log.rcError('❌ Exception from presentPaywall():', paywallError.message || paywallError, paywallError);
+      throw paywallError;
+    }
+    
+    // Handle paywall presentation results
+    if (result === RevenueCatUI.PAYWALL_RESULT.NOT_PRESENTED) {
+      log.rcError(
+        '❌ Paywall not presented - no template configured for offering:',
+        offering.identifier,
+        '\n💡 To fix: Go to RevenueCat Dashboard → Paywalls → Assign a paywall template to the "' + offering.identifier + '" offering'
+      );
       const error: any = new Error(
-        `No paywall template configured for offering '${offering.identifier}'.`
+        `No paywall template configured for offering '${offering.identifier}'. ` +
+        `Please assign a paywall template to this offering in RevenueCat Dashboard.`
       );
       error.code = 'NO_PAYWALL_TEMPLATE';
       error.offeringId = offering.identifier;
       throw error;
     }
-
-    log.rc('🚀 Launching native paywall UI...');
-    const result = await RevenueCatUI.presentPaywall({ offering });
-
+    
+    if (result === RevenueCatUI.PAYWALL_RESULT.ERROR) {
+      log.rcError('❌ Error presenting paywall for offering:', offering.identifier);
+      const error: any = new Error(`Error presenting paywall for offering '${offering.identifier}'`);
+      error.code = 'PAYWALL_PRESENTATION_ERROR';
+      error.offeringId = offering.identifier;
+      throw error;
+    }
+    
+    // Log the result of paywall presentation
     const purchased = result === RevenueCatUI.PAYWALL_RESULT.PURCHASED;
     const cancelled = result === RevenueCatUI.PAYWALL_RESULT.CANCELLED;
+    const restored = result === RevenueCatUI.PAYWALL_RESULT.RESTORED;
+    
+    // Map result to readable string
+    let resultString = 'UNKNOWN';
+    if (purchased) resultString = 'PURCHASED';
+    else if (cancelled) resultString = 'CANCELLED';
+    else if (restored) resultString = 'RESTORED';
+    else if (result === RevenueCatUI.PAYWALL_RESULT.NOT_PRESENTED) resultString = 'NOT_PRESENTED';
+    else if (result === RevenueCatUI.PAYWALL_RESULT.ERROR) resultString = 'ERROR';
+    
+    log.rc('📊 Paywall result:', resultString, `(offering: ${offering.identifier})`);
 
     if (purchased) {
+      log.rc('✅ Purchase completed! Syncing with backend...');
       const customerInfo = await Purchases.getCustomerInfo();
       await notifyBackendOfPurchase(customerInfo);
+    } else if (restored) {
+      log.rc('✅ Purchases restored! Syncing with backend...');
+      const customerInfo = await Purchases.getCustomerInfo();
+      await notifyBackendOfPurchase(customerInfo);
+    } else if (cancelled) {
+      log.rc('ℹ️ Paywall dismissed by user');
     }
 
-    return { purchased, cancelled };
+    return { purchased: purchased || restored, cancelled };
   } catch (error: any) {
     log.rcError('Error presenting paywall:', error?.message, error?.code);
     throw error;
