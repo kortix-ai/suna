@@ -1,6 +1,8 @@
 import { MenuPage, HomePage, ThreadPage } from '@/components/pages';
 import type { HomePageRef } from '@/components/pages/HomePage';
 import { useSideMenu, usePageNavigation, useChat, useAgentManager } from '@/hooks';
+import { useSystemStatus } from '@/hooks/useSystemStatus';
+import { useAdminRole } from '@/hooks/useAdminRole';
 import { useAuthContext } from '@/contexts';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from 'nativewind';
@@ -12,6 +14,7 @@ import type { Agent } from '@/api/types';
 import type { Conversation } from '@/components/menu/types';
 import { FeedbackDrawer } from '@/components/chat/tool-views/complete-tool/FeedbackDrawer';
 import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
+import { MaintenanceBanner, TechnicalIssueBanner } from '@/components/status';
 
 export default function AppScreen() {
   const { colorScheme } = useColorScheme();
@@ -23,6 +26,9 @@ export default function AppScreen() {
   const pageNav = usePageNavigation();
   const { isOpen: isFeedbackDrawerOpen } = useFeedbackDrawerStore();
   const homePageRef = React.useRef<HomePageRef>(null);
+  const { data: systemStatus } = useSystemStatus();
+  const { data: adminRole } = useAdminRole();
+  const isAdmin = adminRole?.isAdmin ?? false;
 
   // Worker config drawer state for MenuPage
   const [menuWorkerConfigWorkerId, setMenuWorkerConfigWorkerId] = React.useState<string | null>(
@@ -160,23 +166,41 @@ export default function AppScreen() {
             onCloseWorkerConfigDrawer={handleCloseMenuWorkerConfig}
           />
         )}>
-        {chat.hasActiveThread ? (
-          <ThreadPage
-            onMenuPress={pageNav.openDrawer}
-            chat={chat}
-            isAuthenticated={canSendMessages}
-            onOpenWorkerConfig={handleOpenWorkerConfigFromAgentDrawer}
-          />
-        ) : (
-          <HomePage
-            ref={homePageRef}
-            onMenuPress={pageNav.openDrawer}
-            chat={chat}
-            isAuthenticated={canSendMessages}
-            onOpenWorkerConfig={handleOpenWorkerConfigFromAgentDrawer}
-            showThreadListView={false}
-          />
-        )}
+        <View className="flex-1">
+          {!isAdmin && systemStatus?.maintenanceNotice?.enabled && systemStatus.maintenanceNotice.startTime && systemStatus.maintenanceNotice.endTime && (
+            <MaintenanceBanner
+              startTime={systemStatus.maintenanceNotice.startTime}
+              endTime={systemStatus.maintenanceNotice.endTime}
+            />
+          )}
+          {!isAdmin && systemStatus?.technicalIssue?.enabled && systemStatus.technicalIssue.message && (
+            <TechnicalIssueBanner
+              message={systemStatus.technicalIssue.message}
+              statusUrl={systemStatus.technicalIssue.statusUrl}
+              description={systemStatus.technicalIssue.description}
+              estimatedResolution={systemStatus.technicalIssue.estimatedResolution}
+              severity={systemStatus.technicalIssue.severity}
+              affectedServices={systemStatus.technicalIssue.affectedServices}
+            />
+          )}
+          {chat.hasActiveThread ? (
+            <ThreadPage
+              onMenuPress={pageNav.openDrawer}
+              chat={chat}
+              isAuthenticated={canSendMessages}
+              onOpenWorkerConfig={handleOpenWorkerConfigFromAgentDrawer}
+            />
+          ) : (
+            <HomePage
+              ref={homePageRef}
+              onMenuPress={pageNav.openDrawer}
+              chat={chat}
+              isAuthenticated={canSendMessages}
+              onOpenWorkerConfig={handleOpenWorkerConfigFromAgentDrawer}
+              showThreadListView={false}
+            />
+          )}
+        </View>
       </Drawer>
       {isFeedbackDrawerOpen && <FeedbackDrawer />}
     </>
