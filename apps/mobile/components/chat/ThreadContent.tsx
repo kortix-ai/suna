@@ -1266,7 +1266,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
             return (
               <View key={group.key} className="mb-6">
-                <View className="mb-1 flex-row items-center">
+                <View className="mb-3 flex-row items-center">
                   {renderAgentIndicator(groupAgentId)}
                 </View>
 
@@ -1603,7 +1603,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           
           return (
             <View className="mb-6">
-              <View className="mb-2 flex-row items-center">
+              <View className="mb-3 flex-row items-center">
                 {renderAgentIndicator(null)}
               </View>
               <View className="h-6 justify-center">
