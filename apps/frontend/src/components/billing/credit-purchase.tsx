@@ -15,7 +15,7 @@ import { AlertCircle } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { billingApi } from '@/lib/api/billing';
 import { toast } from '@/lib/toast';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { useUserCurrency } from '@/hooks/use-user-currency';
 import { formatPrice, getCurrencySymbol } from '@/lib/utils/currency';
 

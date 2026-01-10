@@ -15,7 +15,7 @@ import {
 } from '@/lib/api/errors';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { normalizeFilenameToNFC } from '@agentpress/shared';
 
 export interface OptimisticAgentStartOptions {
   message: string;

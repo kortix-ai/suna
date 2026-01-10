@@ -3,7 +3,7 @@ import { View, Pressable, Modal, ScrollView, ActivityIndicator } from 'react-nat
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { AlertCircle } from 'lucide-react-native';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { startUnifiedCreditPurchase, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';

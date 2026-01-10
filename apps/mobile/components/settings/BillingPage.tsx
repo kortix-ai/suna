@@ -46,7 +46,7 @@ import {
   ArrowRight,
   Settings,
 } from 'lucide-react-native';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
 import { log } from '@/lib/logger';
 

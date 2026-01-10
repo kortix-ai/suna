@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { UploadedFile } from './chat-input';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { normalizeFilenameToNFC } from '@agentpress/shared';
 import { backendApi } from '@/lib/api-client';
 import JSZip from 'jszip';
 import {

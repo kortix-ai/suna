@@ -16,7 +16,7 @@ import { AlertCircle, MessageSquare, Activity, Sparkles } from 'lucide-react-nat
 import * as Haptics from 'expo-haptics';
 import { useThreadUsage } from '@/lib/billing';
 import { useBillingContext } from '@/contexts/BillingContext';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { DateRangePicker, type DateRange } from '@/components/billing/DateRangePicker';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';

@@ -9,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { useCreditBalance } from '@/lib/billing';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useColorScheme } from 'nativewind';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { useLanguage } from '@/contexts';
 import { log } from '@/lib/logger';
 

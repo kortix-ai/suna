@@ -201,6 +201,7 @@ export function Navbar() {
                   href={ctaLink}
                   onClick={() => trackCtaSignup()}
                   className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                  suppressHydrationWarning
                 >
                   {t('tryFree')}
                 </Link>
@@ -337,6 +338,7 @@ export function Navbar() {
                         setIsDrawerOpen(false);
                       }}
                       className="w-full h-10 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                      suppressHydrationWarning
                     >
                       {t('tryFree')}
                     </Link>

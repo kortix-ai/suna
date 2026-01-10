@@ -1,4 +1,9 @@
-// tool-parser.ts
+/**
+ * Dirty JSON Parser
+ * 
+ * Robust JSON parser that handles malformed JSON from AI outputs
+ * Fixes common issues like missing quotes, trailing commas, unquoted keys, incomplete JSON
+ */
 
 // ————————————————————————————————————————————————
 // 1) AST Node Definitions
@@ -245,6 +250,13 @@ function evalAST(node: ASTNode): any {
 // 5) Public API
 // ————————————————————————————————————————————————
 
+/**
+ * Parse dirty/malformed JSON from AI outputs
+ * Handles missing quotes, trailing commas, unquoted keys, incomplete JSON
+ * 
+ * @param raw - The potentially malformed JSON string
+ * @returns Parsed JavaScript object
+ */
 export function parseDirtyJSON(raw: string): any {
   // 0) Strip literal backspaces/control-chars
   raw = raw.replace(/[\u0000-\u001F]/g, c =>
@@ -256,3 +268,4 @@ export function parseDirtyJSON(raw: string): any {
   const ast = parser.parse();
   return evalAST(ast);
 }
+

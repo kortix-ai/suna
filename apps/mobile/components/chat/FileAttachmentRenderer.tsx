@@ -21,7 +21,7 @@ import { Icon } from '@/components/ui/icon';
 import { FileText, File, Download, ExternalLink, Image as ImageIcon, Play, Presentation } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import { autoLinkUrls } from '@agentpress/shared';
 import {
   isImageExtension,
   isDocumentExtension,

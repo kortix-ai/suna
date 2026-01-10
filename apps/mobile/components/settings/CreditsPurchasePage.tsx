@@ -9,7 +9,7 @@ import { useLanguage } from '@/contexts';
 import { CreditPackages } from '@/components/billing';
 import { startUnifiedCreditPurchase, shouldUseRevenueCat, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { useQueryClient } from '@tanstack/react-query';
 import { log } from '@/lib/logger';
 

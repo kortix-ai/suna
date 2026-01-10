@@ -56,7 +56,7 @@ import {
 } from '@/hooks/files';
 import { useDownloadRestriction } from '@/hooks/billing';
 import JSZip from 'jszip';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { normalizeFilenameToNFC } from '@agentpress/shared';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useFileViewerStore } from '@/stores/file-viewer-store';

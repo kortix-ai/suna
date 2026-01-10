@@ -38,7 +38,7 @@ import { getToolIcon } from '@/lib/icons/tool-icons';
 import { useColorScheme } from 'nativewind';
 import { useAgent } from '@/contexts/AgentContext';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import { autoLinkUrls } from '@agentpress/shared';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { CheckCircle2, AlertCircle, Info, CircleDashed } from 'lucide-react-native';
 import { KortixLoader } from '@/components/ui/kortix-loader';

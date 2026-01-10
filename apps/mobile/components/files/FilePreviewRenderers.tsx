@@ -12,7 +12,7 @@ import { KortixLoader } from '@/components/ui';
 import { AlertCircle, FileText } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import { autoLinkUrls } from '@agentpress/shared';
 import * as FileSystem from 'expo-file-system/legacy';
 import { log } from '@/lib/logger';
 
