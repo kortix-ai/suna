@@ -349,11 +349,11 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
   text: {
     color: isDark ? '#fafafa' : '#18181b',
-    fontFamily: 'Roobert-Regular',
+    // Don't set fontFamily here - let it inherit from parent (strong, em, etc.)
   },
   textgroup: {
     color: isDark ? '#fafafa' : '#18181b',
-    fontFamily: 'Roobert-Regular',
+    // Don't set fontFamily here - let children inherit from their specific styles (strong, em, etc.)
   },
   paragraph: {
     marginVertical: 0,
@@ -362,6 +362,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
   strong: {
     fontFamily: 'Roobert-SemiBold',
+    fontWeight: '600',
   },
   em: {
     fontStyle: 'italic',
