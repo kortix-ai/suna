@@ -8,25 +8,25 @@ import { Button } from '@/components/ui/button';
 // Detect if user is on mobile device
 function isMobileDevice(): boolean {
   if (typeof window === 'undefined') return false;
-  
+
   const userAgent = navigator.userAgent || navigator.vendor || (window as any).opera;
   const ua = userAgent.toLowerCase();
-  
+
   // Check for mobile user agents
   const mobileRegex = /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini|mobile|tablet/i;
-  
+
   // Also check for iOS Simulator (Macintosh with touch support)
   const isIOSSimulator = ua.includes('macintosh') && navigator.maxTouchPoints > 0;
-  
+
   return mobileRegex.test(ua) || isIOSSimulator;
 }
 
 // Detect specific platform
 function getMobilePlatform(): 'ios' | 'android' | null {
   if (typeof window === 'undefined') return null;
-  
+
   const userAgent = navigator.userAgent.toLowerCase();
-  
+
   // Check for iOS devices or iOS Simulator (Macintosh with touch)
   if (/iphone|ipad|ipod/.test(userAgent)) {
     return 'ios';
@@ -55,24 +55,16 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
     // Check if banner was previously dismissed for this session
     const dismissed = sessionStorage.getItem('mobile-app-banner-dismissed');
     if (dismissed) {
-      console.log('[MobileAppBanner] Dismissed previously');
       setIsDismissed(true);
       return;
     }
 
     const mobile = isMobileDevice();
     const mobilePlatform = getMobilePlatform();
-    
-    console.log('[MobileAppBanner] Detection:', { 
-      mobile, 
-      platform: mobilePlatform,
-      userAgent: navigator.userAgent,
-      maxTouchPoints: navigator.maxTouchPoints 
-    });
-    
+
     setIsMobile(mobile);
     setPlatform(mobilePlatform);
-    
+
     // Show banner after a short delay for better UX
     if (mobile) {
       setTimeout(() => setIsVisible(true), 500);
@@ -88,10 +80,10 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
   const handleOpenInApp = () => {
     // Use custom URL scheme to open the app
     const appUrl = `kortix://share/${threadId}`;
-    
+
     // Try to open the app
     window.location.href = appUrl;
-    
+
     // Fallback: If app doesn't open within 2 seconds, show app store
     setTimeout(() => {
       if (platform === 'ios') {
@@ -109,9 +101,8 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
 
   return (
     <div
-      className={`fixed bottom-0 left-0 right-0 z-50 transform transition-transform duration-300 ease-out ${
-        isVisible ? 'translate-y-0' : 'translate-y-full'
-      }`}
+      className={`fixed bottom-0 left-0 right-0 z-50 transform transition-transform duration-300 ease-out ${isVisible ? 'translate-y-0' : 'translate-y-full'
+        }`}
     >
       <div className="mx-4 mb-4 rounded-2xl bg-background border border-border shadow-lg p-4">
         <div className="flex items-start gap-3">
@@ -128,7 +119,7 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
             <p className="text-xs text-muted-foreground mt-0.5">
               Get the full experience with the native app
             </p>
-            
+
             <div className="flex gap-2 mt-3">
               <Button
                 onClick={handleOpenInApp}
