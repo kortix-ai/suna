@@ -13,6 +13,7 @@ import Animated, {
   withTiming,
   withRepeat,
   runOnJS,
+  interpolate,
 } from 'react-native-reanimated';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import type { Attachment } from '@/hooks/useChat';
@@ -630,21 +631,32 @@ const NormalMode = ({
   hasAgent,
   hasAttachments,
 }: NormalModeProps) => {
-  // LOCAL state for instant button response - no parent re-render needed!
-  const [localHasText, setLocalHasText] = React.useState(!!(value && value.trim()));
+  // REANIMATED shared value for INSTANT button icon switching
+  // This bypasses React rendering entirely - updates on UI thread!
+  const hasContentShared = useSharedValue(!!(value && value.trim()) || hasAttachments ? 1 : 0);
 
-  // Handle text change locally for instant button update
-  const handleLocalTextChange = React.useCallback((text: string) => {
-    setLocalHasText(!!(text && text.trim()));
-    onChangeText?.(text);
-  }, [onChangeText]);
-
-  // Sync when value changes from outside (e.g., after send clears)
+  // Update shared value when hasAttachments changes
   React.useEffect(() => {
-    setLocalHasText(!!(value && value.trim()));
-  }, [value]);
+    hasContentShared.value = (!!(value && value.trim()) || hasAttachments) ? 1 : 0;
+  }, [hasAttachments, value, hasContentShared]);
 
-  const hasContent = localHasText || hasAttachments;
+  // Handle text change - update shared value SYNCHRONOUSLY (no setState!)
+  const handleLocalTextChange = React.useCallback((text: string) => {
+    // Update Reanimated value immediately - no React render needed!
+    hasContentShared.value = (!!(text && text.trim()) || hasAttachments) ? 1 : 0;
+    onChangeText?.(text);
+  }, [onChangeText, hasAttachments, hasContentShared]);
+
+  // Animated styles for icon switching - runs on UI thread!
+  const voiceIconStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(hasContentShared.value, [0, 1], [1, 0]),
+    position: 'absolute' as const,
+  }));
+
+  const sendIconStyle = useAnimatedStyle(() => ({
+    opacity: hasContentShared.value,
+    position: 'absolute' as const,
+  }));
 
   return (
     <>
@@ -718,12 +730,25 @@ const NormalMode = ({
             {(isSendingMessage || isTranscribing || isAgentRunning || isStopping) ? (
               <StopIcon size={14} className="text-background" />
             ) : (
-              <Icon
-                as={hasContent ? CornerDownLeft : AudioLines}
-                size={18}
-                className="text-primary-foreground"
-                strokeWidth={2}
-              />
+              // Both icons rendered, Reanimated switches opacity on UI thread (instant!)
+              <>
+                <Animated.View style={voiceIconStyle}>
+                  <Icon
+                    as={AudioLines}
+                    size={18}
+                    className="text-primary-foreground"
+                    strokeWidth={2}
+                  />
+                </Animated.View>
+                <Animated.View style={sendIconStyle}>
+                  <Icon
+                    as={CornerDownLeft}
+                    size={18}
+                    className="text-primary-foreground"
+                    strokeWidth={2}
+                  />
+                </Animated.View>
+              </>
             )}
           </TouchableOpacity>
         </View>
