@@ -55,12 +55,20 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
     // Check if banner was previously dismissed for this session
     const dismissed = sessionStorage.getItem('mobile-app-banner-dismissed');
     if (dismissed) {
+      console.log('[MobileAppBanner] Dismissed previously');
       setIsDismissed(true);
       return;
     }
 
     const mobile = isMobileDevice();
     const mobilePlatform = getMobilePlatform();
+    
+    console.log('[MobileAppBanner] Detection:', { 
+      mobile, 
+      platform: mobilePlatform,
+      userAgent: navigator.userAgent,
+      maxTouchPoints: navigator.maxTouchPoints 
+    });
     
     setIsMobile(mobile);
     setPlatform(mobilePlatform);
@@ -125,7 +133,7 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
               <Button
                 onClick={handleOpenInApp}
                 size="sm"
-                className="flex-1 h-9 text-sm font-medium"
+                className="flex-1 h-10 text-sm font-medium"
               >
                 Open App
               </Button>
@@ -133,7 +141,7 @@ export function MobileAppBanner({ threadId }: MobileAppBannerProps) {
                 onClick={handleDismiss}
                 variant="outline"
                 size="sm"
-                className="h-9 text-sm"
+                className="flex-1 h-10 text-sm font-medium"
               >
                 Continue in Browser
               </Button>
