@@ -191,15 +191,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Sync localHasText when value prop changes from outside (e.g., after send clears input)
   React.useEffect(() => {
-    const newHasText = !!(value && value.trim());
-    if (newHasText !== localHasText) {
-      // iOS: smooth animation, Android: instant
-      if (Platform.OS === 'ios') {
-        LayoutAnimation.configureNext(NATIVE_SPRING_CONFIG);
-      }
-      setLocalHasText(newHasText);
-    }
-  }, [value, localHasText]);
+    setLocalHasText(!!(value && value.trim()));
+  }, [value]);
 
 
   // Memoized placeholder
@@ -455,18 +448,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [value, selection, onChangeText]
   );
 
-  // Wrapped onChangeText - instant update for button
+  // Parent's onChangeText - just updates parent state for button press logic
+  // NormalMode handles its own local state for instant button icon update
   const handleChangeText = React.useCallback((text: string) => {
-    // Update ref immediately (no render cycle)
     textValueRef.current = text;
-    const newHasText = !!(text && text.trim());
-    // iOS: smooth animation, Android: instant (no animation delay)
-    if (newHasText !== localHasText && Platform.OS === 'ios') {
-      LayoutAnimation.configureNext(NATIVE_SPRING_CONFIG);
-    }
-    setLocalHasText(newHasText);
+    setLocalHasText(!!(text && text.trim()));
     onChangeText?.(text);
-  }, [onChangeText, localHasText]);
+  }, [onChangeText]);
 
   // Container style with dynamic height
   const containerStyle = React.useMemo(
@@ -516,16 +504,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
               isDisabled={isDisabled}
               textInputStyle={textInputStyle}
               handleContentSizeChange={handleContentSizeChange}
-              attachButtonStyle={attachButtonStyle}
-              onAttachPressIn={handleAttachPressIn}
-              onAttachPressOut={handleAttachPressOut}
               onAttachPress={onAttachPress}
               onAgentPress={onAgentPress}
-              sendAnimatedStyle={sendAnimatedStyle}
-              rotationAnimatedStyle={rotationAnimatedStyle}
-              hasContent={hasContent}
-              onSendPressIn={handleSendPressIn}
-              onSendPressOut={handleSendPressOut}
               onButtonPress={handleButtonPress}
               isSendingMessage={isSendingMessage}
               isTranscribing={isTranscribing}
@@ -533,6 +513,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
               isStopping={isStopping}
               isAuthenticated={isAuthenticated}
               hasAgent={hasAgent}
+              hasAttachments={hasAttachments}
             />
           )}
         </View>
@@ -615,16 +596,8 @@ interface NormalModeProps {
   isDisabled: boolean;
   textInputStyle: any;
   handleContentSizeChange: (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => void;
-  attachButtonStyle: any;
-  onAttachPressIn: () => void;
-  onAttachPressOut: () => void;
   onAttachPress?: () => void;
   onAgentPress?: () => void;
-  sendAnimatedStyle: any;
-  rotationAnimatedStyle: any;
-  hasContent: boolean;
-  onSendPressIn: () => void;
-  onSendPressOut: () => void;
   onButtonPress: () => void;
   isSendingMessage: boolean;
   isTranscribing: boolean;
@@ -632,9 +605,11 @@ interface NormalModeProps {
   isStopping: boolean;
   isAuthenticated: boolean;
   hasAgent: boolean;
+  hasAttachments: boolean;
 }
 
-const NormalMode = React.memo(({
+// NOT memo'd - we want instant re-renders for button state
+const NormalMode = ({
   textInputRef,
   value,
   onChangeText,
@@ -643,16 +618,8 @@ const NormalMode = React.memo(({
   isDisabled,
   textInputStyle,
   handleContentSizeChange,
-  attachButtonStyle,
-  onAttachPressIn,
-  onAttachPressOut,
   onAttachPress,
   onAgentPress,
-  sendAnimatedStyle,
-  rotationAnimatedStyle,
-  hasContent,
-  onSendPressIn,
-  onSendPressOut,
   onButtonPress,
   isSendingMessage,
   isTranscribing,
@@ -660,90 +627,106 @@ const NormalMode = React.memo(({
   isStopping,
   isAuthenticated,
   hasAgent,
-}: NormalModeProps) => (
-  <>
-    <View className="flex-1 mb-12">
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        nestedScrollEnabled={true}
-        style={{ maxHeight: 100 }} // Cap at ~4-5 lines
-      >
-        <TextInput
-          ref={textInputRef}
-          // iOS: controlled for proper state sync
-          // Android: uncontrolled (defaultValue) for instant response - no bridge delay
-          {...(Platform.OS === 'ios' ? { value } : { defaultValue: value })}
-          onChangeText={onChangeText}
-          onFocus={() => {
-            if (!isAuthenticated) {
-              textInputRef.current?.blur();
-            }
-          }}
-          placeholder={effectivePlaceholder}
-          placeholderTextColor={placeholderTextColor}
-          multiline
-          scrollEnabled={false}
-          editable={!isDisabled}
-          onContentSizeChange={handleContentSizeChange}
-          className="text-foreground text-base"
-          style={textInputStyle}
-          textAlignVertical="top"
-          underlineColorAndroid="transparent"
-        />
-      </ScrollView>
-    </View>
+  hasAttachments,
+}: NormalModeProps) => {
+  // LOCAL state for instant button response - no parent re-render needed!
+  const [localHasText, setLocalHasText] = React.useState(!!(value && value.trim()));
 
-    <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
-      <View className="flex-row items-center gap-2">
-        {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
-        <TouchableOpacity
-          onPress={() => {
-            if (!isAuthenticated) {
-              console.warn('⚠️ User not authenticated - cannot attach');
-              return;
-            }
-            onAttachPress?.();
-          }}
-          disabled={isDisabled}
-          style={{ width: 40, height: 40, borderWidth: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isDisabled ? 0.4 : 1 }}
-          className="border-border"
-          hitSlop={ANDROID_HIT_SLOP}
-          activeOpacity={0.7}
+  // Handle text change locally for instant button update
+  const handleLocalTextChange = React.useCallback((text: string) => {
+    setLocalHasText(!!(text && text.trim()));
+    onChangeText?.(text);
+  }, [onChangeText]);
+
+  // Sync when value changes from outside (e.g., after send clears)
+  React.useEffect(() => {
+    setLocalHasText(!!(value && value.trim()));
+  }, [value]);
+
+  const hasContent = localHasText || hasAttachments;
+
+  return (
+    <>
+      <View className="flex-1 mb-12">
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          nestedScrollEnabled={true}
+          style={{ maxHeight: 100 }} // Cap at ~4-5 lines
         >
-          <Icon as={Paperclip} size={16} className="text-foreground" />
-        </TouchableOpacity>
+          <TextInput
+            ref={textInputRef}
+            // iOS: controlled, Android: uncontrolled for speed
+            {...(Platform.OS === 'ios' ? { value } : { defaultValue: value })}
+            onChangeText={handleLocalTextChange}
+            onFocus={() => {
+              if (!isAuthenticated) {
+                textInputRef.current?.blur();
+              }
+            }}
+            placeholder={effectivePlaceholder}
+            placeholderTextColor={placeholderTextColor}
+            multiline
+            scrollEnabled={false}
+            editable={!isDisabled}
+            onContentSizeChange={handleContentSizeChange}
+            className="text-foreground text-base"
+            style={textInputStyle}
+            textAlignVertical="top"
+            underlineColorAndroid="transparent"
+          />
+        </ScrollView>
       </View>
 
-      <View className="flex-row items-center gap-1">
-        <AgentSelector
-          onPress={onAgentPress}
-          compact={false}
-        />
+      <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
+        <View className="flex-row items-center gap-2">
+          {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
+          <TouchableOpacity
+            onPress={() => {
+              if (!isAuthenticated) {
+                console.warn('⚠️ User not authenticated - cannot attach');
+                return;
+              }
+              onAttachPress?.();
+            }}
+            disabled={isDisabled}
+            style={{ width: 40, height: 40, borderWidth: 1, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isDisabled ? 0.4 : 1 }}
+            className="border-border"
+            hitSlop={ANDROID_HIT_SLOP}
+            activeOpacity={0.7}
+          >
+            <Icon as={Paperclip} size={16} className="text-foreground" />
+          </TouchableOpacity>
+        </View>
 
-        {/* Main action button */}
-        <TouchableOpacity
-          onPress={onButtonPress}
-          disabled={isStopping || (!hasAgent && !isAgentRunning && !isSendingMessage)}
-          style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isStopping ? 0.5 : ((!hasAgent && !isAgentRunning && !isSendingMessage) ? 0.4 : 1) }}
-          className={(isAgentRunning || isSendingMessage || isTranscribing || isStopping) ? 'bg-foreground' : 'bg-primary'}
-          hitSlop={ANDROID_HIT_SLOP}
-          activeOpacity={0.7}
-        >
-          {(isSendingMessage || isTranscribing || isAgentRunning || isStopping) ? (
-            <StopIcon size={14} className="text-background" />
-          ) : (
-            <Icon
-              as={hasContent ? CornerDownLeft : AudioLines}
-              size={18}
-              className="text-primary-foreground"
-              strokeWidth={2}
-            />
-          )}
-        </TouchableOpacity>
+        <View className="flex-row items-center gap-1">
+          <AgentSelector
+            onPress={onAgentPress}
+            compact={false}
+          />
+
+          {/* Main action button */}
+          <TouchableOpacity
+            onPress={onButtonPress}
+            disabled={isStopping || (!hasAgent && !isAgentRunning && !isSendingMessage)}
+            style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isStopping ? 0.5 : ((!hasAgent && !isAgentRunning && !isSendingMessage) ? 0.4 : 1) }}
+            className={(isAgentRunning || isSendingMessage || isTranscribing || isStopping) ? 'bg-foreground' : 'bg-primary'}
+            hitSlop={ANDROID_HIT_SLOP}
+            activeOpacity={0.7}
+          >
+            {(isSendingMessage || isTranscribing || isAgentRunning || isStopping) ? (
+              <StopIcon size={14} className="text-background" />
+            ) : (
+              <Icon
+                as={hasContent ? CornerDownLeft : AudioLines}
+                size={18}
+                className="text-primary-foreground"
+                strokeWidth={2}
+              />
+            )}
+          </TouchableOpacity>
+        </View>
       </View>
-    </View>
-  </>
-));
-
-NormalMode.displayName = 'NormalMode';
+    </>
+  );
+};
