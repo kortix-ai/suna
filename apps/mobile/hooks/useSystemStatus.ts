@@ -20,6 +20,7 @@ export interface TechnicalIssue {
 export interface SystemStatus {
   maintenanceNotice: MaintenanceNotice;
   technicalIssue: TechnicalIssue;
+  updatedAt?: string;
 }
 
 async function fetchSystemStatus(): Promise<SystemStatus> {
@@ -44,9 +45,10 @@ export function useSystemStatus() {
   return useQuery<SystemStatus>({
     queryKey: ['system-status'],
     queryFn: fetchSystemStatus,
-    staleTime: 5 * 60 * 1000,
-    refetchInterval: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
+    staleTime: 30 * 1000,
+    refetchInterval: 60 * 1000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: 'always',
     retry: 3,
     placeholderData: {
       maintenanceNotice: { enabled: false },
