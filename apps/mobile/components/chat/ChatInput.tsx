@@ -130,12 +130,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Track text value in ref for instant access (no render cycle)
   const textValueRef = React.useRef(value || '');
 
-  // State - simple React state for both platforms
+  // State - minimal state only
   const [isFocused, setIsFocused] = React.useState(false);
   const [selection, setSelection] = React.useState({ start: 0, end: 0 });
   const [isStopping, setIsStopping] = React.useState(false);
-  const [localHasText, setLocalHasText] = React.useState(!!(value && value.trim()));
   const [contentHeight, setContentHeight] = React.useState(0);
+  // NO localHasText state in parent - NormalMode handles button state locally
 
   // Android: Clear input imperatively when value prop becomes empty
   React.useEffect(() => {
@@ -173,11 +173,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       .activeOffsetY(SWIPE_DOWN_THRESHOLD) // Only activate on downward movement
     , [dismissKeyboard]);
 
-  // Derived values - computed once per render
-  // Use localHasText for instant response on BOTH platforms (avoids prop round-trip delay)
-  const hasText = localHasText;
+  // Derived values - use ref for hasText to avoid re-renders
   const hasAttachments = attachments.length > 0;
-  const hasContent = hasText || hasAttachments;
+  // hasContent computed from ref - no state dependency
+  const getHasContent = React.useCallback(() => {
+    return !!(textValueRef.current && textValueRef.current.trim()) || attachments.length > 0;
+  }, [attachments.length]);
   const hasAgent = !!agent?.agent_id;
   // Allow input to be editable during streaming - only disable when sending or transcribing
   const isDisabled = isSendingMessage || isTranscribing;
@@ -189,9 +190,9 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     }
   }, [isAgentRunning, isSendingMessage, isTranscribing]);
 
-  // Sync localHasText when value prop changes from outside (e.g., after send clears input)
+  // Sync ref when value prop changes from outside (e.g., after send clears input)
   React.useEffect(() => {
-    setLocalHasText(!!(value && value.trim()));
+    textValueRef.current = value || '';
   }, [value]);
 
 
@@ -355,6 +356,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Main button press handler
   const handleButtonPress = React.useCallback(() => {
+    const hasContent = getHasContent(); // Compute from ref at press time
     console.log('[ChatInput] 🔘 Button pressed!', { isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping });
 
     // Priority 1: Stop if agent is running OR if we're in sending/transcribing state
@@ -391,7 +393,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       return;
     }
     onAudioRecord?.();
-  }, [isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
+  }, [isAgentRunning, isRecording, getHasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
   // Content size change handler - iOS smooth, Android instant
   const handleContentSizeChange = React.useCallback(
@@ -448,11 +450,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [value, selection, onChangeText]
   );
 
-  // Parent's onChangeText - just updates parent state for button press logic
-  // NormalMode handles its own local state for instant button icon update
+  // Parent's onChangeText - NO STATE UPDATE, just ref + forward to parent prop
+  // NormalMode handles button icon locally - parent doesn't need to re-render
   const handleChangeText = React.useCallback((text: string) => {
     textValueRef.current = text;
-    setLocalHasText(!!(text && text.trim()));
     onChangeText?.(text);
   }, [onChangeText]);
 
