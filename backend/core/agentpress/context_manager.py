@@ -15,7 +15,7 @@ from anthropic import Anthropic
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.ai_models import model_manager
-from core.agentpress.prompt_caching import apply_anthropic_caching_strategy
+from core.agentpress.prompt_caching import apply_anthropic_caching_strategy, supports_prompt_caching
 
 DEFAULT_TOKEN_THRESHOLD = 120000
 
@@ -128,7 +128,7 @@ class ContextManager:
         messages_to_count = messages
         system_to_count = system_prompt
         
-        if apply_caching and ('claude' in model.lower() or 'anthropic' in model.lower()):
+        if apply_caching and supports_prompt_caching(model):
             try:
                 # Temporarily apply caching transformation
                 prepared = await apply_anthropic_caching_strategy(
