@@ -1266,7 +1266,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
 
             return (
               <View key={group.key} className="mb-6">
-                <View className="mb-1 flex-row items-center">
+                <View className="mb-3 flex-row items-center">
                   {renderAgentIndicator(groupAgentId)}
                 </View>
 
@@ -1495,7 +1495,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           null;
                         
                         return (
-                          <View className="gap-2">
+                          <View className="mt-2 gap-2">
                             {visibleToolCalls.map((tc: any, tcIndex: number) => {
                               const toolName = (tc.function_name || tc.name || '')?.replace(/_/g, '-');
                               const isCompleted = tc.completed === true || 
@@ -1538,7 +1538,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         );
                       }
 
-                      return <CompactStreamingToolCard toolCall={null} toolName="" />;
+                      return (
+                        <View className="mt-2">
+                          <CompactStreamingToolCard toolCall={null} toolName="" />
+                        </View>
+                      );
                     })()}
 
                   {/* Show loader when agent is running but not streaming, inside the last assistant group */}
@@ -1599,7 +1603,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           
           return (
             <View className="mb-6">
-              <View className="mb-2 flex-row items-center">
+              <View className="mb-3 flex-row items-center">
                 {renderAgentIndicator(null)}
               </View>
               <View className="h-6 justify-center">
