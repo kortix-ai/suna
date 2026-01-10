@@ -26,9 +26,15 @@ export function useSmoothToolField<T extends Record<string, any>>(
   const [revealedArgs, setRevealedArgs] = useState<Partial<T>>({});
   const keysRef = useRef<string[]>([]);
   const currentIndexRef = useRef(0);
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   useEffect(() => {
+    // Handle null/undefined targetArgs
+    if (!targetArgs || typeof targetArgs !== 'object') {
+      setRevealedArgs({});
+      return;
+    }
+
     // Get keys from target
     const targetKeys = Object.keys(targetArgs);
     

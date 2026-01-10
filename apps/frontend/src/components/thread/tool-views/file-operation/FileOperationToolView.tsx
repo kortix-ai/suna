@@ -276,20 +276,14 @@ export function FileOperationToolView({
   const streamingSource = isStreaming ? throttledStreamingSource : rawStreamingSource;
 
   // Apply smooth text streaming for file_contents (create/rewrite operations)
-  const { displayedValue: smoothFileContents, isAnimating: isFileContentsAnimating } = useSmoothToolField(
-    rawStreamingSource,
-    'file_contents',
-    120,
-    isStreaming && (operation === 'create' || operation === 'rewrite') && !toolResult
+  const smoothFields = useSmoothToolField(
+    rawStreamingSource && typeof rawStreamingSource === 'object' ? rawStreamingSource : {},
+    { interval: 50 }
   );
-
-  // Apply smooth text streaming for code_edit (edit operations)
-  const { displayedValue: smoothCodeEdit, isAnimating: isCodeEditAnimating } = useSmoothToolField(
-    rawStreamingSource,
-    'code_edit',
-    120,
-    isStreaming && operation === 'edit' && !toolResult
-  );
+  const smoothFileContents = (smoothFields as any).file_contents || (rawStreamingSource && typeof rawStreamingSource === 'object' ? (rawStreamingSource as Record<string, any>).file_contents : '') || '';
+  const smoothCodeEdit = (smoothFields as any).code_edit || (rawStreamingSource && typeof rawStreamingSource === 'object' ? (rawStreamingSource as Record<string, any>).code_edit : '') || '';
+  const isFileContentsAnimating = isStreaming && (operation === 'create' || operation === 'rewrite') && !toolResult;
+  const isCodeEditAnimating = isStreaming && operation === 'edit' && !toolResult;
 
   const extractedContent = useMemo(() => {
     let filePath: string | null = args.file_path || args.target_file || args.path || null;

@@ -24,8 +24,8 @@ export function useSmoothText(
   const { speed = 120, delay = 0 } = config;
 
   const [displayedText, setDisplayedText] = useState('');
-  const startTimeRef = useRef<number>();
-  const animationFrameRef = useRef<number>();
+  const startTimeRef = useRef<number | undefined>(undefined);
+  const animationFrameRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     // Reset when target changes
@@ -34,15 +34,15 @@ export function useSmoothText(
 
     if (!targetText) {
       return;
-    }
+      }
 
     const animate = (currentTime: number) => {
       if (!startTimeRef.current) {
         startTimeRef.current = currentTime;
-      }
+    }
 
       const elapsed = currentTime - startTimeRef.current;
-
+    
       // Handle delay
       if (elapsed < delay) {
         animationFrameRef.current = requestAnimationFrame(animate);
@@ -66,7 +66,7 @@ export function useSmoothText(
     return () => {
       if (animationFrameRef.current) {
         cancelAnimationFrame(animationFrameRef.current);
-      }
+    }
     };
   }, [targetText, speed, delay]);
 

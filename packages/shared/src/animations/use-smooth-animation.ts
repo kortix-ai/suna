@@ -31,9 +31,9 @@ export function useSmoothAnimation(
 
   const displayedTextRef = useRef('');
   const targetTextRef = useRef(targetText);
-  const animationFrameRef = useRef<number>();
+  const animationFrameRef = useRef<number | undefined>(undefined);
   const lastUpdateTimeRef = useRef(0);
-  const startTimeRef = useRef<number>();
+  const startTimeRef = useRef<number | undefined>(undefined);
 
   // Update target when it changes
   if (targetTextRef.current !== targetText) {
@@ -51,11 +51,11 @@ export function useSmoothAnimation(
       // Handle delay
       if (elapsed < delay) {
         animationFrameRef.current = requestAnimationFrame(animate);
-        return;
-      }
+      return;
+    }
 
       const timeSinceLastUpdate = currentTime - lastUpdateTimeRef.current;
-
+      
       // Throttle updates
       if (timeSinceLastUpdate < minInterval) {
         animationFrameRef.current = requestAnimationFrame(animate);
@@ -84,7 +84,7 @@ export function useSmoothAnimation(
     },
     [delay, speed, minInterval]
   );
-
+  
   // Start/restart animation when target changes
   const currentDisplayed = displayedTextRef.current;
   const currentTarget = targetTextRef.current;
@@ -96,15 +96,7 @@ export function useSmoothAnimation(
       animationFrameRef.current = requestAnimationFrame(animate);
     }
   }
-
-  // Cleanup on unmount
-  if (typeof window !== 'undefined') {
-    return () => {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
-    };
-  }
-
+  
+  // Cleanup happens in useEffect (not here)
   return displayedTextRef.current || '';
-}
+  }

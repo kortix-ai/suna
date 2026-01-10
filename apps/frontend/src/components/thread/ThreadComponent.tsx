@@ -370,7 +370,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     agentName: derivedAgentName,
   }), [derivedAgentId, derivedAgentName]);
 
-  // Track the thread ID that was opened via optimistic start - we should NEVER reset for this thread
+  // Track the previous thread ID to detect thread switches
+  const prevThreadIdRef = useRef<string | null>(null);
+  
+  // Track the thread ID that was opened via optimistic start
   const optimisticThreadIdRef = useRef<string | null>(null);
   
   // Mark this thread as optimistic when we enter optimistic mode
@@ -380,16 +383,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [showOptimisticUI, isNewThread, threadId]);
   
+  // Reset Kortix Computer state when switching threads
   useEffect(() => {
     if (!isShared) {
       queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
-      // Skip reset if this is the thread we opened via optimistic start
-      // This prevents the panel from flickering closed during the transition
+      
+      // Always reset when switching between different threads
+      // Only skip reset on the very first mount if it's the optimistic thread
+      const isThreadSwitch = prevThreadIdRef.current !== null && prevThreadIdRef.current !== threadId;
+      const isFirstMount = prevThreadIdRef.current === null;
       const isOptimisticThread = optimisticThreadIdRef.current === threadId;
-      if (!isOptimisticThread) {
+      
+      if (isThreadSwitch || (isFirstMount && !isOptimisticThread)) {
+        console.log('[ThreadComponent] Resetting Kortix Computer state for thread:', threadId);
         resetKortixComputerStore();
       }
+      
+      // Update the previous thread ID
+      prevThreadIdRef.current = threadId;
     }
   }, [threadId, queryClient, isShared, resetKortixComputerStore]);
 

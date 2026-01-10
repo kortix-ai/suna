@@ -32,6 +32,7 @@ import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { log } from '@/lib/logger';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -642,6 +643,10 @@ export function useChat(): UseChatReturn {
     
     setMessages([]);
     
+    // Reset Kortix Computer state when switching threads
+    useKortixComputerStore.getState().reset();
+    log.log('[useChat] Reset Kortix Computer state');
+    
     setActiveThreadId(threadId);
     setModeViewState('thread');
     
@@ -683,6 +688,10 @@ export function useChat(): UseChatReturn {
     setIsNewThreadOptimistic(false);
     setActiveSandboxId(undefined);
     stopStreaming();
+    
+    // Reset Kortix Computer state when starting new chat
+    useKortixComputerStore.getState().reset();
+    log.log('[useChat] Reset Kortix Computer state for new chat');
   }, [stopStreaming]);
 
   const updateThreadTitle = useCallback(async (newTitle: string) => {

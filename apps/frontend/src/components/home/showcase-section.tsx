@@ -193,9 +193,11 @@ export function ShowCaseSection() {
                                         </h3>
 
                                         {/* Description */}
-                                        <GrainText className="text-sm leading-relaxed text-muted-foreground" suppressHydrationWarning>
-                                            {worker.description}
-                                        </GrainText>
+                                        <div suppressHydrationWarning>
+                                            <GrainText className="text-sm leading-relaxed text-muted-foreground">
+                                                {worker.description}
+                                            </GrainText>
+                                        </div>
 
                                         {/* Capabilities */}
                                         <div className="flex flex-wrap gap-1.5 sm:gap-2">
