@@ -27,19 +27,19 @@ const variantStyles: Record<AlertBannerVariant, {
 }> = {
   warning: {
     bg: 'bg-muted',
-    border: 'border-muted',
+    border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
     iconColor: 'text-amber-500',
   },
   error: {
     bg: 'bg-muted',
-    border: 'border-muted',
+    border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
     iconColor: 'text-red-500',
   },
   info: {
     bg: 'bg-muted',
-    border: 'border-muted',
+    border: 'border-muted-foreground/20',
     textColor: 'text-foreground',
     iconColor: 'text-blue-500',
   },
@@ -95,7 +95,7 @@ export function AlertBanner({
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
     >
-      <View className={`mx-4 rounded-xl border p-3 ${styles.bg} ${styles.border}`}>
+      <View className={`mx-4 rounded-3xl border p-3 ${styles.bg} ${styles.border}`}>
         <View className="flex-row items-center gap-2">
           <Icon as={IconComponent} size={16} className={styles.iconColor} />
           
