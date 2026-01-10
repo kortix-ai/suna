@@ -294,6 +294,7 @@ export const ToolSnack = React.memo(function ToolSnack({
             style={{ backgroundColor: statusBgColor }}
           >
             <View 
+              key={isStreaming ? 'streaming' : 'static'}
               className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'animate-pulse' : ''}`}
               style={{ backgroundColor: statusDotColor }}
             />
