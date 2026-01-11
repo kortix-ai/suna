@@ -51,19 +51,19 @@ export function CommandToolView({
 
   // Apply smooth text streaming for command field
   const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
-  const { displayedValue: smoothCommand, isAnimating: isCommandAnimating } = useSmoothToolField(
-    rawArguments,
-    'command',
-    120,
-    isStreaming && !toolResult
+  const smoothFields = useSmoothToolField(
+    (typeof rawArguments === 'object' && rawArguments) ? rawArguments : {},
+    { interval: 50 }
   );
+  const smoothCommand = (smoothFields as any).command || (typeof rawArguments === 'object' ? rawArguments?.command : '') || '';
+  const isCommandAnimating = isStreaming && !toolResult;
 
   // Apply smooth text streaming for output (use useSmoothText since output is a plain string)
-  const { text: smoothOutput, isAnimating: isOutputAnimating } = useSmoothText(
+  const smoothOutput = useSmoothText(
     streamingOutput || output || '',
-    120,
-    isStreaming && isOutputStreaming && !toolResult
+    { speed: 120 }
   );
+  const isOutputAnimating = isStreaming && isOutputStreaming && !toolResult;
   
   // Use smooth streaming output when available, otherwise use regular streaming output or result output
   const displayOutput = isStreaming && isOutputStreaming && smoothOutput 

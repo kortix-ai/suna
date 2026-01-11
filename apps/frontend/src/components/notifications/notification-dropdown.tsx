@@ -9,6 +9,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { UnifiedMarkdown } from '@/components/markdown';
 import { useAnnouncementStore, AnnouncementData } from '@/stores/announcement-store';
 import { useNovuInbox, useNovuAppearance } from './novu-inbox-provider';
+import { NotificationErrorBoundary } from './error-boundary';
 
 type ChannelType = 'in_app' | 'email' | 'sms' | 'push' | 'chat';
 
@@ -263,12 +264,14 @@ const MemoizedInbox = memo(function MemoizedInbox({
   console.log('[NovuInbox] Rendering with session key:', `${subscriberId}-${applicationIdentifier}`);
   
   return (
-    <Inbox
-      applicationIdentifier={applicationIdentifier}
-      subscriberId={subscriberId}
-      appearance={appearance}
-      renderNotification={renderNotification}
-    />
+    <NotificationErrorBoundary>
+      <Inbox
+        applicationIdentifier={applicationIdentifier}
+        subscriberId={subscriberId}
+        appearance={appearance}
+        renderNotification={renderNotification}
+      />
+    </NotificationErrorBoundary>
   );
 });
 

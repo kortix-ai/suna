@@ -11,6 +11,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import type { UserProfile } from './types';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -62,8 +63,8 @@ export function ProfileSection({ profile, onPress }: ProfileSectionProps) {
   };
   
   const handlePress = () => {
-    console.log('🎯 Profile section pressed - Opening settings');
-    console.log('📊 User:', { userName, isGuest });
+    log.log('🎯 Profile section pressed - Opening settings');
+    log.log('📊 User:', { userName, isGuest });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onPress?.();
   };

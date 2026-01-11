@@ -674,11 +674,8 @@ class ThreadManager:
                         # Use fast path if we have usage data
                         if usage:
                             last_total_tokens = int(usage.get('total_tokens', 0))
-                            
-                            cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                            if cache_creation > 0:
-                                last_total_tokens += cache_creation
-                                logger.debug(f"Added {cache_creation} cache creation tokens to fast check total")
+                            # Note: cache_creation_input_tokens is NOT added here - it's a billing metric,
+                            # not actual context window usage. The context window is just prompt_tokens.
                             
                             new_msg_tokens = 0
                             

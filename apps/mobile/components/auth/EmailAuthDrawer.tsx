@@ -15,6 +15,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
 import { useToast } from '@/components/ui/toast-provider';
+import { log } from '@/lib/logger';
 
 export interface EmailAuthDrawerRef {
   open: () => void;
@@ -190,7 +191,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                           await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                           await openInbox({});
                         } catch (error) {
-                          console.error('Failed to open email app:', error);
+                          log.error('Failed to open email app:', error);
                         }
                       }}
                       className="flex-row items-center justify-center gap-2"
@@ -210,7 +211,7 @@ export const EmailAuthDrawer = React.forwardRef<EmailAuthDrawerRef, {
                         await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
                         await openInbox({ app: 'gmail' });
                       } catch (error) {
-                        console.error('Failed to open Gmail:', error);
+                        log.error('Failed to open Gmail:', error);
                       }
                     }}
                     className="flex-row items-center justify-center gap-2"

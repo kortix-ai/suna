@@ -58,4 +58,5 @@ export const normalizePathToNFC = (path: string): string => {
     console.warn('Failed to normalize path to NFC:', path, error);
     return path;
   }
-}; 
+};
+

@@ -1,12 +1,13 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
+import { log } from '@/lib/logger';
 
 let Tracking: any = null;
 try {
   Tracking = require('expo-tracking-transparency');
 } catch (e) {
-  console.warn('⚠️ expo-tracking-transparency not available (needs native rebuild)');
+  log.warn('⚠️ expo-tracking-transparency not available (needs native rebuild)');
 }
 
 interface TrackingContextType {
@@ -27,7 +28,7 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
 
   const checkAndRequestTracking = async () => {
     if (!Tracking) {
-      console.warn('⚠️ Tracking module not available, defaulting to no tracking');
+      log.warn('⚠️ Tracking module not available, defaulting to no tracking');
       setCanTrack(false);
       setIsLoading(false);
       return;
@@ -43,27 +44,27 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
       const { status: currentStatus } = await Tracking.getTrackingPermissionsAsync();
       
       if (currentStatus === 'granted') {
-        console.log('✅ Tracking already authorized');
+        log.log('✅ Tracking already authorized');
         setCanTrack(true);
         setIsLoading(false);
         return;
       }
 
       if (currentStatus === 'undetermined') {
-        console.log('⏳ Requesting tracking permission...');
+        log.log('⏳ Requesting tracking permission...');
         const { status: newStatus } = await Tracking.requestTrackingPermissionsAsync();
         const granted = newStatus === 'granted';
         
-        console.log(granted ? '✅ Tracking authorized' : '❌ Tracking denied');
+        log.log(granted ? '✅ Tracking authorized' : '❌ Tracking denied');
         setCanTrack(granted);
       } else {
-        console.log('❌ Tracking not authorized, status:', currentStatus);
+        log.log('❌ Tracking not authorized, status:', currentStatus);
         setCanTrack(false);
       }
       
       setIsLoading(false);
     } catch (error) {
-      console.error('Error checking/requesting tracking permission:', error);
+      log.error('Error checking/requesting tracking permission:', error);
       setCanTrack(false);
       setIsLoading(false);
     }
@@ -71,7 +72,7 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
 
   const requestTrackingPermission = async (): Promise<boolean> => {
     if (!Tracking) {
-      console.warn('⚠️ Tracking module not available');
+      log.warn('⚠️ Tracking module not available');
       return false;
     }
 
@@ -85,7 +86,7 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
       setCanTrack(granted);
       return granted;
     } catch (error) {
-      console.error('Error requesting tracking permission:', error);
+      log.error('Error requesting tracking permission:', error);
       return false;
     }
   };

@@ -3,6 +3,7 @@ import { View, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Table } from 'lucide-react-native';
+import { log } from '@/lib/logger';
 
 interface XlsxRendererProps {
   content: string;
@@ -221,7 +222,7 @@ export function XlsxRenderer({ content, fileName }: XlsxRendererProps) {
       </View>
     );
   } catch (error) {
-    console.error('[XlsxRenderer] Error parsing content:', error);
+    log.error('[XlsxRenderer] Error parsing content:', error);
     return (
       <View className="flex-1 items-center justify-center py-16">
         <View className="bg-card rounded-2xl p-4 mb-4">

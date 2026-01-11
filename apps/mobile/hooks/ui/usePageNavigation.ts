@@ -1,5 +1,6 @@
 import * as React from 'react';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 /**
  * usePageNavigation Hook (Refactored for Drawer)
@@ -25,7 +26,7 @@ export function usePageNavigation() {
    * This is the single source of truth for opening the drawer
    */
   const handleDrawerOpen = React.useCallback(() => {
-    console.log('📄 Drawer opened');
+    log.log('📄 Drawer opened');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setIsDrawerOpen(true);
   }, []);
@@ -35,7 +36,7 @@ export function usePageNavigation() {
    * This is the single source of truth for closing the drawer
    */
   const handleDrawerClose = React.useCallback(() => {
-    console.log('📄 Drawer closed');
+    log.log('📄 Drawer closed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsDrawerOpen(false);
   }, []);

@@ -305,12 +305,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     }, [effectiveToolCall, throttledContent]);
 
     // Apply smooth animation to tool content (120 chars/sec for snappy code display)
-    const { displayedValue: smoothFieldValue, isAnimating: isFieldAnimating } = useSmoothToolField(
-        rawToolArguments,
-        smoothFieldPath,
-        120,
-        !isCompleted // Only animate while streaming (not completed)
+    const smoothFieldValue = useSmoothToolField(
+        rawToolArguments || {},
+        { interval: 8 }
     );
+    const isFieldAnimating = !isCompleted;
 
     // Extract streaming content from JSON or plain text
     const streamingContent = useMemo(() => {

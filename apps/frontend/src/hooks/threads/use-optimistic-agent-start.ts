@@ -15,11 +15,10 @@ import {
 } from '@/lib/api/errors';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { normalizeFilenameToNFC } from '@agentpress/shared';
 
 export interface OptimisticAgentStartOptions {
   message: string;
-  files?: File[];
   fileIds?: string[];
   modelName?: string;
   agentId?: string;
@@ -137,10 +136,10 @@ export function useOptimisticAgentStart(
   const startAgent = useCallback(async (
     options: OptimisticAgentStartOptions
   ): Promise<OptimisticAgentStartResult | null> => {
-    const { message, files = [], fileIds = [], modelName, agentId } = options;
+    const { message, fileIds = [], modelName, agentId } = options;
     
     const trimmedMessage = message.trim();
-    if (!trimmedMessage && files.length === 0 && fileIds.length === 0) {
+    if (!trimmedMessage && fileIds.length === 0) {
       toast.error('Please enter a message or attach files');
       return null;
     }
@@ -151,25 +150,9 @@ export function useOptimisticAgentStart(
     const projectId = crypto.randomUUID();
 
     try {
-      // Normalize file names
-      const normalizedFiles = files.map((file) => {
-        const normalizedName = normalizeFilenameToNFC(file.name);
-        return new File([file], normalizedName, { type: file.type });
-      });
-
-      // Build prompt with file references
-      let promptWithFiles = trimmedMessage;
-      if (normalizedFiles.length > 0 && fileIds.length === 0) {
-        addOptimisticFiles(threadId, projectId, normalizedFiles);
-        sessionStorage.setItem('optimistic_files', 'true');
-        const fileRefs = normalizedFiles.map((f) => 
-          `[Uploaded File: uploads/${f.name}]`
-        ).join('\n');
-        promptWithFiles = `${trimmedMessage}\n\n${fileRefs}`;
-      }
-
       // Store optimistic data for the thread component to pick up
-      sessionStorage.setItem('optimistic_prompt', promptWithFiles);
+      // Backend will build file references from staged files
+      sessionStorage.setItem('optimistic_prompt', message);
       sessionStorage.setItem('optimistic_thread', threadId);
 
       if (process.env.NODE_ENV !== 'production') {
@@ -178,9 +161,8 @@ export function useOptimisticAgentStart(
           threadId,
           agent_id: agentId || undefined,
           model_name: modelName,
-          promptLength: promptWithFiles.length,
-          promptPreview: promptWithFiles.slice(0, 140),
-          files: normalizedFiles.map((f) => ({ name: f.name, size: f.size, type: f.type })),
+          promptLength: message.length,
+          promptPreview: message.slice(0, 140),
           fileIds: fileIds.length,
         });
       }
@@ -188,11 +170,11 @@ export function useOptimisticAgentStart(
       // Navigate immediately for optimistic UX
       router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
 
-      // Start agent in background
+      // Start agent in background - only pass file_ids, backend handles everything
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
-        prompt: promptWithFiles,
+        prompt: message,
         file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: modelName,
         agent_id: agentId || undefined,
@@ -284,7 +266,6 @@ export function useOptimisticAgentStart(
   }, [
     router,
     queryClient,
-    addOptimisticFiles,
     redirectOnError,
     handleBillingError,
     handleAgentRunLimitError,

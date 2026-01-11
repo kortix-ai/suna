@@ -8,34 +8,34 @@ import Link from 'next/link';
 
 const values = [
   {
-    title: "Ship Fast",
-    description: "We move quickly and iterate. Speed is a feature, not an afterthought."
+    title: "Speed matters",
+    description: "We ship often. If something isn't working, we'd rather find out now than in three months."
   },
   {
-    title: "Debate Openly",
-    description: "The best ideas win, regardless of who they come from. No politics, no hierarchy of opinions."
+    title: "Say what you think",
+    description: "Good ideas can come from anyone. We argue, disagree, and figure things out together."
   },
   {
-    title: "Think Long-Term",
-    description: "We're building infrastructure for the future, not chasing trends."
+    title: "Build for the long run",
+    description: "We're not interested in hype. We want to build something that's still useful in ten years."
   },
   {
-    title: "Stay Curious",
-    description: "New places, new perspectives. We believe movement keeps us sharp."
+    title: "Work from anywhere",
+    description: "No office, no set hours. Just get your work done and be online when it matters."
   }
 ];
 
 const openings = [
   {
     title: "AI Engineer",
-    location: "Remote (Global)",
-    description: "Build AI agents that actually work. Deep knowledge of LLMs, agent architectures, and shipping AI products to production.",
+    location: "Remote",
+    description: "You'll work on our AI agents, making them reliable, fast, and actually useful. Experience with LLMs and building AI products required.",
     href: "/careers/ai-engineer",
   },
   {
     title: "Design Engineer",
-    location: "Remote (Global)",
-    description: "Engineer with taste. Exceptional frontend skills paired with an obsession for beautiful, polished interfaces.",
+    location: "Remote",
+    description: "Frontend engineer who cares about design. You'll own how things look and feel across the product.",
     href: "/careers/design-engineer",
   }
 ];
@@ -57,12 +57,12 @@ export default function CareersPage() {
             </div>
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-medium tracking-tight text-balance">
-              Ship fast. Travel far.
+              Work with us
             </h1>
             
             <p className="text-foreground text-[1.375rem] md:text-[1.5rem] leading-[1.6] tracking-[-0.025em] font-medium max-w-2xl opacity-50">
-              Eight people across three continents, building AI workers that actually work. 
-              Remote-first, travel-friendly, obsessed with shipping.
+              Small team, big problem. We're building AI that can take over real work. 
+              Fully remote, flexible hours, and we travel together a few times a year.
             </p>
           </motion.div>
         </div>
@@ -113,7 +113,7 @@ export default function CareersPage() {
               Open positions
             </h2>
             <p className="text-muted-foreground mb-12">
-              Doesn't matter where you are. If you build great things, we want to hear from you.
+              If you're good at what you do, we'd like to talk.
             </p>
           </motion.div>
 
@@ -171,7 +171,7 @@ export default function CareersPage() {
               Don't see your role?
             </h2>
             <p className="text-muted-foreground max-w-xl mx-auto">
-              We're always looking for exceptional people. If you're passionate about AI and want to join our tribe, reach out.
+              We're always looking for exceptional people. If you're passionate about AI and want to join our team, reach out.
             </p>
             <div className="pt-4">
               <Button asChild size="lg" variant="outline">

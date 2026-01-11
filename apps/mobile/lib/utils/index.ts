@@ -18,7 +18,8 @@ export * from './icon-mapping';
 // message-grouping moved to @agentpress/shared/utils
 // tool-parser moved to @agentpress/shared/tools
 // tool-display moved to @agentpress/shared/tools
-export * from './credit-formatter';
+// credit-formatter moved to @agentpress/shared
+export { formatCredits, formatCreditsWithSign, dollarsToCredits, creditsToDollars, formatDollarsAsCredits, CREDITS_PER_DOLLAR } from '@agentpress/shared';
 
 // Streaming & tool call utilities (portable from frontend)
 // streaming-utils moved to @agentpress/shared/streaming

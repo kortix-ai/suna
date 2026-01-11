@@ -15,6 +15,7 @@ import { BrowserView } from './BrowserView';
 import { extractToolCallAndResult } from '@/lib/utils/tool-data-extractor';
 import type { UnifiedMessage } from '@/api/types';
 import type { ToolMessagePair } from '@/components/chat';
+import { log } from '@/lib/logger';
 
 interface KortixComputerProps {
   toolMessages: ToolMessagePair[];
@@ -54,6 +55,8 @@ export function KortixComputer({
   streamingText,
   sandboxId,
 }: KortixComputerProps) {
+  log.log('[KortixComputer] Render - toolMessages:', toolMessages.length, 'currentIndex:', currentIndex);
+  
   const insets = useSafeAreaInsets();
 
   const {
@@ -91,10 +94,17 @@ export function KortixComputer({
   const currentPair = toolMessages.length > 0 && safeIndex >= 0 && safeIndex < toolMessages.length
     ? toolMessages[safeIndex]
     : undefined;
+  
+  log.log('[KortixComputer] currentPair:', currentPair ? 'has pair' : 'undefined');
+  log.log('[KortixComputer] currentPair.toolMessage:', currentPair?.toolMessage?.message_id || 'null');
+  log.log('[KortixComputer] currentPair.assistantMessage:', currentPair?.assistantMessage?.message_id || 'null');
+  
   const { toolCall, toolResult, isSuccess, assistantTimestamp, toolTimestamp } = useMemo(() => {
     if (!currentPair?.toolMessage) {
+      log.log('[KortixComputer] No toolMessage in currentPair, returning null');
       return { toolCall: null, toolResult: null, isSuccess: false, assistantTimestamp: undefined, toolTimestamp: undefined };
     }
+    log.log('[KortixComputer] Calling extractToolCallAndResult');
     return extractToolCallAndResult(currentPair.assistantMessage, currentPair.toolMessage);
   }, [currentPair]);
 

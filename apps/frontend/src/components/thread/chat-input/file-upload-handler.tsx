@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { UploadedFile } from './chat-input';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { normalizeFilenameToNFC } from '@agentpress/shared';
 import { backendApi } from '@/lib/api-client';
 import JSZip from 'jszip';
 import {
@@ -459,13 +459,53 @@ const handleFiles = async (
   messages: any[] = [],
   queryClient?: any,
 ) => {
-  await handleLocalFiles(files, setPendingFiles, setUploadedFiles, setIsUploading);
-
-  if (sandboxId && files.length > 0) {
-    await uploadFiles(files, sandboxId, setUploadedFiles, setIsUploading, messages, queryClient, setPendingFiles);
-  } else if (projectId && files.length > 0) {
-    await uploadFilesToProject(files, projectId, setUploadedFiles, setIsUploading, setPendingFiles);
+  // Process files (extract zips, validate)
+  const processedFiles: File[] = [];
+  
+  for (const file of files) {
+    if (isExtractableArchive(file)) {
+      const extracted = await extractZipFiles(file);
+      processedFiles.push(...extracted);
+    } else {
+      const validation = isAllowedFile(file);
+      if (!validation.allowed) {
+        toast.error(`${file.name}: ${validation.reason}`);
+        continue;
+      }
+      processedFiles.push(file);
+    }
   }
+  
+  if (processedFiles.length === 0) return;
+
+  setIsUploading(true);
+
+  // Always stage files via /files/stage API (simplified flow)
+  for (const file of processedFiles) {
+    const normalizedName = normalizeFilenameToNFC(file.name);
+    const fileId = crypto.randomUUID();
+
+    // Add to uploaded files with pending status and local preview
+    setUploadedFiles((prev) => [...prev, {
+      name: normalizedName,
+      path: `/workspace/uploads/${normalizedName}`,
+      size: file.size,
+      type: file.type || 'application/octet-stream',
+      localUrl: URL.createObjectURL(file),
+      fileId,
+      status: 'uploading' as const,
+    }]);
+
+    // Stage file to backend
+    try {
+      await stageFileToS3(file, fileId, setUploadedFiles);
+    } catch (error) {
+      console.error(`Failed to stage file ${normalizedName}:`, error);
+      // Error handling is done in stageFileToS3
+    }
+  }
+
+  setIsUploading(false);
 };
 
 interface FileUploadHandlerProps {

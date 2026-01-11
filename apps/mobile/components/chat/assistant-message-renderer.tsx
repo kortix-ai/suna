@@ -15,7 +15,7 @@ import type { UnifiedMessage, ParsedMetadata, ParsedContent } from '@agentpress/
 import { safeJsonParse, getUserFriendlyToolName, isAskOrCompleteTool, extractTextFromArguments } from '@agentpress/shared';
 import { getToolIcon } from '@/lib/icons/tool-icons';
 import { SelectableMarkdownText } from '@/components/ui/selectable-markdown';
-import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import { autoLinkUrls } from '@agentpress/shared';
 import { Linking } from 'react-native';
 import { FileAttachmentsGrid } from './FileAttachmentRenderer';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';

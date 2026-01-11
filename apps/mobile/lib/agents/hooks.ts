@@ -5,6 +5,7 @@
  * Following the same patterns as useApiQueries.ts
  */
 
+import { log } from '@/lib/logger';
 import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import type {
@@ -59,12 +60,12 @@ export function useAgents(
 
       if (!res.ok) {
         const errorText = await res.text();
-        console.error('❌ Failed to fetch agents:', res.status);
+        log.error('❌ Failed to fetch agents:', res.status);
         throw new Error(`Failed to fetch agents: ${res.status} - ${errorText}`);
       }
 
       const data = await res.json();
-      console.log('✅ Agents loaded:', data.agents?.length || 0);
+      log.log('✅ Agents loaded:', data.agents?.length || 0);
 
       return data;
     },
@@ -76,11 +77,11 @@ export function useAgents(
                          error.message.includes('403') ||
                          error.message.includes('429');
       if (is4xxError) {
-        console.log('🚫 Not retrying due to client error:', error.message);
+        log.log('🚫 Not retrying due to client error:', error.message);
         return false;
       }
       // Only retry server errors (5xx) up to 2 times
-      console.log(`🔄 Retry attempt ${failureCount} for agents fetch:`, error.message);
+      log.log(`🔄 Retry attempt ${failureCount} for agents fetch:`, error.message);
       return failureCount < 2;
     },
     retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000), // Exponential backoff: 1s, 2s, 4s...

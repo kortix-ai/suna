@@ -31,6 +31,7 @@ import {
   MessageSquare,
   Heart,
   LifeBuoy,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAccounts } from '@/hooks/account';
 import { useAccountState } from '@/hooks/billing';
@@ -468,6 +469,14 @@ export function NavUserWithTeams({
                         <Link href="/admin/notifications" className="gap-2 p-2">
                           <Bell className="h-4 w-4" />
                           <span>Notifications</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/utils" className="gap-2 p-2">
+                          <AlertTriangle className="h-4 w-4" />
+                          <span>Admin Utils</span>
                         </Link>
                       </DropdownMenuItem>
                     )}

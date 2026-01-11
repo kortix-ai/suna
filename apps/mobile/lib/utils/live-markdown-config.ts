@@ -7,6 +7,7 @@
 
 import { Platform } from 'react-native';
 import type { MarkdownStyle } from '@expensify/react-native-live-markdown';
+import { log } from '@/lib/logger';
 
 /**
  * Custom markdown parser worklet
@@ -183,7 +184,7 @@ let LINK_UNDERLINE_ENABLED = false;
  */
 export function setHeadingMarginLeft(value: number) {
   HEADING_MARGIN_LEFT = value;
-  console.log(`[MarkdownConfig] Heading margin set to ${value}. Press 'r' in Metro to reload.`);
+  log.log(`[MarkdownConfig] Heading margin set to ${value}. Press 'r' in Metro to reload.`);
 }
 
 export function getHeadingMarginLeft() {
@@ -203,7 +204,7 @@ export function getHeadingMarginLeft() {
  */
 export function setLinkUnderline(enabled: boolean) {
   LINK_UNDERLINE_ENABLED = enabled;
-  console.log(`[MarkdownConfig] Link underline ${enabled ? 'enabled' : 'disabled'}. Press 'r' in Metro to reload.`);
+  log.log(`[MarkdownConfig] Link underline ${enabled ? 'enabled' : 'disabled'}. Press 'r' in Metro to reload.`);
 }
 
 export function getLinkUnderline() {

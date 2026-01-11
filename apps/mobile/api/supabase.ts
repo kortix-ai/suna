@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createClient } from '@supabase/supabase-js';
 import { AppState } from 'react-native';
 import 'react-native-url-polyfill/auto';
+import { log } from '@/lib/logger';
 
 /**
  * Supabase Configuration
@@ -16,13 +17,13 @@ const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
 // Validate environment variables
 if (!supabaseUrl || supabaseUrl === 'YOUR_SUPABASE_URL' || !supabaseUrl.startsWith('https://')) {
-  console.error('❌ EXPO_PUBLIC_SUPABASE_URL is not properly configured');
-  console.log('Please set EXPO_PUBLIC_SUPABASE_URL in your environment variables');
+  log.error('❌ EXPO_PUBLIC_SUPABASE_URL is not properly configured');
+  log.log('Please set EXPO_PUBLIC_SUPABASE_URL in your environment variables');
 }
 
 if (!supabaseAnonKey || supabaseAnonKey === 'YOUR_SUPABASE_ANON_KEY' || supabaseAnonKey.length < 10) {
-  console.error('❌ EXPO_PUBLIC_SUPABASE_ANON_KEY is not properly configured');
-  console.log('Please set EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment variables');
+  log.error('❌ EXPO_PUBLIC_SUPABASE_ANON_KEY is not properly configured');
+  log.log('Please set EXPO_PUBLIC_SUPABASE_ANON_KEY in your environment variables');
 }
 
 /**
@@ -43,7 +44,7 @@ export const supabase = (() => {
       },
     });
   } catch (error) {
-    console.error('Failed to initialize Supabase client:', error);
+    log.error('Failed to initialize Supabase client:', error);
     // Return a mock client that throws errors for all operations
     return {
       auth: {

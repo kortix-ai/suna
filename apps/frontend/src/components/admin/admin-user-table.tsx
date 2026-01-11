@@ -22,7 +22,7 @@ import {
 } from 'lucide-react';
 import { useAdminUserList, useAdminUserStats } from '@/hooks/admin/use-admin-users';
 import type { UserSummary } from '@/hooks/admin/use-admin-users';
-import { formatCredits, dollarsToCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits, dollarsToCredits } from '@agentpress/shared';
 
 interface AdminUserTableProps {
   onUserSelect?: (user: UserSummary) => void;

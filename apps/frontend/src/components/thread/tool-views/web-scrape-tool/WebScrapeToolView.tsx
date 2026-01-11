@@ -37,12 +37,12 @@ export function WebScrapeToolView({
   const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
 
   // Apply smooth text streaming for URL field
-  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
-    rawArguments,
-    'url',
-    120,
-    isStreaming && !toolResult && !!toolCall
+  const smoothFields = useSmoothToolField(
+    typeof rawArguments === 'object' && rawArguments ? rawArguments : {},
+    { interval: 50 }
   );
+  const smoothUrl = (smoothFields as any).url || (typeof rawArguments === 'object' ? rawArguments?.url : '') || '';
+  const isUrlAnimating = isStreaming && !toolResult && !!toolCall;
 
   if (!toolCall) {
     console.warn('WebScrapeToolView: toolCall is undefined.');

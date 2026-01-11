@@ -14,7 +14,7 @@ try {
   const TrackingModule = require('@/contexts/TrackingContext');
   useTracking = TrackingModule.useTracking;
 } catch (e) {
-  console.warn('⚠️ TrackingContext not available');
+  log.warn('⚠️ TrackingContext not available');
 }
 import type {
   AuthState,
@@ -25,6 +25,7 @@ import type {
   AuthError,
 } from '@/lib/utils/auth-types';
 import type { Session, User, AuthChangeEvent } from '@supabase/supabase-js';
+import { log, setLoggerUserId } from '@/lib/logger';
 
 // Complete any pending auth sessions (required for web)
 WebBrowser.maybeCompleteAuthSession();
@@ -54,7 +55,7 @@ function extractTokensFromUrl(url: string): { access_token: string | null; refre
       refresh_token: params.refresh_token || null,
     };
   } catch (e) {
-    console.error('Failed to extract tokens from URL:', e);
+    log.error('Failed to extract tokens from URL:', e);
     return { access_token: null, refresh_token: null };
   }
 }
@@ -66,18 +67,18 @@ async function createSessionFromUrl(url: string) {
   const { access_token, refresh_token } = extractTokensFromUrl(url);
   
   if (!access_token || !refresh_token) {
-    console.log('⚠️ No tokens found in URL');
+    log.log('⚠️ No tokens found in URL');
     return null;
   }
   
-  console.log('✅ Tokens extracted, setting session...');
+  log.log('✅ Tokens extracted, setting session...');
   const { data, error } = await supabase.auth.setSession({
     access_token,
     refresh_token,
   });
   
   if (error) {
-    console.error('❌ Failed to set session:', error);
+    log.error('❌ Failed to set session:', error);
     throw error;
   }
   
@@ -108,6 +109,9 @@ export function useAuth() {
     supabase.auth.getSession().then(async ({ data: { session } }: { data: { session: Session | null } }) => {
       if (!mounted) return;
 
+      // Update logger with user ID
+      setLoggerUserId(session?.user?.id || null);
+
       setAuthState({
         user: session?.user ?? null,
         session,
@@ -127,7 +131,7 @@ export function useAuth() {
             initializedUserIdRef.current = session.user.id;
             initializedCanTrackRef.current = canTrack;
         } catch (error) {
-          console.warn('⚠️ Failed to initialize RevenueCat:', error);
+          log.warn('⚠️ Failed to initialize RevenueCat:', error);
           }
         }
       }
@@ -142,9 +146,12 @@ export function useAuth() {
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event: AuthChangeEvent, session: Session | null) => {
+        // Update logger with user ID
+        setLoggerUserId(session?.user?.id || null);
+
         // Only log significant auth events, not every state change
         if (_event === 'SIGNED_IN' || _event === 'SIGNED_OUT' || _event === 'TOKEN_REFRESHED') {
-          console.log('🔄 Auth state changed:', _event);
+          log.log('🔄 Auth state changed:', _event);
         }
         
         setAuthState({
@@ -166,7 +173,7 @@ export function useAuth() {
               initializedUserIdRef.current = session.user.id;
               initializedCanTrackRef.current = canTrack;
           } catch (error) {
-            console.warn('⚠️ Failed to initialize RevenueCat:', error);
+            log.warn('⚠️ Failed to initialize RevenueCat:', error);
           }
           }
         } else if (_event === 'SIGNED_OUT') {
@@ -192,14 +199,14 @@ export function useAuth() {
           initializedCanTrackRef.current = canTrack;
         })
         .catch((error) => {
-          console.warn('⚠️ Failed to update RevenueCat tracking:', error);
+          log.warn('⚠️ Failed to update RevenueCat tracking:', error);
         });
     }
   }, [canTrack, authState.user]); // Update when canTrack or user changes
 
   const signIn = useCallback(async ({ email, password }: SignInCredentials) => {
     try {
-      console.log('🎯 Sign in attempt:', email);
+      log.log('🎯 Sign in attempt:', email);
       setError(null);
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
@@ -209,22 +216,22 @@ export function useAuth() {
       });
 
       if (signInError) {
-        console.error('❌ Sign in error:', signInError.message);
+        log.error('❌ Sign in error:', signInError.message);
         setError({ message: signInError.message, status: signInError.status });
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: false, error: signInError };
       }
 
-      console.log('✅ Sign in successful:', data.user?.email);
+      log.log('✅ Sign in successful:', data.user?.email);
       
       // Immediately invalidate React Query cache to fetch fresh account state
-      console.log('🔄 Invalidating cache to fetch fresh account state');
+      log.log('🔄 Invalidating cache to fetch fresh account state');
       queryClient.invalidateQueries({ queryKey: ['account-state'] });
       
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return { success: true, data };
     } catch (err: any) {
-      console.error('❌ Sign in exception:', err);
+      log.error('❌ Sign in exception:', err);
       const error = { message: err.message || 'An unexpected error occurred' };
       setError(error);
       setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -235,7 +242,7 @@ export function useAuth() {
   const signUp = useCallback(
     async ({ email, password, fullName }: SignUpCredentials) => {
       try {
-        console.log('🎯 Sign up attempt:', email);
+        log.log('🎯 Sign up attempt:', email);
         setError(null);
         setAuthState((prev) => ({ ...prev, isLoading: true }));
 
@@ -251,24 +258,24 @@ export function useAuth() {
         });
 
         if (signUpError) {
-          console.error('❌ Sign up error:', signUpError.message);
+          log.error('❌ Sign up error:', signUpError.message);
           setError({ message: signUpError.message, status: signUpError.status });
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: false, error: signUpError };
         }
 
-        console.log('✅ Sign up successful:', data.user?.email);
+        log.log('✅ Sign up successful:', data.user?.email);
         
         // If user is auto-logged in after signup, invalidate cache to fetch fresh account state
         if (data.session) {
-          console.log('🔄 User auto-logged in after signup - invalidating cache to fetch fresh account state');
+          log.log('🔄 User auto-logged in after signup - invalidating cache to fetch fresh account state');
           queryClient.invalidateQueries({ queryKey: ['account-state'] });
         }
         
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: true, data };
       } catch (err: any) {
-        console.error('❌ Sign up exception:', err);
+        log.error('❌ Sign up exception:', err);
         const error = { message: err.message || 'An unexpected error occurred' };
         setError(error);
         setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -289,7 +296,7 @@ export function useAuth() {
    */
   const signInWithOAuth = useCallback(async (provider: OAuthProvider) => {
     try {
-      console.log('🎯 OAuth sign in attempt:', provider);
+      log.log('🎯 OAuth sign in attempt:', provider);
       setError(null);
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
@@ -298,7 +305,7 @@ export function useAuth() {
       // Uses expo-apple-authentication for the best UX
       // ========================================
       if (provider === 'apple' && Platform.OS === 'ios') {
-        console.log('🍎 Using native Apple Authentication for iOS');
+        log.log('🍎 Using native Apple Authentication for iOS');
         
         try {
           const credential = await AppleAuthentication.signInAsync({
@@ -308,7 +315,7 @@ export function useAuth() {
             ],
           });
 
-          console.log('✅ Apple credential received:', credential.user);
+          log.log('✅ Apple credential received:', credential.user);
 
           // Sign in to Supabase with Apple ID token
           const { data, error: appleError } = await supabase.auth.signInWithIdToken({
@@ -317,23 +324,23 @@ export function useAuth() {
           });
 
           if (appleError) {
-            console.error('❌ Apple sign in error:', appleError.message);
+            log.error('❌ Apple sign in error:', appleError.message);
             setError({ message: appleError.message });
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             return { success: false, error: appleError };
           }
 
-          console.log('✅ Apple sign in successful');
+          log.log('✅ Apple sign in successful');
           
           // Immediately invalidate React Query cache to fetch fresh account state
-          console.log('🔄 Invalidating cache to fetch fresh account state');
+          log.log('🔄 Invalidating cache to fetch fresh account state');
           queryClient.invalidateQueries({ queryKey: ['account-state'] });
           
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           return { success: true, data };
         } catch (appleErr: any) {
           if (appleErr.code === 'ERR_REQUEST_CANCELED') {
-            console.log('⚠️ Apple sign in cancelled by user');
+            log.log('⚠️ Apple sign in cancelled by user');
             setAuthState((prev) => ({ ...prev, isLoading: false }));
             return { success: false, error: { message: 'Sign in cancelled' } };
           }
@@ -355,7 +362,7 @@ export function useAuth() {
         path: 'auth/callback',
       });
 
-      console.log('📊 Redirect URL:', redirectTo, 'Platform:', Platform.OS);
+      log.log('📊 Redirect URL:', redirectTo, 'Platform:', Platform.OS);
 
       // Get OAuth URL from Supabase
       const { data, error: oauthError } = await supabase.auth.signInWithOAuth({
@@ -367,25 +374,25 @@ export function useAuth() {
       });
 
       if (oauthError) {
-        console.error('❌ OAuth error:', oauthError.message);
+        log.error('❌ OAuth error:', oauthError.message);
         setError({ message: oauthError.message });
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: false, error: oauthError };
       }
 
       if (!data?.url) {
-        console.error('❌ No OAuth URL returned');
+        log.error('❌ No OAuth URL returned');
         const error = { message: 'Failed to get authentication URL' };
         setError(error);
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: false, error };
       }
 
-      console.log('🌐 Opening OAuth URL:', data.url);
+      log.log('🌐 Opening OAuth URL:', data.url);
       
       // Prevent multiple simultaneous OAuth sessions
       if (oauthSessionActiveRef.current) {
-        console.warn('⚠️ OAuth session already in progress');
+        log.warn('⚠️ OAuth session already in progress');
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: false, error: { message: 'An authentication session is already in progress' } };
       }
@@ -399,14 +406,14 @@ export function useAuth() {
         // The external browser (Chrome, Firefox, etc.) works correctly for all OAuth providers
         // ========================================
         if (Platform.OS === 'android') {
-          console.log('🤖 Android: Opening OAuth in external browser');
+          log.log('🤖 Android: Opening OAuth in external browser');
           
           // Open OAuth URL in external browser
           await Linking.openURL(data.url);
           
           // Wait for the app to return from browser and check for session
           // The deep link handler in _layout.tsx will process the callback
-          console.log('⏳ Android: Waiting for OAuth callback...');
+          log.log('⏳ Android: Waiting for OAuth callback...');
           
           return new Promise((resolve) => {
             let hasResolved = false;
@@ -417,7 +424,7 @@ export function useAuth() {
               if (!hasResolved) {
                 hasResolved = true;
                 appStateSubscription?.remove();
-                console.log('❌ Android: OAuth timeout');
+                log.log('❌ Android: OAuth timeout');
                 setAuthState((prev) => ({ ...prev, isLoading: false }));
                 oauthSessionActiveRef.current = false;
                 resolve({ success: false, error: { message: 'Authentication timed out. Please try again.' } });
@@ -425,7 +432,7 @@ export function useAuth() {
             }, 120000);
             
             const handleAppStateChange = async (nextAppState: AppStateStatus) => {
-              console.log('📱 Android: AppState changed to:', nextAppState);
+              log.log('📱 Android: AppState changed to:', nextAppState);
               
               // When app comes back to foreground
               if (nextAppState === 'active' && !hasResolved) {
@@ -439,10 +446,10 @@ export function useAuth() {
                   hasResolved = true;
                   clearTimeout(timeout);
                   appStateSubscription?.remove();
-                  console.log('✅ Android: Session found - OAuth successful:', session.user?.email);
+                  log.log('✅ Android: Session found - OAuth successful:', session.user?.email);
                   
                   // Immediately invalidate React Query cache to fetch fresh account state
-                  console.log('🔄 Invalidating cache to fetch fresh account state');
+                  log.log('🔄 Invalidating cache to fetch fresh account state');
                   queryClient.invalidateQueries({ queryKey: ['account-state'] });
                   
                   setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -458,10 +465,10 @@ export function useAuth() {
                     hasResolved = true;
                     clearTimeout(timeout);
                     appStateSubscription?.remove();
-                    console.log('✅ Android: Session found on retry - OAuth successful');
+                    log.log('✅ Android: Session found on retry - OAuth successful');
                     
                     // Immediately invalidate React Query cache to fetch fresh account state
-                    console.log('🔄 Invalidating cache to fetch fresh account state');
+                    log.log('🔄 Invalidating cache to fetch fresh account state');
                     queryClient.invalidateQueries({ queryKey: ['account-state'] });
                     
                     setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -471,7 +478,7 @@ export function useAuth() {
                     hasResolved = true;
                     clearTimeout(timeout);
                     appStateSubscription?.remove();
-                    console.log('❌ Android: No session after returning from browser');
+                    log.log('❌ Android: No session after returning from browser');
                     setAuthState((prev) => ({ ...prev, isLoading: false }));
                     oauthSessionActiveRef.current = false;
                     resolve({ success: false, error: { message: 'Authentication was not completed. Please try again.' } });
@@ -488,7 +495,7 @@ export function useAuth() {
         // iOS: Use WebBrowser.openAuthSessionAsync
         // ASWebAuthenticationSession works perfectly with custom URL schemes
         // ========================================
-        console.log('🍎 iOS: Opening OAuth in auth session');
+        log.log('🍎 iOS: Opening OAuth in auth session');
         
         await WebBrowser.maybeCompleteAuthSession();
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -502,15 +509,15 @@ export function useAuth() {
           }
         );
 
-        console.log('📊 WebBrowser result:', result, 'Type:', result.type);
+        log.log('📊 WebBrowser result:', result, 'Type:', result.type);
 
         if (result.type === 'success' && result.url) {
           const url = result.url;
-          console.log('✅ OAuth redirect received:', url);
+          log.log('✅ OAuth redirect received:', url);
           
           // Check for access_token in URL fragment (implicit flow)
           if (url.includes('access_token=')) {
-            console.log('✅ Access token found in URL, setting session');
+            log.log('✅ Access token found in URL, setting session');
             
             // Extract tokens from URL fragment
             const hashParams = new URLSearchParams(url.split('#')[1] || '');
@@ -526,17 +533,17 @@ export function useAuth() {
                 });
 
               if (sessionError) {
-                console.error('❌ Session error:', sessionError.message);
+                log.error('❌ Session error:', sessionError.message);
                 setError({ message: sessionError.message });
                 setAuthState((prev) => ({ ...prev, isLoading: false }));
                 oauthSessionActiveRef.current = false;
                 return { success: false, error: sessionError };
               }
 
-              console.log('✅ OAuth sign in successful');
+              log.log('✅ OAuth sign in successful');
               
               // Immediately invalidate React Query cache to fetch fresh account state
-              console.log('🔄 Invalidating cache to fetch fresh account state');
+              log.log('🔄 Invalidating cache to fetch fresh account state');
               queryClient.invalidateQueries({ queryKey: ['account-state'] });
               
               setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -550,23 +557,23 @@ export function useAuth() {
           const code = urlObj.searchParams.get('code');
           
           if (code) {
-            console.log('✅ OAuth code received, exchanging for session');
+            log.log('✅ OAuth code received, exchanging for session');
             
             const { data: sessionData, error: sessionError } = 
               await supabase.auth.exchangeCodeForSession(code);
 
             if (sessionError) {
-              console.error('❌ Session exchange error:', sessionError.message);
+              log.error('❌ Session exchange error:', sessionError.message);
               setError({ message: sessionError.message });
               setAuthState((prev) => ({ ...prev, isLoading: false }));
               oauthSessionActiveRef.current = false;
               return { success: false, error: sessionError };
             }
 
-            console.log('✅ OAuth sign in successful');
+            log.log('✅ OAuth sign in successful');
             
             // Immediately invalidate React Query cache to fetch fresh account state
-            console.log('🔄 Invalidating cache to fetch fresh account state');
+            log.log('🔄 Invalidating cache to fetch fresh account state');
             queryClient.invalidateQueries({ queryKey: ['account-state'] });
             
             setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -574,13 +581,13 @@ export function useAuth() {
             return { success: true, data: sessionData };
           }
         } else if (result.type === 'cancel' || result.type === 'dismiss') {
-          console.log('⚠️ OAuth cancelled/dismissed by user');
+          log.log('⚠️ OAuth cancelled/dismissed by user');
           setAuthState((prev) => ({ ...prev, isLoading: false }));
           oauthSessionActiveRef.current = false;
           return { success: false, error: { message: 'Sign in cancelled' } };
         }
 
-        console.log('❌ OAuth failed - unexpected result type:', result.type);
+        log.log('❌ OAuth failed - unexpected result type:', result.type);
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         oauthSessionActiveRef.current = false;
         return { success: false, error: { message: 'Authentication failed' } };
@@ -590,19 +597,19 @@ export function useAuth() {
         throw sessionErr;
       }
     } catch (err: any) {
-      console.error('❌ OAuth exception:', err);
+      log.error('❌ OAuth exception:', err);
       
       // Reset session flag on error
       oauthSessionActiveRef.current = false;
       
       // Handle specific WebBrowser auth session error
       if (err.message?.includes('invalid state') || err.message?.includes('redirect handler')) {
-        console.warn('⚠️ WebBrowser auth session conflict, attempting cleanup...');
+        log.warn('⚠️ WebBrowser auth session conflict, attempting cleanup...');
         try {
           await WebBrowser.maybeCompleteAuthSession();
           await new Promise(resolve => setTimeout(resolve, 200));
         } catch (cleanupError) {
-          console.warn('⚠️ Cleanup attempt failed:', cleanupError);
+          log.warn('⚠️ Cleanup attempt failed:', cleanupError);
         }
       }
       
@@ -620,7 +627,7 @@ export function useAuth() {
    */
   const signInWithMagicLink = useCallback(async ({ email, acceptedTerms }: { email: string; acceptedTerms?: boolean }) => {
     try {
-      console.log('🎯 Magic link sign in request:', email);
+      log.log('🎯 Magic link sign in request:', email);
       setError(null);
       setAuthState((prev) => ({ ...prev, isLoading: true }));
 
@@ -632,7 +639,7 @@ export function useAuth() {
       
       const emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
 
-      console.log('📱 Magic link redirect URL:', emailRedirectTo);
+      log.log('📱 Magic link redirect URL:', emailRedirectTo);
 
       const { error: magicLinkError, data } = await supabase.auth.signInWithOtp({
         email: email.trim().toLowerCase(),
@@ -643,7 +650,7 @@ export function useAuth() {
       });
 
       if (magicLinkError) {
-        console.error('❌ Supabase rejected redirect URL:', {
+        log.error('❌ Supabase rejected redirect URL:', {
           message: magicLinkError.message,
           status: magicLinkError.status,
           attemptedUrl: emailRedirectTo,
@@ -652,7 +659,7 @@ export function useAuth() {
       }
 
       if (magicLinkError) {
-        console.error('❌ Magic link error:', magicLinkError.message);
+        log.error('❌ Magic link error:', magicLinkError.message);
         setError({ message: magicLinkError.message });
         setAuthState((prev) => ({ ...prev, isLoading: false }));
         return { success: false, error: magicLinkError };
@@ -662,11 +669,11 @@ export function useAuth() {
       // Note: This will be handled when the user clicks the magic link and signs in
       // For now, we store it in the signup data which will be saved when account is created
 
-      console.log('✅ Magic link email sent');
+      log.log('✅ Magic link email sent');
       setAuthState((prev) => ({ ...prev, isLoading: false }));
       return { success: true };
     } catch (err: any) {
-      console.error('❌ Magic link exception:', err);
+      log.error('❌ Magic link exception:', err);
       const error = { message: err.message || 'An unexpected error occurred' };
       setError(error);
       setAuthState((prev) => ({ ...prev, isLoading: false }));
@@ -679,7 +686,7 @@ export function useAuth() {
    */
   const resetPassword = useCallback(async ({ email }: PasswordResetRequest) => {
     try {
-      console.log('🎯 Password reset request:', email);
+      log.log('🎯 Password reset request:', email);
       setError(null);
 
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
@@ -687,15 +694,15 @@ export function useAuth() {
       });
 
       if (resetError) {
-        console.error('❌ Password reset error:', resetError.message);
+        log.error('❌ Password reset error:', resetError.message);
         setError({ message: resetError.message });
         return { success: false, error: resetError };
       }
 
-      console.log('✅ Password reset email sent');
+      log.log('✅ Password reset email sent');
       return { success: true };
     } catch (err: any) {
-      console.error('❌ Password reset exception:', err);
+      log.error('❌ Password reset exception:', err);
       const error = { message: err.message || 'An unexpected error occurred' };
       setError(error);
       return { success: false, error };
@@ -705,7 +712,7 @@ export function useAuth() {
 
   const updatePassword = useCallback(async (newPassword: string) => {
     try {
-      console.log('🎯 Password update attempt');
+      log.log('🎯 Password update attempt');
       setError(null);
 
       const { error: updateError } = await supabase.auth.updateUser({
@@ -713,15 +720,15 @@ export function useAuth() {
       });
 
       if (updateError) {
-        console.error('❌ Password update error:', updateError.message);
+        log.error('❌ Password update error:', updateError.message);
         setError({ message: updateError.message });
         return { success: false, error: updateError };
       }
 
-      console.log('✅ Password updated successfully');
+      log.log('✅ Password updated successfully');
       return { success: true };
     } catch (err: any) {
-      console.error('❌ Password update exception:', err);
+      log.error('❌ Password update exception:', err);
       const error = { message: err.message || 'An unexpected error occurred' };
       setError(error);
       return { success: false, error };
@@ -745,7 +752,7 @@ export function useAuth() {
   const signOut = useCallback(async () => {
     // Prevent multiple simultaneous sign out attempts
     if (isSigningOut) {
-      console.log('⚠️ Sign out already in progress, ignoring duplicate call');
+      log.log('⚠️ Sign out already in progress, ignoring duplicate call');
       return { success: false, error: { message: 'Sign out already in progress' } };
     }
 
@@ -765,11 +772,11 @@ export function useAuth() {
         );
         
         if (supabaseKeys.length > 0) {
-          console.log(`🗑️  Removing ${supabaseKeys.length} Supabase keys from storage`);
+          log.log(`🗑️  Removing ${supabaseKeys.length} Supabase keys from storage`);
           await AsyncStorage.multiRemove(supabaseKeys);
         }
       } catch (error) {
-        console.warn('⚠️  Failed to clear Supabase storage:', error);
+        log.warn('⚠️  Failed to clear Supabase storage:', error);
       }
     };
 
@@ -783,19 +790,20 @@ export function useAuth() {
           !key.includes('onboarding_completed')
         );
         
-        console.log(`🧹 Clearing ${appDataKeys.length} app data keys:`, appDataKeys);
+        log.log(`🧹 Clearing ${appDataKeys.length} app data keys:`, appDataKeys);
         
         if (appDataKeys.length > 0) {
           await AsyncStorage.multiRemove(appDataKeys);
         }
         
-        console.log('✅ All app data cleared (except preferences and onboarding status)');
+        log.log('✅ All app data cleared (except preferences and onboarding status)');
       } catch (error) {
-        console.warn('⚠️  Failed to clear app data:', error);
+        log.warn('⚠️  Failed to clear app data:', error);
       }
     };
 
     const forceSignOutState = () => {
+      setLoggerUserId(null); // Clear logger user ID
       setAuthState({
         user: null,
         session: null,
@@ -806,28 +814,28 @@ export function useAuth() {
     };
 
     try {
-      console.log('🎯 Sign out initiated');
+      log.log('🎯 Sign out initiated');
       setIsSigningOut(true);
       
       if (shouldUseRevenueCat()) {
         try {
           const { logoutRevenueCat } = require('@/lib/billing/revenuecat');
           await logoutRevenueCat();
-          console.log('✅ RevenueCat logout completed - subscription detached from device');
+          log.log('✅ RevenueCat logout completed - subscription detached from device');
         } catch (rcError) {
-          console.warn('⚠️  RevenueCat logout failed (non-critical):', rcError);
+          log.warn('⚠️  RevenueCat logout failed (non-critical):', rcError);
         }
       }
 
       const { error: globalError } = await supabase.auth.signOut({ scope: 'global' });
 
       if (globalError) {
-        console.warn('⚠️  Global sign out failed:', globalError.message);
+        log.warn('⚠️  Global sign out failed:', globalError.message);
         
         const { error: localError } = await supabase.auth.signOut({ scope: 'local' });
         
         if (localError) {
-          console.warn('⚠️  Local sign out also failed:', localError.message);
+          log.warn('⚠️  Local sign out also failed:', localError.message);
         }
       }
 
@@ -835,25 +843,25 @@ export function useAuth() {
 
       await clearAppData();
 
-      console.log('🗑️  Clearing React Query cache...');
+      log.log('🗑️  Clearing React Query cache...');
       queryClient.clear();
-      console.log('✅ React Query cache cleared');
+      log.log('✅ React Query cache cleared');
 
       forceSignOutState();
 
-      console.log('✅ Sign out completed successfully - all data cleared');
+      log.log('✅ Sign out completed successfully - all data cleared');
       setIsSigningOut(false);
       return { success: true };
 
     } catch (error: any) {
-      console.error('❌ Sign out exception:', error);
+      log.error('❌ Sign out exception:', error);
 
       await clearSupabaseStorage().catch(() => {});
       await clearAppData().catch(() => {});
       queryClient.clear();
       forceSignOutState();
 
-      console.log('✅ Sign out completed (with errors handled) - all data cleared');
+      log.log('✅ Sign out completed (with errors handled) - all data cleared');
       setIsSigningOut(false);
       return { success: true };
     }

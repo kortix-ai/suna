@@ -100,11 +100,11 @@ export function GenericToolView({
   );
 
   // Apply smooth text streaming for arguments when streaming
-  const { text: smoothAssistantContent, isAnimating: isAssistantAnimating } = useSmoothText(
+  const smoothAssistantContent = useSmoothText(
     rawAssistantContent || '',
-    120,
-    isStreaming && !toolResult && !!rawAssistantContent
+    { speed: 120 }
   );
+  const isAssistantAnimating = isStreaming && !toolResult && !!rawAssistantContent;
 
   const formattedAssistantContent = isStreaming && smoothAssistantContent ? smoothAssistantContent : rawAssistantContent;
 

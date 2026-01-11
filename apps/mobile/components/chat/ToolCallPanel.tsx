@@ -13,6 +13,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react-native';
+import { log } from '@/lib/logger';
 
 export interface ToolMessagePair {
   assistantMessage: UnifiedMessage | null;
@@ -55,7 +56,7 @@ export function ToolCallPanel({
     if (visible) {
       setCurrentIndex(initialIndex);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('📳 Haptic Feedback: Tool Drawer Opened');
+      log.log('📳 Haptic Feedback: Tool Drawer Opened');
       bottomSheetRef.current?.snapToIndex(0);
     } else {
       bottomSheetRef.current?.close();
@@ -99,7 +100,7 @@ export function ToolCallPanel({
   const handlePrev = useCallback(() => {
     if (currentIndex > 0) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      console.log('◀️ Tool Navigation: Previous', { from: currentIndex, to: currentIndex - 1 });
+      log.log('◀️ Tool Navigation: Previous', { from: currentIndex, to: currentIndex - 1 });
       setCurrentIndex(currentIndex - 1);
     }
   }, [currentIndex]);
@@ -107,21 +108,21 @@ export function ToolCallPanel({
   const handleNext = useCallback(() => {
     if (currentIndex < toolMessages.length - 1) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      console.log('▶️ Tool Navigation: Next', { from: currentIndex, to: currentIndex + 1 });
+      log.log('▶️ Tool Navigation: Next', { from: currentIndex, to: currentIndex + 1 });
       setCurrentIndex(currentIndex + 1);
     }
   }, [currentIndex, toolMessages.length]);
 
   const handleClose = useCallback(() => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    console.log('❌ Tool Drawer Closed');
+    log.log('❌ Tool Drawer Closed');
     onClose();
   }, [onClose]);
 
   // Handler to auto-fill chat input - closes panel and fills input
   const handlePromptFill = useCallback((prompt: string) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    console.log('📝 Prompt fill triggered:', prompt);
+    log.log('📝 Prompt fill triggered:', prompt);
     onClose(); // Close the panel first
     onPromptFill?.(prompt); // Then fill the chat input
   }, [onClose, onPromptFill]);

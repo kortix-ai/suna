@@ -5,6 +5,7 @@ import { API_URL, getAuthToken } from '@/api/config';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { supabase } from '@/api/supabase';
 import { RealtimeChannel } from '@supabase/supabase-js';
+import { log } from '@/lib/logger';
 
 type PresenceStatus = 'online' | 'idle' | 'offline';
 
@@ -64,7 +65,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
         }
         setSessionId(storedId);
       } catch (error) {
-        console.error('[Presence] Failed to load session ID:', error);
+        log.error('[Presence] Failed to load session ID:', error);
         const fallbackId = generateSessionId();
         setSessionId(fallbackId);
       }
@@ -119,7 +120,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
             }),
           });
         } catch (err) {
-          console.error('[Presence] Update failed:', err);
+          log.error('[Presence] Update failed:', err);
           throw err;
         } finally {
           setTimeout(() => {
@@ -267,7 +268,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       
       await AsyncStorage.removeItem(SESSION_STORAGE_KEY);
     } catch (error) {
-      console.error('[Presence] Failed to clear presence:', error);
+      log.error('[Presence] Failed to clear presence:', error);
     }
   }, [sessionId]);
 

@@ -9,6 +9,7 @@ import { Layers, Globe, ExternalLink, AlertCircle, Rocket, Sparkles } from 'luci
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
+import { log } from '@/lib/logger';
 
 interface BetaPageProps {
   visible: boolean;
@@ -21,13 +22,13 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
   const { isEnabled: advancedFeaturesEnabled, toggle: toggleAdvancedFeatures } = useAdvancedFeatures();
 
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Beta page closing');
+    log.log('🎯 Beta page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
 
   const handleToggle = React.useCallback(async () => {
-    console.log('🎯 Advanced features toggle pressed');
+    log.log('🎯 Advanced features toggle pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await toggleAdvancedFeatures();
   }, [toggleAdvancedFeatures]);

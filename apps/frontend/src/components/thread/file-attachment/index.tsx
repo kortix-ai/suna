@@ -85,7 +85,8 @@ export function FileAttachment({
     const isSpreadsheet = isSpreadsheetExtension(extension) || isCsvExtension(extension);
     const isPreviewable = isPreviewableFile(filepath);
     const isGridLayout = customStyle?.gridColumn === '1 / -1' || Boolean(customStyle && ('--attachment-height' in customStyle));
-    const shouldShowPreview = isPreviewable && showPreview && collapsed === false;
+    // Images should also show previews, not just previewable files
+    const shouldShowPreview = (isPreviewable || isImage) && showPreview && collapsed === false;
     
     // Call all hooks at the top level before any early returns
     const { error, retryCount } = useFileData(
@@ -106,7 +107,8 @@ export function FileAttachment({
     const isStillRetrying = retryCount < 15;
     const hasError = error && !isStillRetrying;
     const hasContent = data || localPreviewUrl;
-    const waitingForSandbox = (isPdf || isSpreadsheet || isPreviewable) && !sandboxId;
+    // For images, we have content if we have localPreviewUrl
+    const waitingForSandbox = (isPdf || isSpreadsheet || isPreviewable) && !sandboxId && !localPreviewUrl;
     
     const handleClick = () => {
         if (onClick) {
@@ -139,7 +141,7 @@ export function FileAttachment({
     
     // Show compact FileCard when collapsed or not in grid layout
     if (collapsed || !isGridLayout) {
-        // For images in grid layout, show ImagePreview even when collapsed
+        // For images, always show preview in grid layout (even when collapsed prop is true)
         if (isImage && isGridLayout && showPreview) {
             return (
                 <ImagePreview
@@ -171,8 +173,10 @@ export function FileAttachment({
     }
     
     // Large preview layout - only show when content is loaded
-    // Only show large preview if we have content loaded
-    if (!shouldShowPreview || waitingForSandbox || hasError || isSandboxDeleted || !hasContent) {
+    // For images with localPreviewUrl, always show preview even if shouldShowPreview is false
+    const canShowPreview = shouldShowPreview || (isImage && localPreviewUrl);
+    
+    if (!canShowPreview || waitingForSandbox || hasError || isSandboxDeleted || (!hasContent && !localPreviewUrl)) {
         return (
             <FileCard
                 filepath={filepath}

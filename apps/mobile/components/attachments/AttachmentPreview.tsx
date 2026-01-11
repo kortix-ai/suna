@@ -12,6 +12,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import type { Attachment } from '@/hooks/useChat';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -64,7 +65,7 @@ function AttachmentItem({ attachment, index, onRemove }: AttachmentItemProps) {
   }));
 
   const handleRemove = () => {
-    console.log('🗑️ Removing attachment:', {
+    log.log('🗑️ Removing attachment:', {
       type: attachment.type,
       name: attachment.name || 'unnamed',
       index,

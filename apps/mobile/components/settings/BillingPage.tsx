@@ -20,7 +20,6 @@ import {
   billingKeys,
   presentCustomerInfo,
   shouldUseRevenueCat,
-  isRevenueCatConfigured,
   isRevenueCatInitialized,
   initializeRevenueCat,
 } from '@/lib/billing';
@@ -47,8 +46,9 @@ import {
   ArrowRight,
   Settings,
 } from 'lucide-react-native';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 const AnimatedView = Animated.createAnimatedComponent(View);
@@ -117,7 +117,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.PAGE_SHEET,
       });
     } catch (error) {
-      console.error('Error opening credits explained page:', error);
+      log.error('Error opening credits explained page:', error);
     }
   }, []);
 
@@ -151,14 +151,14 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
       // Ensure RevenueCat is initialized before presenting customer info
-      if (user && shouldUseRevenueCat() && isRevenueCatConfigured()) {
+      if (user && shouldUseRevenueCat()) {
         const initialized = await isRevenueCatInitialized();
         if (!initialized) {
-          console.log('🔄 RevenueCat not initialized, initializing now...');
+          log.log('🔄 RevenueCat not initialized, initializing now...');
           try {
             await initializeRevenueCat(user.id, user.email || undefined, true);
           } catch (initError) {
-            console.warn('⚠️ RevenueCat initialization warning:', initError);
+            log.warn('⚠️ RevenueCat initialization warning:', initError);
           }
         }
       }
@@ -167,29 +167,15 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       // Refresh billing data after user returns from customer info portal
       handleSubscriptionUpdate();
     } catch (error) {
-      console.error('Error presenting customer info portal:', error);
+      log.error('Error presenting customer info portal:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [user, handleSubscriptionUpdate]);
 
-  // Show button if RevenueCat should be used and is configured
-  // We'll handle initialization when the button is clicked if needed
-  const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
+  // Show button if RevenueCat should be used (iOS/Android only)
+  const useRevenueCat = shouldUseRevenueCat();
 
   // Debug logging to help diagnose button visibility
-  useEffect(() => {
-    if (visible) {
-      console.log('🔍 [BillingPage] RevenueCat button visibility check:', {
-        shouldUseRevenueCat: shouldUseRevenueCat(),
-        isRevenueCatConfigured: isRevenueCatConfigured(),
-        useRevenueCat,
-        platform: Platform.OS,
-        hasIosKey: !!process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY,
-        hasAndroidKey: !!process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY,
-        useRevenueCatEnv: process.env.EXPO_PUBLIC_USE_REVENUECAT,
-      });
-    }
-  }, [visible, useRevenueCat]);
 
   if (!visible) return null;
 
@@ -253,12 +239,12 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       seconds = Math.floor(diffMs / 1000);
       hours = Math.ceil(diffMs / (1000 * 60 * 60));
     } else {
-      console.log('⚠️ No refresh info available:', dailyRefreshInfo);
+      log.log('⚠️ No refresh info available:', dailyRefreshInfo);
       return null; // No refresh info available
     }
 
     // Debug logging
-    console.log('🕐 Daily refresh calculation:', {
+    log.log('🕐 Daily refresh calculation:', {
       seconds_until_refresh: dailyRefreshInfo.seconds_until_refresh,
       next_refresh_at: dailyRefreshInfo.next_refresh_at,
       calculatedSeconds: seconds,
@@ -267,7 +253,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
 
     // Handle edge cases
     if (hours <= 0 || isNaN(hours)) {
-      console.log('⚠️ Invalid hours:', hours);
+      log.log('⚠️ Invalid hours:', hours);
       return null; // Invalid or past refresh time
     }
 
@@ -572,10 +558,10 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     // Use RevenueCat paywall for credit purchases
                     if (useNativePaywall) {
-                      console.log('📱 Using RevenueCat paywall for additional credits');
+                      log.log('📱 Using RevenueCat paywall for additional credits');
                       await presentUpgradePaywall();
                     } else {
-                      console.warn('⚠️ RevenueCat not available, cannot purchase credits');
+                      log.warn('⚠️ RevenueCat not available, cannot purchase credits');
                     }
                   }}
                   onPressIn={() => {

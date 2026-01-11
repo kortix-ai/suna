@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Platform } from 'react-native';
 import * as Tracking from 'expo-tracking-transparency';
+import { log } from '@/lib/logger';
 
 export type TrackingStatus = 'unavailable' | 'denied' | 'authorized' | 'restricted' | 'not-determined';
 
@@ -41,7 +42,7 @@ export function useAppTracking() {
         canTrack,
       });
     } catch (error) {
-      console.error('Error checking tracking status:', error);
+      log.error('Error checking tracking status:', error);
       setState({
         status: 'unavailable',
         isLoading: false,
@@ -67,7 +68,7 @@ export function useAppTracking() {
 
       return canTrack;
     } catch (error) {
-      console.error('Error requesting tracking permission:', error);
+      log.error('Error requesting tracking permission:', error);
       return false;
     }
   };

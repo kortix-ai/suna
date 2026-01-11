@@ -8,6 +8,7 @@
 import { getOfferings } from './revenuecat';
 import { PRICING_TIERS, type PricingTier, type BillingPeriod } from './pricing';
 import type { PurchasesPackage } from 'react-native-purchases';
+import { log } from '@/lib/logger';
 
 export interface RevenueCatPricingData {
   tier: PricingTier;
@@ -31,7 +32,7 @@ export async function getRevenueCatPricing(): Promise<Map<string, RevenueCatPric
     const offerings = await getOfferings(true);
     
     if (!offerings || !offerings.availablePackages.length) {
-      console.warn('⚠️ No RevenueCat offerings available, using fallback pricing');
+      log.warn('⚠️ No RevenueCat offerings available, using fallback pricing');
       // Return tiers with fallback pricing
       PRICING_TIERS.forEach(tier => {
         pricingMap.set(tier.id, {
@@ -51,7 +52,7 @@ export async function getRevenueCatPricing(): Promise<Map<string, RevenueCatPric
     // Group packages by tier with improved matching
     const tierPackages = new Map<string, { monthly?: PurchasesPackage; yearly?: PurchasesPackage }>();
 
-    console.log('🔍 Matching RevenueCat packages to tiers...');
+    log.log('🔍 Matching RevenueCat packages to tiers...');
     offerings.availablePackages.forEach((pkg) => {
       const productId = pkg.product.identifier.toLowerCase();
       const packageId = pkg.identifier.toLowerCase();
@@ -83,15 +84,15 @@ export async function getRevenueCatPricing(): Promise<Map<string, RevenueCatPric
         
         if (isYearly) {
           existing.yearly = pkg;
-          console.log(`  ✅ Matched ${matchingTier.id} yearly: ${pkg.identifier}`);
+          log.log(`  ✅ Matched ${matchingTier.id} yearly: ${pkg.identifier}`);
         } else {
           existing.monthly = pkg;
-          console.log(`  ✅ Matched ${matchingTier.id} monthly: ${pkg.identifier}`);
+          log.log(`  ✅ Matched ${matchingTier.id} monthly: ${pkg.identifier}`);
         }
         
         tierPackages.set(matchingTier.id, existing);
       } else {
-        console.log(`  ⚠️ No match for package: ${pkg.identifier} (Product: ${pkg.product.identifier})`);
+        log.log(`  ⚠️ No match for package: ${pkg.identifier} (Product: ${pkg.product.identifier})`);
       }
     });
 
@@ -141,7 +142,7 @@ export async function getRevenueCatPricing(): Promise<Map<string, RevenueCatPric
       });
     });
 
-    console.log('✅ RevenueCat pricing loaded:', Array.from(pricingMap.entries()).map(([id, data]) => ({
+    log.log('✅ RevenueCat pricing loaded:', Array.from(pricingMap.entries()).map(([id, data]) => ({
       tier: id,
       monthly: data.monthlyPriceString,
       yearly: data.yearlyPriceString,
@@ -149,7 +150,7 @@ export async function getRevenueCatPricing(): Promise<Map<string, RevenueCatPric
     })));
 
   } catch (error) {
-    console.error('❌ Error loading RevenueCat pricing:', error);
+    log.error('❌ Error loading RevenueCat pricing:', error);
     // Return fallback pricing
     PRICING_TIERS.forEach(tier => {
       pricingMap.set(tier.id, {

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { Smartphone, Bell, Shield, Zap } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { AppDownloadQR, APP_DOWNLOAD_URL } from '@/components/common/app-download-qr';
+import { SimpleFooter } from '@/components/home/simple-footer';
 
 // Mobile users are redirected at the edge by middleware (hyper-fast)
 // This page only renders for desktop users
@@ -37,11 +38,11 @@ function AppleLogo({ className }: { className?: string }) {
   );
 }
 
-// Google Play logo SVG
-function GooglePlayLogo({ className }: { className?: string }) {
+// Play icon SVG
+function PlayIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
-      <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.198l2.807 1.626a1 1 0 0 1 0 1.73l-2.808 1.626L15.206 12l2.492-2.491zM5.864 2.658L16.8 8.99l-2.302 2.302-8.634-8.634z"/>
+    <svg className={className} viewBox="0 0 406 455" fill="currentColor">
+      <path d="M382.634 187.308C413.301 205.014 413.301 249.277 382.634 266.983L69.0001 448.06C38.3334 465.765 3.84111e-05 443.633 3.9959e-05 408.222L5.57892e-05 46.0689C5.73371e-05 10.6581 38.3334 -11.4738 69.0001 6.23166L382.634 187.308Z"/>
     </svg>
   );
 }
@@ -65,14 +66,9 @@ export default function AppDownloadPage() {
   }
 
   return (
-    <main className="w-full min-h-screen bg-gradient-to-b from-background via-background to-foreground/5 relative">
-      {/* Decorative glows - fixed to viewport, no scroll impact */}
-      <div className="fixed inset-0 pointer-events-none overflow-hidden z-0">
-        <div className="absolute -top-32 -right-32 w-96 h-96 bg-foreground/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-foreground/10 rounded-full blur-3xl" />
-      </div>
+    <main className="w-full min-h-screen bg-background relative flex flex-col">
 
-      <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-6 py-16">
+      <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-6 py-16">
         <div className="w-full max-w-5xl mx-auto">
           {/* Header */}
           <motion.div
@@ -81,10 +77,9 @@ export default function AppDownloadPage() {
             transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
             className="flex flex-col items-center mb-12"
           >
-            {/* App icon with glow effect */}
+            {/* App icon */}
             <div className="relative mb-6 z-10">
-              <div className="absolute inset-0 bg-foreground/30 rounded-[24px] blur-2xl scale-150 pointer-events-none" />
-              <div className="relative w-20 h-20 bg-foreground rounded-[20px] flex items-center justify-center shadow-xl">
+              <div className="relative w-20 h-20 bg-foreground rounded-[20px] flex items-center justify-center">
                 <KortixSymbol size={40} className="text-background" />
               </div>
             </div>
@@ -93,124 +88,103 @@ export default function AppDownloadPage() {
               Kortix for Mobile
             </h1>
             <p className="text-base text-muted-foreground text-center max-w-xl leading-relaxed">
-              Your AI Worker, in your pocket. Download the app and take Kortix with you everywhere.
+              Your AI Worker, in your pocket.<br />
+              Download the app and take Kortix with you everywhere.
             </p>
           </motion.div>
 
-          {/* Main Content Grid */}
-          <div className="grid md:grid-cols-2 gap-10 items-center">
-            {/* Left: QR Code Card */}
-            <motion.div
-              initial={{ opacity: 0, x: -30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.2, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="flex flex-col items-center"
-            >
-              <div className="relative bg-white dark:bg-[#2a2a2a] rounded-3xl shadow-2xl overflow-hidden border border-border/60 dark:border-[#232324] w-full max-w-md">
-                {/* QR Code area */}
-                <div className="relative bg-muted dark:bg-[#e8e4df] flex items-center justify-center p-12">
-                  <AppDownloadQR size={200} logoSize={32} />
-                </div>
+          {/* QR Code Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="flex flex-col items-center mb-16"
+          >
+            <div className="relative bg-white dark:bg-[#2a2a2a] rounded-3xl overflow-hidden border border-border/60 dark:border-[#232324] w-full max-w-md">
+              {/* QR Code area */}
+              <div className="relative bg-muted dark:bg-[#e8e4df] flex items-center justify-center p-12">
+                <AppDownloadQR size={200} logoSize={32} />
+              </div>
 
-                {/* Info area */}
-                <div className="p-6 bg-muted/30 dark:bg-[#161618]">
-                  <h3 className="text-foreground dark:text-white text-sm font-medium mb-1 text-center">
-                    Scan to download
-                  </h3>
-                  <p className="text-muted-foreground dark:text-white/60 text-xs text-center mb-5">
-                    Automatically opens the right store for your device
-                  </p>
-                  
-                  {/* Direct store links for desktop users */}
-                  <div className="flex gap-3 max-w-sm mx-auto">
-                    <a
-                      href={STORE_LINKS.ios}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 h-12 bg-black dark:bg-white rounded-xl flex items-center justify-center gap-2.5 hover:opacity-90 active:scale-[0.98] transition-all"
-                    >
-                      <AppleLogo className="h-6 w-6 text-white dark:text-black" />
-                      <div className="flex flex-col items-start">
-                        <span className="text-[9px] text-white/70 dark:text-black/70 leading-none">
-                          App Store
-                        </span>
-                        <span className="text-sm font-semibold text-white dark:text-black leading-tight">
-                          iOS
-                        </span>
-                      </div>
-                    </a>
-                    <a
-                      href={STORE_LINKS.android}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="flex-1 h-12 bg-black dark:bg-white rounded-xl flex items-center justify-center gap-2.5 hover:opacity-90 active:scale-[0.98] transition-all"
-                    >
-                      <GooglePlayLogo className="h-5 w-5 text-white dark:text-black" />
-                      <div className="flex flex-col items-start">
-                        <span className="text-[9px] text-white/70 dark:text-black/70 leading-none">
-                          Google Play
-                        </span>
-                        <span className="text-sm font-semibold text-white dark:text-black leading-tight">
-                          Android
-                        </span>
-                      </div>
-                    </a>
-                  </div>
+              {/* Info area */}
+              <div className="p-6 bg-muted/30 dark:bg-[#161618]">
+                <h3 className="text-foreground dark:text-white text-sm font-medium mb-1 text-center">
+                  Scan to download
+                </h3>
+                <p className="text-muted-foreground dark:text-white/60 text-xs text-center mb-5">
+                  Automatically opens the right store for your device
+                </p>
+                
+                {/* Direct store links for desktop users */}
+                <div className="flex gap-3 max-w-sm mx-auto">
+                  <a
+                    href={STORE_LINKS.ios}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 h-12 bg-black dark:bg-white rounded-xl flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition-all"
+                  >
+                    <AppleLogo className="h-4 w-4 text-white dark:text-black" />
+                    <span className="text-base font-semibold text-white dark:text-black">
+                      iOS
+                    </span>
+                  </a>
+                  <a
+                    href={STORE_LINKS.android}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 h-12 bg-black dark:bg-white rounded-xl flex items-center justify-center gap-1.5 hover:opacity-90 active:scale-[0.98] transition-all"
+                  >
+                    <PlayIcon className="h-3 w-3 text-white dark:text-black" />
+                    <span className="text-base font-semibold text-white dark:text-black">
+                      Android
+                    </span>
+                  </a>
                 </div>
               </div>
-            </motion.div>
+            </div>
+          </motion.div>
 
-            {/* Right: Features */}
-            <motion.div
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.3, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-              className="space-y-4"
-            >
-              <h2 className="text-lg font-semibold text-foreground mb-6">
-                Why you'll love it
-              </h2>
-              
+          {/* Features Section */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+            className="w-full max-w-4xl mx-auto"
+          >
+            <h2 className="text-2xl md:text-3xl font-medium text-foreground mb-12">
+              Why you'll love it
+            </h2>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-16 gap-y-12">
               {FEATURES.map((feature, index) => (
                 <motion.div
                   key={feature.label}
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: 0.4 + index * 0.1, duration: 0.5 }}
-                  className="flex items-start gap-4 group"
+                  className="flex flex-col"
                 >
-                  <div className="w-10 h-10 bg-foreground/10 dark:bg-foreground/5 rounded-xl flex items-center justify-center group-hover:bg-foreground/20 dark:group-hover:bg-foreground/10 transition-colors flex-shrink-0">
+                  <div className="w-10 h-10 bg-foreground/10 dark:bg-foreground/5 rounded-xl flex items-center justify-center mb-4">
                     <feature.icon className="h-5 w-5 text-foreground" />
                   </div>
-                  <div className="flex-1 pt-1.5">
-                    <h3 className="text-sm font-medium text-foreground mb-0.5">
-                      {feature.label}
-                    </h3>
-                    <p className="text-muted-foreground text-xs leading-relaxed">
-                      {feature.label === 'Always on the go' && 'Access your AI worker from anywhere, anytime. Your tasks never stop.'}
-                      {feature.label === 'Push notifications' && 'Get instant updates when your agents complete tasks or need your input.'}
-                      {feature.label === 'Secure & private' && 'Your data is encrypted and secure. Privacy-first, always.'}
-                      {feature.label === 'Lightning fast' && 'Native performance optimized for mobile. Faster than the web app.'}
-                    </p>
-                  </div>
+                  <h3 className="text-base font-semibold text-foreground mb-3">
+                    {feature.label}
+                  </h3>
+                  <p className="text-muted-foreground text-base leading-relaxed">
+                    {feature.label === 'Always on the go' && 'Access your AI worker from anywhere, anytime. Your tasks never stop.'}
+                    {feature.label === 'Push notifications' && 'Get instant updates when your agents complete tasks or need your input.'}
+                    {feature.label === 'Secure & private' && 'Your data is encrypted end-to-end and stored securely. Privacy-first, always.'}
+                    {feature.label === 'Lightning fast' && 'Native performance optimized for mobile. Faster than the web app.'}
+                  </p>
                 </motion.div>
               ))}
-            </motion.div>
-          </div>
-
-          {/* Footer Note */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8, duration: 0.6 }}
-            className="mt-16 text-center"
-          >
-            <p className="text-sm text-muted-foreground">
-              Available on iOS and Android. Free to download.
-            </p>
+            </div>
           </motion.div>
+
         </div>
       </div>
+
+      <SimpleFooter />
     </main>
   );
 }
