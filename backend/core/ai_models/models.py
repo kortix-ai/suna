@@ -90,12 +90,6 @@ class Model:
     # If None, defaults to id
     litellm_model_id: Optional[str] = None
     
-    # Vision-specific LiteLLM model ID - used when thread has images
-    # If None, uses litellm_model_id for both text and vision
-    vision_litellm_model_id: Optional[str] = None
-    vision_context_window: Optional[int] = None  # Defaults to context_window if None
-    vision_pricing: Optional[ModelPricing] = None  # Defaults to pricing if None
-    
     aliases: List[str] = field(default_factory=list)
     context_window: int = 128_000
     capabilities: List[ModelCapability] = field(default_factory=list)
@@ -116,31 +110,6 @@ class Model:
         # Ensure CHAT capability is always present
         if ModelCapability.CHAT not in self.capabilities:
             self.capabilities.insert(0, ModelCapability.CHAT)
-    
-    def get_litellm_model_id_for_context(self, has_images: bool = False) -> str:
-        """Get the appropriate LiteLLM model ID based on context.
-        
-        Args:
-            has_images: Whether the thread/context has images
-            
-        Returns:
-            vision_litellm_model_id if has_images and it's set, otherwise litellm_model_id
-        """
-        if has_images and self.vision_litellm_model_id:
-            return self.vision_litellm_model_id
-        return self.litellm_model_id
-    
-    def get_context_window_for_context(self, has_images: bool = False) -> int:
-        """Get the appropriate context window based on context."""
-        if has_images and self.vision_context_window:
-            return self.vision_context_window
-        return self.context_window
-    
-    def get_pricing_for_context(self, has_images: bool = False) -> Optional[ModelPricing]:
-        """Get the appropriate pricing based on context."""
-        if has_images and self.vision_pricing:
-            return self.vision_pricing
-        return self.pricing
     
     @property
     def supports_thinking(self) -> bool:
