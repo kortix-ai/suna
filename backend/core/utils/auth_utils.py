@@ -598,53 +598,35 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
     from core.services.db import execute_one
     
     try:
-        # Use different queries for authenticated vs anonymous users to avoid UUID type errors
-        if user_id:
-            # Full query with user role checks for authenticated users
-            sql = """
-            SELECT 
-                t.thread_id,
-                t.account_id,
-                p.is_public as project_is_public,
-                COALESCE(ur.role::text, '') as user_role,
-                CASE WHEN au.user_id IS NOT NULL THEN true ELSE false END as is_team_member
-            FROM threads t
-            LEFT JOIN projects p ON t.project_id = p.project_id
-            LEFT JOIN user_roles ur ON ur.user_id = :user_id
-            LEFT JOIN basejump.account_user au ON au.account_id = t.account_id AND au.user_id = :user_id
-            WHERE t.thread_id = :thread_id
-            """
-            result = await execute_one(sql, {"thread_id": thread_id, "user_id": user_id})
-        else:
-            # Simple query for anonymous users - only need thread and public status
-            sql = """
-            SELECT 
-                t.thread_id,
-                t.account_id,
-                p.is_public as project_is_public
-            FROM threads t
-            LEFT JOIN projects p ON t.project_id = p.project_id
-            WHERE t.thread_id = :thread_id
-            """
-            result = await execute_one(sql, {"thread_id": thread_id})
+        # Single optimized query that fetches thread + project + access info in one round-trip
+        # This replaces 3-4 sequential Supabase API calls with a single SQL query
+        # Use NULL instead of empty string for user_id to avoid UUID type errors
+        sql = """
+        SELECT 
+            t.thread_id,
+            t.account_id,
+            p.is_public as project_is_public,
+            COALESCE(ur.role::text, '') as user_role,
+            CASE WHEN au.user_id IS NOT NULL THEN true ELSE false END as is_team_member
+        FROM threads t
+        LEFT JOIN projects p ON t.project_id = p.project_id
+        LEFT JOIN user_roles ur ON ur.user_id = :user_id
+        LEFT JOIN basejump.account_user au ON au.account_id = t.account_id AND au.user_id = :user_id
+        WHERE t.thread_id = :thread_id
+        """
+        # Use None instead of empty string to properly handle NULL in SQL
+        result = await execute_one(sql, {"thread_id": thread_id, "user_id": user_id})
         
         if not result:
             raise HTTPException(status_code=404, detail="Thread not found")
         
-        # Check if project is public - allow anonymous READ access only
+        # Check if project is public - allow anonymous access
         if result.get('project_is_public'):
-            if require_write_access:
-                # Public threads are read-only for non-owners
-                # Continue to check if user is owner/team member/admin
-                structlog.get_logger().debug(f"Public thread write access requested, checking ownership: {thread_id}")
-            else:
-                structlog.get_logger().debug(f"Public thread read access granted: {thread_id}")
-                return True
+            structlog.get_logger().debug(f"Public thread access granted: {thread_id}")
+            return True
         
-        # If not public (or write access required), user must be authenticated
+        # If not public, user must be authenticated
         if not user_id:
-            if require_write_access:
-                raise HTTPException(status_code=403, detail="Authentication required to modify this thread")
             raise HTTPException(status_code=403, detail="Authentication required for private threads")
         
         # Check if user is an admin (admins have access to all threads)
@@ -980,52 +962,32 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
     """
     from core.services.db import execute_one
     
-    # Use different queries for authenticated vs anonymous users to avoid UUID type errors
-    if user_id:
-        sql = """
-        SELECT 
-            r.id as resource_id,
-            r.account_id as resource_account_id,
-            r.config as resource_config,
-            p.project_id,
-            p.account_id as project_account_id,
-            p.is_public,
-            p.name as project_name,
-            p.description as project_description,
-            p.sandbox_resource_id,
-            p.created_at as project_created_at,
-            p.updated_at as project_updated_at,
-            COALESCE(ur.role::text, '') as user_role,
-            CASE WHEN au_resource.user_id IS NOT NULL THEN true ELSE false END as is_resource_team_member,
-            CASE WHEN au_project.user_id IS NOT NULL THEN true ELSE false END as is_project_team_member
-        FROM resources r
-        LEFT JOIN projects p ON p.sandbox_resource_id = r.id
-        LEFT JOIN user_roles ur ON ur.user_id = :user_id
-        LEFT JOIN basejump.account_user au_resource ON au_resource.account_id = r.account_id AND au_resource.user_id = :user_id
-        LEFT JOIN basejump.account_user au_project ON au_project.account_id = p.account_id AND au_project.user_id = :user_id
-        WHERE r.external_id = :sandbox_id AND r.type = 'sandbox'
-        """
-        result = await execute_one(sql, {"sandbox_id": sandbox_id, "user_id": user_id})
-    else:
-        # Simple query for anonymous users - only need resource and public status
-        sql = """
-        SELECT 
-            r.id as resource_id,
-            r.account_id as resource_account_id,
-            r.config as resource_config,
-            p.project_id,
-            p.account_id as project_account_id,
-            p.is_public,
-            p.name as project_name,
-            p.description as project_description,
-            p.sandbox_resource_id,
-            p.created_at as project_created_at,
-            p.updated_at as project_updated_at
-        FROM resources r
-        LEFT JOIN projects p ON p.sandbox_resource_id = r.id
-        WHERE r.external_id = :sandbox_id AND r.type = 'sandbox'
-        """
-        result = await execute_one(sql, {"sandbox_id": sandbox_id})
+    sql = """
+    SELECT 
+        r.id as resource_id,
+        r.account_id as resource_account_id,
+        r.config as resource_config,
+        p.project_id,
+        p.account_id as project_account_id,
+        p.is_public,
+        p.name as project_name,
+        p.description as project_description,
+        p.sandbox_resource_id,
+        p.created_at as project_created_at,
+        p.updated_at as project_updated_at,
+        COALESCE(ur.role::text, '') as user_role,
+        CASE WHEN au_resource.user_id IS NOT NULL THEN true ELSE false END as is_resource_team_member,
+        CASE WHEN au_project.user_id IS NOT NULL THEN true ELSE false END as is_project_team_member
+    FROM resources r
+    LEFT JOIN projects p ON p.sandbox_resource_id = r.id
+    LEFT JOIN user_roles ur ON ur.user_id = :user_id
+    LEFT JOIN basejump.account_user au_resource ON au_resource.account_id = r.account_id AND au_resource.user_id = :user_id
+    LEFT JOIN basejump.account_user au_project ON au_project.account_id = p.account_id AND au_project.user_id = :user_id
+    WHERE r.external_id = :sandbox_id AND r.type = 'sandbox'
+    """
+    
+    # Use None instead of empty string to properly handle NULL in SQL
+    result = await execute_one(sql, {"sandbox_id": sandbox_id, "user_id": user_id})
     
     if not result:
         raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox")

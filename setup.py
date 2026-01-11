@@ -2437,13 +2437,13 @@ class SetupWizard:
             print(
                 f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
-
+            step_num += 1
 
             print(
-                f"n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
+                f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
             
-            print(f"n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
+            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
             
             # Show stop commands for local Supabase
             if self.env_vars.get("supabase_setup_method") == "local":
