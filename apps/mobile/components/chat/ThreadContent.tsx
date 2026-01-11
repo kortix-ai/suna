@@ -1260,6 +1260,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           }
 
           if (group.type === 'assistant_group') {
+            // Skip rendering streaming groups when last message is user
+            // because the trailing indicator handles streaming in that case
+            const isStreamingGroup = group.key.startsWith('streaming-group');
+            const lastMsgIsUser = messages[messages.length - 1]?.type === 'user';
+            if (isStreamingGroup && lastMsgIsUser) {
+              return null; // Trailing indicator handles this
+            }
+            
             const firstAssistantMsg = group.messages.find((m) => m.type === 'assistant');
             const groupAgentId = firstAssistantMsg?.agent_id;
             const assistantMessages = group.messages.filter((m) => m.type === 'assistant');
@@ -1608,8 +1616,48 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           
           // Contemplating = sending message, waiting for server (before agent starts)
           const isContemplating = isSendingMessage && !isAgentActive && !hasStreamingContent;
-          // Brewing = agent is active but no content yet
-          const isBrewing = isAgentActive && !hasStreamingContent && !isSmoothAnimating;
+          
+          // Check if we have ACTUAL visible streaming content to show
+          // This prevents the shift from AgentLoader to empty streaming container
+          const hasVisibleStreamingText = (() => {
+            if (!streamingTextContent && !isSmoothAnimating) return false;
+            const rawContent = streamingTextContent || '';
+            const displayContent = smoothStreamingText || '';
+            
+            // Check for XML tags
+            let detectedTag: string | null = null;
+            let tagStartIndex = -1;
+            const functionCallsIndex = rawContent.indexOf('<function_calls>');
+            if (functionCallsIndex !== -1) {
+              detectedTag = 'function_calls';
+              tagStartIndex = functionCallsIndex;
+            } else {
+              for (const tag of HIDE_STREAMING_XML_TAGS) {
+                const openingTagPattern = `<${tag}`;
+                const index = rawContent.indexOf(openingTagPattern);
+                if (index !== -1) {
+                  detectedTag = tag;
+                  tagStartIndex = index;
+                  break;
+                }
+              }
+            }
+            
+            // Has visible text before tag?
+            const textBeforeTag = detectedTag && tagStartIndex >= 0
+              ? displayContent.substring(0, Math.min(displayContent.length, tagStartIndex))
+              : displayContent;
+            const hasText = preprocessTextOnlyToolsLocal(textBeforeTag).trim().length > 0;
+            
+            // Has visible tag (tool card)?
+            const hasTag = detectedTag !== null;
+            
+            return hasText || hasTag;
+          })();
+          
+          // Brewing = agent is active but no VISIBLE content yet
+          // Keep showing AgentLoader until we have actual visible streaming content
+          const isBrewing = isAgentActive && !hasVisibleStreamingText && !streamingToolCall;
           
           return (
             <View className="mb-6">
@@ -1626,15 +1674,15 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 </View>
               )}
               
-              {/* Brewing ideas state */}
+              {/* Brewing ideas state - show until we have VISIBLE streaming content */}
               {isBrewing && (
                 <View className="mt-4">
                   <AgentLoader />
                 </View>
               )}
               
-              {/* Streaming text content - render HERE to prevent layout jump */}
-              {isStreaming && (streamingTextContent || isSmoothAnimating) && (
+              {/* Streaming text content - only show when we have VISIBLE content */}
+              {isStreaming && hasVisibleStreamingText && (
                 <View className="mt-2">
                   {(() => {
                     // Use raw content for tag detection

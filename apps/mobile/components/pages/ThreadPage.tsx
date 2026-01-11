@@ -524,33 +524,21 @@ export function ThreadPage({
     lastUserMessageCountRef.current = userMessageCount;
   }, [userMessageCount, pushToTop]);
 
-  // Track when agent is running - remove pushToTop ONLY after agent finishes
+  // Track when agent is running
+  // NOTE: We NO LONGER remove pushToTop when agent finishes
+  // This prevents the jarring shift when the agent completes
+  // The extra padding at the bottom is harmless - user can scroll naturally
+  // pushToTop is only reset when:
+  // 1. Thread changes (in the reset effect above)
+  // 2. User scrolls up significantly (handled below)
   React.useEffect(() => {
     const isRunning = chat.isStreaming || chat.isAgentRunning;
-
     if (isRunning) {
       agentWasRunningRef.current = true;
-    } else if (agentWasRunningRef.current) {
-      // Agent just finished - now check if we should remove pushToTop
+    } else {
       agentWasRunningRef.current = false;
-
-      if (pushToTop && pushActivatedContentHeightRef.current !== null) {
-        const actualContentHeight = contentHeightRef.current - extraPushPadding;
-        const hasOverflow = actualContentHeight > viewportHeightRef.current;
-        const contentGrowth = contentHeightRef.current - pushActivatedContentHeightRef.current;
-
-        // Only remove push if content has grown significantly (agent responded)
-        // AND actual content overflows the viewport
-        if (hasOverflow && contentGrowth > 150) {
-          // Use a small delay to ensure smooth transition after agent stops
-          setTimeout(() => {
-            setPushToTop(false);
-            pushActivatedContentHeightRef.current = null;
-          }, 100);
-        }
-      }
     }
-  }, [chat.isStreaming, chat.isAgentRunning, pushToTop, extraPushPadding]);
+  }, [chat.isStreaming, chat.isAgentRunning]);
 
   const lastScrollYRef = React.useRef(0);
 
@@ -609,7 +597,19 @@ export function ThreadPage({
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
-  }, [extraPushPadding]);
+
+    // Remove pushToTop padding when user scrolls up significantly
+    // This is user-initiated so it won't feel jarring
+    // Only do this when agent is NOT running to avoid mid-stream issues
+    if (pushToTop && hasOverflow && !chat.isStreaming && !chat.isAgentRunning) {
+      // If user has scrolled up more than 100px from bottom, remove the extra padding
+      const distanceFromBottom = actualMaxScrollY - currentScrollY;
+      if (distanceFromBottom > 100) {
+        setPushToTop(false);
+        pushActivatedContentHeightRef.current = null;
+      }
+    }
+  }, [extraPushPadding, pushToTop, chat.isStreaming, chat.isAgentRunning]);
 
   const scrollToBottom = React.useCallback(() => {
     if (pushToTop && extraPushPadding > 0) {
