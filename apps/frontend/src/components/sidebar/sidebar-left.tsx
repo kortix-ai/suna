@@ -377,7 +377,7 @@ export function SidebarLeft({
           <div className="w-full flex flex-col items-center space-y-3">
             {[
               { view: 'chats' as const, icon: MessageCircle },
-              { view: 'library' as const, icon: Library },
+              // { view: 'library' as const, icon: Library },
               { view: 'workers' as const, icon: Users },
               { view: 'starred' as const, icon: Zap },
             ].map(({ view, icon: Icon }) => (
@@ -443,7 +443,7 @@ export function SidebarLeft({
             <div className="flex justify-between items-center gap-2">
               {[
                 { view: 'chats' as const, icon: MessageCircle, label: t('chats') },
-                { view: 'library' as const, icon: Library, label: t('library') },
+                // { view: 'library' as const, icon: Library, label: t('library') },
                 { view: 'workers' as const, icon: Users, label: 'Workers' },
                 { view: 'starred' as const, icon: Zap, label: t('triggers') }
               ].map(({ view, icon: Icon, label }) => (
