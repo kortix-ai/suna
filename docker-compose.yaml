@@ -54,6 +54,7 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_SSL=False
+      - WORKERS=5
     # DNS configuration to reduce DNS lookup latency for third-party services
     # Using Google and Cloudflare DNS for reliability
     dns:

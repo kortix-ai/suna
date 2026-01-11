@@ -76,6 +76,188 @@ def print_error(message):
     print(f"{Colors.RED}❌  {message}{Colors.ENDC}")
 
 
+# --- API Key Provider Colors and Info ---
+API_PROVIDER_INFO = {
+    "ANTHROPIC_API_KEY": {
+        "name": "Anthropic Claude",
+        "color": Colors.CYAN,
+        "icon": "🤖",
+        "url": "https://console.anthropic.com/settings/keys",
+        "guide": "1. Go to Anthropic Console → Settings → API Keys\n  2. Click 'Create Key'\n  3. Copy your API key (starts with 'sk-ant-')",
+        "required": False,
+    },
+    "OPENAI_API_KEY": {
+        "name": "OpenAI",
+        "color": Colors.GREEN,
+        "icon": "🧠",
+        "url": "https://platform.openai.com/api-keys",
+        "guide": "1. Go to OpenAI Platform → API Keys\n  2. Click 'Create new secret key'\n  3. Copy your API key (starts with 'sk-')",
+        "required": True,
+    },
+    "GROQ_API_KEY": {
+        "name": "Groq",
+        "color": Colors.YELLOW,
+        "icon": "⚡",
+        "url": "https://console.groq.com/keys",
+        "guide": "1. Go to Groq Console → API Keys\n  2. Click 'Create API Key'\n  3. Copy your API key",
+        "required": False,
+    },
+    "OPENROUTER_API_KEY": {
+        "name": "OpenRouter",
+        "color": Colors.BLUE,
+        "icon": "🌐",
+        "url": "https://openrouter.ai/keys",
+        "guide": "1. Go to OpenRouter → Keys\n  2. Click 'Create Key'\n  3. Copy your API key",
+        "required": False,
+    },
+    "XAI_API_KEY": {
+        "name": "xAI",
+        "color": Colors.RED,
+        "icon": "🚀",
+        "url": "https://console.x.ai/",
+        "guide": "1. Go to xAI Console\n  2. Navigate to API Keys\n  3. Create and copy your API key",
+        "required": False,
+    },
+    "GEMINI_API_KEY": {
+        "name": "Google Gemini",
+        "color": Colors.BLUE,
+        "icon": "💎",
+        "url": "https://makersuite.google.com/app/apikey",
+        "guide": "1. Go to Google AI Studio → Get API Key\n  2. Create API key in Google Cloud Console\n  3. Copy your API key",
+        "required": False,
+    },
+    "OPENAI_COMPATIBLE_API_KEY": {
+        "name": "OpenAI Compatible",
+        "color": Colors.CYAN,
+        "icon": "🔌",
+        "url": "",
+        "guide": "Enter your OpenAI-compatible API key (e.g., from local LLM server)",
+        "required": False,
+    },
+    "AWS_BEARER_TOKEN_BEDROCK": {
+        "name": "AWS Bedrock",
+        "color": Colors.YELLOW,
+        "icon": "☁️",
+        "url": "https://console.aws.amazon.com/bedrock/",
+        "guide": "1. Configure AWS credentials (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)\n  2. Enable Bedrock in your AWS region\n  3. Bearer token is optional for some setups",
+        "required": False,
+    },
+    "MORPH_API_KEY": {
+        "name": "Morph",
+        "color": Colors.CYAN,
+        "icon": "✨",
+        "url": "https://morphllm.com/api-keys",
+        "guide": "1. Go to Morph → API Keys\n  2. Sign up or log in\n  3. Create and copy your API key",
+        "required": False,
+    },
+    "TAVILY_API_KEY": {
+        "name": "Tavily",
+        "color": Colors.GREEN,
+        "icon": "🔍",
+        "url": "https://tavily.com",
+        "guide": "1. Go to Tavily.com → Sign up\n  2. Navigate to API Keys\n  3. Copy your API key",
+        "required": False,
+    },
+    "FIRECRAWL_API_KEY": {
+        "name": "Firecrawl",
+        "color": Colors.RED,
+        "icon": "🔥",
+        "url": "https://firecrawl.dev",
+        "guide": "1. Go to Firecrawl.dev → Sign up\n  2. Navigate to API Keys\n  3. Copy your API key",
+        "required": False,
+    },
+    "SERPER_API_KEY": {
+        "name": "Serper",
+        "color": Colors.BLUE,
+        "icon": "🖼️",
+        "url": "https://serper.dev",
+        "guide": "1. Go to Serper.dev → Sign up\n  2. Navigate to API Keys\n  3. Copy your API key",
+        "required": False,
+    },
+    "EXA_API_KEY": {
+        "name": "Exa",
+        "color": Colors.CYAN,
+        "icon": "👥",
+        "url": "https://exa.ai",
+        "guide": "1. Go to Exa.ai → Sign up\n  2. Navigate to API Keys\n  3. Copy your API key",
+        "required": False,
+    },
+    "SEMANTIC_SCHOLAR_API_KEY": {
+        "name": "Semantic Scholar",
+        "color": Colors.BLUE,
+        "icon": "📚",
+        "url": "https://www.semanticscholar.org/product/api",
+        "guide": "1. Go to Semantic Scholar → API\n  2. Sign up for API access\n  3. Copy your API key",
+        "required": False,
+    },
+    "RAPID_API_KEY": {
+        "name": "RapidAPI",
+        "color": Colors.YELLOW,
+        "icon": "⚡",
+        "url": "https://rapidapi.com/developer/security",
+        "guide": "1. Go to RapidAPI → Developer Dashboard\n  2. Navigate to Security → API Key\n  3. Copy your API key",
+        "required": False,
+    },
+    "COMPOSIO_API_KEY": {
+        "name": "Composio",
+        "color": Colors.GREEN,
+        "icon": "🔗",
+        "url": "https://app.composio.dev/settings/api-keys",
+        "guide": "1. Go to Composio → Settings → API Keys\n  2. Click 'Create API Key'\n  3. Copy your API key",
+        "required": True,
+    },
+    "DAYTONA_API_KEY": {
+        "name": "Daytona",
+        "color": Colors.BLUE,
+        "icon": "🖥️",
+        "url": "https://app.daytona.io/keys",
+        "guide": "1. Go to Daytona → Keys menu\n  2. Generate a new API key\n  3. Copy your API key",
+        "required": True,
+    },
+}
+
+
+def print_api_key_prompt(provider_key, optional=False, existing_value=""):
+    """Prints a beautifully formatted API key prompt with provider-specific styling."""
+    provider = API_PROVIDER_INFO.get(provider_key, {
+        "name": provider_key.replace("_", " ").title(),
+        "color": Colors.CYAN,
+        "icon": "🔑",
+        "url": "",
+        "guide": "Enter your API key",
+        "required": False,
+    })
+    
+    color = provider["color"]
+    icon = provider["icon"]
+    name = provider["name"]
+    url = provider["url"]
+    guide = provider["guide"]
+    
+    print()
+    print(f"{color}{'═'*70}{Colors.ENDC}")
+    print(f"{color}{Colors.BOLD}  {icon}  {name} API Key{Colors.ENDC}")
+    if optional:
+        print(f"{Colors.YELLOW}  (Optional){Colors.ENDC}")
+    elif provider.get("required", False):
+        print(f"{Colors.RED}  (Required){Colors.ENDC}")
+    print(f"{color}{'═'*70}{Colors.ENDC}")
+    
+    if url:
+        print(f"{Colors.CYAN}📍 Get your API key:{Colors.ENDC} {Colors.GREEN}{url}{Colors.ENDC}")
+    
+    print(f"{Colors.CYAN}📖 How to get it:{Colors.ENDC}")
+    for line in guide.split('\n'):
+        print(f"   {Colors.CYAN}{line}{Colors.ENDC}")
+    
+    if existing_value:
+        masked = mask_sensitive_value(existing_value)
+        print(f"\n{Colors.GREEN}✓ Found existing key: {masked}{Colors.ENDC}")
+        print(f"{Colors.YELLOW}Press Enter to keep current value or type a new one.{Colors.ENDC}")
+    
+    print()
+
+
 
 def detect_docker_compose_command():
     """Detects whether 'docker compose' or 'docker-compose' is available."""
@@ -896,9 +1078,7 @@ class SetupWizard:
 
         print_info("Kortix Super Worker REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
         
-        # Local Supabase is not supported for either setup method
-        print_warning("Local Supabase is not supported at this time.")
-        print_info("Proceeding with Cloud Supabase setup...")
+        # Proceed with Cloud Supabase setup (local Supabase warning already shown in choose_setup_method)
         self.env_vars["supabase_setup_method"] = "cloud"
         self._setup_cloud_supabase()
 
@@ -1120,12 +1300,11 @@ class SetupWizard:
         print_info("You can provide either:")
         print_info("  1. DATABASE_URL (full connection string) - Recommended")
         print_info("     Format: postgresql://postgres.[project-ref]:[password]@[host]:[port]/postgres")
-        print_info("     Example (Direct): postgresql://postgres.lqpzbjelskdqxkvnkfbu:password@db.lqpzbjelskdqxkvnkfbu.supabase.co:5432/postgres")
-        print_info("     Example (Pooler): postgresql://postgres.lqpzbjelskdqxkvnkfbu:password@aws-1-eu-west-1.pooler.supabase.com:5432/postgres")
+        print_info("     Example (Transaction Pooler): postgresql://postgres.lqpzbjelskdqxkvnkfbu:password@aws-1-eu-west-1.pooler.supabase.com:6543/postgres")
         print_info("     Note: Special characters in password (like @, :, /) will be automatically URL-encoded")
         print_info("  2. POSTGRES_PASSWORD (database password) - Alternative")
-        print_info("     We'll construct the URL automatically (requires project ref and host info)")
-        print_info("Find these in: Project Settings > Database > Connection string")
+        print_info("     We'll construct the Transaction Pooler URL automatically (requires project ref and pooler hostname)")
+        print_info("Find these in: Project Settings > Database > Connection string > Transaction mode (Supavisor)")
         
         database_url = self._get_input(
             "Enter your DATABASE_URL (or press Enter to skip and provide password instead): ",
@@ -1168,51 +1347,29 @@ class SetupWizard:
                 "Invalid password format. It should be at least 10 characters.",
             )
             
-            # Ask for connection type
-            print_info("\nConnection Type:")
-            print_info("  [1] Direct Connection (port 5432) - Recommended for most cases")
-            print_info("  [2] Session Pooler (port 5432) - For connection pooling")
-            print_info("  [3] Transaction Pooler (port 6543) - For Supavisor")
+            # Use Transaction Pooler (Supavisor) - recommended for production
+            print_info("\n" + "="*60)
+            print_info("Transaction Pooler (Supavisor) Configuration")
+            print_info("="*60)
+            print_info("Using Transaction Pooler (port 6543) for optimal connection handling.")
+            print_info("\n📍 Where to find your Transaction Pooler connection string:")
+            print_info("  1. Go to: Supabase Dashboard → Project Settings → Database")
+            print_info("  2. Scroll to 'Connection string' section")
+            print_info("  3. Select 'Transaction' mode (Supavisor)")
+            print_info("  4. Copy the hostname (e.g., aws-1-eu-west-1.pooler.supabase.com)")
+            print_info("\nThe connection string format:")
+            print_info("  postgresql://postgres.[project-ref]:[password]@[pooler-host]:6543/postgres")
+            print()
             
-            connection_type = input("Select connection type (1-3, default: 1): ").strip() or "1"
-            
-            if connection_type == "2":
-                # Session pooler
-                print_info("Using Session Pooler format")
-                host = self._get_input(
-                    f"Enter pooler hostname (e.g., aws-1-eu-west-1.pooler.supabase.com): ",
-                    lambda x: bool(x and "." in x),
-                    "Invalid hostname format.",
-                )
-                port = 5432
-                use_pooler = True
-            elif connection_type == "3":
-                # Transaction pooler
-                print_info("Using Transaction Pooler (Supavisor) format")
-                host = self._get_input(
-                    f"Enter pooler hostname (e.g., aws-1-eu-west-1.pooler.supabase.com): ",
-                    lambda x: bool(x and "." in x),
-                    "Invalid hostname format.",
-                )
-                port = 6543
-                use_pooler = True
-            else:
-                # Direct connection
-                print_info("Using Direct Connection format")
-                host = self._get_input(
-                    f"Enter database hostname (e.g., db.{project_ref}.supabase.co): ",
-                    lambda x: bool(x and "." in x),
-                    "Invalid hostname format.",
-                    default_value=f"db.{project_ref}.supabase.co",
-                )
-                port_input = self._get_input(
-                    "Enter database port (default: 5432): ",
-                    lambda x, allow_empty=True: allow_empty or (x.isdigit() and 1 <= int(x) <= 65535),
-                    "Invalid port number. Must be between 1 and 65535.",
-                    allow_empty=True,
-                )
-                port = int(port_input) if port_input else 5432
-                use_pooler = False
+            # Transaction pooler configuration
+            print_info("Using Transaction Pooler (Supavisor) format")
+            host = self._get_input(
+                f"Enter Transaction Pooler hostname (e.g., aws-1-eu-west-1.pooler.supabase.com): ",
+                lambda x, allow_empty=False: allow_empty or bool(x and "." in x),
+                "Invalid hostname format.",
+            )
+            port = 6543
+            use_pooler = True
             
             # Construct the DATABASE_URL with proper URL encoding
             constructed_url = construct_database_url(
@@ -1256,23 +1413,25 @@ class SetupWizard:
             sys.exit(1)
         
         # Collect OPENAI_API_KEY - Required for background tasks (project naming, icon generation, etc.)
-        print_info("\n" + "="*60)
-        print_info("OpenAI API Key (Required for Background Tasks)")
-        print_info("="*60)
+        print()
+        print(f"{Colors.RED}{'═'*70}{Colors.ENDC}")
+        print(f"{Colors.RED}{Colors.BOLD}  🧠  OpenAI API Key (Required for Background Tasks){Colors.ENDC}")
+        print(f"{Colors.RED}{'═'*70}{Colors.ENDC}")
         print_info("Background tasks require OpenAI API key for:")
-        print_info("  • Generating project names and icons")
-        print_info("  • Generating thread names")
-        print_info("  • Generating file names")
-        print_info("  • Agent setup and configuration")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Generating project names and icons")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Generating thread names")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Generating file names")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Agent setup and configuration")
         print_info("\nThese tasks use 'openai/gpt-5-nano-2025-08-07' model.")
-        print_info("Get your API key from: https://platform.openai.com/api-keys")
         print_warning("⚠️  This is MANDATORY - background tasks will fail without it!")
+        print()
         
         # Check if already exists in llm section
         existing_openai_key = self.env_vars["llm"].get("OPENAI_API_KEY", "")
+        print_api_key_prompt("OPENAI_API_KEY", optional=False, existing_value=existing_openai_key)
         
         self.env_vars["llm"]["OPENAI_API_KEY"] = self._get_input(
-            "Enter your OpenAI API key (required): ",
+            f"{Colors.GREEN}Enter your OpenAI API key (required){Colors.ENDC}: ",
             validate_api_key,
             "Invalid API key format. It should be at least 10 characters long (OpenAI keys typically start with 'sk-').",
             default_value=existing_openai_key,
@@ -1311,13 +1470,11 @@ class SetupWizard:
         else:
             print_info(
                 "Kortix Super Worker REQUIRES Daytona for sandboxing functionality. Without this key, sandbox features will fail.")
-            print_info(
-                "Visit https://app.daytona.io/ to create an account.")
-            print_info("Then, generate an API key from the 'Keys' menu.")
             input("Press Enter to continue once you have your API key...")
 
+        print_api_key_prompt("DAYTONA_API_KEY", optional=False, existing_value=self.env_vars["daytona"]["DAYTONA_API_KEY"])
         self.env_vars["daytona"]["DAYTONA_API_KEY"] = self._get_input(
-            "Enter your Daytona API key: ",
+            f"{Colors.BLUE}Enter your Daytona API key{Colors.ENDC}: ",
             validate_api_key,
             "Invalid API key format. It should be at least 10 characters long.",
             default_value=self.env_vars["daytona"]["DAYTONA_API_KEY"],
@@ -1414,11 +1571,14 @@ class SetupWizard:
             )
             for key, (name, env_key) in providers.items():
                 current_value = self.env_vars["llm"].get(env_key, "")
+                provider_info = API_PROVIDER_INFO.get(env_key, {})
+                provider_color = provider_info.get("color", Colors.GREEN)
+                provider_icon = provider_info.get("icon", "🔑")
                 status = (
                     f" {Colors.GREEN}(configured){Colors.ENDC}" if current_value else ""
                 )
                 print(
-                    f"{Colors.CYAN}[{key}] {Colors.GREEN}{name}{Colors.ENDC}{status}")
+                    f"{Colors.CYAN}[{key}]{Colors.ENDC} {provider_color}{provider_icon} {name}{Colors.ENDC}{status}")
 
             # Allow Enter to skip if we already have keys configured
             if has_existing:
@@ -1440,15 +1600,22 @@ class SetupWizard:
                 continue
 
             for key in selected_keys:
-                provider_name = key.split("_")[0].capitalize()
                 existing_value = self.env_vars["llm"].get(key, "")
+                print_api_key_prompt(key, optional=False, existing_value=existing_value)
+                
+                provider = API_PROVIDER_INFO.get(key, {})
+                provider_name = provider.get("name", key.split("_")[0].capitalize())
+                
                 api_key = self._get_input(
-                    f"Enter your {provider_name} API key: ",
+                    f"{provider.get('color', Colors.CYAN)}Enter your {provider_name} API key{Colors.ENDC}: ",
                     validate_api_key,
                     "Invalid API key format.",
                     default_value=existing_value,
                 )
                 self.env_vars["llm"][key] = api_key
+                if api_key:
+                    print_success(f"{provider_name} API key saved!")
+                print()
 
         # Validate that at least one LLM provider is configured
         configured_providers = [k for k in self.env_vars["llm"] if self.env_vars["llm"][k]]
@@ -1491,10 +1658,9 @@ class SetupWizard:
             print_error("Invalid input. Please enter 'y' or 'n'.")
 
         if choice == 'y':
-            print_info(
-                "Great! Please get your API key from: https://morphllm.com/api-keys")
+            print_api_key_prompt("MORPH_API_KEY", optional=True, existing_value="")
             morph_api_key = self._get_input(
-                "Enter your Morph API key (or press Enter to skip): ",
+                f"{Colors.CYAN}Enter your Morph API key (or press Enter to skip){Colors.ENDC}: ",
                 validate_api_key,
                 "The key seems invalid, but continuing. You can edit it later in backend/.env",
                 allow_empty=True,
@@ -1535,39 +1701,39 @@ class SetupWizard:
                 "Search APIs are OPTIONAL tools that enhance Kortix Super Worker's capabilities.")
             print_info(
                 "Without these, Kortix Super Worker will work but won't have web search or scraping functionality.")
-            print_info(
-                "Optional: Tavily for web search, Firecrawl for web scraping")
-            print_info(
-                "Optional: Serper for image search, Exa for people/company search, and Semantic Scholar for academic papers.")
-            print_info(
-                "Get a Tavily key at https://tavily.com, a Firecrawl key at https://firecrawl.dev")
-            print_info(
-                "Optional: Serper key at https://serper.dev, Exa key at https://exa.ai, Semantic Scholar key at https://www.semanticscholar.org/product/api"
-            )
+            print()
+            print(f"{Colors.CYAN}Available Search Tools:{Colors.ENDC}")
+            print(f"  {Colors.GREEN}🔍 Tavily{Colors.ENDC} - Web search")
+            print(f"  {Colors.RED}🔥 Firecrawl{Colors.ENDC} - Web scraping")
+            print(f"  {Colors.BLUE}🖼️ Serper{Colors.ENDC} - Image search (optional)")
+            print(f"  {Colors.CYAN}👥 Exa{Colors.ENDC} - People/company search (optional)")
+            print(f"  {Colors.BLUE}📚 Semantic Scholar{Colors.ENDC} - Academic papers (optional)")
+            print()
             print_info("Press Enter to skip any optional keys.")
 
+        # Tavily API key
+        print_api_key_prompt("TAVILY_API_KEY", optional=False, existing_value=self.env_vars["search"]["TAVILY_API_KEY"])
         self.env_vars["search"]["TAVILY_API_KEY"] = self._get_input(
-            "Enter your Tavily API key: ",
+            f"{Colors.GREEN}Enter your Tavily API key{Colors.ENDC}: ",
             validate_api_key,
             "Invalid API key.",
             default_value=self.env_vars["search"]["TAVILY_API_KEY"],
         )
+        
+        # Firecrawl API key
+        print_api_key_prompt("FIRECRAWL_API_KEY", optional=False, existing_value=self.env_vars["search"]["FIRECRAWL_API_KEY"])
         self.env_vars["search"]["FIRECRAWL_API_KEY"] = self._get_input(
-            "Enter your Firecrawl API key: ",
+            f"{Colors.RED}Enter your Firecrawl API key{Colors.ENDC}: ",
             validate_api_key,
             "Invalid API key.",
             default_value=self.env_vars["search"]["FIRECRAWL_API_KEY"],
         )
         
         # Serper API key (optional for image search)
-        print_info(
-            "\nSerper API enables image search functionality."
-        )
-        print_info(
-            "This is optional but required for the Image Search tool. Leave blank to skip."
-        )
+        print_api_key_prompt("SERPER_API_KEY", optional=True, existing_value=self.env_vars["search"]["SERPER_API_KEY"])
+        print_info("This enables image search functionality. Leave blank to skip.")
         self.env_vars["search"]["SERPER_API_KEY"] = self._get_input(
-            "Enter your Serper API key (optional): ",
+            f"{Colors.BLUE}Enter your Serper API key (optional){Colors.ENDC}: ",
             validate_api_key,
             "Invalid API key.",
             allow_empty=True,
@@ -1575,14 +1741,10 @@ class SetupWizard:
         )
         
         # Exa API key (optional for people search)
-        print_info(
-            "\nExa API enables advanced people search with LinkedIn/email enrichment using Websets."
-        )
-        print_info(
-            "This is optional but required for the People Search tool. Leave blank to skip."
-        )
+        print_api_key_prompt("EXA_API_KEY", optional=True, existing_value=self.env_vars["search"]["EXA_API_KEY"])
+        print_info("This enables advanced people search with LinkedIn/email enrichment. Leave blank to skip.")
         self.env_vars["search"]["EXA_API_KEY"] = self._get_input(
-            "Enter your Exa API key (optional): ",
+            f"{Colors.CYAN}Enter your Exa API key (optional){Colors.ENDC}: ",
             validate_api_key,
             "Invalid API key.",
             allow_empty=True,
@@ -1590,14 +1752,10 @@ class SetupWizard:
         )
         
         # Semantic Scholar API key (optional for academic paper search)
-        print_info(
-            "\nSemantic Scholar API enables searching and analyzing academic papers and research."
-        )
-        print_info(
-            "This is optional but required for the Research Papers tool. Leave blank to skip."
-        )
+        print_api_key_prompt("SEMANTIC_SCHOLAR_API_KEY", optional=True, existing_value=self.env_vars["search"]["SEMANTIC_SCHOLAR_API_KEY"])
+        print_info("This enables searching and analyzing academic papers. Leave blank to skip.")
         self.env_vars["search"]["SEMANTIC_SCHOLAR_API_KEY"] = self._get_input(
-            "Enter your Semantic Scholar API key (optional): ",
+            f"{Colors.BLUE}Enter your Semantic Scholar API key (optional){Colors.ENDC}: ",
             validate_api_key,
             "Invalid API key.",
             allow_empty=True,
@@ -1631,22 +1789,12 @@ class SetupWizard:
         """Collects the optional RapidAPI key."""
         print_step(8, self.total_steps, "Collecting RapidAPI Key (Optional)")
 
-        # Check if we already have a value configured
         existing_key = self.env_vars["rapidapi"]["RAPID_API_KEY"]
-        if existing_key:
-            print_info(
-                f"Found existing RapidAPI key: {mask_sensitive_value(existing_key)}"
-            )
-            print_info("Press Enter to keep current value or type a new one.")
-        else:
-            print_info(
-                "A RapidAPI key enables extra tools like LinkedIn scraping.")
-            print_info(
-                "Get a key at https://rapidapi.com/. You can skip this and add it later."
-            )
-
+        print_api_key_prompt("RAPID_API_KEY", optional=True, existing_value=existing_key)
+        print_info("This enables extra tools like LinkedIn scraping. Leave blank to skip.")
+        
         rapid_api_key = self._get_input(
-            "Enter your RapidAPI key (or press Enter to skip): ",
+            f"{Colors.YELLOW}Enter your RapidAPI key (or press Enter to skip){Colors.ENDC}: ",
             validate_api_key,
             "The key seems invalid, but continuing. You can edit it later in backend/.env",
             allow_empty=True,
@@ -1713,12 +1861,11 @@ class SetupWizard:
             print_info("  • Social media (Twitter, LinkedIn, Instagram)")
             print_info("  • CRM systems (Salesforce, HubSpot, Pipedrive)")
             print_info("  • And many more integrations for workflow automation")
-            print_info(
-                "Get your API key from: https://app.composio.dev/settings/api-keys")
             input("Press Enter to continue once you have your API key...")
 
+        print_api_key_prompt("COMPOSIO_API_KEY", optional=False, existing_value=self.env_vars["composio"]["COMPOSIO_API_KEY"])
         self.env_vars["composio"]["COMPOSIO_API_KEY"] = self._get_input(
-            "Enter your Composio API Key: ",
+            f"{Colors.GREEN}Enter your Composio API Key{Colors.ENDC}: ",
             validate_api_key,
             "Invalid Composio API Key format. It should be at least 10 characters long.",
             default_value=self.env_vars["composio"]["COMPOSIO_API_KEY"],
@@ -1942,18 +2089,8 @@ class SetupWizard:
             "This step will apply database migrations to your Supabase instance."
         )
         print_info(
-            "You can skip this if you've already set up your database or prefer to do it manually."
+            "Migrations are required for Kortix Super Worker to function properly."
         )
-
-        prompt = "Do you want to apply database migrations now? (Y/n): "
-        user_input = input(prompt).lower().strip()
-
-        if user_input in ["n", "no"]:
-            print_info("Skipping Supabase database setup.")
-            print_warning(
-                "Remember to manually apply migrations from backend/supabase/migrations/"
-            )
-            return
 
         # Determine if local or cloud setup based on user's choice
         if self.env_vars["supabase_setup_method"] == "local":
@@ -2128,54 +2265,98 @@ class SetupWizard:
     def start_suna(self):
         """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup."""
         print_step(17, self.total_steps, "Starting Kortix Super Worker")
-        if self.env_vars["setup_method"] == "docker":
-            print_info("Starting Kortix Super Worker with Docker Compose...")
-            compose_cmd = self.get_compose_command()
-            if not compose_cmd:
-                print_warning("Docker Compose command not detected. Install Docker Desktop or docker-compose and rerun.")
-                return
-            compose_cmd_str = format_compose_cmd(compose_cmd)
-            try:
-                subprocess.run(
-                    compose_cmd + ["up", "-d", "--build"],
-                    check=True,
-                    shell=IS_WINDOWS,
-                )
-                print_info("Waiting for services to spin up...")
-                time.sleep(15)
-                # A simple check to see if containers are running
-                result = subprocess.run(
-                    compose_cmd + ["ps"],
-                    capture_output=True,
-                    text=True,
-                    shell=IS_WINDOWS,
-                )
-                if "backend" in result.stdout and "frontend" in result.stdout:
-                    print_success("Kortix Super Worker services are starting up!")
-                else:
-                    print_warning(
-                        "Some services might not be running. Check '{compose_cmd_str} ps' for details."
-                    )
-            except subprocess.SubprocessError as e:
-                print_error(f"Failed to start Kortix Super Worker with Docker Compose: {e}")
-                print_warning(
-                    "The Docker build might be failing due to environment variable issues during build time."
-                )
-                print_info(
-                    "WORKAROUND: Try starting without rebuilding:"
-                )
-                print_info(f"  {Colors.CYAN}{compose_cmd_str} up -d{Colors.ENDC} (without --build)")
-                print_info(
-                    "\nIf that doesn't work, you may need to:"
-                )
-                print_info(f"  1. {Colors.CYAN}cd frontend{Colors.ENDC}")
-                print_info(f"  2. {Colors.CYAN}pnpm run build{Colors.ENDC}")
-                print_info(f"  3. {Colors.CYAN}cd .. && {compose_cmd_str} up -d{Colors.ENDC}")
-                # Don't exit, let the final instructions show
-                return
+        
+        compose_cmd = self.get_compose_command()
+        if not compose_cmd:
+            print_warning("Docker Compose command not detected. Install Docker Desktop or docker-compose and rerun.")
+            compose_cmd_str = "docker compose"
         else:
-            print_info(
-                "All configurations are complete. Manual start is required.")
+            compose_cmd_str = format_compose_cmd(compose_cmd)
+        
+        # Ask user how they want to start
+        print_info("\nHow would you like to start Kortix Super Worker?")
+        print(f"  {Colors.CYAN}[1]{Colors.ENDC} Automatic - Start services automatically")
+        print(f"  {Colors.CYAN}[2]{Colors.ENDC} Manual - Show commands to run manually")
+        
+        while True:
+            choice = input("Enter your choice (1-2, default: 1): ").strip() or "1"
+            if choice in ["1", "2"]:
+                break
+            print_error("Invalid choice. Please enter 1 or 2.")
+        
+        self.env_vars["start_method"] = "automatic" if choice == "1" else "manual"
+        
+        if self.env_vars["setup_method"] == "docker":
+            if choice == "1":
+                # Automatic Docker start
+                print_info("Starting Kortix Super Worker with Docker Compose...")
+                try:
+                    subprocess.run(
+                        compose_cmd + ["up", "-d", "--build"],
+                        check=True,
+                        shell=IS_WINDOWS,
+                    )
+                    print_info("Waiting for services to spin up...")
+                    time.sleep(15)
+                    # A simple check to see if containers are running
+                    result = subprocess.run(
+                        compose_cmd + ["ps"],
+                        capture_output=True,
+                        text=True,
+                        shell=IS_WINDOWS,
+                    )
+                    if "backend" in result.stdout and "frontend" in result.stdout:
+                        print_success("Kortix Super Worker services are starting up!")
+                    else:
+                        print_warning(
+                            f"Some services might not be running. Check '{compose_cmd_str} ps' for details."
+                        )
+                except subprocess.SubprocessError as e:
+                    print_error(f"Failed to start Kortix Super Worker with Docker Compose: {e}")
+                    print_warning(
+                        "The Docker build might be failing due to environment variable issues during build time."
+                    )
+                    print_info(
+                        "WORKAROUND: Try starting without rebuilding:"
+                    )
+                    print_info(f"  {Colors.CYAN}{compose_cmd_str} up -d{Colors.ENDC} (without --build)")
+                    print_info(
+                        "\nIf that doesn't work, you may need to:"
+                    )
+                    print_info(f"  1. {Colors.CYAN}cd frontend{Colors.ENDC}")
+                    print_info(f"  2. {Colors.CYAN}pnpm run build{Colors.ENDC}")
+                    print_info(f"  3. {Colors.CYAN}cd .. && {compose_cmd_str} up -d{Colors.ENDC}")
+            else:
+                # Manual Docker start - show commands
+                print_info("Manual start selected. Use these commands:")
+                print_info(f"  {Colors.CYAN}{compose_cmd_str} up -d{Colors.ENDC} - Start all services")
+                print_info(f"  {Colors.CYAN}{compose_cmd_str} down{Colors.ENDC} - Stop all services")
+                print_info(f"  {Colors.CYAN}{compose_cmd_str} logs -f{Colors.ENDC} - View logs")
+                print_info(f"  {Colors.CYAN}python start.py{Colors.ENDC} - Start/stop services")
+        else:
+            # Manual setup
+            if choice == "1":
+                # Automatic manual start - use start.py
+                print_info("Starting Kortix Super Worker automatically...")
+                print_info("This will start Redis, Backend, and Frontend services.")
+                try:
+                    # Use start.py to handle automatic start
+                    subprocess.run(
+                        [sys.executable, "start.py"],
+                        check=True,
+                        shell=IS_WINDOWS,
+                    )
+                    print_success("Kortix Super Worker services started!")
+                except subprocess.SubprocessError as e:
+                    print_error(f"Failed to start services automatically: {e}")
+                    print_info("You can start services manually using the commands shown below.")
+            else:
+                # Manual manual start - show commands
+                print_info("Manual start selected. Run these commands in separate terminals:")
+                print_info(f"  {Colors.CYAN}cd backend && uv run api.py{Colors.ENDC} - Start backend")
+                print_info(f"  {Colors.CYAN}cd apps/frontend && pnpm run dev{Colors.ENDC} - Start frontend")
+                print_info(f"  {Colors.CYAN}{compose_cmd_str} up redis -d{Colors.ENDC} - Start Redis")
+                print_info(f"\nOr use: {Colors.CYAN}python start.py{Colors.ENDC} to start automatically")
 
     def final_instructions(self):
         """Shows final instructions to the user."""
@@ -2193,31 +2374,23 @@ class SetupWizard:
         compose_cmd = self.get_compose_command()
         compose_cmd_str = format_compose_cmd(compose_cmd)
 
+        start_method = self.env_vars.get("start_method", "manual")
+        
         if self.env_vars["setup_method"] == "docker":
             print_info("Your Kortix Super Worker instance is ready to use!")
             
-            # Important limitation for local Supabase with Docker
-            if self.env_vars.get("supabase_setup_method") == "local":
-                print(f"\n{Colors.RED}{Colors.BOLD}⚠️  IMPORTANT LIMITATION:{Colors.ENDC}")
-                print(f"{Colors.YELLOW}Local Supabase is currently NOT supported with Docker Compose.{Colors.ENDC}")
-                print("\nThis is due to network configuration complexity between:")
-                print("  • Kortix Super Worker containers (backend, frontend, worker)")
-                print("  • Local Supabase containers (via npx supabase start)")
-                print("  • Your browser (accessing from host machine)")
-                print("\n" + "="*70)
-                print(f"{Colors.BOLD}RECOMMENDED OPTIONS:{Colors.ENDC}")
-                print("="*70)
-                print(f"\n{Colors.GREEN}Option 1 (Recommended):{Colors.ENDC} Use Cloud Supabase")
-                print("  • Re-run setup.py and choose Cloud Supabase")
-                print("  • Works seamlessly with Docker Compose")
-                print(f"\n{Colors.GREEN}Option 2:{Colors.ENDC} Run Everything Manually (No Docker)")
-                print("  • Re-run setup.py and choose 'Manual' setup")
-                print("  • Local Supabase works perfectly with manual setup")
-                print(f"\n{Colors.CYAN}Future:{Colors.ENDC} We plan to integrate Supabase directly into docker-compose.yaml")
-                print("="*70 + "\n")
-                return  # Don't show Docker commands if local Supabase is configured
+            if start_method == "automatic":
+                print_info("Services are starting automatically. Use these commands to manage:")
+            else:
+                print_info("To start services manually, use:")
             
             print("\nUseful Docker commands:")
+            print(
+                f"  {Colors.CYAN}{compose_cmd_str} up -d{Colors.ENDC}     - Start all services"
+            )
+            print(
+                f"  {Colors.CYAN}{compose_cmd_str} down{Colors.ENDC}       - Stop all services"
+            )
             print(
                 f"  {Colors.CYAN}{compose_cmd_str} ps{Colors.ENDC}         - Check service status"
             )
@@ -2225,10 +2398,7 @@ class SetupWizard:
                 f"  {Colors.CYAN}{compose_cmd_str} logs -f{Colors.ENDC}    - Follow logs"
             )
             print(
-                f"  {Colors.CYAN}{compose_cmd_str} down{Colors.ENDC}       - Stop Kortix Super Worker services"
-            )
-            print(
-                f"  {Colors.CYAN}python start.py{Colors.ENDC}           - To start or stop Kortix Super Worker services"
+                f"  {Colors.CYAN}python start.py{Colors.ENDC}           - Start/stop services (automatic mode)"
             )
             
             # Cloud Supabase commands
@@ -2237,9 +2407,12 @@ class SetupWizard:
                 print(f"  {Colors.CYAN}Supabase Dashboard:{Colors.ENDC} https://supabase.com/dashboard")
                 print(f"  {Colors.CYAN}Project URL:{Colors.ENDC} {self.env_vars['supabase'].get('SUPABASE_URL', 'N/A')}")
         else:
-            print_info(
-                "To start Kortix Super Worker, you need to run these commands in separate terminals:"
-            )
+            # Manual setup
+            if start_method == "automatic":
+                print_info("Services are starting automatically via start.py.")
+                print_info("To manage services manually, use these commands:")
+            else:
+                print_info("To start Kortix Super Worker manually, run these commands in separate terminals:")
             
             # Show Supabase start command for local setup
             step_num = 1
@@ -2257,21 +2430,15 @@ class SetupWizard:
             step_num += 1
 
             print(
-                f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
-            print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
-            step_num += 1
-
-            print(
                 f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
             step_num += 1
 
             print(
-                f"\n{Colors.BOLD}{step_num}. Start Background Worker (in a new terminal):{Colors.ENDC}"
-            )
-            print(
-                f"{Colors.CYAN}   cd backend && uv run dramatiq run_agent_background{Colors.ENDC}"
-            )
+                f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
+            print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
+            
+            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
             
             # Show stop commands for local Supabase
             if self.env_vars.get("supabase_setup_method") == "local":

@@ -225,11 +225,11 @@ def main():
     if setup_method == "manual":
         # For manual setup, start all services automatically
         print(f"{Colors.BLUE}{Colors.BOLD}Manual Setup Detected{Colors.ENDC}")
-        print("Starting all Suna services...\n")
+        print("Managing Suna services (Redis, Backend, Frontend)...\n")
 
         force = "-f" in sys.argv
         if force:
-            print("Force awakened. Skipping confirmation.")
+            print("Force mode: Skipping confirmation.")
 
         if not check_docker_available():
             return
@@ -269,9 +269,10 @@ def main():
                     return
 
         if action == "stop":
-            # Stop infrastructure
-            subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
-            # Stop other services
+            # Stop infrastructure (Redis)
+            print(f"{Colors.YELLOW}🛑 Stopping Redis...{Colors.ENDC}")
+            subprocess.run(compose_cmd + ["stop", "redis"], shell=IS_WINDOWS)
+            # Stop other services (Backend, Frontend)
             stop_services()
             print(f"\n{Colors.GREEN}✅ All Suna services stopped.{Colors.ENDC}")
         else:
@@ -298,7 +299,19 @@ def main():
                     pids["supabase"] = supabase_process.pid
                 time.sleep(2)  # Give Supabase time to start
 
+            # Start Backend
+            print(f"{Colors.CYAN}🚀 Starting Backend...{Colors.ENDC}")
+            backend_process = start_service_in_background(
+                "uv run api.py",
+                cwd="backend",
+                name="Backend"
+            )
+            if backend_process:
+                pids["backend"] = backend_process.pid
+            time.sleep(2)  # Give Backend time to start
+
             # Start Frontend
+            print(f"{Colors.CYAN}🚀 Starting Frontend...{Colors.ENDC}")
             frontend_process = start_service_in_background(
                 "pnpm run dev",
                 cwd="apps/frontend",
@@ -307,30 +320,22 @@ def main():
             if frontend_process:
                 pids["frontend"] = frontend_process.pid
 
-            # Start Backend
-            backend_process = start_service_in_background(
-                "uv run api.py",
-                cwd="backend",
-                name="Backend"
-            )
-            if backend_process:
-                pids["backend"] = backend_process.pid
-
             # Save PIDs
             if pids:
                 save_pids(pids)
 
             print(f"\n{Colors.GREEN}✅ All Suna services started.{Colors.ENDC}")
             print(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
-            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}./start.py{Colors.ENDC}' to stop all services.")
+            print(f"{Colors.CYAN}🔧 Backend API at: http://localhost:8000{Colors.ENDC}")
+            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' to stop all services.")
 
     else:  # docker setup
         print(f"{Colors.BLUE}{Colors.BOLD}Docker Setup Detected{Colors.ENDC}")
-        print("Managing all Suna services with Docker Compose...\n")
+        print("Managing all Suna services with Docker Compose (Redis, Backend, Frontend)...\n")
 
         force = "-f" in sys.argv
         if force:
-            print("Force awakened. Skipping confirmation.")
+            print("Force mode: Skipping confirmation.")
 
         if not check_docker_available():
             return
@@ -362,12 +367,16 @@ def main():
                     return
 
         if action == "stop":
+            print(f"{Colors.YELLOW}🛑 Stopping all services...{Colors.ENDC}")
             subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
             print(f"\n{Colors.GREEN}✅ All Suna services stopped.{Colors.ENDC}")
         else:
+            print(f"{Colors.CYAN}🚀 Starting all services...{Colors.ENDC}")
             subprocess.run(compose_cmd + ["up", "-d"], shell=IS_WINDOWS)
             print(f"\n{Colors.GREEN}✅ All Suna services started.{Colors.ENDC}")
             print(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
+            print(f"{Colors.CYAN}🔧 Backend API at: http://localhost:8000{Colors.ENDC}")
+            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' to stop services.")
 
 
 if __name__ == "__main__":
