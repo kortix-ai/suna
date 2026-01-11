@@ -177,9 +177,10 @@ jobs:
         run: |
           echo "🏃 Running performance benchmarks..."
           
+          # Run slow tests BUT exclude large_context (those run in large-context-tests job)
           uv run pytest tests/core/agentpress/test_context_manager_compression.py \
             -v \
-            -m "slow" \
+            -m "slow and not large_context" \
             --tb=short \
             --timeout=600 \
             2>&1 | tee perf_output.txt
