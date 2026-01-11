@@ -437,20 +437,12 @@ export function ThreadPage({
       setShowScrollToBottom(true);
     }
 
-    // Track content height when push is activated, remove push only when AI adds enough content
-    if (pushToTop) {
-      // Capture initial height when push is first activated
-      if (pushActivatedContentHeightRef.current === null) {
-        pushActivatedContentHeightRef.current = contentHeight;
-      }
-
-      // Only remove push when content has grown by at least 200px (AI added content)
-      // AND actual content overflows the viewport
-      const contentGrowth = contentHeight - pushActivatedContentHeightRef.current;
-      if (hasOverflow && contentGrowth > 200) {
-        setPushToTop(false);
-        pushActivatedContentHeightRef.current = null;
-      }
+    // Track content height when push is activated
+    // NOTE: We NO LONGER remove pushToTop based on content growth during streaming
+    // This prevents the jarring shift when agent starts typing after "brewing ideas"
+    // pushToTop is now only removed when agent finishes (see effect below)
+    if (pushToTop && pushActivatedContentHeightRef.current === null) {
+      pushActivatedContentHeightRef.current = contentHeight;
     }
   }, [extraPushPadding, isUserScrolling, pushToTop]);
 
@@ -474,7 +466,27 @@ export function ThreadPage({
     pushActivatedContentHeightRef.current = null;
   }, [chat.activeThread?.id]);
 
-  // When user sends a NEW message - activate push to top
+  // Activate pushToTop immediately when user starts sending (before message appears)
+  // This ensures the layout is ready before the optimistic message renders
+  const wasSendingRef = React.useRef(false);
+  React.useEffect(() => {
+    if (chat.isSendingMessage && !wasSendingRef.current) {
+      // User just started sending - activate push immediately
+      // Only activate if there are already messages (not first message in empty thread)
+      if (messages.length > 0) {
+        setPushToTop(true);
+        scrollLockActiveRef.current = true;
+        setIsUserScrolling(false);
+        pushActivatedContentHeightRef.current = contentHeightRef.current;
+
+        // Scroll to end immediately
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+      }
+    }
+    wasSendingRef.current = chat.isSendingMessage;
+  }, [chat.isSendingMessage, messages.length]);
+
+  // When user sends a NEW message - reinforce push to top and scroll
   // Only trigger for ACTUAL new messages (count increases by 1-2), NOT bulk thread loads
   React.useEffect(() => {
     const prevCount = lastUserMessageCountRef.current;
@@ -486,11 +498,15 @@ export function ThreadPage({
     const isActualNewMessage = diff > 0 && diff <= 2 && prevCount > 0;
 
     if (isActualNewMessage) {
-      setPushToTop(true);
+      // Reinforce pushToTop (might already be true from isSendingMessage effect)
+      if (!pushToTop) {
+        setPushToTop(true);
+        pushActivatedContentHeightRef.current = contentHeightRef.current;
+      }
       scrollLockActiveRef.current = true;
       setIsUserScrolling(false);
 
-      // Multiple scroll attempts
+      // Multiple scroll attempts to ensure we're at bottom
       const scrollAttempt = (ms: number) => {
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: false });
@@ -506,18 +522,21 @@ export function ThreadPage({
     }
 
     lastUserMessageCountRef.current = userMessageCount;
-  }, [userMessageCount]);
+  }, [userMessageCount, pushToTop]);
 
-  // Track when agent is running - DON'T reset pushToTop, keep the padding
+  // Track when agent is running
+  // NOTE: We NO LONGER remove pushToTop when agent finishes
+  // This prevents the jarring shift when the agent completes
+  // The extra padding at the bottom is harmless - user can scroll naturally
+  // pushToTop is only reset when:
+  // 1. Thread changes (in the reset effect above)
+  // 2. User scrolls up significantly (handled below)
   React.useEffect(() => {
     const isRunning = chat.isStreaming || chat.isAgentRunning;
-
     if (isRunning) {
       agentWasRunningRef.current = true;
-    } else if (agentWasRunningRef.current) {
+    } else {
       agentWasRunningRef.current = false;
-      // DON'T remove pushToTop - keep the padding to avoid scroll jump
-      // The extra space at bottom is fine, user can scroll naturally
     }
   }, [chat.isStreaming, chat.isAgentRunning]);
 
@@ -578,7 +597,19 @@ export function ThreadPage({
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
-  }, [extraPushPadding]);
+
+    // Remove pushToTop padding when user scrolls up significantly
+    // This is user-initiated so it won't feel jarring
+    // Only do this when agent is NOT running to avoid mid-stream issues
+    if (pushToTop && hasOverflow && !chat.isStreaming && !chat.isAgentRunning) {
+      // If user has scrolled up more than 100px from bottom, remove the extra padding
+      const distanceFromBottom = actualMaxScrollY - currentScrollY;
+      if (distanceFromBottom > 100) {
+        setPushToTop(false);
+        pushActivatedContentHeightRef.current = null;
+      }
+    }
+  }, [extraPushPadding, pushToTop, chat.isStreaming, chat.isAgentRunning]);
 
   const scrollToBottom = React.useCallback(() => {
     if (pushToTop && extraPushPadding > 0) {

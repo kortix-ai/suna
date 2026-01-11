@@ -5,7 +5,7 @@ import { Icon } from '@/components/ui/icon';
 import { CheckCircle2, CircleDashed } from 'lucide-react-native';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { getUserFriendlyToolName } from '@agentpress/shared';
-import { useSmoothText } from '@agentpress/shared/animations';
+// NOTE: useSmoothText removed - displaying content immediately (following frontend pattern)
 import { getToolIcon } from '@/lib/icons/tool-icons';
 
 const STREAMABLE_TOOLS = {
@@ -185,12 +185,8 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
     };
   }, [content]);
 
-  // Apply smooth text animation to tool streaming content (150 chars/sec for code)
-  const { text: smoothStreamingContent } = useSmoothText(
-    toolInfo?.rawStreamingContent || '',
-    150,
-    true
-  );
+  // Display tool streaming content immediately (following frontend pattern - no artificial delay)
+  const smoothStreamingContent = toolInfo?.rawStreamingContent || '';
 
   // Track if user has scrolled away from bottom
   const handleScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
