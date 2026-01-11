@@ -35,6 +35,14 @@ const getBackendUrl = (): string => {
 const nextConfig = (): NextConfig => ({
   output: (process.env.NEXT_OUTPUT as 'standalone') || undefined,
   
+  // Skip linting and type checking during Docker builds to save memory
+  eslint: {
+    ignoreDuringBuilds: process.env.NEXT_SKIP_LINT === 'true',
+  },
+  typescript: {
+    ignoreBuildErrors: process.env.NEXT_SKIP_TYPE_CHECK === 'true',
+  },
+  
   // Transpile shared package
   transpilePackages: ['@agentpress/shared'],
   
