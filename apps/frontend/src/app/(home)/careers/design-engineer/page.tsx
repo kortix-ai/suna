@@ -7,28 +7,26 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 const responsibilities = [
-  "Build beautiful, performant, and delightful user interfaces for our AI platform",
-  "Own features end-to-end—from concept to polish to production",
-  "Craft micro-interactions and animations that make the product feel alive",
-  "Collaborate with AI engineers to design intuitive interfaces for complex AI interactions",
-  "Push the boundaries of what's possible on the web with modern frontend technologies",
-  "Set the bar for quality and taste across everything we ship"
+  "Build and maintain the frontend of our platform",
+  "Own features from design through implementation",
+  "Create animations and interactions that improve the user experience",
+  "Work with the team to design interfaces for features",
+  "Keep the UI consistent and polished across the product"
 ];
 
 const qualifications = [
-  "Exceptional frontend engineering skills—you can build anything you can imagine",
-  "Deep knowledge of React, TypeScript, and modern CSS (Tailwind, animations, etc.)",
-  "Strong visual taste and attention to detail—you notice the 1px issues others miss",
-  "Portfolio of work that demonstrates both engineering excellence and design sensibility",
-  "Ability to move fast without sacrificing quality",
-  "Passion for craft and an obsession with getting the details right"
+  "Strong frontend skills with React and TypeScript",
+  "Good understanding of CSS, including Tailwind and animations",
+  "You care about how things look and notice small details",
+  "Portfolio showing both technical and design work",
+  "Experience shipping polished interfaces"
 ];
 
 const bonuses = [
-  "Experience with Framer Motion, GSAP, or other animation libraries",
-  "Background in graphic design, typography, or visual arts",
-  "Contributions to design systems or component libraries",
-  "Experience building products with complex, real-time interactions"
+  "Experience with Framer Motion or similar animation libraries",
+  "Background in graphic design or typography",
+  "Experience building or contributing to design systems",
+  "Worked on products with real-time or complex interactions"
 ];
 
 export default function DesignEngineerPage() {
@@ -69,7 +67,7 @@ export default function DesignEngineerPage() {
             </h1>
             
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
-              Engineer with taste. You're not just a frontend developer—you care deeply about how things look, feel, and move. You build interfaces that are both technically excellent and beautiful.
+              Frontend engineer who cares about design. You'll own how the product looks and feels, building interfaces that are fast, polished, and easy to use.
             </p>
           </motion.div>
         </div>
@@ -90,13 +88,13 @@ export default function DesignEngineerPage() {
             </h2>
             <div className="prose prose-neutral dark:prose-invert max-w-none">
               <p className="text-muted-foreground leading-relaxed">
-                We're looking for someone rare: an engineer who can build anything and has impeccable taste. You don't need to be a designer by title, but you need to care about design as much as you care about code.
+                We need a frontend engineer who also has a good eye for design. You don't need to be a designer, but you should care about visual quality and user experience.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                At Kortix, you'll shape how people interact with AI. The interfaces we build aren't simple forms and buttons—they're complex, dynamic experiences where AI agents work alongside humans. This requires both deep technical skill and a keen eye for what feels right.
+                You'll work on the interfaces people use to interact with our AI agents. This includes everything from the main chat experience to settings, dashboards, and new features as we build them.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                You'll obsess over the details. The weight of a shadow. The timing of an animation. The way a hover state communicates affordance. You'll also ship fast, because taste without speed is just perfectionism. The magic is in having both.
+                We're a small team, so you'll have a lot of say in how things look and work. You'll ship often and iterate based on feedback.
               </p>
             </div>
           </motion.div>
@@ -209,10 +207,10 @@ export default function DesignEngineerPage() {
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl md:text-2xl font-medium tracking-tight mb-3">
-                  Ready to craft something beautiful?
+                  Interested?
                 </h2>
                 <p className="text-muted-foreground">
-                  Send us your resume, portfolio, and anything that shows your taste and engineering skills.
+                  Send us your resume and portfolio. Include any projects that show your work.
                 </p>
               </div>
               <Button asChild size="lg">
