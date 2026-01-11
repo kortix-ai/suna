@@ -1,7 +1,8 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, Pressable, Linking, Text as RNText, TextInput, Platform, ScrollView, Image } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
-import { useSmoothText } from '@agentpress/shared/animations';
+// NOTE: useSmoothText removed - following frontend pattern of displaying content immediately
+// The old interface was also broken (wrong parameters and return type)
 
 // Only import ContextMenu on native platforms (iOS/Android)
 let ContextMenu: React.ComponentType<any> | null = null;
@@ -710,14 +711,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       );
     }, [isDark, agents]);
 
-    // Apply smooth typewriter effect to streaming text (120 chars/sec for snappy feel)
-    const { text: smoothStreamingText, isAnimating: isSmoothAnimating } = useSmoothText(
-      streamingTextContent || '',
-      120,
-      true
-    );
+    // STREAMING OPTIMIZATION: Content now displays immediately as it arrives from the stream
+    // Following frontend pattern - removed useSmoothText typewriter animation that was causing artificial delay
+    // The old interface was also broken (wrong parameters and return type)
+    const smoothStreamingText = streamingTextContent || '';
+    const isSmoothAnimating = Boolean(streamingTextContent);
 
-    // Extract ask/complete text from streaming tool call for smooth animation
+    // Extract ask/complete text from streaming tool call
     const rawAskCompleteText = useMemo(() => {
       if (!streamingToolCall) return '';
       
@@ -733,11 +733,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       return extractTextFromArguments(toolArgs);
     }, [streamingToolCall]);
 
-    const { text: smoothAskCompleteText, isAnimating: isAskCompleteAnimating } = useSmoothText(
-      rawAskCompleteText,
-      120,
-      true
-    );
+    // Display ask/complete text immediately as it arrives (no artificial animation delay)
+    const smoothAskCompleteText = rawAskCompleteText;
+    const isAskCompleteAnimating = Boolean(rawAskCompleteText);
 
     const prevScrollTriggerLengthRef = React.useRef(0);
     const SCROLL_TRIGGER_CHARS = 80;
