@@ -2,6 +2,7 @@ import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { View } from 'react-native';
 import { KortixLoader } from '@/components/ui';
+import { log } from '@/lib/logger';
 
 export default function NotFoundScreen() {
   const router = useRouter();
@@ -9,7 +10,7 @@ export default function NotFoundScreen() {
   useEffect(() => {
     // Redirect to splash screen - it will handle routing decisions
     const redirectTimer = setTimeout(() => {
-      console.log('📍 Not found screen - redirecting to splash');
+      log.log('📍 Not found screen - redirecting to splash');
       router.replace('/');
     }, 500);
 

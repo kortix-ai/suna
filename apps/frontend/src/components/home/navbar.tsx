@@ -3,7 +3,7 @@
 import { ThemeToggle } from '@/components/home/theme-toggle';
 import { siteConfig } from '@/lib/site-config';
 import { cn } from '@/lib/utils';
-import { X } from 'lucide-react';
+import { X, Menu } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
 import Link from 'next/link';
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -76,6 +76,7 @@ export function Navbar() {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
+  const [isMobile, setIsMobile] = useState(false);
   const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -83,6 +84,15 @@ export function Navbar() {
   const lastScrollY = useRef(0);
 
   const filteredNavLinks = siteConfig.nav.links;
+
+  // Detect if user is on an actual mobile device (iOS/Android)
+  // Mobile users clicking "Try Free" will be redirected to /app which then redirects to app stores
+  useEffect(() => {
+    setIsMobile(isMobileDevice());
+  }, []);
+
+  // Get the appropriate CTA link based on device type
+  const ctaLink = isMobile ? '/app' : '/auth';
 
   // Single unified scroll handler with hysteresis
   const handleScroll = useCallback(() => {
@@ -206,13 +216,23 @@ export function Navbar() {
                 </Link>
               ) : (
                 <Link
-                  href="/auth"
+                  href={ctaLink}
                   onClick={() => trackCtaSignup()}
                   className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                  suppressHydrationWarning
                 >
                   {t('tryFree')}
                 </Link>
               )}
+              
+              {/* Mobile Menu Button */}
+              <button
+                onClick={toggleDrawer}
+                className="md:hidden p-2 rounded-lg hover:bg-accent transition-colors"
+                aria-label="Open menu"
+              >
+                <Menu className="size-5" />
+              </button>
             </div>
           </div>
         </div>
@@ -298,6 +318,23 @@ export function Navbar() {
                         </a>
                       </motion.li>
                     ))}
+                    {/* Mobile App Link */}
+                    <motion.li
+                      className="p-2.5"
+                      variants={drawerMenuVariants}
+                    >
+                      <Link
+                        href="/app"
+                        onClick={() => setIsDrawerOpen(false)}
+                        className={`underline-offset-4 hover:text-primary/80 transition-colors ${
+                          pathname === '/app'
+                            ? 'text-primary font-medium'
+                            : 'text-primary/60'
+                        }`}
+                      >
+                        Mobile App
+                      </Link>
+                    </motion.li>
                   </AnimatePresence>
                 </motion.ul>
 
@@ -313,12 +350,13 @@ export function Navbar() {
                     </Link>
                   ) : (
                     <Link
-                      href="/auth"
+                      href={ctaLink}
                       onClick={() => {
                         trackCtaSignup();
                         setIsDrawerOpen(false);
                       }}
                       className="w-full h-10 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                      suppressHydrationWarning
                     >
                       {t('tryFree')}
                     </Link>

@@ -42,6 +42,7 @@ import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { PresentationSlideCard } from '../presentation-tool/PresentationSlideCard';
+import { log } from '@/lib/logger';
 
 // Helper functions for presentation slide detection
 function isPresentationSlideFile(filepath: string): boolean {
@@ -299,7 +300,7 @@ export function FileOperationToolView({
 
   // Debug: Log content extraction
   if (operation === 'create' || operation === 'edit' || operation === 'rewrite' || isStrReplace) {
-    console.log('[FileOperationToolView] Content extraction:', {
+    log.log('[FileOperationToolView] Content extraction:', {
       operation,
       isStrReplace,
       hasFileContent: !!fileContent,
@@ -384,7 +385,7 @@ export function FileOperationToolView({
       await Clipboard.setStringAsync(fileContent);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
-      console.error('Failed to copy text: ', err);
+      log.error('Failed to copy text: ', err);
     }
     setTimeout(() => setIsCopyingContent(false), 500);
   };

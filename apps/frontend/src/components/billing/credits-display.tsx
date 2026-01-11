@@ -11,7 +11,7 @@ import { PlanSelectionModal } from '@/components/billing/pricing';
 import { cn } from '@/lib/utils';
 import { useQueryClient } from '@tanstack/react-query';
 import { trackCtaUpgrade } from '@/lib/analytics/gtm';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 
 export function CreditsDisplay() {
   const { user } = useAuth();

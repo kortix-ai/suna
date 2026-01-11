@@ -33,7 +33,6 @@ from core.services.supabase import DBConnection
 # Import from new modules
 from core.agents.runner import execute_agent_run
 from core.files import (
-    handle_file_uploads_fast,
     handle_staged_files_for_thread,
     get_staged_files_for_thread,
 )
@@ -49,7 +48,7 @@ _cancellation_events: Dict[str, asyncio.Event] = {}
 # Helper Functions
 # ============================================================================
 
-async def _get_agent_run_with_access_check(agent_run_id: str, user_id: str):
+async def _get_agent_run_with_access_check(agent_run_id: str, user_id: str, require_write_access: bool = False):
     """Get agent run with access check."""
     from core.agents import repo as agents_repo
     
@@ -66,7 +65,7 @@ async def _get_agent_run_with_access_check(agent_run_id: str, user_id: str):
         return agent_run_data
     
     client = await db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=require_write_access)
     return agent_run_data
 
 
@@ -225,7 +224,6 @@ async def start_agent_run(
     project_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     skip_limits_check: bool = False,
-    files: Optional[List[UploadFile]] = None,
     staged_files: Optional[List[Dict[str, Any]]] = None,
     memory_enabled: Optional[bool] = None,
     is_optimistic: bool = False,
@@ -273,46 +271,36 @@ async def start_agent_run(
     
     # Create project/thread for new threads
     if is_new_thread:
-        project_created_here = False
-        
         if not project_id:
             project_id = str(uuid.uuid4())
-        
-        step_start = time.time()
-        placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
-        await threads_repo.create_project(project_id=project_id, account_id=account_id, name=placeholder_name)
-        timing_breakdown["create_project_ms"] = round((time.time() - step_start) * 1000, 1)
-        project_created_here = True
-        
-        try:
-            from core.cache.runtime_cache import set_cached_project_metadata
-            await set_cached_project_metadata(project_id, {})
-        except Exception:
-            pass
-        
-        asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
-        
         if not thread_id:
             thread_id = str(uuid.uuid4())
         
-        try:
-            step_start = time.time()
-            await threads_repo.create_thread_full(
-                thread_id=thread_id,
-                project_id=project_id,
-                account_id=account_id,
-                name="New Chat",
-                status="pending",
-                memory_enabled=memory_enabled
-            )
-            timing_breakdown["create_thread_ms"] = round((time.time() - step_start) * 1000, 1)
-            
-            if prompt:
-                from core.utils.thread_name_generator import generate_and_update_thread_name
-                asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
-            
-            # Migrate file cache
-            if project_id != thread_id:
+        placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
+        
+        step_start = time.time()
+        await threads_repo.create_project_and_thread(
+            project_id=project_id,
+            thread_id=thread_id,
+            account_id=account_id,
+            project_name=placeholder_name,
+            thread_name="New Chat",
+            status="pending",
+            memory_enabled=memory_enabled
+        )
+        timing_breakdown["create_project_and_thread_ms"] = round((time.time() - step_start) * 1000, 1)
+        
+        from core.cache.runtime_cache import set_cached_project_metadata, increment_thread_count_cache
+        from core.utils.thread_name_generator import generate_and_update_thread_name
+        
+        asyncio.create_task(set_cached_project_metadata(project_id, {}))
+        asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
+        if prompt:
+            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
+        asyncio.create_task(increment_thread_count_cache(account_id))
+        
+        if project_id != thread_id:
+            async def migrate_file_cache():
                 try:
                     old_key = f"file_context:{project_id}"
                     new_key = f"file_context:{thread_id}"
@@ -322,23 +310,10 @@ async def start_agent_run(
                         await redis.delete(old_key)
                 except Exception:
                     pass
-        except Exception as e:
-            if project_created_here:
-                try:
-                    await threads_repo.delete_project(project_id)
-                except Exception:
-                    pass
-            raise e
+            asyncio.create_task(migrate_file_cache())
         
         structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
         
-        try:
-            from core.cache.runtime_cache import increment_thread_count_cache
-            asyncio.create_task(increment_thread_count_cache(account_id))
-        except Exception:
-            pass
-        
-        # Process files for new threads
         if staged_files:
             final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
                 staged_files=staged_files,
@@ -347,23 +322,16 @@ async def start_agent_run(
                 prompt=prompt,
                 account_id=account_id
             )
-        elif files:
-            final_message_content = await handle_file_uploads_fast(files, project_id, prompt, thread_id)
     
-    # Process files for existing threads
-    elif not is_new_thread and (staged_files or files):
-        if staged_files:
-            final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
-                staged_files=staged_files,
-                thread_id=thread_id,
-                project_id=project_id,
-                prompt=prompt,
-                account_id=account_id
-            )
-        elif files:
-            final_message_content = await handle_file_uploads_fast(files, project_id, prompt or "", thread_id)
+    elif not is_new_thread and staged_files:
+        final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
+            staged_files=staged_files,
+            thread_id=thread_id,
+            project_id=project_id,
+            prompt=prompt,
+            account_id=account_id
+        )
     
-    # Create message, agent run, update status in parallel
     async def create_message():
         if not final_message_content or not final_message_content.strip():
             return
@@ -427,7 +395,8 @@ async def start_agent_run(
                 model_name=effective_model,
                 agent_config=agent_config,
                 account_id=account_id,
-                cancellation_event=cancellation_event
+                cancellation_event=cancellation_event,
+                is_new_thread=is_new_thread
             )
         finally:
             _cancellation_events.pop(agent_run_id, None)
@@ -459,13 +428,12 @@ async def unified_agent_start(
     prompt: Optional[str] = Form(None),
     model_name: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
-    files: List[UploadFile] = File(default=[]),
     file_ids: List[str] = Form(default=[]),
     optimistic: Optional[str] = Form(None),
     memory_enabled: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Start an agent run."""
+    """Start an agent run. Files must be staged via /files/stage first."""
     client = await db.client
     account_id = user_id
     is_optimistic = optimistic and optimistic.lower() == 'true'
@@ -480,16 +448,17 @@ async def unified_agent_start(
     if is_optimistic:
         if not thread_id or not project_id:
             raise HTTPException(status_code=400, detail="thread_id and project_id required for optimistic mode")
-        if not prompt or not prompt.strip():
-            raise HTTPException(status_code=400, detail="prompt required for optimistic mode")
+        # Allow empty prompt if file_ids provided (file-only submission)
+        if (not prompt or not prompt.strip()) and not file_ids:
+            raise HTTPException(status_code=400, detail="prompt or file_ids required for optimistic mode")
         try:
             uuid.UUID(thread_id)
             uuid.UUID(project_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid UUID format")
     
-    if not is_optimistic and not thread_id and (not prompt or not prompt.strip()):
-        raise HTTPException(status_code=400, detail="prompt required when creating new thread")
+    if not is_optimistic and not thread_id and (not prompt or not prompt.strip()) and not file_ids:
+        raise HTTPException(status_code=400, detail="prompt or file_ids required when creating new thread")
     
     # Resolve model
     if model_name is None:
@@ -520,7 +489,7 @@ async def unified_agent_start(
                 raise HTTPException(status_code=404, detail="Thread not found")
             project_id = thread_data['project_id']
             if thread_data['account_id'] != user_id:
-                await verify_and_authorize_thread_access(client, thread_id, user_id)
+                await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=True)
         
         result = await start_agent_run(
             account_id=account_id,
@@ -529,7 +498,6 @@ async def unified_agent_start(
             model_name=model_name,
             thread_id=thread_id,
             project_id=project_id,
-            files=files if files else None,
             staged_files=staged_files_data,
             memory_enabled=memory_enabled_bool,
             is_optimistic=is_optimistic,
@@ -561,7 +529,7 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
     from core.utils.run_management import stop_agent_run_with_helpers as stop_agent_run
     
     structlog.contextvars.bind_contextvars(agent_run_id=agent_run_id)
-    await _get_agent_run_with_access_check(agent_run_id, user_id)
+    await _get_agent_run_with_access_check(agent_run_id, user_id, require_write_access=True)
     await stop_agent_run(agent_run_id)
     return {"status": "stopped"}
 
@@ -695,9 +663,10 @@ async def stream_agent_run(
                 yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
                 return
 
-            # Polling loop
-            BLOCK_MS = 100
-            POLLS_PER_PING = 50
+            # Polling loop - increased block time to reduce Redis load
+            # 500ms block = 2 Redis calls/second per client (was 10/second with 100ms)
+            BLOCK_MS = 500
+            POLLS_PER_PING = 10  # Adjusted to maintain ~5 second ping interval
             polls = 0
             pings = 0
             received_data = bool(entries)

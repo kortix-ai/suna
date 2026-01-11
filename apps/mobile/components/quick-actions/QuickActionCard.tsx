@@ -10,6 +10,7 @@ import Animated, {
   withSpring 
 } from 'react-native-reanimated';
 import { QuickAction } from '.';
+import { log } from '@/lib/logger';
 
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -37,8 +38,8 @@ export function QuickActionCard({ action }: QuickActionCardProps) {
   }));
 
   const handlePress = () => {
-    console.log('🎯 Quick action pressed:', translatedLabel);
-    console.log('📊 Action data:', { id: action.id, label: translatedLabel });
+    log.log('🎯 Quick action pressed:', translatedLabel);
+    log.log('📊 Action data:', { id: action.id, label: translatedLabel });
     action.onPress?.();
   };
 

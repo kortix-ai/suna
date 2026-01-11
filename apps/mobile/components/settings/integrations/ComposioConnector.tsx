@@ -32,6 +32,7 @@ import {
 } from '@/hooks/useComposio';
 import * as WebBrowser from 'expo-web-browser';
 import { ToolkitIcon } from './ToolkitIcon';
+import { log } from '@/lib/logger';
 
 interface ComposioConnectorProps {
   app: ComposioApp;
@@ -261,7 +262,7 @@ export function ComposioConnectorContent({
       return;
     }
 
-    console.log('🚀 Creating profile:', profileName, 'for app:', app.slug);
+    log.log('🚀 Creating profile:', profileName, 'for app:', app.slug);
 
     createProfile(
       {
@@ -274,11 +275,11 @@ export function ComposioConnectorContent({
       },
       {
         onSuccess: (response) => {
-          console.log('✅ Profile created successfully:', response);
+          log.log('✅ Profile created successfully:', response);
           setCreatedProfileId(response.profile_id);
 
           if (response.redirect_url) {
-            console.log('🌐 Opening OAuth redirect:', response.redirect_url);
+            log.log('🌐 Opening OAuth redirect:', response.redirect_url);
             setRedirectUrl(response.redirect_url);
             setCurrentStep(Step.Connecting);
 
@@ -289,7 +290,7 @@ export function ComposioConnectorContent({
               controlsColor: '#000000',
               dismissButtonStyle: 'close',
             }).then((result) => {
-              console.log('🔄 WebBrowser result:', result);
+              log.log('🔄 WebBrowser result:', result);
 
               if (result.type === 'dismiss' || result.type === 'cancel') {
                 // User closed browser, assume auth completed
@@ -305,7 +306,7 @@ export function ComposioConnectorContent({
           }
         },
         onError: (error: any) => {
-          console.error('❌ Profile creation failed:', error);
+          log.error('❌ Profile creation failed:', error);
           Alert.alert('Error', error.message || 'Failed to create profile');
         },
       }
@@ -313,7 +314,7 @@ export function ComposioConnectorContent({
   };
 
   const handleAuthComplete = () => {
-    console.log('✅ Authentication completed for profile:', createdProfileId);
+    log.log('✅ Authentication completed for profile:', createdProfileId);
 
     if (createdProfileId) {
       if (mode === 'full' && agentId && onNavigateToTools) {

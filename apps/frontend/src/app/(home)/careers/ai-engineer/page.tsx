@@ -7,28 +7,27 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 const responsibilities = [
-  "Design and build AI agents that can autonomously complete complex, real-world tasks",
-  "Architect LLM-powered systems with optimal prompt engineering, context management, and tool use",
-  "Develop and iterate on agent frameworks, planning systems, and reasoning architectures",
-  "Implement robust evaluation pipelines to measure and improve agent performance",
-  "Collaborate closely with product and design to ship AI features that users love",
-  "Stay at the frontier—research, prototype, and integrate the latest AI capabilities"
+  "Build and maintain AI agents that handle real tasks end-to-end",
+  "Work on prompt engineering, context management, and tool integrations",
+  "Develop evaluation systems to track agent performance",
+  "Debug agent failures and improve reliability",
+  "Ship features alongside the product and design team",
+  "Stay current with new models and techniques"
 ];
 
 const qualifications = [
-  "Deep hands-on experience building AI products, agents, or LLM-powered applications",
-  "Strong understanding of modern LLM architectures, prompting techniques, and agent patterns",
-  "Proficiency in Python; experience with frameworks like LangChain, LlamaIndex, or similar",
-  "Track record of shipping AI features to production at scale",
-  "Ability to debug, evaluate, and iterate on AI systems methodically",
-  "Passion for pushing the boundaries of what AI can do"
+  "Experience building LLM-powered products or agents",
+  "Solid understanding of prompting techniques and agent patterns",
+  "Proficient in Python",
+  "Experience shipping AI agents to production",
+  "Comfortable debugging unpredictable AI behavior"
 ];
 
 const bonuses = [
-  "Experience with multi-agent systems or complex tool-use architectures",
-  "Background in reinforcement learning, planning algorithms, or cognitive architectures",
-  "Contributions to open-source AI projects",
-  "Published research or writing on AI/ML topics"
+  "Experience with multi-agent systems or complex tool use",
+  "Background in reinforcement learning or planning",
+  "Open source contributions in AI",
+  "Published writing or research on AI topics"
 ];
 
 export default function AIEngineerPage() {
@@ -69,7 +68,7 @@ export default function AIEngineerPage() {
             </h1>
             
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
-              Build AI agents that actually work. You'll be at the core of what we do—designing, building, and shipping autonomous systems that handle real-world tasks.
+              Help us build AI agents that can complete real tasks. You'll work on improving reliability, adding new capabilities, and shipping features.
             </p>
           </motion.div>
         </div>
@@ -90,13 +89,13 @@ export default function AIEngineerPage() {
             </h2>
             <div className="prose prose-neutral dark:prose-invert max-w-none">
               <p className="text-muted-foreground leading-relaxed">
-                We're building AI workers—not chatbots, not narrow tools, but general-purpose agents that can autonomously complete complex tasks. This is hard. Really hard. And that's exactly why we need you.
+                We're building AI agents that can take on real work, not just answer questions. The goal is to create something people can rely on to complete tasks from start to finish.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                As an AI Engineer at Kortix, you'll work on the frontier of what's possible with LLMs and agent systems. You'll design architectures that let AI reason, plan, and act. You'll debug mysterious failures and discover why an agent decided to do something unexpected. You'll ship features that make users say "I can't believe this actually works."
+                In this role, you'll spend most of your time improving our agents. That includes writing better prompts, building evaluation systems, debugging failures, and trying new approaches when current ones hit limits.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                We move fast. We ship constantly. We debate ideas openly and let the best ones win. If you're excited about building AI that matters, we want to talk.
+                We're a small, remote team. You'll have significant ownership over your work and direct impact on the product.
               </p>
             </div>
           </motion.div>
@@ -209,10 +208,10 @@ export default function AIEngineerPage() {
             <div className="space-y-6">
               <div>
                 <h2 className="text-xl md:text-2xl font-medium tracking-tight mb-3">
-                  Ready to build the future of AI?
+                  Interested?
                 </h2>
                 <p className="text-muted-foreground">
-                  Send us your resume, a few lines about yourself, and any relevant work or projects.
+                  Send us your resume and a short note about yourself. Include any relevant projects or work.
                 </p>
               </div>
               <Button asChild size="lg">

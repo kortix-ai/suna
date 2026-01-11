@@ -44,6 +44,7 @@ import {
   useCreateSandboxDirectory,
 } from '@/lib/files/hooks';
 import type { SandboxFile } from '@/api/types';
+import { log } from '@/lib/logger';
 
 // Helper functions
 function normalizePath(path: string | null | undefined): string {
@@ -145,7 +146,7 @@ export function FileManagerScreen({ sandboxId, sandboxUrl, onClose, initialFileP
   // Refetch when streaming ends
   React.useEffect(() => {
     if (wasStreamingRef.current && !isStreaming) {
-      console.log('[FileManagerScreen] Streaming ended, refetching files...');
+      log.log('[FileManagerScreen] Streaming ended, refetching files...');
       // Delay refetch to ensure backend has processed files
       const timer = setTimeout(() => {
         refetch();

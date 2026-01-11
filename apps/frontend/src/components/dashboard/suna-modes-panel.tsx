@@ -48,51 +48,6 @@ interface SunaModesPanelProps {
 
 type ModeType = 'image' | 'slides' | 'data' | 'docs' | 'canvas' | 'video' | 'research';
 
-// Color themes for each mode - ADA compliant with softer saturation
-// Uses 500 shades for light mode and 400 for dark mode - slightly muted but readable
-// Background/border use balanced opacity for subtle distinction
-const modeColors: Record<ModeType, { 
-  accent: string; 
-  bg: string; 
-  border: string;
-}> = {
-  slides: { 
-    accent: 'text-amber-500 dark:text-amber-400', 
-    bg: 'bg-amber-500/8 dark:bg-amber-400/12',
-    border: 'border-amber-500/20 dark:border-amber-400/25',
-  },
-  data: { 
-    accent: 'text-teal-500 dark:text-teal-400', 
-    bg: 'bg-teal-500/8 dark:bg-teal-400/12',
-    border: 'border-teal-500/20 dark:border-teal-400/25',
-  },
-  docs: { 
-    accent: 'text-blue-500 dark:text-blue-400', 
-    bg: 'bg-blue-500/8 dark:bg-blue-400/12',
-    border: 'border-blue-500/20 dark:border-blue-400/25',
-  },
-  canvas: { 
-    accent: 'text-pink-500 dark:text-pink-400', 
-    bg: 'bg-pink-500/8 dark:bg-pink-400/12',
-    border: 'border-pink-500/20 dark:border-pink-400/25',
-  },
-  video: { 
-    accent: 'text-rose-500 dark:text-rose-400', 
-    bg: 'bg-rose-500/8 dark:bg-rose-400/12',
-    border: 'border-rose-500/20 dark:border-rose-400/25',
-  },
-  research: { 
-    accent: 'text-indigo-500 dark:text-indigo-400', 
-    bg: 'bg-indigo-500/8 dark:bg-indigo-400/12',
-    border: 'border-indigo-500/20 dark:border-indigo-400/25',
-  },
-  image: { 
-    accent: 'text-violet-500 dark:text-violet-400', 
-    bg: 'bg-violet-500/8 dark:bg-violet-400/12',
-    border: 'border-violet-500/20 dark:border-violet-400/25',
-  },
-};
-
 interface SamplePrompt {
   text: string;
   thumbnail?: string;
@@ -1344,54 +1299,37 @@ export function SunaModesPanel({
 
   return (
     <div className="w-full space-y-4">
-      {/* Mode Tabs - Always visible with active state */}
+      {/* Mode Tabs - Kortix minimal design */}
       <div className="flex items-center justify-center animate-in fade-in-0 zoom-in-95 duration-300 px-2 sm:px-0">
         <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
           {modes.map((mode) => {
             const isActive = selectedMode === mode.id;
-            const colors = modeColors[mode.id];
             return (
               <motion.button
                 key={mode.id}
                 onClick={() => onModeSelect(isActive ? null : mode.id)}
-                whileHover={{ scale: 1.03, y: -2 }}
-                whileTap={{ scale: 0.97 }}
-                transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
                 className={cn(
-                  // Base button styles
+                  // Base button styles matching Kortix design
                   "inline-flex items-center justify-center whitespace-nowrap text-sm font-medium",
                   "outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-                  // Custom styles
-                  "group relative h-10 px-3 sm:px-4 gap-2 shrink-0 rounded-xl cursor-pointer overflow-hidden",
-                  "border transition-all duration-200",
+                  "relative h-10 px-3 sm:px-4 gap-2 shrink-0 rounded-2xl cursor-pointer",
+                  "border-[1.5px] transition-all duration-200",
+                  // Active state - clean, minimal Kortix style
                   isActive
-                    ? cn(
-                        colors.bg,
-                        colors.accent,
-                        colors.border
-                      )
-                    : "bg-background/80 border-border/60 text-muted-foreground hover:text-foreground hover:border-border hover:bg-accent/50"
+                    ? "bg-background text-foreground border-border font-medium dark:bg-background"
+                    : "bg-background/50 border-border/40 text-muted-foreground hover:text-foreground hover:border-border hover:bg-background/80 dark:bg-card/30 dark:hover:bg-card/50"
                 )}
               >
-                {/* Subtle inner glow on hover */}
-                <div className={cn(
-                  "absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none",
-                  "bg-gradient-to-br from-white/[0.08] via-transparent to-transparent"
-                )} />
-                
-                {/* Icon with color */}
-                <span className={cn(
-                  "relative z-10 transition-colors duration-200 [&>svg]:w-4 [&>svg]:h-4",
-                  isActive ? colors.accent : "group-hover:text-foreground"
-                )}>
+                {/* Icon */}
+                <span className="transition-colors duration-200 [&>svg]:w-4 [&>svg]:h-4">
                   {mode.icon}
                 </span>
                 
                 {/* Label */}
-                <span className={cn(
-                  "relative z-10 transition-colors duration-200",
-                  isActive ? colors.accent : ""
-                )}>
+                <span className="transition-colors duration-200">
                   {mode.label}
                 </span>
               </motion.button>
@@ -1608,7 +1546,7 @@ export function SunaModesPanel({
                     className={cn(
                       "p-3 cursor-pointer transition-all duration-200 group rounded-xl relative",
                       isSelected 
-                        ? "bg-primary/10 border-primary border-2 shadow-sm" 
+                        ? "bg-primary/10 border-primary border-2" 
                         : "border border-border hover:bg-primary/5 hover:border-primary/30"
                     )}
                     onClick={() => handleOutputFormatSelect(item.id)}
@@ -1620,7 +1558,7 @@ export function SunaModesPanel({
                           animate={{ scale: 1, opacity: 1 }}
                           exit={{ scale: 0, opacity: 0 }}
                           transition={{ duration: 0.2 }}
-                          className="absolute -top-2 -right-2 w-6 h-6 bg-primary rounded-full flex items-center justify-center shadow-md z-10"
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-primary rounded-full flex items-center justify-center z-10"
                         >
                           <Check className="w-4 h-4 text-primary-foreground" strokeWidth={3} />
                         </motion.div>
@@ -1776,7 +1714,7 @@ export function SunaModesPanel({
                       className={cn(
                         "flex flex-col items-center gap-2 cursor-pointer group p-3 transition-all duration-200 rounded-xl relative",
                         isSelected 
-                          ? "bg-primary/10 border-primary border-2 shadow-sm" 
+                          ? "bg-primary/10 border-primary border-2" 
                           : "border border-border hover:bg-primary/5 hover:border-primary/30"
                       )}
                       onClick={() => handleChartToggle(chart.id)}
@@ -1788,7 +1726,7 @@ export function SunaModesPanel({
                             animate={{ scale: 1, opacity: 1 }}
                             exit={{ scale: 0, opacity: 0 }}
                             transition={{ duration: 0.2, type: "spring", stiffness: 300 }}
-                            className="absolute -top-2 -right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center shadow-md z-10"
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center z-10"
                           >
                             <Check className="w-3 h-3 text-primary-foreground" strokeWidth={3} />
                           </motion.div>

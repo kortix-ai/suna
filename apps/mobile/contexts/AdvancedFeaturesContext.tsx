@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { log } from '@/lib/logger';
 
 const ADVANCED_FEATURES_KEY = '@advanced_features_enabled';
 
@@ -44,7 +45,7 @@ export function AdvancedFeaturesProvider({ children }: AdvancedFeaturesProviderP
       // Default to false (disabled) if not set
       setIsEnabled(enabled === null ? false : enabled === 'true');
     } catch (error) {
-      console.error('Failed to check advanced features status:', error);
+      log.error('Failed to check advanced features status:', error);
       // Default to disabled if we can't read the value
       setIsEnabled(false);
     } finally {
@@ -56,10 +57,10 @@ export function AdvancedFeaturesProvider({ children }: AdvancedFeaturesProviderP
     try {
       await AsyncStorage.setItem(ADVANCED_FEATURES_KEY, enabled ? 'true' : 'false');
       setIsEnabled(enabled);
-      console.log(`✅ Advanced features ${enabled ? 'enabled' : 'disabled'}`);
+      log.log(`✅ Advanced features ${enabled ? 'enabled' : 'disabled'}`);
       return true;
     } catch (error) {
-      console.error('Failed to save advanced features status:', error);
+      log.error('Failed to save advanced features status:', error);
       return false;
     }
   }, []);

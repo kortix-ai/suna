@@ -9,8 +9,9 @@ import { useLanguage } from '@/contexts';
 import { CreditPackages } from '@/components/billing';
 import { startUnifiedCreditPurchase, shouldUseRevenueCat, invalidateCreditsAfterPurchase } from '@/lib/billing';
 import * as Haptics from 'expo-haptics';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { useQueryClient } from '@tanstack/react-query';
+import { log } from '@/lib/logger';
 
 interface CreditsPurchasePageProps {
   visible: boolean;
@@ -24,7 +25,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
   const queryClient = useQueryClient();
 
   const handleClose = () => {
-    console.log('🎯 Credits purchase page closed');
+    log.log('🎯 Credits purchase page closed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   };
@@ -43,7 +44,7 @@ export function CreditsPurchasePage({ visible, onClose }: CreditsPurchasePagePro
         setPurchasing(null);
       });
     } catch (error) {
-      console.error('❌ Purchase error:', error);
+      log.error('❌ Purchase error:', error);
       setPurchasing(null);
     }
   };

@@ -11,6 +11,7 @@ import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { MessageCircle, Briefcase, Zap } from 'lucide-react-native';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -119,16 +120,16 @@ function NavButton({ icon, label, isActive = false, onPress }: NavButtonProps) {
   };
   
   const handlePress = () => {
-    console.log('🎯 Bottom nav tab pressed:', label);
-    console.log('📊 Active state:', isActive);
-    console.log('⏰ Timestamp:', new Date().toISOString());
+    log.log('🎯 Bottom nav tab pressed:', label);
+    log.log('📊 Active state:', isActive);
+    log.log('⏰ Timestamp:', new Date().toISOString());
     
     // Haptic feedback
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     
     // Don't trigger if already active
     if (isActive) {
-      console.log('ℹ️ Tab already active, skipping callback');
+      log.log('ℹ️ Tab already active, skipping callback');
       return;
     }
     

@@ -87,18 +87,14 @@ export function BrowserToolView({
   const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
 
   // Apply smooth text streaming for URL/instruction fields - MUST be called unconditionally
-  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
-    rawArguments,
-    'url',
-    120,
-    isStreaming && !toolResult && !!toolCall
+  const smoothFields = useSmoothToolField(
+    (typeof rawArguments === 'object' && rawArguments) ? rawArguments : {},
+    { interval: 50 }
   );
-  const { displayedValue: smoothInstruction, isAnimating: isInstructionAnimating } = useSmoothToolField(
-    rawArguments,
-    'instruction',
-    120,
-    isStreaming && !toolResult && !!toolCall
-  );
+  const smoothUrl = (smoothFields as any).url || (typeof rawArguments === 'object' ? rawArguments?.url : '') || '';
+  const smoothInstruction = (smoothFields as any).instruction || (typeof rawArguments === 'object' ? rawArguments?.instruction : '') || '';
+  const isUrlAnimating = isStreaming && !toolResult && !!toolCall;
+  const isInstructionAnimating = isStreaming && !toolResult && !!toolCall;
 
   React.useEffect(() => {
     if (isRunning) {

@@ -15,7 +15,7 @@ from anthropic import Anthropic
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.ai_models import model_manager
-from core.agentpress.prompt_caching import apply_anthropic_caching_strategy
+from core.agentpress.prompt_caching import apply_anthropic_caching_strategy, supports_prompt_caching
 
 DEFAULT_TOKEN_THRESHOLD = 120000
 
@@ -128,7 +128,7 @@ class ContextManager:
         messages_to_count = messages
         system_to_count = system_prompt
         
-        if apply_caching and ('claude' in model.lower() or 'anthropic' in model.lower()):
+        if apply_caching and supports_prompt_caching(model):
             try:
                 # Temporarily apply caching transformation
                 prepared = await apply_anthropic_caching_strategy(
@@ -973,7 +973,8 @@ class ContextManager:
                         if _i > self.keep_recent_user_messages:  # If this is not one of the most recent N User messages
                             message_id = msg.get('message_id')  # Get the message_id
                             if message_id:
-                                msg["content"] = self.compress_message(msg["content"], message_id, token_threshold * 3)
+                                # Secondary compression - just placeholder
+                                msg["content"] = f"[Content compressed]\n\nmessage_id \"{message_id}\"\nUse expand-message tool to see contents"
                             else:
                                 logger.warning(f"UNEXPECTED: Message has no message_id {str(msg)[:100]}")
                         else:
@@ -1003,7 +1004,8 @@ class ContextManager:
                         if _i > self.keep_recent_assistant_messages:  # If this is not one of the most recent N Assistant messages
                             message_id = msg.get('message_id')  # Get the message_id
                             if message_id:
-                                msg["content"] = self.compress_message(msg["content"], message_id, token_threshold * 3)
+                                # Secondary compression - just placeholder
+                                msg["content"] = f"[Content compressed]\n\nmessage_id \"{message_id}\"\nUse expand-message tool to see contents"
                             else:
                                 logger.warning(f"UNEXPECTED: Message has no message_id {str(msg)[:100]}")
                         else:
@@ -1150,8 +1152,8 @@ class ContextManager:
 
         # Recurse if still too large
         if max_iterations <= 0:
-            logger.warning(f"Max iterations reached, omitting messages")
-            result = await self.compress_messages_by_omitting_messages(result, llm_model, max_tokens, system_prompt=system_prompt)
+            logger.warning(f"Max iterations reached, omitting messages to target ({target_tokens})")
+            result = await self.compress_messages_by_omitting_messages(result, llm_model, target_tokens, system_prompt=system_prompt)
             compressed_total = await self.count_tokens(llm_model, result, system_prompt, apply_caching=True)
             # Fall through to last_usage update
         elif compressed_total > max_tokens:
@@ -1318,6 +1320,25 @@ class ContextManager:
             if omitted_to_save:
                 try:
                     await self.save_compressed_messages(omitted_to_save)
+                    
+                    # Also mark any tool results belonging to omitted assistant messages
+                    # This handles the case where tool results were compressed separately
+                    omitted_tool_call_ids = []
+                    for msg in all_omitted_messages:
+                        if msg.get('tool_calls'):
+                            for tc in msg['tool_calls']:
+                                tc_id = tc.get('id')
+                                if tc_id:
+                                    omitted_tool_call_ids.append(tc_id)
+                    
+                    if omitted_tool_call_ids and self.thread_id:
+                        from core.threads import repo as threads_repo
+                        marked_count = await threads_repo.mark_tool_results_as_omitted(
+                            self.thread_id, 
+                            omitted_tool_call_ids
+                        )
+                        if marked_count > 0:
+                            logger.info(f"📝 Also marked {marked_count} orphaned tool results as omitted")
                 except Exception as e:
                     logger.warning(f"Failed to save omitted messages: {e}")
 
@@ -1415,6 +1436,25 @@ class ContextManager:
             if omitted_to_save:
                 try:
                     await self.save_compressed_messages(omitted_to_save)
+                    
+                    # Also mark any tool results belonging to omitted assistant messages
+                    omitted_tool_call_ids = []
+                    for group in removed_groups:
+                        for msg in group:
+                            if msg.get('tool_calls'):
+                                for tc in msg['tool_calls']:
+                                    tc_id = tc.get('id')
+                                    if tc_id:
+                                        omitted_tool_call_ids.append(tc_id)
+                    
+                    if omitted_tool_call_ids and self.thread_id:
+                        from core.threads import repo as threads_repo
+                        marked_count = await threads_repo.mark_tool_results_as_omitted(
+                            self.thread_id, 
+                            omitted_tool_call_ids
+                        )
+                        if marked_count > 0:
+                            logger.info(f"📝 Also marked {marked_count} orphaned tool results as omitted")
                 except Exception as e:
                     logger.warning(f"Failed to save middle-out omitted messages: {e}")
         

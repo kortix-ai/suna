@@ -3,6 +3,7 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
+    "postinstall": "patch-package",
     "dev": "expo start -c",
     "android": "expo start -c --android",
     "android:dev": "./scripts/start-android.sh",

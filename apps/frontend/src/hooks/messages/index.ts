@@ -7,17 +7,10 @@ export { usePlaybackController, type PlaybackState } from './usePlaybackControll
 // Smooth text/streaming animation hooks - re-exported from shared package
 export { 
   useSmoothText, 
-  type SmoothTextResult,
-  useSmoothToolArguments, 
   useSmoothToolField, 
-  useSmoothToolContent,
-  type SmoothToolArgumentsResult,
-  type SmoothToolFieldResult,
   useSmoothAnimation, 
-  extractFieldFromArguments,
   type SmoothAnimationConfig,
-  type SmoothAnimationState,
-  type SmoothAnimationResult,
+  type SmoothToolConfig,
 } from '@agentpress/shared/animations';
 
 // Message rendering utilities

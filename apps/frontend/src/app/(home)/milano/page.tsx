@@ -18,6 +18,9 @@ const SunaModesPanel = lazy(() =>
   import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
 
+// Mobile users are redirected at the edge by middleware (hyper-fast)
+// This page only renders for desktop users
+
 export default function MilanoPage() {
   const isMobile = useIsMobile();
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -73,26 +76,27 @@ export default function MilanoPage() {
     message: string,
     options?: { model_name?: string; enable_thinking?: boolean }
   ) => {
-    if ((!message.trim() && !chatInputRef.current?.getPendingFiles().length) || isSubmitting || isOptimisticStarting) return;
+    const fileIds = chatInputRef.current?.getUploadedFileIds() || [];
+    
+    if ((!message.trim() && !fileIds.length) || isSubmitting || isOptimisticStarting) return;
     if (!user && !isLoading) {
       router.push('/auth');
       return;
     }
 
     setIsSubmitting(true);
-    const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
 
     console.log('[Milano] Starting agent with:', {
       prompt: message.substring(0, 100),
       promptLength: message.length,
       model_name: options?.model_name,
       agent_id: selectedAgentId,
-      pendingFiles: pendingFiles.length,
+      fileIds: fileIds.length,
     });
 
     const result = await startAgent({
       message,
-      files: pendingFiles,
+      fileIds: fileIds.length > 0 ? fileIds : undefined,
       modelName: options?.model_name,
       agentId: selectedAgentId || undefined,
     });

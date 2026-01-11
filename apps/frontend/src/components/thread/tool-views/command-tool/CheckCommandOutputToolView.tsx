@@ -240,11 +240,11 @@ export function CheckCommandOutputToolView({
     const toolTitle = getToolTitle(name);
 
     // Apply smooth text streaming for output
-    const { text: smoothOutput, isAnimating: isOutputAnimating } = useSmoothText(
+    const smoothOutput = useSmoothText(
         output || '',
-        120,
-        isStreaming && !toolResult
+        { speed: 120 }
     );
+    const isOutputAnimating = isStreaming && !toolResult;
 
     // Use smooth output when streaming, otherwise use regular output
     const displayOutput = isStreaming && smoothOutput ? smoothOutput : output;

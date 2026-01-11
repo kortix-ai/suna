@@ -7,6 +7,7 @@ import { Icon } from '@/components/ui/icon';
 import { QUICK_ACTIONS } from './quickActions';
 import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
+import { log } from '@/lib/logger';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ITEM_SPACING = 8; // Consistent spacing between items (always the same)
@@ -143,7 +144,7 @@ export function QuickActionBar({
 
   // Handle direct tap on an item
   const handleItemPress = React.useCallback((index: number) => {
-    console.log('🎯 Quick action item pressed:', index, actions[index]?.id);
+    log.log('🎯 Quick action item pressed:', index, actions[index]?.id);
     handleModeChange(index);
   }, [handleModeChange, actions]);
 

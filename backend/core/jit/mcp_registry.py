@@ -14,22 +14,8 @@ class MCPRegistry:
     CACHE_VERSION = "v1"
     
     def __init__(self):
-        self._redis_client = None
-        self._cache_enabled = False
+        self._cache_enabled = True  # Assume enabled, will fail gracefully if Redis unavailable
         self._toolkit_cache = {}
-    
-    async def _ensure_redis(self) -> bool:
-        if self._redis_client is None:
-            try:
-                self._redis_client = await redis_service.get_client()
-                self._cache_enabled = True
-                logger.debug("⚡ [MCP DYNAMIC] Redis cache enabled")
-                return True
-            except Exception as e:
-                logger.warning(f"⚠️  [MCP DYNAMIC] Redis not available: {e}")
-                self._cache_enabled = False
-                return False
-        return self._cache_enabled
     
     def _make_cache_key(self, toolkit_slug: str) -> str:
         return f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:{toolkit_slug}"
@@ -37,11 +23,10 @@ class MCPRegistry:
     async def get_toolkit_tools(self, toolkit_slug: str, account_id: Optional[str] = None, cache_only: bool = False) -> List[str]:
         cache_key = self._make_cache_key(toolkit_slug)
         
-        redis_available = await self._ensure_redis()
-        
-        if redis_available:
+        if self._cache_enabled:
             try:
-                cached_data = await self._redis_client.get(cache_key)
+                # Use module-level function with timeout protection
+                cached_data = await redis_service.get(cache_key, timeout=5.0)
                 if cached_data:
                     tools = json.loads(cached_data)
                     logger.debug(f"⚡ [MCP DYNAMIC] Cache hit: {toolkit_slug} ({len(tools)} tools)")
@@ -199,15 +184,17 @@ class MCPRegistry:
         
         self._toolkit_cache[toolkit_slug] = tools
         
-        if await self._ensure_redis():
+        if self._cache_enabled:
             try:
                 cache_key = self._make_cache_key(toolkit_slug)
                 ttl_seconds = int(self.CACHE_TTL.total_seconds())
                 
-                await self._redis_client.setex(
+                # Use module-level function with timeout protection
+                await redis_service.setex(
                     cache_key,
                     ttl_seconds,
-                    json.dumps(tools)
+                    json.dumps(tools),
+                    timeout=5.0
                 )
                 
                 logger.debug(f"💾 [MCP DYNAMIC] Cached {toolkit_slug}: {len(tools)} tools (TTL={ttl_seconds}s)")
@@ -237,10 +224,11 @@ class MCPRegistry:
         return successful
     
     async def invalidate_toolkit_cache(self, toolkit_slug: str) -> bool:
-        if await self._ensure_redis():
+        if self._cache_enabled:
             try:
                 cache_key = self._make_cache_key(toolkit_slug)
-                await self._redis_client.delete(cache_key)
+                # Use module-level function with timeout protection
+                await redis_service.delete(cache_key, timeout=2.0)
                 
                 self._toolkit_cache.pop(toolkit_slug, None)
                 
@@ -255,16 +243,16 @@ class MCPRegistry:
     async def invalidate_all_cache(self) -> int:
         count = 0
         
-        if await self._ensure_redis():
+        if self._cache_enabled:
             try:
                 pattern = f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:*"
-                keys = []
-                
-                async for key in self._redis_client.scan_iter(match=pattern):
-                    keys.append(key)
+                # Use scan_keys with timeout protection
+                keys = await redis_service.scan_keys(pattern, count=100, timeout=10.0)
                 
                 if keys:
-                    count = await self._redis_client.delete(*keys)
+                    # Use batch delete for efficiency
+                    from core.services.redis import delete_multiple
+                    count = await delete_multiple(keys, timeout=5.0)
                     logger.info(f"🗑️  [MCP DYNAMIC] Invalidated all cache: {count} toolkits")
                 
             except Exception as e:
@@ -278,16 +266,15 @@ class MCPRegistry:
         stats = {
             'cache_enabled': self._cache_enabled,
             'in_memory_toolkits': len(self._toolkit_cache),
-            'redis_available': await self._ensure_redis()
+            'redis_available': self._cache_enabled
         }
         
         if self._cache_enabled:
             try:
                 pattern = f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:*"
-                count = 0
-                
-                async for _ in self._redis_client.scan_iter(match=pattern):
-                    count += 1
+                # Use scan_keys with timeout protection
+                keys = await redis_service.scan_keys(pattern, count=100, timeout=10.0)
+                count = len(keys)
                 
                 stats.update({
                     'cached_toolkits': count,

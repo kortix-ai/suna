@@ -4,14 +4,21 @@ from core.utils.logger import logger
 
 
 async def get_credential_profile_by_id(profile_id: str) -> Optional[Dict[str, Any]]:
-    sql = "SELECT * FROM user_mcp_credential_profiles WHERE profile_id = :profile_id"
+    sql = """
+    SELECT profile_id, account_id, mcp_qualified_name, profile_name, display_name,
+           encrypted_config, is_active, is_default, created_at, updated_at
+    FROM user_mcp_credential_profiles 
+    WHERE profile_id = :profile_id
+    """
     result = await execute_one(sql, {"profile_id": profile_id})
     return serialize_row(dict(result)) if result else None
 
 
 async def get_user_credential_profiles(account_id: str) -> List[Dict[str, Any]]:
     sql = """
-    SELECT * FROM user_mcp_credential_profiles
+    SELECT profile_id, account_id, mcp_qualified_name, profile_name, display_name,
+           encrypted_config, is_active, is_default, created_at, updated_at
+    FROM user_mcp_credential_profiles
     WHERE account_id = :account_id
     ORDER BY created_at DESC
     """
@@ -21,7 +28,9 @@ async def get_user_credential_profiles(account_id: str) -> List[Dict[str, Any]]:
 
 async def get_profiles_for_mcp(account_id: str, mcp_qualified_name: str) -> List[Dict[str, Any]]:
     sql = """
-    SELECT * FROM user_mcp_credential_profiles
+    SELECT profile_id, account_id, mcp_qualified_name, profile_name, display_name,
+           encrypted_config, is_active, is_default, created_at, updated_at
+    FROM user_mcp_credential_profiles
     WHERE account_id = :account_id AND mcp_qualified_name = :mcp_qualified_name
     ORDER BY is_default DESC, created_at DESC
     """

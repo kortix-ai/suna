@@ -145,6 +145,25 @@ export const KortixComputer = memo(function KortixComputer({
     currentViewRef.current = activeView;
   }, [activeView]);
 
+  // Track previous projectId to detect project/thread switches
+  const prevProjectIdRef = useRef<string | null>(null);
+  
+  // Reset local state when switching projects/threads
+  useEffect(() => {
+    if (prevProjectIdRef.current !== null && prevProjectIdRef.current !== projectId) {
+      console.log('[KortixComputer] Project changed, resetting local state');
+      // Reset local component state
+      setInternalIndex(0);
+      setNavigationMode('live');
+      setToolCallSnapshots([]);
+      setIsInitialized(false);
+      setIsMaximized(false);
+      setIsSuiteMode(false);
+      setPreSuiteSize(null);
+    }
+    prevProjectIdRef.current = projectId || null;
+  }, [projectId]);
+
   const handleVncRefresh = useCallback(() => {
     setVncRefreshKey(prev => prev + 1);
   }, []);

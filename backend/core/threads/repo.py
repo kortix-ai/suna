@@ -211,7 +211,9 @@ async def get_thread_messages(
         """
     else:
         sql = f"""
-        SELECT * FROM messages
+        SELECT message_id, thread_id, type, is_llm_message, content, 
+               metadata, created_at, updated_at, agent_id, agent_version_id
+        FROM messages
         WHERE thread_id = :thread_id
         ORDER BY created_at {order_direction}
         """
@@ -371,7 +373,12 @@ async def update_project_visibility(project_id: str, is_public: bool) -> bool:
 
 
 async def get_project_by_id(project_id: str) -> Optional[Dict[str, Any]]:
-    sql = "SELECT * FROM projects WHERE project_id = :project_id"
+    sql = """
+    SELECT project_id, name, description, account_id, is_public, 
+           icon_name, sandbox_resource_id, created_at, updated_at
+    FROM projects 
+    WHERE project_id = :project_id
+    """
     result = await execute_one(sql, {"project_id": project_id})
     return serialize_row(dict(result)) if result else None
 
@@ -422,6 +429,47 @@ async def create_thread_full(
         "project_id": project_id,
         "account_id": account_id,
         "name": name,
+        "status": status,
+        "memory_enabled": memory_enabled,
+        "created_at": now,
+        "updated_at": now
+    }, commit=True)
+    
+    return serialize_row(dict(result)) if result else None
+
+
+async def create_project_and_thread(
+    project_id: str,
+    thread_id: str,
+    account_id: str,
+    project_name: str,
+    thread_name: str = "New Chat",
+    status: str = "pending",
+    memory_enabled: Optional[bool] = None
+) -> Dict[str, Any]:
+    from datetime import datetime, timezone
+    from core.services.db import execute_one
+    
+    sql = """
+    WITH new_project AS (
+        INSERT INTO projects (project_id, account_id, name, created_at)
+        VALUES (:project_id, :account_id, :project_name, :created_at)
+        RETURNING project_id
+    )
+    INSERT INTO threads (thread_id, project_id, account_id, name, status, memory_enabled, created_at, updated_at)
+    SELECT :thread_id, project_id, :account_id, :thread_name, :status, :memory_enabled, :created_at, :updated_at
+    FROM new_project
+    RETURNING thread_id, project_id
+    """
+    
+    now = datetime.now(timezone.utc)
+    
+    result = await execute_one(sql, {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "account_id": account_id,
+        "project_name": project_name,
+        "thread_name": thread_name,
         "status": status,
         "memory_enabled": memory_enabled,
         "created_at": now,
@@ -615,17 +663,11 @@ async def get_llm_messages(
         sql = """
         SELECT message_id, type, content, metadata
         FROM messages
-        WHERE thread_id = :thread_id AND is_llm_message = true
+        WHERE thread_id = :thread_id 
+          AND is_llm_message = true
+          AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
         ORDER BY created_at ASC
         """
-        if limit:
-            sql = sql.replace("ORDER BY", f"ORDER BY created_at ASC LIMIT {limit} ORDER BY")
-            sql = f"""
-            SELECT message_id, type, content, metadata
-            FROM messages
-            WHERE thread_id = :thread_id AND is_llm_message = true
-            ORDER BY created_at ASC
-            """
         rows = await execute(sql, {"thread_id": thread_id})
     
     return [dict(row) for row in rows] if rows else []
@@ -639,7 +681,9 @@ async def get_llm_messages_paginated(
     sql = """
     SELECT message_id, type, content, metadata
     FROM messages
-    WHERE thread_id = :thread_id AND is_llm_message = true
+    WHERE thread_id = :thread_id 
+      AND is_llm_message = true
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     ORDER BY created_at ASC
     LIMIT :limit OFFSET :offset
     """
@@ -777,7 +821,12 @@ async def update_message_content(
 
 
 async def get_message_by_id(message_id: str) -> Optional[Dict[str, Any]]:
-    sql = "SELECT * FROM messages WHERE message_id = :message_id"
+    sql = """
+    SELECT message_id, thread_id, type, is_llm_message, content, 
+           metadata, created_at, updated_at, agent_id, agent_version_id
+    FROM messages 
+    WHERE message_id = :message_id
+    """
     result = await execute_one(sql, {"message_id": message_id})
     return dict(result) if result else None
 
@@ -878,25 +927,128 @@ async def save_compressed_message(
 
 
 async def save_compressed_messages_batch(
-    compressed_messages: List[Dict[str, Any]]
+    compressed_messages: List[Dict[str, Any]],
+    batch_size: int = 500
 ) -> int:
+    """Save compressed message content to database metadata in batch.
+    
+    Uses a single SQL UPDATE with VALUES clause for efficiency.
+    For 400 messages, this is 1 DB call instead of 800 (2 per message).
+    
+    Args:
+        compressed_messages: List of dicts with 'message_id', 'compressed_content', and optional 'is_omission'
+        batch_size: Max messages per SQL statement (default 500 to avoid very long queries)
+        
+    Returns:
+        Number of messages successfully saved
+    """
+    from core.services.db import execute_mutate
+    
     if not compressed_messages:
         return 0
     
-    saved_count = 0
-    for msg_data in compressed_messages:
-        message_id = msg_data.get("message_id")
-        compressed_content = msg_data.get("compressed_content")
-        is_omission = msg_data.get("is_omission", False)
-        
-        if message_id and compressed_content:
-            try:
-                await save_compressed_message(message_id, compressed_content, is_omission)
-                saved_count += 1
-            except Exception as e:
-                logger.warning(f"Failed to save compressed message {message_id}: {e}")
+    # Filter valid entries
+    valid = [
+        (m['message_id'], m['compressed_content'], m.get('is_omission', False)) 
+        for m in compressed_messages 
+        if m.get('message_id') and m.get('compressed_content')
+    ]
     
-    return saved_count
+    if not valid:
+        return 0
+    
+    total_saved = 0
+    
+    # Process in batches to avoid very long SQL statements
+    for batch_start in range(0, len(valid), batch_size):
+        batch = valid[batch_start:batch_start + batch_size]
+        
+        # Build VALUES clause dynamically
+        # Note: Can't use ::uuid cast in VALUES because SQLAlchemy confuses :: with param syntax
+        # Instead, cast in the WHERE clause comparison
+        values_parts = []
+        params = {}
+        for i, (msg_id, content, is_omit) in enumerate(batch):
+            values_parts.append(f"(:id_{i}, :content_{i}, :omit_{i})")
+            params[f'id_{i}'] = msg_id
+            params[f'content_{i}'] = content
+            params[f'omit_{i}'] = is_omit
+        
+        # Single UPDATE with all values - merges into existing metadata
+        # Cast data.id to uuid in WHERE clause to avoid SQLAlchemy param parsing issues
+        sql = f"""
+        UPDATE messages m
+        SET 
+            metadata = COALESCE(m.metadata, '{{}}'::jsonb) 
+                || jsonb_build_object(
+                    'compressed', true,
+                    'compressed_content', data.compressed_content,
+                    'omitted', data.is_omission
+                ),
+            updated_at = NOW()
+        FROM (VALUES {', '.join(values_parts)}) AS data(id, compressed_content, is_omission)
+        WHERE m.message_id = data.id::uuid  -- Cast string to uuid for comparison
+        """
+        
+        try:
+            await execute_mutate(sql, params)
+            total_saved += len(batch)
+        except Exception as e:
+            logger.warning(f"Failed to save compressed messages batch: {e}")
+            # Fallback to individual saves for this batch
+            for msg_id, content, is_omit in batch:
+                try:
+                    await save_compressed_message(msg_id, content, is_omit)
+                    total_saved += 1
+                except Exception as e2:
+                    logger.warning(f"Failed to save compressed message {msg_id}: {e2}")
+    
+    return total_saved
+
+
+async def mark_tool_results_as_omitted(thread_id: str, tool_call_ids: List[str]) -> int:
+    """Mark tool result messages as omitted when their parent assistant message is omitted.
+    
+    This handles the case where tool results were compressed separately from their
+    parent assistant message, and the assistant was later omitted.
+    
+    Args:
+        thread_id: The thread ID
+        tool_call_ids: List of tool_call_ids whose tool results should be marked as omitted
+        
+    Returns:
+        Number of messages marked as omitted
+    """
+    from core.services.db import execute_mutate
+    
+    if not tool_call_ids:
+        return 0
+    
+    # Build the SQL to find and update tool results with matching tool_call_ids
+    # Tool results have content->'tool_call_id' matching one of the IDs
+    placeholders = ', '.join([f':id_{i}' for i in range(len(tool_call_ids))])
+    params = {'thread_id': thread_id}
+    for i, tc_id in enumerate(tool_call_ids):
+        params[f'id_{i}'] = tc_id
+    
+    sql = f"""
+    UPDATE messages
+    SET 
+        metadata = COALESCE(metadata, '{{}}'::jsonb) || '{{"omitted": true}}'::jsonb,
+        updated_at = NOW()
+    WHERE thread_id = :thread_id
+      AND is_llm_message = true
+      AND content->>'tool_call_id' IN ({placeholders})
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
+    RETURNING message_id
+    """
+    
+    try:
+        result = await execute_mutate(sql, params)
+        return len(result) if result else 0
+    except Exception as e:
+        logger.warning(f"Failed to mark tool results as omitted: {e}")
+        return 0
 
 
 async def get_kb_entry_count(agent_id: str) -> int:
@@ -1111,6 +1263,8 @@ async def get_project_threads_paginated(
 
 
 async def get_thread_with_details(thread_id: str) -> Optional[Dict[str, Any]]:
+    # Use a subquery for message_count instead of LEFT JOIN + COUNT
+    # This avoids scanning the entire messages table for this thread
     sql = """
     SELECT 
         t.*,
@@ -1123,15 +1277,11 @@ async def get_thread_with_details(thread_id: str) -> Optional[Dict[str, Any]]:
         p.sandbox_resource_id,
         r.external_id as sandbox_external_id,
         r.config as sandbox_config,
-        COUNT(m.message_id) as message_count
+        (SELECT COUNT(*) FROM messages m WHERE m.thread_id = t.thread_id) as message_count
     FROM threads t
     LEFT JOIN projects p ON t.project_id = p.project_id
     LEFT JOIN resources r ON p.sandbox_resource_id = r.id
-    LEFT JOIN messages m ON t.thread_id = m.thread_id
     WHERE t.thread_id = :thread_id
-    GROUP BY t.thread_id, p.project_id, p.name, p.description, p.icon_name, 
-             p.is_public, p.created_at, p.updated_at, p.sandbox_resource_id,
-             r.external_id, r.config
     """
     result = await execute_one(sql, {"thread_id": thread_id})
     return serialize_row(dict(result)) if result else None

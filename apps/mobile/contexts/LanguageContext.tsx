@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useTranslation } from 'react-i18next';
 import { changeLanguage, getCurrentLanguage, getAvailableLanguages } from '@/lib/utils/i18n';
+import { log } from '@/lib/logger';
 
 interface Language {
   code: string;
@@ -32,7 +33,7 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   // Listen to i18n language changes for immediate UI updates
   React.useEffect(() => {
     const handleLanguageChanged = (lng: string) => {
-      console.log('🌍 LanguageContext: Language changed event received:', lng);
+      log.log('🌍 LanguageContext: Language changed event received:', lng);
       setCurrentLanguage(lng);
     };
 
@@ -50,10 +51,10 @@ export function LanguageProvider({ children }: { children: React.ReactNode }) {
   }, [i18nInstance, currentLanguage]);
 
   const handleSetLanguage = React.useCallback(async (languageCode: string) => {
-    console.log('🌍 LanguageContext: Setting language to', languageCode);
+    log.log('🌍 LanguageContext: Setting language to', languageCode);
     await changeLanguage(languageCode);
     // The languageChanged event will update currentLanguage automatically
-    console.log('✅ LanguageContext: Language change initiated:', languageCode);
+    log.log('✅ LanguageContext: Language change initiated:', languageCode);
   }, []);
 
   const value = React.useMemo(

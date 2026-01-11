@@ -15,15 +15,6 @@ class ToolGuideCache:
         self.enabled = True
         logger.info(f"⚡ [TOOL CACHE] Initialized with TTL={self.ttl}, using shared async Redis pool")
     
-    async def _get_redis(self):
-        from core.services import redis as redis_service
-        try:
-            return await redis_service.get_client()
-        except Exception as e:
-            logger.error(f"⚠️  [TOOL CACHE] Redis connection failed: {e}")
-            self.enabled = False
-            return None
-    
     def _make_cache_key(self, tool_name: str) -> str:
         return f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:{tool_name}"
     
@@ -32,12 +23,11 @@ class ToolGuideCache:
             return None
         
         try:
-            redis_client = await self._get_redis()
-            if not redis_client:
-                return None
+            from core.services import redis as redis_service
             
             cache_key = self._make_cache_key(tool_name)
-            cached_data = await redis_client.get(cache_key)
+            # Use module-level function with timeout protection
+            cached_data = await redis_service.get(cache_key, timeout=5.0)
             
             if cached_data:
                 data = json.loads(cached_data)
@@ -56,9 +46,7 @@ class ToolGuideCache:
             return False
         
         try:
-            redis_client = await self._get_redis()
-            if not redis_client:
-                return False
+            from core.services import redis as redis_service
             
             cache_key = self._make_cache_key(tool_name)
             data = {
@@ -67,10 +55,12 @@ class ToolGuideCache:
                 'version': self.CACHE_VERSION
             }
             
-            await redis_client.setex(
+            # Use module-level function with timeout protection
+            await redis_service.setex(
                 cache_key,
                 int(self.ttl.total_seconds()),
-                json.dumps(data)
+                json.dumps(data),
+                timeout=5.0
             )
             
             logger.debug(f"💾 [TOOL CACHE] Stored: {tool_name} (TTL={self.ttl})")
@@ -86,21 +76,14 @@ class ToolGuideCache:
             return {name: None for name in tool_names}
         
         try:
-            redis_client = await self._get_redis()
-            if not redis_client:
-                return {name: None for name in tool_names}
+            from core.services import redis as redis_service
             
-            pipe = redis_client.pipeline()
-            cache_keys = [self._make_cache_key(name) for name in tool_names]
-            
-            for key in cache_keys:
-                pipe.get(key)
-            
-            results = await pipe.execute()
-            
+            # Use individual gets with timeout - pipelining can be added later if needed
             guides = {}
             hits = 0
-            for tool_name, cached_data in zip(tool_names, results):
+            for tool_name in tool_names:
+                cache_key = self._make_cache_key(tool_name)
+                cached_data = await redis_service.get(cache_key, timeout=5.0)
                 if cached_data:
                     data = json.loads(cached_data)
                     guides[tool_name] = data['guide']
@@ -120,12 +103,9 @@ class ToolGuideCache:
             return 0
         
         try:
-            redis_client = await self._get_redis()
-            if not redis_client:
-                return 0
+            from core.services import redis as redis_service
             
-            pipe = redis_client.pipeline()
-            
+            # Use individual sets with timeout - pipelining can be added later if needed
             for tool_name, guide in guides.items():
                 if guide:
                     cache_key = self._make_cache_key(tool_name)
@@ -134,9 +114,12 @@ class ToolGuideCache:
                         'guide': guide,
                         'version': self.CACHE_VERSION
                     }
-                    pipe.setex(cache_key, int(self.ttl.total_seconds()), json.dumps(data))
-            
-            await pipe.execute()
+                    await redis_service.setex(
+                        cache_key,
+                        int(self.ttl.total_seconds()),
+                        json.dumps(data),
+                        timeout=5.0
+                    )
             
             logger.info(f"💾 [TOOL CACHE] Batch stored: {len(guides)} guides")
             return len(guides)
@@ -150,12 +133,10 @@ class ToolGuideCache:
             return False
         
         try:
-            redis_client = await self._get_redis()
-            if not redis_client:
-                return False
+            from core.services import redis as redis_service
             
             cache_key = self._make_cache_key(tool_name)
-            await redis_client.delete(cache_key)
+            await redis_service.delete(cache_key, timeout=2.0)
             logger.info(f"🗑️  [TOOL CACHE] Invalidated: {tool_name}")
             return True
             
@@ -168,17 +149,16 @@ class ToolGuideCache:
             return 0
         
         try:
-            redis_client = await self._get_redis()
-            if not redis_client:
-                return 0
+            from core.services import redis as redis_service
             
             pattern = f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:*"
-            keys = []
-            async for key in redis_client.scan_iter(match=pattern):
-                keys.append(key)
+            # Use scan_keys with timeout protection
+            keys = await redis_service.scan_keys(pattern, count=100, timeout=10.0)
             
             if keys:
-                count = await redis_client.delete(*keys)
+                # Use batch delete for efficiency
+                from core.services.redis import delete_multiple
+                count = await delete_multiple(keys, timeout=5.0)
                 logger.info(f"🗑️  [TOOL CACHE] Invalidated all: {count} guides")
                 return count
             
@@ -214,14 +194,11 @@ class ToolGuideCache:
             return {'enabled': False}
         
         try:
-            redis_client = await self._get_redis()
-            if not redis_client:
-                return {'enabled': False, 'error': 'Redis unavailable'}
+            from core.services import redis as redis_service
             
             pattern = f"{self.CACHE_KEY_PREFIX}{self.CACHE_VERSION}:*"
-            keys = []
-            async for key in redis_client.scan_iter(match=pattern):
-                keys.append(key)
+            # Use scan_keys with timeout protection
+            keys = await redis_service.scan_keys(pattern, count=100, timeout=10.0)
             
             return {
                 'enabled': True,

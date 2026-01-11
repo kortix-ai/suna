@@ -31,6 +31,8 @@ import { useAgentStream } from './useAgentStream';
 import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
 import { useBillingContext } from '@/contexts/BillingContext';
+import { log } from '@/lib/logger';
+import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -187,7 +189,7 @@ export function useChat(): UseChatReturn {
   useEffect(() => {
     const currentIds = accessibleModels.map(m => m.id).join(',');
     if (currentIds !== prevAccessibleModelIdsRef.current) {
-      console.log('🔍 [useChat] Accessible models:', {
+      log.log('🔍 [useChat] Accessible models:', {
         total: availableModels.length,
         accessible: accessibleModels.length,
         hasActiveSubscription,
@@ -213,7 +215,7 @@ export function useChat(): UseChatReturn {
       const recommendedModel = accessibleModels.find(m => m.recommended);
       const fallbackModel = recommendedModel || accessibleModels[0];
       if (fallbackModel) {
-        console.log('🔄 [useChat] Auto-selecting model (none selected):', fallbackModel.id);
+        log.log('🔄 [useChat] Auto-selecting model (none selected):', fallbackModel.id);
         selectModel(fallbackModel.id);
       }
       return;
@@ -222,11 +224,11 @@ export function useChat(): UseChatReturn {
     // If selected model is not accessible, switch to an accessible one
     const isModelAccessible = accessibleModels.some(m => m.id === selectedModelId);
     if (!isModelAccessible) {
-      console.warn('⚠️ [useChat] Selected model is not accessible, switching:', selectedModelId);
+      log.warn('⚠️ [useChat] Selected model is not accessible, switching:', selectedModelId);
       const recommendedModel = accessibleModels.find(m => m.recommended);
       const fallbackModel = recommendedModel || accessibleModels[0];
       if (fallbackModel) {
-        console.log('🔄 [useChat] Auto-selecting accessible model:', fallbackModel.id);
+        log.log('🔄 [useChat] Auto-selecting accessible model:', fallbackModel.id);
         selectModel(fallbackModel.id);
       }
     }
@@ -263,7 +265,7 @@ export function useChat(): UseChatReturn {
     
     const selectionKey = `${selectedModelId || 'none'}-${currentModel || 'none'}-${accessibleModels.length}`;
     if (selectionKey !== prevModelSelectionRef.current) {
-      console.log('🔍 [useChat] Model selection:', {
+      log.log('🔍 [useChat] Model selection:', {
         selectedModelId,
         currentModel,
         hasActiveSubscription,
@@ -275,9 +277,9 @@ export function useChat(): UseChatReturn {
       });
       
       if (currentModel) {
-        console.log('✅ [useChat] Using selected accessible model:', currentModel);
+        log.log('✅ [useChat] Using selected accessible model:', currentModel);
       } else {
-        console.warn('⚠️ [useChat] No accessible models available');
+        log.warn('⚠️ [useChat] No accessible models available');
       }
       
       prevModelSelectionRef.current = selectionKey;
@@ -311,7 +313,7 @@ export function useChat(): UseChatReturn {
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
       if (!message.message_id) {
-        console.warn(
+        log.warn(
           `[STREAM HANDLER] Received message is missing ID: Type=${message.type}`,
         );
       }
@@ -353,7 +355,7 @@ export function useChat(): UseChatReturn {
                 getBaseContent(m.content) === newBaseContent,
             );
             if (optimisticIndex !== -1) {
-              console.log('[STREAM] Replacing optimistic user message with real one');
+              log.log('[STREAM] Replacing optimistic user message with real one');
               return prev.map((m, index) =>
                 index === optimisticIndex ? message : m,
               );
@@ -392,11 +394,11 @@ export function useChat(): UseChatReturn {
       lower.includes('not found') || lower.includes('agent run is not running');
 
     if (isExpected) {
-      console.info(`[PAGE] Stream skipped for inactive run: ${errorMessage}`);
+      log.info(`[PAGE] Stream skipped for inactive run: ${errorMessage}`);
       return;
     }
 
-    console.error(`[PAGE] Stream hook error: ${errorMessage}`);
+    log.error(`[PAGE] Stream hook error: ${errorMessage}`);
   }, []);
 
   const handleStreamClose = useCallback(() => { }, []);
@@ -436,7 +438,7 @@ export function useChat(): UseChatReturn {
     const isThreadSwitch = prevThread && activeThreadId && prevThread !== activeThreadId;
     
     if (isThreadSwitch) {
-      console.log('[useChat] Thread switched from', prevThread, 'to', activeThreadId);
+      log.log('[useChat] Thread switched from', prevThread, 'to', activeThreadId);
       
       setMessages([]);
       lastStreamStartedRef.current = null;
@@ -489,7 +491,7 @@ export function useChat(): UseChatReturn {
               const baseContent = getBaseContent(m.content);
               const hasMatchingServerMessage = serverBaseContents.has(baseContent);
               if (hasMatchingServerMessage) {
-                console.log('[useChat] Removing optimistic message - server version exists');
+                log.log('[useChat] Removing optimistic message - server version exists');
                 return false; // Remove - server has the real version
               }
               return true; // Keep - still pending
@@ -505,7 +507,7 @@ export function useChat(): UseChatReturn {
             return aTime - bTime;
           });
           
-          console.log('🔄 [useChat] Merged messages:', {
+          log.log('🔄 [useChat] Merged messages:', {
             server: unifiedMessages.length,
             local: localExtras.length,
             total: merged.length,
@@ -523,7 +525,7 @@ export function useChat(): UseChatReturn {
     }
 
     if (userInitiatedRun) {
-      console.log(`[useChat] Starting user-initiated stream for runId: ${agentRunId}`);
+      log.log(`[useChat] Starting user-initiated stream for runId: ${agentRunId}`);
       lastStreamStartedRef.current = agentRunId;
       setUserInitiatedRun(false);
       startStreaming(agentRunId);
@@ -532,7 +534,7 @@ export function useChat(): UseChatReturn {
 
     const activeRun = activeRuns?.find(r => r.id === agentRunId && r.status === 'running');
     if (activeRun) {
-      console.log(`[useChat] Starting auto stream for runId: ${agentRunId}`);
+      log.log(`[useChat] Starting auto stream for runId: ${agentRunId}`);
       lastStreamStartedRef.current = agentRunId;
       startStreaming(agentRunId);
     }
@@ -554,7 +556,7 @@ export function useChat(): UseChatReturn {
       lastStreamStartedRef.current = null;
       
       if (streamHookStatus === 'completed' && activeThreadId) {
-        console.log('[useChat] Streaming completed, refetching in background');
+        log.log('[useChat] Streaming completed, refetching in background');
         setIsNewThreadOptimistic(false);
         
         queryClient.invalidateQueries({ 
@@ -592,18 +594,18 @@ export function useChat(): UseChatReturn {
       !lastStreamStartedRef.current &&
       runningAgentForThread.id !== lastCompletedRunIdRef.current
     ) {
-      console.log('🔄 [useChat] Detected active run for current thread, resuming:', runningAgentForThread.id);
+      log.log('🔄 [useChat] Detected active run for current thread, resuming:', runningAgentForThread.id);
       setAgentRunId(runningAgentForThread.id);
     }
   }, [activeThreadId, activeRuns, agentRunId, streamHookStatus]);
 
   const refreshMessages = useCallback(async () => {
     if (!activeThreadId || isStreaming) {
-      console.log('[useChat] Cannot refresh: no active thread or streaming in progress');
+      log.log('[useChat] Cannot refresh: no active thread or streaming in progress');
       return;
     }
     
-    console.log('[useChat] 🔄 Refreshing messages for thread:', activeThreadId);
+    log.log('[useChat] 🔄 Refreshing messages for thread:', activeThreadId);
     
     try {
       await refetchMessages();
@@ -619,16 +621,16 @@ export function useChat(): UseChatReturn {
         });
       }
       
-      console.log('[useChat] ✅ Messages refreshed successfully');
+      log.log('[useChat] ✅ Messages refreshed successfully');
     } catch (error) {
-      console.error('[useChat] ❌ Failed to refresh messages:', error);
+      log.error('[useChat] ❌ Failed to refresh messages:', error);
       throw error;
     }
   }, [activeThreadId, isStreaming, refetchMessages, queryClient, activeSandboxId]);
 
   const loadThread = useCallback((threadId: string) => {
-    console.log('[useChat] Loading thread:', threadId);
-    console.log('🔄 [useChat] Thread loading initiated');
+    log.log('[useChat] Loading thread:', threadId);
+    log.log('🔄 [useChat] Thread loading initiated');
     
     setAgentRunId(null);
     
@@ -641,38 +643,42 @@ export function useChat(): UseChatReturn {
     
     setMessages([]);
     
+    // Reset Kortix Computer state when switching threads
+    useKortixComputerStore.getState().reset();
+    log.log('[useChat] Reset Kortix Computer state');
+    
     setActiveThreadId(threadId);
     setModeViewState('thread');
     
     // Sync the selected mode with the thread's mode metadata
     const thread = threadsData.find((t: any) => t.thread_id === threadId);
     if (thread?.metadata?.mode) {
-      console.log('[useChat] Syncing mode from thread metadata:', thread.metadata.mode);
+      log.log('[useChat] Syncing mode from thread metadata:', thread.metadata.mode);
       setSelectedQuickAction(thread.metadata.mode);
       setSelectedQuickActionOption(null);
     }
     
     // Refetch active runs to check if there's a running agent for this thread
-    console.log('🔍 [useChat] Checking for active agent runs...');
+    log.log('🔍 [useChat] Checking for active agent runs...');
     refetchActiveRuns().then(result => {
       if (result.data) {
         const runningAgentForThread = result.data.find(
           run => run.thread_id === threadId && run.status === 'running'
         );
         if (runningAgentForThread) {
-          console.log('✅ [useChat] Found running agent, will auto-resume:', runningAgentForThread.id);
+          log.log('✅ [useChat] Found running agent, will auto-resume:', runningAgentForThread.id);
           setAgentRunId(runningAgentForThread.id);
         } else {
-          console.log('ℹ️ [useChat] No active agent run found for this thread');
+          log.log('ℹ️ [useChat] No active agent run found for this thread');
         }
       }
     }).catch(error => {
-      console.error('❌ [useChat] Failed to refetch active runs:', error);
+      log.error('❌ [useChat] Failed to refetch active runs:', error);
     });
   }, [stopStreaming, refetchActiveRuns, threadsData]);
 
   const startNewChat = useCallback(() => {
-    console.log('[useChat] Starting new chat');
+    log.log('[useChat] Starting new chat');
     setActiveThreadId(undefined);
     setAgentRunId(null);
     setMessages([]);
@@ -682,23 +688,27 @@ export function useChat(): UseChatReturn {
     setIsNewThreadOptimistic(false);
     setActiveSandboxId(undefined);
     stopStreaming();
+    
+    // Reset Kortix Computer state when starting new chat
+    useKortixComputerStore.getState().reset();
+    log.log('[useChat] Reset Kortix Computer state for new chat');
   }, [stopStreaming]);
 
   const updateThreadTitle = useCallback(async (newTitle: string) => {
     if (!activeThreadId) {
-      console.warn('[useChat] Cannot update title: no active thread');
+      log.warn('[useChat] Cannot update title: no active thread');
       return;
     }
 
     try {
-      console.log('[useChat] Updating thread title to:', newTitle);
+      log.log('[useChat] Updating thread title to:', newTitle);
       await updateThreadMutation.mutateAsync({
         threadId: activeThreadId,
         data: { title: newTitle },
       });
-      console.log('[useChat] Thread title updated successfully');
+      log.log('[useChat] Thread title updated successfully');
     } catch (error) {
-      console.error('[useChat] Failed to update thread title:', error);
+      log.error('[useChat] Failed to update thread title:', error);
       throw error;
     }
   }, [activeThreadId, updateThreadMutation]);
@@ -707,7 +717,7 @@ export function useChat(): UseChatReturn {
     if (!content.trim() && attachments.length === 0) return;
 
     try {
-      console.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length, selectedQuickAction, selectedQuickActionOption });
+      log.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length, selectedQuickAction, selectedQuickActionOption });
       
       for (const attachment of attachments) {
         const validation = validateFileSize(attachment.size);
@@ -720,7 +730,7 @@ export function useChat(): UseChatReturn {
       let currentThreadId = activeThreadId;
       
       if (!currentThreadId) {
-        console.log('[useChat] Creating new thread via /agent/start with optimistic UI');
+        log.log('[useChat] Creating new thread via /agent/start with optimistic UI');
         
         // Store attachments before clearing for optimistic display
         const pendingAttachments = [...attachments];
@@ -753,7 +763,7 @@ export function useChat(): UseChatReturn {
         };
         setMessages([optimisticUserMessage]);
         setIsNewThreadOptimistic(true);
-        console.log('✨ [useChat] INSTANT user message display with', pendingAttachments.length, 'attachments');
+        log.log('✨ [useChat] INSTANT user message display with', pendingAttachments.length, 'attachments');
         
         // Clear input and attachments immediately for instant feedback
         setInputValue('');
@@ -764,23 +774,23 @@ export function useChat(): UseChatReturn {
           ? await convertAttachmentsToFormDataFiles(pendingAttachments)
           : [];
         
-        console.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
+        log.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
         
         // Append hidden context for selected quick action options
         let messageWithContext = content;
         
         if (selectedQuickAction === 'slides' && selectedQuickActionOption) {
           messageWithContext += `\n\n----\n\n**Presentation Template:** ${selectedQuickActionOption}`;
-          console.log('[useChat] Appended slides template context to new thread:', selectedQuickActionOption);
+          log.log('[useChat] Appended slides template context to new thread:', selectedQuickActionOption);
         }
         
         if (selectedQuickAction === 'image' && selectedQuickActionOption) {
           messageWithContext += `\n\n----\n\n**Image Style:** ${selectedQuickActionOption}`;
-          console.log('[useChat] Appended image style context to new thread:', selectedQuickActionOption);
+          log.log('[useChat] Appended image style context to new thread:', selectedQuickActionOption);
         }
         
         if (!currentModel) {
-          console.error('❌ [useChat] No model available! Details:', {
+          log.error('❌ [useChat] No model available! Details:', {
             totalModels: availableModels.length,
             accessibleModels: accessibleModels.length,
             selectedModelId,
@@ -794,7 +804,7 @@ export function useChat(): UseChatReturn {
           return;
         }
         
-        console.log('🚀 [useChat] Starting agent with accessible model:', currentModel);
+        log.log('🚀 [useChat] Starting agent with accessible model:', currentModel);
         
         try {
           // Detect mode from content (auto-detect overrides selected tab if content suggests different mode)
@@ -803,7 +813,7 @@ export function useChat(): UseChatReturn {
           
           // Visually switch the tab if mode was auto-detected and is different from current
           if (detectedMode && detectedMode !== selectedQuickAction) {
-            console.log('[useChat] 🎯 Auto-switching tab:', selectedQuickAction, '→', detectedMode);
+            log.log('[useChat] 🎯 Auto-switching tab:', selectedQuickAction, '→', detectedMode);
             // Trigger haptic feedback to match manual tab switching experience
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             setSelectedQuickAction(detectedMode);
@@ -814,7 +824,7 @@ export function useChat(): UseChatReturn {
           const threadMetadata: Record<string, any> = {};
           if (effectiveMode) {
             threadMetadata.mode = effectiveMode;
-            console.log('[useChat] Setting thread mode:', effectiveMode, 
+            log.log('[useChat] Setting thread mode:', effectiveMode, 
               detectedMode ? '(auto-detected from content)' : '(from selected tab)');
           }
           
@@ -835,12 +845,12 @@ export function useChat(): UseChatReturn {
           });
           
           if (createResult.agent_run_id) {
-            console.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
+            log.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
             setUserInitiatedRun(true);
             setAgentRunId(createResult.agent_run_id);
           }
         } catch (agentStartError: any) {
-          console.error('[useChat] Error starting agent for new thread:', agentStartError);
+          log.error('[useChat] Error starting agent for new thread:', agentStartError);
           
           const errorMessage = agentStartError?.message || '';
           const errorCode = agentStartError?.code || agentStartError?.detail?.error_code;
@@ -852,7 +862,7 @@ export function useChat(): UseChatReturn {
             const limit = detail.limit || 1;
             const message = detail.message || `Maximum of ${limit} concurrent agent run${limit > 1 ? 's' : ''} allowed. You currently have ${runningCount} running.`;
             
-            console.log('⚠️ Concurrent agent run limit reached');
+            log.log('⚠️ Concurrent agent run limit reached');
             Alert.alert(
               'Concurrent Runs Limit Reached',
               `${message}\n\nPlease stop a running agent or wait for one to complete before starting a new one.`,
@@ -863,7 +873,7 @@ export function useChat(): UseChatReturn {
           
           // Handle project limit
           if (agentStartError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
-            console.log('💳 Project limit exceeded - opening billing modal');
+            log.log('💳 Project limit exceeded - opening billing modal');
             router.push({
               pathname: '/plans',
               params: { creditsExhausted: 'true' },
@@ -874,7 +884,7 @@ export function useChat(): UseChatReturn {
           throw agentStartError;
         }
       } else {
-        console.log('[useChat] Sending to existing thread:', currentThreadId);
+        log.log('[useChat] Sending to existing thread:', currentThreadId);
         
         // Store attachments before clearing for upload
         const pendingAttachments = [...attachments];
@@ -907,7 +917,7 @@ export function useChat(): UseChatReturn {
         };
         
         setMessages((prev) => [...prev, optimisticUserMessage]);
-        console.log('✨ [useChat] INSTANT user message display for existing thread');
+        log.log('✨ [useChat] INSTANT user message display for existing thread');
         
         // Clear input and attachments immediately for instant feedback
         setInputValue('');
@@ -920,20 +930,20 @@ export function useChat(): UseChatReturn {
         // Append hidden context for slides template
         if (selectedQuickAction === 'slides' && selectedQuickActionOption) {
           messageContent += `\n\n----\n\n**Presentation Template:** ${selectedQuickActionOption}`;
-          console.log('[useChat] Appended slides template context:', selectedQuickActionOption);
+          log.log('[useChat] Appended slides template context:', selectedQuickActionOption);
         }
         
         // Append hidden context for image style
         if (selectedQuickAction === 'image' && selectedQuickActionOption) {
           messageContent += `\n\n----\n\n**Image Style:** ${selectedQuickActionOption}`;
-          console.log('[useChat] Appended image style context:', selectedQuickActionOption);
+          log.log('[useChat] Appended image style context:', selectedQuickActionOption);
         }
         
         if (pendingAttachments.length > 0) {
           const sandboxId = activeSandboxId;
           
           if (!sandboxId) {
-            console.error('[useChat] No sandbox ID available for file upload');
+            log.error('[useChat] No sandbox ID available for file upload');
             Alert.alert(
               t('common.error'),
               'Cannot upload files: sandbox not available'
@@ -941,7 +951,7 @@ export function useChat(): UseChatReturn {
             return;
           }
           
-          console.log('[useChat] Uploading', pendingAttachments.length, 'files to sandbox:', sandboxId);
+          log.log('[useChat] Uploading', pendingAttachments.length, 'files to sandbox:', sandboxId);
           
           try {
             const filesToUpload = await convertAttachmentsToFormDataFiles(pendingAttachments);
@@ -955,7 +965,7 @@ export function useChat(): UseChatReturn {
               })),
             });
             
-            console.log('[useChat] Files uploaded successfully:', uploadResults.length);
+            log.log('[useChat] Files uploaded successfully:', uploadResults.length);
             
             const filePaths = uploadResults.map(result => result.path);
             const fileReferences = generateFileReferences(filePaths);
@@ -964,9 +974,9 @@ export function useChat(): UseChatReturn {
               ? `${messageContent}\n\n${fileReferences}`
               : fileReferences;
               
-            console.log('[useChat] Message with file references prepared');
+            log.log('[useChat] Message with file references prepared');
           } catch (uploadError) {
-            console.error('[useChat] File upload failed:', uploadError);
+            log.error('[useChat] File upload failed:', uploadError);
             
             Alert.alert(
               t('common.error'),
@@ -977,7 +987,7 @@ export function useChat(): UseChatReturn {
         }
         
         if (!currentModel) {
-          console.error('❌ [useChat] No model available for sending message! Details:', {
+          log.error('❌ [useChat] No model available for sending message! Details:', {
             totalModels: availableModels.length,
             accessibleModels: accessibleModels.length,
             selectedModelId,
@@ -991,7 +1001,7 @@ export function useChat(): UseChatReturn {
           return;
         }
         
-        console.log('🚀 [useChat] Sending message with accessible model:', currentModel);
+        log.log('🚀 [useChat] Sending message with accessible model:', currentModel);
         
         try {
           const result = await sendMessageMutation.mutateAsync({
@@ -1000,7 +1010,7 @@ export function useChat(): UseChatReturn {
             modelName: currentModel,
           });
           
-          console.log('[useChat] Message sent, agent run started:', result.agentRunId);
+          log.log('[useChat] Message sent, agent run started:', result.agentRunId);
           
           // Replace optimistic message with real message from server
           if (result.message) {
@@ -1034,27 +1044,27 @@ export function useChat(): UseChatReturn {
               );
               
               if (optimisticIndex !== -1) {
-                console.log('[useChat] ✅ Replacing optimistic message with real one');
+                log.log('[useChat] ✅ Replacing optimistic message with real one');
                 return prev.map((m, index) =>
                   index === optimisticIndex ? (result.message as UnifiedMessage) : m
                 );
               }
               
               // If no optimistic found, just add the message
-              console.log('[useChat] No optimistic message found to replace, adding new');
+              log.log('[useChat] No optimistic message found to replace, adding new');
               return [...prev, result.message as UnifiedMessage];
             });
           }
           
           if (result.agentRunId) {
-            console.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
+            log.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
             setUserInitiatedRun(true);
             setAgentRunId(result.agentRunId);
           }
           
           setIsNewThreadOptimistic(false);
         } catch (sendMessageError: any) {
-          console.error('[useChat] Error sending message to existing thread:', sendMessageError);
+          log.error('[useChat] Error sending message to existing thread:', sendMessageError);
           
           const errorMessage = sendMessageError?.message || '';
           const errorCode = sendMessageError?.code || sendMessageError?.detail?.error_code;
@@ -1066,7 +1076,7 @@ export function useChat(): UseChatReturn {
             const limit = detail.limit || 1;
             const message = detail.message || `Maximum of ${limit} concurrent agent run${limit > 1 ? 's' : ''} allowed. You currently have ${runningCount} running.`;
             
-            console.log('⚠️ Concurrent agent run limit reached');
+            log.log('⚠️ Concurrent agent run limit reached');
             Alert.alert(
               'Concurrent Runs Limit Reached',
               `${message}\n\nPlease stop a running agent or wait for one to complete before starting a new one.`,
@@ -1077,7 +1087,7 @@ export function useChat(): UseChatReturn {
           
           // Handle project limit
           if (sendMessageError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
-            console.log('💳 Project limit exceeded - opening billing modal');
+            log.log('💳 Project limit exceeded - opening billing modal');
             router.push({
               pathname: '/plans',
               params: { creditsExhausted: 'true' },
@@ -1088,7 +1098,7 @@ export function useChat(): UseChatReturn {
         }
       }
     } catch (error: any) {
-      console.error('[useChat] Error sending message:', error);
+      log.error('[useChat] Error sending message:', error);
       throw error;
     }
   }, [
@@ -1107,7 +1117,7 @@ export function useChat(): UseChatReturn {
     // Use local agentRunId or fallback to the streaming hook's run ID
     const runIdToStop = agentRunId || currentHookRunId;
     
-    console.log('[useChat] 🛑 Stopping agent run:', runIdToStop, '(local:', agentRunId, ', hook:', currentHookRunId, ')');
+    log.log('[useChat] 🛑 Stopping agent run:', runIdToStop, '(local:', agentRunId, ', hook:', currentHookRunId, ')');
     
     // Always clear local state and stop streaming
     setAgentRunId(null);
@@ -1116,7 +1126,7 @@ export function useChat(): UseChatReturn {
     if (runIdToStop) {
       try {
         await stopAgentRunMutation.mutateAsync(runIdToStop);
-        console.log('[useChat] ✅ Backend stop confirmed');
+        log.log('[useChat] ✅ Backend stop confirmed');
         
         queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() });
         
@@ -1125,10 +1135,10 @@ export function useChat(): UseChatReturn {
           refetchMessages();
         }
       } catch (error) {
-        console.error('[useChat] ❌ Error stopping agent:', error);
+        log.error('[useChat] ❌ Error stopping agent:', error);
       }
     } else {
-      console.log('[useChat] ⚠️ No run ID to stop, but streaming was stopped');
+      log.log('[useChat] ⚠️ No run ID to stop, but streaming was stopped');
     }
   }, [agentRunId, currentHookRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
 
@@ -1221,14 +1231,14 @@ export function useChat(): UseChatReturn {
         });
       }
     } catch (error) {
-      console.error('Error picking document:', error);
+      log.error('Error picking document:', error);
     }
     
     setIsAttachmentDrawerVisible(false);
   }, [addAttachment]);
 
   const handleQuickAction = useCallback((actionId: string) => {
-    console.log('[useChat] 🔄 Switching mode:', selectedQuickAction, '→', actionId);
+    log.log('[useChat] 🔄 Switching mode:', selectedQuickAction, '→', actionId);
     
     // Don't do anything if switching to the same mode
     if (actionId === selectedQuickAction) {
@@ -1237,7 +1247,7 @@ export function useChat(): UseChatReturn {
     
     // Save current mode's FULL state before switching (like saving a browser tab)
     if (selectedQuickAction) {
-      console.log('[useChat] 💾 Saving full state for mode:', selectedQuickAction, {
+      log.log('[useChat] 💾 Saving full state for mode:', selectedQuickAction, {
         threadId: activeThreadId,
         messagesCount: messages.length,
         agentRunId,
@@ -1264,7 +1274,7 @@ export function useChat(): UseChatReturn {
     // Check if the target mode has saved state (instant restore like browser tab)
     const savedState = modeStates[actionId];
     if (savedState && (savedState.threadId || savedState.messages.length > 0)) {
-      console.log('[useChat] ⚡ Instant restore for mode:', actionId, {
+      log.log('[useChat] ⚡ Instant restore for mode:', actionId, {
         threadId: savedState.threadId,
         messagesCount: savedState.messages.length,
         agentRunId: savedState.agentRunId,
@@ -1283,13 +1293,13 @@ export function useChat(): UseChatReturn {
       
       // If there was a running agent, reconnect to stream (quick operation)
       if (savedState.agentRunId && savedState.threadId) {
-        console.log('[useChat] 🔌 Reconnecting to stream:', savedState.agentRunId);
+        log.log('[useChat] 🔌 Reconnecting to stream:', savedState.agentRunId);
         lastStreamStartedRef.current = null; // Allow stream to restart
         startStreaming(savedState.agentRunId);
       }
     } else {
       // No saved state - show fresh thread list for new mode
-      console.log('[useChat] 📋 Fresh mode, showing thread list:', actionId);
+      log.log('[useChat] 📋 Fresh mode, showing thread list:', actionId);
       // Stop current streaming (agent keeps running on server)
       stopStreaming();
       setAgentRunId(null);
@@ -1318,7 +1328,7 @@ export function useChat(): UseChatReturn {
 
   // Show the thread list for current mode
   const showModeThreadList = useCallback(() => {
-    console.log('[useChat] 📋 Going back to thread list for mode:', selectedQuickAction);
+    log.log('[useChat] 📋 Going back to thread list for mode:', selectedQuickAction);
     setModeViewState('thread-list');
     
     // Clear the saved state for current mode when user explicitly goes back
@@ -1339,7 +1349,7 @@ export function useChat(): UseChatReturn {
 
   // Open a specific thread (used from thread list)
   const showModeThread = useCallback((threadId: string) => {
-    console.log('[useChat] Opening thread from list:', threadId);
+    log.log('[useChat] Opening thread from list:', threadId);
     loadThread(threadId);
     setModeViewState('thread');
   }, [loadThread]);
@@ -1393,7 +1403,7 @@ export function useChat(): UseChatReturn {
         });
       }
     } catch (error) {
-      console.error('Transcription error:', error);
+      log.error('Transcription error:', error);
       Alert.alert(
         t('common.error'),
         t('audio.transcriptionFailed') || 'Failed to transcribe audio'

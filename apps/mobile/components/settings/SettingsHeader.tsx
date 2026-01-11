@@ -5,6 +5,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { ArrowLeft, X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 interface SettingsHeaderProps {
   title: string;
@@ -26,7 +27,7 @@ export function SettingsHeader({ title, onClose, disabled = false, variant = 'ba
 
   const handleClose = () => {
     if (disabled) return;
-    console.log(`🎯 Header ${variant} button pressed`);
+    log.log(`🎯 Header ${variant} button pressed`);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   };

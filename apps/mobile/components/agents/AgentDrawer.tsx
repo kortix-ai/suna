@@ -1,4 +1,3 @@
-import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { useLanguage } from '@/contexts';
@@ -17,27 +16,19 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
 import {
   Plus,
-  Check,
-  Briefcase,
-  FileText,
-  BookOpen,
   Zap,
-  Layers,
-  Search as SearchIcon,
-  ChevronRight,
   ArrowLeft,
-  Crown,
-  DollarSign,
-  Plug,
   Brain,
   Wrench,
   Server,
   Sparkles,
   Lock,
+  ChevronRight,
+  Plug,
 } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Pressable, View, ScrollView, Keyboard, Alert, Platform } from 'react-native';
+import { Pressable, View, ScrollView, Keyboard, Alert, Platform, StyleSheet } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   withTiming,
@@ -47,7 +38,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
 import { AgentAvatar } from './AgentAvatar';
-import { ModelAvatar } from '@/components/models/ModelAvatar';
 import { ModelToggle } from '@/components/models/ModelToggle';
 import { SelectableListItem } from '@/components/shared/SelectableListItem';
 import { EntityList } from '@/components/shared/EntityList';
@@ -56,7 +46,6 @@ import { useAvailableModels } from '@/lib/models';
 import type { Agent, Model } from '@/api/types';
 import {
   AppBubble,
-  IntegrationsPage,
   IntegrationsPageContent,
 } from '@/components/settings/IntegrationsPage';
 import { ComposioAppsContent } from '@/components/settings/integrations/ComposioAppsList';
@@ -65,8 +54,7 @@ import { ComposioConnectorContent } from '@/components/settings/integrations/Com
 import { ComposioToolsContent } from '@/components/settings/integrations/ComposioToolsSelector';
 import { CustomMcpContent } from '@/components/settings/integrations/CustomMcpDialog';
 import { CustomMcpToolsContent } from '@/components/settings/integrations/CustomMcpToolsSelector';
-import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
-import { ToolkitIcon } from '../settings/integrations/ToolkitIcon';
+import { log } from '@/lib/logger';
 
 interface AgentDrawerProps {
   visible: boolean;
@@ -79,7 +67,6 @@ interface AgentDrawerProps {
   onDismiss?: () => void;
 }
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 type ViewState =
   | 'main'
   | 'agents'
@@ -93,9 +80,8 @@ type ViewState =
 
 function BackButton({ onPress }: { onPress: () => void }) {
   const { colorScheme } = useColorScheme();
-
   return (
-    <BottomSheetTouchable onPress={onPress} style={{ flexDirection: 'row', alignItems: 'center', opacity: 1 }}>
+    <BottomSheetTouchable onPress={onPress} style={{ padding: 4 }}>
       <ArrowLeft size={20} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
     </BottomSheetTouchable>
   );
@@ -113,8 +99,18 @@ export function AgentDrawer({
   const { t } = useLanguage();
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const router = useRouter();
+  const isDark = colorScheme === 'dark';
 
-  const agentContext = useAgent();
+  // Theme colors
+  const colors = {
+    bg: isDark ? '#161618' : '#FFFFFF',
+    card: isDark ? '#1e1e20' : '#f5f5f5',
+    border: isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)',
+    text: isDark ? '#f8f8f8' : '#121215',
+    muted: isDark ? 'rgba(255,255,255,0.5)' : 'rgba(0,0,0,0.5)',
+    accent: isDark ? '#22c55e' : '#16a34a',
+  };
+
   const {
     agents,
     selectedAgentId,
@@ -124,25 +120,16 @@ export function AgentDrawer({
     isLoading,
     hasInitialized,
     loadAgents,
-  } = agentContext;
+  } = useAgent();
 
   const { data: modelsData, isLoading: modelsLoading } = useAvailableModels();
-
-  const { hasActiveSubscription, subscriptionData, hasFreeTier } = useBillingContext();
+  const { hasActiveSubscription, hasFreeTier } = useBillingContext();
 
   const models = modelsData?.models || [];
   const selectedAgent = agents.find((a) => a.agent_id === selectedAgentId);
 
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<number | null>(null);
-
-  const selectedModel = React.useMemo(() => {
-    if (selectedModelId) {
-      const model = models.find((m) => m.id === selectedModelId);
-      if (model) return model;
-    }
-    return models.find((m) => m.id === selectedAgent?.model) || models.find((m) => m.recommended);
-  }, [selectedModelId, models, selectedAgent]);
 
   const [currentView, setCurrentView] = React.useState<ViewState>('main');
   const [selectedComposioApp, setSelectedComposioApp] = React.useState<any>(null);
@@ -153,6 +140,7 @@ export function AgentDrawer({
     tools: any[];
   } | null>(null);
 
+  // Search for agents (only used in beta mode)
   const searchableAgents = React.useMemo(
     () => agents.map((agent) => ({ ...agent, id: agent.agent_id })),
     [agents]
@@ -171,100 +159,68 @@ export function AgentDrawer({
   // Check if user can access a model
   const canAccessModel = React.useCallback(
     (model: Model) => {
-      // If model doesn't require subscription, it's accessible
       if (!model.requires_subscription) return true;
-      // Model requires subscription - user must have PAID subscription (not free tier)
       return hasActiveSubscription && !hasFreeTier;
     },
     [hasActiveSubscription, hasFreeTier]
   );
 
-  // Handle model change from the toggle
   const handleModelChange = React.useCallback(
     (modelId: string) => {
-      console.log('🎯 Model Changed via Toggle:', modelId);
-      if (selectModel) {
-        selectModel(modelId);
-      }
+      log.log('🎯 Model Changed:', modelId);
+      selectModel?.(modelId);
     },
     [selectModel]
   );
 
-  // Handle upgrade required - navigate to plans page
   const handleUpgradeRequired = React.useCallback(() => {
-    console.log('🔒 Upgrade required - navigating to plans');
+    log.log('🔒 Upgrade required');
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
     onClose?.();
-    // Small delay to allow drawer to close before navigation
-    setTimeout(() => {
-      router.push('/plans');
-    }, 100);
+    setTimeout(() => router.push('/plans'), 100);
   }, [onClose, router]);
 
-  // Track actual drawer state changes
   const handleSheetChange = React.useCallback(
     (index: number) => {
-      console.log('🎭 [AgentDrawer] Sheet index changed:', index, '| Resetting guard');
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;
       }
       if (index === -1) {
-        // Drawer fully closed - reset guard immediately
-        console.log('🎭 [AgentDrawer] Drawer closed - guard reset');
         isOpeningRef.current = false;
         onClose?.();
       } else if (index >= 0) {
-        // Drawer opened successfully - can safely reset guard
-        console.log('🎭 [AgentDrawer] Drawer opened - guard reset');
         isOpeningRef.current = false;
       }
     },
     [onClose]
   );
 
-  // Handle dismiss
   const handleDismiss = React.useCallback(() => {
-    console.log('🎭 [AgentDrawer] Sheet dismissed');
     isOpeningRef.current = false;
     onClose?.();
     onDismiss?.();
   }, [onClose, onDismiss]);
 
-  // Handle visibility changes
   React.useEffect(() => {
-    console.log('🎭 [AgentDrawer] Visibility changed:', visible, '| Guard:', isOpeningRef.current);
     if (visible && !isOpeningRef.current) {
-      console.log('✅ [AgentDrawer] Opening drawer with haptic feedback');
       isOpeningRef.current = true;
-
-      // Fallback: reset guard after 500ms if onChange doesn't fire
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
-        console.log('🎭 [AgentDrawer] Fallback timeout - resetting guard');
         isOpeningRef.current = false;
       }, 500);
-
-      // Ensure keyboard is dismissed when drawer opens
       Keyboard.dismiss();
-
-      // Refetch agents when drawer opens to ensure fresh data
-      console.log('🔄 Refetching agents when drawer opens...');
       loadAgents();
-
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       bottomSheetRef.current?.present();
-      setCurrentView('main'); // Reset to main view when opening
+      setCurrentView('main');
     } else if (!visible) {
-      console.log('❌ [AgentDrawer] Closing drawer');
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       bottomSheetRef.current?.dismiss();
-      // Clear searches when closing
       clearAgentSearch();
     }
-  }, [visible, clearAgentSearch, loadAgents, handleSheetChange]);
+  }, [visible, clearAgentSearch, loadAgents]);
 
-  // Navigation functions
   const navigateToView = React.useCallback((view: ViewState) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setCurrentView(view);
@@ -272,48 +228,24 @@ export function AgentDrawer({
 
   const handleAgentPress = React.useCallback(
     async (agent: Agent) => {
-      console.log('🤖 Agent Selected:', agent.name);
       await selectAgent(agent.agent_id);
       navigateToView('main');
     },
     [selectAgent, navigateToView]
   );
 
-  const integrationsScale = useSharedValue(1);
-
-  const integrationsAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: integrationsScale.value }],
-  }));
-
   const handleIntegrationsPress = React.useCallback(() => {
-    console.log('🔌 Integrations pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    // Block free tier users from accessing integrations
     if (hasFreeTier) {
       handleUpgradeRequired();
       return;
     }
-
-    if (!selectedAgent) {
-      Alert.alert(
-        'No Worker Selected',
-        'Please select a worker first before configuring integrations.',
-        [{ text: 'OK' }]
-      );
+    if (!selectedAgent && advancedFeaturesEnabled) {
+      Alert.alert('No Worker Selected', 'Please select a worker first.', [{ text: 'OK' }]);
       return;
     }
-
     setCurrentView('integrations');
-  }, [selectedAgent, hasFreeTier, handleUpgradeRequired]);
-
-  const handleIntegrationsPressIn = React.useCallback(() => {
-    integrationsScale.value = withTiming(0.95, { duration: 100 });
-  }, []);
-
-  const handleIntegrationsPressOut = React.useCallback(() => {
-    integrationsScale.value = withTiming(1, { duration: 100 });
-  }, []);
+  }, [selectedAgent, hasFreeTier, handleUpgradeRequired, advancedFeaturesEnabled]);
 
   const renderBackdrop = React.useCallback(
     (props: BottomSheetBackdropProps) => (
@@ -328,93 +260,19 @@ export function AgentDrawer({
     []
   );
 
+  // ============================================================================
+  // MAIN VIEW - Clean, focused on Mode selection
+  // ============================================================================
   const renderMainView = () => (
-    <View>
-      <View className="pb-3" style={{ overflow: 'visible' }}>
-        <View className="mb-3 flex-row items-center justify-between">
-          <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-            }}
-            className="font-roobert-medium text-sm">
-            {t('agents.myWorkers')}
-          </Text>
-          {onCreateAgent && (
-            <BottomSheetTouchable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                if (hasFreeTier) {
-                  handleUpgradeRequired();
-                } else {
-                  onCreateAgent();
-                }
-              }}>
-              {hasFreeTier ? (
-                <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
-              ) : (
-                <Plus
-                  size={18}
-                  color={
-                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'
-                  }
-                />
-              )}
-            </BottomSheetTouchable>
-          )}
-        </View>
-
-        {/* Selected Worker - Clickable */}
-        {selectedAgent ? (
-          <SelectableListItem
-            avatar={<AgentAvatar agent={selectedAgent} size={48} />}
-            title={selectedAgent.name}
-            subtitle={selectedAgent.description}
-            showChevron
-            onPress={() => navigateToView('agents')}
-          />
-        ) : (
-          <View className="items-center py-4">
-            <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-              className="font-roobert text-sm">
-              {isLoading || !hasInitialized ? t('loading.threads') : 'No worker selected'}
-            </Text>
-          </View>
-        )}
-      </View>
-
-      {/* Divider */}
-      <View
-        style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-        className="my-3 h-px w-full"
-      />
-
-      {/* Mode Section - Simple Toggle */}
-      <View className="pb-3">
-        <View className="mb-3 flex-row items-center justify-between">
-          <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-            }}
-            className="font-roobert-medium text-sm">
-            {t('models.mode', 'Mode')}
-          </Text>
-        </View>
-
-        {/* Model Toggle - Basic/Advanced switcher */}
+    <View style={styles.mainContainer}>
+      {/* Mode Section - Primary & prominent */}
+      <View style={styles.section}>
+        <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+          {t('models.mode', 'Mode')}
+        </Text>
         {modelsLoading ? (
-          <View className="items-center py-4">
-            <Text
-              style={{
-                color:
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-              }}
-              className="font-roobert text-sm">
-              Loading...
-            </Text>
+          <View style={styles.loadingContainer}>
+            <Text style={[styles.loadingText, { color: colors.muted }]}>Loading...</Text>
           </View>
         ) : (
           <ModelToggle
@@ -427,260 +285,211 @@ export function AgentDrawer({
         )}
       </View>
 
-      {/* Integrations Button - Always visible */}
-      <AnimatedPressable
-        style={[
-          integrationsAnimatedStyle,
+      {/* Integrations */}
+      <Pressable
+        onPress={handleIntegrationsPress}
+        style={({ pressed }) => [
+          styles.integrationsContainer,
           {
-            borderColor: hasFreeTier
-              ? colorScheme === 'dark'
-                ? '#22c55e'
-                : '#16a34a'
-              : colorScheme === 'dark'
-                ? '#454444'
-                : '#c2c2c2',
-            borderWidth: hasFreeTier ? 1.5 : 1,
-            backgroundColor: hasFreeTier
-              ? colorScheme === 'dark'
-                ? 'rgba(34, 197, 94, 0.1)'
-                : 'rgba(22, 163, 74, 0.1)'
-              : 'transparent',
+            backgroundColor: pressed 
+              ? isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)'
+              : isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.02)',
+            borderColor: colors.border,
           },
         ]}
-        className="mt-4 h-16 flex-1 flex-row items-center justify-center gap-2 rounded-2xl"
-        onPress={handleIntegrationsPress}
-        onPressIn={handleIntegrationsPressIn}
-        onPressOut={handleIntegrationsPressOut}>
-        {hasFreeTier ? (
-          <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
-        ) : (
-          <AppBubble />
-        )}
-        <Text
-          className="font-roobert-medium"
-          style={{
-            color: hasFreeTier
-              ? colorScheme === 'dark'
-                ? '#22c55e'
-                : '#16a34a'
-              : colorScheme === 'dark'
-                ? '#f8f8f8'
-                : '#121215',
-          }}>
-          {t('integrations.connectApps')}
-        </Text>
-      </AnimatedPressable>
-      <View
-        style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-        className="my-3 h-px w-full"
-      />
-      {advancedFeaturesEnabled && (
-        <>
-          <BottomSheetTouchable
-            style={{
-              marginTop: 16,
-              height: 64,
-              flex: 1,
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              borderRadius: 16,
-              borderColor: hasFreeTier
-                ? colorScheme === 'dark'
-                  ? '#22c55e'
-                  : '#16a34a'
-                : colorScheme === 'dark'
-                  ? '#454444'
-                  : '#c2c2c2',
-              borderWidth: hasFreeTier ? 1.5 : 1,
-              backgroundColor: hasFreeTier
-                ? colorScheme === 'dark'
-                  ? 'rgba(34, 197, 94, 0.1)'
-                  : 'rgba(22, 163, 74, 0.1)'
-                : 'transparent',
-            }}
-            onPress={handleIntegrationsPress}>
+      >
+        <View style={styles.integrationsRow}>
+          <View style={[styles.integrationsIcon, { backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.04)' }]}>
             {hasFreeTier ? (
-              <Lock size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+              <Lock size={18} color={colors.muted} strokeWidth={2} />
             ) : (
-              <AppBubble />
+              <Plug size={18} color={colors.text} strokeWidth={2} />
             )}
-            <Text
-              className="font-roobert-medium"
-              style={{
-                color: hasFreeTier
-                  ? colorScheme === 'dark'
-                    ? '#22c55e'
-                    : '#16a34a'
-                  : colorScheme === 'dark'
-                    ? '#f8f8f8'
-                    : '#121215',
-              }}>
-              {t('integrations.connectApps')}
+          </View>
+          <View style={styles.integrationsTextContainer}>
+            <Text style={[styles.integrationsTitle, { color: colors.text }]}>
+              Connect your Apps
             </Text>
-          </BottomSheetTouchable>
-          <View
-            style={{ backgroundColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0' }}
-            className="my-3 h-px w-full"
-          />
-        </>
-      )}
+            <Text style={[styles.integrationsSubtitle, { color: colors.muted }]}>
+              {hasFreeTier ? 'Upgrade to unlock' : 'Google, Slack, GitHub & more'}
+            </Text>
+          </View>
+          <ChevronRight size={18} color={colors.muted} />
+        </View>
+      </Pressable>
+
+      {/* Worker Section - ONLY visible in beta mode */}
       {advancedFeaturesEnabled && (
         <>
-          <View className="pb-2">
-            <View className="mb-2.5 flex-row items-center justify-between">
-              <Text
-                style={{
-                  color:
-                    colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-                }}
-                className="font-roobert-medium text-sm">
-                Worker Settings
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
+
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+                {t('agents.myWorkers', 'Workers')}
               </Text>
+              {onCreateAgent && (
+                <BottomSheetTouchable
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    hasFreeTier ? handleUpgradeRequired() : onCreateAgent();
+                  }}
+                >
+                  {hasFreeTier ? (
+                    <Sparkles size={16} color={colors.accent} />
+                  ) : (
+                    <Plus size={16} color={colors.muted} />
+                  )}
+                </BottomSheetTouchable>
+              )}
             </View>
-            <View className="flex-row gap-2">
+
+            {/* Selected Worker */}
+            {selectedAgent ? (
+              <Pressable
+                onPress={() => navigateToView('agents')}
+                style={({ pressed }) => [
+                  styles.workerCard,
+                  {
+                    backgroundColor: pressed ? colors.card : 'transparent',
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <AgentAvatar agent={selectedAgent} size={40} />
+                <View style={styles.workerInfo}>
+                  <Text style={[styles.workerName, { color: colors.text }]} numberOfLines={1}>
+                    {selectedAgent.name}
+                  </Text>
+                  {selectedAgent.description && (
+                    <Text style={[styles.workerDesc, { color: colors.muted }]} numberOfLines={1}>
+                      {selectedAgent.description}
+                    </Text>
+                  )}
+                </View>
+                <ChevronRight size={18} color={colors.muted} />
+              </Pressable>
+            ) : (
+              <Pressable
+                onPress={() => navigateToView('agents')}
+                style={({ pressed }) => [
+                  styles.workerCard,
+                  {
+                    backgroundColor: pressed ? colors.card : 'transparent',
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <View style={[styles.workerPlaceholder, { backgroundColor: colors.card }]}>
+                  <Sparkles size={18} color={colors.muted} />
+                </View>
+                <Text style={[styles.workerPlaceholderText, { color: colors.muted }]}>
+                  Select a worker
+                </Text>
+                <ChevronRight size={18} color={colors.muted} />
+              </Pressable>
+            )}
+          </View>
+
+          {/* Worker Quick Actions */}
+          {selectedAgent && (
+            <View style={styles.quickActionsContainer}>
               <BottomSheetTouchable
-                style={{
-                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-                  borderWidth: 1.5,
-                  minHeight: 56,
-                  flex: 1,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 16,
-                }}
+                style={[styles.quickAction, { borderColor: colors.border }]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'instructions');
                     onClose?.();
                   }
-                }}>
-                <Brain size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+              >
+                <Brain size={18} color={colors.text} />
               </BottomSheetTouchable>
               <BottomSheetTouchable
-                style={{
-                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-                  borderWidth: 1.5,
-                  minHeight: 56,
-                  flex: 1,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 16,
-                }}
+                style={[styles.quickAction, { borderColor: colors.border }]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'tools');
                     onClose?.();
                   }
-                }}>
-                <Wrench size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+              >
+                <Wrench size={18} color={colors.text} />
               </BottomSheetTouchable>
               <BottomSheetTouchable
-                style={{
-                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-                  borderWidth: 1.5,
-                  minHeight: 56,
-                  flex: 1,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 16,
-                }}
+                style={[styles.quickAction, { borderColor: colors.border }]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'integrations');
                     onClose?.();
                   }
-                }}>
-                <Server size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+              >
+                <Server size={18} color={colors.text} />
               </BottomSheetTouchable>
               <BottomSheetTouchable
-                style={{
-                  borderColor: colorScheme === 'dark' ? '#232324' : '#e0e0e0',
-                  borderWidth: 1.5,
-                  minHeight: 56,
-                  flex: 1,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 16,
-                }}
+                style={[styles.quickAction, { borderColor: colors.border }]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   if (selectedAgentId && onOpenWorkerConfig) {
                     onOpenWorkerConfig(selectedAgentId, 'triggers');
                     onClose?.();
                   }
-                }}>
-                <Zap size={18} color={colorScheme === 'dark' ? '#f8f8f8' : '#121215'} />
+                }}
+              >
+                <Zap size={18} color={colors.text} />
               </BottomSheetTouchable>
             </View>
-          </View>
+          )}
         </>
       )}
     </View>
   );
 
+  // ============================================================================
+  // AGENTS VIEW - Worker selection (beta only)
+  // ============================================================================
   const renderAgentsView = () => (
     <ScrollView showsVerticalScrollIndicator={false}>
-      <View className="mb-4 flex-row items-center">
+      <View style={styles.viewHeader}>
         <BackButton onPress={() => navigateToView('main')} />
-        <View className="ml-3 flex-1">
-          <Text
-            style={{ color: colorScheme === 'dark' ? '#f8f8f8' : '#121215' }}
-            className="font-roobert-semibold text-xl">
-            {t('agents.selectAgent')}
+        <View style={styles.viewHeaderText}>
+          <Text style={[styles.viewTitle, { color: colors.text }]}>
+            {t('agents.selectAgent', 'Select Worker')}
           </Text>
-          <Text
-            style={{
-              color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.6)' : 'rgba(18, 18, 21, 0.6)',
-            }}
-            className="font-roobert text-sm">
-            {t('agents.chooseAgent')}
+          <Text style={[styles.viewSubtitle, { color: colors.muted }]}>
+            {t('agents.chooseAgent', 'Choose a worker for your tasks')}
           </Text>
         </View>
       </View>
 
-      {/* Search Bar */}
-      <View className="mb-4">
+      <View style={styles.searchContainer}>
         <SearchBar
           value={agentQuery}
           onChangeText={updateAgentQuery}
-          placeholder={t('agents.searchAgents')}
+          placeholder={t('agents.searchAgents', 'Search workers...')}
           onClear={clearAgentSearch}
         />
       </View>
 
-      {/* Workers List */}
-      <View className="mb-3 flex-row items-center justify-between">
-        <Text
-          style={{
-            color: colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)',
-          }}
-          className="font-roobert-medium text-sm">
-          {t('agents.myWorkers')}
+      <View style={styles.sectionHeader}>
+        <Text style={[styles.sectionLabel, { color: colors.muted }]}>
+          {t('agents.myWorkers', 'Workers')}
         </Text>
         {onCreateAgent && (
           <BottomSheetTouchable
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              if (hasFreeTier) {
-                handleUpgradeRequired();
-              } else {
-                onCreateAgent();
-              }
-            }}>
+              hasFreeTier ? handleUpgradeRequired() : onCreateAgent();
+            }}
+          >
             {hasFreeTier ? (
-              <Sparkles size={18} color={colorScheme === 'dark' ? '#22c55e' : '#16a34a'} />
+              <Sparkles size={16} color={colors.accent} />
             ) : (
-              <Plus
-                size={18}
-                color={
-                  colorScheme === 'dark' ? 'rgba(248, 248, 248, 0.5)' : 'rgba(18, 18, 21, 0.5)'
-                }
-              />
+              <Plus size={16} color={colors.muted} />
             )}
           </BottomSheetTouchable>
         )}
@@ -696,12 +505,11 @@ export function AgentDrawer({
         renderItem={(agent) => (
           <SelectableListItem
             key={agent.agent_id}
-            avatar={<AgentAvatar agent={agent} size={48} />}
+            avatar={<AgentAvatar agent={agent} size={44} />}
             title={agent.name}
             subtitle={agent.description}
             isSelected={agent.agent_id === selectedAgentId}
             onPress={() => handleAgentPress(agent)}
-            accessibilityLabel={`Select ${agent.name} worker`}
           />
         )}
       />
@@ -711,18 +519,18 @@ export function AgentDrawer({
   return (
     <BottomSheetModal
       ref={bottomSheetRef}
-      snapPoints={['90%']}
+      snapPoints={advancedFeaturesEnabled ? ['70%'] : ['50%']}
       enablePanDownToClose
       onDismiss={handleDismiss}
       onChange={handleSheetChange}
       backdropComponent={renderBackdrop}
       backgroundStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#161618' : '#FFFFFF',
+        backgroundColor: colors.bg,
         borderTopLeftRadius: 24,
         borderTopRightRadius: 24,
       }}
       handleIndicatorStyle={{
-        backgroundColor: colorScheme === 'dark' ? '#3F3F46' : '#D4D4D8',
+        backgroundColor: isDark ? '#3F3F46' : '#D4D4D8',
         width: 36,
         height: 5,
         borderRadius: 3,
@@ -730,8 +538,9 @@ export function AgentDrawer({
       style={{
         zIndex: 50,
         elevation: Platform.OS === 'android' ? 10 : undefined,
-      }}>
-      {/* Use BottomSheetFlatList directly for composio, composio-detail, and composio-connector views */}
+      }}
+    >
+      {/* Composio views with FlatList */}
       {['composio', 'composio-detail', 'composio-connector'].includes(currentView) ? (
         currentView === 'composio' ? (
           <ComposioAppsContent
@@ -764,10 +573,7 @@ export function AgentDrawer({
           <ComposioConnectorContent
             app={selectedComposioApp}
             onBack={() => setCurrentView('composio-detail')}
-            onComplete={(profileId, appName, appSlug) => {
-              console.log('✅ Composio connector completed');
-              setCurrentView('integrations');
-            }}
+            onComplete={() => setCurrentView('integrations')}
             onNavigateToTools={(app, profile) => {
               setSelectedComposioApp(app);
               setSelectedComposioProfile(profile);
@@ -780,52 +586,33 @@ export function AgentDrawer({
           />
         ) : null
       ) : ['composio-tools', 'customMcp-tools'].includes(currentView) ? (
-        <BottomSheetView
-          style={{
-            paddingHorizontal: 24,
-            paddingTop: 24,
-            paddingBottom: 32,
-            flex: 1,
-          }}>
+        <BottomSheetView style={styles.toolsView}>
           {currentView === 'composio-tools' &&
             selectedComposioApp &&
             selectedComposioProfile &&
             selectedAgent && (
-              <Animated.View
-                entering={FadeIn.duration(300)}
-                exiting={FadeOut.duration(200)}
-                style={{ flex: 1 }}>
+              <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)} style={{ flex: 1 }}>
                 <ComposioToolsContent
                   app={selectedComposioApp}
                   profile={selectedComposioProfile}
                   agentId={selectedAgent.agent_id}
                   onBack={() => setCurrentView('composio-detail')}
-                  onComplete={() => {
-                    console.log('✅ Composio tools configured');
-                    setCurrentView('integrations');
-                  }}
+                  onComplete={() => setCurrentView('integrations')}
                   noPadding={true}
                 />
               </Animated.View>
             )}
-
           {currentView === 'customMcp-tools' && customMcpConfig && (
-            <Animated.View
-              entering={FadeIn.duration(300)}
-              exiting={FadeOut.duration(200)}
-              style={{ flex: 1 }}>
+            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)} style={{ flex: 1 }}>
               <CustomMcpToolsContent
                 serverName={customMcpConfig.serverName}
                 url={customMcpConfig.url}
                 tools={customMcpConfig.tools}
                 onBack={() => setCurrentView('customMcp')}
                 onComplete={(enabledTools) => {
-                  console.log('✅ Custom MCP tools configured:', enabledTools);
                   Alert.alert(
                     t('integrations.customMcp.toolsConfigured'),
-                    t('integrations.customMcp.toolsConfiguredMessage', {
-                      count: enabledTools.length,
-                    })
+                    t('integrations.customMcp.toolsConfiguredMessage', { count: enabledTools.length })
                   );
                   setCurrentView('integrations');
                 }}
@@ -836,28 +623,22 @@ export function AgentDrawer({
         </BottomSheetView>
       ) : (
         <BottomSheetScrollView
-          contentContainerStyle={{
-            paddingHorizontal: 24,
-            paddingTop: 24,
-            paddingBottom: 48,
-          }}
+          contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled">
-          {/* Dynamic content based on current view */}
+          keyboardShouldPersistTaps="handled"
+        >
           {currentView === 'main' && (
-            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(150)}>
               {renderMainView()}
             </Animated.View>
           )}
-
           {currentView === 'agents' && (
-            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(150)}>
               {renderAgentsView()}
             </Animated.View>
           )}
-
           {currentView === 'integrations' && (
-            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(150)}>
               <IntegrationsPageContent
                 onBack={() => setCurrentView('main')}
                 noPadding={true}
@@ -866,15 +647,12 @@ export function AgentDrawer({
               />
             </Animated.View>
           )}
-
           {currentView === 'customMcp' && (
-            <Animated.View entering={FadeIn.duration(300)} exiting={FadeOut.duration(200)}>
+            <Animated.View entering={FadeIn.duration(250)} exiting={FadeOut.duration(150)}>
               <CustomMcpContent
                 onBack={() => setCurrentView('integrations')}
                 noPadding={true}
                 onSave={(config) => {
-                  console.log('Custom MCP config:', config);
-                  // Store the config and navigate to tools selector
                   setCustomMcpConfig({
                     serverName: config.serverName,
                     url: config.url,
@@ -890,3 +668,144 @@ export function AgentDrawer({
     </BottomSheetModal>
   );
 }
+
+const styles = StyleSheet.create({
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 48,
+  },
+  mainContainer: {
+    gap: 24,
+  },
+  section: {
+    gap: 10,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  sectionLabel: {
+    fontSize: 13,
+    fontFamily: 'Roobert-Medium',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  loadingContainer: {
+    paddingVertical: 24,
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 14,
+    fontFamily: 'Roobert',
+  },
+  divider: {
+    height: 1,
+    marginVertical: 4,
+  },
+  integrationsContainer: {
+    borderRadius: 14,
+    borderWidth: 1,
+  },
+  integrationsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    gap: 12,
+  },
+  integrationsIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  integrationsTextContainer: {
+    flex: 1,
+    gap: 2,
+  },
+  integrationsTitle: {
+    fontSize: 15,
+    fontFamily: 'Roobert-Medium',
+  },
+  integrationsSubtitle: {
+    fontSize: 12,
+    fontFamily: 'Roobert',
+  },
+  workerCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  workerInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  workerName: {
+    fontSize: 15,
+    fontFamily: 'Roobert-Medium',
+  },
+  workerDesc: {
+    fontSize: 13,
+    fontFamily: 'Roobert',
+  },
+  workerPlaceholder: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  workerPlaceholderText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: 'Roobert',
+  },
+  quickActionsContainer: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 8,
+  },
+  quickAction: {
+    flex: 1,
+    height: 48,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  viewHeaderText: {
+    flex: 1,
+  },
+  viewTitle: {
+    fontSize: 20,
+    fontFamily: 'Roobert-SemiBold',
+  },
+  viewSubtitle: {
+    fontSize: 14,
+    fontFamily: 'Roobert',
+    marginTop: 2,
+  },
+  searchContainer: {
+    marginBottom: 16,
+  },
+  toolsView: {
+    paddingHorizontal: 24,
+    paddingTop: 24,
+    paddingBottom: 32,
+    flex: 1,
+  },
+});

@@ -1,53 +1,40 @@
 'use client';
 
-import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { X, Smartphone, Bell, Shield } from 'lucide-react';
+import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
-const INTERSTITIAL_STORAGE_KEY = 'kortix-mobile-interstitial-dismissed';
-const INTERSTITIAL_DISMISS_EXPIRY = 7 * 24 * 60 * 60 * 1000; // 7 days
+const STORAGE_KEY = 'kortix-mobile-banner-dismissed';
+const DISMISS_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 const STORE_LINKS = {
   ios: 'https://apps.apple.com/ie/app/kortix/id6754448524',
   android: 'https://play.google.com/store/apps/details?id=com.kortix.app',
-};
+} as const;
 
-const DEEP_LINK = 'kortix://';
+type Platform = 'ios' | 'android';
 
-type MobilePlatform = 'ios' | 'android' | null;
-
-// Detect actual mobile device (not just viewport) using userAgent
-function detectMobileDevice(): MobilePlatform {
+function detectPlatform(): Platform | null {
   if (typeof window === 'undefined') return null;
-  
-  const userAgent = window.navigator.userAgent.toLowerCase();
-  
-  // Check for iOS devices
-  if (/iphone|ipad|ipod/.test(userAgent)) {
-    return 'ios';
-  }
-  
-  // Check for Android devices
-  if (/android/.test(userAgent)) {
-    return 'android';
-  }
-  
+  const ua = window.navigator.userAgent.toLowerCase();
+  if (/iphone|ipad|ipod/.test(ua)) return 'ios';
+  if (/android/.test(ua)) return 'android';
   return null;
 }
 
-// Check if dismissed within expiry period
-function isDismissedRecently(): boolean {
+function wasDismissedRecently(): boolean {
   if (typeof window === 'undefined') return false;
-  
-  const dismissedAt = localStorage.getItem(INTERSTITIAL_STORAGE_KEY);
+  const dismissedAt = localStorage.getItem(STORAGE_KEY);
   if (!dismissedAt) return false;
-  
-  const dismissedTime = parseInt(dismissedAt, 10);
-  const now = Date.now();
-  
-  return (now - dismissedTime) < INTERSTITIAL_DISMISS_EXPIRY;
+  return Date.now() - parseInt(dismissedAt, 10) < DISMISS_EXPIRY_MS;
+}
+
+function KortixLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 30 25" fill="currentColor" className={className}>
+      <path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z" />
+    </svg>
+  );
 }
 
 // Apple logo SVG
@@ -60,7 +47,7 @@ function AppleLogo({ className }: { className?: string }) {
 }
 
 // Google Play logo SVG
-function PlayStoreLogo({ className }: { className?: string }) {
+function GooglePlayLogo({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="currentColor">
       <path d="M3.609 1.814L13.792 12 3.61 22.186a.996.996 0 0 1-.61-.92V2.734a1 1 0 0 1 .609-.92zm10.89 10.893l2.302 2.302-10.937 6.333 8.635-8.635zm3.199-3.198l2.807 1.626a1 1 0 0 1 0 1.73l-2.808 1.626L15.206 12l2.492-2.491zM5.864 2.658L16.8 8.99l-2.302 2.302-8.634-8.634z"/>
@@ -68,187 +55,106 @@ function PlayStoreLogo({ className }: { className?: string }) {
   );
 }
 
-const FEATURES = [
-  { icon: Smartphone, label: 'Always on the go' },
-  { icon: Bell, label: 'Push notifications' },
-  { icon: Shield, label: 'Secure & private' },
-];
-
 export function MobileAppInterstitial() {
   const [isVisible, setIsVisible] = useState(false);
-  const [platform, setPlatform] = useState<MobilePlatform>(null);
-  const [mounted, setMounted] = useState(false);
+  const [platform, setPlatform] = useState<Platform | null>(null);
 
   useEffect(() => {
-    setMounted(true);
-    
-    const detectedPlatform = detectMobileDevice();
-    setPlatform(detectedPlatform);
-    
-    // Only show on actual mobile devices and if not recently dismissed
-    if (detectedPlatform && !isDismissedRecently()) {
-      // Small delay before showing
-      const timer = setTimeout(() => {
-        setIsVisible(true);
-      }, 800);
+    const detected = detectPlatform();
+    setPlatform(detected);
+
+    if (detected && !wasDismissedRecently()) {
+      const timer = setTimeout(() => setIsVisible(true), 1500);
       return () => clearTimeout(timer);
     }
   }, []);
 
-  const handleDismiss = () => {
+  const dismiss = () => {
     setIsVisible(false);
-    localStorage.setItem(INTERSTITIAL_STORAGE_KEY, Date.now().toString());
+    localStorage.setItem(STORAGE_KEY, Date.now().toString());
   };
 
-  const handleOpenInApp = () => {
-    // Try to open the app via deep link
-    window.location.href = DEEP_LINK;
-    
-    // If the app doesn't open within 1.5s, redirect to store
-    setTimeout(() => {
-      if (document.hasFocus()) {
-        // User is still on the page, app didn't open
-        handleDownload();
-      }
-    }, 1500);
-  };
-
-  const handleDownload = () => {
+  const openStore = () => {
     if (platform) {
       window.open(STORE_LINKS[platform], '_blank');
     }
   };
 
-  if (!mounted || !isVisible || !platform) return null;
+  if (!isVisible || !platform) return null;
 
-  const storeName = platform === 'ios' ? 'App Store' : 'Google Play';
-  const StoreLogo = platform === 'ios' ? AppleLogo : PlayStoreLogo;
+  const isIOS = platform === 'ios';
 
   return (
     <AnimatePresence>
       <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        transition={{ duration: 0.4 }}
-        className="fixed inset-0 z-[200] overflow-hidden"
+        initial={{ y: 120, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 120, opacity: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="fixed bottom-0 left-0 right-0 z-[100] p-4"
+        style={{ paddingBottom: 'max(1.5rem, env(safe-area-inset-bottom))' }}
       >
-        {/* Beautiful gradient background */}
-        <div className="absolute inset-0 bg-gradient-to-b from-background via-background to-foreground/5" />
-        
-        {/* Decorative circles */}
-        <div className="absolute -top-32 -right-32 w-64 h-64 bg-foreground/5 rounded-full blur-3xl" />
-        <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-foreground/5 rounded-full blur-3xl" />
-
-        {/* Close button - smaller, more subtle */}
-        <button
-          onClick={handleDismiss}
-          className="absolute top-4 right-4 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-muted/60 hover:bg-muted transition-colors"
-          aria-label="Close"
-        >
-          <X className="h-4 w-4 text-muted-foreground" />
-        </button>
-
-        {/* Content */}
-        <div className="relative flex flex-col items-center justify-between min-h-screen px-6 py-8 safe-area-inset">
-          
-          {/* Top section - Logo and headline */}
-          <motion.div
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.1, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="flex flex-col items-center pt-8"
+        <div className="relative max-w-lg mx-auto">
+          {/* Close Button */}
+          <button
+            onClick={dismiss}
+            className="absolute -top-2 -right-2 z-10 w-8 h-8 flex items-center justify-center rounded-full bg-white dark:bg-neutral-800 border border-black/10 dark:border-white/10 shadow-md hover:bg-neutral-50 dark:hover:bg-neutral-700 transition-colors"
+            aria-label="Dismiss"
           >
-            {/* App icon with glow effect */}
-            <div className="relative mb-6">
-              <div className="absolute inset-0 bg-foreground/20 rounded-3xl blur-2xl scale-150" />
-              <div className="relative w-24 h-24 bg-foreground rounded-[28px] flex items-center justify-center shadow-2xl">
-                <KortixLogo size={48} className="invert dark:invert-0" />
+            <X className="h-4 w-4 text-neutral-500 dark:text-neutral-400" />
+          </button>
+
+          {/* Card */}
+          <button
+            onClick={openStore}
+            className="w-full bg-white dark:bg-neutral-900 border border-black/10 dark:border-white/10 rounded-2xl shadow-xl text-left active:scale-[0.98] transition-transform"
+          >
+            <div className="p-5 flex items-center gap-4">
+              {/* App Icon */}
+              <div className="w-14 h-14 bg-black dark:bg-white rounded-xl flex items-center justify-center flex-shrink-0">
+                <KortixLogo className="w-7 h-7 text-white dark:text-black" />
+              </div>
+
+              {/* Text */}
+              <div className="flex-1 min-w-0">
+                <h3 className="text-base font-semibold text-neutral-900 dark:text-white mb-0.5">
+                  Get Kortix for Mobile
+                </h3>
+                <p className="text-sm text-neutral-500 dark:text-neutral-400">
+                  Your AI Worker, in your pocket
+                </p>
+              </div>
+
+              {/* Store Button - minimal design */}
+              <div className="flex-shrink-0 h-10 px-3 bg-black dark:bg-white rounded-lg flex items-center justify-center gap-2">
+                {isIOS ? (
+                  <>
+                    <AppleLogo className="h-5 w-5 text-white dark:text-black" />
+                    <div className="flex flex-col items-start">
+                      <span className="text-[8px] text-white/70 dark:text-black/70 leading-none">
+                        App Store
+                      </span>
+                      <span className="text-[11px] font-semibold text-white dark:text-black leading-tight">
+                        iOS
+                      </span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <GooglePlayLogo className="h-4 w-4 text-white dark:text-black" />
+                    <div className="flex flex-col items-start">
+                      <span className="text-[8px] text-white/70 dark:text-black/70 leading-none">
+                        Google Play
+                      </span>
+                      <span className="text-[11px] font-semibold text-white dark:text-black leading-tight">
+                        Android
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
-            
-            <h1 className="text-3xl font-bold text-foreground text-center tracking-tight">
-              Kortix
-            </h1>
-            <p className="text-muted-foreground text-center text-sm mt-1">
-              Your AI Worker, in your pocket
-            </p>
-          </motion.div>
-
-          {/* Middle section - Value proposition */}
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.2, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="flex-1 flex flex-col items-center justify-center w-full max-w-sm py-8"
-          >
-            {/* Main message */}
-            <div className="text-center mb-8">
-              <h2 className="text-2xl font-bold text-foreground mb-3 leading-tight">
-                Get the best experience<br />on mobile
-              </h2>
-              <p className="text-muted-foreground text-base leading-relaxed">
-                We highly recommend using our native app for an optimized mobile experience.
-              </p>
-            </div>
-
-            {/* Feature list */}
-            <div className="flex flex-wrap justify-center gap-2 w-full mb-8">
-              {FEATURES.map((feature, index) => (
-                <motion.div
-                  key={feature.label}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.3 + index * 0.05, duration: 0.3 }}
-                  className="flex items-center gap-2 bg-muted/50 rounded-full px-4 py-2"
-                >
-                  <feature.icon className="h-4 w-4 text-foreground/70 flex-shrink-0" />
-                  <span className="text-xs font-medium text-foreground/80">{feature.label}</span>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
-
-          {/* Bottom section - CTAs */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.4, duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full max-w-sm space-y-3 pb-4"
-          >
-            {/* Primary CTA - Open in App */}
-            <button
-              onClick={handleOpenInApp}
-              className="w-full h-14 bg-foreground hover:bg-foreground/90 text-background rounded-2xl text-base font-semibold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg"
-            >
-              <KortixLogo size={20} className="invert dark:invert-0" />
-              Open in Kortix App
-            </button>
-
-            {/* Secondary CTA - Download with store badge styling */}
-            <button
-              onClick={handleDownload}
-              className="w-full h-14 bg-black dark:bg-white rounded-2xl flex items-center justify-center gap-3 hover:opacity-90 transition-all active:scale-[0.98] shadow-lg"
-            >
-              <StoreLogo className="h-7 w-7 text-white dark:text-black" />
-              <div className="flex flex-col items-start">
-                <span className="text-[10px] text-white/70 dark:text-black/70 leading-none font-medium">
-                  {platform === 'ios' ? 'Download on the' : 'GET IT ON'}
-                </span>
-                <span className="text-base font-bold text-white dark:text-black leading-tight">
-                  {storeName}
-                </span>
-              </div>
-            </button>
-
-            {/* Continue in browser - more prominent */}
-            <button
-              onClick={handleDismiss}
-              className="w-full h-12 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted/50 rounded-xl transition-all"
-            >
-              Continue in browser
-            </button>
-          </motion.div>
+          </button>
         </div>
       </motion.div>
     </AnimatePresence>

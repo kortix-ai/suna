@@ -35,7 +35,7 @@ export interface GroupingOptions {
  */
 export function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
   const groups: MessageGroup[] = [];
-  let currentAssistantGroup: UnifiedMessage[] | null = null;
+  let currentAssistantGroup: UnifiedMessage[] = [];
   let assistantGroupCounter = 0;
 
   messages.forEach((message, index) => {
@@ -43,14 +43,14 @@ export function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
 
     if (message.type === 'user') {
       // Finalize any existing assistant group
-      if (currentAssistantGroup && currentAssistantGroup.length > 0) {
+      if (currentAssistantGroup.length > 0) {
         assistantGroupCounter++;
         groups.push({
           type: 'assistant_group',
           messages: currentAssistantGroup,
           key: `assistant-group-${assistantGroupCounter}`,
         });
-        currentAssistantGroup = null;
+        currentAssistantGroup = [];
       }
 
       // Add standalone user message - wrap in array for consistency
@@ -98,7 +98,7 @@ export function groupMessages(messages: UnifiedMessage[]): MessageGroup[] {
   });
 
   // Finalize any remaining assistant group
-  if (currentAssistantGroup !== null && currentAssistantGroup.length > 0) {
+  if (currentAssistantGroup.length > 0) {
     assistantGroupCounter++;
     groups.push({
       type: 'assistant_group',

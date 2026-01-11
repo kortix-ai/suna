@@ -10,6 +10,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { X } from 'lucide-react-native';
+import { log } from '@/lib/logger';
 
 interface UsageDrawerProps {
   visible: boolean;
@@ -33,12 +34,12 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
 
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef.current = setTimeout(() => {
-        console.log('📳 [UsageDrawer] Fallback timeout - resetting guard');
+        log.log('📳 [UsageDrawer] Fallback timeout - resetting guard');
         isOpeningRef.current = false;
       }, 500);
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('📳 Haptic Feedback: Usage Drawer Opened');
+      log.log('📳 Haptic Feedback: Usage Drawer Opened');
       bottomSheetRef.current?.snapToIndex(0);
     } else if (!visible) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -47,13 +48,13 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
   }, [visible]);
 
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Usage drawer closing');
+    log.log('🎯 Usage drawer closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
 
   const handleThreadPress = React.useCallback((threadId: string, projectId: string | null) => {
-    console.log('🎯 Thread pressed from UsageDrawer:', threadId);
+    log.log('🎯 Thread pressed from UsageDrawer:', threadId);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
     onThreadPress?.(threadId, projectId);
@@ -73,7 +74,7 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
   );
 
   const handleSheetChange = React.useCallback((index: number) => {
-    console.log('📳 [UsageDrawer] Sheet index changed:', index);
+    log.log('📳 [UsageDrawer] Sheet index changed:', index);
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;

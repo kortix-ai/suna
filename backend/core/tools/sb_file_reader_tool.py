@@ -65,9 +65,12 @@ class SandboxFileReaderTool(SandboxToolsBase):
         
         key = f"file_upload_pending:{self.project_id}"
         start_time = asyncio.get_event_loop().time()
+        # Reduced polling frequency from 0.5s to 2s to minimize Redis load
+        POLL_INTERVAL = 2.0
         
         while True:
-            pending = await redis.get(key)
+            # Use timeout-protected get
+            pending = await redis.get(key, timeout=2.0)
             if pending is None:
                 return True
             
@@ -77,7 +80,7 @@ class SandboxFileReaderTool(SandboxToolsBase):
                 return False
             
             logger.debug(f"[FileReader] Waiting for {pending} file uploads to complete...")
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(POLL_INTERVAL)
 
     async def _ensure_kb(self) -> bool:
         if self._kb_ready:

@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Depends, Form, Query, Body, Request
-from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, AuthorizedThreadAccess, get_optional_user_id
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt, verify_and_authorize_thread_access, require_thread_access, require_thread_write_access, AuthorizedThreadAccess, get_optional_user_id
 from core.utils.logger import logger
 from core.sandbox.sandbox import create_sandbox, delete_sandbox
 from core.utils.config import config, EnvMode
@@ -622,7 +622,7 @@ async def add_message_to_thread(
     if thread_account_id != user_id:
         client = await db.client
         from core.utils.auth_utils import verify_and_authorize_thread_access
-        await verify_and_authorize_thread_access(client, thread_id, user_id)
+        await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=True)
     
     try:
         thread_name = await threads_repo.get_thread_name(thread_id)
@@ -658,7 +658,7 @@ async def create_message_endpoint(
     client = await db.client
     
     try:
-        await verify_and_authorize_thread_access(client, thread_id, user_id)
+        await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=True)
         
         message_payload = {
             "role": "user" if message_data.type == "user" else "assistant",
@@ -694,7 +694,7 @@ async def delete_message_endpoint(
     
     logger.debug(f"Deleting message from thread: {thread_id}")
     client = await db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=True)
     try:
         await threads_repo.delete_message(thread_id, message_id, is_llm_message=True)
         return {"message": "Message deleted successfully"}
@@ -708,7 +708,7 @@ async def update_thread(
     request: Request,
     title: Optional[str] = Body(None, embed=True),
     is_public: Optional[bool] = Body(None, embed=True),
-    auth: AuthorizedThreadAccess = Depends(require_thread_access)
+    auth: AuthorizedThreadAccess = Depends(require_thread_write_access)
 ):
     from core.threads import repo as threads_repo
     
@@ -798,7 +798,7 @@ async def update_thread(
 @router.delete("/threads/{thread_id}", summary="Delete Thread", operation_id="delete_thread")
 async def delete_thread(
     thread_id: str,
-    auth: AuthorizedThreadAccess = Depends(require_thread_access)
+    auth: AuthorizedThreadAccess = Depends(require_thread_write_access)
 ):
     from core.threads.repo import (
         get_thread_project_id,

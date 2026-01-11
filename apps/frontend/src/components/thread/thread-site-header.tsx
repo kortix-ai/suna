@@ -1,8 +1,7 @@
 'use client';
 
 import { Button } from "@/components/ui/button"
-import { FolderOpen, Upload, PanelRightOpen, PanelRightClose, Copy, Check } from "lucide-react"
-import { usePathname, useRouter } from "next/navigation"
+import { Upload, PanelRightOpen, PanelRightClose, Copy, Check } from "lucide-react"
 import { toast } from "@/lib/toast"
 import {
   Tooltip,
@@ -10,17 +9,11 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import { useState, useRef, KeyboardEvent } from "react"
-import { Input } from "@/components/ui/input"
-import { useUpdateProject } from "@/hooks/threads/use-project";
-import { Skeleton } from "@/components/ui/skeleton"
+import { useState } from "react"
 import { useIsMobile } from "@/hooks/utils"
 import { cn } from "@/lib/utils"
 import { SharePopover } from "@/components/sidebar/share-modal"
-import { useQueryClient } from "@tanstack/react-query";
-import { projectKeys } from "@/hooks/threads/keys";
-import { threadKeys } from "@/hooks/threads/keys";
-import { ModeIndicator } from "@/components/thread/mode-indicator";
+import { ModeIndicator } from "@/components/thread/mode-indicator"
 
 interface ThreadSiteHeaderProps {
   threadId?: string;
@@ -45,22 +38,8 @@ export function SiteHeader({
   isMobileView,
   variant = 'default',
 }: ThreadSiteHeaderProps) {
-  const pathname = usePathname()
-  const router = useRouter()
-  const [isEditing, setIsEditing] = useState(false)
-  const [editName, setEditName] = useState(projectName)
-  const inputRef = useRef<HTMLInputElement>(null)
-  const isSharedVariant = variant === 'shared'
-  const [showKnowledgeBase, setShowKnowledgeBase] = useState(false);
   const [copied, setCopied] = useState(false);
-  const queryClient = useQueryClient();
-
   const isMobile = useIsMobile() || isMobileView
-  const updateProjectMutation = useUpdateProject()
-
-  const openKnowledgeBase = () => {
-    setShowKnowledgeBase(true)
-  }
 
   const copyShareLink = async () => {
     try {
@@ -73,72 +52,12 @@ export function SiteHeader({
     }
   };
 
-  const startEditing = () => {
-    setEditName(projectName);
-    setIsEditing(true);
-    setTimeout(() => {
-      inputRef.current?.focus();
-      inputRef.current?.select();
-    }, 0);
-  };
-
-  const cancelEditing = () => {
-    setIsEditing(false);
-    setEditName(projectName);
-  };
-
-  const saveNewName = async () => {
-    if (editName.trim() === '') {
-      setEditName(projectName);
-      setIsEditing(false);
-      return;
-    }
-
-    if (editName !== projectName) {
-      try {
-        if (!projectId) {
-          toast.error('Cannot rename: Project ID is missing');
-          setEditName(projectName);
-          setIsEditing(false);
-          return;
-        }
-
-        const updatedProject = await updateProjectMutation.mutateAsync({
-          projectId,
-          data: { name: editName }
-        })
-        if (updatedProject) {
-          onProjectRenamed?.(editName);
-          queryClient.invalidateQueries({ queryKey: threadKeys.project(projectId) });
-        } else {
-          throw new Error('Failed to update project');
-        }
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : 'Failed to rename project';
-        console.error('Failed to rename project:', errorMessage);
-        toast.error(errorMessage);
-        setEditName(projectName);
-      }
-    }
-
-    setIsEditing(false)
-  }
-
-  const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      saveNewName();
-    } else if (e.key === 'Escape') {
-      cancelEditing();
-    }
-  };
-
   return (
     <header className={cn(
-      "bg-background sticky top-0 flex h-14 shrink-0 items-center gap-2 z-20 w-full",
+      "bg-background sticky top-0 flex shrink-0 gap-2 z-20 w-full pt-4",
       isMobile && "px-2"
     )}>
-      <div className="flex flex-1 items-center gap-2 px-3 min-w-0">
+      <div className="flex flex-1 items-center h-[32px] gap-2 px-3 min-w-0">
         {variant === 'shared' ? (
           <div className="text-base font-medium text-muted-foreground flex items-center gap-2 min-w-0">
             <span className="truncate">{projectName}</span>
@@ -146,37 +65,13 @@ export function SiteHeader({
               Shared
             </span>
           </div>
-        ) : isEditing ? (
-          <Input
-            ref={inputRef}
-            value={editName}
-            onChange={(e) => setEditName(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onBlur={saveNewName}
-            className="h-8 w-auto min-w-[180px] text-base font-medium"
-            maxLength={50}
-          />
-        ) : !projectName || projectName === 'Project' ? (
-          <Skeleton className="h-5 w-32" />
         ) : (
-          <div
-            className={cn(
-              "text-base font-medium text-muted-foreground truncate",
-              !isSharedVariant && "hover:text-foreground cursor-pointer"
-            )}
-            onClick={isSharedVariant ? undefined : startEditing}
-            title={isSharedVariant ? projectName : `Click to rename project: ${projectName}`}
-          >
-            {projectName}
-          </div>
+          <ModeIndicator />
         )}
       </div>
 
-      <div className="flex items-center gap-1 pr-4">
+      <div className="flex items-center h-[32px] gap-1 pr-4">
         <TooltipProvider>
-          {/* Mode Indicator - only show for non-shared variant */}
-          {variant !== 'shared' && <ModeIndicator />}
-
           {variant === 'shared' ? (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -204,30 +99,6 @@ export function SiteHeader({
               </Button>
             </SharePopover>
           ) : null}
-
-          {/* Hidden: View Files in Task button - functionality moved to Library
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => {
-                  if (projectId) {
-                    router.push(`/library/${projectId}`);
-                  } else {
-                    onViewFiles();
-                  }
-                }}
-                className="h-9 w-9 cursor-pointer"
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              <p>View Files in Task</p>
-            </TooltipContent>
-          </Tooltip>
-          */}
 
           <Tooltip>
             <TooltipTrigger asChild>

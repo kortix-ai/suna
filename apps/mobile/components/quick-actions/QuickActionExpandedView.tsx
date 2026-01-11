@@ -11,6 +11,7 @@ import { ArrowUpRight, RefreshCw, MessageCircle, ChevronDown, ChevronUp } from '
 import { TemplatePreviewModal } from './TemplatePreviewModal';
 import { useThreads } from '@/lib/chat/hooks';
 import type { Thread } from '@/api/types';
+import { log } from '@/lib/logger';
 
 // Enable LayoutAnimation on Android
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
@@ -87,13 +88,13 @@ export function QuickActionExpandedView({
   };
   
   const handlePreview = (templateId: string, templateName: string) => {
-    console.log('👁️ Opening template preview:', templateName);
+    log.log('👁️ Opening template preview:', templateName);
     setPreviewTemplate({ id: templateId, name: templateName });
     setIsPreviewVisible(true);
   };
   
   const handleClosePreview = () => {
-    console.log('👁️ Closing template preview');
+    log.log('👁️ Closing template preview');
     setIsPreviewVisible(false);
   };
   
@@ -132,7 +133,7 @@ export function QuickActionExpandedView({
               <Pressable
                 key={thread.thread_id}
                 onPress={() => {
-                  console.log('📂 Opening thread from mode history:', thread.thread_id);
+                  log.log('📂 Opening thread from mode history:', thread.thread_id);
                   onThreadPress?.(thread.thread_id);
                 }}
                 className="bg-card border border-border/50 rounded-xl px-3 py-2.5 active:bg-accent/50 flex-row items-center gap-2"
@@ -192,7 +193,7 @@ export function QuickActionExpandedView({
                 <Pressable
                   key={`${prompt}-${index}`}
                   onPress={() => {
-                    console.log('📝 Example prompt selected:', prompt);
+                    log.log('📝 Example prompt selected:', prompt);
                     onSelectPrompt?.(prompt);
                   }}
                   className="bg-card border border-border/50 rounded-xl p-4 active:bg-accent/50"

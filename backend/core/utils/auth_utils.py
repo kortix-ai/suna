@@ -341,7 +341,7 @@ async def verify_and_get_agent_authorization(client, agent_id: str, user_id: str
         structlog.error(f"Error verifying agent access for agent {agent_id}, user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to verify agent access")
 
-async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Optional[str]):
+async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Optional[str], require_write_access: bool = False):
     """
     Verify that a user has access to a thread.
     Supports both authenticated and anonymous access (for public threads).
@@ -350,48 +350,76 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
         client: Supabase client
         thread_id: Thread ID to check
         user_id: User ID (can be None for anonymous users accessing public threads)
+        require_write_access: If True, public threads only grant read access (default False for backward compatibility)
     """
+    from core.services.db import execute_one
+    
     try:
-        # Get thread data first
-        thread_result = await client.table('threads').select('*').eq('thread_id', thread_id).execute()
-
-        if not thread_result.data or len(thread_result.data) == 0:
+        # Use different queries for authenticated vs anonymous users to avoid UUID type errors
+        if user_id:
+            # Full query with user role checks for authenticated users
+            sql = """
+            SELECT 
+                t.thread_id,
+                t.account_id,
+                p.is_public as project_is_public,
+                COALESCE(ur.role::text, '') as user_role,
+                CASE WHEN au.user_id IS NOT NULL THEN true ELSE false END as is_team_member
+            FROM threads t
+            LEFT JOIN projects p ON t.project_id = p.project_id
+            LEFT JOIN user_roles ur ON ur.user_id = :user_id
+            LEFT JOIN basejump.account_user au ON au.account_id = t.account_id AND au.user_id = :user_id
+            WHERE t.thread_id = :thread_id
+            """
+            result = await execute_one(sql, {"thread_id": thread_id, "user_id": user_id})
+        else:
+            # Simple query for anonymous users - only need thread and public status
+            sql = """
+            SELECT 
+                t.thread_id,
+                t.account_id,
+                p.is_public as project_is_public
+            FROM threads t
+            LEFT JOIN projects p ON t.project_id = p.project_id
+            WHERE t.thread_id = :thread_id
+            """
+            result = await execute_one(sql, {"thread_id": thread_id})
+        
+        if not result:
             raise HTTPException(status_code=404, detail="Thread not found")
         
-        thread_data = thread_result.data[0]
+        # Check if project is public - allow anonymous READ access only
+        if result.get('project_is_public'):
+            if require_write_access:
+                # Public threads are read-only for non-owners
+                # Continue to check if user is owner/team member/admin
+                structlog.get_logger().debug(f"Public thread write access requested, checking ownership: {thread_id}")
+            else:
+                structlog.get_logger().debug(f"Public thread read access granted: {thread_id}")
+                return True
         
-        # Check if thread's project is public - allow anonymous access
-        project_id = thread_data.get('project_id')
-        if project_id:
-            project_result = await client.table('projects').select('is_public').eq('project_id', project_id).execute()
-            if project_result.data and len(project_result.data) > 0:
-                if project_result.data[0].get('is_public'):
-                    structlog.get_logger().debug(f"Public thread access granted: {thread_id}")
-                    return True
-        
-        # If not public, user must be authenticated
+        # If not public (or write access required), user must be authenticated
         if not user_id:
+            if require_write_access:
+                raise HTTPException(status_code=403, detail="Authentication required to modify this thread")
             raise HTTPException(status_code=403, detail="Authentication required for private threads")
         
         # Check if user is an admin (admins have access to all threads)
-        admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
-        if admin_result.data and len(admin_result.data) > 0:
-            role = admin_result.data[0].get('role')
-            if role in ('admin', 'super_admin'):
-                structlog.get_logger().debug(f"Admin access granted for thread {thread_id}", user_role=role)
-                return True
+        user_role = result.get('user_role', '')
+        if user_role in ('admin', 'super_admin'):
+            structlog.get_logger().debug(f"Admin access granted for thread {thread_id}", user_role=user_role)
+            return True
         
         # Check if user owns the thread
-        if thread_data['account_id'] == user_id:
+        if result.get('account_id') == user_id:
             return True
         
         # Check if user is a team member of the account
-        account_id = thread_data.get('account_id')
-        if account_id:
-            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
-            if account_user_result.data and len(account_user_result.data) > 0:
-                return True
+        if result.get('is_team_member'):
+            return True
         
+        if require_write_access:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this thread")
         raise HTTPException(status_code=403, detail="Not authorized to access this thread")
     except HTTPException:
         raise
@@ -411,7 +439,8 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
 
 async def get_authorized_user_for_thread(
     thread_id: str,
-    request: Request
+    request: Request,
+    require_write_access: bool = False
 ) -> str:
     """
     FastAPI dependency that verifies JWT and authorizes thread access.
@@ -419,6 +448,7 @@ async def get_authorized_user_for_thread(
     Args:
         thread_id: The thread ID to authorize access for
         request: The FastAPI request object
+        require_write_access: If True, requires write access (not just public read access)
         
     Returns:
         str: The authenticated and authorized user ID
@@ -434,7 +464,7 @@ async def get_authorized_user_for_thread(
     # Then, authorize thread access - use singleton, already initialized
     db = DBConnection()
     client = await db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=require_write_access)
     
     return user_id
 
@@ -504,7 +534,8 @@ async def require_thread_access(
     request: Request
 ) -> AuthorizedThreadAccess:
     """
-    FastAPI dependency that verifies JWT and authorizes thread access.
+    FastAPI dependency that verifies JWT and authorizes thread access (read-only).
+    For public threads, allows read access to anyone.
     
     Args:
         thread_id: The thread ID from the path parameter
@@ -516,7 +547,28 @@ async def require_thread_access(
     Raises:
         HTTPException: If authentication fails or user lacks thread access
     """
-    user_id = await get_authorized_user_for_thread(thread_id, request)
+    user_id = await get_authorized_user_for_thread(thread_id, request, require_write_access=False)
+    return AuthorizedThreadAccess(user_id)
+
+async def require_thread_write_access(
+    thread_id: str,
+    request: Request
+) -> AuthorizedThreadAccess:
+    """
+    FastAPI dependency that verifies JWT and authorizes thread WRITE access.
+    Public threads only grant read access - this ensures only owners/team members/admins can modify.
+    
+    Args:
+        thread_id: The thread ID from the path parameter
+        request: The FastAPI request object
+        
+    Returns:
+        AuthorizedThreadAccess: Object containing authenticated user_id
+        
+    Raises:
+        HTTPException: If authentication fails or user lacks write access to thread
+    """
+    user_id = await get_authorized_user_for_thread(thread_id, request, require_write_access=True)
     return AuthorizedThreadAccess(user_id)
 
 async def require_agent_access(
@@ -564,52 +616,77 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
     Raises:
         HTTPException: If the user doesn't have access to the project/sandbox or sandbox doesn't exist
     """
-    from core.resources import ResourceService, ResourceType
+    from core.services.db import execute_one
     
-    resource_service = ResourceService(client)
+    sql = """
+    SELECT 
+        r.id as resource_id,
+        r.account_id as resource_account_id,
+        r.config as resource_config,
+        p.project_id,
+        p.account_id as project_account_id,
+        p.is_public,
+        p.name as project_name,
+        p.description as project_description,
+        p.sandbox_resource_id,
+        p.created_at as project_created_at,
+        p.updated_at as project_updated_at,
+        COALESCE(ur.role::text, '') as user_role,
+        CASE WHEN au_resource.user_id IS NOT NULL THEN true ELSE false END as is_resource_team_member,
+        CASE WHEN au_project.user_id IS NOT NULL THEN true ELSE false END as is_project_team_member
+    FROM resources r
+    LEFT JOIN projects p ON p.sandbox_resource_id = r.id
+    LEFT JOIN user_roles ur ON ur.user_id = :user_id
+    LEFT JOIN basejump.account_user au_resource ON au_resource.account_id = r.account_id AND au_resource.user_id = :user_id
+    LEFT JOIN basejump.account_user au_project ON au_project.account_id = p.account_id AND au_project.user_id = :user_id
+    WHERE r.external_id = :sandbox_id AND r.type = 'sandbox'
+    """
     
-    # Find the resource by external_id
-    resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
+    result = await execute_one(sql, {"sandbox_id": sandbox_id, "user_id": user_id})
     
-    if not resource:
+    if not result:
         raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox")
     
-    resource_account_id = resource.get('account_id')
+    resource_account_id = result.get('resource_account_id')
+    project_id = result.get('project_id')
+    is_public = result.get('is_public', False)
+    user_role = result.get('user_role', '')
+    is_resource_team_member = result.get('is_resource_team_member', False)
+    is_project_team_member = result.get('is_project_team_member', False)
     
-    # Find the project that uses this resource
-    project_result = await client.table('projects').select('*').eq('sandbox_resource_id', resource['id']).execute()
-    
-    if not project_result.data or len(project_result.data) == 0:
-        # Resource exists but no project uses it - check account access directly
-        # Check if user is a member of the resource's account
-        account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', resource_account_id).execute()
-        
-        if account_user_result.data and len(account_user_result.data) > 0:
+    # No project uses this resource - check resource account access
+    if not project_id:
+        if is_resource_team_member:
             structlog.get_logger().debug("User has access to resource via account membership", sandbox_id=sandbox_id, account_id=resource_account_id)
-            # Return resource data in project-like format for compatibility
             return {
                 'project_id': None,
                 'account_id': resource_account_id,
                 'is_public': False,
                 'sandbox': {
                     'id': sandbox_id,
-                    **resource.get('config', {})
+                    **(result.get('resource_config') or {})
                 }
             }
-        
         raise HTTPException(status_code=404, detail="Sandbox not found - no project uses this sandbox")
     
-    project_data = project_result.data[0]
-    project_id = project_data.get('project_id')
-    is_public = project_data.get('is_public', False)
+    # Build project data for return
+    project_data = {
+        'project_id': project_id,
+        'account_id': result.get('project_account_id'),
+        'is_public': is_public,
+        'name': result.get('project_name'),
+        'description': result.get('project_description'),
+        'sandbox_resource_id': result.get('sandbox_resource_id'),
+        'created_at': result.get('project_created_at'),
+        'updated_at': result.get('project_updated_at'),
+    }
     
     structlog.get_logger().debug(
         "Checking sandbox access via resource ownership",
         sandbox_id=sandbox_id,
         project_id=project_id,
         is_public=is_public,
-        user_id=user_id,
-        resource_account_id=resource_account_id
+        user_id=user_id
     )
 
     # Public projects: Allow access regardless of authentication
@@ -618,27 +695,15 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
         return project_data
     
     # Check if user is an admin (admins have access to all sandboxes)
-    admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
-    if admin_result.data and len(admin_result.data) > 0:
-        role = admin_result.data[0].get('role')
-        if role in ('admin', 'super_admin'):
-            structlog.get_logger().debug("Admin access granted for sandbox", sandbox_id=sandbox_id, user_role=role)
-            return project_data
-    
-    # Private projects: Verify the user is a member of the project's account
-    account_id = project_data.get('account_id')
-    if not account_id:
-        raise HTTPException(status_code=500, detail="Project has no associated account")
+    if user_role in ('admin', 'super_admin'):
+        structlog.get_logger().debug("Admin access granted for sandbox", sandbox_id=sandbox_id, user_role=user_role)
+        return project_data
     
     # Check if user is a member of the project's account
-    account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
-    
-    if account_user_result.data and len(account_user_result.data) > 0:
-        user_role = account_user_result.data[0].get('account_role')
+    if is_project_team_member:
         structlog.get_logger().debug(
-            "User has access to private project sandbox", 
-            project_id=project_id,
-            user_role=user_role
+            "User has access to private project sandbox via team membership", 
+            project_id=project_id
         )
         return project_data
     
@@ -646,8 +711,7 @@ async def verify_sandbox_access(client, sandbox_id: str, user_id: str):
         "User denied access to private project sandbox",
         sandbox_id=sandbox_id,
         project_id=project_id,
-        user_id=user_id,
-        account_id=account_id
+        user_id=user_id
     )
     raise HTTPException(status_code=403, detail="Not authorized to access this project's sandbox")
 
@@ -671,42 +735,91 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
     Raises:
         HTTPException: If the user doesn't have access to the project/sandbox or sandbox doesn't exist
     """
-    from core.resources import ResourceService, ResourceType
+    from core.services.db import execute_one
     
-    resource_service = ResourceService(client)
+    # Use different queries for authenticated vs anonymous users to avoid UUID type errors
+    if user_id:
+        sql = """
+        SELECT 
+            r.id as resource_id,
+            r.account_id as resource_account_id,
+            r.config as resource_config,
+            p.project_id,
+            p.account_id as project_account_id,
+            p.is_public,
+            p.name as project_name,
+            p.description as project_description,
+            p.sandbox_resource_id,
+            p.created_at as project_created_at,
+            p.updated_at as project_updated_at,
+            COALESCE(ur.role::text, '') as user_role,
+            CASE WHEN au_resource.user_id IS NOT NULL THEN true ELSE false END as is_resource_team_member,
+            CASE WHEN au_project.user_id IS NOT NULL THEN true ELSE false END as is_project_team_member
+        FROM resources r
+        LEFT JOIN projects p ON p.sandbox_resource_id = r.id
+        LEFT JOIN user_roles ur ON ur.user_id = :user_id
+        LEFT JOIN basejump.account_user au_resource ON au_resource.account_id = r.account_id AND au_resource.user_id = :user_id
+        LEFT JOIN basejump.account_user au_project ON au_project.account_id = p.account_id AND au_project.user_id = :user_id
+        WHERE r.external_id = :sandbox_id AND r.type = 'sandbox'
+        """
+        result = await execute_one(sql, {"sandbox_id": sandbox_id, "user_id": user_id})
+    else:
+        # Simple query for anonymous users - only need resource and public status
+        sql = """
+        SELECT 
+            r.id as resource_id,
+            r.account_id as resource_account_id,
+            r.config as resource_config,
+            p.project_id,
+            p.account_id as project_account_id,
+            p.is_public,
+            p.name as project_name,
+            p.description as project_description,
+            p.sandbox_resource_id,
+            p.created_at as project_created_at,
+            p.updated_at as project_updated_at
+        FROM resources r
+        LEFT JOIN projects p ON p.sandbox_resource_id = r.id
+        WHERE r.external_id = :sandbox_id AND r.type = 'sandbox'
+        """
+        result = await execute_one(sql, {"sandbox_id": sandbox_id})
     
-    # Find the resource by external_id
-    resource = await resource_service.get_resource_by_external_id(sandbox_id, ResourceType.SANDBOX)
-    
-    if not resource:
+    if not result:
         raise HTTPException(status_code=404, detail="Sandbox not found - no resource exists for this sandbox")
     
-    # Find the project that uses this resource
-    project_result = await client.table('projects').select('*').eq('sandbox_resource_id', resource['id']).execute()
+    resource_account_id = result.get('resource_account_id')
+    project_id = result.get('project_id')
+    is_public = result.get('is_public', False)
+    user_role = result.get('user_role', '')
+    is_resource_team_member = result.get('is_resource_team_member', False)
+    is_project_team_member = result.get('is_project_team_member', False)
     
-    if not project_result.data or len(project_result.data) == 0:
-        # Resource exists but no project uses it - check account access directly if user_id provided
-        if user_id:
-            resource_account_id = resource.get('account_id')
-            account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', resource_account_id).execute()
-            
-            if account_user_result.data and len(account_user_result.data) > 0:
-                structlog.get_logger().debug("User has access to resource via account membership", sandbox_id=sandbox_id, account_id=resource_account_id)
-                return {
-                    'project_id': None,
-                    'account_id': resource_account_id,
-                    'is_public': False,
-                    'sandbox': {
-                        'id': sandbox_id,
-                        **resource.get('config', {})
-                    }
+    # No project uses this resource
+    if not project_id:
+        if user_id and is_resource_team_member:
+            structlog.get_logger().debug("User has access to resource via account membership", sandbox_id=sandbox_id, account_id=resource_account_id)
+            return {
+                'project_id': None,
+                'account_id': resource_account_id,
+                'is_public': False,
+                'sandbox': {
+                    'id': sandbox_id,
+                    **(result.get('resource_config') or {})
                 }
-        
+            }
         raise HTTPException(status_code=404, detail="Sandbox not found - no project uses this sandbox")
     
-    project_data = project_result.data[0]
-    project_id = project_data.get('project_id')
-    is_public = project_data.get('is_public', False)
+    # Build project data for return
+    project_data = {
+        'project_id': project_id,
+        'account_id': result.get('project_account_id'),
+        'is_public': is_public,
+        'name': result.get('project_name'),
+        'description': result.get('project_description'),
+        'sandbox_resource_id': result.get('sandbox_resource_id'),
+        'created_at': result.get('project_created_at'),
+        'updated_at': result.get('project_updated_at'),
+    }
     
     structlog.get_logger().debug(
         "Checking optional sandbox access via resource ownership",
@@ -731,27 +844,15 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
         raise HTTPException(status_code=401, detail="Authentication required for this private project")
     
     # Check if user is an admin (admins have access to all sandboxes)
-    admin_result = await client.table('user_roles').select('role').eq('user_id', user_id).execute()
-    if admin_result.data and len(admin_result.data) > 0:
-        role = admin_result.data[0].get('role')
-        if role in ('admin', 'super_admin'):
-            structlog.get_logger().debug("Admin access granted for sandbox", sandbox_id=sandbox_id, user_role=role)
-            return project_data
-    
-    # Verify the user is a member of the project's account
-    account_id = project_data.get('account_id')
-    if not account_id:
-        raise HTTPException(status_code=500, detail="Project has no associated account")
+    if user_role in ('admin', 'super_admin'):
+        structlog.get_logger().debug("Admin access granted for sandbox", sandbox_id=sandbox_id, user_role=user_role)
+        return project_data
     
     # Check if user is a member of the project's account
-    account_user_result = await client.schema('basejump').from_('account_user').select('account_role').eq('user_id', user_id).eq('account_id', account_id).execute()
-    
-    if account_user_result.data and len(account_user_result.data) > 0:
-        user_role = account_user_result.data[0].get('account_role')
+    if is_project_team_member:
         structlog.get_logger().debug(
-            "User has access to private project sandbox", 
-            project_id=project_id,
-            user_role=user_role
+            "User has access to private project sandbox via team membership", 
+            project_id=project_id
         )
         return project_data
     
@@ -759,7 +860,6 @@ async def verify_sandbox_access_optional(client, sandbox_id: str, user_id: Optio
         "User denied access to private project sandbox",
         sandbox_id=sandbox_id,
         project_id=project_id,
-        user_id=user_id,
-        account_id=account_id
+        user_id=user_id
     )
     raise HTTPException(status_code=403, detail="Not authorized to access this project's sandbox")

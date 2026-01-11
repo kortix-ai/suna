@@ -339,6 +339,7 @@ export const useTriggerApps = () => {
 
 // ===== COMPOSIO EVENT TRIGGER HOOKS =====
 
+import { log } from '@/lib/logger';
 import type {
   ComposioAppsWithTriggersResponse,
   ComposioAppTriggersResponse,
@@ -422,7 +423,7 @@ const createComposioEventTrigger = async ({
       }
     } catch (parseError) {
       // If JSON parsing fails, use default error message
-      console.error('Failed to parse error response:', parseError);
+      log.error('Failed to parse error response:', parseError);
     }
 
     // Create error with clean message (not JSON stringified)

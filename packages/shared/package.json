@@ -10,7 +10,8 @@
     "./streaming": "./src/streaming/index.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
-    "./animations": "./src/animations/index.ts"
+    "./animations": "./src/animations/index.ts",
+    "./constants": "./src/constants/upload-limits.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

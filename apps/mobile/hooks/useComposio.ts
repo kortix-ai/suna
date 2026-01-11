@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tansta
 import { useState, useEffect } from 'react';
 import { supabase } from '@/api/supabase';
 import { API_URL } from '@/api/config';
+import { log } from '@/lib/logger';
 
 interface ComposioApp {
   name: string;
@@ -290,7 +291,7 @@ const useCreateComposioProfile = () => {
       } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      console.log('🔄 Creating Composio profile:', request);
+      log.log('🔄 Creating Composio profile:', request);
 
       const response = await fetch(`${API_URL}/composio/profiles`, {
         method: 'POST',
@@ -303,7 +304,7 @@ const useCreateComposioProfile = () => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Profile creation error:', errorText);
+        log.error('❌ Profile creation error:', errorText);
 
         try {
           const errorJson = JSON.parse(errorText);
@@ -314,7 +315,7 @@ const useCreateComposioProfile = () => {
       }
 
       const result = await response.json();
-      console.log('✅ Profile created:', result);
+      log.log('✅ Profile created:', result);
       return result;
     },
     onSuccess: (data) => {
@@ -406,8 +407,8 @@ const useUpdateComposioTools = () => {
       } = await supabase.auth.getSession();
       if (!session) throw new Error('Not authenticated');
 
-      console.log('💾 Updating agent tools - Profile ID:', profileId, 'Agent ID:', agentId);
-      console.log('🔧 Selected tools:', selectedTools);
+      log.log('💾 Updating agent tools - Profile ID:', profileId, 'Agent ID:', agentId);
+      log.log('🔧 Selected tools:', selectedTools);
 
       // First get MCP config for the profile
       const mcpConfigResponse = await fetch(
@@ -422,12 +423,12 @@ const useUpdateComposioTools = () => {
 
       if (!mcpConfigResponse.ok) {
         const mcpError = await mcpConfigResponse.text();
-        console.error('❌ MCP Config error:', mcpError);
+        log.error('❌ MCP Config error:', mcpError);
         throw new Error(`Failed to get MCP config: ${mcpConfigResponse.status}`);
       }
 
       const mcpConfig = await mcpConfigResponse.json();
-      console.log('📋 MCP Config received:', mcpConfig);
+      log.log('📋 MCP Config received:', mcpConfig);
 
       // Structure the request body to match backend expectations
       const mcpConfigData = mcpConfig.mcp_config;
@@ -443,7 +444,7 @@ const useUpdateComposioTools = () => {
           },
         ],
       };
-      console.log('📤 Sending request to update tools:', JSON.stringify(requestBody, null, 2));
+      log.log('📤 Sending request to update tools:', JSON.stringify(requestBody, null, 2));
 
       // Update agent tools
       const response = await fetch(`${API_URL}/agents/${agentId}/custom-mcp-tools`, {
@@ -457,8 +458,8 @@ const useUpdateComposioTools = () => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Update tools error:', errorText);
-        console.error('❌ Response status:', response.status, response.statusText);
+        log.error('❌ Update tools error:', errorText);
+        log.error('❌ Response status:', response.status, response.statusText);
 
         try {
           const errorJson = JSON.parse(errorText);

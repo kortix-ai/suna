@@ -1,11 +1,11 @@
 import * as React from 'react';
-import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, useWindowDimensions } from 'react-native';
+import { Platform, Pressable, View, ScrollView, Alert, Modal, RefreshControl, NativeScrollEvent, NativeSyntheticEvent, Dimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import Animated, {
   useAnimatedStyle,
-  withTiming,
   useSharedValue,
+  withTiming,
   withDelay,
   Easing,
 } from 'react-native-reanimated';
@@ -16,7 +16,11 @@ import {
   ChatDrawers,
   type ToolMessagePair,
   CHAT_INPUT_SECTION_HEIGHT,
+  extractLastToolFromMessages,
+  extractToolFromStreamingMessage,
+  type ToolSnackData,
 } from '@/components/chat';
+import { parseToolMessage } from '@agentpress/shared';
 import { ThreadHeader } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -26,6 +30,8 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
+import { AgentLoader } from '../chat/AgentLoader';
+import { log } from '@/lib/logger';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -208,7 +214,6 @@ export function ThreadPage({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
   const router = useRouter();
   const [selectedToolData, setSelectedToolData] = React.useState<{
     toolMessages: ToolMessagePair[];
@@ -268,8 +273,108 @@ export function ThreadPage({
   const isLoading = chat.isLoading;
   const hasMessages = messages.length > 0 || streamingContent.length > 0;
   const scrollViewRef = React.useRef<ScrollView>(null);
-  
-  // Calculate bottom padding for content to account for input section + safe area
+
+  // Track the active tool data for the snack bar
+  // This persists after the tool completes so we can show "Success" state
+  const [activeToolData, setActiveToolData] = React.useState<ToolSnackData | null>(null);
+  const lastToolCallIdRef = React.useRef<string | null>(null);
+
+  // Track if user dismissed the snack (so we don't show it again for the same tool)
+  const [dismissedToolCallId, setDismissedToolCallId] = React.useState<string | null>(null);
+
+  // Handle snack dismiss - user swiped to close
+  const handleToolSnackDismiss = React.useCallback(() => {
+    log.log('[ToolSnack] 👋 User dismissed snack for:', activeToolData?.toolCallId);
+    if (activeToolData?.toolCallId) {
+      setDismissedToolCallId(activeToolData.toolCallId);
+    }
+    setActiveToolData(null);
+  }, [activeToolData?.toolCallId]);
+
+  // Update activeToolData when streamingToolCall changes
+  React.useEffect(() => {
+    log.log('[ToolSnack] streamingToolCall changed:', streamingToolCall ? 'has data' : 'null');
+    const extracted = extractToolFromStreamingMessage(streamingToolCall);
+    log.log('[ToolSnack] Extracted from streaming:', extracted?.toolName || 'null');
+    if (extracted) {
+      // Check if this is a NEW tool (different from dismissed one)
+      if (extracted.toolCallId && extracted.toolCallId !== dismissedToolCallId) {
+        // New tool - clear dismissed state and show
+        if (dismissedToolCallId) {
+          log.log('[ToolSnack] New tool started, clearing dismissed state');
+          setDismissedToolCallId(null);
+        }
+        setActiveToolData(extracted);
+        lastToolCallIdRef.current = extracted.toolCallId || null;
+      } else if (!dismissedToolCallId) {
+        // No dismissed state, just update
+        setActiveToolData(extracted);
+        lastToolCallIdRef.current = extracted.toolCallId || null;
+      }
+    }
+    // Don't clear when streamingToolCall becomes null - we want to persist the last state
+  }, [streamingToolCall, dismissedToolCallId]);
+
+  // When messages load/change, check if we should show a tool from existing messages
+  // This handles:
+  // 1. Opening an existing thread with tools (activeToolData is null)
+  // 2. When a streaming tool completes (activeToolData.isStreaming is true, tool message appears)
+  React.useEffect(() => {
+    log.log('[ToolSnack] Messages effect - count:', messages.length, 'activeToolData:', activeToolData?.toolName || 'null', 'isStreaming:', activeToolData?.isStreaming);
+
+    if (messages.length === 0) return;
+
+    // Case 1: No active tool data - set from messages (unless dismissed)
+    if (!activeToolData) {
+      const lastTool = extractLastToolFromMessages(messages);
+      log.log('[ToolSnack] Setting from messages (no active):', lastTool?.toolName || 'null');
+      if (lastTool) {
+        // Only show if not the dismissed tool
+        if (lastTool.toolCallId !== dismissedToolCallId) {
+          setActiveToolData(lastTool);
+          lastToolCallIdRef.current = lastTool.toolCallId || null;
+        } else {
+          log.log('[ToolSnack] Tool was dismissed, not showing');
+        }
+      }
+      return;
+    }
+
+    // Case 2: Active tool is streaming - check if it completed in messages
+    if (activeToolData.isStreaming && activeToolData.toolCallId) {
+      // Look for this tool in messages to see if it completed
+      const completedTool = extractLastToolFromMessages(messages);
+      if (completedTool && completedTool.toolCallId === activeToolData.toolCallId && !completedTool.isStreaming) {
+        log.log('[ToolSnack] Tool completed! Updating from streaming to:', completedTool.success ? 'success' : 'failed');
+        setActiveToolData(completedTool);
+      }
+    }
+
+    // Case 3: Active tool is not streaming but check if there's a newer tool in messages
+    // This handles when multiple tools run in sequence
+    if (!activeToolData.isStreaming) {
+      const lastTool = extractLastToolFromMessages(messages);
+      if (lastTool && lastTool.toolCallId !== activeToolData.toolCallId) {
+        // New tool found - clear dismissed state and show
+        log.log('[ToolSnack] Newer tool found in messages:', lastTool.toolName);
+        if (dismissedToolCallId) {
+          setDismissedToolCallId(null);
+        }
+        setActiveToolData(lastTool);
+        lastToolCallIdRef.current = lastTool.toolCallId || null;
+      }
+    }
+  }, [messages, activeToolData, dismissedToolCallId]);
+
+  // Clear activeToolData and dismissed state when thread changes
+  React.useEffect(() => {
+    log.log('[ToolSnack] Thread changed, clearing activeToolData and dismissed state');
+    setActiveToolData(null);
+    setDismissedToolCallId(null);
+    lastToolCallIdRef.current = null;
+  }, [chat.activeThread?.id]);
+
+  const windowHeight = Dimensions.get('window').height;
   const baseBottomPadding = CHAT_INPUT_SECTION_HEIGHT.THREAD_PAGE + insets.bottom;
   const [isUserScrolling, setIsUserScrolling] = React.useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = React.useState(false);
@@ -281,9 +386,10 @@ export function ThreadPage({
   const viewportHeightRef = React.useRef(0);
   const scrollLockActiveRef = React.useRef(false);
   const agentWasRunningRef = React.useRef(false);
+  const pushActivatedContentHeightRef = React.useRef<number | null>(null);
 
   // Count user messages
-  const userMessageCount = React.useMemo(() => 
+  const userMessageCount = React.useMemo(() =>
     messages.filter(m => m.type === 'user').length,
     [messages]
   );
@@ -303,64 +409,55 @@ export function ThreadPage({
 
   const contentBottomPadding = baseBottomPadding + extraPushPadding;
 
-  // DEBUG: Track state changes
-  const prevStreamingRef = React.useRef(false);
-  const prevAgentRunningRef = React.useRef(false);
-
-  React.useEffect(() => {
-    if (chat.isStreaming !== prevStreamingRef.current) {
-      console.log(`[SCROLL DEBUG] isStreaming changed: ${prevStreamingRef.current} → ${chat.isStreaming}`);
-      prevStreamingRef.current = chat.isStreaming;
-    }
-    if (chat.isAgentRunning !== prevAgentRunningRef.current) {
-      console.log(`[SCROLL DEBUG] isAgentRunning changed: ${prevAgentRunningRef.current} → ${chat.isAgentRunning}`);
-      prevAgentRunningRef.current = chat.isAgentRunning;
-    }
-  }, [chat.isStreaming, chat.isAgentRunning]);
-
   // Track viewport size
   const handleLayout = React.useCallback((event: any) => {
-    const newHeight = event.nativeEvent.layout.height;
-    if (newHeight !== viewportHeightRef.current) {
-      console.log(`[SCROLL DEBUG] viewport height: ${viewportHeightRef.current} → ${newHeight}`);
-    }
-    viewportHeightRef.current = newHeight;
+    viewportHeightRef.current = event.nativeEvent.layout.height;
   }, []);
 
   // Track content size changes
   const handleContentSizeChange = React.useCallback((_contentWidth: number, contentHeight: number) => {
     const prevHeight = contentHeightRef.current;
     contentHeightRef.current = contentHeight;
-    
-    if (Math.abs(contentHeight - prevHeight) > 10) {
-      console.log(`[SCROLL DEBUG] content height: ${prevHeight} → ${contentHeight} (diff: ${contentHeight - prevHeight}), scrollLock: ${scrollLockActiveRef.current}`);
-    }
-    
+
     // Scroll when padding is applied (content grew significantly)
     if (scrollLockActiveRef.current && contentHeight > prevHeight + 100) {
       const maxY = Math.max(0, contentHeight - viewportHeightRef.current);
-      console.log(`[SCROLL DEBUG] 🎯 Scrolling to maxY: ${maxY} (content: ${contentHeight}, viewport: ${viewportHeightRef.current})`);
       scrollViewRef.current?.scrollTo({ y: maxY, animated: false });
       scrollLockActiveRef.current = false;
     }
-    
+
     // Check if content overflows and we're not at the bottom - show scroll button
     const actualContentHeight = contentHeight - extraPushPadding;
     const hasOverflow = actualContentHeight > viewportHeightRef.current;
     const currentScrollY = lastScrollYRef.current;
     const actualMaxScrollY = Math.max(0, actualContentHeight - viewportHeightRef.current);
     const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
-    
+
     if (hasOverflow && !isAtActualBottom && !isUserScrolling) {
       setShowScrollToBottom(true);
     }
-  }, [extraPushPadding, isUserScrolling]);
+
+    // Track content height when push is activated, remove push only when AI adds enough content
+    if (pushToTop) {
+      // Capture initial height when push is first activated
+      if (pushActivatedContentHeightRef.current === null) {
+        pushActivatedContentHeightRef.current = contentHeight;
+      }
+
+      // Only remove push when content has grown by at least 200px (AI added content)
+      // AND actual content overflows the viewport
+      const contentGrowth = contentHeight - pushActivatedContentHeightRef.current;
+      if (hasOverflow && contentGrowth > 200) {
+        setPushToTop(false);
+        pushActivatedContentHeightRef.current = null;
+      }
+    }
+  }, [extraPushPadding, isUserScrolling, pushToTop]);
 
   // Scroll to bottom when thread first opens
   React.useEffect(() => {
     if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current && !pushToTop) {
       setTimeout(() => {
-        console.log('[SCROLL DEBUG] Thread opened - scrolling to end');
         scrollViewRef.current?.scrollToEnd({ animated: false });
         hasScrolledToBottomOnOpenRef.current = true;
       }, 150);
@@ -369,12 +466,12 @@ export function ThreadPage({
 
   // Reset when thread changes
   React.useEffect(() => {
-    console.log('[SCROLL DEBUG] Thread changed - resetting state');
     hasScrolledToBottomOnOpenRef.current = false;
     lastUserMessageCountRef.current = userMessageCount;
     setPushToTop(false);
     scrollLockActiveRef.current = false;
     agentWasRunningRef.current = false;
+    pushActivatedContentHeightRef.current = null;
   }, [chat.activeThread?.id]);
 
   // When user sends a NEW message - activate push to top
@@ -382,97 +479,87 @@ export function ThreadPage({
   React.useEffect(() => {
     const prevCount = lastUserMessageCountRef.current;
     const diff = userMessageCount - prevCount;
-    
+
     // Only trigger if:
     // 1. Count increased by 1-2 (actual new message, not bulk load)
     // 2. Previous count was > 0 (thread was already loaded, not initial load)
     const isActualNewMessage = diff > 0 && diff <= 2 && prevCount > 0;
-    
+
     if (isActualNewMessage) {
-      console.log(`[SCROLL DEBUG] 📤 User sent NEW message! userMessageCount: ${prevCount} → ${userMessageCount}`);
-      console.log('[SCROLL DEBUG] Setting pushToTop=true, scrollLockActive=true');
-      
       setPushToTop(true);
       scrollLockActiveRef.current = true;
       setIsUserScrolling(false);
-      
+
       // Multiple scroll attempts
       const scrollAttempt = (ms: number) => {
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: false });
         }, ms);
       };
-      
+
       scrollAttempt(0);
       scrollAttempt(30);
       scrollAttempt(60);
       scrollAttempt(100);
       scrollAttempt(150);
       scrollAttempt(200);
-    } else if (diff > 2) {
-      console.log(`[SCROLL DEBUG] Thread loaded with ${userMessageCount} user messages (bulk load, not triggering pushToTop)`);
     }
-    
+
     lastUserMessageCountRef.current = userMessageCount;
   }, [userMessageCount]);
 
-  // DEBUG: Log pushToTop changes
-  React.useEffect(() => {
-    console.log(`[SCROLL DEBUG] pushToTop changed to: ${pushToTop}, extraPushPadding: ${extraPushPadding}`);
-  }, [pushToTop, extraPushPadding]);
-
-  // Track when agent is running (for future use if needed)
+  // Track when agent is running - DON'T reset pushToTop, keep the padding
   React.useEffect(() => {
     const isRunning = chat.isStreaming || chat.isAgentRunning;
-    
+
     if (isRunning) {
       agentWasRunningRef.current = true;
-      console.log('[SCROLL DEBUG] Agent started running');
     } else if (agentWasRunningRef.current) {
-      console.log('[SCROLL DEBUG] Agent finished');
       agentWasRunningRef.current = false;
       // DON'T remove pushToTop - keep the padding to avoid scroll jump
       // The extra space at bottom is fine, user can scroll naturally
     }
   }, [chat.isStreaming, chat.isAgentRunning]);
 
-
   const lastScrollYRef = React.useRef(0);
 
-  // Track significant scroll changes for debugging
-  const lastLoggedScrollY = React.useRef(0);
-  
-  // Animation for scroll button
   const scrollButtonOpacity = useSharedValue(0);
   const scrollButtonScale = useSharedValue(0.8);
-  
+
   const scrollButtonAnimatedStyle = useAnimatedStyle(() => ({
     opacity: scrollButtonOpacity.value,
     transform: [{ scale: scrollButtonScale.value }],
   }));
-  
+
   // Show/hide scroll button with animation
+  // When sending a message, hide instantly (no animation)
   React.useEffect(() => {
     if (showScrollToBottom) {
       scrollButtonOpacity.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.ease) });
       scrollButtonScale.value = withTiming(1, { duration: 200, easing: Easing.out(Easing.back(1.5)) });
     } else {
-      scrollButtonOpacity.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.ease) });
-      scrollButtonScale.value = withTiming(0.8, { duration: 150, easing: Easing.in(Easing.ease) });
+      // If sending message, hide instantly without animation
+      if (chat.isSendingMessage) {
+        scrollButtonOpacity.value = 0;
+        scrollButtonScale.value = 0.8;
+      } else {
+        scrollButtonOpacity.value = withTiming(0, { duration: 150, easing: Easing.in(Easing.ease) });
+        scrollButtonScale.value = withTiming(0.8, { duration: 150, easing: Easing.in(Easing.ease) });
+      }
     }
-  }, [showScrollToBottom, scrollButtonOpacity, scrollButtonScale]);
+  }, [showScrollToBottom, scrollButtonOpacity, scrollButtonScale, chat.isSendingMessage]);
 
-  const handleScroll = React.useCallback((event: any) => {
+  const handleScroll = React.useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
     const currentScrollY = contentOffset.y;
-    
+
     // Calculate the ACTUAL content bottom (excluding extra push padding)
     const actualContentHeight = contentSize.height - extraPushPadding;
     const actualMaxScrollY = Math.max(0, actualContentHeight - layoutMeasurement.height);
-    
+
     // Check if content is larger than viewport
     const hasOverflow = actualContentHeight > layoutMeasurement.height;
-    
+
     // User is at bottom of ACTUAL content (not counting padding)
     const isAtActualBottom = currentScrollY >= actualMaxScrollY - 50;
 
@@ -501,7 +588,7 @@ export function ThreadPage({
       scrollViewRef.current?.scrollTo({ y: targetY, animated: true });
     } else {
       // Normal mode - scroll to very end
-    scrollViewRef.current?.scrollToEnd({ animated: true });
+      scrollViewRef.current?.scrollToEnd({ animated: true });
     }
     setIsUserScrolling(false);
     setShowScrollToBottom(false);
@@ -517,7 +604,7 @@ export function ThreadPage({
     try {
       await chat.refreshMessages();
     } catch (error) {
-      console.error('Failed to refresh:', error);
+      log.error('Failed to refresh:', error);
     } finally {
       setIsRefreshing(false);
     }
@@ -565,7 +652,7 @@ export function ThreadPage({
 
       if (messages.length === 0 && !isLoading && !chat.isStreaming) {
         chat.refreshMessages().catch((error) => {
-          console.error('Failed to load thread messages:', error);
+          log.error('Failed to load thread messages:', error);
           Alert.alert('Error', 'Failed to load thread messages. Please try again.');
         });
       }
@@ -574,7 +661,6 @@ export function ThreadPage({
 
   return (
     <View className="flex-1 bg-background">
-      {/* Main content area - positioned below header but above nothing */}
       <View className="flex-1" style={{ zIndex: 1 }}>
         {isLoading ? (
           <View className="flex-1 items-center justify-center">
@@ -638,6 +724,7 @@ export function ThreadPage({
             showsVerticalScrollIndicator={true}
             contentContainerStyle={{
               flexGrow: 1,
+              justifyContent: 'flex-end',
               paddingTop: Math.max(insets.top, 16) + 80,
               paddingBottom: contentBottomPadding,
               paddingHorizontal: 16,
@@ -689,20 +776,21 @@ export function ThreadPage({
           style={[
             {
               position: 'absolute',
-              right: 24,
-              bottom: baseBottomPadding - 40,
+              right: 10,
+              // When snack is visible, keep position higher; when no snack, move down 40px
+              bottom: baseBottomPadding - 0 + (activeToolData ? 0 : -40),
               zIndex: 150,
             },
             scrollButtonAnimatedStyle,
           ]}
           pointerEvents={showScrollToBottom ? 'auto' : 'none'}
         >
-        <Pressable
-          onPress={scrollToBottom}
+          <Pressable
+            onPress={scrollToBottom}
             className="h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
           >
-          <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
-        </Pressable>
+            <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
+          </Pressable>
         </Animated.View>
       )}
 
@@ -714,7 +802,7 @@ export function ThreadPage({
           try {
             await chat.updateThreadTitle(newTitle);
           } catch (error) {
-            console.error('Failed to update thread title:', error);
+            log.error('Failed to update thread title:', error);
           }
         }}
         onBackPress={chat.showModeThreadList}
@@ -723,7 +811,7 @@ export function ThreadPage({
           try {
             await shareThreadMutation.mutateAsync(chat.activeThread.id);
           } catch (error) {
-            console.error('Failed to share thread:', error);
+            log.error('Failed to share thread:', error);
           }
         }}
         onFiles={() => {
@@ -738,7 +826,7 @@ export function ThreadPage({
               router.back();
             }
           } catch (error) {
-            console.error('Failed to delete thread:', error);
+            log.error('Failed to delete thread:', error);
           }
         }}
       />
@@ -747,6 +835,8 @@ export function ThreadPage({
         value={chat.inputValue}
         onChangeText={chat.setInputValue}
         onSendMessage={(content, agentId, agentName) => {
+          // Clear the tool snack when sending a new message
+          setActiveToolData(null);
           chat.sendMessage(content, agentId, agentName);
         }}
         onSendAudio={audioHandlers.handleSendAudio}
@@ -771,13 +861,132 @@ export function ThreadPage({
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}
         isTranscribing={isTranscribing}
+        activeToolData={activeToolData}
+        agentName={agentManager.selectedAgent?.name}
+        onToolSnackPress={() => {
+          log.log('[ToolSnackPress] Pressed! activeToolData:', activeToolData);
+          log.log('[ToolSnackPress] Total messages:', messages.length);
+
+          // Build ALL tool message pairs from the thread (same logic as ThreadContent)
+          const assistantMessages = messages.filter((m) => m.type === 'assistant');
+          const toolMsgs = messages.filter((m) => m.type === 'tool');
+
+          log.log('[ToolSnackPress] Assistant messages:', assistantMessages.length);
+          log.log('[ToolSnackPress] Tool messages:', toolMsgs.length);
+
+          // Map tool messages to their assistant messages
+          const toolMap = new Map<string | null, typeof messages>();
+          toolMsgs.forEach((toolMsg) => {
+            try {
+              // Handle metadata as string OR object
+              let metadata: Record<string, any> = {};
+              if (typeof toolMsg.metadata === 'string') {
+                try {
+                  metadata = JSON.parse(toolMsg.metadata || '{}');
+                } catch {
+                  metadata = {};
+                }
+              } else if (toolMsg.metadata && typeof toolMsg.metadata === 'object') {
+                metadata = toolMsg.metadata as Record<string, any>;
+              }
+
+              const assistantId = metadata.assistant_message_id || null;
+
+              const parsed = parseToolMessage(toolMsg);
+              const toolName = parsed?.toolName || '';
+
+              log.log('[ToolSnackPress] Processing tool:', toolName, 'assistantId:', assistantId);
+
+              // Skip ask/complete tools
+              if (toolName === 'ask' || toolName === 'complete') {
+                log.log('[ToolSnackPress] Skipping ask/complete tool');
+                return;
+              }
+
+              if (!toolMap.has(assistantId)) {
+                toolMap.set(assistantId, []);
+              }
+              toolMap.get(assistantId)!.push(toolMsg);
+            } catch (e) {
+              log.log('[ToolSnackPress] Error processing tool:', e);
+            }
+          });
+
+          log.log('[ToolSnackPress] ToolMap size:', toolMap.size);
+
+          // Build pairs from assistant messages
+          const allPairs: ToolMessagePair[] = [];
+          assistantMessages.forEach((assistantMsg) => {
+            const linkedTools = toolMap.get(assistantMsg.message_id || null);
+            if (linkedTools && linkedTools.length > 0) {
+              log.log('[ToolSnackPress] Found', linkedTools.length, 'tools for assistant:', assistantMsg.message_id);
+              linkedTools.forEach((toolMsg) => {
+                allPairs.push({
+                  assistantMessage: assistantMsg,
+                  toolMessage: toolMsg,
+                });
+              });
+            }
+          });
+
+          // Add orphaned tools (no assistant message)
+          const orphanedTools = toolMap.get(null);
+          log.log('[ToolSnackPress] Orphaned tools:', orphanedTools?.length || 0);
+          if (orphanedTools) {
+            orphanedTools.forEach((toolMsg) => {
+              allPairs.push({
+                assistantMessage: assistantMessages[0] || null,
+                toolMessage: toolMsg,
+              });
+            });
+          }
+
+          log.log('[ToolSnackPress] Built', allPairs.length, 'tool pairs from thread');
+
+          if (allPairs.length === 0) {
+            log.log('[ToolSnackPress] No tool pairs found, just opening panel');
+            openPanel();
+            return;
+          }
+
+          // Find the index of the clicked tool
+          let clickedIndex = allPairs.length - 1; // Default to last tool
+
+          if (activeToolData?.toolCallId) {
+            const foundIndex = allPairs.findIndex(pair => {
+              const parsed = parseToolMessage(pair.toolMessage);
+              return parsed?.toolCallId === activeToolData.toolCallId;
+            });
+            if (foundIndex >= 0) {
+              clickedIndex = foundIndex;
+              log.log('[ToolSnackPress] Found tool at index', clickedIndex, 'by toolCallId');
+            }
+          } else if (activeToolData?.functionName) {
+            // Find by function name (last matching one)
+            for (let i = allPairs.length - 1; i >= 0; i--) {
+              const parsed = parseToolMessage(allPairs[i].toolMessage);
+              const msgFnName = (parsed?.functionName || '').replace(/_/g, '-').toLowerCase();
+              const targetFnName = activeToolData.functionName.replace(/_/g, '-').toLowerCase();
+              if (msgFnName === targetFnName) {
+                clickedIndex = i;
+                log.log('[ToolSnackPress] Found tool at index', clickedIndex, 'by functionName');
+                break;
+              }
+            }
+          }
+
+          log.log('[ToolSnackPress] Setting selectedToolData with', allPairs.length, 'pairs, initialIndex:', clickedIndex);
+          setSelectedToolData({ toolMessages: allPairs, initialIndex: clickedIndex });
+          openPanel();
+        }}
+        onToolSnackDismiss={handleToolSnackDismiss}
       />
 
       <ChatDrawers
         isAgentDrawerVisible={agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
         onOpenWorkerConfig={(workerId, view) => {
-          console.log('🔧 [ThreadPage] Opening worker config:', {
+          log.log('🔧 [ThreadPage] Opening worker config:', {
             workerId,
             view,
             isAgentDrawerVisible: agentManager.isDrawerVisible,
@@ -800,12 +1009,12 @@ export function ThreadPage({
 
           // If AgentDrawer is visible, close it and wait for dismiss
           if (agentManager.isDrawerVisible) {
-            console.log('🔧 [ThreadPage] AgentDrawer visible, closing first');
+            log.log('🔧 [ThreadPage] AgentDrawer visible, closing first');
             agentManager.closeDrawer();
 
             // Fallback: if onDismiss doesn't fire within 500ms, open anyway
             pendingWorkerConfigTimeoutRef.current = setTimeout(() => {
-              console.log('⏰ [ThreadPage] Fallback timeout - opening WorkerConfigDrawer');
+              log.log('⏰ [ThreadPage] Fallback timeout - opening WorkerConfigDrawer');
               const pending = pendingWorkerConfigRef.current;
               if (pending) {
                 pendingWorkerConfigRef.current = null;
@@ -817,7 +1026,7 @@ export function ThreadPage({
             }, 500);
           } else {
             // AgentDrawer is not visible, open immediately
-            console.log('✅ [ThreadPage] AgentDrawer not visible, opening immediately');
+            log.log('✅ [ThreadPage] AgentDrawer not visible, opening immediately');
             pendingWorkerConfigRef.current = null;
             setWorkerConfigWorkerId(workerId);
             setWorkerConfigInitialView(view || 'instructions');
@@ -825,7 +1034,7 @@ export function ThreadPage({
           }
         }}
         onAgentDrawerDismiss={() => {
-          console.log('🎭 [ThreadPage] AgentDrawer dismissed');
+          log.log('🎭 [ThreadPage] AgentDrawer dismissed');
 
           // Clear fallback timeout since dismiss fired
           if (pendingWorkerConfigTimeoutRef.current) {
@@ -836,7 +1045,7 @@ export function ThreadPage({
           // Check REF (not state) for pending config
           const pending = pendingWorkerConfigRef.current;
           if (pending) {
-            console.log('🎭 [ThreadPage] Opening pending WorkerConfigDrawer');
+            log.log('🎭 [ThreadPage] Opening pending WorkerConfigDrawer');
             pendingWorkerConfigRef.current = null;
             setWorkerConfigWorkerId(pending.workerId);
             setWorkerConfigInitialView(pending.view || 'instructions');
