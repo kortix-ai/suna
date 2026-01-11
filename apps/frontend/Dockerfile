@@ -103,6 +103,13 @@ COPY --from=builder /app/apps/frontend/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/apps/frontend/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/frontend/.next/static ./.next/static
 
+# When building from a subdirectory, Next.js standalone mode preserves the directory structure
+# The server.js runs from apps/frontend/, so we need static files accessible from there too
+# Copy static files to the subdirectory location where the server expects them
+RUN mkdir -p apps/frontend/.next && \
+    cp -r .next/static apps/frontend/.next/static && \
+    chown -R nextjs:nodejs apps/frontend/.next
+
 USER nextjs
 
 EXPOSE 3000

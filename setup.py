@@ -1473,7 +1473,7 @@ class SetupWizard:
             print_info("AI-powered code editing is enabled using Morph.")
             return
 
-        print_info("Kortix Super Worker uses Morph for fast, intelligent code editing.")
+        print_info("Kortix Super Worker uses Morph for fast, intelligent code editinsg.")
         print_info(
             "This is optional but highly recommended for the best experience.")
         print_info(f"Learn more about Morph at: {Colors.GREEN}https://morphllm.com/{Colors.ENDC}")
