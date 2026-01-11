@@ -215,7 +215,7 @@ export default function AIEngineerPage() {
                 </p>
               </div>
               <Button asChild size="lg">
-                <a href="mailto:careers@kortix.ai?subject=AI Engineer Application">
+                <a href="mailto:marko@kortix.com?subject=AI Engineer Application">
                   Apply now
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </a>
