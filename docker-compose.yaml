@@ -1,7 +1,7 @@
 # ============================================================================
 # KORTIX SUPER WORKER DOCKER COMPOSE - LOCAL DEVELOPMENT
 # ============================================================================
-# This Docker Compose file runs Kortix Super Worker services (Backend, Frontend, Redis)
+# This Docker Compose file runs Kortix Super Worker services (Backend, Worker, Frontend, Redis)
 #
 # ⚠️  IMPORTANT LIMITATION - LOCAL SUPABASE:
 # Currently, local Supabase (via `npx supabase start`) is NOT supported with
@@ -54,9 +54,34 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_SSL=False
-      - WORKERS=5
     # DNS configuration to reduce DNS lookup latency for third-party services
     # Using Google and Cloudflare DNS for reliability
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    dns_search:
+      - .
+    depends_on:
+      redis:
+        condition: service_healthy
+      worker:
+        condition: service_started
+
+  worker:
+    image: ghcr.io/suna-ai/suna-backend:latest
+    platform: linux/amd64
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
+    volumes:
+      - ./backend/.env:/app/.env:ro
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=
+      - REDIS_SSL=False
+    # DNS configuration to reduce DNS lookup latency for third-party services
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -69,22 +94,14 @@ services:
   frontend:
     init: true
     build:
-      context: .
-      dockerfile: ./apps/frontend/Dockerfile
+      context: ./apps/frontend
+      dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000/v1}
         NEXT_PUBLIC_URL: ${NEXT_PUBLIC_URL:-http://localhost:3000}
         NEXT_PUBLIC_ENV_MODE: ${NEXT_PUBLIC_ENV_MODE:-LOCAL}
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
     ports:
       - "3000:3000"
-    environment:
-      - NEXT_PUBLIC_BACKEND_URL=${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000/v1}
-      - NEXT_PUBLIC_URL=${NEXT_PUBLIC_URL:-http://localhost:3000}
-      - NEXT_PUBLIC_ENV_MODE=${NEXT_PUBLIC_ENV_MODE:-LOCAL}
-      - NEXT_PUBLIC_SUPABASE_URL=${NEXT_PUBLIC_SUPABASE_URL}
-      - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
     depends_on:
       - backend
 

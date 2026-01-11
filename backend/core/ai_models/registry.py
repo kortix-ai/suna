@@ -2,12 +2,9 @@ from typing import Dict, List, Optional, Tuple, Any
 from .models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
-import os
 
 # Use Bedrock for STAGING and PRODUCTION, LOCAL uses native APIs (Anthropic API, etc.)
-# Allow LOCAL to use Bedrock if USE_BEDROCK_FOR_LOCAL=true is set in environment
-USE_BEDROCK_FOR_LOCAL = os.getenv("USE_BEDROCK_FOR_LOCAL", "false").lower() == "true"
-SHOULD_USE_BEDROCK = USE_BEDROCK_FOR_LOCAL or config.ENV_MODE in (EnvMode.STAGING, EnvMode.PRODUCTION)
+SHOULD_USE_BEDROCK = config.ENV_MODE in (EnvMode.STAGING, EnvMode.PRODUCTION)
 
 AWS_BEDROCK_REGION = "us-west-2"
 AWS_BEDROCK_ACCOUNT_ID = "935064898258"

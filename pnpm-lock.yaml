@@ -448,7 +448,7 @@ importers:
         version: 4.0.2(next@15.5.9(@babel/core@7.28.5)(babel-plugin-react-compiler@1.0.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(sass@1.97.2))(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       framer-motion:
         specifier: ^12.6.5
-        version: 12.24.12(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+        version: 12.25.0(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
       geist:
         specifier: ^1.2.1
         version: 1.5.1(next@15.5.9(@babel/core@7.28.5)(babel-plugin-react-compiler@1.0.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)(sass@1.97.2))
@@ -532,7 +532,7 @@ importers:
         version: 8.4.33
       posthog-js:
         specifier: ^1.258.6
-        version: 1.316.0
+        version: 1.316.1
       posthog-node:
         specifier: ^5.6.0
         version: 5.20.0
@@ -2852,8 +2852,8 @@ packages:
   '@posthog/core@1.9.1':
     resolution: {integrity: sha512-kRb1ch2dhQjsAapZmu6V66551IF2LnCbc1rnrQqnR7ArooVyJN9KOPXre16AJ3ObJz2eTfuP7x25BMyS2Y5Exw==}
 
-  '@posthog/types@1.316.0':
-    resolution: {integrity: sha512-2CS2wecsv9Eafa8euXePr6ba1/eV9k7BLAREKd2SqCsTd6bYRFILvVDlkrvPCSpdZ6qOq/b6IA//HMC1Z0fN8w==}
+  '@posthog/types@1.316.1':
+    resolution: {integrity: sha512-rh8GSOnmnwd0fUIBYzQcXt4WYXMg9QPkY0tE46K0eneWYVyqNYXFXzcdf2U37g+ZYNiBq9ubLeCD7h0C0MDJgw==}
 
   '@radix-ui/number@1.0.0':
     resolution: {integrity: sha512-Ofwh/1HX69ZfJRiRBMTy7rgjAzHmwe4kW9C9Y99HTRUcYLUuVT0KESFj15rPjRgKJs20GPq8Bm5aEDJ8DuA3vA==}
@@ -6069,8 +6069,8 @@ packages:
   base64-js@1.5.1:
     resolution: {integrity: sha512-AKpaYlHn8t4SVbOHCy+b5+KKgvR4vrsD8vbvrbiQJps7fKDTkjkDry6ji0rUJjC0kzbNePLwzxq8iypo41qeWA==}
 
-  baseline-browser-mapping@2.9.13:
-    resolution: {integrity: sha512-WhtvB2NG2wjr04+h77sg3klAIwrgOqnjS49GGudnUPGFFgg7G17y7Qecqp+2Dr5kUDxNRBca0SK7cG8JwzkWDQ==}
+  baseline-browser-mapping@2.9.14:
+    resolution: {integrity: sha512-B0xUquLkiGLgHhpPBqvl7GWegWBUNuujQ6kXd/r1U38ElPT6Ok8KZ8e+FpUGEc2ZoRQUzq/aUnaKFc/svWUGSg==}
     hasBin: true
 
   better-opn@3.0.2:
@@ -7788,8 +7788,8 @@ packages:
   fraction.js@4.3.7:
     resolution: {integrity: sha512-ZsDfxO51wGAXREY55a7la9LScWpwv9RxIrYABrlvOFBlH/ShPnrtsXeuUIfXKKOVicNxQ+o8JTbJvjS4M89yew==}
 
-  framer-motion@12.24.12:
-    resolution: {integrity: sha512-W+tBOI1SDGNMH4D4mADY95qYd16Drke2Tj9zlGlwTGSCi6yy8wbMmPY1mvirfcTK8HBeuuCd2PflHdN/zbL4ew==}
+  framer-motion@12.25.0:
+    resolution: {integrity: sha512-mlWqd0rApIjeyhTCSNCqPYsUAEhkcUukZxH3ke6KbstBRPcxhEpuIjmiUQvB+1E9xkEm5SpNHBgHCapH/QHTWg==}
     peerDependencies:
       '@emotion/is-prop-valid': '*'
       react: ^18.0.0 || ^19.0.0
@@ -10055,8 +10055,8 @@ packages:
     resolution: {integrity: sha512-3Ybi1tAuwAP9s0r1UQ2J4n5Y0G05bJkpUIO0/bI9MhwmD70S5aTWbXGBwxHrelT+XM1k6dM0pk+SwNkpTRN7Pg==}
     engines: {node: ^10 || ^12 || >=14}
 
-  posthog-js@1.316.0:
-    resolution: {integrity: sha512-Y8JKqv61HQKHB4savYnbp1+zUhfkSLSE4famJONaPuBq9lX+F8j9uNENvIWioe2roJa7FU3g5Ji/CjwwRh+/kA==}
+  posthog-js@1.316.1:
+    resolution: {integrity: sha512-4B0PHnMZwjV9aoQRQ5OqrPa40aCVlqRx1aZMCZCbZ4Z7c91bpOJDpENGGyxFvjUoNN+f8MP8LHZBdn5DPQyWTg==}
 
   posthog-node@5.20.0:
     resolution: {integrity: sha512-LkR5KfrvEQTnUtNKN97VxFB00KcYG1Iz8iKg8r0e/i7f1eQhg1WSZO+Jp1B4bvtHCmdpIE4HwYbvCCzFoCyjVg==}
@@ -14612,7 +14612,7 @@ snapshots:
     dependencies:
       cross-spawn: 7.0.6
 
-  '@posthog/types@1.316.0': {}
+  '@posthog/types@1.316.1': {}
 
   '@radix-ui/number@1.0.0':
     dependencies:
@@ -18847,7 +18847,7 @@ snapshots:
 
   base64-js@1.5.1: {}
 
-  baseline-browser-mapping@2.9.13: {}
+  baseline-browser-mapping@2.9.14: {}
 
   better-opn@3.0.2:
     dependencies:
@@ -18913,7 +18913,7 @@ snapshots:
 
   browserslist@4.28.1:
     dependencies:
-      baseline-browser-mapping: 2.9.13
+      baseline-browser-mapping: 2.9.14
       caniuse-lite: 1.0.30001763
       electron-to-chromium: 1.5.267
       node-releases: 2.0.27
@@ -20897,7 +20897,7 @@ snapshots:
 
   fraction.js@4.3.7: {}
 
-  framer-motion@12.24.12(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
+  framer-motion@12.25.0(@emotion/is-prop-valid@1.4.0)(react-dom@18.3.1(react@18.3.1))(react@18.3.1):
     dependencies:
       motion-dom: 12.24.11
       motion-utils: 12.24.10
@@ -23537,10 +23537,10 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  posthog-js@1.316.0:
+  posthog-js@1.316.1:
     dependencies:
       '@posthog/core': 1.9.1
-      '@posthog/types': 1.316.0
+      '@posthog/types': 1.316.1
       core-js: 3.47.0
       fflate: 0.4.8
       preact: 10.28.2
