@@ -13,6 +13,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { AppDownloadQR } from '@/components/common/app-download-qr';
+import { isMobileDevice } from '@/lib/utils/is-mobile-device';
 
 // Apple logo SVG
 function AppleLogo({ className }: { className?: string }) {
