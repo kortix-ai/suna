@@ -36,7 +36,7 @@ export function PromptExamples({
 }: PromptExamplesProps) {
   if (!prompts || prompts.length === 0) return null;
 
-  // Text variant (list style like RESEARCH mode) - exact match
+  // Text variant (list style with card containers like sidebar items)
   if (variant === 'text') {
     return (
       <div className={cn('space-y-2', className)}>
@@ -45,7 +45,7 @@ export function PromptExamples({
             {title}
           </p>
         )}
-        <div className="space-y-1">
+        <div className="space-y-2">
           {prompts.map((prompt, index) => (
             <motion.div
               key={`${prompt.text}-${index}`}
@@ -56,14 +56,14 @@ export function PromptExamples({
                 delay: index * 0.03,
                 ease: 'easeOut',
               }}
-              className="group cursor-pointer rounded-lg hover:bg-accent/50 transition-colors duration-150"
+              className="group cursor-pointer rounded-xl border border-border hover:bg-muted transition-colors duration-150"
               onClick={() => onPromptClick?.(prompt.text)}
             >
-              <div className="flex items-center justify-between gap-3 px-3 py-2.5">
-                <p className="text-sm text-foreground/70 group-hover:text-foreground transition-colors leading-relaxed flex-1">
+              <div className="flex items-center gap-3 p-3">
+                <p className="text-sm text-foreground/80 group-hover:text-foreground transition-colors leading-relaxed flex-1">
                   {prompt.text}
                 </p>
-                <ArrowUpRight className="w-3.5 h-3.5 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                <ArrowUpRight className="w-4 h-4 text-muted-foreground/40 group-hover:text-foreground/60 shrink-0 transition-all duration-150 group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
               </div>
             </motion.div>
           ))}
