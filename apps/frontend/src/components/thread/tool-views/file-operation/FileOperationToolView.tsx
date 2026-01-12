@@ -74,7 +74,7 @@ import { toast } from '@/lib/toast';
 import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSmoothToolField } from '@/hooks/messages';
+import { useSmoothStream } from '@/lib/streaming';
 
 const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[]; fileName?: string }> = ({ lineDiff, fileName }) => (
   <div className="font-mono text-[13px] leading-relaxed">
@@ -275,15 +275,97 @@ export function FileOperationToolView({
   
   const streamingSource = isStreaming ? throttledStreamingSource : rawStreamingSource;
 
-  // Apply smooth text streaming for file_contents (create/rewrite operations)
-  const smoothFields = useSmoothToolField(
-    rawStreamingSource && typeof rawStreamingSource === 'object' ? rawStreamingSource : {},
-    { interval: 50 }
-  );
-  const smoothFileContents = (smoothFields as any).file_contents || (rawStreamingSource && typeof rawStreamingSource === 'object' ? (rawStreamingSource as Record<string, any>).file_contents : '') || '';
-  const smoothCodeEdit = (smoothFields as any).code_edit || (rawStreamingSource && typeof rawStreamingSource === 'object' ? (rawStreamingSource as Record<string, any>).code_edit : '') || '';
+  const rawFileContents = useMemo(() => {
+    if (!rawStreamingSource) return '';
+    if (typeof rawStreamingSource === 'object') {
+      return (rawStreamingSource as Record<string, any>).file_contents || '';
+    }
+    try {
+      const parsed = JSON.parse(rawStreamingSource);
+      return parsed.file_contents || '';
+    } catch {
+      const pattern = /"file_contents"\s*:\s*"/;
+      const match = rawStreamingSource.match(pattern);
+      if (match && match.index !== undefined) {
+        const startIndex = match.index + match[0].length;
+        let value = '';
+        let i = startIndex;
+        let escaped = false;
+        while (i < rawStreamingSource.length) {
+          const char = rawStreamingSource[i];
+          if (escaped) {
+            switch (char) {
+              case 'n': value += '\n'; break;
+              case 't': value += '\t'; break;
+              case 'r': value += '\r'; break;
+              case '"': value += '"'; break;
+              case '\\': value += '\\'; break;
+              default: value += char;
+            }
+            escaped = false;
+          } else if (char === '\\') {
+            escaped = true;
+          } else if (char === '"') {
+            return value;
+          } else {
+            value += char;
+          }
+          i++;
+        }
+        return value;
+      }
+      return '';
+    }
+  }, [rawStreamingSource]);
+
+  const rawCodeEdit = useMemo(() => {
+    if (!rawStreamingSource) return '';
+    if (typeof rawStreamingSource === 'object') {
+      return (rawStreamingSource as Record<string, any>).code_edit || '';
+    }
+    try {
+      const parsed = JSON.parse(rawStreamingSource);
+      return parsed.code_edit || '';
+    } catch {
+      const pattern = /"code_edit"\s*:\s*"/;
+      const match = rawStreamingSource.match(pattern);
+      if (match && match.index !== undefined) {
+        const startIndex = match.index + match[0].length;
+        let value = '';
+        let i = startIndex;
+        let escaped = false;
+        while (i < rawStreamingSource.length) {
+          const char = rawStreamingSource[i];
+          if (escaped) {
+            switch (char) {
+              case 'n': value += '\n'; break;
+              case 't': value += '\t'; break;
+              case 'r': value += '\r'; break;
+              case '"': value += '"'; break;
+              case '\\': value += '\\'; break;
+              default: value += char;
+            }
+            escaped = false;
+          } else if (char === '\\') {
+            escaped = true;
+          } else if (char === '"') {
+            return value;
+          } else {
+            value += char;
+          }
+          i++;
+        }
+        return value;
+      }
+      return '';
+    }
+  }, [rawStreamingSource]);
+
   const isFileContentsAnimating = isStreaming && (operation === 'create' || operation === 'rewrite') && !toolResult;
   const isCodeEditAnimating = isStreaming && operation === 'edit' && !toolResult;
+  
+  const smoothFileContents = useSmoothStream(rawFileContents, isFileContentsAnimating);
+  const smoothCodeEdit = useSmoothStream(rawCodeEdit, isCodeEditAnimating);
 
   const extractedContent = useMemo(() => {
     let filePath: string | null = args.file_path || args.target_file || args.path || null;
@@ -303,9 +385,8 @@ export function FileOperationToolView({
     }
 
     if (isStreaming && streamingSource) {
-      // Use smooth streaming content when available
       if (operation === 'create' || operation === 'rewrite') {
-        if (smoothFileContents) {
+        if (rawFileContents) {
           fileContent = smoothFileContents;
         } else {
           try {
@@ -346,7 +427,7 @@ export function FileOperationToolView({
           }
         }
       } else if (operation === 'edit') {
-        if (smoothCodeEdit) {
+        if (rawCodeEdit) {
           fileContent = smoothCodeEdit;
         } else {
           try {
@@ -580,9 +661,11 @@ export function FileOperationToolView({
     }
 
     return { filePath, fileContent, oldStr, newStr };
-  }, [args, output, isStreaming, streamingSource, operation, isStrReplace, smoothFileContents, smoothCodeEdit]);
+  }, [args, output, isStreaming, streamingSource, operation, isStrReplace, rawFileContents, rawCodeEdit, smoothFileContents, smoothCodeEdit]);
 
   const { filePath, fileContent, oldStr, newStr } = extractedContent;
+  
+  const hasRawContent = !!(rawFileContents || rawCodeEdit);
 
   // Generate diff data for str-replace and edit operations
   const lineDiff = React.useMemo(() => {
@@ -1099,7 +1182,7 @@ export function FileOperationToolView({
                   subtitle="Please wait while the file is being processed"
                   showProgress={false}
                 />
-              ) : !fileContent && isStreaming ? (
+              ) : !fileContent && !hasRawContent && isStreaming ? (
                 <StreamingLoader />
               ) : operation === 'delete' ? (
                 <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-white dark:bg-zinc-900">

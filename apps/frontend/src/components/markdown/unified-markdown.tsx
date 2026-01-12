@@ -147,9 +147,13 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   const processedContent = autoLinkUrls(safeContent);
 
   return (
-    <div className={cn('kortix-markdown', className)}>
+    <div 
+      className={cn('kortix-markdown', isStreaming && 'streaming-active', className)}
+      data-streaming={isStreaming ? 'true' : 'false'}
+    >
       <Streamdown
         isAnimating={isStreaming}
+        mode={isStreaming ? 'streaming' : 'static'}
         components={{
           // ═══════════════════════════════════════════════════════════════
           // HEADINGS - Clean hierarchy with proper weight distribution

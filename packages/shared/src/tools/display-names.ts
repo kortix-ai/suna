@@ -3,6 +3,30 @@
  * Single source of truth for both frontend and mobile
  */
 
+export const TOOL_COMPLETED_NAMES: ReadonlyMap<string, string> = new Map([
+  ['web-search', 'Searched Web'],
+  ['web_search', 'Searched Web'],
+  ['image-search', 'Searched Images'],
+  ['image_search', 'Searched Images'],
+  ['scrape-webpage', 'Scraped Website'],
+  ['scrape_webpage', 'Scraped Website'],
+  ['crawl-webpage', 'Crawled Website'],
+  ['crawl_webpage', 'Crawled Website'],
+  ['execute-command', 'Executed Command'],
+  ['execute_command', 'Executed Command'],
+  ['create-file', 'Created File'],
+  ['create_file', 'Created File'],
+  ['edit-file', 'Edited File'],
+  ['edit_file', 'Edited File'],
+  ['read-file', 'Read File'],
+  ['read_file', 'Read File'],
+  ['delete-file', 'Deleted File'],
+  ['delete_file', 'Deleted File'],
+  ['create-slide', 'Created Slide'],
+  ['create_slide', 'Created Slide'],
+]);
+
+
 export const TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   // Initialization
   ['initialize-tools', 'Mode Activated'],

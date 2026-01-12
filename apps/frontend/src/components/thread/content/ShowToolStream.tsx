@@ -3,6 +3,7 @@ import { KortixLoader } from '@/components/ui/kortix-loader';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 import { useSmoothToolField } from '@/hooks/messages';
+import { ToolCard } from './ToolCard';
 
 /**
  * Optimistically extract a string field from partial/streaming JSON.
@@ -544,29 +545,23 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     if (isMediaGenTool) {
         const IconComponent = getToolIcon(rawToolName || '');
         
-        // Check if this is a video generation (has video_options in arguments)
         const isVideoGeneration = effectiveToolCall?.arguments?.video_options !== undefined ||
             (typeof effectiveToolCall?.arguments === 'string' && effectiveToolCall.arguments.includes('video_options'));
 
         return (
             <div className="space-y-2">
-                {/* Tool button - exactly like regular tools */}
-                <button
+                <ToolCard
+                    toolName={rawToolName || ''}
+                    displayName="Generate Media"
+                    toolCall={effectiveToolCall}
+                    toolCallId={effectiveToolCall?.tool_call_id}
+                    isStreaming={!isCompleted}
+                    fallbackIcon={IconComponent}
                     onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
-                    className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
-                >
-                    <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground shrink-0" fallbackIcon={IconComponent} />
-                    <span className="font-mono text-xs text-foreground truncate">Generate Media</span>
-                    {!isCompleted && (
-                        <KortixLoader size="small" className="ml-1" />
-                    )}
-                </button>
+                />
 
-                {/* Shimmer below - aspect-video for video, aspect-square for image */}
                 <div className={`relative w-full max-w-80 ${isVideoGeneration ? 'aspect-video' : 'aspect-square'} rounded-2xl overflow-hidden border border-neutral-200 dark:border-neutral-700/50`}>
-                    {/* Gray base layer - contained with rounded corners */}
                     <div className="absolute inset-[-50%] bg-gradient-to-br from-zinc-300/60 to-zinc-400/60 dark:from-zinc-600/60 dark:to-zinc-700/60 blur-2xl" />
-                    {/* Color layer that fades in - contained with rounded corners */}
                     <div 
                         className={`absolute inset-[-50%] bg-gradient-to-br ${shimmerColorRef.current} blur-2xl transition-opacity duration-1000`}
                         style={{ opacity: showShimmerColor ? 1 : 0 }}
@@ -709,19 +704,16 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
     return (
         <div className="min-w-0 max-w-full">
-            <button
+            <ToolCard
+                toolName={rawToolName || ''}
+                displayName={displayName}
+                toolCall={effectiveToolCall}
+                toolCallId={effectiveToolCall?.tool_call_id}
+                paramDisplay={paramDisplay}
+                isStreaming={!isCompleted}
+                fallbackIcon={IconComponent}
                 onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
-                className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 max-w-full"
-            >
-                <div className='flex items-center justify-center flex-shrink-0'>
-                    <AppIcon toolCall={effectiveToolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
-                </div>
-                <span className="font-mono text-xs text-foreground truncate">{displayName}</span>
-                {paramDisplay && <span className="ml-1 text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-[200px]" title={paramDisplay}>{paramDisplay}</span>}
-                {!isCompleted && (
-                    <KortixLoader size="small" className="ml-1" />
-                )}
-            </button>
+            />
         </div>
     );
 }; 
