@@ -811,8 +811,8 @@ export function ThreadPage({
             className="flex-1"
             showsVerticalScrollIndicator={true}
             contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: 'flex-end',
+              // NOTE: No flexGrow or justifyContent - content starts at top and grows down
+              // This prevents scroll jump issues during streaming
               paddingTop: Math.max(insets.top, 16) + 80,
               paddingBottom: contentBottomPadding,
               paddingHorizontal: 16,

@@ -712,12 +712,12 @@ export function useChat(): UseChatReturn {
       setSelectedQuickActionOption(null);
     }
     
-    // Invalidate messages cache to get fresh data
-    queryClient.invalidateQueries({ queryKey: chatKeys.messages(threadId) });
+    // Reset messages cache to force fresh fetch from server (not stale cache)
+    queryClient.resetQueries({ queryKey: chatKeys.messages(threadId) });
     
-    // Invalidate active runs cache, then refetch to get fresh data from server
+    // Reset active runs cache, then refetch to get fresh data from server
     log.log('🔍 [useChat] Checking for active agent runs...');
-    queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() }).then(() => {
+    queryClient.resetQueries({ queryKey: chatKeys.activeRuns() }).then(() => {
       return refetchActiveRuns();
     }).then(result => {
       if (result.data) {
@@ -1228,8 +1228,12 @@ export function useChat(): UseChatReturn {
       if (activeThreadId) {
         log.log('[useChat] Retry: Refreshing messages and checking for active runs...');
         try {
+          // CRITICAL: Reset queries to clear stale cache BEFORE refetching
+          // This ensures we get fresh data from server, not cached data from when network was down
+          await queryClient.resetQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          await queryClient.resetQueries({ queryKey: chatKeys.activeRuns() });
+          
           await refetchMessages();
-          queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
           
           // Check if there's still a running agent for this thread
           const activeRunsResult = await refetchActiveRuns();
@@ -1242,11 +1246,13 @@ export function useChat(): UseChatReturn {
               setAgentRunId(runningAgent.id);
               await startStreaming(runningAgent.id);
             } else {
-              log.log('[useChat] Retry: No running agent, thread is up to date');
+              log.log('[useChat] Retry: No running agent found after fresh fetch');
             }
+          } else {
+            log.warn('[useChat] Retry: No data returned from activeRuns fetch');
           }
         } catch (err) {
-          log.warn('[useChat] Retry: Failed to refresh:', err);
+          log.error('[useChat] Retry: Failed to refresh - network may still be unstable:', err);
         }
       }
       return;
@@ -1261,8 +1267,11 @@ export function useChat(): UseChatReturn {
       
       if (activeThreadId) {
         try {
+          // Reset queries to clear stale cache before refetching
+          await queryClient.resetQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          await queryClient.resetQueries({ queryKey: chatKeys.activeRuns() });
+          
           await refetchMessages();
-          queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
           
           const activeRunsResult = await refetchActiveRuns();
           if (activeRunsResult.data) {
@@ -1273,10 +1282,12 @@ export function useChat(): UseChatReturn {
               log.log('[useChat] Retry: Found running agent, reconnecting:', runningAgent.id);
               setAgentRunId(runningAgent.id);
               await startStreaming(runningAgent.id);
+            } else {
+              log.log('[useChat] Retry: No running agent found with runId backup');
             }
           }
         } catch (err) {
-          log.warn('[useChat] Retry: Failed to refresh:', err);
+          log.error('[useChat] Retry: Failed to refresh with runId:', err);
         }
       }
       return;
