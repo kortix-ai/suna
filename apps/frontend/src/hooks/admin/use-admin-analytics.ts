@@ -175,7 +175,7 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
   });
 }
 
-export function useMessageDistribution(date?: string) {
+export function useMessageDistribution(date?: string, enabled: boolean = true) {
   return useQuery({
     queryKey: ['admin', 'analytics', 'message-distribution', date],
     queryFn: async (): Promise<MessageDistribution> => {
@@ -190,10 +190,11 @@ export function useMessageDistribution(date?: string) {
     },
     staleTime: 300000, // 5 minutes
     placeholderData: (previousData) => previousData, // Keep previous data while loading
+    enabled,
   });
 }
 
-export function useCategoryDistribution(date?: string, tier?: string | null) {
+export function useCategoryDistribution(date?: string, tier?: string | null, enabled: boolean = true) {
   return useQuery({
     queryKey: ['admin', 'analytics', 'category-distribution', date, tier],
     queryFn: async (): Promise<CategoryDistribution> => {
@@ -212,10 +213,11 @@ export function useCategoryDistribution(date?: string, tier?: string | null) {
     },
     staleTime: 300000, // 5 minutes
     placeholderData: (previousData) => previousData,
+    enabled,
   });
 }
 
-export function useTierDistribution(date?: string) {
+export function useTierDistribution(date?: string, enabled: boolean = true) {
   return useQuery({
     queryKey: ['admin', 'analytics', 'tier-distribution', date],
     queryFn: async (): Promise<TierDistribution> => {
@@ -230,6 +232,7 @@ export function useTierDistribution(date?: string) {
     },
     staleTime: 300000, // 5 minutes
     placeholderData: (previousData) => previousData,
+    enabled,
   });
 }
 
@@ -698,3 +701,125 @@ export function useToggleMonthlyFieldOverride() {
 }
 
 
+// ============================================================================
+// EXECUTIVE OVERVIEW HOOKS
+// ============================================================================
+
+export interface RevenueSummary {
+  mrr: number;
+  arr: number;
+  total_paid_subscribers: number;
+  subscribers_by_tier: Record<string, number>;
+  arpu: number;
+  mrr_change_percent: number | null;
+  new_paid_this_month: number;
+  churned_this_month: number;
+}
+
+export interface EngagementSummary {
+  dau: number;
+  wau: number;
+  mau: number;
+  dau_mau_ratio: number;
+  avg_threads_per_active_user: number;
+  total_threads_today: number;
+  total_threads_week: number;
+  retention_d1: number | null;
+  retention_d7: number | null;
+  retention_d30: number | null;
+}
+
+export interface TaskPerformance {
+  total_runs: number;
+  completed_runs: number;
+  failed_runs: number;
+  stopped_runs: number;  // User cancelled
+  running_runs: number;
+  pending_runs: number;  // Not started yet
+  success_rate: number;  // completed / (completed + failed + stopped)
+  avg_duration_seconds: number | null;
+  runs_by_status: Record<string, number>;
+}
+
+export interface ToolUsage {
+  tool_name: string;
+  usage_count: number;
+  unique_threads: number;
+  percentage_of_threads: number;
+}
+
+export interface ToolAdoptionSummary {
+  total_tool_calls: number;
+  total_threads_with_tools: number;
+  top_tools: ToolUsage[];
+  tool_adoption_rate: number;
+}
+
+export function useRevenueSummary() {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'revenue-summary'],
+    queryFn: async (): Promise<RevenueSummary> => {
+      const response = await backendApi.get('/admin/analytics/revenue-summary');
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    retry: 1,
+  });
+}
+
+export function useEngagementSummary(date?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'engagement-summary', date],
+    queryFn: async (): Promise<EngagementSummary> => {
+      const url = date
+        ? `/admin/analytics/engagement-summary?date=${date}`
+        : '/admin/analytics/engagement-summary';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useTaskPerformance(date?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'task-performance', date],
+    queryFn: async (): Promise<TaskPerformance> => {
+      const url = date
+        ? `/admin/analytics/task-performance?date=${date}`
+        : '/admin/analytics/task-performance';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useToolAdoption(date?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'tool-adoption', date],
+    queryFn: async (): Promise<ToolAdoptionSummary> => {
+      const url = date
+        ? `/admin/analytics/tool-adoption?date=${date}`
+        : '/admin/analytics/tool-adoption';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    placeholderData: (previousData) => previousData,
+  });
+}
