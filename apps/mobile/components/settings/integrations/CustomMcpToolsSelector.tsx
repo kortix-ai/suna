@@ -10,6 +10,7 @@ import {
   Save,
   Search
 } from 'lucide-react-native';
+import { log } from '@/lib/logger';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
@@ -78,7 +79,7 @@ export function CustomMcpToolsContent({
       await new Promise(resolve => setTimeout(resolve, 500));
       onComplete(Array.from(selectedTools));
     } catch (error) {
-      console.error('❌ Failed to save custom MCP configuration:', error);
+      log.error('❌ Failed to save custom MCP configuration:', error);
     } finally {
       setIsSaving(false);
     }
@@ -187,13 +188,13 @@ export function CustomMcpToolsSelector({
   const [isSaving, setIsSaving] = React.useState(false);
 
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Custom MCP tools selector closing');
+    log.log('🎯 Custom MCP tools selector closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
 
   const handleToolToggle = React.useCallback((toolName: string) => {
-    console.log('🎯 Tool toggled:', toolName);
+    log.log('🎯 Tool toggled:', toolName);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     const newSelected = new Set(selectedTools);
@@ -206,7 +207,7 @@ export function CustomMcpToolsSelector({
   }, [selectedTools, onSelectedToolsChange]);
 
   const handleSelectAll = React.useCallback(() => {
-    console.log('🎯 Select all tools');
+    log.log('🎯 Select all tools');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     if (selectedTools.size === tools.length) {
@@ -217,7 +218,7 @@ export function CustomMcpToolsSelector({
   }, [selectedTools.size, tools, onSelectedToolsChange]);
 
   const handleSave = React.useCallback(async () => {
-    console.log('🎯 Saving custom MCP tools configuration');
+    log.log('🎯 Saving custom MCP tools configuration');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     setIsSaving(true);
@@ -226,7 +227,7 @@ export function CustomMcpToolsSelector({
       await new Promise(resolve => setTimeout(resolve, 500));
       onComplete(Array.from(selectedTools));
     } catch (error) {
-      console.error('❌ Failed to save custom MCP configuration:', error);
+      log.error('❌ Failed to save custom MCP configuration:', error);
     } finally {
       setIsSaving(false);
     }

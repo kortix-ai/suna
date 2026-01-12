@@ -39,12 +39,12 @@ export function WebSearchToolView({
 
   // Apply smooth text streaming for query field
   const rawArguments = toolCall?.rawArguments || toolCall?.arguments;
-  const { displayedValue: smoothQuery, isAnimating: isQueryAnimating } = useSmoothToolField(
-    rawArguments,
-    'query',
-    120,
-    isStreaming && !toolResult
+  const smoothFields = useSmoothToolField(
+    typeof rawArguments === 'object' && rawArguments ? rawArguments : {},
+    { interval: 50 }
   );
+  const smoothQuery = (smoothFields as any).query || (typeof rawArguments === 'object' ? rawArguments?.query : '') || '';
+  const isQueryAnimating = isStreaming && !toolResult;
 
   const {
     query,

@@ -9,6 +9,7 @@ import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
 import { DeepSearchLoadingState } from './DeepSearchLoadingState';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 // Utility functions
 function formatTimestamp(isoString?: string): string {
@@ -28,7 +29,7 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
   
   // Log for debugging
-  console.log('[WebSearchToolView] Data:', {
+  log.log('[WebSearchToolView] Data:', {
     query,
     queryType: typeof query,
     queriesArray,

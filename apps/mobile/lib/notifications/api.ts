@@ -1,5 +1,6 @@
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { Platform } from 'react-native';
+import { log } from '@/lib/logger';
 
 interface RegisterDeviceTokenRequest {
   device_token: string;
@@ -31,7 +32,7 @@ async function fetchApi<T>(
     const errorData = await response.json().catch(() => ({ message: response.statusText }));
     
     if (response.status !== 401 && response.status !== 403) {
-      console.error('❌ Notifications API Error:', {
+      log.error('❌ Notifications API Error:', {
         endpoint,
         status: response.status,
         error: errorData,
@@ -49,7 +50,7 @@ export const notificationsApi = {
   async registerDeviceToken(
     deviceToken: string
   ): Promise<RegisterDeviceTokenResponse> {
-    console.log('📲 Registering device token...');
+    log.log('📲 Registering device token...');
     
     const deviceType = Platform.OS === 'ios' ? 'ios' : 'android';
     
@@ -67,12 +68,12 @@ export const notificationsApi = {
       }
     );
 
-    console.log('✅ Device token registered successfully');
+    log.log('✅ Device token registered successfully');
     return response;
   },
 
   async unregisterDeviceToken(deviceToken: string): Promise<void> {
-    console.log('🗑️ Unregistering device token...');
+    log.log('🗑️ Unregistering device token...');
     
     await fetchApi<void>(
       `/notifications/device-token/${encodeURIComponent(deviceToken)}`,
@@ -81,6 +82,6 @@ export const notificationsApi = {
       }
     );
 
-    console.log('✅ Device token unregistered successfully');
+    log.log('✅ Device token unregistered successfully');
   },
 };

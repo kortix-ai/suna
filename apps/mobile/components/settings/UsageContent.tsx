@@ -16,9 +16,10 @@ import { AlertCircle, MessageSquare, Activity, Sparkles } from 'lucide-react-nat
 import * as Haptics from 'expo-haptics';
 import { useThreadUsage } from '@/lib/billing';
 import { useBillingContext } from '@/contexts/BillingContext';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { DateRangePicker, type DateRange } from '@/components/billing/DateRangePicker';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
+import { log } from '@/lib/logger';
 
 interface UsageContentProps {
   onThreadPress?: (threadId: string, projectId: string | null) => void;
@@ -131,7 +132,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
   const handlePrevThreadPage = React.useCallback(() => {
     if (threadOffset > 0 && !isLoadingThreads) {
       const newOffset = Math.max(0, threadOffset - threadLimit);
-      console.log('📄 Previous page:', { from: threadOffset, to: newOffset });
+      log.log('📄 Previous page:', { from: threadOffset, to: newOffset });
       setThreadOffset(newOffset);
     }
   }, [threadOffset, threadLimit, isLoadingThreads]);
@@ -139,7 +140,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
   const handleNextThreadPage = React.useCallback(() => {
     if (threadData?.pagination.has_more && !isLoadingThreads) {
       const newOffset = threadOffset + threadLimit;
-      console.log('📄 Next page:', { from: threadOffset, to: newOffset });
+      log.log('📄 Next page:', { from: threadOffset, to: newOffset });
       setThreadOffset(newOffset);
     }
   }, [threadData?.pagination.has_more, threadOffset, threadLimit, isLoadingThreads]);
@@ -205,7 +206,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 // Use RevenueCat paywall for top-ups
                 if (useNativePaywall) {
-                  console.log('📱 Using RevenueCat paywall for top-ups');
+                  log.log('📱 Using RevenueCat paywall for top-ups');
                   await presentUpgradePaywall();
                 } else {
                   // Fallback to upgrade press if RevenueCat not available
@@ -346,7 +347,7 @@ export function UsageContent({ onThreadPress, onUpgradePress }: UsageContentProp
                   <Pressable
                     key={record.thread_id}
                     onPress={() => {
-                      console.log('🎯 Thread row pressed:', record.thread_id);
+                      log.log('🎯 Thread row pressed:', record.thread_id);
                       handleThreadPress(record.thread_id, record.project_id);
                     }}
                     className={`flex-row items-center border-b border-border/30 px-4 py-3 ${

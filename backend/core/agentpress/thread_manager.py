@@ -463,13 +463,18 @@ class ThreadManager:
         cache_key = f"thread_has_images:{thread_id}"
         
         try:
-            # Check Redis first (fast path)
+            # Check Redis first (fast path) - cache stores "1" for True, "0" for False
             try:
                 cached = await asyncio.wait_for(redis.get(cache_key), timeout=0.5)
                 if cached == "1":
                     elapsed = (time.time() - start) * 1000
                     logger.info(f"🖼️ Thread {thread_id} has_images: True (from Redis, {elapsed:.1f}ms)")
                     return True
+                elif cached == "0":
+                    # Cached "no images" - skip DB query entirely
+                    elapsed = (time.time() - start) * 1000
+                    logger.debug(f"🖼️ Thread {thread_id} has_images: False (from Redis, {elapsed:.1f}ms)")
+                    return False
             except Exception:
                 pass  # Redis miss or error, fall through to DB
             
@@ -477,22 +482,26 @@ class ThreadManager:
             try:
                 has_images = await asyncio.wait_for(
                     threads_repo.check_thread_has_images(thread_id),
-                    timeout=2.0
+                    timeout=5.0  # 5s timeout for slow connections (e.g., local dev to remote Supabase)
                 )
             except asyncio.TimeoutError:
                 elapsed = (time.time() - start) * 1000
                 logger.warning(f"⚠️ thread_has_images QUERY timeout after {elapsed:.1f}ms for {thread_id} - assuming no images")
                 return False
             
-            # Cache in Redis if True (2 hour TTL, refreshed on each access)
-            if has_images:
-                try:
+            # Cache result in Redis
+            # has_images=True: 2 hour TTL (images don't disappear)
+            # has_images=False: 5 min TTL (image might be added soon, check again later)
+            try:
+                if has_images:
                     await redis.set(cache_key, "1", ex=7200)
-                except Exception:
-                    pass  # Best effort caching
+                else:
+                    await redis.set(cache_key, "0", ex=300)
+            except Exception:
+                pass  # Best effort caching
             
             elapsed = (time.time() - start) * 1000
-            logger.info(f"🖼️ Thread {thread_id} has_images: {has_images} (from DB, {elapsed:.1f}ms)")
+            logger.debug(f"🖼️ Thread {thread_id} has_images: {has_images} (from DB, {elapsed:.1f}ms)")
             return has_images
         except Exception as e:
             elapsed = (time.time() - start) * 1000
@@ -582,22 +591,16 @@ class ThreadManager:
             ENABLE_PROMPT_CACHING = True    # Set to False to disable prompt caching
             # ==================================
             
-            # Store registry model ID for lookups (before any switching)
             registry_model_id = llm_model
             
             # ===== MODEL SWITCHING FOR IMAGES =====
-            # Only check for images if the model has a separate vision model configured
-            # (e.g., MiniMax models use Haiku Bedrock for vision). Skip expensive lookup
-            # for models that handle images natively (e.g., Anthropic, OpenAI models).
+            # Switch to image model only if current model doesn't support vision natively
             from core.ai_models import model_manager
-            has_images = False
-            if model_manager.needs_vision_model_check(registry_model_id):
-                has_images = await self.thread_has_images(thread_id)
-                if has_images:
-                    # Get the vision-specific LLM model ID from registry
-                    llm_model = model_manager.get_litellm_model_id(registry_model_id, has_images=True)
-                    if llm_model != registry_model_id:
-                        logger.info(f"🖼️ Thread has images - switching model from {registry_model_id} to vision model: {llm_model}")
+            from core.ai_models.registry import IMAGE_MODEL_ID
+            if not model_manager.supports_vision(registry_model_id) and await self.thread_has_images(thread_id):
+                registry_model_id = IMAGE_MODEL_ID
+                llm_model = model_manager.get_litellm_model_id(IMAGE_MODEL_ID)
+                logger.info(f"🖼️ Thread has images - switching to image model: {llm_model}")
             # ======================================
             
             skip_fetch = False
@@ -671,11 +674,8 @@ class ThreadManager:
                         # Use fast path if we have usage data
                         if usage:
                             last_total_tokens = int(usage.get('total_tokens', 0))
-                            
-                            cache_creation = int(usage.get("cache_creation_input_tokens", 0) or 0)
-                            if cache_creation > 0:
-                                last_total_tokens += cache_creation
-                                logger.debug(f"Added {cache_creation} cache creation tokens to fast check total")
+                            # Note: cache_creation_input_tokens is NOT added here - it's a billing metric,
+                            # not actual context window usage. The context window is just prompt_tokens.
                             
                             new_msg_tokens = 0
                             
@@ -732,8 +732,7 @@ class ThreadManager:
                             estimated_total_tokens = estimated_total  # Store for response processor
                             
                             # Calculate threshold (same logic as context_manager.py)
-                            # Use registry_model_id with has_images to get correct context window
-                            context_window = model_manager.get_context_window(registry_model_id, has_images=has_images)
+                            context_window = model_manager.get_context_window(registry_model_id)
                             
                             if context_window >= 1_000_000:
                                 max_tokens = context_window - 300_000
@@ -911,7 +910,7 @@ class ThreadManager:
                 logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (no fast check available)")
             
             # Calculate threshold (same logic as fast check)
-            context_window = model_manager.get_context_window(registry_model_id, has_images=has_images)
+            context_window = model_manager.get_context_window(registry_model_id)
             if context_window >= 1_000_000:
                 safety_threshold = context_window - 300_000
             elif context_window >= 400_000:

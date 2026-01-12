@@ -71,6 +71,13 @@ export { useChatCommons } from './useChatCommons';
 export { useAccountInitialization } from './useAccountInitialization';
 export { useAccountSetup } from './useAccountSetup';
 
+// System status hooks
+export { useSystemStatus, useMaintenanceNotice, useTechnicalIssue } from './useSystemStatus';
+export type { SystemStatus, MaintenanceNotice, TechnicalIssue } from './useSystemStatus';
+
+// Admin hooks
+export { useAdminRole } from './useAdminRole';
+
 // Billing hooks
 export {
   useUpgradePaywall,

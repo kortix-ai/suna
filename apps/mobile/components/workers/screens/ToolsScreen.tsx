@@ -91,6 +91,7 @@ import {
 import { SvgUri } from 'react-native-svg';
 import * as Haptics from 'expo-haptics';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { log } from '@/lib/logger';
 
 interface ToolsScreenProps {
   agentId: string;
@@ -265,7 +266,7 @@ export function ToolsScreen({ agentId, onUpdate }: ToolsScreenProps) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       onUpdate?.();
     } catch (error: any) {
-      console.error('Failed to update tools:', error);
+      log.error('Failed to update tools:', error);
       Alert.alert(t('common.error'), error?.message || t('common.errorOccurred'));
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }

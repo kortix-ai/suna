@@ -1,7 +1,6 @@
 'use client';
 
-import React, { memo, useCallback, useMemo, useState, useEffect } from 'react';
-import { useTheme } from 'next-themes';
+import React, { memo, useCallback, useMemo, useState } from 'react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +12,7 @@ import { useModelSelection } from '@/hooks/agents';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
 // Logo component for mode display with theme support
+// Uses CSS to switch between light/dark variants without JS
 const ModeLogo = memo(function ModeLogo({ 
   mode, 
   height = 12
@@ -20,30 +20,28 @@ const ModeLogo = memo(function ModeLogo({
   mode: 'basic' | 'advanced'; 
   height?: number;
 }) {
-  const { theme, systemTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Determine if dark mode
-  const isDark = mounted && (
-    theme === 'dark' || (theme === 'system' && systemTheme === 'dark')
-  );
-
-  // Use light variant on dark mode, dark variant on light mode
-  const src = mode === 'advanced' 
-    ? (isDark ? '/Advanced-Light.svg' : '/Advanced-Dark.svg')
-    : (isDark ? '/Basic-Light.svg' : '/Basic-Dark.svg');
+  const darkSrc = mode === 'advanced' ? '/Advanced-Light.svg' : '/Basic-Light.svg';
+  const lightSrc = mode === 'advanced' ? '/Advanced-Dark.svg' : '/Basic-Dark.svg';
 
   return (
-    <img
-      src={src}
-      alt={mode === 'advanced' ? 'Kortix Advanced' : 'Kortix Basic'}
-      className="flex-shrink-0"
-      style={{ height: `${height}px`, width: 'auto' }}
-    />
+    <span className="flex-shrink-0 relative" style={{ height: `${height}px`, width: 'auto' }}>
+      {/* Light mode image */}
+      <img
+        src={lightSrc}
+        alt={mode === 'advanced' ? 'Kortix Advanced' : 'Kortix Basic'}
+        className="block dark:hidden"
+        style={{ height: `${height}px`, width: 'auto' }}
+        suppressHydrationWarning
+      />
+      {/* Dark mode image */}
+      <img
+        src={darkSrc}
+        alt={mode === 'advanced' ? 'Kortix Advanced' : 'Kortix Basic'}
+        className="hidden dark:block"
+        style={{ height: `${height}px`, width: 'auto' }}
+        suppressHydrationWarning
+      />
+    </span>
   );
 });
 

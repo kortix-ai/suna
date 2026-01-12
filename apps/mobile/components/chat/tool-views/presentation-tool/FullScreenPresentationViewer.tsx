@@ -37,6 +37,7 @@ import * as Haptics from 'expo-haptics';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -149,7 +150,7 @@ export function FullScreenPresentationViewer({
         throw new Error(`HTTP ${response.status}`);
       }
     } catch (err) {
-      console.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
+      log.error(`Error loading metadata (attempt ${retryCount + 1}):`, err);
 
       const delay = retryCount < 5
         ? Math.min(1000 * Math.pow(2, retryCount), 10000)
@@ -236,7 +237,7 @@ export function FullScreenPresentationViewer({
       const presentationPath = `/workspace/presentations/${presentationName}`;
       const exportUrl = `${sandboxUrl}/presentation/convert-to-${format}`;
 
-      console.log(`📤 Exporting ${format}:`, exportUrl);
+      log.log(`📤 Exporting ${format}:`, exportUrl);
 
       // POST request to sandbox API (matching frontend)
       const response = await fetch(exportUrl, {
@@ -289,7 +290,7 @@ export function FullScreenPresentationViewer({
             Alert.alert('Success', `${fileName} has been saved to cache.`);
           }
         } catch (saveError) {
-          console.error('Error saving file:', saveError);
+          log.error('Error saving file:', saveError);
           Alert.alert('Error', 'Failed to save the file.');
         } finally {
           setIsExporting(null);
@@ -297,13 +298,13 @@ export function FullScreenPresentationViewer({
       };
 
       reader.onerror = () => {
-        console.error('Error reading blob');
+        log.error('Error reading blob');
         Alert.alert('Error', 'Failed to process the file.');
         setIsExporting(null);
       };
 
     } catch (error) {
-      console.error(`Error exporting ${format}:`, error);
+      log.error(`Error exporting ${format}:`, error);
       Alert.alert('Export Failed', `Could not export as ${format.toUpperCase()}. Please try again.`);
       setIsExporting(null);
     }
@@ -321,7 +322,7 @@ export function FullScreenPresentationViewer({
       const presentationPath = `/workspace/presentations/${presentationName}`;
       const authHeaders = await getAuthHeaders();
 
-      console.log('📤 Exporting to Google Slides via backend API');
+      log.log('📤 Exporting to Google Slides via backend API');
 
       const response = await fetch(`${API_URL}/presentation-tools/convert-and-upload-to-slides`, {
         method: 'POST',
@@ -412,7 +413,7 @@ export function FullScreenPresentationViewer({
         );
       }
     } catch (error) {
-      console.error('Error uploading to Google Slides:', error);
+      log.error('Error uploading to Google Slides:', error);
       Alert.alert('Export Failed', 'Could not upload to Google Slides. Please try again.');
     } finally {
       setIsExporting(null);

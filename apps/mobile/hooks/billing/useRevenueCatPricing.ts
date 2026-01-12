@@ -6,12 +6,12 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { getRevenueCatPricing, type RevenueCatPricingData } from '@/lib/billing/revenuecat-pricing';
-import { shouldUseRevenueCat, isRevenueCatConfigured } from '@/lib/billing/provider';
+import { shouldUseRevenueCat } from '@/lib/billing/provider';
 
 const REVENUECAT_PRICING_KEY = ['revenuecat', 'pricing'];
 
 export function useRevenueCatPricing() {
-  const useRevenueCat = shouldUseRevenueCat() && isRevenueCatConfigured();
+  const useRevenueCat = shouldUseRevenueCat();
   
   return useQuery<Map<string, RevenueCatPricingData>>({
     queryKey: REVENUECAT_PRICING_KEY,

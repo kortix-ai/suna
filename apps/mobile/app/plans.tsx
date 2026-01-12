@@ -7,17 +7,18 @@ import { useRouter } from 'expo-router';
 import { useQueryClient } from '@tanstack/react-query';
 import { billingKeys } from '@/lib/billing';
 import { useLanguage } from '@/contexts';
-import { useLocalSearchParams } from 'expo-router';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { Text } from '@/components/ui/text';
+import { log } from '@/lib/logger';
 
 export default function PlansScreen() {
   const router = useRouter();
   const queryClient = useQueryClient();
   const { t } = useLanguage();
-  const { creditsExhausted } = useLocalSearchParams<{ creditsExhausted?: string }>();
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
   const [hasPresented, setHasPresented] = useState(false);
+  // Track if we should fall back to custom page (e.g., no paywall template configured)
+  const [showCustomPage, setShowCustomPage] = useState(false);
 
   const handleClose = () => {
     if (router.canGoBack()) {
@@ -40,15 +41,19 @@ export default function PlansScreen() {
 
   // If RevenueCat is available, present the native paywall immediately
   useEffect(() => {
-    if (useNativePaywall && !hasPresented) {
+    if (useNativePaywall && !hasPresented && !showCustomPage) {
       setHasPresented(true);
       const presentPaywall = async () => {
-        console.log('📱 Plans screen: Using native RevenueCat paywall');
-        const result = await presentUpgradePaywall();
+        log.log('📱 Plans screen: Using native RevenueCat paywall');
+        const result = await presentUpgradePaywall() as any;
 
         if (result.purchased) {
           // Purchase successful - handle subscription update
           handleSubscriptionUpdate();
+        } else if (result.needsCustomPage) {
+          // RevenueCat paywall not available (no template configured) - show custom page
+          log.log('📱 Plans screen: Falling back to custom plan page');
+          setShowCustomPage(true);
         } else {
           // Cancelled or dismissed - go back
           handleClose();
@@ -58,33 +63,32 @@ export default function PlansScreen() {
       // Small delay to ensure navigation is complete
       setTimeout(presentPaywall, 300);
     }
-  }, [useNativePaywall, hasPresented, presentUpgradePaywall]);
+  }, [useNativePaywall, hasPresented, presentUpgradePaywall, showCustomPage]);
 
-  // If RevenueCat is available, show loading while we present the paywall
-  if (useNativePaywall) {
+  // If we need to show the custom page as fallback, show it
+  if (showCustomPage || !useNativePaywall) {
     return (
       <GestureHandlerRootView style={{ flex: 1 }}>
         <Stack.Screen options={{ headerShown: false }} />
-        <View className="flex-1 items-center justify-center bg-background">
-          <ActivityIndicator size="large" />
-          <Text className="mt-4 text-muted-foreground">
-            {t('billing.loadingPaywall', 'Loading plans...')}
-          </Text>
-        </View>
+        <PlanPage
+          visible={true}
+          onClose={handleClose}
+          onPurchaseComplete={handleSubscriptionUpdate}
+        />
       </GestureHandlerRootView>
     );
   }
 
-  // Otherwise show the custom PlanPage
+  // Show loading while we present the RevenueCat paywall
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <Stack.Screen options={{ headerShown: false }} />
-      <PlanPage
-        visible={true}
-        onClose={handleClose}
-        onPurchaseComplete={handleSubscriptionUpdate}
-        customTitle={creditsExhausted === 'true' ? t('billing.ranOutOfCredits') : undefined}
-      />
+      <View className="flex-1 items-center justify-center bg-background">
+        <ActivityIndicator size="large" />
+        <Text className="mt-4 text-muted-foreground">
+          {t('billing.loadingPaywall', 'Loading plans...')}
+        </Text>
+      </View>
     </GestureHandlerRootView>
   );
 }

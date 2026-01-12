@@ -3,6 +3,7 @@ import { Pressable, View, Keyboard } from 'react-native';
 import { Search, X } from 'lucide-react-native';
 import { Icon } from './icon';
 import { Input } from './input';
+import { log } from '@/lib/logger';
 
 interface SearchBarProps {
   value: string;
@@ -31,7 +32,7 @@ export function SearchBar({
   className = ""
 }: SearchBarProps) {
   const handleClear = () => {
-    console.log('🎯 Clear search');
+    log.log('🎯 Clear search');
     onClear?.();
     Keyboard.dismiss();
   };

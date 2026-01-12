@@ -6,8 +6,6 @@ import time
 from typing import Optional, Tuple
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
-from core.prompts.agent_builder_prompt import get_agent_builder_prompt
-from core.prompts.prompt import get_system_prompt
 from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
 from core.utils.logger import logger
 
@@ -20,7 +18,6 @@ class PromptManager:
                                   tool_registry=None,
                                   xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None,
-                                  use_dynamic_tools: bool = True,
                                   mcp_loader=None) -> Tuple[dict, Optional[dict]]:
         
         build_start = time.time()
@@ -32,12 +29,8 @@ class PromptManager:
             system_content = get_core_system_prompt()
         
         t1 = time.time()
-        system_content = PromptManager._build_base_prompt(system_content, use_dynamic_tools)
+        system_content = PromptManager._build_base_prompt(system_content)
         logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
-        
-        t2 = time.time()
-        system_content = await PromptManager._append_builder_tools_prompt(system_content, agent_config)
-        logger.debug(f"⏱️ [PROMPT TIMING] _append_builder_tools_prompt: {(time.time() - t2) * 1000:.1f}ms")
         
         # Start parallel fetch tasks
         kb_task = PromptManager._with_timeout(PromptManager._fetch_knowledge_base(agent_config, client), 2.0, "KB fetch")
@@ -82,7 +75,7 @@ class PromptManager:
         if user_context_data:
             system_content += user_context_data
         
-        PromptManager._log_prompt_stats(system_content, use_dynamic_tools)
+        PromptManager._log_prompt_stats(system_content)
         
         system_message = {"role": "system", "content": system_content}
         
@@ -119,21 +112,16 @@ class PromptManager:
             return None
     
     @staticmethod
-    def _build_base_prompt(system_content: str, use_dynamic_tools: bool) -> str:
-        if use_dynamic_tools:
-            logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
-            minimal_index = get_minimal_tool_index()
-            system_content += "\n\n" + minimal_index
-            logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
-            
-            preloaded_guides = PromptManager._get_preloaded_tool_guides()
-            if preloaded_guides:
-                system_content += preloaded_guides
-                logger.info(f"📖 [DYNAMIC TOOLS] Added preloaded tool guides: {len(preloaded_guides):,} chars")
-        else:
-            logger.info("⚠️  [LEGACY MODE] Using full embedded prompt (all tool documentation included)")
-            system_content = get_system_prompt()
-            logger.info(f"📊 [LEGACY MODE] Full prompt size: {len(system_content):,} chars")
+    def _build_base_prompt(system_content: str) -> str:
+        logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
+        minimal_index = get_minimal_tool_index()
+        system_content += "\n\n" + minimal_index
+        logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
+        
+        preloaded_guides = PromptManager._get_preloaded_tool_guides()
+        if preloaded_guides:
+            system_content += preloaded_guides
+            logger.info(f"📖 [DYNAMIC TOOLS] Added preloaded tool guides: {len(preloaded_guides):,} chars")
         
         return system_content
     
@@ -160,34 +148,9 @@ class PromptManager:
         return guides_content
     
     @staticmethod
-    def _append_agent_system_prompt(system_content: str, agent_config: Optional[dict], use_dynamic_tools: bool) -> str:
+    def _append_agent_system_prompt(system_content: str, agent_config: Optional[dict]) -> str:
         if agent_config and agent_config.get('system_prompt'):
             return agent_config['system_prompt'].strip()
-        return system_content
-    
-    @staticmethod
-    async def _append_builder_tools_prompt(system_content: str, agent_config: Optional[dict]) -> str:
-        if not agent_config:
-            return system_content
-        
-        agentpress_tools = agent_config.get('agentpress_tools', {})
-        
-        def is_tool_enabled(tool_name: str) -> bool:
-            tool_config = agentpress_tools.get(tool_name)
-            if isinstance(tool_config, bool):
-                return tool_config
-            elif isinstance(tool_config, dict):
-                return tool_config.get('enabled', False)
-            else:
-                return False
-        
-        builder_tool_names = ['agent_creation_tool', 'agent_config_tool', 'mcp_search_tool', 'credential_profile_tool', 'trigger_tool']
-        has_builder_tools = any(is_tool_enabled(tool) for tool in builder_tool_names)
-        
-        if has_builder_tools:
-            builder_prompt = get_agent_builder_prompt()
-            system_content += f"\n\n{builder_prompt}"
-        
         return system_content
     
     @staticmethod
@@ -676,11 +639,8 @@ Example of correct tool call format (multiple invokes in one block):
         return None
     
     @staticmethod
-    def _log_prompt_stats(system_content: str, use_dynamic_tools: bool):
+    def _log_prompt_stats(system_content: str):
         final_prompt_size = len(system_content)
-        if use_dynamic_tools:
-            estimated_legacy_size = final_prompt_size * 3.5
-            reduction_pct = ((estimated_legacy_size - final_prompt_size) / estimated_legacy_size) * 100
-            logger.info(f"✅ [DYNAMIC TOOLS] Final system prompt: {final_prompt_size:,} chars (est. {reduction_pct:.0f}% reduction vs legacy)")
-        else:
-            logger.info(f"📝 [LEGACY MODE] Final system prompt: {final_prompt_size:,} chars")
+        estimated_legacy_size = final_prompt_size * 3.5
+        reduction_pct = ((estimated_legacy_size - final_prompt_size) / estimated_legacy_size) * 100
+        logger.info(f"✅ [DYNAMIC TOOLS] Final system prompt: {final_prompt_size:,} chars (est. {reduction_pct:.0f}% reduction vs legacy)")

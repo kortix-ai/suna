@@ -29,7 +29,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 import { useThreadUsage } from '@/hooks/billing/use-thread-usage';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 
 export default function ThreadUsage() {
   const router = useRouter();

@@ -8,6 +8,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import * as Haptics from 'expo-haptics';
 import { API_URL, getAuthHeaders } from '@/api/config';
+import { log } from '@/lib/logger';
 
 interface FileDownloadButtonProps {
   /** The file content to download/export */
@@ -236,7 +237,7 @@ ${content}
       // Use backend API endpoint
       const endpoint = `${API_URL}/export/${format}`;
 
-      console.log(`[FileDownloadButton] Calling ${format.toUpperCase()} export API:`, endpoint);
+      log.log(`[FileDownloadButton] Calling ${format.toUpperCase()} export API:`, endpoint);
 
       // Get auth headers
       const authHeaders = await getAuthHeaders();
@@ -252,7 +253,7 @@ ${content}
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[FileDownloadButton] ${format.toUpperCase()} API error response:`, errorText);
+        log.error(`[FileDownloadButton] ${format.toUpperCase()} API error response:`, errorText);
 
         let errorMessage = `Export failed with status ${response.status}`;
         try {
@@ -290,7 +291,7 @@ ${content}
         reader.readAsDataURL(blob);
       });
     } catch (error) {
-      console.error(`[FileDownloadButton] ${format.toUpperCase()} export API error:`, error);
+      log.error(`[FileDownloadButton] ${format.toUpperCase()} export API error:`, error);
       Alert.alert(
         'Export Failed',
         `Failed to export as ${format.toUpperCase()}: ${error instanceof Error ? error.message : 'Unknown error'}`
@@ -340,8 +341,8 @@ ${content}
         case 'pdf': {
           // Call API for PDF conversion
           const htmlContent = isMarkdown ? convertMarkdownToHtml(content) : content;
-          console.log('[FileDownloadButton] PDF export - HTML length:', htmlContent.length);
-          console.log('[FileDownloadButton] PDF export - HTML preview:', htmlContent.substring(0, 200));
+          log.log('[FileDownloadButton] PDF export - HTML length:', htmlContent.length);
+          log.log('[FileDownloadButton] PDF export - HTML preview:', htmlContent.substring(0, 200));
 
           const convertedUri = await callExportAPI(htmlContent, baseFileName, 'pdf');
 
@@ -361,8 +362,8 @@ ${content}
         case 'docx': {
           // Call API for DOCX conversion
           const htmlContent = isMarkdown ? convertMarkdownToHtml(content) : content;
-          console.log('[FileDownloadButton] DOCX export - HTML length:', htmlContent.length);
-          console.log('[FileDownloadButton] DOCX export - HTML preview:', htmlContent.substring(0, 200));
+          log.log('[FileDownloadButton] DOCX export - HTML length:', htmlContent.length);
+          log.log('[FileDownloadButton] DOCX export - HTML preview:', htmlContent.substring(0, 200));
 
           const convertedUri = await callExportAPI(htmlContent, baseFileName, 'docx');
 
@@ -400,7 +401,7 @@ ${content}
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
-      console.error('[FileDownloadButton] Export error:', error);
+      log.error('[FileDownloadButton] Export error:', error);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert(
         'Export Failed',
@@ -432,7 +433,7 @@ ${content}
         await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
     } catch (error) {
-      console.error('[FileDownloadButton] Download error:', error);
+      log.error('[FileDownloadButton] Download error:', error);
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setTimeout(() => setIsExporting(false), 500);

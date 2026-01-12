@@ -7,6 +7,7 @@
 
 import type { UnifiedMessage, ParsedMetadata } from '@/api/types';
 import { safeJsonParse } from '@agentpress/shared/utils';
+import { log } from '@/lib/logger';
 
 /**
  * Structured tool call data from metadata
@@ -117,6 +118,40 @@ export function extractToolResult(toolMessage: UnifiedMessage | null): ToolResul
 }
 
 /**
+ * Extract tool call data directly from tool message metadata
+ * This handles the "new format" where function_name, arguments, etc. are in the tool message itself
+ * 
+ * @param toolMessage - The tool message that might contain tool call data
+ * @returns Tool call data or null if not found
+ */
+export function extractToolCallFromToolMessage(toolMessage: UnifiedMessage | null): ToolCallData | null {
+  if (!toolMessage) return null;
+  
+  const metadata = safeJsonParse<ParsedMetadata>(toolMessage.metadata, {});
+  
+  // Check if tool message has function_name and tool_call_id directly
+  if (metadata.function_name && metadata.tool_call_id) {
+    let args: Record<string, any> | string = metadata.arguments || {};
+    if (typeof args === 'string') {
+      try {
+        args = JSON.parse(args);
+      } catch {
+        // Keep as string if partial JSON
+      }
+    }
+    
+    return {
+      tool_call_id: metadata.tool_call_id,
+      function_name: metadata.function_name,
+      arguments: args,
+      source: (metadata as any).source || 'native',
+    };
+  }
+  
+  return null;
+}
+
+/**
  * Extract both tool call and tool result from message pair
  * 
  * @param assistantMessage - Assistant message with tool call
@@ -137,8 +172,14 @@ export function extractToolData(
     toolCallId = toolMetadata.tool_call_id;
   }
   
-  // Extract tool call - if we have toolCallId, use it to find the specific tool call
-  const toolCall = extractToolCall(assistantMessage, toolCallId);
+  // Extract tool call - try from assistant message first
+  let toolCall = extractToolCall(assistantMessage, toolCallId);
+  
+  // Fallback: try to extract tool call data directly from tool message
+  // This handles the "new format" where function_name, arguments are in tool message metadata
+  if (!toolCall && toolMessage) {
+    toolCall = extractToolCallFromToolMessage(toolMessage);
+  }
   
   // Extract tool result
   let toolResult: ToolResultData | null = null;
@@ -163,7 +204,13 @@ export function extractToolCallAndResult(
   assistantTimestamp?: string;
   toolTimestamp?: string;
 } {
+  log.log('[extractToolCallAndResult] assistantMessage:', assistantMessage?.message_id || 'null');
+  log.log('[extractToolCallAndResult] toolMessage:', toolMessage?.message_id || 'null');
+  
   const { toolCall, toolResult } = extractToolData(assistantMessage, toolMessage);
+  
+  log.log('[extractToolCallAndResult] Extracted toolCall:', toolCall?.function_name || 'null');
+  log.log('[extractToolCallAndResult] Extracted toolResult:', toolResult ? 'has result' : 'null');
   
   return {
     toolCall,

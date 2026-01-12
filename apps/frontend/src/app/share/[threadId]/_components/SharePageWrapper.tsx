@@ -1,8 +1,10 @@
 'use client';
 
 import React, { useEffect, useState, Suspense, lazy } from 'react';
+import { useParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { AppProviders } from '@/components/layout/app-providers';
+import { MobileAppBanner } from './MobileAppBanner';
 
 // Lazy load presentation modal (only needed when presentations are opened)
 const PresentationViewerWrapper = lazy(() =>
@@ -10,6 +12,8 @@ const PresentationViewerWrapper = lazy(() =>
 );
 
 export function SharePageWrapper({ children }: { children: React.ReactNode }) {
+    const params = useParams();
+    const threadId = params?.threadId as string;
     const [isLoggedIn, setIsLoggedIn] = useState<boolean | null>(null);
     const [isChecking, setIsChecking] = useState(true);
 
@@ -42,6 +46,7 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
                 <Suspense fallback={null}>
                     <PresentationViewerWrapper />
                 </Suspense>
+                {threadId && <MobileAppBanner threadId={threadId} />}
             </AppProviders>
         );
     }
@@ -53,6 +58,7 @@ export function SharePageWrapper({ children }: { children: React.ReactNode }) {
             <Suspense fallback={null}>
                 <PresentationViewerWrapper />
             </Suspense>
+            {threadId && <MobileAppBanner threadId={threadId} />}
         </div>
     );
 }

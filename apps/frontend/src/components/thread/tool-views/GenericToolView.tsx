@@ -20,7 +20,7 @@ import { toast } from '@/lib/toast';
 import { AppIcon } from './shared/AppIcon';
 import { SmartJsonViewer } from './shared/SmartJsonViewer';
 import { ToolViewIconTitle } from './shared/ToolViewIconTitle';
-import { useSmoothText } from '@/hooks/messages';
+import { useSmoothStream } from '@/lib/streaming';
 
 export function GenericToolView({
   toolCall,
@@ -100,11 +100,11 @@ export function GenericToolView({
   );
 
   // Apply smooth text streaming for arguments when streaming
-  const { text: smoothAssistantContent, isAnimating: isAssistantAnimating } = useSmoothText(
+  const smoothAssistantContent = useSmoothStream(
     rawAssistantContent || '',
-    120,
-    isStreaming && !toolResult && !!rawAssistantContent
+    true
   );
+  const isAssistantAnimating = isStreaming && !toolResult && !!rawAssistantContent;
 
   const formattedAssistantContent = isStreaming && smoothAssistantContent ? smoothAssistantContent : rawAssistantContent;
 

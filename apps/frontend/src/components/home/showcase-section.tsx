@@ -149,10 +149,10 @@ export function ShowCaseSection() {
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-8 sm:mb-12 md:mb-16 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
-                    <h1 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center mb-3 sm:mb-4">
+                    <h1 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance text-center mb-3 sm:mb-4" suppressHydrationWarning>
                         {t('title')}
                     </h1>
-                    <h2 className="text-[15px] max-w-3xl mx-auto block text-muted-foreground font-normal px-2">
+                    <h2 className="text-[15px] max-w-3xl mx-auto block text-muted-foreground font-normal px-2" suppressHydrationWarning>
                         {t('subtitle')}
                     </h2>
                 </div>
@@ -188,14 +188,16 @@ export function ShowCaseSection() {
                                         />
 
                                         {/* Title */}
-                                        <h3 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance">
+                                        <h3 className="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium tracking-tighter text-balance" suppressHydrationWarning>
                                             {worker.title}
                                         </h3>
 
                                         {/* Description */}
-                                        <GrainText className="text-sm leading-relaxed text-muted-foreground">
-                                            {worker.description}
-                                        </GrainText>
+                                        <div suppressHydrationWarning>
+                                            <GrainText className="text-sm leading-relaxed text-muted-foreground">
+                                                {worker.description}
+                                            </GrainText>
+                                        </div>
 
                                         {/* Capabilities */}
                                         <div className="flex flex-wrap gap-1.5 sm:gap-2">
@@ -204,6 +206,7 @@ export function ShowCaseSection() {
                                                     key={idx}
                                                     variant="outline"
                                                     className="text-xs sm:text-sm h-7 sm:h-9 px-2.5 sm:px-4"
+                                                    suppressHydrationWarning
                                                 >
                                                     {capability}
                                                 </Badge>
@@ -217,6 +220,7 @@ export function ShowCaseSection() {
                                             variant="default"
                                             size="default"
                                             className="w-fit flex items-center justify-center gap-2 bg-primary text-primary-foreground mt-4 h-9 sm:h-10 text-sm"
+                                            suppressHydrationWarning
                                         >
                                             {t('tryItOut')}
                                             <span>→</span>
@@ -232,11 +236,11 @@ export function ShowCaseSection() {
                                             <div className="flex items-center gap-2">
                                                 <KortixLogo size={14} className="sm:hidden opacity-50" />
                                                 <KortixLogo size={14} className="hidden sm:block opacity-50" />
-                                                <span className="text-base sm:text-xl font-medium">
+                                                <span className="text-base sm:text-xl font-medium" suppressHydrationWarning>
                                                     {t('kortixComputer')}
                                                 </span>
                                             </div>
-                                            <Badge variant="outline" className="flex items-center gap-1.5 px-2 py-0.5 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400">
+                                            <Badge variant="outline" className="flex items-center gap-1.5 px-2 py-0.5 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400" suppressHydrationWarning>
                                                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
                                                 <span className="text-[10px] sm:text-xs font-medium">{t('running')}</span>
                                             </Badge>
@@ -258,7 +262,7 @@ export function ShowCaseSection() {
 
                                         {/* Footer with file type */}
                                         <div className="bg-background text-foreground px-3 sm:px-4 flex items-center flex-shrink-0 h-[50px] sm:h-[71px]">
-                                            <Badge variant="outline" className="text-[10px] sm:text-xs font-mono gap-1 sm:gap-1.5">
+                                            <Badge variant="outline" className="text-[10px] sm:text-xs font-mono gap-1 sm:gap-1.5" suppressHydrationWarning>
                                                 <svg
                                                     className="w-2.5 h-2.5 sm:w-3 sm:h-3"
                                                     viewBox="0 0 16 16"

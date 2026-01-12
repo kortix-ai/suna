@@ -291,16 +291,17 @@ async def handle_staged_files_for_thread(
                 "url": sf['image_url'],
                 "mime_type": sf['mime_type']
             })
-            file_refs.append(f"[Image: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
-        else:
-            file_refs.append(f"[Attached: {filename} ({sf['file_size']:,} bytes) -> uploads/{filename}]")
-            if sf.get('parsed_content'):
-                parsed_contents.append({
-                    "filename": filename,
-                    "content": sf['parsed_content'],
-                    "mime_type": sf['mime_type'],
-                    "size": sf['file_size']
-                })
+        
+        # Use consistent [Uploaded File: ...] format that frontend expects
+        file_refs.append(f"[Uploaded File: uploads/{filename}]")
+        
+        if sf.get('parsed_content'):
+            parsed_contents.append({
+                "filename": filename,
+                "content": sf['parsed_content'],
+                "mime_type": sf['mime_type'],
+                "size": sf['file_size']
+            })
     
     message_content = prompt + "\n\n" + "\n".join(file_refs) if file_refs else prompt
     

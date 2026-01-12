@@ -3,28 +3,22 @@ import { Text } from '@/components/ui/text';
 import { KortixLoader } from '@/components/ui';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
-import { Pressable, TextInput, View, Alert } from 'react-native';
+import { Pressable, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import {
   ChevronLeft,
-  Share2,
-  FolderOpen,
-  Trash2,
   MoreHorizontal,
-  X,
   Check,
-  type LucideIcon,
 } from 'lucide-react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  FadeIn,
-  FadeOut,
-  SlideInRight,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
+import { ThreadActionsDrawer } from './ThreadActionsDrawer';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -37,71 +31,6 @@ interface ThreadHeaderProps {
   onDelete?: () => void;
   isLoading?: boolean;
 }
-
-interface ActionPillProps {
-  icon: LucideIcon;
-  label: string;
-  onPress: () => void;
-  destructive?: boolean;
-  delay?: number;
-}
-
-const ActionPill = React.memo(function ActionPill({
-  icon,
-  label,
-  onPress,
-  destructive = false,
-  delay = 0,
-}: ActionPillProps) {
-  const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
-  const scale = useSharedValue(1);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.92, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    onPress();
-  };
-
-  const bgColor = destructive
-    ? isDark
-      ? 'rgba(239, 68, 68, 0.12)'
-      : 'rgba(239, 68, 68, 0.08)'
-    : isDark
-      ? 'rgba(255, 255, 255, 0.06)'
-      : 'rgba(0, 0, 0, 0.04)';
-
-  const textColor = destructive ? '#ef4444' : isDark ? '#f8f8f8' : '#121215';
-
-  return (
-    <Animated.View entering={SlideInRight.delay(delay).duration(200).springify()}>
-      <AnimatedPressable
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        style={[animatedStyle, { backgroundColor: bgColor }]}
-        className="flex-row items-center gap-2 rounded-full px-3.5 py-2"
-        hitSlop={4}
-      >
-        <Icon as={icon} size={16} color={textColor} strokeWidth={2} />
-        <Text style={{ color: textColor }} className="font-roobert-medium text-sm">
-          {label}
-        </Text>
-      </AnimatedPressable>
-    </Animated.View>
-  );
-});
 
 export function ThreadHeader({
   threadTitle,
@@ -120,7 +49,7 @@ export function ThreadHeader({
   const [isEditingTitle, setIsEditingTitle] = React.useState(false);
   const [editedTitle, setEditedTitle] = React.useState(threadTitle || '');
   const [isUpdating, setIsUpdating] = React.useState(false);
-  const [showActions, setShowActions] = React.useState(false);
+  const [isActionsDrawerOpen, setIsActionsDrawerOpen] = React.useState(false);
   const titleInputRef = React.useRef<TextInput>(null);
 
   const backScale = useSharedValue(1);
@@ -148,10 +77,6 @@ export function ThreadHeader({
   };
 
   const handleTitlePress = () => {
-    if (showActions) {
-      setShowActions(false);
-      return;
-    }
     setIsEditingTitle(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setTimeout(() => {
@@ -167,7 +92,7 @@ export function ThreadHeader({
       try {
         await onTitleChange?.(editedTitle.trim());
       } catch (error) {
-        console.error('Failed to update thread title:', error);
+        log.error('Failed to update thread title:', error);
         setEditedTitle(threadTitle || '');
       } finally {
         setIsUpdating(false);
@@ -179,24 +104,12 @@ export function ThreadHeader({
 
   const handleMorePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowActions(!showActions);
+    setIsActionsDrawerOpen(true);
   };
 
-  const handleDelete = () => {
-    setShowActions(false);
-    Alert.alert(
-      t('threadActions.deleteThread'),
-      t('threadActions.deleteConfirm'),
-      [
-        { text: t('common.cancel'), style: 'cancel' },
-        {
-          text: t('common.delete'),
-          style: 'destructive',
-          onPress: onDelete,
-        },
-      ]
-    );
-  };
+  const handleCloseActionsDrawer = React.useCallback(() => {
+    setIsActionsDrawerOpen(false);
+  }, []);
 
   const displayTitle = threadTitle && threadTitle.trim() 
     ? threadTitle 
@@ -286,7 +199,7 @@ export function ThreadHeader({
           )}
         </View>
 
-        {/* More/Close Button */}
+        {/* More Button */}
         {!isEditingTitle && (
           <AnimatedPressable
             onPressIn={() => {
@@ -300,10 +213,10 @@ export function ThreadHeader({
             className="w-8 h-8 items-center justify-center rounded-full"
             hitSlop={8}
             accessibilityRole="button"
-            accessibilityLabel={showActions ? t('common.close') : t('threadHeader.threadActions')}
+            accessibilityLabel={t('threadHeader.threadActions')}
           >
             <Icon
-              as={showActions ? X : MoreHorizontal}
+              as={MoreHorizontal}
               size={20}
               className="text-foreground"
               strokeWidth={2}
@@ -312,48 +225,13 @@ export function ThreadHeader({
         )}
       </View>
 
-      {/* Expandable Actions Row */}
-      {showActions && (
-        <Animated.View
-          entering={FadeIn.duration(150)}
-          exiting={FadeOut.duration(100)}
-          className="px-4 pb-3"
-        >
-          <View className="flex-row items-center gap-2 flex-wrap">
-            {onShare && (
-              <ActionPill
-                icon={Share2}
-                label={t('threadActions.share')}
-                onPress={() => {
-                  setShowActions(false);
-                  onShare();
-                }}
-                delay={0}
-              />
-            )}
-            {onFiles && (
-              <ActionPill
-                icon={FolderOpen}
-                label={t('threadActions.files')}
-                onPress={() => {
-                  setShowActions(false);
-                  onFiles();
-                }}
-                delay={40}
-              />
-            )}
-            {onDelete && (
-              <ActionPill
-                icon={Trash2}
-                label={t('threadActions.delete')}
-                onPress={handleDelete}
-                destructive
-                delay={80}
-              />
-            )}
-          </View>
-        </Animated.View>
-      )}
+      <ThreadActionsDrawer
+        isOpen={isActionsDrawerOpen}
+        onClose={handleCloseActionsDrawer}
+        onShare={onShare}
+        onFiles={onFiles}
+        onDelete={onDelete}
+      />
     </View>
   );
 }

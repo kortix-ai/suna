@@ -209,6 +209,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
                 batch_response = {
                     "batch_mode": True,
                     "total_queries": len(queries),
+                    "elapsed_time": round(elapsed_time, 2),
                     "results": []
                 }
                 
@@ -243,7 +244,6 @@ class SandboxWebSearchTool(SandboxToolsBase):
                     output=json.dumps(batch_response, ensure_ascii=False)
                 )
             else:
-                # Single query mode: original behavior
                 if not query or not isinstance(query, str):
                     return self.fail_response("A valid search query is required.")
                 
@@ -252,18 +252,23 @@ class SandboxWebSearchTool(SandboxToolsBase):
                     return self.fail_response("A valid search query is required.")
                 
                 logging.info(f"Executing web search for query: '{query}' with {num_results} results")
+                start_time = time.time()
                 result = await self._execute_single_search(query, num_results)
+                elapsed_time = time.time() - start_time
+                
+                response = result.get("response", {})
+                response["elapsed_time"] = round(elapsed_time, 2)
                 
                 if result.get("success", False):
                     return ToolResult(
                         success=True,
-                        output=json.dumps(result.get("response", {}), ensure_ascii=False)
+                        output=json.dumps(response, ensure_ascii=False)
                     )
                 else:
                     logging.warning(f"No search results or answer found for query: '{query}'")
                     return ToolResult(
                         success=False,
-                        output=json.dumps(result.get("response", {}), ensure_ascii=False)
+                        output=json.dumps(response, ensure_ascii=False)
                     )
         
         except Exception as e:

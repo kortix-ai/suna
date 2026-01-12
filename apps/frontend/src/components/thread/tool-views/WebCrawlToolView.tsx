@@ -57,19 +57,19 @@ export function WebCrawlToolView({
   }, [toolResult?.output]);
 
   // Apply smooth text streaming for URL field - MUST be called unconditionally
-  const { displayedValue: smoothUrl, isAnimating: isUrlAnimating } = useSmoothToolField(
-    rawArguments,
-    'url',
-    120,
-    isStreaming && !toolResult && !!toolCall
+  const smoothFields = useSmoothToolField(
+    typeof rawArguments === 'object' && rawArguments ? rawArguments : {},
+    { interval: 50 }
   );
+  const smoothUrl = (smoothFields as any).url || (typeof rawArguments === 'object' ? rawArguments?.url : '') || '';
+  const isUrlAnimating = isStreaming && !toolResult && !!toolCall;
 
   // Apply smooth text streaming for content - MUST be called unconditionally
-  const { text: smoothContent, isAnimating: isContentAnimating } = useSmoothText(
+  const smoothContent = useSmoothText(
     webpageContentText,
-    120,
-    isStreaming && !toolResult && !!webpageContentText
+    { speed: 120 }
   );
+  const isContentAnimating = isStreaming && !toolResult && !!webpageContentText;
 
   useEffect(() => {
     if (isStreaming) {

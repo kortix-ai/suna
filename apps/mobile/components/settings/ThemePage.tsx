@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, ScrollView, useColorScheme as useSystemColorScheme } from 'react-native';
+import { Pressable, View, ScrollView } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -17,7 +17,6 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
-
 type ThemePreference = 'light' | 'dark' | 'system';
 
 interface ThemePageProps {
@@ -27,14 +26,19 @@ interface ThemePageProps {
 
 export function ThemePage({ visible, onClose }: ThemePageProps) {
   const { colorScheme, setColorScheme } = useColorScheme();
-  const systemColorScheme = useSystemColorScheme();
   const { t } = useLanguage();
   
-  // Start with null - we'll determine the actual preference after checking storage and current theme
   const [themePreference, setThemePreference] = React.useState<ThemePreference | null>(null);
   const [isTransitioning, setIsTransitioning] = React.useState(false);
+  const isMountedRef = React.useRef(true);
 
-  // Load preference from storage when component becomes visible
+  React.useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   React.useEffect(() => {
     if (visible) {
       loadThemePreference();
@@ -42,114 +46,56 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visible]);
 
-  React.useEffect(() => {
-    if (themePreference === 'system' && systemColorScheme) {
-      console.log('🌓 System theme changed to:', systemColorScheme);
-      setColorScheme(systemColorScheme);
-    }
-  }, [systemColorScheme, themePreference, setColorScheme]);
-
   const loadThemePreference = async () => {
     try {
       const saved = await AsyncStorage.getItem(THEME_PREFERENCE_KEY);
-      const currentTheme = colorScheme || systemColorScheme || 'light';
-      
-      console.log('🌓 Loading theme preference:', {
-        saved,
-        currentColorScheme: colorScheme,
-        systemColorScheme,
-        resolvedTheme: currentTheme
-      });
-      
+      if (!isMountedRef.current) return;
       if (saved) {
         const preference = saved as ThemePreference;
-        console.log('🌓 Loaded saved theme preference:', preference);
         setThemePreference(preference);
-        
-        // Apply the saved preference to colorScheme if needed
-        if (preference === 'system' && systemColorScheme) {
-          setColorScheme(systemColorScheme);
-        } else if (preference !== 'system') {
-          setColorScheme(preference as 'light' | 'dark');
-        }
+        setColorScheme(preference === 'system' ? 'system' : preference);
       } else {
-        // No saved preference - derive from current colorScheme
+        const currentTheme = colorScheme || 'light';
         const derivedPreference = currentTheme === 'dark' ? 'dark' : 'light';
-        console.log('🌓 No saved preference, deriving from current theme:', derivedPreference, 'from:', currentTheme);
         setThemePreference(derivedPreference);
       }
-    } catch (error) {
-      console.error('🌓 Failed to load theme preference:', error);
-      // Fallback: derive from current colorScheme
-      const currentTheme = colorScheme || systemColorScheme || 'light';
-      const derivedPreference = currentTheme === 'dark' ? 'dark' : 'light';
-      console.log('🌓 Error fallback, deriving:', derivedPreference);
+    } catch {
+      if (!isMountedRef.current) return;
+      const derivedPreference = colorScheme === 'dark' ? 'dark' : 'light';
       setThemePreference(derivedPreference);
     }
   };
 
   const saveThemePreference = async (preference: ThemePreference) => {
     try {
-      console.log('🌓 Saving theme preference:', preference);
       await AsyncStorage.setItem(THEME_PREFERENCE_KEY, preference);
       setThemePreference(preference);
-      console.log('🌓 Theme preference saved successfully. State updated to:', preference);
-    } catch (error) {
-      console.error('Failed to save theme preference:', error);
+    } catch {
     }
   };
   
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Theme page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
   
   const handleThemeSelect = React.useCallback(async (preference: ThemePreference) => {
-    console.log('🌓 handleThemeSelect called:', {
-      preference,
-      currentThemePreference: themePreference,
-      currentColorScheme: colorScheme,
-      isTransitioning
-    });
+    if (isTransitioning) return;
+    if (themePreference !== null && themePreference === preference) return;
     
-    if (isTransitioning) {
-      console.log('🌓 Skipping - transitioning');
-      return;
-    }
-    
-    // Check if already selected (handle null case)
-    if (themePreference !== null && themePreference === preference) {
-      console.log('🌓 Skipping - already selected');
-      return;
-    }
-    
-    console.log('🌓 Theme preference selected:', preference);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
     setIsTransitioning(true);
     
-    const newTheme = preference === 'system' 
-      ? (systemColorScheme || 'light')
-      : preference;
-    
-    console.log('🌓 Setting colorScheme to:', newTheme);
-    setColorScheme(newTheme);
-    
-    // Await the save operation to ensure state is updated
     await saveThemePreference(preference);
-    
-    console.log('🌓 Theme preference saved. New themePreference:', preference, 'New colorScheme:', newTheme);
+    setColorScheme(preference === 'system' ? 'system' : preference);
     
     setTimeout(() => {
       setIsTransitioning(false);
     }, 100);
-  }, [themePreference, isTransitioning, systemColorScheme, setColorScheme, colorScheme]);
+  }, [themePreference, isTransitioning, setColorScheme]);
   
   if (!visible) return null;
 
-  // Don't render until we've determined the theme preference
-  // This prevents showing the wrong selection initially
   if (themePreference === null) {
     return (
       <View className="absolute inset-0 z-50">
@@ -163,27 +109,6 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
       </View>
     );
   }
-
-  const currentTheme = colorScheme || 'light';
-  
-  // Determine selected state based on themePreference
-  // If themePreference is 'system', check the actual colorScheme
-  const getSelectedPreference = (): 'light' | 'dark' => {
-    if (themePreference === 'system') {
-      return (colorScheme || systemColorScheme || 'light') === 'dark' ? 'dark' : 'light';
-    }
-    return themePreference;
-  };
-
-  const selectedPreference = getSelectedPreference();
-  
-  console.log('🌓 Rendering theme options:', {
-    themePreference,
-    colorScheme,
-    selectedPreference,
-    isLightSelected: selectedPreference === 'light',
-    isDarkSelected: selectedPreference === 'dark'
-  });
   
   return (
     <View className="absolute inset-0 z-50">
@@ -204,16 +129,6 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
           />
 
           <View className="px-6 pb-8">
-            {/* <View className="mb-6">
-              <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                {t('theme.preview')}
-              </Text>
-              <View className="flex-row gap-4 mb-6">
-                <DeviceMock theme="light" isActive={currentTheme === 'light'} />
-                <DeviceMock theme="dark" isActive={currentTheme === 'dark'} />
-              </View>
-            </View> */}
-
             <View className="mb-3">
               <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
                 {t('theme.themeOptions')}
@@ -225,7 +140,7 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
                 icon={Sun}
                 label={t('theme.light')}
                 description={t('theme.lightDescription')}
-                isSelected={selectedPreference === 'light'}
+                isSelected={themePreference === 'light'}
                 onPress={() => handleThemeSelect('light')}
                 disabled={isTransitioning}
               />
@@ -234,19 +149,19 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
                 icon={Moon}
                 label={t('theme.dark')}
                 description={t('theme.darkDescription')}
-                isSelected={selectedPreference === 'dark'}
+                isSelected={themePreference === 'dark'}
                 onPress={() => handleThemeSelect('dark')}
                 disabled={isTransitioning}
               />
 
-              {/* <ThemeOption
+              <ThemeOption
                 icon={Monitor}
                 label={t('theme.system')}
                 description={t('theme.systemDescription')}
                 isSelected={themePreference === 'system'}
                 onPress={() => handleThemeSelect('system')}
                 disabled={isTransitioning}
-              /> */}
+              />
             </View>
           </View>
           <View className="h-20" />
@@ -329,201 +244,3 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled }
     </AnimatedPressable>
   );
 }
-
-interface DeviceMockProps {
-  theme: 'light' | 'dark';
-  isActive: boolean;
-}
-
-function DeviceMock({ theme, isActive }: DeviceMockProps) {
-  const { t } = useLanguage();
-  const isLight = theme === 'light';
-  const scale = useSharedValue(1);
-
-  React.useEffect(() => {
-    if (isActive) {
-      scale.value = withSpring(1.05, {
-        damping: 15,
-        stiffness: 200,
-      });
-    } else {
-      scale.value = withSpring(1, {
-        damping: 15,
-        stiffness: 200,
-      });
-    }
-  }, [isActive, scale]);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  return (
-    <Animated.View style={animatedStyle} className="items-center flex-1">
-      {/* Device Container with Shadow */}
-      <View
-        className={`relative rounded-[32px] overflow-hidden ${
-          isActive ? 'shadow-2xl' : 'shadow-lg'
-        }`}
-        style={{
-          width: 130,
-          height: 260,
-          shadowColor: isActive ? '#3b82f6' : '#000',
-          shadowOffset: { width: 0, height: isActive ? 12 : 8 },
-          shadowOpacity: isActive ? 0.3 : 0.15,
-          shadowRadius: isActive ? 20 : 12,
-          elevation: isActive ? 12 : 6,
-        }}
-      >
-        {/* Outer Frame (Device Bezel) */}
-        <View
-          className={`absolute inset-0 rounded-[32px] border-[3px] ${
-            isActive ? 'border-primary' : 'border-border/30'
-          }`}
-          style={{
-            shadowColor: '#000',
-            shadowOffset: { width: 0, height: 2 },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-          }}
-        >
-          {/* Screen Background */}
-          <View
-            className={`absolute inset-[3px] rounded-[29px] ${
-              isLight ? 'bg-[#FAFAFA]' : 'bg-[#0A0A0B]'
-            }`}
-          >
-            {/* Dynamic Island / Notch */}
-            <View className="absolute top-0 left-0 right-0 h-12 items-center justify-center z-10">
-              <View
-                className={`w-20 h-[22px] rounded-full ${
-                  isLight ? 'bg-[#0A0A0B]' : 'bg-[#1C1C1E]'
-                }`}
-                style={{
-                  shadowColor: '#000',
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.3,
-                  shadowRadius: 3,
-                }}
-              >
-                {/* Camera */}
-                <View className="absolute top-1.5 left-4 w-2 h-2 rounded-full bg-[#1a1a1a]/60" />
-                {/* Speaker Grille */}
-                <View className="absolute top-2 right-4 w-6 h-1 rounded-full bg-[#1a1a1a]/40" />
-              </View>
-            </View>
-
-            {/* Screen Content */}
-            <View className="absolute top-14 left-0 right-0 bottom-8 px-4">
-              {/* Status Bar Area */}
-              <View className="flex-row justify-between items-center mb-4 px-1">
-                <View className={`w-12 h-2 rounded-full ${
-                  isLight ? 'bg-[#D1D5DB]' : 'bg-[#2C2C2E]'
-                }`} />
-                <View className={`w-8 h-2 rounded-full ${
-                  isLight ? 'bg-[#D1D5DB]' : 'bg-[#2C2C2E]'
-                }`} />
-              </View>
-
-              {/* Content Cards with Gradient Effect */}
-              <View className={`h-14 rounded-2xl mb-3 overflow-hidden ${
-                isLight ? 'bg-white' : 'bg-[#1C1C1E]'
-              }`}
-              style={{
-                shadowColor: isLight ? '#000' : '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: isLight ? 0.05 : 0.2,
-                shadowRadius: 2,
-              }}>
-                <View className={`h-3 rounded-t-2xl ${
-                  isLight ? 'bg-gradient-to-r from-blue-100 to-purple-100' : 'bg-[#2C2C2E]'
-                }`} />
-              </View>
-
-              <View className={`h-20 rounded-2xl mb-3 overflow-hidden ${
-                isLight ? 'bg-white' : 'bg-[#1C1C1E]'
-              }`}
-              style={{
-                shadowColor: isLight ? '#000' : '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: isLight ? 0.05 : 0.2,
-                shadowRadius: 2,
-              }}>
-                <View className={`h-4 rounded-t-2xl ${
-                  isLight ? 'bg-gradient-to-r from-green-100 to-teal-100' : 'bg-[#2C2C2E]'
-                }`} />
-              </View>
-
-              <View className={`h-16 rounded-2xl mb-3 overflow-hidden ${
-                isLight ? 'bg-white' : 'bg-[#1C1C1E]'
-              }`}
-              style={{
-                shadowColor: isLight ? '#000' : '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: isLight ? 0.05 : 0.2,
-                shadowRadius: 2,
-              }}>
-                <View className={`h-3 rounded-t-2xl ${
-                  isLight ? 'bg-gradient-to-r from-orange-100 to-pink-100' : 'bg-[#2C2C2E]'
-                }`} />
-              </View>
-
-              <View className={`h-14 rounded-2xl overflow-hidden ${
-                isLight ? 'bg-white' : 'bg-[#1C1C1E]'
-              }`}
-              style={{
-                shadowColor: isLight ? '#000' : '#000',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: isLight ? 0.05 : 0.2,
-                shadowRadius: 2,
-              }}>
-                <View className={`h-3 rounded-t-2xl ${
-                  isLight ? 'bg-gradient-to-r from-purple-100 to-indigo-100' : 'bg-[#2C2C2E]'
-                }`} />
-              </View>
-            </View>
-
-            {/* Home Indicator */}
-            <View className="absolute bottom-2 left-0 right-0 items-center">
-              <View
-                className={`w-28 h-[5px] rounded-full ${
-                  isLight ? 'bg-[#0A0A0B]/30' : 'bg-[#FAFAFA]/30'
-                }`}
-              />
-            </View>
-          </View>
-        </View>
-
-        {/* Side Buttons */}
-        <View
-          className={`absolute right-[-3px] top-[60px] w-[3px] h-12 rounded-l-sm ${
-            isLight ? 'bg-[#D1D5DB]' : 'bg-[#3C3C3E]'
-          }`}
-        />
-        <View
-          className={`absolute right-[-3px] top-[90px] w-[3px] h-8 rounded-l-sm ${
-            isLight ? 'bg-[#D1D5DB]' : 'bg-[#3C3C3E]'
-          }`}
-        />
-        <View
-          className={`absolute left-[-3px] top-[70px] w-[3px] h-6 rounded-r-sm ${
-            isLight ? 'bg-[#D1D5DB]' : 'bg-[#3C3C3E]'
-          }`}
-        />
-      </View>
-
-      {/* Label */}
-      <View className="mt-3 items-center">
-        <Text
-          className={`text-xs font-roobert-medium tracking-wide ${
-            isActive ? 'text-primary' : 'text-muted-foreground'
-          }`}
-        >
-          {isLight ? t('theme.lightMode') : t('theme.darkMode')}
-        </Text>
-      </View>
-    </Animated.View>
-  );
-}
-
-

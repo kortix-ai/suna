@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useAuthContext } from '@/contexts';
+import { log } from '@/lib/logger';
 
 /**
  * Account Setup Hook
@@ -25,7 +26,7 @@ export function useAccountSetup() {
 
   // Debug logging
   React.useEffect(() => {
-    console.log('🔧 useAccountSetup state:', {
+    log.log('🔧 useAccountSetup state:', {
       billingLoading,
       isChecking,
       isAuthenticated,
@@ -36,7 +37,7 @@ export function useAccountSetup() {
   }, [billingLoading, isChecking, isAuthenticated, hasActiveSubscription, subscriptionData, needsSetup]);
 
   const markSetupComplete = async () => {
-    console.log('✅ Setup marked as complete (billing context will reflect this)');
+    log.log('✅ Setup marked as complete (billing context will reflect this)');
   };
 
   return {

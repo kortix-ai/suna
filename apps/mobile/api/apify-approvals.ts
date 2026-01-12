@@ -5,6 +5,7 @@
  */
 
 import { API_URL, getAuthHeaders } from './config';
+import { log } from '@/lib/logger';
 
 export interface ApifyApprovalRequest {
   actor_id: string;
@@ -53,7 +54,7 @@ async function fetchApi<T>(
     const errorData = await response.json().catch(() => ({ message: response.statusText }));
     
     if (response.status !== 401 && response.status !== 403) {
-      console.error('❌ Apify Approvals API Error:', {
+      log.error('❌ Apify Approvals API Error:', {
         endpoint,
         status: response.status,
         error: errorData,

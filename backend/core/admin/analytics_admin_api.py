@@ -2240,3 +2240,437 @@ async def toggle_monthly_field_override(
     except Exception as e:
         logger.error(f"Failed to toggle monthly field override: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to toggle monthly field override")
+
+
+# ============================================================================
+# EXECUTIVE OVERVIEW ENDPOINTS
+# ============================================================================
+
+class RevenueSummary(BaseModel):
+    """Revenue metrics from Stripe and database."""
+    mrr: float  # Monthly Recurring Revenue
+    arr: float  # Annual Recurring Revenue (MRR * 12)
+    total_paid_subscribers: int
+    subscribers_by_tier: Dict[str, int]  # tier_name -> count
+    arpu: float  # Average Revenue Per User
+    mrr_change_percent: Optional[float] = None  # vs last month
+    new_paid_this_month: int
+    churned_this_month: int
+
+
+class EngagementSummary(BaseModel):
+    """User engagement metrics."""
+    dau: int  # Daily Active Users (unique accounts with activity today)
+    wau: int  # Weekly Active Users (last 7 days)
+    mau: int  # Monthly Active Users (last 30 days)
+    dau_mau_ratio: float  # Stickiness ratio
+    avg_threads_per_active_user: float
+    total_threads_today: int
+    total_threads_week: int
+    retention_d1: Optional[float] = None  # Day 1 retention
+    retention_d7: Optional[float] = None  # Day 7 retention
+    retention_d30: Optional[float] = None  # Day 30 retention
+
+
+class TaskPerformance(BaseModel):
+    """Agent run/task performance metrics."""
+    total_runs: int
+    completed_runs: int
+    failed_runs: int
+    stopped_runs: int  # User cancelled
+    running_runs: int
+    pending_runs: int  # Not started yet
+    success_rate: float  # percentage: completed / (completed + failed + stopped)
+    avg_duration_seconds: Optional[float] = None
+    runs_by_status: Dict[str, int]
+
+
+class ToolUsage(BaseModel):
+    """Individual tool usage stats."""
+    tool_name: str
+    usage_count: int
+    unique_threads: int
+    percentage_of_threads: float
+
+
+class ToolAdoptionSummary(BaseModel):
+    """Tool adoption metrics."""
+    total_tool_calls: int
+    total_threads_with_tools: int
+    top_tools: List[ToolUsage]
+    tool_adoption_rate: float  # % of threads using any tool
+
+
+@router.get("/revenue-summary")
+async def get_revenue_summary(
+    admin: dict = Depends(require_super_admin)
+) -> RevenueSummary:
+    """
+    Get revenue summary including MRR, subscriber counts, and tier breakdown.
+    Combines Stripe API data with database records.
+    Super admin only due to sensitive financial data.
+    """
+    try:
+        stripe.api_key = config.STRIPE_SECRET_KEY
+        db = DBConnection()
+        client = await db.client
+        
+        now = datetime.now(BERLIN_TZ)
+        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        last_month_start = (month_start - timedelta(days=1)).replace(day=1)
+        
+        # Get all active paid subscriptions from Stripe
+        subscribers_by_tier: Dict[str, int] = {}
+        total_mrr = 0.0
+        total_paid_subscribers = 0
+        
+        has_more = True
+        starting_after = None
+        
+        while has_more:
+            params = {
+                'status': 'active',
+                'limit': 100,
+                'expand': ['data.items.data.price']
+            }
+            if starting_after:
+                params['starting_after'] = starting_after
+            
+            result = await stripe.Subscription.list_async(**params)
+            
+            for sub in result.data:
+                metadata = sub.get('metadata', {}) or {}
+                tier = metadata.get('tier', 'unknown')
+                
+                # Skip free tier
+                if tier == 'free':
+                    continue
+                
+                # Calculate MRR from subscription items
+                sub_mrr = 0.0
+                items = sub.get('items', {}).get('data', [])
+                for item in items:
+                    price = item.get('price', {})
+                    unit_amount = price.get('unit_amount', 0) or 0
+                    interval = price.get('recurring', {}).get('interval', 'month')
+                    interval_count = price.get('recurring', {}).get('interval_count', 1)
+                    
+                    if unit_amount > 0:
+                        # Convert to monthly
+                        if interval == 'year':
+                            sub_mrr += (unit_amount / 100) / 12
+                        elif interval == 'month':
+                            sub_mrr += (unit_amount / 100) / interval_count
+                        else:
+                            sub_mrr += unit_amount / 100
+                
+                if sub_mrr > 0:
+                    total_mrr += sub_mrr
+                    total_paid_subscribers += 1
+                    
+                    # Map tier to display name
+                    display_tier = {
+                        'tier_2_20': 'Plus',
+                        'tier_6_50': 'Pro',
+                        'tier_12_100': 'Business',
+                        'tier_25_200': 'Ultra',
+                        'tier_50_400': 'Enterprise',
+                        'tier_125_800': 'Scale',
+                        'tier_200_1000': 'Max',
+                    }.get(tier, tier)
+                    
+                    subscribers_by_tier[display_tier] = subscribers_by_tier.get(display_tier, 0) + 1
+            
+            has_more = result.has_more
+            starting_after = result.data[-1].id if has_more and result.data else None
+        
+        # Get new paid this month from Stripe
+        month_start_ts = int(month_start.timestamp())
+        new_paid_query = f"status:'active' AND -metadata['tier']:'free' AND created>={month_start_ts}"
+        new_paid_result = await stripe.Subscription.search_async(query=new_paid_query, limit=100)
+        new_paid_this_month = len(new_paid_result.data)
+        
+        # Count additional pages if any
+        while new_paid_result.has_more:
+            new_paid_result = await stripe.Subscription.search_async(
+                query=new_paid_query, 
+                limit=100,
+                page=new_paid_result.next_page
+            )
+            new_paid_this_month += len(new_paid_result.data)
+        
+        # Get churned this month from database cache
+        churn_result = await client.from_('arr_daily_churn').select(
+            'deleted_count, downgrade_count'
+        ).gte('churn_date', month_start.strftime('%Y-%m-%d')).execute()
+        
+        churned_this_month = sum(
+            (row.get('deleted_count', 0) or 0) + (row.get('downgrade_count', 0) or 0)
+            for row in churn_result.data or []
+        )
+        
+        # Calculate ARPU
+        arpu = total_mrr / total_paid_subscribers if total_paid_subscribers > 0 else 0.0
+        
+        return RevenueSummary(
+            mrr=round(total_mrr, 2),
+            arr=round(total_mrr * 12, 2),
+            total_paid_subscribers=total_paid_subscribers,
+            subscribers_by_tier=subscribers_by_tier,
+            arpu=round(arpu, 2),
+            mrr_change_percent=None,  # TODO: Calculate from historical data
+            new_paid_this_month=new_paid_this_month,
+            churned_this_month=churned_this_month,
+        )
+        
+    except stripe.error.StripeError as e:
+        logger.error(f"Stripe error getting revenue summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get revenue data from Stripe")
+    except Exception as e:
+        logger.error(f"Failed to get revenue summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get revenue summary")
+
+
+@router.get("/engagement-summary")
+async def get_engagement_summary(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    admin: dict = Depends(require_admin)
+) -> EngagementSummary:
+    """
+    Get user engagement metrics including DAU, WAU, MAU, and retention.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Parse target date
+        if date:
+            target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+        else:
+            target_date = datetime.now(BERLIN_TZ)
+        
+        today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        week_start = today_start - timedelta(days=6)  # 7 days including today
+        month_start = today_start - timedelta(days=29)  # 30 days including today
+        
+        # Use RPC for efficient COUNT(DISTINCT) queries
+        metrics_result = await client.rpc('get_engagement_metrics', {
+            'p_today_start': today_start.isoformat(),
+            'p_today_end': today_end.isoformat(),
+            'p_week_start': week_start.isoformat(),
+            'p_month_start': month_start.isoformat(),
+        }).execute()
+        
+        if metrics_result.data and len(metrics_result.data) > 0:
+            metrics = metrics_result.data[0]
+            dau = metrics.get('dau', 0) or 0
+            wau = metrics.get('wau', 0) or 0
+            mau = metrics.get('mau', 0) or 0
+            total_threads_today = metrics.get('threads_today', 0) or 0
+            total_threads_week = metrics.get('threads_week', 0) or 0
+        else:
+            dau = wau = mau = total_threads_today = total_threads_week = 0
+        
+        # DAU/MAU ratio (stickiness)
+        dau_mau_ratio = (dau / mau * 100) if mau > 0 else 0.0
+        
+        # Avg threads per active user (today)
+        avg_threads_per_active_user = total_threads_today / dau if dau > 0 else 0.0
+        
+        return EngagementSummary(
+            dau=dau,
+            wau=wau,
+            mau=mau,
+            dau_mau_ratio=round(dau_mau_ratio, 1),
+            avg_threads_per_active_user=round(avg_threads_per_active_user, 2),
+            total_threads_today=total_threads_today,
+            total_threads_week=total_threads_week,
+            retention_d1=None,  # TODO: Calculate from cohort data
+            retention_d7=None,
+            retention_d30=None,
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get engagement summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get engagement summary")
+
+
+@router.get("/task-performance")
+async def get_task_performance(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    admin: dict = Depends(require_admin)
+) -> TaskPerformance:
+    """
+    Get task/agent run performance metrics.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Parse target date
+        if date:
+            target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+        else:
+            target_date = datetime.now(BERLIN_TZ)
+        
+        today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        
+        # Get all runs for today
+        runs_result = await client.from_('agent_runs').select(
+            'id, status, started_at, completed_at'
+        ).gte('created_at', today_start.isoformat()).lt('created_at', today_end.isoformat()).execute()
+        
+        runs = runs_result.data or []
+        
+        # Count by status
+        runs_by_status: Dict[str, int] = {}
+        total_duration_seconds = 0.0
+        completed_with_duration = 0
+        
+        for run in runs:
+            status = run.get('status', 'unknown')
+            runs_by_status[status] = runs_by_status.get(status, 0) + 1
+            
+            # Calculate duration for finished runs (completed, failed, stopped)
+            if status in ['completed', 'failed', 'stopped'] and run.get('started_at') and run.get('completed_at'):
+                try:
+                    started = datetime.fromisoformat(run['started_at'].replace('Z', '+00:00'))
+                    completed = datetime.fromisoformat(run['completed_at'].replace('Z', '+00:00'))
+                    duration = (completed - started).total_seconds()
+                    if duration > 0:
+                        total_duration_seconds += duration
+                        completed_with_duration += 1
+                except (ValueError, TypeError):
+                    pass
+        
+        total_runs = len(runs)
+        completed_runs = runs_by_status.get('completed', 0)
+        failed_runs = runs_by_status.get('failed', 0) + runs_by_status.get('error', 0)
+        stopped_runs = runs_by_status.get('stopped', 0)
+        running_runs = runs_by_status.get('running', 0)
+        pending_runs = runs_by_status.get('pending', 0)
+        
+        # Success rate: completed / (completed + failed + stopped)
+        # 'stopped' means user cancelled, 'running'/'pending' are not finished yet
+        finished_runs = completed_runs + failed_runs + stopped_runs
+        success_rate = (completed_runs / finished_runs * 100) if finished_runs > 0 else 0.0
+        
+        # Average duration
+        avg_duration = total_duration_seconds / completed_with_duration if completed_with_duration > 0 else None
+        
+        return TaskPerformance(
+            total_runs=total_runs,
+            completed_runs=completed_runs,
+            failed_runs=failed_runs,
+            stopped_runs=stopped_runs,
+            running_runs=running_runs,
+            pending_runs=pending_runs,
+            success_rate=round(success_rate, 1),
+            avg_duration_seconds=round(avg_duration, 1) if avg_duration else None,
+            runs_by_status=runs_by_status,
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get task performance: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get task performance")
+
+
+@router.get("/tool-adoption")
+async def get_tool_adoption(
+    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    admin: dict = Depends(require_admin)
+) -> ToolAdoptionSummary:
+    """
+    Get tool adoption metrics by parsing tool calls from messages.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+        
+        # Parse target date
+        if date:
+            target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+        else:
+            target_date = datetime.now(BERLIN_TZ)
+        
+        today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
+        
+        # Get messages with tool calls (type='tool' or content contains tool_calls)
+        # We look for assistant messages that have tool_calls in their content
+        messages_result = await client.from_('messages').select(
+            'thread_id, content, type'
+        ).gte('created_at', today_start.isoformat()).lt('created_at', today_end.isoformat()).in_('type', ['tool', 'assistant']).limit(5000).execute()
+        
+        messages = messages_result.data or []
+        
+        # Parse tool usage
+        tool_counts: Dict[str, int] = {}
+        tool_threads: Dict[str, set] = {}
+        threads_with_tools: set = set()
+        total_tool_calls = 0
+        
+        for msg in messages:
+            thread_id = msg.get('thread_id')
+            content = msg.get('content', {})
+            msg_type = msg.get('type')
+            
+            # Handle tool type messages
+            if msg_type == 'tool':
+                tool_name = content.get('name') or content.get('tool_name') or 'unknown'
+                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+                if tool_name not in tool_threads:
+                    tool_threads[tool_name] = set()
+                tool_threads[tool_name].add(thread_id)
+                threads_with_tools.add(thread_id)
+                total_tool_calls += 1
+            
+            # Handle assistant messages with tool_calls
+            elif msg_type == 'assistant' and isinstance(content, dict):
+                tool_calls = content.get('tool_calls', [])
+                if isinstance(tool_calls, list):
+                    for tool_call in tool_calls:
+                        if isinstance(tool_call, dict):
+                            func = tool_call.get('function', {})
+                            tool_name = func.get('name') if isinstance(func, dict) else None
+                            if tool_name:
+                                tool_counts[tool_name] = tool_counts.get(tool_name, 0) + 1
+                                if tool_name not in tool_threads:
+                                    tool_threads[tool_name] = set()
+                                tool_threads[tool_name].add(thread_id)
+                                threads_with_tools.add(thread_id)
+                                total_tool_calls += 1
+        
+        # Get total threads for today to calculate adoption rate
+        threads_result = await client.from_('threads').select(
+            '*', count='exact'
+        ).gte('created_at', today_start.isoformat()).lt('created_at', today_end.isoformat()).execute()
+        total_threads = threads_result.count or 0
+        
+        # Build top tools list
+        top_tools: List[ToolUsage] = []
+        for tool_name, count in sorted(tool_counts.items(), key=lambda x: x[1], reverse=True)[:10]:
+            unique_threads = len(tool_threads.get(tool_name, set()))
+            percentage = (unique_threads / total_threads * 100) if total_threads > 0 else 0.0
+            top_tools.append(ToolUsage(
+                tool_name=tool_name,
+                usage_count=count,
+                unique_threads=unique_threads,
+                percentage_of_threads=round(percentage, 1),
+            ))
+        
+        # Tool adoption rate (% of threads using any tool)
+        tool_adoption_rate = (len(threads_with_tools) / total_threads * 100) if total_threads > 0 else 0.0
+        
+        return ToolAdoptionSummary(
+            total_tool_calls=total_tool_calls,
+            total_threads_with_tools=len(threads_with_tools),
+            top_tools=top_tools,
+            tool_adoption_rate=round(tool_adoption_rate, 1),
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to get tool adoption: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get tool adoption")

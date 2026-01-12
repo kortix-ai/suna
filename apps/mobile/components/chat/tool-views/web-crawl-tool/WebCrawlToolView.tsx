@@ -9,6 +9,7 @@ import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 // Utility functions
 function formatTimestamp(isoString?: string): string {
@@ -55,7 +56,7 @@ export function WebCrawlToolView({ toolCall, toolResult, isStreaming, assistantT
         await Linking.openURL(url);
       }
     } catch (err) {
-      console.error('Failed to open URL:', err);
+      log.error('Failed to open URL:', err);
     }
   };
 

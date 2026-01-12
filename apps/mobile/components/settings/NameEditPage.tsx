@@ -15,6 +15,7 @@ import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/ui';
 import { ProfilePicture } from './ProfilePicture';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
   
@@ -49,7 +50,7 @@ export function NameEditPage({
   }, [visible, currentName]);
   
   const handleClose = () => {
-    console.log('🎯 Name edit page closing');
+    log.log('🎯 Name edit page closing');
     Keyboard.dismiss();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
@@ -66,7 +67,7 @@ export function NameEditPage({
   };
   
   const handleSave = async () => {
-    console.log('🎯 Save name pressed');
+    log.log('🎯 Save name pressed');
     
     const trimmedName = name.trim();
     const validationError = validateName(trimmedName);
@@ -87,9 +88,9 @@ export function NameEditPage({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     
     try {
-      console.log('📝 Updating user name');
-      console.log('User ID:', user?.id);
-      console.log('New name:', trimmedName);
+      log.log('📝 Updating user name');
+      log.log('User ID:', user?.id);
+      log.log('New name:', trimmedName);
       
       // Update user metadata using Supabase Auth
       const { data: updatedUser, error: updateError } = await supabase.auth.updateUser({
@@ -102,7 +103,7 @@ export function NameEditPage({
         throw updateError;
       }
       
-      console.log('✅ Name updated successfully:', updatedUser);
+      log.log('✅ Name updated successfully:', updatedUser);
       
       // Try to update the account table via RPC if it exists
       try {
@@ -110,9 +111,9 @@ export function NameEditPage({
           name: trimmedName,
           account_id: user?.id
         });
-        console.log('✅ Account table also updated');
+        log.log('✅ Account table also updated');
       } catch (rpcError) {
-        console.warn('⚠️ RPC update failed (may not exist):', rpcError);
+        log.warn('⚠️ RPC update failed (may not exist):', rpcError);
         // Ignore RPC errors - not all setups have this function
       }
       
@@ -132,7 +133,7 @@ export function NameEditPage({
         );
       }, 300);
     } catch (err: any) {
-      console.error('❌ Failed to update name:', err);
+      log.error('❌ Failed to update name:', err);
       const errorMessage = err.message || t('nameEdit.failedToUpdate');
       setError(errorMessage);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);

@@ -56,7 +56,7 @@ import {
 } from '@/hooks/files';
 import { useDownloadRestriction } from '@/hooks/billing';
 import JSZip from 'jszip';
-import { normalizeFilenameToNFC } from '@/lib/utils/unicode';
+import { normalizeFilenameToNFC } from '@agentpress/shared';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useFileViewerStore } from '@/stores/file-viewer-store';
@@ -667,9 +667,6 @@ export function FileBrowserView({
   const [revertCommitInfo, setRevertCommitInfo] = useState<any | null>(null);
   const [revertLoadingInfo, setRevertLoadingInfo] = useState(false);
   const [revertInProgress, setRevertInProgress] = useState(false);
-
-  // Other files visibility state (for library views)
-  const [showOtherFiles, setShowOtherFiles] = useState(false);
 
   // Check computer status
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
@@ -1384,8 +1381,8 @@ export function FileBrowserView({
     }
   }, [revertCommitInfo, sandboxId, session?.access_token, refetchFiles, clearSelectedVersion]);
 
-  // Library view header actions
-  const libraryHeaderActions = (
+  // Files view header actions
+  const filesHeaderActions = (
     <>
       {onNavigateToThread && (
         <Button
@@ -1659,7 +1656,7 @@ export function FileBrowserView({
     </>
   );
 
-  // Library view layout
+  // Files view layout
   if (isLibraryView) {
     const allFiles = selectedVersion ? versionFiles : files;
     // Split files into main outputs and other files
@@ -1668,7 +1665,7 @@ export function FileBrowserView({
     
     return (
       <div className="flex flex-col min-h-screen bg-background">
-        {/* Library Header */}
+        {/* Files Header */}
         <div className="px-8 pt-8 pb-6">
           <div className="flex items-center gap-4 mb-4">
             <Button
@@ -1686,7 +1683,7 @@ export function FileBrowserView({
             
             <div className="flex items-center gap-2">
               <h1 className="text-2xl font-semibold">
-                {currentPath === '/workspace' ? 'Library' : currentPath.split('/').pop()}
+                {currentPath === '/workspace' ? 'Files' : currentPath.split('/').pop()}
               </h1>
               {currentPath !== '/workspace' && (
                 <Button
@@ -1704,7 +1701,7 @@ export function FileBrowserView({
             <div className="flex-1" />
 
             <div className="flex items-center gap-2">
-              {libraryHeaderActions}
+              {filesHeaderActions}
             </div>
           </div>
 
@@ -1837,38 +1834,25 @@ export function FileBrowserView({
                   </div>
                 )}
 
-                {/* Other files - collapsible section matching thread list style */}
+                {/* Folders & Files */}
                 {otherFiles.length > 0 && (
                   <div className={cn("mt-8", mainOutputFiles.length === 0 && "mt-0")}>
-                    <button
-                      onClick={() => setShowOtherFiles(!showOtherFiles)}
-                      className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors mb-3"
-                    >
-                      <ChevronRight className={cn(
-                        "h-4 w-4 transition-transform",
-                        showOtherFiles && "rotate-90"
-                      )} />
-                      <span>Other files</span>
-                    </button>
-                    
-                    {showOtherFiles && (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-w-2xl">
-                        {otherFiles.map((file) => (
-                          <button
-                            key={file.path}
-                            className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-muted/50 transition-colors text-left group min-w-0"
-                            onClick={() => handleItemClick(file)}
-                          >
-                            <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
-                              {getFileIcon(file, 'header')}
-                            </div>
-                            <span className="flex-1 text-sm text-muted-foreground group-hover:text-foreground truncate min-w-0">
-                              {file.name}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1 max-w-2xl">
+                      {otherFiles.map((file) => (
+                        <button
+                          key={file.path}
+                          className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-muted/50 transition-colors text-left group min-w-0"
+                          onClick={() => handleItemClick(file)}
+                        >
+                          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                            {getFileIcon(file, 'header')}
+                          </div>
+                          <span className="flex-1 text-sm text-muted-foreground group-hover:text-foreground truncate min-w-0">
+                            {file.name}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
               </div>
@@ -1938,7 +1922,7 @@ export function FileBrowserView({
         icon={Home}
         onIconClick={navigateHome}
         iconTitle="Home"
-        title={currentPath === '/workspace' ? (isInlineLibrary ? 'Library' : 'Files') : undefined}
+        title={currentPath === '/workspace' ? 'Files' : undefined}
         breadcrumbs={currentPath !== '/workspace' ? getBreadcrumbSegments(currentPath) : undefined}
         onBreadcrumbClick={navigateToBreadcrumb}
         actions={defaultHeaderActions}
@@ -2011,7 +1995,7 @@ export function FileBrowserView({
             </div>
           </div>
         ) : isInlineLibrary ? (
-          /* Inline Library: Card layout with thumbnails */
+          /* Inline Files: Card layout with thumbnails */
           <ScrollArea className="h-full w-full max-w-full min-w-0">
             <div className="p-4 max-w-full min-w-0">
               {/* Main outputs - large cards */}
@@ -2104,38 +2088,25 @@ export function FileBrowserView({
                 </div>
               )}
 
-              {/* Other files - collapsible section matching thread list style */}
+              {/* Folders & Files */}
               {otherPanelFiles.length > 0 && (
                 <div className={cn("mt-6", mainPanelFiles.length === 0 && "mt-0")}>
-                  <button
-                    onClick={() => setShowOtherFiles(!showOtherFiles)}
-                    className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors mb-2"
-                  >
-                    <ChevronRight className={cn(
-                      "h-3.5 w-3.5 transition-transform",
-                      showOtherFiles && "rotate-90"
-                    )} />
-                    <span>Other files</span>
-                  </button>
-                  
-                  {showOtherFiles && (
-                    <div className="grid grid-cols-2 gap-0.5">
-                      {otherPanelFiles.map((file) => (
-                        <button
-                          key={file.path}
-                          className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-muted/50 transition-colors text-left group min-w-0"
-                          onClick={() => handleItemClick(file)}
-                        >
-                          <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
-                            {getFileIcon(file, 'header')}
-                          </div>
-                          <span className="flex-1 text-sm text-muted-foreground group-hover:text-foreground truncate min-w-0">
-                            {file.name}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <div className="grid grid-cols-2 gap-0.5">
+                    {otherPanelFiles.map((file) => (
+                      <button
+                        key={file.path}
+                        className="flex items-center gap-3 p-2.5 rounded-2xl hover:bg-muted/50 transition-colors text-left group min-w-0"
+                        onClick={() => handleItemClick(file)}
+                      >
+                        <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
+                          {getFileIcon(file, 'header')}
+                        </div>
+                        <span className="flex-1 text-sm text-muted-foreground group-hover:text-foreground truncate min-w-0">
+                          {file.name}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>

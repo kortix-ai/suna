@@ -1,3 +1,2 @@
 export { ThreadHeader } from './ThreadHeader';
-// ThreadActionsMenu is now integrated into ThreadHeader
-
+export { ThreadActionsDrawer } from './ThreadActionsDrawer';

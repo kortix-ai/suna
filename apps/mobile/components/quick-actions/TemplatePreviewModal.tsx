@@ -1,11 +1,14 @@
 import * as React from 'react';
-import { Modal, View, Pressable, Dimensions } from 'react-native';
+import { Modal, View, Pressable, Dimensions, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
+import { KortixLoader } from '@/components/ui';
 import { X } from 'lucide-react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from 'nativewind';
+import { log } from '@/lib/logger';
 
 interface TemplatePreviewModalProps {
   visible: boolean;
@@ -20,7 +23,21 @@ interface TemplatePreviewModalProps {
 const getPdfUrl = (templateId: string): string => {
   // Use the backend URL from environment or default
   const API_URL = process.env.EXPO_PUBLIC_BACKEND_URL || 'https://api.agentpress.ai';
-  return `${API_URL}/presentation-templates/${templateId}/pdf#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
+  return `${API_URL}/presentation-templates/${templateId}/pdf`;
+};
+
+/**
+ * Gets the viewer URL based on platform
+ * - iOS: Uses native PDF support with direct URL
+ * - Android: Uses Google Docs Viewer since Android WebView lacks native PDF support
+ */
+const getViewerUrl = (pdfUrl: string): string => {
+  if (Platform.OS === 'android') {
+    // Use Google Docs Viewer for Android
+    return `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(pdfUrl)}`;
+  }
+  // iOS can handle PDFs natively
+  return `${pdfUrl}#toolbar=0&navpanes=0&scrollbar=0&view=FitH`;
 };
 
 /**
@@ -36,9 +53,12 @@ export function TemplatePreviewModal({
   templateName,
 }: TemplatePreviewModalProps) {
   const insets = useSafeAreaInsets();
+  const { colorScheme } = useColorScheme();
+  const isDark = colorScheme === 'dark';
   const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
   const pdfUrl = getPdfUrl(templateId);
+  const viewerUrl = getViewerUrl(pdfUrl);
 
   return (
     <Modal
@@ -75,22 +95,34 @@ export function TemplatePreviewModal({
         {/* PDF Content */}
         <View className="flex-1 bg-muted/20">
           <WebView
-            source={{ uri: pdfUrl }}
+            source={{ uri: viewerUrl }}
             onError={(syntheticEvent) => {
               const { nativeEvent } = syntheticEvent;
-              console.error('WebView error:', nativeEvent);
+              log.error('WebView error:', nativeEvent);
             }}
             style={{ 
               width: screenWidth, 
               height: screenHeight,
-              backgroundColor: 'transparent'
+              backgroundColor: isDark ? '#121215' : '#ffffff'
             }}
             scalesPageToFit
             startInLoadingState
+            renderLoading={() => (
+              <View 
+                className="absolute inset-0 items-center justify-center" 
+                style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
+              >
+                <KortixLoader size="large" />
+                <Text className="text-sm text-muted-foreground mt-4">
+                  Loading template...
+                </Text>
+              </View>
+            )}
             allowsInlineMediaPlayback
             mediaPlaybackRequiresUserAction={false}
             javaScriptEnabled
             domStorageEnabled
+            mixedContentMode="compatibility"
           />
         </View>
       </View>

@@ -14,6 +14,7 @@ import { ToolViewProps } from '../types';
 import { ToolViewCard } from '../shared/ToolViewCard';
 import { ApifyApproval } from '@/api/apify-approvals';
 import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify/use-apify-approvals';
+import { log } from '@/lib/logger';
 
 export function ApifyApprovalView({
   toolCall,
@@ -48,7 +49,7 @@ export function ApifyApprovalView({
           });
         }
       } catch (error) {
-        console.error('Error parsing approval data:', error);
+        log.error('Error parsing approval data:', error);
       }
     }
   }, [toolResult]);

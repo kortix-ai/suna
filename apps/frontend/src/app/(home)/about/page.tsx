@@ -11,16 +11,14 @@ type ParagraphItem =
   | { text: string; linkText: string; linkHref: string };
 
 const paragraphs: ParagraphItem[] = [
-  "We are Kortix.",
-  "Eight people across three continents. Some wake to European mornings, others to American dawns, a few greet the day from Asia. The sun never sets on our work. When one logs off, another picks up. A continuous stream that never stops.",
-  "Our mission is to build a general AI worker that can truly take over real world tasks. Not a chatbot. Not a narrow tool. A worker that helps people save time and focus on what actually matters.",
-  "We are essentially a tribe.",
-  "People bound by a shared obsession rather than geography or office walls.",
-  "We don't believe in staying put. We travel year-round, working from new cities, new countries, new time zones. Movement keeps us sharp. New places bring new perspectives, and those perspectives feed directly into what we build.",
-  "The culture is simple: ship fast, debate openly, let the best ideas win. No politics. No hierarchy of opinions. Just a relentless focus on making something that matters.",
-  "We're not here for the hype cycle.",
-  "We're building for the long game. A future where AI workers are infrastructure, not novelty.",
-  { text: "Let's push the game forward. ", linkText: "Join us.", linkHref: "/careers" }
+  "We're Kortix. Eight people, no office.",
+  "We're building AI that does real work, not chatbots, not demos. The kind of thing that takes tasks off your plate so you can focus on what matters.",
+  "Our team is spread across the US, Europe, and Asia. We ship code, debate ideas, and keep things moving.",
+  "We travel a lot. Belgrade, Lisbon, San Francisco. New places keep things fresh and sometimes spark new ideas.",
+  "The way we work is simple: good ideas win, bad ones get called out. No politics, no unnecessary hierarchy.",
+  "There's a lot of noise in AI right now. We're focused on building something that actually works in the real world.",
+  "This is what we spend our time on. It's the problem we care about most.",
+  { text: "If you're interested, ", linkText: "come join us.", linkHref: "/careers" }
 ];
 
 // Helper to get text content from paragraph item

@@ -7,7 +7,7 @@ import { Check, Copy } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { MermaidRenderer } from '@/components/ui/mermaid-renderer';
 import { isMermaidCode } from '@/lib/mermaid-utils';
-import { autoLinkUrls } from '@/lib/utils/url-autolink';
+import { autoLinkUrls } from '@agentpress/shared';
 
 // Helper to check if a URL is internal (same origin)
 function isInternalUrl(href: string | undefined): boolean {
@@ -147,9 +147,13 @@ export const UnifiedMarkdown = React.memo<UnifiedMarkdownProps>(({
   const processedContent = autoLinkUrls(safeContent);
 
   return (
-    <div className={cn('kortix-markdown', className)}>
+    <div 
+      className={cn('kortix-markdown', isStreaming && 'streaming-active', className)}
+      data-streaming={isStreaming ? 'true' : 'false'}
+    >
       <Streamdown
         isAnimating={isStreaming}
+        mode={isStreaming ? 'streaming' : 'static'}
         components={{
           // ═══════════════════════════════════════════════════════════════
           // HEADINGS - Clean hierarchy with proper weight distribution

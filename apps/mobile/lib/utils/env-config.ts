@@ -1,3 +1,4 @@
+import { log } from '@/lib/logger';
 /**
  * Environment Configuration
  * 
@@ -56,6 +57,6 @@ export const useProductionStripeIds = isProduction;
 /**
  * Log current environment on import (for debugging)
  */
-console.log(`🌍 Mobile app environment: ${ENV_MODE}`);
-console.log(`💳 Using ${useProductionStripeIds ? 'PRODUCTION' : 'STAGING'} Stripe price IDs`);
+log.log(`🌍 Mobile app environment: ${ENV_MODE}`);
+log.log(`💳 Using ${useProductionStripeIds ? 'PRODUCTION' : 'STAGING'} Stripe price IDs`);
 

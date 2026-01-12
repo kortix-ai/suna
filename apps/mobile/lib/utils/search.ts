@@ -10,6 +10,7 @@
 
 import * as React from 'react';
 import Fuse, { FuseResultMatch } from 'fuse.js';
+import { log } from '@/lib/logger';
 
 export interface SearchableItem {
   id: string;
@@ -95,7 +96,7 @@ export function useSearch<T extends SearchableItem>(
   }, []);
   
   const updateQuery = React.useCallback((newQuery: string) => {
-    console.log('🔍 Search query updated:', newQuery);
+    log.log('🔍 Search query updated:', newQuery);
     setQuery(newQuery);
   }, []);
   

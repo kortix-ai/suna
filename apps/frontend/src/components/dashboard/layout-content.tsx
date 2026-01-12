@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { Suspense, lazy } from 'react';
 import { useAccounts } from '@/hooks/account';
 import { useAuth } from '@/components/AuthProvider';
-import { useMaintenanceNoticeQuery, useTechnicalIssueQuery } from '@/hooks/edge-flags';
+import { useSystemStatusQuery } from '@/hooks/edge-flags';
 import { useRouter } from 'next/navigation';
 import { useApiHealth } from '@/hooks/usage/use-health';
 import { useAdminRole } from '@/hooks/admin';
@@ -55,6 +55,10 @@ const TechnicalIssueBanner = lazy(() =>
   import('@/components/announcements/technical-issue-banner').then(mod => ({ default: mod.TechnicalIssueBanner }))
 );
 
+const MaintenanceCountdownBanner = lazy(() => 
+  import('@/components/announcements/maintenance-countdown-banner').then(mod => ({ default: mod.MaintenanceCountdownBanner }))
+);
+
 // Skeleton shell that renders immediately for FCP
 function DashboardSkeleton() {
   return (
@@ -100,8 +104,10 @@ export default function DashboardLayoutContent({
   const personalAccount = accounts?.find((account) => account.personal_account);
   const router = useRouter();
   const isMobile = useIsMobile();
-  const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
-  const { data: technicalIssue } = useTechnicalIssueQuery();
+  const { data: systemStatus, isLoading: systemStatusLoading } = useSystemStatusQuery();
+  const maintenanceNotice = systemStatus?.maintenanceNotice;
+  const technicalIssue = systemStatus?.technicalIssue;
+  const statusUpdatedAt = systemStatus?.updatedAt;
   const {
     data: healthData,
     isLoading: isCheckingHealth,
@@ -133,22 +139,35 @@ export default function DashboardLayoutContent({
     }
   }, [user, isLoading, router]);
 
-  const mantenanceBanner: React.ReactNode | null = null;
+  const isMaintenanceActive = (() => {
+    if (!maintenanceNotice?.enabled || !maintenanceNotice.startTime || !maintenanceNotice.endTime) {
+      return false;
+    }
+    const now = new Date();
+    const start = new Date(maintenanceNotice.startTime);
+    const end = new Date(maintenanceNotice.endTime);
+    return now >= start && now <= end;
+  })();
 
-  // Show skeleton immediately for FCP while checking auth
-  // This allows content to paint quickly instead of blocking
+  const isMaintenanceScheduled = (() => {
+    if (!maintenanceNotice?.enabled || !maintenanceNotice.startTime || !maintenanceNotice.endTime) {
+      return false;
+    }
+    const now = new Date();
+    const start = new Date(maintenanceNotice.startTime);
+    const end = new Date(maintenanceNotice.endTime);
+    return now < start && now < end;
+  })();
+
   if (isLoading) {
     return <DashboardSkeleton />;
   }
 
-  // Redirect to auth if not authenticated (don't block render)
   if (!user) {
     return <DashboardSkeleton />;
   }
 
-  // Show maintenance page if maintenance mode is enabled
-  // Lazy loaded to not impact initial FCP
-  if (maintenanceNotice?.enabled && !maintenanceLoading && !isCheckingAdminRole && !isAdmin) {
+  if (isMaintenanceActive && !systemStatusLoading && !isCheckingAdminRole && !isAdmin) {
     return (
       <Suspense fallback={<DashboardSkeleton />}>
         <MaintenancePage />
@@ -179,15 +198,25 @@ export default function DashboardLayoutContent({
       }
     >
       <div className="relative h-full">
-        {/* Technical issue banner - commented out */}
-        {/* {technicalIssue?.enabled && (
+        {technicalIssue?.enabled && technicalIssue.message && (
           <Suspense fallback={null}>
             <TechnicalIssueBanner 
               message={technicalIssue.message}
               statusUrl={technicalIssue.statusUrl}
+              updatedAt={statusUpdatedAt}
             />
           </Suspense>
-        )} */}
+        )}
+        
+        {isMaintenanceScheduled && maintenanceNotice?.startTime && maintenanceNotice?.endTime && (
+          <Suspense fallback={null}>
+            <MaintenanceCountdownBanner 
+              startTime={maintenanceNotice.startTime}
+              endTime={maintenanceNotice.endTime}
+              updatedAt={statusUpdatedAt}
+            />
+          </Suspense>
+        )}
         
         {/* Site-wide promo banner for free tier users */}
         <Suspense fallback={null}>
@@ -199,7 +228,6 @@ export default function DashboardLayoutContent({
         
         <Suspense fallback={null}>
           <OnboardingProvider>
-            {mantenanceBanner}
             <div className="bg-background">{children}</div>
           </OnboardingProvider>
         </Suspense>

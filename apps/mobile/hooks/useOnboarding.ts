@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useAuthContext } from '@/contexts/AuthContext';
 import { supabase } from '@/api/supabase';
+import { log } from '@/lib/logger';
 
 const ONBOARDING_KEY_PREFIX = '@onboarding_completed_';
 
@@ -37,7 +38,7 @@ export function useOnboarding() {
       const completedInMetadata = userMetadata?.onboarding_completed === true;
       
       if (completedInMetadata) {
-        console.log('✅ Onboarding completed (from user_metadata)');
+        log.log('✅ Onboarding completed (from user_metadata)');
         setHasCompletedOnboarding(true);
         
         // Update AsyncStorage cache for faster future checks
@@ -49,7 +50,7 @@ export function useOnboarding() {
         const completedInStorage = await AsyncStorage.getItem(key);
         
         if (completedInStorage === 'true') {
-          console.log('✅ Onboarding completed (from AsyncStorage cache, migrating to metadata...)');
+          log.log('✅ Onboarding completed (from AsyncStorage cache, migrating to metadata...)');
           setHasCompletedOnboarding(true);
           
           // Migrate to user_metadata so it works on other devices
@@ -57,12 +58,12 @@ export function useOnboarding() {
             data: { onboarding_completed: true }
           });
         } else {
-          console.log('📋 Onboarding not completed yet');
+          log.log('📋 Onboarding not completed yet');
           setHasCompletedOnboarding(false);
         }
       }
     } catch (error) {
-      console.error('Failed to check onboarding status:', error);
+      log.error('Failed to check onboarding status:', error);
       // Default to not completed if we can't read the value
       setHasCompletedOnboarding(false);
     } finally {
@@ -85,7 +86,7 @@ export function useOnboarding() {
 
   const markAsCompleted = useCallback(async () => {
     try {
-      console.log('✅ Marking onboarding as completed...');
+      log.log('✅ Marking onboarding as completed...');
       
       // Save to user_metadata (source of truth - works across devices)
       const { error: metadataError } = await supabase.auth.updateUser({
@@ -93,7 +94,7 @@ export function useOnboarding() {
       });
       
       if (metadataError) {
-        console.error('Failed to save onboarding status to user_metadata:', metadataError);
+        log.error('Failed to save onboarding status to user_metadata:', metadataError);
         throw metadataError;
       }
       
@@ -102,17 +103,17 @@ export function useOnboarding() {
       await AsyncStorage.setItem(key, 'true');
       
       setHasCompletedOnboarding(true);
-      console.log('✅ Onboarding status saved successfully');
+      log.log('✅ Onboarding status saved successfully');
       return true;
     } catch (error) {
-      console.error('Failed to save onboarding status:', error);
+      log.error('Failed to save onboarding status:', error);
       return false;
     }
   }, [getOnboardingKey]);
 
   const resetOnboarding = useCallback(async () => {
     try {
-      console.log('🔄 Resetting onboarding status...');
+      log.log('🔄 Resetting onboarding status...');
       
       // Remove from user_metadata
       const { error: metadataError } = await supabase.auth.updateUser({
@@ -120,7 +121,7 @@ export function useOnboarding() {
       });
       
       if (metadataError) {
-        console.error('Failed to reset onboarding status in user_metadata:', metadataError);
+        log.error('Failed to reset onboarding status in user_metadata:', metadataError);
         throw metadataError;
       }
       
@@ -129,10 +130,10 @@ export function useOnboarding() {
       await AsyncStorage.removeItem(key);
       
       setHasCompletedOnboarding(false);
-      console.log('✅ Onboarding status reset successfully');
+      log.log('✅ Onboarding status reset successfully');
       return true;
     } catch (error) {
-      console.error('Failed to reset onboarding:', error);
+      log.error('Failed to reset onboarding:', error);
       return false;
     }
   }, [getOnboardingKey]);

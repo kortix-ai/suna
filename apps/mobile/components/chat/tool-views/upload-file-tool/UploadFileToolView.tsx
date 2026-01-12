@@ -9,6 +9,7 @@ import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import { useToast } from '@/components/ui/toast-provider';
+import { log } from '@/lib/logger';
 
 function formatTimestamp(isoString?: string): string {
   if (!isoString) return '';
@@ -52,7 +53,7 @@ export function UploadFileToolView({ toolCall, toolResult, isStreaming = false, 
         };
       }
     } catch (e) {
-      console.error('Failed to extract storage path from URL:', e);
+      log.error('Failed to extract storage path from URL:', e);
     }
     return null;
   };
@@ -96,7 +97,7 @@ export function UploadFileToolView({ toolCall, toolResult, isStreaming = false, 
       toast.success('Link regenerated!');
     } catch (error) {
       toast.error('Failed to regenerate link');
-      console.error('Error regenerating link:', error);
+      log.error('Error regenerating link:', error);
     } finally {
       setIsRegenerating(false);
     }

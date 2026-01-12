@@ -1,15 +1,8 @@
-/**
- * Renders assistant message content from metadata
- * 
- * This module handles rendering of assistant messages by extracting
- * tool calls and text content from the message metadata structure.
- */
-
 import React from 'react';
-import { Clock } from 'lucide-react';
+import { Clock, LucideIcon } from 'lucide-react';
 import { UnifiedMessage, ParsedMetadata } from '@/components/thread/types';
 import { safeJsonParse, getToolIcon } from '@/components/thread/utils';
-import { getUserFriendlyToolName, isHiddenTool } from '@agentpress/shared/tools';
+import { getUserFriendlyToolName, getCompletedToolName, isHiddenTool } from '@agentpress/shared/tools';
 import { normalizeArrayValue, normalizeAttachments } from '@agentpress/shared/utils';
 import { ComposioUrlDetector } from '@/components/thread/content/composio-url-detector';
 import { FileAttachmentGrid, FileAttachment } from '@/components/thread/file-attachment';
@@ -17,6 +10,7 @@ import { TaskCompletedFeedback } from '@/components/thread/tool-views/shared/Tas
 import { PromptExamples } from '@/components/shared/prompt-examples';
 import type { Project } from '@/lib/api/threads';
 import { AppIcon } from '@/components/thread/tool-views/shared/AppIcon';
+import { ToolCard } from '@/components/thread/content/ToolCard';
 import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalInline';
 import { MediaGenerationInline } from '@/components/thread/content/MediaGenerationInline';
 
@@ -33,19 +27,17 @@ export interface AssistantMessageRendererProps {
   onPromptFill?: (message: string) => void;
 }
 
-// normalizeArrayValue and normalizeAttachments are now imported from @agentpress/shared/utils
+const formatElapsedTime = (seconds: number): string => {
+  if (seconds < 1) return `${Math.round(seconds * 1000)}ms`;
+  return `${seconds.toFixed(1)} seconds`;
+};
 
-/**
- * Extracts a display parameter from tool call arguments
- */
+
 function getToolCallDisplayParam(toolCall: { arguments?: Record<string, any> }): string {
   const args = toolCall.arguments || {};
   return args.file_path || args.command || args.query || args.url || '';
 }
 
-/**
- * Renders an "ask" tool call
- */
 function renderAskToolCall(
   toolCall: { arguments?: Record<string, any> },
   index: number,
@@ -149,38 +141,212 @@ function renderCompleteToolCall(
   );
 }
 
-/**
- * Renders a regular tool call as a clickable button
- */
+function extractWebSearchUrls(toolResult: UnifiedMessage | undefined): string[] {
+  if (!toolResult) return [];
+  
+  const extractFromOutput = (output: any): string[] => {
+    if (!output) return [];
+    
+    if (output.batch_mode && Array.isArray(output.results)) {
+      const allUrls: string[] = [];
+      for (const batch of output.results) {
+        if (batch.results && Array.isArray(batch.results)) {
+          allUrls.push(...batch.results.map((r: any) => r.url).filter(Boolean));
+        }
+      }
+      return allUrls.slice(0, 4);
+    }
+    
+    if (Array.isArray(output.results)) {
+      return output.results.slice(0, 4).map((r: any) => r.url).filter(Boolean);
+    }
+    
+    if (Array.isArray(output)) {
+      return output.slice(0, 4).map((r: any) => r.url).filter(Boolean);
+    }
+    
+    return [];
+  };
+  
+  try {
+    const rawMetadata = toolResult.metadata;
+    const metadata = typeof rawMetadata === 'string' 
+      ? safeJsonParse<any>(rawMetadata, {})
+      : rawMetadata;
+    
+    if (metadata?.result?.output) {
+      return extractFromOutput(metadata.result.output);
+    }
+    
+    if (metadata?.result) {
+      return extractFromOutput(metadata.result);
+    }
+    
+    if (metadata?.output) {
+      return extractFromOutput(metadata.output);
+    }
+    
+    const rawContent = toolResult.content;
+    const content = typeof rawContent === 'string'
+      ? safeJsonParse<any>(rawContent, null)
+      : rawContent;
+      
+    if (content) {
+      const urls = extractFromOutput(content);
+      if (urls.length > 0) return urls;
+      
+      if (content.output) {
+        return extractFromOutput(content.output);
+      }
+    }
+  } catch (e) {
+    console.error('extractWebSearchUrls error:', e);
+  }
+  return [];
+}
+
+function extractImageSearchUrls(toolResult: UnifiedMessage | undefined): string[] {
+  if (!toolResult) return [];
+  
+  try {
+    const rawMetadata = toolResult.metadata;
+    const metadata = typeof rawMetadata === 'string' 
+      ? safeJsonParse<any>(rawMetadata, {})
+      : rawMetadata;
+    
+    const output = metadata?.result?.output || metadata?.result || metadata?.output;
+    
+    if (output) {
+      if (output.batch_results && Array.isArray(output.batch_results)) {
+        const allImages: string[] = [];
+        for (const batch of output.batch_results) {
+          if (batch.images && Array.isArray(batch.images)) {
+            allImages.push(...batch.images);
+          }
+        }
+        return allImages;
+      }
+      
+      if (Array.isArray(output.images)) {
+        return output.images;
+      }
+    }
+    
+    const rawContent = toolResult.content;
+    const content = typeof rawContent === 'string'
+      ? safeJsonParse<any>(rawContent, null)
+      : rawContent;
+      
+    if (content?.images && Array.isArray(content.images)) {
+      return content.images;
+    }
+  } catch (e) {
+    console.error('extractImageSearchUrls error:', e);
+  }
+  return [];
+}
+
+export interface SlideInfo {
+  presentationName: string;
+  slideNumber: number;
+  slideTitle: string;
+  totalSlides: number;
+}
+
+function extractSlideInfo(toolResult: UnifiedMessage | undefined): SlideInfo | undefined {
+  if (!toolResult) return undefined;
+  
+  try {
+    const rawMetadata = toolResult.metadata;
+    const metadata = typeof rawMetadata === 'string' 
+      ? safeJsonParse<any>(rawMetadata, {})
+      : rawMetadata;
+    
+    const output = metadata?.result?.output || metadata?.result || metadata?.output;
+    
+    if (output?.presentation_name && output?.slide_number !== undefined) {
+      return {
+        presentationName: output.presentation_name,
+        slideNumber: output.slide_number,
+        slideTitle: output.slide_title || `Slide ${output.slide_number}`,
+        totalSlides: output.total_slides || output.slide_number,
+      };
+    }
+  } catch (e) {
+    console.error('extractSlideInfo error:', e);
+  }
+  return undefined;
+}
+
 function renderRegularToolCall(
   toolCall: { function_name: string; arguments?: Record<string, any>; tool_call_id?: string },
   index: number,
   toolName: string,
   props: AssistantMessageRendererProps
 ): React.ReactNode {
-  const { message, onToolClick } = props;
+  const { message, onToolClick, toolResults = [] } = props;
   const IconComponent = getToolIcon(toolName);
-  const paramDisplay = getToolCallDisplayParam(toolCall);
   
-  // Use display hint if available, otherwise fallback to friendly name
-  const displayName = (toolCall as any)._display_hint || getUserFriendlyToolName(toolName);
+  let websiteUrls: string[] | undefined;
+  let imageUrls: string[] | undefined;
+  let slideInfo: SlideInfo | undefined;
+  let elapsedTime: number | undefined;
+  let paramDisplay: string | null = null;
+  
+  const isWebSearch = toolName === 'web-search' || toolName === 'web_search' || 
+                      toolCall.function_name === 'web_search' || toolCall.function_name === 'web-search';
+  const isImageSearch = toolName === 'image-search' || toolName === 'image_search' || 
+                        toolCall.function_name === 'image_search' || toolCall.function_name === 'image-search';
+  const isSlideCreate = toolName === 'create-slide' || toolName === 'create_slide' ||
+                        toolCall.function_name === 'create_slide' || toolCall.function_name === 'create-slide';
+  
+  if (isWebSearch || isImageSearch || isSlideCreate) {
+    const toolResult = toolResults.find(tr => {
+      const rawMeta = tr.metadata;
+      const trMeta = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
+      return trMeta.tool_call_id === toolCall.tool_call_id;
+    });
+    
+    if (isWebSearch) {
+      websiteUrls = extractWebSearchUrls(toolResult);
+    }
+    
+    if (isImageSearch) {
+      imageUrls = extractImageSearchUrls(toolResult);
+    }
+    
+    if (isSlideCreate) {
+      slideInfo = extractSlideInfo(toolResult);
+    }
+    
+    if (toolResult) {
+      const rawMeta = toolResult.metadata;
+      const metadata = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
+      elapsedTime = metadata?.result?.output?.response_time;
+    }
+  } else {
+    paramDisplay = getToolCallDisplayParam(toolCall);
+  }
+
+  const baseDisplayName = (toolCall as any)._display_hint || getCompletedToolName(toolName);
+  const displayName = elapsedTime !== undefined 
+    ? `${baseDisplayName} for ${formatElapsedTime(elapsedTime)}`
+    : baseDisplayName;
 
   return (
     <div key={`tool-${index}`} className="my-1.5">
-      <button
+      <ToolCard
+        toolName={toolName}
+        displayName={displayName}
+        toolCall={toolCall}
+        toolCallId={toolCall.tool_call_id}
+        paramDisplay={paramDisplay}
+        fallbackIcon={IconComponent}
         onClick={() => onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
-        className="inline-flex items-center gap-1.5 h-8 px-2 py-1.5 text-xs text-muted-foreground bg-card hover:bg-card/80 rounded-lg transition-colors cursor-pointer border border-neutral-200 dark:border-neutral-700/50 whitespace-nowrap"
-      >
-        <div className='flex items-center justify-center'>
-          <AppIcon toolCall={toolCall} size={14} className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" fallbackIcon={IconComponent} />
-        </div>
-        <span className="font-mono text-xs text-foreground">{displayName}</span>
-        {paramDisplay && (
-          <span className="ml-1 text-xs text-muted-foreground truncate max-w-[200px]" title={paramDisplay}>
-            {paramDisplay}
-          </span>
-        )}
-      </button>
+        websiteUrls={websiteUrls}
+        imageUrls={imageUrls}
+        slideInfo={slideInfo}
+      />
     </div>
   );
 }

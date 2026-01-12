@@ -1848,9 +1848,9 @@ async def websocket_pty_terminal(
             await websocket.close()
             return
         
-        from core.utils.auth_utils import _decode_jwt_with_verification_async
+        from core.utils.auth_utils import _decode_jwt_with_verification
         try:
-            decoded = await _decode_jwt_with_verification_async(access_token)
+            decoded = _decode_jwt_with_verification(access_token)
             user_id = decoded.get("sub")
             if not user_id:
                 raise ValueError("No user ID in token")

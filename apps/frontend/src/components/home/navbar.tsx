@@ -12,8 +12,26 @@ import { useRouter, usePathname } from 'next/navigation';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { isMobileDevice } from '@/lib/utils/is-mobile-device';
 import { AppDownloadQR } from '@/components/common/app-download-qr';
+import { isMobileDevice } from '@/lib/utils/is-mobile-device';
+
+// Apple logo SVG
+function AppleLogo({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+    </svg>
+  );
+}
+
+// Play icon SVG
+function PlayIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 406 455" fill="currentColor">
+      <path d="M382.634 187.308C413.301 205.014 413.301 249.277 382.634 266.983L69.0001 448.06C38.3334 465.765 3.84111e-05 443.633 3.9959e-05 408.222L5.57892e-05 46.0689C5.73371e-05 10.6581 38.3334 -11.4738 69.0001 6.23166L382.634 187.308Z"/>
+    </svg>
+  );
+}
 
 // Scroll threshold with hysteresis to prevent flickering
 const SCROLL_THRESHOLD_DOWN = 50;
@@ -172,16 +190,17 @@ export function Navbar() {
                 {/* QR Code Popover - appears on hover */}
                 <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                   {/* Arrow */}
-                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-2 h-2 bg-white dark:bg-[#1a1a1a] border-l border-t border-border/60 dark:border-[#2a2a2a] rotate-45" />
+                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E8E8E8] dark:bg-[#1a1a1a] border-l border-t border-border/60 dark:border-[#2a2a2a] rotate-45" />
                   
-                  <div className="relative bg-white dark:bg-[#1a1a1a] rounded-2xl shadow-2xl border border-border/60 dark:border-[#2a2a2a] p-4 min-w-[200px]">
+                  <div className="relative bg-[#E8E8E8] dark:bg-[#1a1a1a] rounded-2xl border border-border/60 dark:border-[#2a2a2a] p-4 min-w-[200px]">
                     <AppDownloadQR size={160} logoSize={24} className="rounded-xl p-3 shadow-md" />
                     <p className="text-xs text-muted-foreground text-center mt-3">
                       Scan to download
                     </p>
-                    <p className="text-[10px] text-muted-foreground/60 text-center mt-0.5">
-                      iOS & Android
-                    </p>
+                    <div className="flex items-center justify-center gap-1.5 mt-1.5">
+                      <AppleLogo className="h-3 w-3 text-muted-foreground/60" />
+                      <PlayIcon className="h-2.5 w-2.5 text-muted-foreground/60" />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -201,6 +220,7 @@ export function Navbar() {
                   href={ctaLink}
                   onClick={() => trackCtaSignup()}
                   className="h-8 px-4 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                  suppressHydrationWarning
                 >
                   {t('tryFree')}
                 </Link>
@@ -337,6 +357,7 @@ export function Navbar() {
                         setIsDrawerOpen(false);
                       }}
                       className="w-full h-10 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                      suppressHydrationWarning
                     >
                       {t('tryFree')}
                     </Link>

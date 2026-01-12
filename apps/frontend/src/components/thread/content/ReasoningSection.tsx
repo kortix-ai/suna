@@ -25,11 +25,11 @@ export function ReasoningSection({ content, className, isStreaming = false }: Re
   // Use ~50 chars/second for smooth reasoning display
   // Enable animation whenever streaming is active (even before content arrives)
   // This ensures smooth streaming as soon as first chunk arrives
-  const smoothReasoningContent = useSmoothText(content, 50, isStreaming);
+  const smoothReasoningContent = useSmoothText(content, { speed: 50 });
   
-  // Use smooth content for display, but keep original for hasContent check
-  const displayContent = smoothReasoningContent.text;
-  const isCurrentlyStreaming = smoothReasoningContent.isAnimating;
+  // Use smooth content for display
+  const displayContent = smoothReasoningContent;
+  const isCurrentlyStreaming = isStreaming;
 
   return (
     <div className={cn("w-full", className)}>

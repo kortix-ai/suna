@@ -1,7 +1,5 @@
 'use client';
 
-import { useTheme } from 'next-themes';
-import { useEffect, useState } from 'react';
 import { cn } from '@/lib/utils';
 
 interface KortixLogoProps {
@@ -11,38 +9,28 @@ interface KortixLogoProps {
 }
 
 export function KortixLogo({ size = 24, variant = 'symbol', className }: KortixLogoProps) {
-  const { theme, systemTheme } = useTheme();
-  const [mounted, setMounted] = useState(false);
-
-  // After mount, we can access the theme
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  const shouldInvert = mounted && (
-    theme === 'dark' || (theme === 'system' && systemTheme === 'dark')
-  );
-
   // For logomark variant, use logomark-white.svg which is already white
-  // and invert it for light mode instead
+  // and invert it for light mode using CSS (no JS needed)
   if (variant === 'logomark') {
     return (
       <img
         src="/logomark-white.svg"
         alt="Kortix"
-        className={cn(`${shouldInvert ? '' : 'invert'} flex-shrink-0`, className)}
+        className={cn('invert dark:invert-0 flex-shrink-0', className)}
         style={{ height: `${size}px`, width: 'auto' }}
+        suppressHydrationWarning
       />
     );
   }
 
-  // Default symbol variant behavior
+  // Default symbol variant behavior - invert for dark mode
   return (
     <img
       src="/kortix-symbol.svg"
       alt="Kortix"
-      className={cn(`${shouldInvert ? 'invert' : ''} flex-shrink-0`, className)}
+      className={cn('dark:invert flex-shrink-0', className)}
       style={{ width: `${size}px`, height: `${size}px` }}
+      suppressHydrationWarning
     />
   );
 }

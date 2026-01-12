@@ -43,6 +43,7 @@ import {
 import { useColorScheme } from 'nativewind';
 import * as Clipboard from 'expo-clipboard';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { log } from '@/lib/logger';
 
 // Suppress known warning from react-native-markdown-display library
 LogBox.ignoreLogs(['A props object containing a "key" prop is being spread into JSX']);
@@ -63,7 +64,7 @@ let DISABLE_BLOCK_SPLITTING = true;
 
 export function setBlockSplitting(enabled: boolean) {
   DISABLE_BLOCK_SPLITTING = !enabled;
-  console.log(`[MD] Block splitting ${enabled ? 'enabled' : 'disabled'}`);
+  log.log(`[MD] Block splitting ${enabled ? 'enabled' : 'disabled'}`);
 }
 
 // Runtime tunable values  
@@ -79,42 +80,42 @@ let MAX_LINE_PHANTOM = 8;
 
 export function enableMarkdownDebug(enabled: boolean = true) {
   DEBUG_HEIGHTS = enabled;
-  console.log(`[SelectableMarkdown] Debug ${enabled ? 'enabled' : 'disabled'}`);
+  log.log(`[SelectableMarkdown] Debug ${enabled ? 'enabled' : 'disabled'}`);
 }
 
 export function setCharWidthFactor(factor: number) {
   CHAR_WIDTH_FACTOR = factor;
-  console.log(`[MD] Char width factor: ${factor}`);
+  log.log(`[MD] Char width factor: ${factor}`);
 }
 
 export function setHeadingCharFactor(factor: number) {
   HEADING_CHAR_FACTOR = factor;
-  console.log(`[MD] Heading char factor: ${factor}`);
+  log.log(`[MD] Heading char factor: ${factor}`);
 }
 
 export function setEmptyLineFactor(factor: number) {
   EMPTY_LINE_FACTOR = factor;
-  console.log(`[MD] Empty line factor: ${factor}`);
+  log.log(`[MD] Empty line factor: ${factor}`);
 }
 
 export function setBasePhantom(px: number) {
   BASE_PHANTOM = px;
-  console.log(`[MD] Base phantom: ${px}px`);
+  log.log(`[MD] Base phantom: ${px}px`);
 }
 
 export function setLinePhantom(px: number) {
   LINE_PHANTOM_PX = px;
-  console.log(`[MD] Line phantom: ${px}px per line`);
+  log.log(`[MD] Line phantom: ${px}px per line`);
 }
 
 export function setMaxLinePhantom(px: number) {
   MAX_LINE_PHANTOM = px;
-  console.log(`[MD] Max line phantom: ${px}px`);
+  log.log(`[MD] Max line phantom: ${px}px`);
 }
 
 export function setBoldWidthFactor(factor: number) {
   BOLD_WIDTH_FACTOR = factor;
-  console.log(`[MD] Bold width factor: ${(factor * 100).toFixed(0)}%`);
+  log.log(`[MD] Bold width factor: ${(factor * 100).toFixed(0)}%`);
 }
 
 export function getFactors() {
@@ -131,7 +132,7 @@ if (__DEV__) {
   (globalThis as any).setMaxLinePhantom = setMaxLinePhantom;
   (globalThis as any).setBoldWidthFactor = setBoldWidthFactor;
   (globalThis as any).getFactors = getFactors;
-  console.log('[MD] Tune: setBasePhantom(16) / setLinePhantom(0.5) / setMaxLinePhantom(20)');
+  log.log('[MD] Tune: setBasePhantom(16) / setLinePhantom(0.5) / setMaxLinePhantom(20)');
 }
 
 
@@ -349,11 +350,11 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
   text: {
     color: isDark ? '#fafafa' : '#18181b',
-    fontFamily: 'Roobert-Regular',
+    // Don't set fontFamily here - let it inherit from parent (strong, em, etc.)
   },
   textgroup: {
     color: isDark ? '#fafafa' : '#18181b',
-    fontFamily: 'Roobert-Regular',
+    // Don't set fontFamily here - let children inherit from their specific styles (strong, em, etc.)
   },
   paragraph: {
     marginVertical: 0,
@@ -362,6 +363,7 @@ const createAndroidMarkdownStyles = (isDark: boolean) => StyleSheet.create({
   },
   strong: {
     fontFamily: 'Roobert-SemiBold',
+    fontWeight: '600',
   },
   em: {
     fontStyle: 'italic',
@@ -554,7 +556,7 @@ function TextSelectionModal({ sheetRef, text, isDark, onDismiss }: TextSelection
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy:', err);
+      log.error('Failed to copy:', err);
     }
   }, [text]);
 
@@ -707,7 +709,7 @@ function CodeBlock({
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy code:', err);
+      log.error('Failed to copy code:', err);
     }
   };
 
@@ -998,7 +1000,7 @@ function calculateRealHeight(text: string, screenWidth: number): number {
 
   if (DEBUG_HEIGHTS && debugInfo.length <= 10) {
     const capNote = linePhantom >= MAX_LINE_PHANTOM ? ' [CAPPED]' : '';
-    console.log(`[MD] Breakdown (w=${availableWidth}, cpl=${charsPerLine}):\n  ${debugInfo.join('\n  ')}\n  TOTAL: ${totalHeight} + ${phantomSpace}px phantom (${BASE_PHANTOM}base + ${linePhantom.toFixed(1)}px line${capNote}) = ${finalHeight}px`);
+    log.log(`[MD] Breakdown (w=${availableWidth}, cpl=${charsPerLine}):\n  ${debugInfo.join('\n  ')}\n  TOTAL: ${totalHeight} + ${phantomSpace}px phantom (${BASE_PHANTOM}base + ${linePhantom.toFixed(1)}px line${capNote}) = ${finalHeight}px`);
   }
 
   return finalHeight;
@@ -1030,7 +1032,7 @@ function MeasuredMarkdownInput({
     if (DEBUG_HEIGHTS) {
       const preview = trimmedText.substring(0, 40).replace(/\n/g, '↵');
       const { lines, headings } = analyzeContent(trimmedText);
-      console.log(`[MD] "${preview}..." height=${height.toFixed(0)}px (lines=${lines} h=${headings})`);
+      log.log(`[MD] "${preview}..." height=${height.toFixed(0)}px (lines=${lines} h=${headings})`);
     }
 
     return Math.max(MARKDOWN_LINE_HEIGHT, height);

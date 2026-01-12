@@ -10,6 +10,7 @@ import { useDiscoverCustomMcpTools, type CustomMcpResponse } from '@/hooks/useCu
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import { CustomMcpToolsSelector } from './CustomMcpToolsSelector';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -80,7 +81,7 @@ export function CustomMcpContent({
       return;
     }
 
-    console.log('🎯 Discovering tools for URL:', url);
+    log.log('🎯 Discovering tools for URL:', url);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     setValidationError(null);
@@ -92,7 +93,7 @@ export function CustomMcpContent({
       },
       {
         onSuccess: (response: CustomMcpResponse) => {
-          console.log('✅ Tools discovered:', response);
+          log.log('✅ Tools discovered:', response);
 
           if (!response.tools || response.tools.length === 0) {
             setValidationError(t('integrations.customMcp.noToolsFound'));
@@ -114,7 +115,7 @@ export function CustomMcpContent({
           setStep('tools');
         },
         onError: (error) => {
-          console.error('❌ Failed to discover tools:', error);
+          log.error('❌ Failed to discover tools:', error);
           setValidationError(error.message || t('integrations.customMcp.failedToConnect'));
         },
       }
@@ -122,14 +123,14 @@ export function CustomMcpContent({
   }, [url, manualServerName, validateUrl, discoverTools, isValidating, onSave, t]);
 
   const handleBackToConfig = React.useCallback(() => {
-    console.log('🎯 Back to configuration');
+    log.log('🎯 Back to configuration');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setStep('config');
   }, []);
 
   const handleToolsComplete = React.useCallback(
     (enabledTools: string[]) => {
-      console.log('✅ Custom MCP configuration completed');
+      log.log('✅ Custom MCP configuration completed');
       const config = {
         serverName: serverName,
         url: url.trim(),
@@ -287,7 +288,7 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
   }, [open]);
 
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Custom MCP dialog closing');
+    log.log('🎯 Custom MCP dialog closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onOpenChange(false);
   }, [onOpenChange]);
@@ -317,7 +318,7 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
       return;
     }
 
-    console.log('🎯 Discovering tools for URL:', url);
+    log.log('🎯 Discovering tools for URL:', url);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     setValidationError(null);
@@ -329,7 +330,7 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
       },
       {
         onSuccess: (response: CustomMcpResponse) => {
-          console.log('✅ Tools discovered:', response);
+          log.log('✅ Tools discovered:', response);
 
           if (!response.tools || response.tools.length === 0) {
             setValidationError(t('integrations.customMcp.noToolsFound'));
@@ -342,7 +343,7 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
           setStep('tools');
         },
         onError: (error) => {
-          console.error('❌ Failed to discover tools:', error);
+          log.error('❌ Failed to discover tools:', error);
           setValidationError(error.message || t('integrations.customMcp.failedToConnect'));
         },
       }
@@ -350,14 +351,14 @@ export function CustomMcpDialog({ open, onOpenChange, onSave }: CustomMcpDialogP
   }, [url, manualServerName, validateUrl, discoverTools, t]);
 
   const handleBackToConfig = React.useCallback(() => {
-    console.log('🎯 Back to configuration');
+    log.log('🎯 Back to configuration');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setStep('config');
   }, []);
 
   const handleToolsComplete = React.useCallback(
     (enabledTools: string[]) => {
-      console.log('✅ Custom MCP configuration completed');
+      log.log('✅ Custom MCP configuration completed');
 
       const config = {
         name: serverName,

@@ -4,6 +4,7 @@
  */
 
 import { Platform } from 'react-native';
+import { log } from '@/lib/logger';
 
 // Supported locales (must match frontend and backend)
 export const SUPPORTED_LOCALES = ['en', 'de', 'it', 'zh', 'ja', 'pt', 'fr', 'es'] as const;
@@ -112,11 +113,11 @@ const TIMEZONE_TO_LOCALE_MAP: Record<string, SupportedLocale> = {
 export function detectLocaleFromTimezone(): SupportedLocale | null {
   try {
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    console.log('🌍 Device timezone:', timezone);
+    log.log('🌍 Device timezone:', timezone);
     
     // Direct timezone match
     if (TIMEZONE_TO_LOCALE_MAP[timezone]) {
-      console.log('🌍 Matched timezone to locale:', TIMEZONE_TO_LOCALE_MAP[timezone]);
+      log.log('🌍 Matched timezone to locale:', TIMEZONE_TO_LOCALE_MAP[timezone]);
       return TIMEZONE_TO_LOCALE_MAP[timezone];
     }
     
@@ -181,7 +182,7 @@ export function detectLocaleFromTimezone(): SupportedLocale | null {
     
     return null;
   } catch (error) {
-    console.warn('⚠️ Failed to detect locale from timezone:', error);
+    log.warn('⚠️ Failed to detect locale from timezone:', error);
     return null;
   }
 }
@@ -198,9 +199,9 @@ export function detectLocaleFromDevice(): SupportedLocale | null {
     // Method 1: Try Intl API (most reliable, works on both iOS and Android)
     try {
       deviceLocale = Intl.DateTimeFormat().resolvedOptions().locale;
-      console.log('🌍 Got locale from Intl API:', deviceLocale);
+      log.log('🌍 Got locale from Intl API:', deviceLocale);
     } catch (e) {
-      console.warn('⚠️ Could not get locale from Intl API:', e);
+      log.warn('⚠️ Could not get locale from Intl API:', e);
     }
     
     // Method 2: Try React Native NativeModules (platform-specific)
@@ -219,26 +220,26 @@ export function detectLocaleFromDevice(): SupportedLocale | null {
         }
         
         if (deviceLocale) {
-          console.log('🌍 Got locale from NativeModules:', deviceLocale);
+          log.log('🌍 Got locale from NativeModules:', deviceLocale);
         }
       } catch (e) {
-        console.warn('⚠️ Could not get locale from NativeModules:', e);
+        log.warn('⚠️ Could not get locale from NativeModules:', e);
       }
     }
     
     if (!deviceLocale) {
-      console.log('🌍 No device locale found');
+      log.log('🌍 No device locale found');
       return null;
     }
     
-    console.log('🌍 Device locale:', deviceLocale);
+    log.log('🌍 Device locale:', deviceLocale);
     
     // Extract language code (e.g., "en-US" -> "en", "zh-Hans" -> "zh", "zh-Hans-CN" -> "zh")
     const languageCode = deviceLocale.split('-')[0].toLowerCase();
     
     // Check if it's a supported locale
     if (SUPPORTED_LOCALES.includes(languageCode as SupportedLocale)) {
-      console.log('🌍 Matched device locale:', languageCode);
+      log.log('🌍 Matched device locale:', languageCode);
       return languageCode as SupportedLocale;
     }
     
@@ -246,7 +247,7 @@ export function detectLocaleFromDevice(): SupportedLocale | null {
     const lowerLocale = deviceLocale.toLowerCase();
     for (const locale of SUPPORTED_LOCALES) {
       if (lowerLocale.startsWith(locale + '-') || lowerLocale === locale) {
-        console.log('🌍 Matched device locale (full code):', locale);
+        log.log('🌍 Matched device locale (full code):', locale);
         return locale;
       }
     }
@@ -254,11 +255,11 @@ export function detectLocaleFromDevice(): SupportedLocale | null {
     // Special handling for Chinese variants
     if (lowerLocale.includes('zh')) {
       if (lowerLocale.includes('hans') || lowerLocale.includes('cn') || lowerLocale.includes('sg')) {
-        console.log('🌍 Matched Chinese (Simplified)');
+        log.log('🌍 Matched Chinese (Simplified)');
         return 'zh';
       }
       if (lowerLocale.includes('hant') || lowerLocale.includes('tw') || lowerLocale.includes('hk') || lowerLocale.includes('mo')) {
-        console.log('🌍 Matched Chinese (Traditional) -> using zh');
+        log.log('🌍 Matched Chinese (Traditional) -> using zh');
         return 'zh';
       }
     }
@@ -266,19 +267,19 @@ export function detectLocaleFromDevice(): SupportedLocale | null {
     // Special handling for Portuguese variants
     if (lowerLocale.includes('pt')) {
       if (lowerLocale.includes('br')) {
-        console.log('🌍 Matched Portuguese (Brazilian)');
+        log.log('🌍 Matched Portuguese (Brazilian)');
         return 'pt';
       }
       if (lowerLocale.startsWith('pt-')) {
-        console.log('🌍 Matched Portuguese');
+        log.log('🌍 Matched Portuguese');
         return 'pt';
       }
     }
     
-    console.log('🌍 No supported locale match found for device locale');
+    log.log('🌍 No supported locale match found for device locale');
     return null;
   } catch (error) {
-    console.warn('⚠️ Failed to detect locale from device:', error);
+    log.warn('⚠️ Failed to detect locale from device:', error);
     return null;
   }
 }
@@ -291,19 +292,19 @@ export function detectBestLocale(): SupportedLocale {
   // Try device locale first (most accurate - user's explicit setting)
   const deviceLocale = detectLocaleFromDevice();
   if (deviceLocale) {
-    console.log('✅ Using device locale:', deviceLocale);
+    log.log('✅ Using device locale:', deviceLocale);
     return deviceLocale;
   }
   
   // Fallback to timezone detection
   const timezoneLocale = detectLocaleFromTimezone();
   if (timezoneLocale) {
-    console.log('✅ Using timezone-detected locale:', timezoneLocale);
+    log.log('✅ Using timezone-detected locale:', timezoneLocale);
     return timezoneLocale;
   }
   
   // Default fallback
-  console.log('🌍 Using default locale:', DEFAULT_LOCALE);
+  log.log('🌍 Using default locale:', DEFAULT_LOCALE);
   return DEFAULT_LOCALE;
 }
 

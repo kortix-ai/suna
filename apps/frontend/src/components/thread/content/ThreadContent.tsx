@@ -24,9 +24,10 @@ import {
   extractTextFromStreamingAskComplete,
 } from "@/hooks/messages/utils";
 import { AppIcon } from "../tool-views/shared/AppIcon";
-import { useSmoothText } from "@/hooks/messages";
+import { useSmoothStream } from "@/lib/streaming/animations";
 import { isHiddenTool } from "@agentpress/shared/tools";
 import { ReasoningSection } from "./ReasoningSection";
+import { StreamingText } from "./StreamingText";
 
 export function renderAttachments(
   attachments: string[],
@@ -111,16 +112,23 @@ const UserMessageRow = memo(function UserMessageRow({
   }, [message.content]);
 
   const { cleanContent, attachments } = useMemo(() => {
-    const attachmentsMatch = messageContent.match(/\[Uploaded File: (.*?)\]/g);
+    // Parse all file reference formats: [Uploaded File: ...], [Attached: ...], [Image: ...]
+    const attachmentsMatch = messageContent.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/g);
     const attachmentsList = attachmentsMatch
       ? (attachmentsMatch
           .map((match: string) => {
-            const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
-            return pathMatch ? pathMatch[1] : null;
+            const pathMatch = match.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/);
+            if (!pathMatch) return null;
+            // Extract just the path, removing size info if present
+            const fullMatch = pathMatch[1];
+            const pathOnly = fullMatch.includes(' -> ') 
+              ? fullMatch.split(' -> ')[1] 
+              : fullMatch;
+            return pathOnly;
           })
           .filter(Boolean) as string[])
       : [];
-    const clean = messageContent.replace(/\[Uploaded File: .*?\]/g, "").trim();
+    const clean = messageContent.replace(/\[(?:Uploaded File|Attached|Image): .*?\]/g, "").trim();
     return { cleanContent: clean, attachments: attachmentsList };
   }, [messageContent]);
 
@@ -190,20 +198,20 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
-  // STREAMING OPTIMIZATION: Content now displays immediately as it arrives from the stream
-  // Removed useSmoothText typewriter animation that was causing 120 chars/sec artificial delay
-  const displayStreamingText = streamingTextContent || "";
+  const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+  
+  const displayStreamingText = useSmoothStream(
+    streamingTextContent || "",
+    isActivelyStreaming,
+    300
+  );
 
-  // Extract ask/complete text from streaming tool call
-  // Handles both raw streaming format AND accumulated format from useToolCallAccumulator
   const askCompleteText = useMemo(() => {
     if (!streamingToolCall) return "";
     
     const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const parsedContent = safeJsonParse<any>(streamingToolCall.content, {});
     
-    // Try accumulated format first (from useToolCallAccumulator)
-    // Structure: metadata.function_name, content.arguments (accumulated)
     if (parsedMetadata.function_name) {
       const toolName = parsedMetadata.function_name.replace(/_/g, "-").toLowerCase();
       if (toolName === "ask" || toolName === "complete") {
@@ -411,7 +419,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     return (
       <div className="mt-1.5">
         {textBeforeTag && (
-          <ComposioUrlDetector
+          <StreamingText
             content={textBeforeTag}
             isStreaming={isCurrentlyStreaming}
           />
@@ -424,7 +432,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               detectedTag as "ask" | "complete",
             );
             return (
-              <ComposioUrlDetector
+              <StreamingText
                 content={extractedText}
                 isStreaming={isCurrentlyStreaming}
               />
@@ -514,7 +522,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     return (
       <div className="mt-1.5">
         {textBeforeTag && (
-          <ComposioUrlDetector content={textBeforeTag} isStreaming={true} />
+          <StreamingText content={textBeforeTag} isStreaming={true} />
         )}
         {detectedTag && isAskOrComplete ? (
           (() => {
@@ -524,7 +532,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               detectedTag as "ask" | "complete",
             );
             return (
-              <ComposioUrlDetector content={extractedText} isStreaming={true} />
+              <StreamingText content={extractedText} isStreaming={true} />
             );
           })()
         ) : detectedTag ? (
@@ -598,7 +606,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       // Display text immediately
       if (askCompleteText) {
         return (
-          <ComposioUrlDetector
+          <StreamingText
             content={askCompleteText}
             isStreaming={isCurrentlyStreaming}
           />
@@ -1082,12 +1090,17 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           try {
             const content =
               typeof message.content === "string" ? message.content : "";
-            const attachmentsMatch = content.match(/\[Uploaded File: (.*?)\]/g);
+            const attachmentsMatch = content.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/g);
             if (attachmentsMatch) {
               attachmentsMatch.forEach((match) => {
-                const pathMatch = match.match(/\[Uploaded File: (.*?)\]/);
+                const pathMatch = match.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/);
                 if (pathMatch && pathMatch[1]) {
-                  allAttachments.push(pathMatch[1]);
+                  // Extract just the path, removing size info if present
+                  const fullMatch = pathMatch[1];
+                  const pathOnly = fullMatch.includes(' -> ') 
+                    ? fullMatch.split(' -> ')[1] 
+                    : fullMatch;
+                  allAttachments.push(pathOnly);
                 }
               });
             }

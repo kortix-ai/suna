@@ -20,18 +20,6 @@ SOCKET_CONNECT_TIMEOUT = float(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "5.0"))
 HEALTH_CHECK_INTERVAL = int(os.getenv("REDIS_HEALTH_CHECK_INTERVAL", "15"))  # More frequent
 
 
-def _calculate_max_connections() -> int:
-    """
-    Calculate optimal Redis pool size based on worker count.
-    
-    Each gunicorn worker gets its own connection pool.
-    15-20 connections per worker handles both local and cloud Redis well.
-    
-    Override via REDIS_MAX_CONNECTIONS env var if needed.
-    """
-    workers = int(os.getenv("WORKERS", "16"))
-    per_worker = max(15, min(20, 160 // workers))
-    return per_worker
 
 
 class RedisClient:
@@ -102,14 +90,10 @@ class RedisClient:
                 return self._client
             
             config = self._get_config()
-            max_connections = int(os.getenv("REDIS_MAX_CONNECTIONS", str(_calculate_max_connections())))
-            
-            workers = int(os.getenv("WORKERS", "16"))
             
             logger.info(
                 f"Initializing Redis to {config['host']}:{config['port']} "
-                f"with max {max_connections} connections (workers={workers}, "
-                f"socket_timeout={SOCKET_TIMEOUT}s, connect_timeout={SOCKET_CONNECT_TIMEOUT}s)"
+                f"(socket_timeout={SOCKET_TIMEOUT}s, connect_timeout={SOCKET_CONNECT_TIMEOUT}s)"
             )
             
             retry = Retry(ExponentialBackoff(), 3)
@@ -122,7 +106,6 @@ class RedisClient:
                 socket_keepalive=True,
                 retry_on_timeout=True,
                 health_check_interval=HEALTH_CHECK_INTERVAL,
-                max_connections=max_connections,
             )
             self._client = Redis(
                 connection_pool=self._pool,
@@ -202,40 +185,22 @@ class RedisClient:
             raise ConnectionError(f"Redis stream {stream_key} is not writable: {e}")
     
     async def _with_timeout(self, coro, timeout_seconds: float, operation_name: str, default=None):
-        """Execute a Redis operation with timeout and improved error handling."""
+        """Execute a Redis operation with timeout. Let Redis handle connection errors naturally."""
         self._op_count += 1
         try:
             return await asyncio.wait_for(coro, timeout=timeout_seconds)
         except asyncio.TimeoutError:
             self._timeout_count += 1
             logger.warning(f"⚠️ [REDIS TIMEOUT] {operation_name} timed out after {timeout_seconds}s")
-            if self._pool:
-                pool_info = self.get_pool_info()
-                logger.warning(f"📊 [POOL STATUS] {pool_info}")
             return default
         except (ConnectionError, RedisConnectionError, OSError) as e:
             self._error_count += 1
-            error_str = str(e).lower()
-            # Upstash-specific: "max concurrent connections exceeded" or "too many connections"
-            if "too many connections" in error_str or "max concurrent connections" in error_str:
-                pool_info = self.get_pool_info()
-                logger.error(
-                    f"🚨 [CONNECTION LIMIT] {operation_name} - "
-                    f"Server rejected connection (plan limit reached). Pool: {pool_info}"
-                )
-                # For connection limit errors, return default instead of raising
-                # This prevents cascading failures
-                return default
-            elif "connection refused" in error_str or "connection reset" in error_str:
-                logger.warning(f"⚠️ [REDIS CONNECTION RESET] {operation_name}: {e}")
-                return default
-            else:
-                logger.error(f"⚠️ [REDIS CONNECTION ERROR] {operation_name} failed: {e}")
-                raise
+            logger.warning(f"⚠️ [REDIS CONNECTION] {operation_name}: {e}")
+            return default
         except Exception as e:
             self._error_count += 1
-            logger.error(f"⚠️ [REDIS ERROR] {operation_name} failed: {e}")
-            raise
+            logger.warning(f"⚠️ [REDIS ERROR] {operation_name}: {e}")
+            return default
     
     # ========== Basic Operations with Timeout ==========
     

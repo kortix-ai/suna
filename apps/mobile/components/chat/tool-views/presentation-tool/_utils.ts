@@ -3,6 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { API_URL, getAuthHeaders } from '@/api/config';
 import type { ToolCallData, ToolResultData } from '@/lib/utils/tool-data-extractor';
+import { log } from '@/lib/logger';
 
 export enum DownloadFormat {
   PDF = 'pdf',
@@ -80,7 +81,7 @@ export async function downloadPresentation(
   try {
     const exportUrl = `${sandboxUrl}/presentation/convert-to-${format}`;
     
-    console.log(`📤 [downloadPresentation] Exporting ${format}:`, exportUrl);
+    log.log(`📤 [downloadPresentation] Exporting ${format}:`, exportUrl);
     
     // POST request to sandbox API (matching frontend)
     const response = await fetch(exportUrl, {
@@ -134,7 +135,7 @@ export async function downloadPresentation(
           
           resolve();
         } catch (saveError) {
-          console.error('Error saving file:', saveError);
+          log.error('Error saving file:', saveError);
           reject(saveError);
         }
       };
@@ -144,7 +145,7 @@ export async function downloadPresentation(
       };
     });
   } catch (error) {
-    console.error(`Error downloading ${format}:`, error);
+    log.error(`Error downloading ${format}:`, error);
     throw error;
   }
 }
@@ -164,7 +165,7 @@ export async function handleGoogleSlidesUpload(
   try {
     const authHeaders = await getAuthHeaders();
     
-    console.log('📤 [handleGoogleSlidesUpload] Uploading to Google Slides');
+    log.log('📤 [handleGoogleSlidesUpload] Uploading to Google Slides');
     
     const response = await fetch(`${API_URL}/presentation-tools/convert-and-upload-to-slides`, {
       method: 'POST',
@@ -224,7 +225,7 @@ export async function handleGoogleSlidesUpload(
     throw new Error(result.message || 'No Google Slides URL returned');
     
   } catch (error) {
-    console.error('Error uploading to Google Slides:', error);
+    log.error('Error uploading to Google Slides:', error);
     throw error;
   }
 }

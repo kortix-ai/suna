@@ -7,7 +7,7 @@
 Build, manage, and train sophisticated AI agents for any use case. Create powerful agents that act autonomously on your behalf.
 
 [![Discord Follow](https://dcbadge.limes.pink/api/server/RvFhXUdZ9H?style=flat)](https://discord.com/invite/RvFhXUdZ9H)
-[![Twitter Follow](https://img.shields.io/twitter/follow/kortix)](https://x.com/korti)
+[![Twitter Follow](https://img.shields.io/twitter/follow/kortix)](https://x.com/kortix)
 [![GitHub Repo stars](https://img.shields.io/github/stars/kortix-ai/suna)](https://github.com/kortix-ai/suna)
 [![Issues](https://img.shields.io/github/issues/kortix-ai/suna)](https://github.com/kortix-ai/suna/labels/bug)
 
@@ -157,45 +157,14 @@ cd suna
 ```bash
 python setup.py
 ```
-The wizard will guide you through the setup process with progress saving, so you can resume if interrupted.
+The wizard will guide you through 14 steps with progress saving, so you can resume if interrupted.
 
-**Setup Options:**
-- **Setup Method**: Choose between Manual or Docker Compose
-- **Start Method**: Choose Automatic (services start automatically) or Manual (shows commands to run)
-
-**What happens:**
-- ✅ Automatic start: Services will start automatically after setup completes
-- 📋 Manual start: You'll get clear commands to run services yourself
-
-### 3️⃣ Start/Stop the Platform (if needed)
-
-If you chose manual start or need to restart services later:
-
+### 3️⃣ Start the Platform
 ```bash
 python start.py
 ```
 
-This will:
-- **Start** all services (Redis, Backend, Frontend) if they're stopped
-- **Stop** all services if they're running
-- Works for both Docker and Manual setups
-
-**That's it!** Your Kortix platform will be running with Kortix Super Worker ready to assist you.
-
-### 4️⃣ Access the Platform
-
-Once services are running, open your browser and navigate to:
-
-```
-http://localhost:3000
-```
-
-**First time setup:**
-1. **Sign up** - Create your account using email/password
-2. **Log in** - Use your credentials to access the platform
-3. **Start building** - Create your first AI agent or chat with Kortix Super Worker
-
-The platform is now ready to use! 🎉
+That's it! Your Kortix platform will be running with Kortix Super Worker ready to assist you.
 
 ## 🏠 Self-Hosting
 

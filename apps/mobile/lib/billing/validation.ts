@@ -6,6 +6,7 @@
 
 import { useCallback, useState } from 'react';
 import { useBillingContext } from '@/contexts/BillingContext';
+import { log } from '@/lib/logger';
 
 export function useBillingCheck() {
   const { billingStatus, checkBillingStatus } = useBillingContext();
@@ -13,7 +14,7 @@ export function useBillingCheck() {
 
   const requireBilling = useCallback(
     async (action?: string): Promise<boolean> => {
-      console.log('💳 Checking billing for action:', action);
+      log.log('💳 Checking billing for action:', action);
 
       // Check current status
       if (billingStatus?.can_run) {
@@ -24,7 +25,7 @@ export function useBillingCheck() {
       const canProceed = await checkBillingStatus();
       
       if (!canProceed) {
-        console.log('❌ Insufficient credits');
+        log.log('❌ Insufficient credits');
         setShowAlert(true);
         return false;
       }

@@ -9,8 +9,9 @@ import * as Haptics from 'expo-haptics';
 import { useCreditBalance } from '@/lib/billing';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { useColorScheme } from 'nativewind';
-import { formatCredits } from '@/lib/utils/credit-formatter';
+import { formatCredits } from '@agentpress/shared';
 import { useLanguage } from '@/contexts';
+import { log } from '@/lib/logger';
 
 // NOTE: On Android, AnimatedPressable blocks touches - use TouchableOpacity instead
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -72,20 +73,20 @@ export function TopNav({
   }));
 
   const handleMenuPress = () => {
-    console.log('🎯 Menu panel pressed');
-    console.log('📱 Opening menu drawer');
+    log.log('🎯 Menu panel pressed');
+    log.log('📱 Opening menu drawer');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onMenuPress?.();
   };
 
   const handleUpgradePress = () => {
-    console.log('🎯 Upgrade button pressed');
+    log.log('🎯 Upgrade button pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onUpgradePress?.();
   };
 
   const handleCreditsPress = () => {
-    console.log('🎯 Credits button pressed');
+    log.log('🎯 Credits button pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     refetchCredits();
     onCreditsPress?.();

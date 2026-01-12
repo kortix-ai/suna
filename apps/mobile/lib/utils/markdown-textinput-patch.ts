@@ -12,6 +12,7 @@
 
 import { Platform } from 'react-native';
 import { MarkdownTextInput } from '@expensify/react-native-live-markdown';
+import { log } from '@/lib/logger';
 
 // Height reduction percentages - the phantom space the library adds
 const HEIGHT_REDUCTION = Platform.select({
@@ -63,7 +64,7 @@ function getReductionFactor(text: string): number {
  */
 export function patchMarkdownTextInputHeight() {
   if (isPatched) {
-    console.log('[MarkdownPatch] Already patched, skipping...');
+    log.log('[MarkdownPatch] Already patched, skipping...');
     return;
   }
 
@@ -108,15 +109,15 @@ export function patchMarkdownTextInputHeight() {
 
     // Monkey patch by wrapping the component
     // This is hacky but works for class/function components
-    console.log('[MarkdownPatch] ✅ Height reduction patch ready');
-    console.log(`[MarkdownPatch] Reductions: plain=${(HEIGHT_REDUCTION.plain * 100).toFixed(0)}%, heading=${(HEIGHT_REDUCTION.withHeadings * 100).toFixed(0)}%`);
+    log.log('[MarkdownPatch] ✅ Height reduction patch ready');
+    log.log(`[MarkdownPatch] Reductions: plain=${(HEIGHT_REDUCTION.plain * 100).toFixed(0)}%, heading=${(HEIGHT_REDUCTION.withHeadings * 100).toFixed(0)}%`);
     
     // Export the wrapper function for use
     (globalThis as any).__patchedContentSizeChange = patchedOnContentSizeChange;
 
     isPatched = true;
   } catch (error) {
-    console.error('[MarkdownPatch] ❌ Failed to patch:', error);
+    log.error('[MarkdownPatch] ❌ Failed to patch:', error);
   }
 }
 
@@ -158,12 +159,12 @@ export function createPatchedOnContentSizeChange(
  */
 export function setPlainReduction(percent: number) {
   runtimePlainReduction = percent / 100;
-  console.log(`[MarkdownPatch] Plain reduction set to ${percent}%`);
+  log.log(`[MarkdownPatch] Plain reduction set to ${percent}%`);
 }
 
 export function setHeadingReduction(percent: number) {
   runtimeHeadingReduction = percent / 100;
-  console.log(`[MarkdownPatch] Heading reduction set to ${percent}%`);
+  log.log(`[MarkdownPatch] Heading reduction set to ${percent}%`);
 }
 
 export function getReductions() {
@@ -178,8 +179,8 @@ if (__DEV__) {
   (globalThis as any).setPlainReduction = setPlainReduction;
   (globalThis as any).setHeadingReduction = setHeadingReduction;
   (globalThis as any).getReductions = getReductions;
-  console.log('[MarkdownPatch] Debug commands:');
-  console.log('  globalThis.setPlainReduction(20)  // 20% reduction for plain text');
-  console.log('  globalThis.setHeadingReduction(12) // 12% reduction for headings');
-  console.log('  globalThis.getReductions()');
+  log.log('[MarkdownPatch] Debug commands:');
+  log.log('  globalThis.setPlainReduction(20)  // 20% reduction for plain text');
+  log.log('  globalThis.setHeadingReduction(12) // 12% reduction for headings');
+  log.log('  globalThis.getReductions()');
 }

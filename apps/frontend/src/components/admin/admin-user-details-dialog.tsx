@@ -49,7 +49,7 @@ import {
   useAdminUserTransactions,
 } from '@/hooks/billing';
 import type { UserSummary } from '@/hooks/admin/use-admin-users';
-import { formatCredits, dollarsToCredits, formatCreditsWithSign } from '@/lib/utils/credit-formatter';
+import { formatCredits, dollarsToCredits, formatCreditsWithSign } from '@agentpress/shared';
 
 interface AdminUserDetailsDialogProps {
   user: UserSummary | null;

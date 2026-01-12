@@ -3,6 +3,7 @@ import { View, type ViewProps } from 'react-native';
 import { Cpu } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { getModelProviderIcon } from '@/lib/utils/model-provider';
+import { log } from '@/lib/logger';
 
 interface ModelAvatarProps extends ViewProps {
   model?: any;
@@ -26,7 +27,7 @@ export function ModelAvatar({ model, size = 48, style, ...props }: ModelAvatarPr
     try {
       return getModelProviderIcon(modelId);
     } catch (error) {
-      console.error('Error loading model icon:', error);
+      log.error('Error loading model icon:', error);
       return null;
     }
   }, [modelId]);

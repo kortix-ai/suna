@@ -11,6 +11,7 @@ import { Icon } from '@/components/ui/icon';
 import { Check } from 'lucide-react-native';
 import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
+import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -34,14 +35,14 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
   const { currentLanguage, availableLanguages, setLanguage, t } = useLanguage();
 
   const handleLanguageSelect = async (languageCode: string) => {
-    console.log('🌍 Language selected:', languageCode);
+    log.log('🌍 Language selected:', languageCode);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     await setLanguage(languageCode);
   };
 
   const handleClose = React.useCallback(() => {
-    console.log('🎯 Language page closing');
+    log.log('🎯 Language page closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
