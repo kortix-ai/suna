@@ -31,6 +31,9 @@ import {
   CreditCard,
   Lock,
   Unlock,
+  Zap,
+  CheckCircle2,
+  PieChart,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Calendar } from '@/components/ui/calendar';
@@ -73,6 +76,8 @@ import {
   useViewsByDate,
   useNewPaidByDate,
   useChurnByDate,
+  useEngagementSummary,
+  useTaskPerformance,
   type SimulatorConfigData,
   type ThreadAnalytics,
   type RetentionData,
@@ -81,6 +86,8 @@ import {
   type MonthlyActualData,
   type FieldOverrides,
   type AnalyticsSource,
+  type EngagementSummary,
+  type TaskPerformance,
 } from '@/hooks/admin/use-admin-analytics';
 import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
@@ -1852,24 +1859,6 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         </CardContent>
       </Card>
 
-      {/* View Toggle */}
-      <div className="flex items-center gap-2">
-        <Button
-          variant={simulatorView === 'monthly' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setSimulatorView('monthly')}
-        >
-          📅 Monthly View
-        </Button>
-        <Button
-          variant={simulatorView === 'weekly' ? 'default' : 'outline'}
-          size="sm"
-          onClick={() => setSimulatorView('weekly')}
-        >
-          📊 Weekly Tracking
-        </Button>
-      </div>
-
       {/* Key Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card>
@@ -1943,6 +1932,24 @@ function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* View Toggle - just above the charts/tables it controls */}
+      <div className="flex items-center gap-2">
+        <Button
+          variant={simulatorView === 'monthly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('monthly')}
+        >
+          📅 Monthly View
+        </Button>
+        <Button
+          variant={simulatorView === 'weekly' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setSimulatorView('weekly')}
+        >
+          📊 Weekly Tracking
+        </Button>
+      </div>
 
       {simulatorView === 'monthly' && (
       <>
@@ -3183,6 +3190,23 @@ export default function AdminAnalyticsPage() {
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [tierFilter, setTierFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
+  const [activeTab, setActiveTab] = useState<string>('overview');
+  
+  // Helper to set category filter and auto-switch to threads tab
+  const handleCategoryFilter = (category: string | null) => {
+    setCategoryFilter(category);
+    if (category) {
+      setActiveTab('threads'); // Auto-switch to threads tab when filtering
+    }
+  };
+  
+  // Helper to set tier filter and auto-switch to threads tab  
+  const handleTierFilter = (tier: string | null) => {
+    setTierFilter(tier);
+    if (tier && tier !== 'all') {
+      setActiveTab('threads'); // Auto-switch to threads tab when filtering
+    }
+  };
   
   // User details dialog state
   const [selectedUser, setSelectedUser] = useState<UserSummary | null>(null);
@@ -3240,13 +3264,23 @@ export default function AdminAnalyticsPage() {
   const dateString = format(distributionDate, 'yyyy-MM-dd');
   
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-  const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateString);
-  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString, tierFilter);
-  const { data: tierDistribution, isFetching: tierFetching } = useTierDistribution(dateString);
+  
+  // Only fetch threads-related data when on threads tab
+  const isThreadsTab = activeTab === 'threads';
+  const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateString, isThreadsTab);
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString, tierFilter, isThreadsTab);
+  const { data: tierDistribution, isFetching: tierFetching } = useTierDistribution(dateString, isThreadsTab);
+  
+  // Overview tab data
   const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateString, analyticsSource);
+  
+  // Executive Overview data hooks
+  const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateString);
+  const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateString);
   
   // Combined fetching state for the Daily Analytics card
   const isDailyAnalyticsFetching = distributionFetching || categoryFetching || tierFetching || funnelFetching;
+  const isOverviewFetching = engagementFetching || taskFetching;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -3275,55 +3309,71 @@ export default function AdminAnalyticsPage() {
           </div>
         </div>
 
-        {/* Summary Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {summaryLoading ? (
-            [...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-32" />
-            ))
-          ) : (
-            <>
-              <StatCard
-                title="Total Users"
-                value={summary?.total_users?.toLocaleString() || '0'}
-                description={`${summary?.active_users_week || 0} active this week`}
-                icon={<Users className="h-4 w-4 text-primary" />}
-              />
-              <StatCard
-                title="New Signups Today"
-                value={summary?.new_signups_today || 0}
-                description={`${summary?.new_signups_week || 0} this week`}
-                icon={<TrendingUp className="h-4 w-4 text-primary" />}
-              />
-              <StatCard
-                title="Conversion Rate"
-                value={`${summary?.conversion_rate_week || 0}%`}
-                description="Signups → Subscriptions (week)"
-                icon={<Activity className="h-4 w-4 text-primary" />}
-              />
-              <StatCard
-                title="Total Threads"
-                value={summary?.total_threads?.toLocaleString() || '0'}
-                description={`Avg ${summary?.avg_threads_per_user?.toFixed(1) || 0} per user`}
-                icon={<MessageSquare className="h-4 w-4 text-primary" />}
-              />
-            </>
-          )}
-        </div>
+        {/* Tabs - at top for easy navigation */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <TabsList>
+            <TabsTrigger value="overview" className="flex items-center gap-2">
+              <BarChart3 className="h-4 w-4" />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="threads" className="flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" />
+              All Threads
+            </TabsTrigger>
+            <TabsTrigger value="users" className="flex items-center gap-2">
+              <CreditCard className="h-4 w-4" />
+              Users & Billing
+            </TabsTrigger>
+            <TabsTrigger value="retention" className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4" />
+              Retention
+            </TabsTrigger>
+            <TabsTrigger value="simulator" className="flex items-center gap-2">
+              <TrendingUp className="h-4 w-4" />
+              ARR Simulator
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Daily Analytics - Unified Card */}
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2">
-                <BarChart3 className="h-5 w-5" />
-                Daily Analytics (Berlin)
-              </CardTitle>
-              <CardDescription>
-                Conversion funnel, threads, and categories
-              </CardDescription>
+          <TabsContent value="overview" className="space-y-6">
+            {/* Executive Summary - Top KPIs Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {(summaryLoading || engagementLoading) ? (
+                [...Array(4)].map((_, i) => (
+                  <Skeleton key={i} className="h-28" />
+                ))
+              ) : (
+                <>
+                  <StatCard
+                    title="Active Users Today"
+                    value={engagementSummary?.dau?.toLocaleString() || '0'}
+                    description={`${engagementSummary?.wau || 0} WAU · ${engagementSummary?.mau || 0} MAU`}
+                    icon={<Users className="h-4 w-4 text-primary" />}
+                  />
+                  <StatCard
+                    title="New Signups"
+                    value={summary?.new_signups_today || 0}
+                    description={`${summary?.new_signups_week || 0} this week`}
+                    icon={<TrendingUp className="h-4 w-4 text-primary" />}
+                  />
+                  <StatCard
+                    title="Threads Today"
+                    value={engagementSummary?.total_threads_today?.toLocaleString() || '0'}
+                    description={`${engagementSummary?.total_threads_week || 0} this week`}
+                    icon={<Activity className="h-4 w-4 text-primary" />}
+                  />
+                  <StatCard
+                    title="Success Rate"
+                    value={`${taskPerformance?.success_rate || 0}%`}
+                    description={`${taskPerformance?.total_runs || 0} runs today`}
+                    icon={<CheckCircle2 className="h-4 w-4 text-primary" />}
+                  />
+                </>
+              )}
             </div>
-            <div className="flex items-center gap-2">
+
+            {/* Date Picker for Overview */}
+            <div className="flex items-center justify-end gap-2">
+              <span className="text-sm text-muted-foreground">Date:</span>
               <Button
                 variant="ghost"
                 size="icon"
@@ -3338,8 +3388,8 @@ export default function AdminAnalyticsPage() {
               </Button>
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[160px] justify-start text-left font-normal">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
+                  <Button variant="outline" className="min-w-[140px] justify-start text-left font-normal h-8">
+                    <CalendarIcon className="mr-2 h-3.5 w-3.5" />
                     {format(distributionDate, 'MMM d, yyyy')}
                   </Button>
                 </PopoverTrigger>
@@ -3372,206 +3422,393 @@ export default function AdminAnalyticsPage() {
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
-          </CardHeader>
-          <CardContent className={`space-y-6 transition-opacity duration-200 ${isDailyAnalyticsFetching ? 'opacity-60' : 'opacity-100'}`}>
-            {/* Conversion Funnel Section */}
-            <div>
-              <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                <TrendingUp className="h-4 w-4" />
-                Conversion Funnel
-              </h3>
-              {funnelLoading ? (
-                <div className="grid grid-cols-3 gap-4">
-                  {[...Array(3)].map((_, i) => (
-                    <Skeleton key={i} className="h-20" />
-                  ))}
-                </div>
-              ) : conversionFunnel ? (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="text-center p-3 rounded-lg bg-muted/50">
-                      <div className="text-2xl font-bold">{conversionFunnel.visitors.toLocaleString()}</div>
-                      <p className="text-xs text-muted-foreground">Visitors</p>
-                    </div>
-                    <div className="text-center p-3 rounded-lg bg-muted/50">
-                      <div className="text-2xl font-bold">{conversionFunnel.signups.toLocaleString()}</div>
-                      <p className="text-xs text-muted-foreground">Signups ({conversionFunnel.visitor_to_signup_rate}%)</p>
-                    </div>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <div className="text-center p-3 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors">
-                          <div className="text-2xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
-                          <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
-                          {conversionFunnel.subscriptions > 0 && (
-                            <p className="text-[10px] text-primary mt-1">Click to view emails</p>
-                          )}
+
+            {/* Single Column Layout */}
+            <div className={`space-y-6 transition-opacity duration-200 ${isOverviewFetching ? 'opacity-60' : 'opacity-100'}`}>
+              {/* Conversion Funnel Card */}
+              <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <TrendingUp className="h-4 w-4" />
+                      Conversion Funnel
+                    </CardTitle>
+                    <CardDescription>
+                      Visitors → Signups → Subscriptions for {format(distributionDate, 'MMM d')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {funnelLoading ? (
+                      <div className="grid grid-cols-3 gap-3">
+                        {[...Array(3)].map((_, i) => (
+                          <Skeleton key={i} className="h-16" />
+                        ))}
+                      </div>
+                    ) : conversionFunnel ? (
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="text-center p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-xl font-bold">{conversionFunnel.visitors.toLocaleString()}</div>
+                            <p className="text-xs text-muted-foreground">Visitors</p>
+                          </div>
+                          <div className="text-center p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-xl font-bold">{conversionFunnel.signups.toLocaleString()}</div>
+                            <p className="text-xs text-muted-foreground">Signups ({conversionFunnel.visitor_to_signup_rate}%)</p>
+                          </div>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <div className="text-center p-2.5 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors">
+                                <div className="text-xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
+                                <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
+                              </div>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-80 max-h-64 overflow-y-auto">
+                              <div className="space-y-2">
+                                <h4 className="font-medium text-sm">Subscriber Emails</h4>
+                                {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
+                                  <ul className="space-y-1">
+                                    {conversionFunnel.subscriber_emails.map((email, idx) => (
+                                      <li key={idx} className="text-sm flex items-center gap-2">
+                                        <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
+                                        <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="text-sm text-muted-foreground">No subscriber emails for this date</p>
+                                )}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
                         </div>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-80 max-h-64 overflow-y-auto">
-                        <div className="space-y-2">
-                          <h4 className="font-medium text-sm">Subscriber Emails</h4>
-                          {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
-                            <ul className="space-y-1">
-                              {conversionFunnel.subscriber_emails.map((email, idx) => (
-                                <li key={idx} className="text-sm flex items-center gap-2">
-                                  <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
-                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No subscriber emails for this date</p>
-                          )}
+                        <p className="text-xs text-muted-foreground text-center">
+                          Overall: <span className="font-medium text-foreground">{conversionFunnel.overall_conversion_rate}%</span> conversion
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        <Eye className="h-5 w-5 mx-auto mb-1 opacity-50" />
+                        Analytics not configured
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+
+              {/* User Engagement Card */}
+              <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Activity className="h-4 w-4" />
+                      User Engagement
+                    </CardTitle>
+                    <CardDescription>
+                      Daily, weekly, and monthly active users
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {engagementLoading ? (
+                      <div className="space-y-3">
+                        <Skeleton className="h-16" />
+                        <Skeleton className="h-16" />
+                      </div>
+                    ) : engagementSummary ? (
+                      <div className="space-y-4">
+                        {/* DAU / WAU / MAU */}
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="text-center p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-xl font-bold">{engagementSummary.dau.toLocaleString()}</div>
+                            <p className="text-xs text-muted-foreground">DAU</p>
+                          </div>
+                          <div className="text-center p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-xl font-bold">{engagementSummary.wau.toLocaleString()}</div>
+                            <p className="text-xs text-muted-foreground">WAU</p>
+                          </div>
+                          <div className="text-center p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-xl font-bold">{engagementSummary.mau.toLocaleString()}</div>
+                            <p className="text-xs text-muted-foreground">MAU</p>
+                          </div>
                         </div>
-                      </PopoverContent>
-                    </Popover>
-                  </div>
-                  <p className="text-xs text-muted-foreground text-center">
-                    Overall: <span className="font-medium text-foreground">{conversionFunnel.overall_conversion_rate}%</span> conversion
-                  </p>
-                </div>
-              ) : (
-                <div className="text-center py-4 text-muted-foreground text-sm">
-                  <Eye className="h-5 w-5 mx-auto mb-1 opacity-50" />
-                  PostHog not configured
-                </div>
-              )}
+
+                        {/* Stickiness & Threads */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-3 rounded-lg bg-muted/50">
+                            <div className="text-lg font-bold">{engagementSummary.dau_mau_ratio}%</div>
+                            <p className="text-xs text-muted-foreground">DAU/MAU Ratio (Stickiness)</p>
+                          </div>
+                          <div className="p-3 rounded-lg bg-muted/50">
+                            <div className="text-lg font-bold">{engagementSummary.avg_threads_per_active_user.toFixed(1)}</div>
+                            <p className="text-xs text-muted-foreground">Avg Threads/User</p>
+                          </div>
+                        </div>
+
+                        {/* Thread counts */}
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Threads today:</span>
+                          <span className="font-medium">{engagementSummary.total_threads_today.toLocaleString()}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-sm">
+                          <span className="text-muted-foreground">Threads this week:</span>
+                          <span className="font-medium">{engagementSummary.total_threads_week.toLocaleString()}</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        <Activity className="h-5 w-5 mx-auto mb-1 opacity-50" />
+                        Engagement data unavailable
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Task Performance Card */}
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-base flex items-center gap-2">
+                      <Zap className="h-4 w-4" />
+                      Task Performance
+                    </CardTitle>
+                    <CardDescription>
+                      Agent run statistics for {format(distributionDate, 'MMM d')}
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    {taskLoading ? (
+                      <div className="space-y-3">
+                        <Skeleton className="h-16" />
+                        <Skeleton className="h-16" />
+                      </div>
+                    ) : taskPerformance ? (
+                      <div className="space-y-4">
+                        {/* Success Rate & Total */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="p-3 rounded-lg bg-muted/50">
+                            <div className="text-2xl font-bold">
+                              {taskPerformance.success_rate}%
+                            </div>
+                            <p className="text-xs text-muted-foreground">Success Rate</p>
+                          </div>
+                          <div className="p-3 rounded-lg bg-muted/50">
+                            <div className="text-2xl font-bold">{taskPerformance.total_runs.toLocaleString()}</div>
+                            <p className="text-xs text-muted-foreground">Total Runs</p>
+                          </div>
+                        </div>
+
+                        {/* Status Breakdown */}
+                        <div className="grid grid-cols-4 gap-2 text-center">
+                          <div className="p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-lg font-bold">{taskPerformance.completed_runs}</div>
+                            <p className="text-xs text-muted-foreground">Completed</p>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-lg font-bold">{taskPerformance.failed_runs}</div>
+                            <p className="text-xs text-muted-foreground">Failed</p>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-lg font-bold">{taskPerformance.stopped_runs}</div>
+                            <p className="text-xs text-muted-foreground">Stopped</p>
+                          </div>
+                          <div className="p-2.5 rounded-lg bg-muted/50">
+                            <div className="text-lg font-bold">{taskPerformance.running_runs}</div>
+                            <p className="text-xs text-muted-foreground">Running</p>
+                          </div>
+                        </div>
+
+                        {/* Avg Duration */}
+                        {taskPerformance.avg_duration_seconds !== null && (
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-muted-foreground">Avg Duration:</span>
+                            <span className="font-medium">
+                              {taskPerformance.avg_duration_seconds < 60 
+                                ? `${taskPerformance.avg_duration_seconds.toFixed(0)}s`
+                                : `${(taskPerformance.avg_duration_seconds / 60).toFixed(1)}m`}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 text-muted-foreground text-sm">
+                        <Zap className="h-5 w-5 mx-auto mb-1 opacity-50" />
+                        Task data unavailable
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
             </div>
+          </TabsContent>
 
-            {/* Divider */}
-            <div className="border-t" />
-
-            {/* Thread Distribution Section */}
-            {distribution && (
-              <div>
-                <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Thread Distribution
-                </h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <div className="text-2xl font-bold">{distribution.distribution['1_message']}</div>
-                    <p className="text-xs text-muted-foreground">1 message ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <div className="text-2xl font-bold">{distribution.distribution['2_3_messages']}</div>
-                    <p className="text-xs text-muted-foreground">2-3 msgs ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
-                  </div>
-                  <div className="text-center p-3 rounded-lg bg-muted/50">
-                    <div className="text-2xl font-bold">{distribution.distribution['5_plus_messages']}</div>
-                    <p className="text-xs text-muted-foreground">5+ msgs ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
-                  </div>
+          <TabsContent value="threads" className="space-y-4">
+            {/* Thread & Category Distribution - above the browser */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <div>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4" />
+                    Thread Analytics
+                  </CardTitle>
+                  <CardDescription>
+                    Distribution by messages and categories for {format(distributionDate, 'MMM d, yyyy')}
+                  </CardDescription>
                 </div>
-                <p className="text-xs text-muted-foreground text-center mt-2">
-                  Total: <span className="font-medium text-foreground">{distribution.total_threads}</span> threads
-                </p>
-              </div>
-            )}
-
-            {/* Divider */}
-            {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
-              <div className="border-t" />
-            )}
-
-            {/* Category Distribution Section */}
-            {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-medium flex items-center gap-2">
-                    <Filter className="h-4 w-4" />
-                    Category Distribution
-                  </h3>
-                  {/* Tier Filter Dropdown */}
-                  {tierDistribution && Object.keys(tierDistribution.distribution).length > 0 && (
-                    <Select
-                      value={tierFilter || 'all'}
-                      onValueChange={(value) => setTierFilter(value === 'all' ? null : value)}
-                    >
-                      <SelectTrigger className="w-[150px] h-7 text-xs">
-                        <CreditCard className="h-3 w-3 mr-1 text-muted-foreground" />
-                        <SelectValue placeholder="All Tiers" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">All Tiers</SelectItem>
-                        {Object.entries(tierDistribution.distribution).map(([tier, count]) => {
-                          const displayName = tier === 'none' ? 'No Subscription' :
-                            tier === 'free' ? 'Free' :
-                            tier === 'tier_2_20' ? 'Plus' :
-                            tier === 'tier_6_50' ? 'Pro' :
-                            tier === 'tier_12_100' ? 'Business' :
-                            tier === 'tier_25_200' ? 'Ultra' :
-                            tier === 'tier_50_400' ? 'Enterprise' :
-                            tier === 'tier_125_800' ? 'Scale' :
-                            tier === 'tier_200_1000' ? 'Max' : tier;
-                          return (
-                            <SelectItem key={tier} value={tier} className="[font-variant-ligatures:none]">
-                              {displayName} · {count}
-                            </SelectItem>
-                          );
-                        })}
-                      </SelectContent>
-                    </Select>
-                  )}
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => {
+                      const prev = new Date(distributionDate);
+                      prev.setDate(prev.getDate() - 1);
+                      setDistributionDate(prev);
+                    }}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </Button>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className="min-w-[140px] justify-start text-left font-normal h-8 text-sm">
+                        <CalendarIcon className="mr-2 h-3 w-3" />
+                        {format(distributionDate, 'MMM d, yyyy')}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="end">
+                      <Calendar
+                        mode="single"
+                        selected={distributionDate}
+                        onSelect={(date) => {
+                          if (date) {
+                            setDistributionDate(date);
+                          }
+                        }}
+                        disabled={(date) => date > berlinToday}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    disabled={format(distributionDate, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
+                    onClick={() => {
+                      const next = new Date(distributionDate);
+                      next.setDate(next.getDate() + 1);
+                      setDistributionDate(next);
+                    }}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </Button>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
-                    const percentage = categoryDistribution.total_projects > 0 
-                      ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
-                      : '0.0';
-                    const isSelected = categoryFilter === category;
-                    return (
-                      <button
-                        key={category}
-                        onClick={() => setCategoryFilter(isSelected ? null : category)}
-                        className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
-                          isSelected 
-                            ? 'bg-primary text-primary-foreground border-primary' 
-                            : 'bg-muted/50 hover:bg-muted border-transparent'
-                        }`}
-                      >
-                        <span className="font-medium truncate max-w-[120px]" title={category}>
-                          {category}
-                        </span>
-                        <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                          {count} ({percentage}%)
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {categoryFilter && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
-                  </p>
+              </CardHeader>
+              <CardContent className={`space-y-4 transition-opacity duration-200 ${isDailyAnalyticsFetching ? 'opacity-60' : 'opacity-100'}`}>
+                {/* Thread Distribution Section */}
+                {distribution && (
+                  <div>
+                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <MessageSquare className="h-4 w-4" />
+                      Message Distribution
+                    </h3>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="text-center p-3 rounded-lg bg-muted/50">
+                        <div className="text-2xl font-bold">{distribution.distribution['1_message']}</div>
+                        <p className="text-xs text-muted-foreground">1 message ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                      </div>
+                      <div className="text-center p-3 rounded-lg bg-muted/50">
+                        <div className="text-2xl font-bold">{distribution.distribution['2_3_messages']}</div>
+                        <p className="text-xs text-muted-foreground">2-3 msgs ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                      </div>
+                      <div className="text-center p-3 rounded-lg bg-muted/50">
+                        <div className="text-2xl font-bold">{distribution.distribution['5_plus_messages']}</div>
+                        <p className="text-xs text-muted-foreground">5+ msgs ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
+                      </div>
+                    </div>
+                    <p className="text-xs text-muted-foreground text-center mt-2">
+                      Total: <span className="font-medium text-foreground">{distribution.total_threads}</span> threads
+                    </p>
+                  </div>
                 )}
-              </div>
-            )}
 
-          </CardContent>
-        </Card>
+                {/* Divider */}
+                {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && distribution && (
+                  <div className="border-t" />
+                )}
 
-        {/* Tabs */}
-        <Tabs defaultValue="threads" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="threads" className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
-              All Threads
-            </TabsTrigger>
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
-              Users & Billing
-            </TabsTrigger>
-            <TabsTrigger value="retention" className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4" />
-              Retention
-            </TabsTrigger>
-            <TabsTrigger value="simulator" className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              ARR Simulator
-            </TabsTrigger>
-          </TabsList>
+                {/* Category Distribution Section */}
+                {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-medium flex items-center gap-2">
+                        <Filter className="h-4 w-4" />
+                        Category Distribution
+                      </h3>
+                      {/* Tier Filter Dropdown */}
+                      {tierDistribution && Object.keys(tierDistribution.distribution).length > 0 && (
+                        <Select
+                          value={tierFilter || 'all'}
+                          onValueChange={(value) => setTierFilter(value === 'all' ? null : value)}
+                        >
+                          <SelectTrigger className="w-[150px] h-7 text-xs">
+                            <CreditCard className="h-3 w-3 mr-1 text-muted-foreground" />
+                            <SelectValue placeholder="All Tiers" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="all">All Tiers</SelectItem>
+                            {Object.entries(tierDistribution.distribution).map(([tier, count]) => {
+                              const displayName = tier === 'none' ? 'No Subscription' :
+                                tier === 'free' ? 'Free' :
+                                tier === 'tier_2_20' ? 'Plus' :
+                                tier === 'tier_6_50' ? 'Pro' :
+                                tier === 'tier_12_100' ? 'Business' :
+                                tier === 'tier_25_200' ? 'Ultra' :
+                                tier === 'tier_50_400' ? 'Enterprise' :
+                                tier === 'tier_125_800' ? 'Scale' :
+                                tier === 'tier_200_1000' ? 'Max' : tier;
+                              return (
+                                <SelectItem key={tier} value={tier} className="[font-variant-ligatures:none]">
+                                  {displayName} · {count}
+                                </SelectItem>
+                              );
+                            })}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
+                        const percentage = categoryDistribution.total_projects > 0 
+                          ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
+                          : '0.0';
+                        const isSelected = categoryFilter === category;
+                        return (
+                          <button
+                            key={category}
+                            onClick={() => setCategoryFilter(isSelected ? null : category)}
+                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
+                              isSelected 
+                                ? 'bg-primary text-primary-foreground border-primary' 
+                                : 'bg-muted/50 hover:bg-muted border-transparent'
+                            }`}
+                          >
+                            <span className="font-medium truncate max-w-[120px]" title={category}>
+                              {category}
+                            </span>
+                            <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                              {count} ({percentage}%)
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {categoryFilter && (
+                      <p className="text-xs text-muted-foreground mt-2">
+                        <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
 
-          <TabsContent value="threads">
+            {/* Thread Browser */}
             <ThreadBrowser
               categoryFilter={categoryFilter}
               tierFilter={tierFilter}
