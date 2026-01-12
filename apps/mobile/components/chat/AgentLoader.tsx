@@ -107,12 +107,23 @@ const ShimmerText = ({ text }: { text: string }) => {
   );
 };
 
-export const AgentLoader = React.memo(function AgentLoader() {
+interface AgentLoaderProps {
+  isReconnecting?: boolean;
+  retryCount?: number;
+}
+
+export const AgentLoader = React.memo(function AgentLoader({ 
+  isReconnecting = false, 
+  retryCount = 0 
+}: AgentLoaderProps) {
   const [phraseIndex, setPhraseIndex] = useState(0);
   const textOpacity = useSharedValue(1);
   const textTranslateY = useSharedValue(0);
 
   useEffect(() => {
+    // Don't cycle phrases when reconnecting
+    if (isReconnecting) return;
+    
     const interval = setInterval(() => {
       textOpacity.value = withTiming(0, { duration: 200, easing: Easing.ease });
       textTranslateY.value = withTiming(-4, { duration: 200, easing: Easing.ease });
@@ -128,12 +139,17 @@ export const AgentLoader = React.memo(function AgentLoader() {
     }, 2800);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [isReconnecting]);
 
   const textAnimatedStyle = useAnimatedStyle(() => ({
     opacity: textOpacity.value,
     transform: [{ translateY: textTranslateY.value }],
   }));
+
+  // Show reconnecting message when network issues detected
+  const displayText = isReconnecting 
+    ? `Reconnecting${retryCount > 0 ? ` (${retryCount}/5)` : ''}...`
+    : thinkingPhrases[phraseIndex];
 
   return (
     <View className="flex-row items-center gap-2">
@@ -144,7 +160,7 @@ export const AgentLoader = React.memo(function AgentLoader() {
       </View>
 
       <Animated.View style={textAnimatedStyle}>
-        <ShimmerText text={thinkingPhrases[phraseIndex]} />
+        <ShimmerText text={displayText} />
       </Animated.View>
     </View>
   );

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Alert, Keyboard } from 'react-native';
+import { Alert, Keyboard, AppState, AppStateStatus } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
@@ -77,6 +77,8 @@ export interface UseChatReturn {
   streamingContent: string;
   streamingToolCall: UnifiedMessage | null;
   isStreaming: boolean;
+  isReconnecting: boolean;
+  retryCount: number;
   
   sendMessage: (content: string, agentId: string, agentName: string) => Promise<void>;
   stopAgent: () => void;
@@ -96,6 +98,10 @@ export interface UseChatReturn {
   isLoading: boolean;
   isSendingMessage: boolean;
   isAgentRunning: boolean;
+  
+  // Error state for stream errors
+  streamError: string | null;
+  retryLastMessage: () => void;
   
   handleTakePicture: () => Promise<void>;
   handleChooseImages: () => Promise<void>;
@@ -146,6 +152,13 @@ export function useChat(): UseChatReturn {
   const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false);
   const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
+  
+  // Track last message params for retry functionality
+  const lastMessageParamsRef = useRef<{
+    content: string;
+    agentId: string;
+    agentName: string;
+  } | null>(null);
   
   // Per-mode full state: keeps entire mode state in memory for instant switching (like browser tabs)
   const [modeStates, setModeStates] = useState<Record<string, ModeState>>({});;
@@ -380,8 +393,9 @@ export function useChat(): UseChatReturn {
           setAgentRunId(null);
           break;
         case 'connecting':
-          break;
         case 'streaming':
+        case 'reconnecting':
+          // Keep agentRunId during active states
           break;
       }
     },
@@ -414,8 +428,10 @@ export function useChat(): UseChatReturn {
     toolCall: streamingToolCall,
     error: streamError,
     agentRunId: currentHookRunId,
+    retryCount: streamRetryCount,
     startStreaming,
     stopStreaming,
+    resumeStream,
   } = useAgentStream(
     {
       onMessage: handleNewMessageFromStream,
@@ -429,7 +445,33 @@ export function useChat(): UseChatReturn {
     undefined,
   );
 
-  const isStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
+  const isStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting' || streamHookStatus === 'reconnecting';
+  const isReconnecting = streamHookStatus === 'reconnecting';
+
+  // Handle app state changes - resume stream when coming back to foreground
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+      // App came to foreground from background/inactive
+      if (
+        appStateRef.current.match(/inactive|background/) && 
+        nextAppState === 'active'
+      ) {
+        log.log('[useChat] App came to foreground, checking stream status');
+        // Only try to resume if we have an active agent run
+        if (currentHookRunId || agentRunId) {
+          log.log('[useChat] Active run detected, resuming stream...');
+          resumeStream();
+        }
+      }
+      appStateRef.current = nextAppState;
+    });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [currentHookRunId, agentRunId, resumeStream]);
 
   const prevThreadIdRef = useRef<string | undefined>(undefined);
   
@@ -715,6 +757,9 @@ export function useChat(): UseChatReturn {
 
   const sendMessage = useCallback(async (content: string, agentId: string, agentName: string) => {
     if (!content.trim() && attachments.length === 0) return;
+
+    // Store params for retry functionality
+    lastMessageParamsRef.current = { content, agentId, agentName };
 
     try {
       log.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length, selectedQuickAction, selectedQuickActionOption });
@@ -1142,6 +1187,20 @@ export function useChat(): UseChatReturn {
     }
   }, [agentRunId, currentHookRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
 
+  // Retry the last failed message
+  const retryLastMessage = useCallback(() => {
+    if (!lastMessageParamsRef.current) {
+      log.warn('[useChat] No message to retry');
+      return;
+    }
+    
+    const { content, agentId, agentName } = lastMessageParamsRef.current;
+    log.log('[useChat] Retrying last message:', { content: content.substring(0, 50) + '...' });
+    
+    // Re-send the message
+    sendMessage(content, agentId, agentName);
+  }, [sendMessage]);
+
   const addAttachment = useCallback((attachment: Attachment) => {
     setAttachments(prev => [...prev, attachment]);
   }, []);
@@ -1444,6 +1503,8 @@ export function useChat(): UseChatReturn {
     streamingContent: streamingTextContent,
     streamingToolCall,
     isStreaming,
+    isReconnecting,
+    retryCount: streamRetryCount,
     
     sendMessage,
     stopAgent,
@@ -1460,6 +1521,10 @@ export function useChat(): UseChatReturn {
     isLoading,
     isSendingMessage: sendMessageMutation.isPending || unifiedAgentStartMutation.isPending,
     isAgentRunning: isStreaming,
+    
+    // Error state for stream errors
+    streamError: streamError,
+    retryLastMessage,
     
     handleTakePicture,
     handleChooseImages,

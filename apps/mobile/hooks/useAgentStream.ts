@@ -17,8 +17,10 @@ interface UseAgentStreamResult {
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;
+  retryCount: number; // Number of reconnection attempts (0 = connected)
   startStreaming: (runId: string) => Promise<void>;
   stopStreaming: () => Promise<void>;
+  resumeStream: () => Promise<void>; // Call when app comes back to foreground
 }
 
 interface AgentStreamCallbacks {
@@ -93,7 +95,9 @@ export function useAgentStream(
     toolCall: coreResult.toolCall,
     error: coreResult.error,
     agentRunId: coreResult.agentRunId,
+    retryCount: coreResult.retryCount,
     startStreaming: coreResult.startStreaming,
     stopStreaming: coreResult.stopStreaming,
+    resumeStream: coreResult.resumeStream,
   };
 }
