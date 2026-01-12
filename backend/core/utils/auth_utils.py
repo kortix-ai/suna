@@ -24,7 +24,7 @@ def _constant_time_compare(a: str, b: str) -> bool:
 
 # JWKS cache for ES256 tokens
 _jwks_cache: Optional[Dict] = None
-_jwks_cache_time: float = 0
+_jwks_cache_time: float = 0 
 _jwks_cache_ttl: int = 3600  # Cache for 1 hour
 
 

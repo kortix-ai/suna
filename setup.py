@@ -8,7 +8,7 @@ import re
 import json
 import secrets
 import base64
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse, unquote
 
 # --- Constants ---
 IS_WINDOWS = platform.system() == "Windows"
@@ -536,7 +536,7 @@ def normalize_database_url(url):
     """
     Normalizes a database URL:
     - Converts postgres:// to postgresql://
-    - Ensures password is properly URL-encoded
+    - Ensures password is properly URL-encoded (handles double-encoding)
     - Validates structure
     """
     if not url:
@@ -551,8 +551,19 @@ def normalize_database_url(url):
         
         # URL-encode the password if present
         if parsed.password:
-            # Reconstruct with URL-encoded password
-            encoded_password = quote(parsed.password, safe='')
+            # Decode password until no more URL-encoded sequences remain (handles double/triple encoding)
+            decoded_password = parsed.password
+            while '%' in decoded_password:
+                try:
+                    new_decoded = unquote(decoded_password)
+                    if new_decoded == decoded_password:
+                        break  # No more decoding possible
+                    decoded_password = new_decoded
+                except Exception:
+                    break  # Stop if decoding fails
+            
+            # Reconstruct with properly URL-encoded password (encode once)
+            encoded_password = quote(decoded_password, safe='')
             netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
             if parsed.port:
                 netloc += f":{parsed.port}"
@@ -1450,7 +1461,41 @@ class SetupWizard:
         
         print_success("OpenAI API key saved for background tasks.")
         
-        # Explain Bedrock configuration for cloud Supabase users
+        # Collect AWS Bedrock credentials - Required as default LLM provider
+        print()
+        print(f"{Colors.YELLOW}{'═'*70}{Colors.ENDC}")
+        print(f"{Colors.YELLOW}{Colors.BOLD}  ☁️  AWS Bedrock Configuration (Default LLM Provider){Colors.ENDC}")
+        print(f"{Colors.YELLOW}{'═'*70}{Colors.ENDC}")
+        print_info("AWS Bedrock is the DEFAULT LLM provider for Kortix Super Worker.")
+        print_info("All main LLM calls will use AWS Bedrock (Claude models).")
+        print_info("\nTo use Bedrock, you need:")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} AWS credentials configured (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Bedrock enabled in your AWS region")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Optional: Bearer token (if required by your setup)")
+        print()
+        print_warning("⚠️  IMPORTANT: Configure AWS credentials before running Kortix Super Worker!")
+        print_info("Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as environment variables or in AWS credentials file.")
+        print()
+        
+        # Check if already exists
+        existing_bedrock_token = self.env_vars["llm"].get("AWS_BEARER_TOKEN_BEDROCK", "")
+        print_api_key_prompt("AWS_BEARER_TOKEN_BEDROCK", optional=True, existing_value=existing_bedrock_token)
+        print_info("Note: Bearer token is optional for most Bedrock setups. Leave blank if not needed.")
+        
+        bedrock_token = self._get_input(
+            f"{Colors.YELLOW}Enter your AWS Bedrock Bearer Token (optional, press Enter to skip){Colors.ENDC}: ",
+            validate_api_key,
+            "Invalid token format. It should be at least 10 characters long.",
+            allow_empty=True,
+            default_value=existing_bedrock_token,
+        )
+        
+        if bedrock_token:
+            self.env_vars["llm"]["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
+            print_success("AWS Bedrock Bearer Token saved.")
+        else:
+            print_info("No Bearer Token provided - will use AWS credentials only.")
+        
         print_info("\n" + "="*60)
         print_info("LLM Model Configuration")
         print_info("="*60)
@@ -1458,7 +1503,7 @@ class SetupWizard:
         print_info("  • USE_BEDROCK_FOR_LOCAL=true will be set in backend/.env")
         print_info("  • All LLM calls will use AWS Bedrock (Claude models)")
         print_info("  • Make sure your AWS credentials are configured")
-        print_info("\nTo use a different LLM provider, configure it in backend/.env after setup.")
+        print_info("\nYou can configure additional LLM providers in the next step (optional).")
         
         print_success("Supabase information saved.")
 
@@ -1526,8 +1571,8 @@ class SetupWizard:
         input("Press Enter to continue once you have created the snapshot...")
 
     def collect_llm_api_keys(self):
-        """Collects LLM API keys for various providers."""
-        print_step(5, self.total_steps, "Collecting LLM API Keys")
+        """Collects optional LLM API keys for additional providers (Bedrock is default, OpenAI is required for background tasks)."""
+        print_step(5, self.total_steps, "Collecting Additional LLM API Keys (Optional)")
 
         # Check if we already have any LLM keys configured
         existing_keys = {
@@ -1552,84 +1597,93 @@ class SetupWizard:
             )
             print_warning("RECOMMENDED: Start with Anthropic Claude for the best experience.")
 
-        # Don't clear existing keys if we're updating
-        if not has_existing:
-            self.env_vars["llm"] = {}
+        while True:
+            print(f"\n{Colors.CYAN}Would you like to configure additional LLM providers?{Colors.ENDC}")
+            choice = input("Enter 'y' to add providers, or press Enter to skip: ").strip().lower()
+            
+            if choice in ['', 'n', 'no']:
+                print_info("Skipping additional LLM provider configuration.")
+                break
+            elif choice in ['y', 'yes']:
+                # Show available providers (excluding OpenAI and Bedrock)
+                providers = {
+                    "1": ("Anthropic (Direct API)", "ANTHROPIC_API_KEY"),
+                    "2": ("Groq", "GROQ_API_KEY"),
+                    "3": ("OpenRouter", "OPENROUTER_API_KEY"),
+                    "4": ("xAI", "XAI_API_KEY"),
+                    "5": ("Google Gemini", "GEMINI_API_KEY"),
+                    "6": ("OpenAI Compatible", "OPENAI_COMPATIBLE_API_KEY"),
+                }
+                
+                print(f"\n{Colors.CYAN}Select additional LLM providers to configure (e.g., 1,3):{Colors.ENDC}")
+                for key, (name, env_key) in providers.items():
+                    current_value = self.env_vars["llm"].get(env_key, "")
+                    provider_info = API_PROVIDER_INFO.get(env_key, {})
+                    provider_color = provider_info.get("color", Colors.GREEN)
+                    provider_icon = provider_info.get("icon", "🔑")
+                    status = (
+                        f" {Colors.GREEN}(configured){Colors.ENDC}" if current_value else ""
+                    )
+                    print(
+                        f"{Colors.CYAN}[{key}]{Colors.ENDC} {provider_color}{provider_icon} {name}{Colors.ENDC}{status}")
 
-        while not any(
-            k
-            for k in self.env_vars["llm"]
-            if self.env_vars["llm"][k]
-        ):
-            providers = {
-                "1": ("Anthropic (Recommended)", "ANTHROPIC_API_KEY"),
-                "2": ("OpenAI", "OPENAI_API_KEY"),
-                "3": ("Groq", "GROQ_API_KEY"),
-                "4": ("OpenRouter", "OPENROUTER_API_KEY"),
-                "5": ("xAI", "XAI_API_KEY"),
-                "6": ("Google Gemini", "GEMINI_API_KEY"),
-                "7": ("OpenAI Compatible", "OPENAI_COMPATIBLE_API_KEY"),
-                "8": ("AWS Bedrock", "AWS_BEARER_TOKEN_BEDROCK"),
-            }
-            print(
-                f"\n{Colors.CYAN}Select LLM providers to configure (e.g., 1,3):{Colors.ENDC}"
-            )
-            for key, (name, env_key) in providers.items():
-                current_value = self.env_vars["llm"].get(env_key, "")
-                provider_info = API_PROVIDER_INFO.get(env_key, {})
-                provider_color = provider_info.get("color", Colors.GREEN)
-                provider_icon = provider_info.get("icon", "🔑")
-                status = (
-                    f" {Colors.GREEN}(configured){Colors.ENDC}" if current_value else ""
-                )
-                print(
-                    f"{Colors.CYAN}[{key}]{Colors.ENDC} {provider_color}{provider_icon} {name}{Colors.ENDC}{status}")
-
-            # Allow Enter to skip if we already have keys configured
-            if has_existing:
-                choices_input = input(
-                    "Select providers (or press Enter to skip): "
-                ).strip()
+                choices_input = input("Select providers (or press Enter to skip): ").strip()
                 if not choices_input:
                     break
+
+                choices = choices_input.replace(",", " ").split()
+                selected_keys = {providers[c][1] for c in choices if c in providers}
+
+                if not selected_keys:
+                    print_warning("No providers selected. Skipping.")
+                    break
+
+                for key in selected_keys:
+                    existing_value = self.env_vars["llm"].get(key, "")
+                    print_api_key_prompt(key, optional=True, existing_value=existing_value)
+                    
+                    provider = API_PROVIDER_INFO.get(key, {})
+                    provider_name = provider.get("name", key.split("_")[0].capitalize())
+                    
+                    api_key = self._get_input(
+                        f"{provider.get('color', Colors.CYAN)}Enter your {provider_name} API key (optional){Colors.ENDC}: ",
+                        validate_api_key,
+                        "Invalid API key format.",
+                        allow_empty=True,
+                        default_value=existing_value,
+                    )
+                    if api_key:
+                        self.env_vars["llm"][key] = api_key
+                        print_success(f"{provider_name} API key saved!")
+                    print()
+                
+                # Ask if they want to add more
+                more = input(f"{Colors.CYAN}Add more providers? (y/n): {Colors.ENDC}").strip().lower()
+                if more not in ['y', 'yes']:
+                    break
             else:
-                choices_input = input("Select providers: ").strip()
+                print_error("Invalid choice. Please enter 'y' or press Enter to skip.")
 
-            choices = choices_input.replace(",", " ").split()
-            selected_keys = {providers[c][1]
-                             for c in choices if c in providers}
-
-            if not selected_keys and not has_existing:
-                print_error(
-                    "Invalid selection. Please choose at least one provider.")
-                continue
-
-            for key in selected_keys:
-                existing_value = self.env_vars["llm"].get(key, "")
-                print_api_key_prompt(key, optional=False, existing_value=existing_value)
-                
-                provider = API_PROVIDER_INFO.get(key, {})
-                provider_name = provider.get("name", key.split("_")[0].capitalize())
-                
-                api_key = self._get_input(
-                    f"{provider.get('color', Colors.CYAN)}Enter your {provider_name} API key{Colors.ENDC}: ",
-                    validate_api_key,
-                    "Invalid API key format.",
-                    default_value=existing_value,
-                )
-                self.env_vars["llm"][key] = api_key
-                if api_key:
-                    print_success(f"{provider_name} API key saved!")
-                print()
-
-        # Validate that at least one LLM provider is configured
-        configured_providers = [k for k in self.env_vars["llm"] if self.env_vars["llm"][k]]
+        # Show summary of configured providers
+        configured_providers = []
+        if self.env_vars["llm"].get("AWS_BEARER_TOKEN_BEDROCK") or True:  # Bedrock is always configured
+            configured_providers.append("AWS Bedrock (default)")
+        if self.env_vars["llm"].get("OPENAI_API_KEY"):
+            configured_providers.append("OpenAI (background tasks)")
+        
+        additional_providers = [
+            k for k in self.env_vars["llm"] 
+            if self.env_vars["llm"][k] and k not in ["OPENAI_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"]
+        ]
+        if additional_providers:
+            configured_providers.extend(additional_providers)
+        
         if configured_providers:
             print_success(f"LLM providers configured: {', '.join(configured_providers)}")
         else:
-            print_warning("No LLM providers configured - Kortix Super Worker will work but AI features will be disabled.")
+            print_warning("Only Bedrock and OpenAI configured - additional providers can be added later.")
         
-        print_success("LLM keys saved.")
+        print_success("LLM configuration saved.")
 
     def collect_morph_api_key(self):
         """Collects the optional MorphLLM API key for code editing."""
@@ -1968,13 +2022,11 @@ class SetupWizard:
                 print_warning("Expected format: postgresql://[username]:[password]@[host]:[port]/[database]")
                 # Don't exit - let user fix manually if needed
         
-        # Determine if using cloud Supabase (indicates Bedrock usage)
-        is_cloud_supabase = self.env_vars["setup_method"] == "cloud"
-        
+        # Always use Bedrock as default LLM provider
         backend_env = {
             "ENV_MODE": "local",
-            # Use Bedrock in LOCAL mode if using cloud Supabase (since cloud setup typically uses Bedrock)
-            "USE_BEDROCK_FOR_LOCAL": "true" if is_cloud_supabase else "false",
+            # Always use Bedrock as default LLM provider
+            "USE_BEDROCK_FOR_LOCAL": "true",
             # Backend only needs these Supabase variables
             "SUPABASE_URL": supabase_url,
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
@@ -2015,10 +2067,7 @@ class SetupWizard:
         with open(os.path.join("backend", ".env"), "w") as f:
             f.write(backend_env_content)
         print_success("Created backend/.env file with ENCRYPTION_KEY.")
-        
-        # Confirm Bedrock configuration if using cloud Supabase
-        if is_cloud_supabase:
-            print_info(f"  → USE_BEDROCK_FOR_LOCAL=true (Bedrock enabled for LOCAL mode)")
+        print_info(f"  → USE_BEDROCK_FOR_LOCAL=true (Bedrock enabled as default LLM provider)")
 
         # --- Frontend .env.local ---
         # Always use localhost for base .env files
