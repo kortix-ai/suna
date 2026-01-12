@@ -107,32 +107,32 @@ export const ToolCard: React.FC<ToolCardProps> = ({
                 background: linear-gradient(
                   90deg,
                   currentColor 0%,
-                  currentColor 10%,
-                  rgba(0, 0, 0, 0.8) 20%,
-                  rgba(0, 0, 0, 1) 25%,
-                  rgba(0, 0, 0, 0.8) 30%,
                   currentColor 40%,
+                  rgba(0, 0, 0, 0.7) 48%,
+                  rgba(0, 0, 0, 1) 50%,
+                  rgba(0, 0, 0, 0.7) 52%,
+                  currentColor 60%,
                   currentColor 100%
                 );
-                background-size: 300% 100%;
+                background-size: 200% 100%;
                 -webkit-background-clip: text;
                 background-clip: text;
                 -webkit-text-fill-color: transparent;
-                animation: shimmerFlowFancy 1s ease-in-out infinite;
+                animation: shimmerFlowFancy 0.8s linear infinite;
               }
               :root.dark .shimmer-text-fancy,
               .dark .shimmer-text-fancy {
                 background: linear-gradient(
                   90deg,
                   currentColor 0%,
-                  currentColor 10%,
-                  rgba(255, 255, 255, 0.9) 20%,
-                  rgba(255, 255, 255, 1) 25%,
-                  rgba(255, 255, 255, 0.9) 30%,
                   currentColor 40%,
+                  rgba(255, 255, 255, 0.85) 48%,
+                  rgba(255, 255, 255, 1) 50%,
+                  rgba(255, 255, 255, 0.85) 52%,
+                  currentColor 60%,
                   currentColor 100%
                 );
-                background-size: 300% 100%;
+                background-size: 200% 100%;
                 -webkit-background-clip: text;
                 background-clip: text;
                 -webkit-text-fill-color: transparent;

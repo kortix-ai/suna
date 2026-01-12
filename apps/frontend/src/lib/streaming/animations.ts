@@ -2,7 +2,7 @@
 
 import { useRef, useSyncExternalStore, useEffect, useLayoutEffect } from 'react';
 
-const CHARS_PER_SECOND = 200;
+const CHARS_PER_SECOND = 300;
 const MS_PER_CHAR = 1000 / CHARS_PER_SECOND;
 
 class SmoothStreamStore {

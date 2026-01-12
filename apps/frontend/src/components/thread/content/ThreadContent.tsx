@@ -203,7 +203,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   const displayStreamingText = useSmoothStream(
     streamingTextContent || "",
     isActivelyStreaming,
-    200
+    300
   );
 
   const askCompleteText = useMemo(() => {
