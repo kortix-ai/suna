@@ -4,8 +4,10 @@ from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.services.http_client import get_http_client
+import httpx
 import json
 import logging
+import time
 from typing import Union, List
 
 @tool_metadata(
@@ -151,6 +153,7 @@ class SandboxImageSearchTool(SandboxToolsBase):
                 payload = {"q": queries[0], "num": num_results}
             
             # SERPER API request
+            start_time = time.time()
             async with get_http_client() as client:
                 headers = {
                     "X-API-KEY": self.serper_api_key,
@@ -166,62 +169,61 @@ class SandboxImageSearchTool(SandboxToolsBase):
                 
                 response.raise_for_status()
                 data = response.json()
+            elapsed_time = round(time.time() - start_time, 2)
+            
+            if is_batch:
+                if not isinstance(data, list):
+                    return self.fail_response("Unexpected batch response format from SERPER API.")
                 
-                if is_batch:
-                    # Handle batch response
-                    if not isinstance(data, list):
-                        return self.fail_response("Unexpected batch response format from SERPER API.")
+                batch_results = []
+                for i, (q, result_data) in enumerate(zip(queries, data)):
+                    images = result_data.get("images", []) if isinstance(result_data, dict) else []
                     
-                    batch_results = []
-                    for i, (q, result_data) in enumerate(zip(queries, data)):
-                        images = result_data.get("images", []) if isinstance(result_data, dict) else []
-                        
-                        # Extract image URLs
-                        image_urls = []
-                        for img in images:
-                            img_url = img.get("imageUrl")
-                            if img_url:
-                                image_urls.append(img_url)
-                        
-                        batch_results.append({
-                            "query": q,
-                            "total_found": len(image_urls),
-                            "images": image_urls
-                        })
-                        
-                        logging.info(f"Found {len(image_urls)} image URLs for query: '{q}'")
-                    
-                    result = {
-                        "batch_results": batch_results,
-                        "total_queries": len(queries)
-                    }
-                else:
-                    # Handle single response
-                    images = data.get("images", [])
-                    
-                    if not images:
-                        logging.warning(f"No images found for query: '{queries[0]}'")
-                        return self.fail_response(f"No images found for query: '{queries[0]}'")
-                    
-                    # Extract just the image URLs - keep it simple
                     image_urls = []
                     for img in images:
                         img_url = img.get("imageUrl")
                         if img_url:
                             image_urls.append(img_url)
                     
-                    logging.info(f"Found {len(image_urls)} image URLs for query: '{queries[0]}'")
-                    
-                    result = {
-                        "query": queries[0],
+                    batch_results.append({
+                        "query": q,
                         "total_found": len(image_urls),
                         "images": image_urls
-                    }
+                    })
+                    
+                    logging.info(f"Found {len(image_urls)} image URLs for query: '{q}'")
                 
-                return ToolResult(
-                    success=True,
-                    output=json.dumps(result, ensure_ascii=False)
-                )
+                result = {
+                    "batch_results": batch_results,
+                    "total_queries": len(queries),
+                    "response_time": elapsed_time
+                }
+            else:
+                images = data.get("images", [])
+                
+                if not images:
+                    logging.warning(f"No images found for query: '{queries[0]}'")
+                    return self.fail_response(f"No images found for query: '{queries[0]}'")
+                
+                image_urls = []
+                for img in images:
+                    img_url = img.get("imageUrl")
+                    if img_url:
+                        image_urls.append(img_url)
+                
+                logging.info(f"Found {len(image_urls)} image URLs for query: '{queries[0]}'")
+                
+                result = {
+                    "query": queries[0],
+                    "total_found": len(image_urls),
+                    "images": image_urls,
+                    "response_time": elapsed_time
+                }
+            
+            return ToolResult(
+                success=True,
+                output=json.dumps(result, ensure_ascii=False)
+            )
         
         except httpx.HTTPStatusError as e:
             error_message = f"SERPER API error: {e.response.status_code}"

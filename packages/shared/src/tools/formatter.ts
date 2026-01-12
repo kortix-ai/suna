@@ -3,7 +3,7 @@
  * Converts tool identifiers to human-readable display names
  */
 
-import { TOOL_DISPLAY_NAMES } from './display-names';
+import { TOOL_DISPLAY_NAMES, TOOL_COMPLETED_NAMES } from './display-names';
 
 /**
  * Server name mappings for MCP tools
@@ -103,6 +103,22 @@ export function getUserFriendlyToolName(toolName: string): string {
   
   // Return mapped display name or the tool name itself
   return TOOL_DISPLAY_NAMES.get(toolName) || toolName;
+}
+
+/**
+ * Get a completed/past-tense display name for a tool
+ * Falls back to the regular display name if no completed name exists
+ * 
+ * @param toolName - The tool identifier
+ * @returns Human-readable completed display name
+ */
+export function getCompletedToolName(toolName: string): string {
+  if (!toolName) return 'Unknown Tool';
+  
+  const completedName = TOOL_COMPLETED_NAMES.get(toolName);
+  if (completedName) return completedName;
+  
+  return getUserFriendlyToolName(toolName);
 }
 
 /**
