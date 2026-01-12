@@ -642,6 +642,9 @@ export interface ChatInputHandles {
   clearUploadedFiles: () => void;
   setValue: (value: string) => void;
   getValue: () => string;
+  focus: () => void;
+  selectRange: (start: number, end: number) => void;
+  addFiles: (files: File[]) => void;
 }
 
 export interface ChatInputProps {
@@ -934,7 +937,32 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         setHasContent(newValue.trim().length > 0);
       },
       getValue: () => valueRef.current,
-    }), [pendingFiles, uploadedFiles]);
+      focus: () => {
+        const textarea = textareaRef.current as any;
+        if (textarea?.focus) {
+          textarea.focus();
+        }
+      },
+      selectRange: (start: number, end: number) => {
+        // The textareaRef points to the IsolatedTextarea which exposes the textarea element via useImperativeHandle
+        const textarea = textareaRef.current as HTMLTextAreaElement | null;
+        if (textarea && textarea.setSelectionRange) {
+          textarea.focus();
+          textarea.setSelectionRange(start, end);
+        }
+      },
+      addFiles: (files: File[]) => {
+        handleFiles(
+          files,
+          sandboxId,
+          projectId,
+          setPendingFiles,
+          setUploadedFiles,
+          setIsUploading,
+          messages,
+        );
+      },
+    }), [pendingFiles, uploadedFiles, sandboxId, projectId, messages]);
 
     useEffect(() => {
       if (agents.length > 0 && !onAgentSelect) {

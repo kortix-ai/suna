@@ -7,7 +7,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { 
   AgentRunLimitError, 
   ProjectLimitError, 
@@ -70,6 +70,7 @@ import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
 import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
 import { useClearNavigation } from '@/stores/thread-navigation-store';
+import { useModeViewerInit } from '@/hooks/threads/use-mode-viewer-init';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -82,6 +83,7 @@ interface ThreadComponentProps {
 export function ThreadComponent({ projectId, threadId, compact = false, configuredAgentId, isShared = false }: ThreadComponentProps) {
   const t = useTranslations('dashboard');
   const isMobile = useIsMobile();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const clearNavigation = useClearNavigation();
@@ -96,6 +98,27 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [threadId, clearNavigation]);
   
   const isNewThread = searchParams?.get('new') === 'true';
+  
+  // Mode Starter - show mode-specific starter panel based on query param
+  const modeStarterParam = searchParams?.get('modeStarter');
+  type ModeStarterType = 'presentation' | 'sheets' | 'docs' | 'canvas' | 'video' | 'research' | null;
+  const validModeStarters = ['presentation', 'sheets', 'docs', 'canvas', 'video', 'research'];
+  const [modeStarter, setModeStarter] = useState<ModeStarterType>(
+    modeStarterParam && validModeStarters.includes(modeStarterParam) 
+      ? modeStarterParam as ModeStarterType 
+      : null
+  );
+  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  
+  // Update modeStarter when URL changes
+  useEffect(() => {
+    const newModeStarter: ModeStarterType = 
+      modeStarterParam && validModeStarters.includes(modeStarterParam)
+        ? modeStarterParam as ModeStarterType
+        : null;
+    setModeStarter(newModeStarter);
+    console.log('[ThreadComponent] modeStarter param:', modeStarterParam, '-> state:', newModeStarter);
+  }, [modeStarterParam]);
 
   const [isSending, setIsSending] = useState(false);
   const [initialPanelOpenAttempted, setInitialPanelOpenAttempted] =
@@ -214,6 +237,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef,
   } = useThreadToolCalls(messages, setLeftSidebarOpen, agentStatus, compact);
   
+  // Auto-open mode-specific viewers when coming from /thread/new
+  useModeViewerInit(threadId, projectId, sandboxId, user?.user_metadata?.access_token);
+  
   if (isNewThread && !optimisticPrompt) {
     try {
       const stored = sessionStorage.getItem('optimistic_prompt');
@@ -277,7 +303,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   // Use individual selectors to avoid subscribing to entire store (prevents unnecessary re-renders)
   const openFileInComputer = useKortixComputerStore((state) => state.openFileInComputer);
   const openFileBrowser = useKortixComputerStore((state) => state.openFileBrowser);
-  const resetKortixComputerStore = useKortixComputerStore((state) => state.reset);
+  const setSandboxContext = useKortixComputerStore((state) => state.setSandboxContext);
 
   const billingModal = useBillingModal();
   const threadBilling = useThreadBilling(
@@ -370,40 +396,26 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     agentName: derivedAgentName,
   }), [derivedAgentId, derivedAgentName]);
 
-  // Track the previous thread ID to detect thread switches
+  // Invalidate thread queries when thread changes
   const prevThreadIdRef = useRef<string | null>(null);
   
-  // Track the thread ID that was opened via optimistic start
-  const optimisticThreadIdRef = useRef<string | null>(null);
-  
-  // Mark this thread as optimistic when we enter optimistic mode
-  useEffect(() => {
-    if (showOptimisticUI && isNewThread) {
-      optimisticThreadIdRef.current = threadId;
-    }
-  }, [showOptimisticUI, isNewThread, threadId]);
-  
-  // Reset Kortix Computer state when switching threads
   useEffect(() => {
     if (!isShared) {
+      // Invalidate thread-specific queries
       queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
-      
-      // Always reset when switching between different threads
-      // Only skip reset on the very first mount if it's the optimistic thread
-      const isThreadSwitch = prevThreadIdRef.current !== null && prevThreadIdRef.current !== threadId;
-      const isFirstMount = prevThreadIdRef.current === null;
-      const isOptimisticThread = optimisticThreadIdRef.current === threadId;
-      
-      if (isThreadSwitch || (isFirstMount && !isOptimisticThread)) {
-        console.log('[ThreadComponent] Resetting Kortix Computer state for thread:', threadId);
-        resetKortixComputerStore();
-      }
-      
-      // Update the previous thread ID
       prevThreadIdRef.current = threadId;
     }
-  }, [threadId, queryClient, isShared, resetKortixComputerStore]);
+  }, [threadId, queryClient, isShared]);
+  
+  // Sync Kortix Computer sandbox context with current sandbox
+  // The store will automatically clear file state when sandbox changes
+  useEffect(() => {
+    if (!isShared) {
+      // Set the sandbox context - the store handles state clearing internally
+      setSandboxContext(sandboxId || null);
+    }
+  }, [sandboxId, isShared, setSandboxContext]);
 
   useEffect(() => {
     if (!isNewThread || hasDataLoaded.current || !showOptimisticUI) return;
@@ -616,6 +628,158 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const handlePromptFill = useCallback((message: string) => {
     chatInputRef.current?.setValue(message);
   }, []);
+
+  // Helper to format template name nicely (e.g., "premium_black" -> "Premium Black")
+  const formatTemplateName = useCallback((templateId: string) => {
+    return templateId
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  }, []);
+
+  // Mode Starter handlers
+  const handleModeStarterAction = useCallback(async (
+    method: 'prompt' | 'pdf' | 'link', 
+    template?: string,
+    data?: { url?: string; file?: File }
+  ) => {
+    console.log('[ThreadComponent] Mode starter action:', method, 'template:', template, 'data:', data);
+    
+    let prompt = '';
+    
+    // Handle video mode differently - template is already a prompt string
+    if (modeStarter === 'video') {
+      if (template) {
+        // Template is already a formatted prompt string for video - prepend initialize instruction
+        prompt = `Initialize the tools. ${template}`;
+      } else {
+        // Default video prompt based on method
+        switch (method) {
+          case 'prompt':
+            prompt = `Initialize the tools. Create a video about `;
+            break;
+          case 'pdf': // For video, this is 'script'
+            prompt = `Initialize the tools. Create a video from this script. `;
+            if (data?.file) {
+              chatInputRef.current?.addFiles([data.file]);
+            }
+            break;
+          case 'link': // For video, this is 'images'
+            prompt = `Initialize the tools. Create a video from these images. `;
+            if (data?.file) {
+              chatInputRef.current?.addFiles([data.file]);
+            }
+            break;
+        }
+      }
+    } else {
+      // Presentation mode (existing logic)
+      const templateName = template ? formatTemplateName(template) : '';
+      
+      switch (method) {
+        case 'prompt':
+          if (template) {
+            prompt = `Initialize the tools. Create a presentation using the ${templateName} template style. I want to create slides about `;
+          } else {
+            prompt = `Initialize the tools. Create a presentation about `;
+          }
+          break;
+        case 'pdf':
+          if (template) {
+            prompt = `Initialize the tools. Convert this file into slides using the ${templateName} template style. `;
+          } else {
+            prompt = `Initialize the tools. Convert this file into slides. `;
+          }
+          if (data?.file) {
+            chatInputRef.current?.addFiles([data.file]);
+          }
+          break;
+        case 'link':
+          if (template) {
+            prompt = `Initialize the tools. Create slides from this URL using the ${templateName} template style: ${data?.url || ''}`;
+          } else {
+            prompt = `Initialize the tools. Create slides from this URL: ${data?.url || ''}`;
+          }
+          break;
+      }
+    }
+    
+    // Fill the chat input with the prompt and focus it
+    chatInputRef.current?.setValue(prompt);
+    chatInputRef.current?.focus();
+    
+    // Close the mode starter and remove the query param
+    setModeStarter(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('modeStarter');
+    window.history.replaceState({}, '', url.pathname + url.search);
+    
+    // Open the side panel to show KortixComputer
+    if (!isSidePanelOpen) {
+      toggleSidePanel();
+    }
+  }, [isSidePanelOpen, toggleSidePanel, formatTemplateName, modeStarter]);
+
+  const handleModeStarterTemplate = useCallback((templateId: string) => {
+    console.log('[ThreadComponent] Template selected:', templateId);
+    setSelectedTemplate(templateId);
+    
+    // Format template name nicely
+    const templateName = formatTemplateName(templateId);
+    
+    // Fill the chat input with a prompt using this template
+    const prompt = `Initialize the tools. Create a presentation using the ${templateName} template style. I want to create slides about `;
+    chatInputRef.current?.setValue(prompt);
+    chatInputRef.current?.focus();
+    
+    // Close the mode starter and remove the query param
+    setModeStarter(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('modeStarter');
+    window.history.replaceState({}, '', url.pathname + url.search);
+    
+    // Open the side panel to show KortixComputer
+    if (!isSidePanelOpen) {
+      toggleSidePanel();
+    }
+  }, [isSidePanelOpen, toggleSidePanel, formatTemplateName]);
+
+  const handleModeStarterClose = useCallback(() => {
+    console.log('[ThreadComponent] Mode starter closed');
+    setModeStarter(null);
+    
+    // Remove the modeStarter query param from URL
+    const url = new URL(window.location.href);
+    url.searchParams.delete('modeStarter');
+    window.history.replaceState({}, '', url.pathname + url.search);
+  }, []);
+
+  // Handler for mode starter prompt selection (works for all modes except presentation)
+  const handleStarterPrompt = useCallback((prompt: string, placeholderInfo?: { start: number; end: number }) => {
+    console.log('[ThreadComponent] Starter prompt:', prompt, 'placeholder:', placeholderInfo);
+    
+    // Fill the chat input with the selected prompt
+    chatInputRef.current?.setValue(prompt);
+    chatInputRef.current?.focus();
+    
+    // Select the placeholder text if it exists (use setTimeout to ensure value is set)
+    if (placeholderInfo) {
+      setTimeout(() => {
+        chatInputRef.current?.selectRange(placeholderInfo.start, placeholderInfo.end);
+      }, 50);
+    }
+    
+    // Close the mode starter and remove the query param
+    setModeStarter(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('modeStarter');
+    window.history.replaceState({}, '', url.pathname + url.search);
+    
+    // Keep the side panel open to show KortixComputer
+    if (!isSidePanelOpen) {
+      toggleSidePanel();
+    }
+  }, [isSidePanelOpen, toggleSidePanel]);
 
   const handleExpandToolPreview = useCallback(() => {
     setIsSidePanelOpen(true);
@@ -866,6 +1030,15 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           );
         }
 
+        // Close mode starter when user sends their first message
+        if (modeStarter) {
+          console.log('[ThreadComponent] Closing mode starter on first message');
+          setModeStarter(null);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('modeStarter');
+          window.history.replaceState({}, '', url.pathname + url.search);
+        }
+
         if (results[1].status === 'rejected') {
           const error = results[1].reason;
           console.error('Failed to start agent:', error);
@@ -927,6 +1100,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       agentStatus,
       queueMessage,
       queuedMessages,
+      modeStarter,
     ],
   );
 
@@ -1387,7 +1561,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           projectId={project?.id || projectId}
           project={showOptimisticUI ? null : project}
           sandboxId={showOptimisticUI ? null : sandboxId}
-          isSidePanelOpen={effectivePanelOpen}
+          isSidePanelOpen={effectivePanelOpen || !!modeStarter}
           onToggleSidePanel={showOptimisticUI ? () => {} : toggleSidePanel}
           onProjectRenamed={handleProjectRenamed}
           onViewFiles={showOptimisticUI ? () => {} : handleOpenFileViewer}
@@ -1408,6 +1582,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           compact={true}
           streamingTextContent={isShared ? '' : displayStreamingText}
           streamingToolCall={isShared || showOptimisticUI ? undefined : streamingToolCall}
+          modeStarter={modeStarter}
+          onModeStarterAction={handleModeStarterAction}
+          onModeStarterTemplate={handleModeStarterTemplate}
+          onModeStarterClose={handleModeStarterClose}
+          onStarterPrompt={handleStarterPrompt}
         >
           <div
             ref={scrollContainerRef}
@@ -1553,7 +1732,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         projectId={project?.id || projectId}
         project={showOptimisticUI ? null : project}
         sandboxId={showOptimisticUI ? null : sandboxId}
-        isSidePanelOpen={effectivePanelOpen}
+        isSidePanelOpen={effectivePanelOpen || !!modeStarter}
         onToggleSidePanel={showOptimisticUI ? () => {} : toggleSidePanel}
         onProjectRenamed={handleProjectRenamed}
         onViewFiles={showOptimisticUI ? () => {} : handleOpenFileViewer}
@@ -1576,6 +1755,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         leftSidebarState={leftSidebarState}
         streamingTextContent={isShared ? '' : displayStreamingText}
         streamingToolCall={isShared || showOptimisticUI ? undefined : streamingToolCall}
+        modeStarter={modeStarter}
+        onModeStarterAction={handleModeStarterAction}
+        onModeStarterTemplate={handleModeStarterTemplate}
+        onModeStarterClose={handleModeStarterClose}
       >
         <ThreadContent
           messages={isShared ? playback.playbackState.visibleMessages : displayMessages}

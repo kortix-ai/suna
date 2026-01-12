@@ -12,6 +12,8 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  Maximize2,
+  Type,
 } from 'lucide-react';
 import { ToolViewProps } from '../types';
 import { cleanUrl, formatTimestamp, getToolTitle } from '../utils';
@@ -23,8 +25,9 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { WebSearchLoadingState } from './WebSearchLoadingState';
-import { extractWebSearchData } from './_utils';
+import { extractWebSearchData, EnrichedImage } from './_utils';
 import { useSmoothToolField } from '@/hooks/messages';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function WebSearchToolView({
   toolCall,
@@ -228,36 +231,96 @@ export function WebSearchToolView({
                   <div className={`grid gap-3 mb-1 ${name === 'image-search' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4' : 'grid-cols-2 sm:grid-cols-3'}`}>
                     {(() => {
                       // Show images for current query if batch mode, otherwise all images
-                      const imagesToShow = isBatch && currentBatchItem?.images
+                      const imagesToShow: EnrichedImage[] = isBatch && currentBatchItem?.images
                         ? currentBatchItem.images
                         : (name === 'image-search' ? images : images.slice(0, 6));
                       return imagesToShow.map((image, idx) => {
-                      const imageUrl = typeof image === 'string' ? image : (image as any).imageUrl;
+                      const imageUrl = image.url || image.imageUrl || '';
+                      const hasDescription = image.description && image.description.trim().length > 0;
+                      const hasDimensions = image.width && image.height && image.width > 0 && image.height > 0;
+                      const orientation = hasDimensions 
+                        ? (image.width! > image.height! ? 'landscape' : image.width! < image.height! ? 'portrait' : 'square')
+                        : null;
                       
                       return (
-                        <a
-                          key={idx}
-                          href={imageUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="group relative overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 hover:border-blue-300 dark:hover:border-blue-700 transition-colors shadow-sm hover:shadow-md"
-                        >
-                          <img
-                            src={imageUrl}
-                            alt={`Search result ${idx + 1}`}
-                            className="object-cover w-full h-32 group-hover:opacity-90 transition-opacity"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2' ry='2'%3E%3C/rect%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'%3E%3C/circle%3E%3Cpolyline points='21 15 16 10 5 21'%3E%3C/polyline%3E%3C/svg%3E";
-                              target.classList.add("p-4");
-                            }}
-                          />
-                          <div className="absolute top-0 right-0 p-1">
-                            <Badge variant="secondary" className="bg-black/60 hover:bg-black/70 text-white border-none shadow-md">
-                              <ExternalLink className="h-3 w-3" />
-                            </Badge>
-                          </div>
-                        </a>
+                        <TooltipProvider key={idx}>
+                          <Tooltip>
+                            
+                            <TooltipTrigger asChild>
+                              <a
+                                href={imageUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="group relative overflow-hidden rounded-lg border border-zinc-200 dark:border-zinc-800 bg-zinc-100 dark:bg-zinc-900 hover:border-blue-300 dark:hover:border-blue-700 transition-colors shadow-sm hover:shadow-md"
+                              >
+                                <img
+                                  src={imageUrl}
+                                  alt={image.title || `Search result ${idx + 1}`}
+                                  className="object-cover w-full h-32 group-hover:opacity-90 transition-opacity"
+                                  onError={(e) => {
+                                    const target = e.target as HTMLImageElement;
+                                    target.src = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='3' width='18' height='18' rx='2' ry='2'%3E%3C/rect%3E%3Ccircle cx='8.5' cy='8.5' r='1.5'%3E%3C/circle%3E%3Cpolyline points='21 15 16 10 5 21'%3E%3C/polyline%3E%3C/svg%3E";
+                                    target.classList.add("p-4");
+                                  }}
+                                />
+                                {/* Metadata badges overlay */}
+                                <div className="absolute top-0 left-0 right-0 p-1 flex justify-between items-start">
+                                  <div className="flex gap-1">
+                                    {hasDimensions && (
+                                      <Badge variant="secondary" className="bg-black/60 hover:bg-black/70 text-white border-none shadow-md text-[10px] px-1.5 py-0">
+                                        <Maximize2 className="h-2.5 w-2.5 mr-0.5" />
+                                        {image.width}×{image.height}
+                                      </Badge>
+                                    )}
+                                    {hasDescription && (
+                                      <Badge variant="secondary" className="bg-emerald-600/80 hover:bg-emerald-600/90 text-white border-none shadow-md text-[10px] px-1.5 py-0">
+                                        <Type className="h-2.5 w-2.5" />
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  <Badge variant="secondary" className="bg-black/60 hover:bg-black/70 text-white border-none shadow-md">
+                                    <ExternalLink className="h-3 w-3" />
+                                  </Badge>
+                                </div>
+                                {/* Title/source at bottom */}
+                                {(image.title || image.source) && (
+                                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent p-2 pt-4">
+                                    <p className="text-[10px] text-white/90 truncate leading-tight">
+                                      {image.title || image.source}
+                                    </p>
+                                  </div>
+                                )}
+                              </a>
+                            </TooltipTrigger>
+                            <TooltipContent side="bottom" className="max-w-xs">
+                              <div className="space-y-1.5">
+                                {image.title && (
+                                  <p className="font-medium text-sm">{truncateString(image.title, 60)}</p>
+                                )}
+                                {hasDimensions && (
+                                  <p className="text-xs text-muted-foreground flex items-center gap-1">
+                                    <Maximize2 className="h-3 w-3" />
+                                    {image.width} × {image.height}px
+                                    {orientation && <span className="text-xs">({orientation})</span>}
+                                  </p>
+                                )}
+                                {hasDescription && (
+                                  <div className="text-xs">
+                                    <p className="text-muted-foreground flex items-center gap-1 mb-0.5">
+                                      <Type className="h-3 w-3" /> Description:
+                                    </p>
+                                    <p className="text-foreground bg-muted/50 rounded px-1.5 py-1 font-mono text-[10px] max-h-20 overflow-auto">
+                                      {truncateString(image.description || '', 150)}
+                                    </p>
+                                  </div>
+                                )}
+                                {image.source && (
+                                  <p className="text-xs text-muted-foreground">Source: {image.source}</p>
+                                )}
+                              </div>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
                       );
                     });
                     })()}

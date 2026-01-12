@@ -2,6 +2,13 @@ import React, { useState, useEffect, useRef, memo, useMemo } from 'react';
 import * as ResizablePrimitive from 'react-resizable-panels';
 import { SiteHeader } from '@/components/thread/thread-site-header';
 import { KortixComputer, ToolCallInput } from '@/components/thread/kortix-computer';
+import { PresentationStarter } from '@/components/thread/presentation-starter';
+import { SheetsModeStarter } from '@/components/thread/sheets-mode-starter';
+import { DocsStarter } from '@/components/thread/docs-starter';
+import { CanvasModeStarter } from '@/components/thread/canvas-mode-starter';
+import { CanvasStarter } from '@/components/thread/canvas-starter';
+import { VideoStarter } from '@/components/thread/video-starter';
+import { ResearchStarter } from '@/components/thread/research-starter';
 import { Project } from '@/lib/api/threads';
 import { ApiMessageType } from '@/components/thread/types';
 import { useIsMobile } from '@/hooks/utils';
@@ -44,6 +51,12 @@ interface ThreadLayoutProps {
   leftSidebarState?: 'collapsed' | 'expanded';
   streamingTextContent?: string;
   streamingToolCall?: any;
+  // Mode Starter props
+  modeStarter?: 'presentation' | 'sheets' | 'docs' | 'canvas' | 'video' | 'research' | null;
+  onModeStarterAction?: (method: 'prompt' | 'pdf' | 'link', template?: string, data?: { url?: string; file?: File }) => void;
+  onModeStarterTemplate?: (templateId: string) => void;
+  onModeStarterClose?: () => void;
+  onStarterPrompt?: (prompt: string, placeholderInfo?: { start: number; end: number }) => void;
 }
 
 export const ThreadLayout = memo(function ThreadLayout({
@@ -77,6 +90,11 @@ export const ThreadLayout = memo(function ThreadLayout({
   leftSidebarState = 'collapsed',
   streamingTextContent,
   streamingToolCall,
+  modeStarter,
+  onModeStarterAction,
+  onModeStarterTemplate,
+  onModeStarterClose,
+  onStarterPrompt,
 }: ThreadLayoutProps) {
   const isActuallyMobile = useIsMobile();
 
@@ -247,26 +265,71 @@ export const ThreadLayout = memo(function ThreadLayout({
           )}
         </div>
 
-        <KortixComputer
-          isOpen={isSidePanelOpen && initialLoadCompleted}
-          onClose={onSidePanelClose}
-          toolCalls={toolCalls}
-          messages={messages}
-          externalNavigateToIndex={externalNavIndex}
-          agentStatus={agentStatus}
-          currentIndex={currentToolIndex}
-          onNavigate={onSidePanelNavigate}
-          project={project || undefined}
-          renderAssistantMessage={renderAssistantMessage}
-          renderToolResult={renderToolResult}
-          isLoading={!initialLoadCompleted || isLoading}
-          onFileClick={handleFileClick}
-          agentName={agentName}
-          disableInitialAnimation={disableInitialAnimation}
-          streamingText={streamingToolArgsJson}
-          sandboxId={sandboxId || undefined}
-          projectId={projectId}
-        />
+        {/* Show mode-specific starter when modeStarter is set, otherwise show KortixComputer */}
+        {modeStarter === 'presentation' ? (
+          <PresentationStarter
+            onSelectMethod={(method, template, data) => onModeStarterAction?.(method, template, data)}
+            onSelectTemplate={(templateId) => onModeStarterTemplate?.(templateId)}
+            onClose={onModeStarterClose}
+            className="h-full"
+          />
+        ) : modeStarter === 'sheets' ? (
+          <SheetsModeStarter
+            sandboxId={sandboxId || undefined}
+            project={project || undefined}
+            onClose={onModeStarterClose}
+            className="h-full"
+          />
+        ) : modeStarter === 'docs' ? (
+          <DocsStarter
+            onSelectPrompt={(prompt, placeholderInfo) => onStarterPrompt?.(prompt, placeholderInfo)}
+            onClose={onModeStarterClose}
+            className="h-full"
+            sandboxId={sandboxId}
+            project={project}
+          />
+        ) : modeStarter === 'canvas' ? (
+          <CanvasModeStarter
+            sandboxId={sandboxId || undefined}
+            project={project || undefined}
+            onClose={onModeStarterClose}
+            className="h-full"
+          />
+        ) : modeStarter === 'video' ? (
+          <VideoStarter
+            onSelectMethod={(method, template) => onModeStarterAction?.(method as 'prompt' | 'pdf' | 'link', template)}
+            onSelectTemplate={(templateId) => onModeStarterTemplate?.(templateId)}
+            onClose={onModeStarterClose}
+            className="h-full"
+          />
+        ) : modeStarter === 'research' ? (
+          <ResearchStarter
+            onSelectPrompt={(prompt) => onStarterPrompt?.(prompt)}
+            onClose={onModeStarterClose}
+            className="h-full"
+          />
+        ) : (
+          <KortixComputer
+            isOpen={isSidePanelOpen && initialLoadCompleted}
+            onClose={onSidePanelClose}
+            toolCalls={toolCalls}
+            messages={messages}
+            externalNavigateToIndex={externalNavIndex}
+            agentStatus={agentStatus}
+            currentIndex={currentToolIndex}
+            onNavigate={onSidePanelNavigate}
+            project={project || undefined}
+            renderAssistantMessage={renderAssistantMessage}
+            renderToolResult={renderToolResult}
+            isLoading={!initialLoadCompleted || isLoading}
+            onFileClick={handleFileClick}
+            agentName={agentName}
+            disableInitialAnimation={disableInitialAnimation}
+            streamingText={streamingToolArgsJson}
+            sandboxId={sandboxId || undefined}
+            projectId={projectId}
+          />
+        )}
       </div>
     );
   }
@@ -321,37 +384,82 @@ export const ThreadLayout = memo(function ThreadLayout({
         {/* Side panel - always render but control size */}
         <ResizablePanel
           ref={sidePanelRef}
-          defaultSize={shouldShowPanel ? 50 : 0}
-          minSize={shouldShowPanel ? 35 : 0}
-          maxSize={shouldShowPanel ? 70 : 0}
+          defaultSize={shouldShowPanel || modeStarter ? 50 : 0}
+          minSize={shouldShowPanel || modeStarter ? 35 : 0}
+          maxSize={shouldShowPanel || modeStarter ? 70 : 0}
           collapsible={true}
           className={cn(
             "relative bg-transparent",
-            shouldShowPanel ? "pr-4 pb-5 pt-4" : "px-0",
-            !shouldShowPanel ? "hidden" : ""
+            (shouldShowPanel || modeStarter) ? "pr-4 pb-5 pt-4" : "px-0",
+            (!shouldShowPanel && !modeStarter) ? "hidden" : ""
           )}
         >
-          <KortixComputer
-            isOpen={isSidePanelOpen && initialLoadCompleted}
-            onClose={onSidePanelClose}
-            toolCalls={toolCalls}
-            messages={messages}
-            externalNavigateToIndex={externalNavIndex}
-            agentStatus={agentStatus}
-            currentIndex={currentToolIndex}
-            onNavigate={onSidePanelNavigate}
-            project={project || undefined}
-            renderAssistantMessage={renderAssistantMessage}
-            renderToolResult={renderToolResult}
-            isLoading={!initialLoadCompleted || isLoading}
-            onFileClick={handleFileClick}
-            agentName={agentName}
-            disableInitialAnimation={disableInitialAnimation}
-            streamingText={streamingToolArgsJson}
-            sandboxId={sandboxId || undefined}
-            projectId={projectId}
-            sidePanelRef={sidePanelRef}
-          />
+          {/* Show mode-specific starter when modeStarter is set, otherwise show KortixComputer */}
+          {modeStarter === 'presentation' ? (
+            <PresentationStarter
+              onSelectMethod={(method, template, data) => onModeStarterAction?.(method, template, data)}
+              onSelectTemplate={(templateId) => onModeStarterTemplate?.(templateId)}
+              onClose={onModeStarterClose}
+              className="h-full"
+            />
+          ) : modeStarter === 'sheets' ? (
+            <SheetsModeStarter
+              sandboxId={sandboxId || undefined}
+              project={project || undefined}
+              onClose={onModeStarterClose}
+              className="h-full"
+            />
+          ) : modeStarter === 'docs' ? (
+            <DocsStarter
+              onSelectPrompt={(prompt, placeholderInfo) => onStarterPrompt?.(prompt, placeholderInfo)}
+              onClose={onModeStarterClose}
+              className="h-full"
+              sandboxId={sandboxId}
+              project={project}
+            />
+          ) : modeStarter === 'canvas' ? (
+            <CanvasModeStarter
+              sandboxId={sandboxId || undefined}
+              project={project || undefined}
+              onClose={onModeStarterClose}
+              className="h-full"
+            />
+          ) : modeStarter === 'video' ? (
+            <VideoStarter
+              onSelectMethod={(method, template) => onModeStarterAction?.(method as 'prompt' | 'pdf' | 'link', template)}
+              onSelectTemplate={(templateId) => onModeStarterTemplate?.(templateId)}
+              onClose={onModeStarterClose}
+              className="h-full"
+            />
+          ) : modeStarter === 'research' ? (
+            <ResearchStarter
+              onSelectPrompt={(prompt) => onStarterPrompt?.(prompt)}
+              onClose={onModeStarterClose}
+              className="h-full"
+            />
+          ) : (
+            <KortixComputer
+              isOpen={isSidePanelOpen && initialLoadCompleted}
+              onClose={onSidePanelClose}
+              toolCalls={toolCalls}
+              messages={messages}
+              externalNavigateToIndex={externalNavIndex}
+              agentStatus={agentStatus}
+              currentIndex={currentToolIndex}
+              onNavigate={onSidePanelNavigate}
+              project={project || undefined}
+              renderAssistantMessage={renderAssistantMessage}
+              renderToolResult={renderToolResult}
+              isLoading={!initialLoadCompleted || isLoading}
+              onFileClick={handleFileClick}
+              agentName={agentName}
+              disableInitialAnimation={disableInitialAnimation}
+              streamingText={streamingToolArgsJson}
+              sandboxId={sandboxId || undefined}
+              projectId={projectId}
+              sidePanelRef={sidePanelRef}
+            />
+          )}
         </ResizablePanel>
       </ResizablePanelGroup>
     </div>

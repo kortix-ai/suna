@@ -2,7 +2,7 @@
 
 import React, { Suspense, lazy } from 'react';
 import { ChatInput } from '@/components/thread/chat-input/chat-input';
-import { useAgentStartInput, UseAgentStartInputOptions } from '@/hooks/dashboard';
+import { useAgentStartInput } from '@/hooks/dashboard';
 import { useTranslations } from 'next-intl';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
@@ -10,11 +10,9 @@ import { useAuth } from '@/components/AuthProvider';
 import { Button } from '@/components/ui/button';
 import { ChevronRight } from 'lucide-react';
 import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
+import { ModeSelector } from './mode-selector';
 
 // Lazy load heavy components
-const SunaModesPanel = lazy(() => 
-  import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
-);
 const AgentRunLimitBanner = lazy(() => 
   import('@/components/thread/agent-run-limit-banner').then(mod => ({ default: mod.AgentRunLimitBanner }))
 );
@@ -124,15 +122,6 @@ export function AgentStartInput({
     chatInputRef,
     selectedAgentId,
     setSelectedAgent,
-    isSunaAgent,
-    selectedMode,
-    selectedCharts,
-    selectedOutputFormat,
-    selectedTemplate,
-    setSelectedMode,
-    setSelectedCharts,
-    setSelectedOutputFormat,
-    setSelectedTemplate,
     agentLimitData,
     showAgentLimitBanner,
     setShowAgentLimitBanner,
@@ -177,13 +166,8 @@ export function AgentStartInput({
           autoFocus={autoFocus}
           enableAdvancedConfig={enableAdvancedConfig}
           onConfigureAgent={onConfigureAgent}
-          selectedMode={selectedMode}
-          onModeDeselect={() => setSelectedMode(null)}
           animatePlaceholder={animatePlaceholder}
           hideAttachments={hideAttachments}
-          selectedCharts={selectedCharts}
-          selectedOutputFormat={selectedOutputFormat}
-          selectedTemplate={selectedTemplate}
         />
         
         {/* Alert Banners */}
@@ -227,25 +211,10 @@ export function AgentStartInput({
         )}
       </div>
       
-      {/* Suna Modes Panel */}
-      {showModesPanel && isSunaAgent && (
-        <div className={modesPanelWrapperClassName || "w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both"}>
-          <Suspense fallback={<div className="h-24 bg-muted/10 rounded-lg animate-pulse" />}>
-            <SunaModesPanel
-              selectedMode={selectedMode}
-              onModeSelect={setSelectedMode}
-              onSelectPrompt={setInputValue}
-              isMobile={isMobile}
-              selectedCharts={selectedCharts}
-              onChartsChange={setSelectedCharts}
-              selectedOutputFormat={selectedOutputFormat}
-              onOutputFormatChange={setSelectedOutputFormat}
-              selectedTemplate={selectedTemplate}
-              onTemplateChange={setSelectedTemplate}
-              isFreeTier={isFreeTier || false}
-              onUpgradeClick={() => pricingModalStore.openPricingModal()}
-            />
-          </Suspense>
+      {/* Mode Selection - positioned right below input */}
+      {showModesPanel && (
+        <div className={modesPanelWrapperClassName || "w-full pt-1 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both"}>
+          <ModeSelector />
         </div>
       )}
       

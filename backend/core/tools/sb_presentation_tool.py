@@ -61,13 +61,22 @@ Follow this workflow for every presentation. **Complete each phase fully before 
 
 **Phase 1: Topic Confirmation** 📋
 
-1. **Topic and Context Confirmation**: Ask the user about:
-   - **Presentation topic/subject**
-   - **Target audience**
-   - **Presentation goals**
-   - **Any specific requirements or preferences**
+1. **Extract Topic from User Input**: Identify the presentation topic from the user's message. If the user has already provided clear topic information, proceed directly to Phase 2 with reasonable defaults:
+   - **Target audience**: Default to "General public" unless explicitly specified
+   - **Presentation goals**: Default to "Informative overview" unless explicitly specified
+   - **Requirements**: Use sensible defaults based on the topic
 
-2. **WAIT FOR USER CONFIRMATION**: Use the `ask` tool with `follow_up_answers` providing common options (e.g., ["Business audience", "Technical audience", "General public", "Students"]) to reduce typing friction. Wait for the user's response before proceeding.
+2. **Only Ask if Truly Ambiguous**: ONLY use the `ask` tool if:
+   - The topic is completely unclear or missing
+   - There are multiple valid interpretations that would significantly change the presentation
+   - The user explicitly requests clarification
+   
+   **DO NOT ask for:**
+   - Target audience if not specified (use "General public" default)
+   - Presentation goals if not specified (use "Informative overview" default)
+   - Requirements if not specified (proceed with sensible defaults)
+   
+   **Action-first approach**: When the topic is clear, immediately proceed to Phase 2. Don't ask unnecessary questions that delay creation.
 
 **Phase 2: Theme and Content Planning** 📝
 
@@ -127,7 +136,22 @@ Follow this workflow for every presentation. **Complete each phase fully before 
    ```
    use image_search with multiple queries ([topic] exterior view, [topic] interior detail, [topic] key feature, [topic] overview context) and num_results 2
    ```
-   **ALL queries in ONE call.** Results format: `{{"batch_results": [{{"query": "...", "images": ["url1", "url2"]}}, ...]}}`
+   **ALL queries in ONE call.** Results now include enriched metadata for each image:
+   ```json
+   {
+     "batch_results": [{
+       "query": "...",
+       "images": [{
+         "imageUrl": "https://...",
+         "title": "Image title",
+         "width": 1920,
+         "height": 1080,
+         "description": "Text extracted from the image",
+         "source": "example.com"
+       }, ...]
+     }, ...]
+   }
+   ```
    - **TOPIC-SPECIFIC IMAGES REQUIRED**: Images MUST be specific to the actual topic/subject being researched, NOT generic category images
    - **For companies/products**: ALWAYS include the actual company/product name in every image query
    - **For people**: ALWAYS include the person's full name in every image query along with relevant context
@@ -137,6 +161,11 @@ Follow this workflow for every presentation. **Complete each phase fully before 
 
 4. **Extract and Select Topic-Specific Image URLs** (MANDATORY): From the batch results, extract image URLs and **select the most contextually appropriate image** for each slide based on:
    - **TOPIC SPECIFICITY FIRST**: Does it show the actual topic/subject being researched or just a generic category? Always prefer images that directly show the specific topic, brand, product, person, or entity over generic category images
+   - **USE OCR TEXT FOR CONTEXT**: Check the `description` field - if it contains relevant text (brand names, product names, labels), this confirms the image is topic-specific
+   - **USE DIMENSIONS FOR LAYOUT**: Check `width` and `height` to determine image orientation:
+     - **Landscape (width > height)**: Best for full-width backgrounds, hero images, banner sections
+     - **Portrait (height > width)**: Best for side panels, profile photos, vertical accent images
+     - **Square-ish**: Flexible for various layouts
    - How well it matches the slide content and your research findings
    - How well it aligns with your research findings (specific names, brands, products discovered)
    - How well it fits the presentation theme and color scheme
@@ -155,10 +184,16 @@ Follow this workflow for every presentation. **Complete each phase fully before 
    - Preserve or add appropriate file extensions (.jpg, .png, etc.) based on the image URL
    - If using `curl` instead of `wget`, use: `curl -L "URL" -o filename` (without suppressing errors)
 
-6. **Document Image Mapping** (MANDATORY): Create a clear mapping of slide number → image filename for reference in Phase 4:
-   - Slide 1 → `slide1_exterior.jpg`
-   - Slide 2 → `slide2_interior.jpg`
+6. **Document Image Mapping with Metadata** (MANDATORY): Create a clear mapping of slide number → image filename with layout info for reference in Phase 4:
+   - Slide 1 → `slide1_exterior.jpg` (1920x1080, landscape, OCR: "Company Name")
+   - Slide 2 → `slide2_interior.jpg` (800x1200, portrait, OCR: "Product Label")
+   - Slide 3 → `slide3_team.jpg` (1000x1000, square, no text)
    - etc.
+   - **INCLUDE METADATA**: For each image, note:
+     - Dimensions (width x height) from image_search results
+     - Orientation (landscape/portrait/square)
+     - OCR text summary (if any relevant text was detected)
+     - Planned placement (background, side panel, hero image, etc.)
    - **CRITICAL VERIFICATION**: After `ls -lh`, count the files and ensure the number matches the number of images you attempted to download
    - **CRITICAL VERIFICATION**: Check that ALL expected filenames appear in the `ls` output
    - **CRITICAL**: If any image is missing, you MUST retry the download or find alternative image URLs - do NOT proceed to Phase 4 with missing images
@@ -196,15 +231,34 @@ Follow this workflow for every presentation. **Complete each phase fully before 
    - All styling MUST be derived from the **custom color scheme and design elements** defined in Phase 2. Use the custom color palette, fonts, and layout patterns consistently across all slides.
    - **CRITICAL - PRESENTATION DESIGN NOT WEBSITE**: Design for fixed 1920x1080 dimensions. DO NOT use responsive design patterns (no `width: 100%`, `max-width`, `vw/vh` units, or responsive breakpoints). This is a PRESENTATION SLIDE, not a website - use fixed pixel dimensions, absolute positioning, and fixed layouts. **FORBIDDEN**: Multi-column grid layouts with cards (like 2x3 grids of feature cards) - these look like websites. Use centered, focused layouts with large content instead.
 
-2. **Use Downloaded Images**: For each slide that requires images, **MANDATORY**: Use the images that were downloaded in Phase 3. **CRITICAL PATH REQUIREMENTS**:
+2. **Use Downloaded Images with Smart Placement**: For each slide that requires images, **MANDATORY**: Use the images that were downloaded in Phase 3. **CRITICAL PATH REQUIREMENTS**:
    - **Image Path Structure**: Images are in `presentations/images/` (shared folder), and slides are in `presentations/[title]/` (presentation folder)
    - **Reference Path**: Use `../images/[filename]` to reference images (go up one level from presentation folder to shared images folder)
    - Example: If image is `presentations/images/slide1_intro_image.jpg` and slide is `presentations/[presentation-title]/slide_01.html`, use path: `../images/slide1_intro_image.jpg`
+   
+   **🎯 IMAGE PLACEMENT BASED ON DIMENSIONS** (use metadata from Phase 3):
+   - **Landscape Images (width > height)**: 
+     - Use as full-width backgrounds with `width: 100%; object-fit: cover`
+     - Or as hero images spanning 60-80% of slide width
+     - Great for banner sections at top/bottom of slides
+   - **Portrait Images (height > width)**:
+     - Use in side panels (30-40% of slide width)
+     - Or as accent images alongside text content
+     - Never stretch to full width - looks distorted
+   - **Square Images**:
+     - Flexible - work well in grids or as centered focal points
+     - Good for profile photos, logos, icons
+   
+   **🔤 USE OCR TEXT FOR CONTEXT**:
+   - If `description` contains brand names, product names, or labels - this confirms the image is relevant
+   - Use OCR text to inform caption text or surrounding content
+   - If OCR reveals unexpected text (wrong brand, irrelevant content), consider using a different image
+   
    - **CRITICAL REQUIREMENTS**:
      - **DO NOT skip images** - if a slide outline specified images, they must be included in the slide HTML
      - Use the exact filenames you verified in Phase 3 (e.g., `../images/slide1_intro_image.jpg`)
      - Include images in `<img>` tags within your slide HTML content
-     - Ensure images are properly sized and positioned within the slide layout
+     - Match image dimensions to layout - don't force portrait images into landscape slots
      - If an image doesn't appear, verify the filename matches exactly (including extension) and the path is correct (`../images/` not `images/`)
 
 **Final Phase: Deliver** 🎯
