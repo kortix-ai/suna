@@ -323,6 +323,7 @@ export function useChat(): UseChatReturn {
 
   const lastStreamStartedRef = useRef<string | null>(null);
   const lastCompletedRunIdRef = useRef<string | null>(null);
+  const lastErrorRunIdRef = useRef<string | null>(null); // Track runId that had error for retry
 
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
@@ -433,6 +434,7 @@ export function useChat(): UseChatReturn {
     startStreaming,
     stopStreaming,
     resumeStream,
+    clearError: clearStreamError,
   } = useAgentStream(
     {
       onMessage: handleNewMessageFromStream,
@@ -593,6 +595,12 @@ export function useChat(): UseChatReturn {
       // Track the run ID that just completed to prevent immediate resume
       if (agentRunId) {
         lastCompletedRunIdRef.current = agentRunId;
+        
+        // On error, also track for retry - agent WAS started, don't resend
+        if (streamHookStatus === 'error') {
+          lastErrorRunIdRef.current = agentRunId;
+          log.log('[useChat] Stored error runId for retry:', agentRunId);
+        }
       }
       
       setAgentRunId(null);
@@ -675,7 +683,10 @@ export function useChat(): UseChatReturn {
     log.log('[useChat] Loading thread:', threadId);
     log.log('🔄 [useChat] Thread loading initiated');
     
+    // Clear all error state from previous thread
     setAgentRunId(null);
+    lastErrorRunIdRef.current = null;
+    clearStreamError(); // Clear error state from streaming hook
     
     stopStreaming();
     
@@ -718,24 +729,26 @@ export function useChat(): UseChatReturn {
     }).catch(error => {
       log.error('❌ [useChat] Failed to refetch active runs:', error);
     });
-  }, [stopStreaming, refetchActiveRuns, threadsData]);
+  }, [stopStreaming, clearStreamError, refetchActiveRuns, threadsData]);
 
   const startNewChat = useCallback(() => {
     log.log('[useChat] Starting new chat');
     setActiveThreadId(undefined);
     setAgentRunId(null);
+    lastErrorRunIdRef.current = null;
     setMessages([]);
     setInputValue('');
     setAttachments([]);
     setSelectedToolData(null);
     setIsNewThreadOptimistic(false);
     setActiveSandboxId(undefined);
+    clearStreamError(); // Clear any previous error state
     stopStreaming();
     
     // Reset Kortix Computer state when starting new chat
     useKortixComputerStore.getState().reset();
     log.log('[useChat] Reset Kortix Computer state for new chat');
-  }, [stopStreaming]);
+  }, [stopStreaming, clearStreamError]);
 
   const updateThreadTitle = useCallback(async (newTitle: string) => {
     if (!activeThreadId) {
@@ -894,6 +907,7 @@ export function useChat(): UseChatReturn {
             log.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
             setUserInitiatedRun(true);
             setAgentRunId(createResult.agent_run_id);
+            lastErrorRunIdRef.current = null; // Clear any previous error state
           }
         } catch (agentStartError: any) {
           log.error('[useChat] Error starting agent for new thread:', agentStartError);
@@ -1106,6 +1120,7 @@ export function useChat(): UseChatReturn {
             log.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
             setUserInitiatedRun(true);
             setAgentRunId(result.agentRunId);
+            lastErrorRunIdRef.current = null; // Clear any previous error state
           }
           
           setIsNewThreadOptimistic(false);
@@ -1188,35 +1203,83 @@ export function useChat(): UseChatReturn {
     }
   }, [agentRunId, currentHookRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
 
-  // Smart retry - reconnect if agent running, refresh if completed, only resend if never started
+  // Smart retry - NEVER resend if AI already responded, just refresh
   const retryLastMessage = useCallback(async () => {
-    const runId = currentHookRunId || agentRunId;
+    // SIMPLE CHECK: If we have ANY assistant/tool messages, AI responded - just refresh, NEVER resend
+    const hasAIResponse = messages.some(msg => 
+      msg.type === 'assistant' || 
+      msg.type === 'tool' || 
+      (msg.content && typeof msg.content === 'object' && 'role' in msg.content && msg.content.role === 'assistant')
+    );
     
-    // If we have a run ID, agent was started - don't resend, reconnect/refresh
-    if (runId) {
-      log.log('[useChat] Retry: Agent was started, checking status...', { runId });
+    if (hasAIResponse) {
+      log.log('[useChat] Retry: AI already responded, refreshing thread (NOT resending)');
+      lastErrorRunIdRef.current = null;
       
-      try {
-        // Try to reconnect to stream - resumeStream handles all the logic
-        await resumeStream();
-        return;
-      } catch (err) {
-        log.warn('[useChat] Retry: Resume failed, refreshing messages...', err);
-      }
+      // Clear error state first
+      clearStreamError();
       
-      // If reconnect failed, refresh messages to get latest state
+      // Refresh messages to get latest state from server
       if (activeThreadId) {
-        log.log('[useChat] Retry: Refreshing messages...');
-        await refetchMessages();
-        queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
+        log.log('[useChat] Retry: Refreshing messages and checking for active runs...');
+        try {
+          await refetchMessages();
+          queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          
+          // Check if there's still a running agent for this thread
+          const activeRunsResult = await refetchActiveRuns();
+          if (activeRunsResult.data) {
+            const runningAgent = activeRunsResult.data.find(
+              run => run.thread_id === activeThreadId && run.status === 'running'
+            );
+            if (runningAgent) {
+              log.log('[useChat] Retry: Found running agent, reconnecting:', runningAgent.id);
+              setAgentRunId(runningAgent.id);
+              await startStreaming(runningAgent.id);
+            } else {
+              log.log('[useChat] Retry: No running agent, thread is up to date');
+            }
+          }
+        } catch (err) {
+          log.warn('[useChat] Retry: Failed to refresh:', err);
+        }
       }
       return;
     }
     
-    // No run ID - agent never started, resend the message
+    // Also check runId as backup
+    const runId = currentHookRunId || agentRunId || lastErrorRunIdRef.current;
+    if (runId) {
+      log.log('[useChat] Retry: Has runId, refreshing...', { runId });
+      lastErrorRunIdRef.current = null;
+      clearStreamError();
+      
+      if (activeThreadId) {
+        try {
+          await refetchMessages();
+          queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          
+          const activeRunsResult = await refetchActiveRuns();
+          if (activeRunsResult.data) {
+            const runningAgent = activeRunsResult.data.find(
+              run => run.thread_id === activeThreadId && run.status === 'running'
+            );
+            if (runningAgent) {
+              log.log('[useChat] Retry: Found running agent, reconnecting:', runningAgent.id);
+              setAgentRunId(runningAgent.id);
+              await startStreaming(runningAgent.id);
+            }
+          }
+        } catch (err) {
+          log.warn('[useChat] Retry: Failed to refresh:', err);
+        }
+      }
+      return;
+    }
+    
+    // ONLY resend if: no AI response AND no runId - agent truly never started
     if (!lastMessageParamsRef.current) {
-      log.warn('[useChat] No message to retry and no active run');
-      // Just refresh messages as fallback
+      log.warn('[useChat] No message to retry');
       if (activeThreadId) {
         await refetchMessages();
       }
@@ -1224,9 +1287,9 @@ export function useChat(): UseChatReturn {
     }
     
     const { content, agentId, agentName } = lastMessageParamsRef.current;
-    log.log('[useChat] Retry: Agent never started, resending message...');
+    log.log('[useChat] Retry: No AI response, no runId - resending message');
     sendMessage(content, agentId, agentName);
-  }, [currentHookRunId, agentRunId, resumeStream, activeThreadId, refetchMessages, queryClient, sendMessage]);
+  }, [messages, currentHookRunId, agentRunId, clearStreamError, startStreaming, activeThreadId, refetchMessages, refetchActiveRuns, queryClient, sendMessage]);
 
   const addAttachment = useCallback((attachment: Attachment) => {
     setAttachments(prev => [...prev, attachment]);
@@ -1552,7 +1615,7 @@ export function useChat(): UseChatReturn {
     // Error state for stream errors
     streamError: streamError,
     retryLastMessage,
-    hasActiveRun: !!(agentRunId || currentHookRunId),
+    hasActiveRun: !!(agentRunId || currentHookRunId || lastErrorRunIdRef.current),
     
     handleTakePicture,
     handleChooseImages,

@@ -39,6 +39,7 @@ export interface UseAgentStreamResult {
   startStreaming: (runId: string) => Promise<void>;
   stopStreaming: () => Promise<void>;
   resumeStream: () => Promise<void>; // Call when returning to tab/window
+  clearError: () => void; // Clear error state when switching threads
 }
 
 export interface ToolOutputStreamData {
@@ -190,5 +191,6 @@ export function useAgentStream(
     startStreaming: coreResult.startStreaming,
     stopStreaming: coreResult.stopStreaming,
     resumeStream: coreResult.resumeStream,
+    clearError: coreResult.clearError,
   };
 }

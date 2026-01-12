@@ -52,6 +52,7 @@ export interface UseAgentStreamCoreResult {
   startStreaming: (runId: string) => Promise<void>;
   stopStreaming: () => Promise<void>;
   resumeStream: () => Promise<void>; // Call when app comes back to foreground
+  clearError: () => void; // Clear error state when switching threads
 }
 
 export interface ContentThrottleConfig {
@@ -1173,6 +1174,15 @@ export function useAgentStreamCore(
     }
   }, [config, status, getAgentStatus, finalizeStream, updateStatus, setupEventSource]);
 
+  // Clear error state - useful when switching threads
+  const clearError = useCallback(() => {
+    setError(null);
+    updateStatus('idle');
+    retryCountRef.current = 0;
+    setRetryCount(0);
+    isReconnectingRef.current = false;
+  }, [updateStatus]);
+
   return {
     status,
     textContent: orderedTextContent,
@@ -1184,5 +1194,6 @@ export function useAgentStreamCore(
     startStreaming,
     stopStreaming,
     resumeStream,
+    clearError,
   };
 }
