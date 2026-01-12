@@ -2533,8 +2533,8 @@ async def get_task_performance(
             status = run.get('status', 'unknown')
             runs_by_status[status] = runs_by_status.get(status, 0) + 1
             
-            # Calculate duration for completed runs
-            if status == 'completed' and run.get('started_at') and run.get('completed_at'):
+            # Calculate duration for finished runs (completed, failed, stopped)
+            if status in ['completed', 'failed', 'stopped'] and run.get('started_at') and run.get('completed_at'):
                 try:
                     started = datetime.fromisoformat(run['started_at'].replace('Z', '+00:00'))
                     completed = datetime.fromisoformat(run['completed_at'].replace('Z', '+00:00'))
