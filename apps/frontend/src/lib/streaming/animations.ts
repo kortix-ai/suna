@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useSyncExternalStore, useEffect } from 'react';
+import { useRef, useSyncExternalStore, useEffect, useLayoutEffect } from 'react';
 
 const CHARS_PER_SECOND = 200;
 const MS_PER_CHAR = 1000 / CHARS_PER_SECOND;
@@ -123,11 +123,14 @@ export function useSmoothStream(
   
   if (!storeRef.current) {
     storeRef.current = new SmoothStreamStore();
+    storeRef.current.update(text, enabled);
   }
   
   const store = storeRef.current;
   
-  store.update(text, enabled);
+  useLayoutEffect(() => {
+    store.update(text, enabled);
+  }, [text, enabled]);
   
   useSyncExternalStore(
     store.subscribe,

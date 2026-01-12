@@ -346,7 +346,6 @@ function renderRegularToolCall(
         websiteUrls={websiteUrls}
         imageUrls={imageUrls}
         slideInfo={slideInfo}
-        project={props.project}
       />
     </div>
   );
