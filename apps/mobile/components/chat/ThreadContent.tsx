@@ -659,6 +659,8 @@ interface ThreadContentProps {
   onPromptFill?: (prompt: string) => void;
   isSendingMessage?: boolean;
   onRequestScroll?: () => void;
+  isReconnecting?: boolean;
+  retryCount?: number;
 }
 
 interface MessageGroup {
@@ -684,6 +686,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     onPromptFill,
     isSendingMessage = false,
     onRequestScroll,
+    isReconnecting = false,
+    retryCount = 0,
   }) => {
     const { colorScheme } = useColorScheme();
     const isDark = colorScheme === 'dark';
@@ -1582,7 +1586,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       return !hasAskOrComplete;
                     })() && (
                       <View className="mt-4">
-                        <AgentLoader />
+                        <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
                       </View>
                     )}
                 </View>
@@ -1675,7 +1679,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               {/* Brewing ideas state - show until we have VISIBLE streaming content */}
               {isBrewing && (
                 <View className="mt-4">
-                  <AgentLoader />
+                  <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
                 </View>
               )}
               
