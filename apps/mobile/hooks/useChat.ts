@@ -712,9 +712,14 @@ export function useChat(): UseChatReturn {
       setSelectedQuickActionOption(null);
     }
     
-    // Refetch active runs to check if there's a running agent for this thread
+    // Invalidate messages cache to get fresh data
+    queryClient.invalidateQueries({ queryKey: chatKeys.messages(threadId) });
+    
+    // Invalidate active runs cache, then refetch to get fresh data from server
     log.log('🔍 [useChat] Checking for active agent runs...');
-    refetchActiveRuns().then(result => {
+    queryClient.invalidateQueries({ queryKey: chatKeys.activeRuns() }).then(() => {
+      return refetchActiveRuns();
+    }).then(result => {
       if (result.data) {
         const runningAgentForThread = result.data.find(
           run => run.thread_id === threadId && run.status === 'running'
@@ -729,7 +734,7 @@ export function useChat(): UseChatReturn {
     }).catch(error => {
       log.error('❌ [useChat] Failed to refetch active runs:', error);
     });
-  }, [stopStreaming, clearStreamError, refetchActiveRuns, threadsData]);
+  }, [stopStreaming, clearStreamError, refetchActiveRuns, queryClient, threadsData]);
 
   const startNewChat = useCallback(() => {
     log.log('[useChat] Starting new chat');
