@@ -101,8 +101,9 @@ export function useAgentStreamCore(
   // Heartbeat detection refs
   const lastMessageTimeRef = useRef<number>(0);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  // 45 seconds - tools can take a long time, this is just to detect dead connections
-  const HEARTBEAT_TIMEOUT_MS = 45000;
+  // 10 minutes - tools can take a VERY long time, this is just to detect dead connections
+  // Not for detecting "no response" - that's the connection timeout's job
+  const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
   
   // Reconnection refs for graceful handling of bad network
   const retryCountRef = useRef<number>(0);

@@ -47,9 +47,11 @@ interface ThreadPageProps {
 const StreamErrorBanner = React.memo(function StreamErrorBanner({
   error,
   onRetry,
+  hasActiveRun,
 }: {
   error: string | null;
   onRetry: () => void;
+  hasActiveRun?: boolean;
 }) {
   if (!error) return null;
 
@@ -60,6 +62,9 @@ const StreamErrorBanner = React.memo(function StreamErrorBanner({
     if (error.includes('500') || error.includes('Internal server error')) {
       return 'Server error - please try again';
     }
+    if (error.includes('timeout')) {
+      return 'Connection timeout - please check your internet';
+    }
     if (error.includes('network') || error.includes('connection')) {
       return 'Connection lost - please retry';
     }
@@ -68,6 +73,9 @@ const StreamErrorBanner = React.memo(function StreamErrorBanner({
     }
     return error;
   }, [error]);
+
+  // Button text: if agent was running, we reconnect/refresh; otherwise resend
+  const buttonText = hasActiveRun ? 'Refresh' : 'Retry';
 
   return (
     <View className="mx-4 mb-3">
@@ -85,7 +93,7 @@ const StreamErrorBanner = React.memo(function StreamErrorBanner({
           className="flex-row items-center gap-1.5 bg-card border border-border rounded-full px-3 py-2 ml-2 active:opacity-70"
         >
           <Icon as={RefreshCw} size={14} className="text-foreground" />
-          <Text className="text-sm font-roobert-medium text-foreground">Retry</Text>
+          <Text className="text-sm font-roobert-medium text-foreground">{buttonText}</Text>
         </Pressable>
       </View>
     </View>
@@ -850,10 +858,11 @@ export function ThreadPage({
                   isReconnecting={chat.isReconnecting}
                   retryCount={chat.retryCount}
                 />
-                {/* Stream error banner with retry */}
+                {/* Stream error banner with retry/refresh */}
                 <StreamErrorBanner 
                   error={chat.streamError} 
-                  onRetry={chat.retryLastMessage} 
+                  onRetry={chat.retryLastMessage}
+                  hasActiveRun={chat.hasActiveRun}
                 />
               </>
             )}

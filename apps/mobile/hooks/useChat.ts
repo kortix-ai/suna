@@ -102,6 +102,7 @@ export interface UseChatReturn {
   // Error state for stream errors
   streamError: string | null;
   retryLastMessage: () => void;
+  hasActiveRun: boolean;
   
   handleTakePicture: () => Promise<void>;
   handleChooseImages: () => Promise<void>;
@@ -1187,19 +1188,45 @@ export function useChat(): UseChatReturn {
     }
   }, [agentRunId, currentHookRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
 
-  // Retry the last failed message
-  const retryLastMessage = useCallback(() => {
+  // Smart retry - reconnect if agent running, refresh if completed, only resend if never started
+  const retryLastMessage = useCallback(async () => {
+    const runId = currentHookRunId || agentRunId;
+    
+    // If we have a run ID, agent was started - don't resend, reconnect/refresh
+    if (runId) {
+      log.log('[useChat] Retry: Agent was started, checking status...', { runId });
+      
+      try {
+        // Try to reconnect to stream - resumeStream handles all the logic
+        await resumeStream();
+        return;
+      } catch (err) {
+        log.warn('[useChat] Retry: Resume failed, refreshing messages...', err);
+      }
+      
+      // If reconnect failed, refresh messages to get latest state
+      if (activeThreadId) {
+        log.log('[useChat] Retry: Refreshing messages...');
+        await refetchMessages();
+        queryClient.invalidateQueries({ queryKey: chatKeys.messages(activeThreadId) });
+      }
+      return;
+    }
+    
+    // No run ID - agent never started, resend the message
     if (!lastMessageParamsRef.current) {
-      log.warn('[useChat] No message to retry');
+      log.warn('[useChat] No message to retry and no active run');
+      // Just refresh messages as fallback
+      if (activeThreadId) {
+        await refetchMessages();
+      }
       return;
     }
     
     const { content, agentId, agentName } = lastMessageParamsRef.current;
-    log.log('[useChat] Retrying last message:', { content: content.substring(0, 50) + '...' });
-    
-    // Re-send the message
+    log.log('[useChat] Retry: Agent never started, resending message...');
     sendMessage(content, agentId, agentName);
-  }, [sendMessage]);
+  }, [currentHookRunId, agentRunId, resumeStream, activeThreadId, refetchMessages, queryClient, sendMessage]);
 
   const addAttachment = useCallback((attachment: Attachment) => {
     setAttachments(prev => [...prev, attachment]);
@@ -1525,6 +1552,7 @@ export function useChat(): UseChatReturn {
     // Error state for stream errors
     streamError: streamError,
     retryLastMessage,
+    hasActiveRun: !!(agentRunId || currentHookRunId),
     
     handleTakePicture,
     handleChooseImages,
