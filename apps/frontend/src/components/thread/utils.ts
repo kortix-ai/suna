@@ -6,7 +6,8 @@
 // Re-export shared utilities
 export { 
   safeJsonParse,
-  getUserFriendlyToolName, 
+  getUserFriendlyToolName,
+  getCompletedToolName,
   extractAppSlugFromToolCall,
   HIDE_STREAMING_XML_TAGS,
 } from '@agentpress/shared';

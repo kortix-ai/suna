@@ -1,82 +1,145 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useRef, useSyncExternalStore, useEffect } from 'react';
+
+const CHARS_PER_SECOND = 200;
+const MS_PER_CHAR = 1000 / CHARS_PER_SECOND;
+
+class SmoothStreamStore {
+  private targetText = '';
+  private revealedLen = 0;
+  private lastUpdateTime = 0;
+  private animationId: number | null = null;
+  private listeners = new Set<() => void>();
+  private enabled = true;
+
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  getSnapshot = () => this.revealedLen;
+
+  private notify() {
+    this.listeners.forEach(l => l());
+  }
+
+  private tick = () => {
+    if (!this.enabled) return;
+    
+    const now = performance.now();
+    const targetLen = this.targetText.length;
+    
+    if (this.revealedLen >= targetLen) {
+      this.animationId = null;
+      return;
+    }
+
+    if (this.lastUpdateTime === 0) {
+      this.lastUpdateTime = now;
+    }
+
+    const elapsed = now - this.lastUpdateTime;
+    const charsToReveal = Math.floor(elapsed / MS_PER_CHAR);
+    
+    if (charsToReveal > 0) {
+      this.revealedLen = Math.min(this.revealedLen + charsToReveal, targetLen);
+      this.lastUpdateTime = now - (elapsed % MS_PER_CHAR);
+      this.notify();
+    }
+
+    if (this.revealedLen < targetLen) {
+      this.animationId = requestAnimationFrame(this.tick);
+    } else {
+      this.animationId = null;
+    }
+  };
+
+  private startAnimation() {
+    if (this.animationId !== null) return;
+    this.lastUpdateTime = 0;
+    this.animationId = requestAnimationFrame(this.tick);
+  }
+
+  private stopAnimation() {
+    if (this.animationId !== null) {
+      cancelAnimationFrame(this.animationId);
+      this.animationId = null;
+    }
+  }
+
+  update(newText: string, isEnabled: boolean) {
+    const wasEnabled = this.enabled;
+    this.enabled = isEnabled;
+
+    if (!newText) {
+      this.stopAnimation();
+      this.targetText = '';
+      this.revealedLen = 0;
+      this.lastUpdateTime = 0;
+      this.notify();
+      return;
+    }
+
+    if (!isEnabled) {
+      this.stopAnimation();
+      this.targetText = newText;
+      this.revealedLen = newText.length;
+      this.notify();
+      return;
+    }
+
+    const isContinuation = this.targetText.length > 0 && newText.startsWith(this.targetText);
+    
+    if (!isContinuation) {
+      this.stopAnimation();
+      this.revealedLen = 0;
+      this.lastUpdateTime = 0;
+    }
+    
+    this.targetText = newText;
+    
+    if (this.revealedLen < newText.length) {
+      this.startAnimation();
+    }
+  }
+
+  getText() {
+    return this.targetText.slice(0, Math.min(this.revealedLen, this.targetText.length));
+  }
+
+  destroy() {
+    this.stopAnimation();
+    this.listeners.clear();
+  }
+}
 
 export function useSmoothStream(
   text: string,
   enabled: boolean = true,
-  speed: number = 250
+  _speed?: number
 ): string {
-  const [displayedLen, setDisplayedLen] = useState(0);
-  const stateRef = useRef({
-    targetText: '',
-    displayedLen: 0,
-    lastTime: 0,
-    frameId: null as number | null,
-  });
+  const storeRef = useRef<SmoothStreamStore | null>(null);
+  
+  if (!storeRef.current) {
+    storeRef.current = new SmoothStreamStore();
+  }
+  
+  const store = storeRef.current;
+  
+  store.update(text, enabled);
+  
+  useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+    store.getSnapshot
+  );
 
   useEffect(() => {
-    const state = stateRef.current;
-
-    if (state.frameId) {
-      cancelAnimationFrame(state.frameId);
-      state.frameId = null;
-    }
-
-    if (!text) {
-      state.targetText = '';
-      state.displayedLen = 0;
-      state.lastTime = 0;
-      setDisplayedLen(0);
-      return;
-    }
-
-    if (!enabled) {
-      state.targetText = text;
-      state.displayedLen = text.length;
-      setDisplayedLen(text.length);
-      return;
-    }
-
-    const isContinuation = state.targetText.length > 0 && text.startsWith(state.targetText);
-    state.targetText = text;
-
-    if (!isContinuation) {
-      state.displayedLen = 0;
-      state.lastTime = 0;
-      setDisplayedLen(0);
-    }
-
-    const animate = (time: number) => {
-      if (!state.lastTime) state.lastTime = time;
-      const delta = time - state.lastTime;
-      state.lastTime = time;
-
-      const chars = Math.max(2, Math.ceil((delta / 1000) * speed));
-      const targetLen = state.targetText.length;
-      state.displayedLen = Math.min(state.displayedLen + chars, targetLen);
-      
-      setDisplayedLen(state.displayedLen);
-
-      if (state.displayedLen < targetLen) {
-        state.frameId = requestAnimationFrame(animate);
-      } else {
-        state.frameId = null;
-        state.lastTime = 0;
-      }
-    };
-
-    if (state.displayedLen < text.length) {
-      state.frameId = requestAnimationFrame(animate);
-    }
-
     return () => {
-      if (state.frameId) {
-        cancelAnimationFrame(state.frameId);
-        state.frameId = null;
-      }
+      storeRef.current?.destroy();
     };
-  }, [text, enabled, speed]);
+  }, []);
 
-  return text.slice(0, displayedLen);
+  return store.getText();
 }

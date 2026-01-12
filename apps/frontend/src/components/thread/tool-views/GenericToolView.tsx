@@ -20,7 +20,7 @@ import { toast } from '@/lib/toast';
 import { AppIcon } from './shared/AppIcon';
 import { SmartJsonViewer } from './shared/SmartJsonViewer';
 import { ToolViewIconTitle } from './shared/ToolViewIconTitle';
-import { useSmoothText } from '@/hooks/messages';
+import { useSmoothStream } from '@/lib/streaming';
 
 export function GenericToolView({
   toolCall,

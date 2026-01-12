@@ -210,7 +210,11 @@ function processStatusMessage(parsedContent: ParsedContent): ProcessedMessage {
         errorMessage: parsedContent.message || 'Worker run failed' 
       };
     case 'finish':
-      return { type: 'status', status: 'completed' };
+    case 'tool_completed':
+    case 'tool_failed':
+    case 'tool_error':
+    case 'thread_run_start':
+      return { type: 'ignore' };
     default:
       return { type: 'ignore' };
   }

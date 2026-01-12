@@ -224,11 +224,9 @@ export function useAgentStream(
   }, []);
   
   const finalizeStream = useCallback((finalStatus: AgentStatus, runId: string | null = agentRunId) => {
-    console.log('[DEBUG] finalizeStream called with status:', finalStatus, 'runId:', runId);
     if (!isMountedRef.current) return;
 
     if (runId && currentRunIdRef.current && currentRunIdRef.current !== runId) {
-      console.log('[DEBUG] Skipping finalize - runId mismatch');
       return;
     }
 
@@ -290,11 +288,8 @@ export function useAgentStream(
     
     const processed = processStreamData(rawData, accumulatorRef.current);
     
-    console.log('[DEBUG] Processed type:', processed.type, processed.content?.substring(0, 50) || '');
-    
     switch (processed.type) {
       case 'text_chunk':
-        console.log('[DEBUG] Adding text chunk:', processed.content?.substring(0, 50));
         if (processed.content) {
           addTextChunk(processed.content, processed.message?.sequence ?? Date.now());
           callbacksRef.current.onAssistantChunk?.({ content: processed.content });
@@ -327,7 +322,6 @@ export function useAgentStream(
         break;
       
       case 'message_complete':
-        console.log('[DEBUG] message_complete - clearing textChunks');
         flushPendingChunks();
         setTextChunks([]);
         setToolCall(null);
@@ -339,9 +333,7 @@ export function useAgentStream(
         break;
       
       case 'status':
-        console.log('[DEBUG] Status message:', processed.status);
         if (processed.status === 'completed' || processed.status === 'stopped') {
-          console.log('[DEBUG] Finalizing stream with status:', processed.status);
           finalizeStream(processed.status as AgentStatus, currentRunIdRef.current);
         }
         break;
@@ -371,7 +363,7 @@ export function useAgentStream(
         break;
     }
     
-    if (statusRef.current !== 'streaming' && statusRef.current !== 'running') {
+    if (statusRef.current !== 'streaming') {
       setStatus('streaming');
       callbacksRef.current.onStatusChange?.('streaming');
     }
@@ -380,7 +372,6 @@ export function useAgentStream(
   handleStreamMessageRef.current = handleStreamMessage;
   
   const stableMessageHandler = useCallback((rawData: string) => {
-    console.log('[DEBUG] Raw stream message:', rawData.substring(0, 200));
     handleStreamMessageRef.current?.(rawData);
   }, []);
   
