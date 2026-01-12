@@ -1199,6 +1199,11 @@ class SetupWizard:
 
         # Set JWT secret (this is usually a fixed value for local development)
         self.env_vars["supabase"]["SUPABASE_JWT_SECRET"] = "your-super-secret-jwt-token-with-at-least-32-characters-long"
+
+        # Set DATABASE_URL for local Supabase (different format than cloud).
+        # NOTE: These are the default Supabase local development credentials provided by the Supabase CLI.
+        # Not intended for production use - cloud deployments will prompt for their own DATABASE_URL.
+        self.env_vars["supabase"]["DATABASE_URL"] = "postgresql://postgres:postgres@127.0.0.1:54322/postgres"
     
     def _configure_local_supabase_settings(self):
         """Configures local Supabase settings for development (disables email confirmations)."""
@@ -2336,17 +2341,31 @@ class SetupWizard:
         else:
             # Manual setup
             if choice == "1":
-                # Automatic manual start - use start.py
+                # Automatic manual start - start all Docker containers
                 print_info("Starting Kortix Super Worker automatically...")
                 print_info("This will start Redis, Backend, and Frontend services.")
                 try:
-                    # Use start.py to handle automatic start
+                    # Start all containers via docker compose (excluding worker)
                     subprocess.run(
-                        [sys.executable, "start.py"],
+                        compose_cmd + ["up", "-d", "redis", "backend", "frontend"],
                         check=True,
                         shell=IS_WINDOWS,
                     )
-                    print_success("Kortix Super Worker services started!")
+                    print_info("Waiting for services to spin up...")
+                    time.sleep(5)
+                    result = subprocess.run(
+                        compose_cmd + ["ps"],
+                        capture_output=True,
+                        text=True,
+                        shell=IS_WINDOWS,
+                    )
+                    if "backend" in result.stdout and "frontend" in result.stdout:
+                        print_success("Kortix Super Worker services started!")
+                        print_info(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
+                    else:
+                        print_warning(
+                            f"Some services might not be running. Check '{compose_cmd_str} ps' for details."
+                        )
                 except subprocess.SubprocessError as e:
                     print_error(f"Failed to start services automatically: {e}")
                     print_info("You can start services manually using the commands shown below.")
@@ -2432,13 +2451,13 @@ class SetupWizard:
             print(
                 f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
-            step_num += 1
+
 
             print(
-                f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
+                f"n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
             
-            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
+            print(f"n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
             
             # Show stop commands for local Supabase
             if self.env_vars.get("supabase_setup_method") == "local":
