@@ -22,6 +22,7 @@ interface UseAgentStreamResult {
   stopStreaming: () => Promise<void>;
   resumeStream: () => Promise<void>; // Call when app comes back to foreground
   clearError: () => void; // Clear error state when switching threads
+  setError: (error: string) => void; // Set error state (e.g., when retry fails)
 }
 
 interface AgentStreamCallbacks {
@@ -101,5 +102,6 @@ export function useAgentStream(
     stopStreaming: coreResult.stopStreaming,
     resumeStream: coreResult.resumeStream,
     clearError: coreResult.clearError,
+    setError: coreResult.setError,
   };
 }

@@ -102,6 +102,7 @@ export interface UseChatReturn {
   // Error state for stream errors
   streamError: string | null;
   retryLastMessage: () => void;
+  isRetrying: boolean;
   hasActiveRun: boolean;
   
   handleTakePicture: () => Promise<void>;
@@ -153,6 +154,7 @@ export function useChat(): UseChatReturn {
   const [isNewThreadOptimistic, setIsNewThreadOptimistic] = useState(false);
   const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
+  const [isRetrying, setIsRetrying] = useState(false);
   
   // Track last message params for retry functionality
   const lastMessageParamsRef = useRef<{
@@ -435,6 +437,7 @@ export function useChat(): UseChatReturn {
     stopStreaming,
     resumeStream,
     clearError: clearStreamError,
+    setError: setStreamError,
   } = useAgentStream(
     {
       onMessage: handleNewMessageFromStream,
@@ -1209,7 +1212,13 @@ export function useChat(): UseChatReturn {
   }, [agentRunId, currentHookRunId, stopStreaming, stopAgentRunMutation, queryClient, activeThreadId, refetchMessages]);
 
   // Smart retry - NEVER resend if AI already responded, just refresh
+  // IMPORTANT: Don't clear error until success - keep banner visible during retry
   const retryLastMessage = useCallback(async () => {
+    // Prevent double-tapping
+    if (isRetrying) return;
+    
+    setIsRetrying(true);
+    
     // SIMPLE CHECK: If we have ANY assistant/tool messages, AI responded - just refresh, NEVER resend
     const hasAIResponse = messages.some(msg => 
       msg.type === 'assistant' || 
@@ -1219,42 +1228,56 @@ export function useChat(): UseChatReturn {
     
     if (hasAIResponse) {
       log.log('[useChat] Retry: AI already responded, refreshing thread (NOT resending)');
-      lastErrorRunIdRef.current = null;
-      
-      // Clear error state first
-      clearStreamError();
       
       // Refresh messages to get latest state from server
       if (activeThreadId) {
         log.log('[useChat] Retry: Refreshing messages and checking for active runs...');
         try {
-          // CRITICAL: Reset queries to clear stale cache BEFORE refetching
-          // This ensures we get fresh data from server, not cached data from when network was down
-          await queryClient.resetQueries({ queryKey: chatKeys.messages(activeThreadId) });
-          await queryClient.resetQueries({ queryKey: chatKeys.activeRuns() });
+          // CRITICAL: Remove cached data completely so fetchQuery forces network
+          await queryClient.removeQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          await queryClient.removeQueries({ queryKey: chatKeys.activeRuns() });
           
+          // Use fetchQuery which THROWS on network error (unlike refetch which returns cached data)
           await refetchMessages();
           
-          // Check if there's still a running agent for this thread
-          const activeRunsResult = await refetchActiveRuns();
-          if (activeRunsResult.data) {
-            const runningAgent = activeRunsResult.data.find(
-              run => run.thread_id === activeThreadId && run.status === 'running'
+          // fetchQuery throws on error - if we get here, network is working
+          const activeRuns = await queryClient.fetchQuery({
+            queryKey: chatKeys.activeRuns(),
+            staleTime: 0, // Force fresh fetch
+          });
+          
+          log.log('[useChat] Retry: Got fresh activeRuns data, count:', activeRuns?.length ?? 0);
+          
+          if (activeRuns) {
+            const runningAgent = activeRuns.find(
+              (run: { thread_id: string; status: string; id: string }) => 
+                run.thread_id === activeThreadId && run.status === 'running'
             );
             if (runningAgent) {
               log.log('[useChat] Retry: Found running agent, reconnecting:', runningAgent.id);
               setAgentRunId(runningAgent.id);
+              lastErrorRunIdRef.current = null;
+              // SUCCESS! Clear error and start streaming
+              clearStreamError();
               await startStreaming(runningAgent.id);
             } else {
-              log.log('[useChat] Retry: No running agent found after fresh fetch');
+              log.log('[useChat] Retry: No running agent, messages refreshed - clearing error');
+              lastErrorRunIdRef.current = null;
+              // SUCCESS! Got fresh messages, agent finished
+              clearStreamError();
             }
           } else {
-            log.warn('[useChat] Retry: No data returned from activeRuns fetch');
+            log.log('[useChat] Retry: No active runs, clearing error');
+            lastErrorRunIdRef.current = null;
+            clearStreamError();
           }
         } catch (err) {
-          log.error('[useChat] Retry: Failed to refresh - network may still be unstable:', err);
+          // fetchQuery throws on network error - keep the error banner!
+          log.error('[useChat] Retry: Network error - keeping error banner:', err);
+          setStreamError('Connection failed - tap to retry');
         }
       }
+      setIsRetrying(false);
       return;
     }
     
@@ -1262,34 +1285,52 @@ export function useChat(): UseChatReturn {
     const runId = currentHookRunId || agentRunId || lastErrorRunIdRef.current;
     if (runId) {
       log.log('[useChat] Retry: Has runId, refreshing...', { runId });
-      lastErrorRunIdRef.current = null;
-      clearStreamError();
       
       if (activeThreadId) {
         try {
-          // Reset queries to clear stale cache before refetching
-          await queryClient.resetQueries({ queryKey: chatKeys.messages(activeThreadId) });
-          await queryClient.resetQueries({ queryKey: chatKeys.activeRuns() });
+          // CRITICAL: Remove cached data completely so fetchQuery forces network
+          await queryClient.removeQueries({ queryKey: chatKeys.messages(activeThreadId) });
+          await queryClient.removeQueries({ queryKey: chatKeys.activeRuns() });
           
           await refetchMessages();
           
-          const activeRunsResult = await refetchActiveRuns();
-          if (activeRunsResult.data) {
-            const runningAgent = activeRunsResult.data.find(
-              run => run.thread_id === activeThreadId && run.status === 'running'
+          // fetchQuery throws on error - if we get here, network is working
+          const activeRuns = await queryClient.fetchQuery({
+            queryKey: chatKeys.activeRuns(),
+            staleTime: 0, // Force fresh fetch
+          });
+          
+          log.log('[useChat] Retry: Got fresh activeRuns data (runId path), count:', activeRuns?.length ?? 0);
+          
+          if (activeRuns) {
+            const runningAgent = activeRuns.find(
+              (run: { thread_id: string; status: string; id: string }) => 
+                run.thread_id === activeThreadId && run.status === 'running'
             );
             if (runningAgent) {
               log.log('[useChat] Retry: Found running agent, reconnecting:', runningAgent.id);
               setAgentRunId(runningAgent.id);
+              lastErrorRunIdRef.current = null;
+              // SUCCESS! Clear error and start streaming
+              clearStreamError();
               await startStreaming(runningAgent.id);
             } else {
-              log.log('[useChat] Retry: No running agent found with runId backup');
+              log.log('[useChat] Retry: No running agent with runId backup, clearing error');
+              lastErrorRunIdRef.current = null;
+              clearStreamError();
             }
+          } else {
+            log.log('[useChat] Retry: No active runs (runId path), clearing error');
+            lastErrorRunIdRef.current = null;
+            clearStreamError();
           }
         } catch (err) {
-          log.error('[useChat] Retry: Failed to refresh with runId:', err);
+          // fetchQuery throws on network error - keep the error banner!
+          log.error('[useChat] Retry: Network error (runId path) - keeping error banner:', err);
+          setStreamError('Connection failed - tap to retry');
         }
       }
+      setIsRetrying(false);
       return;
     }
     
@@ -1297,15 +1338,23 @@ export function useChat(): UseChatReturn {
     if (!lastMessageParamsRef.current) {
       log.warn('[useChat] No message to retry');
       if (activeThreadId) {
-        await refetchMessages();
+        try {
+          await refetchMessages();
+          clearStreamError();
+        } catch {
+          setStreamError('Connection failed - tap to retry');
+        }
       }
+      setIsRetrying(false);
       return;
     }
     
     const { content, agentId, agentName } = lastMessageParamsRef.current;
     log.log('[useChat] Retry: No AI response, no runId - resending message');
+    clearStreamError(); // Clear before resending
     sendMessage(content, agentId, agentName);
-  }, [messages, currentHookRunId, agentRunId, clearStreamError, startStreaming, activeThreadId, refetchMessages, refetchActiveRuns, queryClient, sendMessage]);
+    setIsRetrying(false);
+  }, [isRetrying, messages, currentHookRunId, agentRunId, clearStreamError, setStreamError, startStreaming, activeThreadId, refetchMessages, refetchActiveRuns, queryClient, sendMessage]);
 
   const addAttachment = useCallback((attachment: Attachment) => {
     setAttachments(prev => [...prev, attachment]);
@@ -1631,6 +1680,7 @@ export function useChat(): UseChatReturn {
     // Error state for stream errors
     streamError: streamError,
     retryLastMessage,
+    isRetrying,
     hasActiveRun: !!(agentRunId || currentHookRunId || lastErrorRunIdRef.current),
     
     handleTakePicture,

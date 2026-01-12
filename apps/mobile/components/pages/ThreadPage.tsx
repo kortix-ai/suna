@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withTiming,
   withDelay,
+  withRepeat,
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
@@ -48,12 +49,34 @@ const StreamErrorBanner = React.memo(function StreamErrorBanner({
   error,
   onRetry,
   hasActiveRun,
+  isRetrying,
 }: {
   error: string | null;
   onRetry: () => void;
   hasActiveRun?: boolean;
+  isRetrying?: boolean;
 }) {
-  if (!error) return null;
+  // Spinning animation for retry button (using Reanimated)
+  const spinValue = useSharedValue(0);
+  
+  React.useEffect(() => {
+    if (isRetrying) {
+      // Continuous rotation using withRepeat
+      spinValue.value = withRepeat(
+        withTiming(360, { duration: 1000, easing: Easing.linear }),
+        -1, // -1 = infinite repeat
+        false // don't reverse
+      );
+    } else {
+      spinValue.value = withTiming(0, { duration: 200 });
+    }
+  }, [isRetrying, spinValue]);
+  
+  const spinStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ rotate: `${spinValue.value}deg` }],
+    };
+  });
 
   // Clean up verbose error messages for display
   const displayError = React.useMemo(() => {
@@ -74,8 +97,10 @@ const StreamErrorBanner = React.memo(function StreamErrorBanner({
     return error;
   }, [error]);
 
+  if (!error) return null;
+
   // Button text: if agent was running, we reconnect/refresh; otherwise resend
-  const buttonText = hasActiveRun ? 'Refresh' : 'Retry';
+  const buttonText = isRetrying ? 'Retrying...' : (hasActiveRun ? 'Refresh' : 'Retry');
 
   return (
     <View className="mx-4 mb-3">
@@ -90,9 +115,12 @@ const StreamErrorBanner = React.memo(function StreamErrorBanner({
         </View>
         <Pressable
           onPress={onRetry}
-          className="flex-row items-center gap-1.5 bg-card border border-border rounded-full px-3 py-2 ml-2 active:opacity-70"
+          disabled={isRetrying}
+          className={`flex-row items-center gap-1.5 bg-card border border-border rounded-full px-3 py-2 ml-2 ${isRetrying ? 'opacity-50' : 'active:opacity-70'}`}
         >
-          <Icon as={RefreshCw} size={14} className="text-foreground" />
+          <Animated.View style={spinStyle}>
+            <Icon as={RefreshCw} size={14} className="text-foreground" />
+          </Animated.View>
           <Text className="text-sm font-roobert-medium text-foreground">{buttonText}</Text>
         </Pressable>
       </View>
@@ -863,6 +891,7 @@ export function ThreadPage({
                   error={chat.streamError} 
                   onRetry={chat.retryLastMessage}
                   hasActiveRun={chat.hasActiveRun}
+                  isRetrying={chat.isRetrying}
                 />
               </>
             )}
