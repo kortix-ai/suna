@@ -17,7 +17,8 @@ except ImportError:
 ENV_MODE = os.getenv("ENV_MODE", "LOCAL").upper()
 
 # Set default logging level based on environment
-default_level = "DEBUG" if ENV_MODE == "PRODUCTION" else "INFO"
+# Production should be INFO (less verbose), local/staging can be DEBUG
+default_level = "INFO" if ENV_MODE == "PRODUCTION" else "DEBUG"
 LOGGING_LEVEL = logging.getLevelNamesMapping().get(
     os.getenv("LOGGING_LEVEL", default_level).upper(),
     logging.INFO,
@@ -33,7 +34,7 @@ NOISY_LOGGERS = (
     # AWS SDK
     "boto3", "botocore", "urllib3", "s3transfer", "watchtower",
     # HTTP clients
-    "httpcore", "httpx", "aiohttp", "requests",
+    "httpcore", "httpx", "aiohttp", "requests", "hpack",
     # Async / event loop
     "asyncio", "concurrent",
     # AI SDKs
