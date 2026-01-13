@@ -901,16 +901,37 @@ async def execute_agent_run(
         await update_agent_run_status(agent_run_id, "failed", error=str(e), account_id=account_id)
         
     finally:
-        clear_tool_output_streaming_context()
+        from core.utils.lifecycle_tracker import log_cleanup_error
+        cleanup_errors = []
         
+        # Step 1: Clear streaming context
+        try:
+            clear_tool_output_streaming_context()
+        except Exception as e:
+            log_cleanup_error(agent_run_id, "streaming_context", e)
+            cleanup_errors.append(f"streaming_context: {e}")
+        
+        # Step 2: Cancel stop checker task
         if stop_checker and not stop_checker.done():
-            stop_checker.cancel()
             try:
+                stop_checker.cancel()
                 await stop_checker
-            except:
-                pass
+            except asyncio.CancelledError:
+                pass  # Expected
+            except Exception as e:
+                log_cleanup_error(agent_run_id, "stop_checker", e)
+                cleanup_errors.append(f"stop_checker: {e}")
         
+        # Step 3: Set Redis stream TTL (ensure cleanup even if we crash)
         try:
             await redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS)
-        except:
-            pass
+        except Exception as e:
+            log_cleanup_error(agent_run_id, "redis_expire", e)
+            cleanup_errors.append(f"redis_expire: {e}")
+        
+        # Log cleanup errors summary if any occurred
+        if cleanup_errors:
+            logger.error(
+                f"[LIFECYCLE] CLEANUP_ERRORS agent_run={agent_run_id} "
+                f"count={len(cleanup_errors)} errors={cleanup_errors}"
+            )
