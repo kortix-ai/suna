@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isLocalMode } from '@/lib/config';
 import { ThreadContent } from '@/components/thread/content/ThreadContent';
+import { NewThreadEmptyState } from '@/components/thread/content/NewThreadEmptyState';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
 import { PlaybackFloatingControls } from '@/components/thread/content/PlaybackFloatingControls';
 import { usePlaybackController, useAddUserMessageMutation } from '@/hooks/messages';
@@ -78,9 +79,11 @@ interface ThreadComponentProps {
   compact?: boolean;
   configuredAgentId?: string;
   isShared?: boolean;
+  isNew?: boolean;
+  preCreatedThreadId?: React.RefObject<string | null>;
 }
 
-export function ThreadComponent({ projectId, threadId, compact = false, configuredAgentId, isShared = false }: ThreadComponentProps) {
+export function ThreadComponent({ projectId, threadId, compact = false, configuredAgentId, isShared = false, isNew = false, preCreatedThreadId }: ThreadComponentProps) {
   const t = useTranslations('dashboard');
   const isMobile = useIsMobile();
   const router = useRouter();
@@ -97,7 +100,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     clearNavigation();
   }, [threadId, clearNavigation]);
   
-  const isNewThread = searchParams?.get('new') === 'true';
+  const isNewThread = isNew || searchParams?.get('new') === 'true';
   
   // Mode Starter - show mode-specific starter panel based on query param
   const modeStarterParam = searchParams?.get('modeStarter');
@@ -1486,7 +1489,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const displayStreamingText = showOptimisticUI ? '' : streamingTextContent;
   const displayProjectName = showOptimisticUI ? 'New Conversation' : projectName;
   
-  if (!hasDataLoaded.current && !showOptimisticUI && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
+  // Skip skeleton for new threads - show empty state immediately
+  if (!isNewThread && !hasDataLoaded.current && !showOptimisticUI && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
     return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} compact={compact} initializingMessage={
       isThreadInitializing ? 'Setting up your conversation...' : undefined
     } />;
@@ -1618,6 +1622,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 isPreviewMode={true}
                 onPromptFill={!isShared ? handlePromptFill : undefined}
                 threadId={threadId}
+                emptyStateComponent={isNewThread && displayMessages.length === 0 ? <NewThreadEmptyState onSubmit={handleSubmitMessage} sandboxId={sandboxId} project={project} /> : undefined}
               />
             </div>
           </div>
@@ -1786,6 +1791,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           scrollContainerRef={scrollContainerRef}
           threadId={threadId}
           onPromptFill={!isShared ? handlePromptFill : undefined}
+          emptyStateComponent={isNewThread && displayMessages.length === 0 ? <NewThreadEmptyState onSubmit={handleSubmitMessage} sandboxId={sandboxId} project={project} /> : undefined}
         />
 
         {isShared && (

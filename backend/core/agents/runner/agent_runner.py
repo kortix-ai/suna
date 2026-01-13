@@ -786,6 +786,13 @@ async def execute_agent_run(
         await stream_status_message("initializing", "Starting execution...", stream_key=stream_key)
         await redis.verify_stream_writable(stream_key)
         
+        # Set TTL immediately on stream creation to prevent orphaned streams on crash
+        # This is the FIRST thing we do after creating the stream - before any other work
+        try:
+            await redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS)
+        except Exception:
+            pass  # Non-critical, we'll retry later
+        
         from core.ai_models import model_manager
         effective_model = model_manager.resolve_model_id(model_name)
         
