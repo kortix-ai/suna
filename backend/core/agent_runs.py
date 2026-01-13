@@ -12,6 +12,7 @@ from core.utils.logger import logger, structlog
 from core.billing.billing_integration import billing_integration
 from core.utils.config import config, EnvMode
 from core.services import redis
+from core.services import stream_hub
 from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from run_agent_background import run_agent_background
@@ -885,12 +886,12 @@ async def stream_agent_run(
     control_channel = f"agent_run:{agent_run_id}:control" # Global control channel
 
     async def stream_generator(agent_run_data):
-        logger.debug(f"Streaming responses for {agent_run_id} using Redis list {response_list_key} and channel {response_channel}")
+        logger.debug(f"Streaming responses for {agent_run_id} using Redis list {response_list_key}")
         last_processed_index = -1
-        # Single pubsub used for response + control
-        listener_task = None
         terminate_stream = False
         initial_yield_complete = False
+        hub = None
+        message_queue = None
 
         try:
             # 1. Fetch and yield initial responses from Redis list
@@ -911,56 +912,16 @@ async def stream_agent_run(
                 logger.debug(f"Agent run {agent_run_id} is not running (status: {current_status}). Ending stream.")
                 yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
                 return
-          
+
             structlog.contextvars.bind_contextvars(
                 thread_id=agent_run_data.get('thread_id'),
             )
 
-            # 3. Use a single Pub/Sub connection subscribed to both channels
-            pubsub = await redis.create_pubsub()
-            await pubsub.subscribe(response_channel, control_channel)
-            logger.debug(f"Subscribed to channels: {response_channel}, {control_channel}")
-
-            # Queue to communicate between listeners and the main generator loop
-            message_queue = asyncio.Queue()
-
-            async def listen_messages():
-                listener = pubsub.listen()
-                task = asyncio.create_task(listener.__anext__())
-
-                while not terminate_stream:
-                    done, _ = await asyncio.wait([task], return_when=asyncio.FIRST_COMPLETED)
-                    for finished in done:
-                        try:
-                            message = finished.result()
-                            if message and isinstance(message, dict) and message.get("type") == "message":
-                                channel = message.get("channel")
-                                data = message.get("data")
-                                if isinstance(data, bytes):
-                                    data = data.decode('utf-8')
-
-                                if channel == response_channel and data == "new":
-                                    await message_queue.put({"type": "new_response"})
-                                elif channel == control_channel and data in ["STOP", "END_STREAM", "ERROR"]:
-                                    logger.debug(f"Received control signal '{data}' for {agent_run_id}")
-                                    await message_queue.put({"type": "control", "data": data})
-                                    return  # Stop listening on control signal
-
-                        except StopAsyncIteration:
-                            logger.warning(f"Listener stopped for {agent_run_id}.")
-                            await message_queue.put({"type": "error", "data": "Listener stopped unexpectedly"})
-                            return
-                        except Exception as e:
-                            logger.error(f"Error in listener for {agent_run_id}: {e}")
-                            await message_queue.put({"type": "error", "data": "Listener failed"})
-                            return
-                        finally:
-                            # Resubscribe to the next message if continuing
-                            if not terminate_stream:
-                                task = asyncio.create_task(listener.__anext__())
-
-
-            listener_task = asyncio.create_task(listen_messages())
+            # 3. Subscribe to StreamHub (shared pubsub connection)
+            # Multiple SSE clients watching same agent_run share ONE pubsub via the hub
+            hub = await stream_hub.get_hub(agent_run_id)
+            message_queue = await hub.subscribe()
+            logger.debug(f"Subscribed to StreamHub for {agent_run_id}")
 
             # 4. Main loop to process messages from the queue
             while not terminate_stream:
@@ -1015,24 +976,14 @@ async def stream_agent_run(
                  yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': f'Failed to start stream: {e}'})}\n\n"
         finally:
             terminate_stream = True
-            # Graceful shutdown order: unsubscribe → close → cancel
-            try:
-                if 'pubsub' in locals() and pubsub:
-                    await pubsub.unsubscribe(response_channel, control_channel)
-                    await pubsub.close()
-            except Exception as e:
-                logger.debug(f"Error during pubsub cleanup for {agent_run_id}: {e}")
-
-            if listener_task:
-                listener_task.cancel()
+            # Unsubscribe from StreamHub (hub manages pubsub lifecycle)
+            if hub and message_queue:
                 try:
-                    await listener_task  # Reap inner tasks & swallow their errors
-                except asyncio.CancelledError:
-                    pass
+                    await hub.unsubscribe(message_queue)
+                    # Clean up hub from registry if no more subscribers
+                    await stream_hub.remove_hub_if_empty(agent_run_id)
                 except Exception as e:
-                    logger.debug(f"listener_task ended with: {e}")
-            # Wait briefly for tasks to cancel
-            await asyncio.sleep(0.1)
+                    logger.debug(f"Error during hub cleanup for {agent_run_id}: {e}")
             logger.debug(f"Streaming cleanup complete for agent run: {agent_run_id}")
 
     return StreamingResponse(stream_generator(agent_run_data), media_type="text/event-stream", headers={
