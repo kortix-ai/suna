@@ -22,6 +22,10 @@ export interface OptimisticAgentStartOptions {
   fileIds?: string[];
   modelName?: string;
   agentId?: string;
+  /** Mode starter to pass as query param (e.g., 'presentation') */
+  modeStarter?: string;
+  /** Mode for backend context (slides, sheets, docs, canvas, video, research) */
+  mode?: string;
 }
 
 export interface OptimisticAgentStartResult {
@@ -136,7 +140,7 @@ export function useOptimisticAgentStart(
   const startAgent = useCallback(async (
     options: OptimisticAgentStartOptions
   ): Promise<OptimisticAgentStartResult | null> => {
-    const { message, fileIds = [], modelName, agentId } = options;
+    const { message, fileIds = [], modelName, agentId, modeStarter, mode } = options;
     
     const trimmedMessage = message.trim();
     if (!trimmedMessage && fileIds.length === 0) {
@@ -168,7 +172,8 @@ export function useOptimisticAgentStart(
       }
 
       // Navigate immediately for optimistic UX
-      router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
+      const modeStarterParam = modeStarter ? `&modeStarter=${modeStarter}` : '';
+      router.push(`/projects/${projectId}/thread/${threadId}?new=true${modeStarterParam}`);
 
       // Start agent in background - only pass file_ids, backend handles everything
       optimisticAgentStart({
@@ -178,6 +183,7 @@ export function useOptimisticAgentStart(
         file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: modelName,
         agent_id: agentId || undefined,
+        mode: mode,
       }).then((response) => {
         console.log('[OptimisticAgentStart] API succeeded, response:', response);
         

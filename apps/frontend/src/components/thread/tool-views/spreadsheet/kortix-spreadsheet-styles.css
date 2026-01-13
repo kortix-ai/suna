@@ -13,6 +13,15 @@
   --kortix-bg-hover: rgba(0, 0, 0, 0.05);
   --kortix-bg-active: rgba(0, 0, 0, 0.08);
   --kortix-bg-pressed: rgba(0, 0, 0, 0.12);
+  --kortix-text: #374151;
+  --kortix-text-muted: #6b7280;
+}
+
+/* Ensure toolbar has proper background for contrast */
+.e-spreadsheet .e-toolbar-items,
+.e-spreadsheet .e-tab-header,
+.e-spreadsheet .e-ribbon {
+  background-color: #f9fafb !important; /* Gray-50 light background */
 }
 
 /* Override Syncfusion variables */
@@ -44,6 +53,32 @@
   background-color: var(--kortix-accent) !important;
   border-color: var(--kortix-accent) !important;
   border-top-color: var(--kortix-accent) !important;
+}
+
+/* All tabs - base text styling (fix white-on-white) */
+.e-spreadsheet .e-toolbar-items .e-tab-text,
+.e-spreadsheet .e-toolbar-item .e-tab-text,
+.e-spreadsheet .e-tab-header .e-tab-text,
+.e-spreadsheet .e-ribbon .e-tab-text {
+  color: #374151 !important; /* Gray-700 for readable inactive tabs */
+}
+
+/* File menu item text */
+.e-spreadsheet .e-menu-item,
+.e-spreadsheet .e-file-menu .e-menu-item,
+.e-spreadsheet .e-menu-parent .e-menu-item {
+  color: #374151 !important;
+}
+
+/* Caret icons in menu */
+.e-spreadsheet .e-menu-item .e-caret,
+.e-spreadsheet .e-file-menu .e-caret {
+  color: #374151 !important;
+}
+
+/* Close icons on tabs */
+.e-spreadsheet .e-close-icon {
+  color: #9ca3af !important; /* Gray-400 for subtle close icons */
 }
 
 /* Active tabs - text styling */

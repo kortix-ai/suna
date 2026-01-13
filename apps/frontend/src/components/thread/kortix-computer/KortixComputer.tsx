@@ -145,13 +145,17 @@ export const KortixComputer = memo(function KortixComputer({
     currentViewRef.current = activeView;
   }, [activeView]);
 
-  // Track previous projectId to detect project/thread switches
+  // Track previous projectId and sandboxId to detect project/thread switches
   const prevProjectIdRef = useRef<string | null>(null);
+  const prevSandboxIdRef = useRef<string | null>(null);
   
-  // Reset local state when switching projects/threads
+  // Reset local state when switching projects/threads or sandboxes
   useEffect(() => {
-    if (prevProjectIdRef.current !== null && prevProjectIdRef.current !== projectId) {
-      console.log('[KortixComputer] Project changed, resetting local state');
+    const projectChanged = prevProjectIdRef.current !== null && prevProjectIdRef.current !== projectId;
+    const sandboxChanged = prevSandboxIdRef.current !== null && prevSandboxIdRef.current !== sandboxId && sandboxId !== null;
+    
+    if (projectChanged || sandboxChanged) {
+      console.log('[KortixComputer] Project or sandbox changed, resetting local state', { projectId, sandboxId });
       // Reset local component state
       setInternalIndex(0);
       setNavigationMode('live');
@@ -162,7 +166,8 @@ export const KortixComputer = memo(function KortixComputer({
       setPreSuiteSize(null);
     }
     prevProjectIdRef.current = projectId || null;
-  }, [projectId]);
+    prevSandboxIdRef.current = sandboxId || null;
+  }, [projectId, sandboxId]);
 
   const handleVncRefresh = useCallback(() => {
     setVncRefreshKey(prev => prev + 1);

@@ -305,40 +305,6 @@ class SandboxFilesTool(SandboxToolsBase):
                 except Exception as e:
                     logger.warning(f"Failed to get preview URL for HTML file: {str(e)}")
             
-            # Auto-validate presentation slides
-            slide_pattern = r'^presentations/([^/]+)/slide_(\d+)\.html$'
-            slide_match = re.match(slide_pattern, file_path)
-            if slide_match:
-                presentation_name = slide_match.group(1)
-                slide_number = int(slide_match.group(2))
-                
-                try:
-                    # Import and instantiate the presentation tool to access validate_slide
-                    from core.tools.sb_presentation_tool import SandboxPresentationTool
-                    presentation_tool = SandboxPresentationTool(self.project_id, self.thread_manager)
-                    
-                    # Call validate_slide
-                    validation_result = await presentation_tool.validate_slide(presentation_name, slide_number)
-                    
-                    # Append validation message to response
-                    if validation_result.success and validation_result.output:
-                        # output can be a dict or string
-                        if isinstance(validation_result.output, dict):
-                            validation_message = validation_result.output.get("message", "")
-                            if validation_message:
-                                message += f"\n\n{validation_message}"
-                        elif isinstance(validation_result.output, str):
-                            message += f"\n\n{validation_result.output}"
-                    elif not validation_result.success:
-                        # If validation failed to run, append a warning but don't fail the rewrite
-                        logger.warning(f"Slide validation failed to execute: {validation_result.output}")
-                        message += f"\n\n⚠️ Note: Slide validation could not be completed."
-                        
-                except Exception as e:
-                    # Log the error but don't fail the file rewrite
-                    logger.warning(f"Failed to auto-validate slide: {str(e)}")
-                    message += f"\n\n⚠️ Note: Slide validation could not be completed."
-            
             return self.success_response(message)
         except Exception as e:
             return self.fail_response(f"Error rewriting file: {str(e)}")
@@ -366,12 +332,34 @@ class SandboxFilesTool(SandboxToolsBase):
             await self._ensure_sandbox()
             
             full_path = self._get_full_path(file_path)
+            logger.debug(f"Attempting to delete file: '{file_path}' (full path: '{full_path}')")
+            
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
             
+            # Delete the file
             await self.sandbox.fs.delete_file(full_path)
+            
+            # Verify the file was actually deleted
+            await asyncio.sleep(0.1)  # Small delay to ensure deletion is processed
+            if await self._file_exists(full_path):
+                logger.warning(f"File '{file_path}' still exists after delete_file call. Attempting alternative deletion method.")
+                # Try alternative: use shell command as fallback
+                try:
+                    result = await self.sandbox.process.exec("rm", "-f", full_path)
+                    if result.exit_code != 0:
+                        return self.fail_response(f"Failed to delete file '{file_path}'. File still exists after deletion attempt. Exit code: {result.exit_code}, stderr: {result.stderr}")
+                    # Verify again
+                    await asyncio.sleep(0.1)
+                    if await self._file_exists(full_path):
+                        return self.fail_response(f"Failed to delete file '{file_path}'. File still exists after deletion attempt.")
+                except Exception as shell_error:
+                    return self.fail_response(f"Failed to delete file '{file_path}'. File still exists and shell deletion also failed: {str(shell_error)}")
+            
+            logger.debug(f"Successfully deleted file: '{file_path}'")
             return self.success_response(f"File '{file_path}' deleted successfully.")
         except Exception as e:
+            logger.error(f"Error deleting file '{file_path}': {str(e)}", exc_info=True)
             return self.fail_response(f"Error deleting file: {str(e)}")
 
     async def _call_morph_api(self, file_content: str, code_edit: str, instructions: str, file_path: str) -> tuple[Optional[str], Optional[str]]:

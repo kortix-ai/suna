@@ -1143,13 +1143,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     ) {
       return (
         <div className="flex-1 min-h-[60vh] flex items-center justify-center">
-          {emptyStateComponent || (
-            <div className="text-center text-muted-foreground">
-              {readOnly
-                ? "No messages to display."
-                : "Send a message to start."}
-            </div>
-          )}
+          {emptyStateComponent || null}
         </div>
       );
     }

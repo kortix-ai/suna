@@ -141,7 +141,7 @@ export const VoiceRecorder: React.FC<VoiceRecorderProps> = memo(function VoiceRe
     const getButtonClass = () => {
         switch (state) {
             case 'recording':
-                return 'text-red-500 hover:bg-red-50 hover:text-red-600';
+                return '';
             case 'processing':
                 return '';
             default:

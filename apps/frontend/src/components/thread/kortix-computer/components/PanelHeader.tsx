@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import { Minimize2, Wifi, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging, Library, Zap } from 'lucide-react';
+import { Minimize2, Wifi, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging, FolderOpen, Activity } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DrawerTitle } from '@/components/ui/drawer';
 import { ViewType } from '@/stores/kortix-computer-store';
@@ -108,69 +108,54 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
   const isAction = currentView === 'tools';
   const isFiles = currentView === 'files';
   
-  // Responsive sizing
-  const containerPadding = size === 'sm' ? 'p-1' : 'p-1';
-  const buttonPadding = size === 'sm' ? 'px-3 py-1.5' : 'px-4 py-2';
-  const fontSize = size === 'sm' ? 'text-[11px]' : 'text-xs';
-  const iconSize = size === 'sm' ? 'h-3 w-3' : 'h-3.5 w-3.5';
-  const indicatorHeight = size === 'sm' ? 'h-7' : 'h-8';
-  const gap = size === 'sm' ? 'gap-1.5' : 'gap-2';
+  // Size variants
+  const config = size === 'sm' 
+    ? { height: 32, padding: 3, btnWidth: 72, iconSize: 12, fontSize: 11 }
+    : { height: 36, padding: 3, btnWidth: 80, iconSize: 14, fontSize: 12 };
+  
+  const totalWidth = config.btnWidth * 2 + config.padding * 2;
 
   return (
-    <div className={cn(
-      "relative flex items-center bg-muted rounded-2xl",
-      containerPadding
-    )}>
+    <div 
+      className="relative flex items-center bg-zinc-100 dark:bg-zinc-800/90 rounded-full"
+      style={{ 
+        height: config.height, 
+        width: totalWidth,
+        padding: config.padding 
+      }}
+    >
       {/* Sliding indicator */}
       <motion.div
-        className={cn(
-          "absolute top-1 bg-white dark:bg-zinc-700 rounded-xl shadow-sm",
-          indicatorHeight
-        )}
-        style={{
-          left: 4,
-          width: 'calc(50% - 4px)',
-        }}
+        className="absolute top-[3px] bottom-[3px] rounded-full bg-white dark:bg-zinc-900 shadow-sm"
+        style={{ width: config.btnWidth }}
         initial={false}
-        animate={{
-          x: isAction ? 0 : 'calc(100% + 0px)',
-        }}
-        transition={{
-          type: "spring",
-          stiffness: 400,
-          damping: 30
-        }}
+        animate={{ x: isAction ? 0 : config.btnWidth }}
+        transition={{ type: "spring", stiffness: 500, damping: 35 }}
       />
       
+      {/* Actions button */}
       <button
         onClick={() => onViewChange('tools')}
         className={cn(
-          "relative z-10 flex items-center justify-center rounded-xl font-medium transition-colors duration-150 flex-1",
-          buttonPadding,
-          fontSize,
-          gap,
-          isAction
-            ? "text-zinc-900 dark:text-white"
-            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors",
+          isAction ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400 dark:text-zinc-500"
         )}
+        style={{ width: config.btnWidth, height: config.height - config.padding * 2, fontSize: config.fontSize }}
       >
-        <Zap className={cn(iconSize, isAction && "fill-current")} />
-        <span>Action</span>
+        <Activity style={{ width: config.iconSize, height: config.iconSize }} strokeWidth={2.5} />
+        <span>Actions</span>
       </button>
       
+      {/* Files button */}
       <button
         onClick={() => onViewChange('files')}
         className={cn(
-          "relative z-10 flex items-center justify-center rounded-xl font-medium transition-colors duration-150 flex-1",
-          buttonPadding,
-          fontSize,
-          gap,
-          isFiles
-            ? "text-zinc-900 dark:text-white"
-            : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors",
+          isFiles ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400 dark:text-zinc-500"
         )}
+        style={{ width: config.btnWidth, height: config.height - config.padding * 2, fontSize: config.fontSize }}
       >
-        <Library className={cn(iconSize)} />
+        <FolderOpen style={{ width: config.iconSize, height: config.iconSize }} strokeWidth={2.5} />
         <span>Files</span>
       </button>
     </div>

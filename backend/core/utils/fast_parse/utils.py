@@ -61,6 +61,50 @@ def get_mime_type(filename: str) -> str:
     return mime_type or "application/octet-stream"
 
 
+def normalize_mime_type(mime_type: str) -> str:
+    """
+    Normalize MIME types to match the allowed_mime_types in the staged-files bucket.
+    Maps unsupported MIME types to their supported equivalents.
+    """
+    # Map of unsupported MIME types to supported ones
+    mime_type_mapping = {
+        # Python variants
+        'text/x-python-script': 'text/x-python',
+        'application/x-python': 'text/x-python',
+        'text/python': 'text/x-python',
+        
+        # Other common variants that might not be in the allowed list
+        'text/x-csrc': 'text/x-c',
+        'text/x-chdr': 'text/x-c',
+        'text/x-c++src': 'text/x-c++',
+        'text/x-c++hdr': 'text/x-c++',
+        'text/x-cpp': 'text/x-c++',
+        'text/x-h': 'text/x-c',
+        
+        # Shell script variants
+        'text/x-bash': 'text/x-shellscript',
+        'text/x-sh': 'text/x-shellscript',
+        'application/x-sh': 'text/x-shellscript',
+        
+        # YAML variants
+        'text/yaml': 'text/x-yaml',
+        'application/yaml': 'application/x-yaml',
+        
+        # JSON variants
+        'text/json': 'application/json',
+        
+        # XML variants
+        'text/x-xml': 'text/xml',
+    }
+    
+    # Check if we have a direct mapping
+    if mime_type in mime_type_mapping:
+        return mime_type_mapping[mime_type]
+    
+    # Return original if no mapping needed
+    return mime_type
+
+
 def strip_script_tags(content: str) -> str:
     content = re.sub(r"<script[^>]*>.*?</script>", "", content, flags=re.DOTALL | re.IGNORECASE)
     content = re.sub(r"javascript:", "", content, flags=re.IGNORECASE)

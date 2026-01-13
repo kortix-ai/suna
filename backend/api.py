@@ -64,9 +64,10 @@ instance_id = INSTANCE_ID  # Keep backward compatibility
 ip_tracker = OrderedDict()
 MAX_CONCURRENT_IPS = 25
 
-# Background task handle for CloudWatch metrics
+# Background task handles
 _worker_metrics_task = None
 _memory_watchdog_task = None
+_stream_cleanup_task = None
 
 # Graceful shutdown flag for health checks
 # When True, health check will return unhealthy to stop receiving traffic
@@ -74,7 +75,7 @@ _is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
+    global _worker_metrics_task, _memory_watchdog_task, _stream_cleanup_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
@@ -123,6 +124,10 @@ async def lifespan(app: FastAPI):
         if config.ENV_MODE == EnvMode.PRODUCTION:
             from core.services import worker_metrics
             _worker_metrics_task = asyncio.create_task(worker_metrics.start_cloudwatch_publisher())
+        
+        # Start Redis stream cleanup task (catches orphaned streams with no TTL)
+        from core.services import worker_metrics
+        _stream_cleanup_task = asyncio.create_task(worker_metrics.start_stream_cleanup_task())
         
         # Start memory watchdog for observability
         _memory_watchdog_task = asyncio.create_task(_memory_watchdog())

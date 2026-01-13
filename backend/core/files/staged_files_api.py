@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-from core.utils.fast_parse import parse, format_file_size, sanitize_filename_for_path, FileType
+from core.utils.fast_parse import parse, format_file_size, sanitize_filename_for_path, FileType, normalize_mime_type
 from core.services.supabase import DBConnection
 
 router = APIRouter(tags=["staged-files"])
@@ -108,7 +108,8 @@ async def stage_file(
     generated_file_id = file_id or str(uuid.uuid4())
     original_filename = file.filename.replace('/', '_').replace('\\', '_')
     storage_safe_filename = sanitize_filename_for_path(file.filename)
-    mime_type = file.content_type or "application/octet-stream"
+    raw_mime_type = file.content_type or "application/octet-stream"
+    mime_type = normalize_mime_type(raw_mime_type)
     
     storage_path = f"{user_id}/{generated_file_id}/{storage_safe_filename}"
     image_public_url = None

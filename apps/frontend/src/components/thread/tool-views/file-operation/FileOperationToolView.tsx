@@ -71,7 +71,8 @@ import { StreamingLoader } from '../shared/StreamingLoader';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { toast } from '@/lib/toast';
-import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
+import { PresentationSlideCard } from '../presentation-tools/PresentationSlideCard';
+import { PresentationSlideSkeleton } from '../presentation-tools/PresentationSlideSkeleton';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useSmoothStream } from '@/lib/streaming';
@@ -826,90 +827,58 @@ export function FileOperationToolView({
   // Don't fallback to GenericToolView
 
   const renderFilePreview = () => {
-    // Handle presentation slide files specially
-    if (isPresentationSlide && presentationName) {
-      // During streaming, show a nice preview with the HTML content being written
+    // Handle presentation slide files - use same style as PresentationViewer
+    if (isPresentationSlide && presentationName && slideNumber) {
+      // During streaming, show skeleton with streaming content
       if (isStreaming) {
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-zinc-900">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
-              <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              Updating Presentation
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center mb-4">
-              {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
-            </p>
-            <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-              <KortixLoader customSize={16} />
-              <span>Writing slide content...</span>
-            </div>
+          <div className="w-full h-full p-4 bg-white dark:bg-zinc-900">
+            <PresentationSlideSkeleton
+              slideNumber={slideNumber}
+              isGenerating={true}
+              slideTitle={undefined}
+              streamingContent={fileContent || undefined}
+            />
           </div>
         );
       }
 
-      // After streaming completes, show the presentation preview if sandbox URL is available
+      // After streaming completes, show the slide card (click opens fullscreen)
       if (project?.sandbox?.sandbox_url) {
+        const slideData = {
+          number: slideNumber,
+          title: '',
+          filename: `slide_${slideNumber}.html`,
+          file_path: `presentations/${presentationName}/slide_${slideNumber}.html`,
+          preview_url: '',
+          created_at: new Date().toISOString(),
+        };
+
         return (
-          <div className="w-full h-full flex flex-col bg-white dark:bg-zinc-900">
-            <div className="flex-1 p-4">
-              <PresentationSlidePreview
-                key={`${presentationName}-${slideNumber}`}
-                presentationName={presentationName}
-                project={project}
-                initialSlide={slideNumber || undefined}
-                onFullScreenClick={(slideNum) => {
-                  console.log('[FileOperationToolView] Opening presentation fullscreen:', {
-                    presentationName,
-                    sandboxUrl: project.sandbox.sandbox_url,
-                    slideNumber: slideNum || slideNumber || 1
-                  });
-                  openPresentation(
-                    presentationName,
-                    project.sandbox.sandbox_url,
-                    slideNum || slideNumber || 1
-                  );
-                }}
-                className="w-full"
-              />
-            </div>
-            <div className="px-4 pb-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  openPresentation(
-                    presentationName,
-                    project.sandbox.sandbox_url,
-                    slideNumber || 1
-                  );
-                }}
-                className="w-full gap-2"
-              >
-                <Presentation className="h-4 w-4" />
-                Open Presentation Viewer
-              </Button>
-            </div>
+          <div className="w-full h-full p-4 bg-white dark:bg-zinc-900">
+            <PresentationSlideCard
+              slide={slideData}
+              project={project}
+              onFullScreenClick={(slideNum) => {
+                openPresentation(
+                  presentationName,
+                  project.sandbox.sandbox_url,
+                  slideNum
+                );
+              }}
+              refreshTimestamp={Date.now()}
+            />
           </div>
         );
       }
       
-      // Sandbox URL not available yet - show waiting state
+      // Sandbox URL not available yet - show skeleton without generating state
       return (
-        <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-zinc-900">
-          <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
-            <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
-          </div>
-          <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-            Presentation Updated
-          </h3>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
-            {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
-          </p>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2">
-            Waiting for sandbox to be ready...
-          </p>
+        <div className="w-full h-full p-4 bg-white dark:bg-zinc-900">
+          <PresentationSlideSkeleton
+            slideNumber={slideNumber}
+            isGenerating={false}
+          />
         </div>
       );
     }

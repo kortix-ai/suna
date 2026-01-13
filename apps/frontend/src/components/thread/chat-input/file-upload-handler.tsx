@@ -14,7 +14,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { UploadedFile } from './chat-input';
-import { normalizeFilenameToNFC } from '@agentpress/shared';
+import { normalizeFilenameToNFC, normalizeMimeType } from '@agentpress/shared';
 import { backendApi } from '@/lib/api-client';
 import JSZip from 'jszip';
 import {
@@ -158,7 +158,9 @@ const extractZipFiles = async (zipFile: File): Promise<File[]> => {
         continue;
       }
       
-      const extractedFile = new File([content], filename, { type: content.type || 'application/octet-stream' });
+      const rawMimeType = content.type || 'application/octet-stream';
+      const normalizedMimeType = normalizeMimeType(rawMimeType);
+      const extractedFile = new File([content], filename, { type: normalizedMimeType });
       extractedFiles.push(extractedFile);
       fileCount++;
     }

@@ -518,9 +518,28 @@ class AgentRunner:
             should_continue = True
             async for chunk in self._execute_single_turn(system_message, cancellation_event):
                 yield chunk
-                if isinstance(chunk, dict) and chunk.get('type') == 'status' and chunk.get('status') == 'stopped':
-                    should_continue = False
-                    break
+                if isinstance(chunk, dict) and chunk.get('type') == 'status':
+                    # Check for explicit stopped status
+                    if chunk.get('status') == 'stopped':
+                        should_continue = False
+                        break
+                    
+                    # Check for finish_reason in content (handles LLM completion signals)
+                    content = chunk.get('content', {})
+                    if isinstance(content, str):
+                        try:
+                            content = json.loads(content)
+                        except (json.JSONDecodeError, TypeError):
+                            content = {}
+                    
+                    if isinstance(content, dict):
+                        finish_reason = content.get('finish_reason')
+                        # Stop on 'stop' or 'agent_terminated' - these indicate the LLM completed naturally
+                        # Don't stop on 'tool_calls' or 'length' as those trigger auto-continue
+                        if finish_reason in ('stop', 'agent_terminated', 'xml_tool_limit_reached'):
+                            should_continue = False
+                            logger.debug(f"🛑 Run loop stopping due to finish_reason: {finish_reason}")
+                            break
             
             if not should_continue:
                 break
@@ -767,6 +786,13 @@ async def execute_agent_run(
         await stream_status_message("initializing", "Starting execution...", stream_key=stream_key)
         await redis.verify_stream_writable(stream_key)
         
+        # Set TTL immediately on stream creation to prevent orphaned streams on crash
+        # This is the FIRST thing we do after creating the stream - before any other work
+        try:
+            await redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS)
+        except Exception:
+            pass  # Non-critical, we'll retry later
+        
         from core.ai_models import model_manager
         effective_model = model_manager.resolve_model_id(model_name)
         
@@ -777,19 +803,31 @@ async def execute_agent_run(
             metadata={"project_id": project_id}
         )
         
-        # Stop signal checker - reduced frequency to minimize Redis load
-        # Check every 2 seconds instead of 0.5s (reduces Redis calls by 4x)
+        # Stop signal checker - check cancellation_event first (immediate), then Redis (periodic)
+        # This prevents race conditions where stop is requested but not yet detected
         stop_state = {'received': False, 'reason': None}
         STOP_CHECK_INTERVAL = float(os.getenv("AGENT_STOP_CHECK_INTERVAL", "2.0"))
         
         async def check_stop():
+            # Check immediately on first run (no initial delay)
             while not stop_state['received']:
                 try:
+                    # First check in-memory cancellation event (immediate, no Redis call)
+                    if cancellation_event.is_set():
+                        stop_state['received'] = True
+                        stop_state['reason'] = 'cancellation_event'
+                        logger.info(f"🛑 Stop detected via cancellation_event for {agent_run_id}")
+                        break
+                    
+                    # Then check Redis stop signal (periodic, cross-instance)
                     if await redis.check_stop_signal(agent_run_id):
                         stop_state['received'] = True
                         stop_state['reason'] = 'stop_signal'
                         cancellation_event.set()
+                        logger.info(f"🛑 Stop detected via Redis for {agent_run_id}")
                         break
+                    
+                    # Sleep after check (not before) so first check is immediate
                     await asyncio.sleep(STOP_CHECK_INTERVAL)
                 except asyncio.CancelledError:
                     break
@@ -821,6 +859,13 @@ async def execute_agent_run(
         error_message = None
         
         async for response in runner.run(cancellation_event=cancellation_event):
+            # Check cancellation immediately after each response (before processing)
+            if cancellation_event.is_set() or stop_state['received']:
+                logger.warning(f"🛑 Agent run stopped: {stop_state.get('reason', 'cancellation_event')}")
+                final_status = "stopped"
+                error_message = f"Stopped by {stop_state.get('reason', 'cancellation_event')}"
+                break
+            
             if not first_response:
                 first_response_time_ms = (time.time() - execution_start) * 1000
                 logger.info(f"⏱️ FIRST RESPONSE: {first_response_time_ms:.1f}ms")
@@ -836,12 +881,6 @@ async def execute_agent_run(
                     await redis.stream_add(stream_key, {"data": json.dumps(timing_msg)}, maxlen=200, approximate=True)
                 except Exception:
                     pass  # Non-critical
-            
-            if stop_state['received']:
-                logger.warning(f"🛑 Agent run stopped: {stop_state['reason']}")
-                final_status = "stopped"
-                error_message = f"Stopped by {stop_state['reason']}"
-                break
 
             from core.services.db import serialize_row
             if isinstance(response, dict):

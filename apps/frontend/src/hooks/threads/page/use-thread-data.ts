@@ -213,7 +213,14 @@ export function useThreadData(
         if (!threadId) throw new Error('Thread ID is required');
 
         if (threadQuery.isError) {
-          throw new Error('Failed to load thread data: ' + threadQuery.error);
+          // For new threads, the thread might not exist yet - that's okay
+          const errorMessage = String(threadQuery.error);
+          const isThreadNotFound = errorMessage.includes('Thread not found') || errorMessage.includes('404');
+
+          if (!isThreadNotFound) {
+            throw new Error('Failed to load thread data: ' + threadQuery.error);
+          }
+          // Thread not found is expected for new threads - continue without error
         }
         if (!isMounted) return;
 
@@ -258,8 +265,11 @@ export function useThreadData(
         // "Initial load" should mean we can render the thread UI (messages + thread metadata).
         // Agent runs are *nice to have* (they can be slow/404 transiently when infra changes),
         // but they should never block the UI from becoming interactive (e.g. opening Kortix Computer).
-        const requiredDataLoaded = Boolean(threadQuery.data && messagesQuery.data);
-          
+        // For new threads (404), we should complete loading to show empty state
+        const isThreadNotFound = threadQuery.isError &&
+          (String(threadQuery.error).includes('Thread not found') || String(threadQuery.error).includes('404'));
+        const requiredDataLoaded = Boolean((threadQuery.data || isThreadNotFound) && messagesQuery.data !== undefined);
+
         if (requiredDataLoaded) {
           initialLoadCompleted.current = true;
           setIsLoading(false);

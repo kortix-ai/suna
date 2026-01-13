@@ -1947,7 +1947,7 @@ class ResponseProcessor:
                             "index": 0,
                             "message": {
                                 "role": "assistant",
-                                "content": accumulated_content,
+                                "content": accumulated_content if accumulated_content else "\n",
                                 "tool_calls": complete_native_tool_calls or None
                             }
                         }

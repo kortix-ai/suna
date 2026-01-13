@@ -10,6 +10,9 @@ import datetime
 import asyncio
 import logging
 import time
+import base64
+import replicate
+import httpx
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
@@ -23,27 +26,32 @@ import time
     usage_guide="""
 ### WEB SEARCH & CONTENT EXTRACTION
 
+**🚨 CRITICAL: USE BATCH MODE - ONE CALL, MULTIPLE QUERIES**
+- **NEVER** make multiple separate web_search calls
+- **ALWAYS** pass ALL your queries as an array in a SINGLE call
+- This is FASTER (parallel execution) and costs FEWER TOKENS
+- ❌ WRONG: 3 separate calls for "Tesla news", "Tesla stock", "Tesla products"
+- ✅ CORRECT: ONE call with query=["Tesla news", "Tesla stock", "Tesla products"]
+
 **WEB SEARCH CAPABILITIES:**
 - Search the web for up-to-date information with direct question answering
-- **BATCH SEARCHING:** Execute multiple queries concurrently for faster research - provide an array of queries to search multiple topics simultaneously
+- **BATCH SEARCHING:** Execute multiple queries concurrently in ONE call for faster research
 - Retrieve relevant images related to search queries
 - Get comprehensive search results with titles, URLs, and snippets
 - Find recent news, articles, and information beyond training data
 - Scrape webpage content for detailed information extraction when needed
 
 **RESEARCH BEST PRACTICES:**
-1. **Multi-source approach for thorough research:**
-   - Start with web-search using BATCH MODE (multiple queries concurrently) to find direct answers, images, and relevant URLs efficiently
-   - ALWAYS use web_search with multiple queries in batch mode when researching multiple aspects of a topic
-   - **AUTOMATICALLY identify and scrape qualitative sources** (papers, articles, detailed content) from search results
-   - Only use browser tools when scrape-webpage fails or interaction is needed
+1. **Collect ALL queries first, then make ONE batch call:**
+   - Think about all the information you need
+   - Combine all queries into a single array
+   - Make ONE web_search call with all queries
+   - Example: web_search(query=["topic overview", "use cases", "pricing", "competitors"], num_results=5)
 
 2. **Research Workflow with Automatic Content Extraction:**
-   - **MANDATORY**: Use web-search in BATCH MODE with multiple queries for direct answers and URLs
-   - **CRITICAL**: When researching any topic with multiple dimensions, ALWAYS use batch mode
-   - **CORRECT FORMAT**: use web_search with query parameter containing multiple queries (e.g., topic overview, use cases, pricing) and num_results set to 5
-   - **WRONG FORMAT**: Never pass query as a JSON string - use native array format
-   - Example: use web_search with query parameter containing multiple queries (topic overview, use cases, pricing, user demographics) and num_results 5 - runs all searches in parallel
+   - **MANDATORY**: Collect all search needs → ONE web_search call with array of queries
+   - **CORRECT FORMAT**: web_search(query=["query1", "query2", "query3"], num_results=5)
+   - **WRONG FORMAT**: Never make 3 separate web_search calls!
    - **AUTOMATIC CONTENT EXTRACTION**: After web_search, automatically identify qualitative sources:
      * Academic papers (arxiv.org, pubmed, Semantic Scholar, etc.) → Use get_paper_details for papers with paper IDs
      * Long-form articles, research reports, detailed content → Use scrape-webpage to extract full content
@@ -51,15 +59,15 @@ import time
    - **MANDATORY**: Never rely solely on search snippets - always extract and read full content from qualitative sources
    - Only if scrape-webpage fails or interaction required: use browser automation tools
 
+**BATCH MODE EXAMPLE:**
+- Single call: web_search(query=["AI trends 2025", "machine learning applications", "GPT competitors"], num_results=5)
+- All 3 queries execute in parallel - much faster than 3 separate calls!
+- Returns batch_results with all query results in one response
+
 **WEB SEARCH BEST PRACTICES:**
-- **BATCH SEARCHING FOR EFFICIENCY:** Use batch mode by providing multiple queries to execute searches concurrently
-- **CRITICAL FORMAT REQUIREMENTS:**
-  * Single query: use web_search with query parameter "Tesla news" and num_results 5
-  * Batch queries: use web_search with query parameter containing multiple queries (Tesla news, Tesla stock, Tesla products) and num_results 5
-  * The query parameter MUST be a native array, NOT a JSON string
-  * num_results MUST be an integer, NOT a string
-- **WHEN TO USE BATCH MODE:** Researching multiple related topics, gathering comprehensive information, parallel searches
-- **WHEN TO USE SINGLE QUERY MODE:** Simple focused searches, follow-up searches, iterative refinement
+- **🚨 ALWAYS BATCH YOUR QUERIES** - never make multiple web_search calls when one batch call works
+- **FORMAT**: query=["query1", "query2", "query3"] (native array, NOT JSON string)
+- **num_results**: Must be an integer (5), NOT a string ("5")
 - Use specific, targeted questions to get direct answers
 - Include key terms and contextual information in search queries
 - Filter search results by date when freshness is important
@@ -67,7 +75,7 @@ import time
 - Analyze multiple search results to cross-validate information
 
 **CONTENT EXTRACTION DECISION TREE:**
-1. ALWAYS start with web-search using BATCH MODE to get direct answers and search results
+1. ALWAYS start with ONE web_search call using BATCH MODE (array of all queries)
 2. **AUTOMATICALLY identify qualitative sources** from search results:
    - Academic papers (arxiv.org, pubmed, Semantic Scholar, IEEE, ACM, Nature, Science, etc.)
    - Long-form articles, research reports, detailed blog posts
@@ -289,7 +297,7 @@ class SandboxWebSearchTool(SandboxToolsBase):
         - num_results: Number of results to return
         
         Returns:
-        - dict with success status, results, answer, images, and full response
+        - dict with success status, results, answer, images (with OCR & dimensions), and full response
         """
         try:
             search_response = await self.tavily_client.search(
@@ -303,19 +311,26 @@ class SandboxWebSearchTool(SandboxToolsBase):
             # Extract results and answer
             results = search_response.get('results', [])
             answer = search_response.get('answer', '')
-            images = search_response.get('images', [])
+            raw_images = search_response.get('images', [])
+            
+            # Enrich images with OCR and dimensions
+            enriched_images = await self._enrich_images_with_metadata(raw_images)
             
             # Consider search successful if we have either results OR an answer
             success = len(results) > 0 or (answer and answer.strip())
             
-            logging.info(f"Retrieved search results for query: '{query}' - {len(results)} results, answer: {'yes' if answer else 'no'}")
+            logging.info(f"Retrieved search results for query: '{query}' - {len(results)} results, answer: {'yes' if answer else 'no'}, {len(enriched_images)} images enriched")
+            
+            # Update search_response with enriched images
+            enriched_response = dict(search_response)
+            enriched_response['images'] = enriched_images
             
             return {
                 "success": success,
                 "results": results,
                 "answer": answer,
-                "images": images,
-                "response": search_response
+                "images": enriched_images,
+                "response": enriched_response
             }
         
         except Exception as e:
@@ -329,6 +344,153 @@ class SandboxWebSearchTool(SandboxToolsBase):
                 "response": {},
                 "error": error_message
             }
+
+    async def _enrich_images_with_metadata(self, images: list) -> list:
+        """
+        Enrich image URLs with OCR text and dimensions.
+        Downloads all images and runs OCR IN PARALLEL for speed.
+        
+        Args:
+            images: List of image URLs (strings) or image objects from Tavily
+            
+        Returns:
+            List of enriched image objects with url, width, height, and description
+        """
+        if not images:
+            return []
+        
+        # Collect valid image URLs
+        valid_images = []
+        for img in images:
+            if isinstance(img, str):
+                img_url = img
+            elif isinstance(img, dict):
+                img_url = img.get('url', '')
+            else:
+                continue
+            
+            if img_url:
+                valid_images.append(img_url)
+        
+        if not valid_images:
+            return []
+        
+        logging.info(f"[WebSearch] Starting parallel image enrichment for {len(valid_images)} images")
+        
+        # Process all images in parallel
+        async with get_http_client() as client:
+            tasks = [self._enrich_single_image(img_url, client) for img_url in valid_images]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Collect results, handling any exceptions
+        enriched = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logging.debug(f"[WebSearch] Error enriching image {i}: {result}")
+                enriched.append({
+                    "url": valid_images[i],
+                    "width": 0,
+                    "height": 0,
+                    "description": ""
+                })
+            else:
+                enriched.append(result)
+        
+        logging.info(f"[WebSearch] Completed parallel enrichment for {len(enriched)} images")
+        return enriched
+    
+    async def _enrich_single_image(self, img_url: str, client) -> dict:
+        """
+        Download and enrich a single image with dimensions and description.
+        Uses Moondream2 vision model for image understanding.
+        
+        Args:
+            img_url: URL of the image
+            client: HTTP client for downloading
+            
+        Returns:
+            Enriched image data dict
+        """
+        image_data = {
+            "url": img_url,
+            "width": 0,
+            "height": 0,
+            "description": ""
+        }
+        
+        try:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            }
+            
+            response = await client.get(img_url, headers=headers, timeout=15.0, follow_redirects=True)
+            
+            if response.status_code == 200:
+                image_bytes = response.content
+                content_type = response.headers.get("content-type", "")
+                
+                if content_type.startswith("image/"):
+                    # Get dimensions using PIL
+                    try:
+                        from PIL import Image
+                        from io import BytesIO
+                        img_pil = Image.open(BytesIO(image_bytes))
+                        image_data["width"] = img_pil.width
+                        image_data["height"] = img_pil.height
+                        logging.debug(f"[WebSearch] Image dimensions: {img_pil.width}x{img_pil.height}")
+                    except Exception as dim_err:
+                        logging.debug(f"[WebSearch] Could not get dimensions: {dim_err}")
+                    
+                    # Get image description using Moondream2
+                    description = await self._describe_image(image_bytes, content_type)
+                    image_data["description"] = description
+        
+        except Exception as e:
+            logging.debug(f"[WebSearch] Error enriching image {img_url[:50]}...: {str(e)[:100]}")
+        
+        return image_data
+    
+    async def _describe_image(self, image_bytes: bytes, content_type: str) -> str:
+        """
+        Get image description using Moondream2 vision model.
+        Runs in ~2 seconds on Replicate GPU, includes text extraction.
+        
+        Args:
+            image_bytes: Raw image bytes
+            content_type: MIME type of the image
+            
+        Returns:
+            Image description, or empty string if processing fails
+        """
+        try:
+            logging.debug(f"[WebSearch] Running Moondream2 on image ({len(image_bytes)} bytes)")
+            
+            # Convert to base64 data URL
+            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+            data_url = f"data:{content_type};base64,{image_b64}"
+            
+            # Call Moondream2 vision model
+            def run_moondream(data_url: str) -> str:
+                output = replicate.run(
+                    "lucataco/moondream2:72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31",
+                    input={
+                        "image": data_url,
+                        "prompt": "Describe this image in detail. Include any text visible in the image."
+                    }
+                )
+                # Output is a generator, consume it to get the full text
+                if hasattr(output, '__iter__') and not isinstance(output, (str, bytes)):
+                    return "".join(str(chunk) for chunk in output)
+                return str(output) if output else ""
+            
+            description = await asyncio.to_thread(run_moondream, data_url)
+            
+            logging.debug(f"[WebSearch] Got description: {len(description)} chars")
+            return description.strip()
+            
+        except Exception as e:
+            logging.debug(f"[WebSearch] Moondream2 error: {e}")
+            return ""
 
     @openapi_schema({
         "type": "function",
