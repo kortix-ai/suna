@@ -541,8 +541,12 @@ class ThreadManager:
         auto_continue_state = {
             'count': 0,
             'active': True,
-            'continuous_state': {'accumulated_content': '', 'thread_run_id': None}
+            'continuous_state': {'accumulated_content': '', 'thread_run_id': None},
+            'force_tool_fallback': False,  # Flag to force stripping tool content on next attempt
+            'error_retry_count': 0  # Counter for error-based retries (to prevent infinite loops)
         }
+
+        MAX_ERROR_RETRIES = 3  # Maximum number of error-based retries before failing
 
         # Single execution if auto-continue is disabled
         if native_max_auto_continues == 0:
@@ -563,7 +567,7 @@ class ThreadManager:
             tool_choice, config, stream,
             generation, auto_continue_state, temporary_message,
             native_max_auto_continues, latest_user_message_content, cancellation_event,
-            prefetch_messages_task, prefetch_llm_end_task
+            prefetch_messages_task, prefetch_llm_end_task, MAX_ERROR_RETRIES
         )
 
     async def _execute_run(
@@ -889,25 +893,99 @@ class ThreadManager:
             # CRITICAL: Validate tool call pairing before sending to LLM
             # This catches any orphaned tool results that would cause Bedrock errors
             validation_start = time.time()
-            
+
             # Ensure we have a ContextManager instance for validation (may not exist if compression was skipped)
             if 'context_manager' not in locals():
                 context_manager = ContextManager(db=self.db)
-            
+
+            # Check if emergency fallback was triggered by previous error
+            if auto_continue_state.get('force_tool_fallback', False):
+                logger.error(f"🚨 FORCED FALLBACK: Stripping all tool content due to previous error")
+                # Refetch messages if we haven't already (don't use prefetched data)
+                if messages is None:
+                    fetch_start = time.time()
+                    messages = await self.get_llm_messages(thread_id)
+                    logger.debug(f"⏱️ [TIMING] get_llm_messages() for fallback: {(time.time() - fetch_start) * 1000:.1f}ms")
+                # Apply fallback to the raw messages first
+                messages = context_manager.strip_all_tool_content_as_fallback(messages)
+                # Rebuild prepared_messages with clean context
+                messages_with_context = messages
+                if self._memory_context and len(messages) > 0:
+                    messages_with_context = [self._memory_context] + messages
+                if ENABLE_PROMPT_CACHING and len(messages_with_context) > 2:
+                    client = await self.db.client
+                    prepared_messages = await apply_anthropic_caching_strategy(
+                        system_prompt, messages_with_context, llm_model,
+                        thread_id=thread_id, force_recalc=True, client=client
+                    )
+                    prepared_messages = validate_cache_blocks(prepared_messages, llm_model)
+                else:
+                    prepared_messages = [system_prompt] + messages_with_context
+                auto_continue_state['force_tool_fallback'] = False  # Reset flag
+                logger.info(f"✅ Forced fallback applied - rebuilt messages without tool content")
+
             is_valid, orphaned_ids, unanswered_ids = context_manager.validate_tool_call_pairing(prepared_messages)
             if not is_valid:
                 logger.warning(f"⚠️ PRE-SEND VALIDATION: Found pairing issues - attempting repair")
                 logger.warning(f"⚠️ Orphaned tool_results: {orphaned_ids}")
                 logger.warning(f"⚠️ Unanswered tool_calls: {unanswered_ids}")
 
+                # PERSIST the repair to database so orphans don't keep coming back
+                if orphaned_ids:
+                    try:
+                        from core.threads import repo as threads_repo
+                        marked_count = await threads_repo.mark_tool_results_as_omitted(thread_id, orphaned_ids)
+                        if marked_count > 0:
+                            logger.info(f"✅ Persisted orphan repair: marked {marked_count} orphaned tool results as omitted in DB")
+                            # Invalidate message cache so next fetch gets clean data
+                            from core.cache.runtime_cache import invalidate_message_history_cache
+                            await invalidate_message_history_cache(thread_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to persist orphan repair to DB: {e}")
+
                 prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
                 is_valid_after, orphans_after, unanswered_after = context_manager.validate_tool_call_pairing(prepared_messages)
                 if not is_valid_after:
                     logger.error(f"🚨 CRITICAL: Could not repair message structure. Orphaned: {len(orphans_after)}, Unanswered: {len(unanswered_after)}")
+                    # EMERGENCY FALLBACK: Strip all tool content to prevent LLM API error
+                    logger.error(f"🚨 Applying emergency fallback: stripping all tool content")
+                    prepared_messages = context_manager.strip_all_tool_content_as_fallback(prepared_messages)
+                    # Final validation after fallback
+                    is_final_valid, _, _ = context_manager.validate_tool_call_pairing(prepared_messages)
+                    if is_final_valid:
+                        logger.info(f"✅ Emergency fallback successful: message structure is now valid")
+                    else:
+                        logger.error(f"🚨 CRITICAL: Even fallback failed - proceeding anyway but LLM may error")
                 else:
                     logger.debug(f"✅ Message structure repaired successfully")
             else:
                 logger.debug(f"✅ Pre-send validation passed: all tool calls properly paired")
+
+            # Also validate tool call ORDERING (tool results must immediately follow their assistant)
+            is_ordered, out_of_order_ids, _ = context_manager.validate_tool_call_ordering(prepared_messages)
+            if not is_ordered:
+                logger.warning(f"⚠️ PRE-SEND ORDERING: Found {len(out_of_order_ids)} out-of-order tool call/result pairs")
+
+                # PERSIST the repair to database so out-of-order pairs don't keep coming back
+                if out_of_order_ids:
+                    try:
+                        from core.threads import repo as threads_repo
+                        # Mark out-of-order tool results as omitted
+                        marked_count = await threads_repo.mark_tool_results_as_omitted(thread_id, out_of_order_ids)
+                        # Also remove the tool_calls from assistant messages
+                        updated_count = await threads_repo.remove_tool_calls_from_assistants(thread_id, out_of_order_ids)
+                        if marked_count > 0 or updated_count > 0:
+                            logger.info(f"✅ Persisted ordering repair: marked {marked_count} tool results as omitted, updated {updated_count} assistants")
+                            from core.cache.runtime_cache import invalidate_message_history_cache
+                            await invalidate_message_history_cache(thread_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to persist ordering repair to DB: {e}")
+
+                # Fix in-memory as well
+                prepared_messages = context_manager.remove_out_of_order_tool_pairs(prepared_messages, out_of_order_ids)
+                # After removing out-of-order tool results, there will be unanswered tool_calls - repair those too
+                prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
+
             logger.debug(f"⏱️ [TIMING] Pre-send validation: {(time.time() - validation_start) * 1000:.1f}ms")
             
             # Wrap token_counter in thread pool (CPU-heavy tiktoken operation)
@@ -1027,7 +1105,8 @@ class ThreadManager:
         auto_continue_state: Dict[str, Any], temporary_message: Optional[Dict[str, Any]],
         native_max_auto_continues: int, latest_user_message_content: Optional[str] = None,
         cancellation_event: Optional[asyncio.Event] = None,
-        prefetch_messages_task: Optional[asyncio.Task] = None, prefetch_llm_end_task: Optional[asyncio.Task] = None
+        prefetch_messages_task: Optional[asyncio.Task] = None, prefetch_llm_end_task: Optional[asyncio.Task] = None,
+        max_error_retries: int = 3
     ) -> AsyncGenerator:
         """Generator that handles auto-continue logic."""
         logger.debug(f"Starting auto-continue generator, max: {native_max_auto_continues}")
@@ -1139,7 +1218,36 @@ class ThreadManager:
 
             except Exception as e:
                 error_str = str(e)
-                
+
+                # Check for tool call pairing error - this can be fixed with fallback
+                is_tool_pairing_error = (
+                    "tool call result does not follow tool call" in error_str.lower() or
+                    "tool_call_id" in error_str.lower()
+                )
+
+                if is_tool_pairing_error:
+                    auto_continue_state['error_retry_count'] = auto_continue_state.get('error_retry_count', 0) + 1
+
+                    if auto_continue_state['error_retry_count'] > max_error_retries:
+                        logger.error(f"🛑 Tool call pairing error: max retries ({max_error_retries}) exceeded - failing: {error_str[:200]}")
+                        processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": thread_id})
+                        ErrorProcessor.log_error(processed_error)
+                        yield processed_error.to_stream_dict()
+                        return
+
+                    logger.error(f"🔧 Tool call pairing error detected (retry {auto_continue_state['error_retry_count']}/{max_error_retries}) - applying emergency fallback: {error_str[:200]}")
+                    # This error means validation/repair didn't catch the issue
+                    # Set flag to force emergency fallback in next iteration
+                    auto_continue_state['force_tool_fallback'] = True
+                    yield {
+                        "type": "status",
+                        "status": "warning",
+                        "message": f"Tool call structure issue detected - recovering by stripping tool content (retry {auto_continue_state['error_retry_count']}/{max_error_retries})"
+                    }
+                    # Retry with the fallback
+                    auto_continue_state['active'] = True
+                    continue
+
                 # Check for non-retryable errors (400 Bad Request, validation errors, etc.)
                 # These should NEVER be retried as they indicate request issues, not transient failures
                 is_non_retryable = (
@@ -1150,7 +1258,7 @@ class ThreadManager:
                     "validation" in error_str.lower() or
                     "invalid" in error_str.lower()
                 )
-                
+
                 if is_non_retryable:
                     logger.error(f"🛑 Non-retryable error detected - stopping immediately: {error_str[:200]}")
                     processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": thread_id})
@@ -1159,7 +1267,16 @@ class ThreadManager:
                     return
                 
                 if "AnthropicException - Overloaded" in error_str:
-                    logger.error(f"Anthropic overloaded, falling back to OpenRouter")
+                    auto_continue_state['error_retry_count'] = auto_continue_state.get('error_retry_count', 0) + 1
+
+                    if auto_continue_state['error_retry_count'] > max_error_retries:
+                        logger.error(f"🛑 Anthropic overloaded: max retries ({max_error_retries}) exceeded - failing")
+                        processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": thread_id})
+                        ErrorProcessor.log_error(processed_error)
+                        yield processed_error.to_stream_dict()
+                        return
+
+                    logger.error(f"Anthropic overloaded (retry {auto_continue_state['error_retry_count']}/{max_error_retries}), falling back to OpenRouter")
                     llm_model = f"openrouter/{llm_model.replace('-20250514', '')}"
                     auto_continue_state['active'] = True
                     continue
