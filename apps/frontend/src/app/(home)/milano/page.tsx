@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, Suspense, lazy } from 'react';
 import { MapPin } from 'lucide-react';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 import { useIsMobile, useLeadingDebouncedCallback } from '@/hooks/utils';
@@ -9,10 +9,14 @@ import { useAuth } from '@/components/AuthProvider';
 import { useRouter } from 'next/navigation';
 import { useOptimisticAgentStart } from '@/hooks/threads';
 import { useAgentSelection } from '@/stores/agent-selection-store';
+import { useSunaModePersistence } from '@/stores/suna-modes-store';
 import { useQuery } from '@tanstack/react-query';
 import { agentKeys } from '@/hooks/agents/keys';
 import { getAgents } from '@/hooks/agents/utils';
-import { ModeSelector } from '@/components/shared/mode-selector';
+
+const SunaModesPanel = lazy(() => 
+  import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
+);
 
 // Mobile users are redirected at the edge by middleware (hyper-fast)
 // This page only renders for desktop users
@@ -28,6 +32,16 @@ export default function MilanoPage() {
   
   // Use centralized optimistic agent start hook
   const { startAgent, isStarting: isOptimisticStarting } = useOptimisticAgentStart('/');
+  const {
+    selectedMode,
+    selectedCharts,
+    selectedOutputFormat,
+    selectedTemplate,
+    setSelectedMode,
+    setSelectedCharts,
+    setSelectedOutputFormat,
+    setSelectedTemplate,
+  } = useSunaModePersistence();
 
   const { data: agentsResponse } = useQuery({
     queryKey: agentKeys.list({
@@ -56,6 +70,7 @@ export default function MilanoPage() {
   const selectedAgent = selectedAgentId
     ? agents.find(agent => agent.agent_id === selectedAgentId)
     : null;
+  const isSunaAgent = !user || selectedAgent?.metadata?.is_suna_default || false;
 
   const handleChatInputSubmit = useLeadingDebouncedCallback(async (
     message: string,
@@ -138,14 +153,34 @@ export default function MilanoPage() {
                       onAgentSelect={setSelectedAgent}
                       autoFocus={false}
                       enableAdvancedConfig={false}
+                      selectedMode={selectedMode}
+                      onModeDeselect={() => setSelectedMode(null)}
+                      selectedCharts={selectedCharts}
+                      selectedOutputFormat={selectedOutputFormat}
+                      selectedTemplate={selectedTemplate}
                     />
                   </div>
                 </div>
               </div>
 
-              <div className="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0 flex justify-center">
-                <ModeSelector />
+              {isSunaAgent && (
+                <div className="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0">
+                  <Suspense fallback={<div className="h-24 animate-pulse bg-muted/10 rounded-lg" />}>
+                    <SunaModesPanel
+                      selectedMode={selectedMode}
+                      onModeSelect={setSelectedMode}
+                      onSelectPrompt={setInputValue}
+                      isMobile={isMobile}
+                      selectedCharts={selectedCharts}
+                      onChartsChange={setSelectedCharts}
+                      selectedOutputFormat={selectedOutputFormat}
+                      onOutputFormatChange={setSelectedOutputFormat}
+                      selectedTemplate={selectedTemplate}
+                      onTemplateChange={setSelectedTemplate}
+                    />
+                  </Suspense>
                 </div>
+              )}
             </div>
           </div>
         </div>

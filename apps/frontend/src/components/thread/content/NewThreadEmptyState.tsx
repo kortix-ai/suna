@@ -3,7 +3,6 @@
 import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '@/lib/utils';
-import { modeConfigs, ModeConfig } from '@/components/shared/mode-selector';
 import { ArrowLeft, Check } from 'lucide-react';
 import Image from 'next/image';
 import { Button } from '@/components/ui/button';
@@ -47,6 +46,99 @@ import {
   Lightbulb,
   DollarSign,
 } from 'lucide-react';
+
+// ============================================================================
+// MODE CONFIGS (local definition for standalone /new page)
+// ============================================================================
+export interface ModeConfig {
+  id: string;
+  name: string;
+  icon: React.ReactNode;
+  iconName: string;
+  description: string;
+  examplePrompts: string[];
+}
+
+export const modeConfigs: ModeConfig[] = [
+  {
+    id: 'slides',
+    name: 'Slides',
+    icon: <Presentation className="w-4 h-4" />,
+    iconName: 'Presentation',
+    description: 'Create stunning presentations',
+    examplePrompts: [
+      'Create a pitch deck for a SaaS startup',
+      'Make a quarterly business review presentation',
+      'Design a product launch presentation',
+      'Build a conference talk about AI trends',
+    ],
+  },
+  {
+    id: 'sheets',
+    name: 'Sheets',
+    icon: <Table className="w-4 h-4" />,
+    iconName: 'Table',
+    description: 'Build and analyze spreadsheets',
+    examplePrompts: [
+      'Create a sales tracking spreadsheet',
+      'Build a budget planner with charts',
+      'Analyze this CSV and find insights',
+      'Create a project timeline tracker',
+    ],
+  },
+  {
+    id: 'docs',
+    name: 'Docs',
+    icon: <FileText className="w-4 h-4" />,
+    iconName: 'FileText',
+    description: 'Write and format documents',
+    examplePrompts: [
+      'Write a technical documentation',
+      'Draft a project proposal',
+      'Create a meeting notes template',
+      'Write a product requirements document',
+    ],
+  },
+  {
+    id: 'canvas',
+    name: 'Canvas',
+    icon: <PenTool className="w-4 h-4" />,
+    iconName: 'PenTool',
+    description: 'Design and create visuals',
+    examplePrompts: [
+      'Design a social media banner',
+      'Create an infographic about climate change',
+      'Build a wireframe for a mobile app',
+      'Design a logo concept',
+    ],
+  },
+  {
+    id: 'video',
+    name: 'Video',
+    icon: <Video className="w-4 h-4" />,
+    iconName: 'Video',
+    description: 'Generate and edit videos',
+    examplePrompts: [
+      'Create a product demo video script',
+      'Generate a short explainer video',
+      'Edit this video with transitions',
+      'Create a video thumbnail design',
+    ],
+  },
+  {
+    id: 'research',
+    name: 'Research',
+    icon: <BookOpen className="w-4 h-4" />,
+    iconName: 'BookOpen',
+    description: 'Deep research and analysis',
+    examplePrompts: [
+      'Research the competitive landscape for AI tools',
+      'Analyze market trends in renewable energy',
+      'Create a comprehensive report on Web3',
+      'Research best practices for remote work',
+    ],
+  },
+];
 
 interface NewThreadEmptyStateProps {
   onSubmit: (prompt: string) => void;
