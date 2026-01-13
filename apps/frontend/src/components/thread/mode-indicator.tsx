@@ -10,6 +10,9 @@ import { Check, Lock, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useModelSelection } from '@/hooks/agents';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
+import { isProductionMode } from '@/lib/config';
+import { ModelProviderIcon } from '@/lib/model-provider-icons';
+import { Separator } from '@/components/ui/separator';
 
 // Logo component for mode display with theme support
 // Uses CSS to switch between light/dark variants without JS
@@ -54,6 +57,9 @@ export const ModeIndicator = memo(function ModeIndicator() {
     handleModelChange,
   } = useModelSelection();
 
+  // Check if we should show all models option (non-production mode)
+  const showAllModelsOption = !isProductionMode();
+
   const basicModel = useMemo(
     () => modelOptions.find((m) => m.id === 'kortix/basic' || m.label === 'Kortix Basic'),
     [modelOptions]
@@ -63,6 +69,26 @@ export const ModeIndicator = memo(function ModeIndicator() {
     () => modelOptions.find((m) => m.id === 'kortix/power' || m.label === 'Kortix Advanced Mode'),
     [modelOptions]
   );
+
+  // Get other models (not basic or power) for the staging section
+  const otherModels = useMemo(() => {
+    return modelOptions.filter(
+      (m) => m.id !== 'kortix/basic' && m.id !== 'kortix/power' && 
+             m.label !== 'Kortix Basic' && m.label !== 'Kortix Advanced Mode'
+    ).sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+  }, [modelOptions]);
+
+  // Check if a non-standard model is selected
+  const isOtherModelSelected = useMemo(() => {
+    return selectedModel && 
+           selectedModel !== basicModel?.id && 
+           selectedModel !== powerModel?.id;
+  }, [selectedModel, basicModel?.id, powerModel?.id]);
+
+  const selectedOtherModel = useMemo(() => {
+    if (!isOtherModelSelected) return null;
+    return modelOptions.find((m) => m.id === selectedModel);
+  }, [isOtherModelSelected, modelOptions, selectedModel]);
 
   const canAccessPower = powerModel ? canAccessModel(powerModel.id) : false;
   const isPowerSelected = powerModel && selectedModel === powerModel.id;
@@ -89,6 +115,11 @@ export const ModeIndicator = memo(function ModeIndicator() {
       }
     }
   }, [powerModel, canAccessPower, handleModelChange]);
+
+  const handleOtherModelClick = useCallback((modelId: string) => {
+    handleModelChange(modelId);
+    setIsOpen(false);
+  }, [handleModelChange]);
 
   return (
     <DropdownMenu open={isOpen} onOpenChange={setIsOpen}>
@@ -155,6 +186,45 @@ export const ModeIndicator = memo(function ModeIndicator() {
             <Lock className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" strokeWidth={2} />
           ) : null}
         </div>
+
+        {/* All Models Section - Only in staging/local mode */}
+        {showAllModelsOption && otherModels.length > 0 && (
+          <>
+            <Separator className="my-2" />
+            <div className="px-2 py-1 text-xs font-medium text-muted-foreground flex items-center gap-2">
+              <span>All Models</span>
+              <span className="text-[10px] px-1.5 py-0.5 bg-amber-500/10 text-amber-600 dark:text-amber-500 rounded-md">
+                Staging
+              </span>
+            </div>
+            <div className="max-h-[200px] overflow-y-auto">
+              {otherModels.map((model) => {
+                const isSelected = selectedModel === model.id;
+                
+                return (
+                  <div
+                    key={model.id}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 cursor-pointer rounded-lg transition-all duration-150 my-0.5',
+                      isSelected 
+                        ? 'bg-accent' 
+                        : 'hover:bg-accent/50 active:bg-accent/70'
+                    )}
+                    onClick={() => handleOtherModelClick(model.id)}
+                  >
+                    <ModelProviderIcon modelId={model.id} size={20} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-medium truncate">{model.label}</div>
+                    </div>
+                    {isSelected && (
+                      <Check className="h-4 w-4 text-foreground flex-shrink-0" strokeWidth={2} />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

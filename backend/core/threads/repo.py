@@ -663,17 +663,11 @@ async def get_llm_messages(
         sql = """
         SELECT message_id, type, content, metadata
         FROM messages
-        WHERE thread_id = :thread_id AND is_llm_message = true
+        WHERE thread_id = :thread_id 
+          AND is_llm_message = true
+          AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
         ORDER BY created_at ASC
         """
-        if limit:
-            sql = sql.replace("ORDER BY", f"ORDER BY created_at ASC LIMIT {limit} ORDER BY")
-            sql = f"""
-            SELECT message_id, type, content, metadata
-            FROM messages
-            WHERE thread_id = :thread_id AND is_llm_message = true
-            ORDER BY created_at ASC
-            """
         rows = await execute(sql, {"thread_id": thread_id})
     
     return [dict(row) for row in rows] if rows else []
@@ -687,7 +681,9 @@ async def get_llm_messages_paginated(
     sql = """
     SELECT message_id, type, content, metadata
     FROM messages
-    WHERE thread_id = :thread_id AND is_llm_message = true
+    WHERE thread_id = :thread_id 
+      AND is_llm_message = true
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     ORDER BY created_at ASC
     LIMIT :limit OFFSET :offset
     """
@@ -700,8 +696,9 @@ async def get_llm_messages_paginated(
 
 
 async def get_thread_metadata(thread_id: str) -> Optional[Dict[str, Any]]:
+    from core.services.db import execute_one_read
     sql = "SELECT metadata FROM threads WHERE thread_id = :thread_id"
-    result = await execute_one(sql, {"thread_id": thread_id})
+    result = await execute_one_read(sql, {"thread_id": thread_id})
     return result["metadata"] if result else None
 
 
@@ -931,25 +928,128 @@ async def save_compressed_message(
 
 
 async def save_compressed_messages_batch(
-    compressed_messages: List[Dict[str, Any]]
+    compressed_messages: List[Dict[str, Any]],
+    batch_size: int = 500
 ) -> int:
+    """Save compressed message content to database metadata in batch.
+    
+    Uses a single SQL UPDATE with VALUES clause for efficiency.
+    For 400 messages, this is 1 DB call instead of 800 (2 per message).
+    
+    Args:
+        compressed_messages: List of dicts with 'message_id', 'compressed_content', and optional 'is_omission'
+        batch_size: Max messages per SQL statement (default 500 to avoid very long queries)
+        
+    Returns:
+        Number of messages successfully saved
+    """
+    from core.services.db import execute_mutate
+    
     if not compressed_messages:
         return 0
     
-    saved_count = 0
-    for msg_data in compressed_messages:
-        message_id = msg_data.get("message_id")
-        compressed_content = msg_data.get("compressed_content")
-        is_omission = msg_data.get("is_omission", False)
-        
-        if message_id and compressed_content:
-            try:
-                await save_compressed_message(message_id, compressed_content, is_omission)
-                saved_count += 1
-            except Exception as e:
-                logger.warning(f"Failed to save compressed message {message_id}: {e}")
+    # Filter valid entries
+    valid = [
+        (m['message_id'], m['compressed_content'], m.get('is_omission', False)) 
+        for m in compressed_messages 
+        if m.get('message_id') and m.get('compressed_content')
+    ]
     
-    return saved_count
+    if not valid:
+        return 0
+    
+    total_saved = 0
+    
+    # Process in batches to avoid very long SQL statements
+    for batch_start in range(0, len(valid), batch_size):
+        batch = valid[batch_start:batch_start + batch_size]
+        
+        # Build VALUES clause dynamically
+        # Note: Can't use ::uuid cast in VALUES because SQLAlchemy confuses :: with param syntax
+        # Instead, cast in the WHERE clause comparison
+        values_parts = []
+        params = {}
+        for i, (msg_id, content, is_omit) in enumerate(batch):
+            values_parts.append(f"(:id_{i}, :content_{i}, :omit_{i})")
+            params[f'id_{i}'] = msg_id
+            params[f'content_{i}'] = content
+            params[f'omit_{i}'] = is_omit
+        
+        # Single UPDATE with all values - merges into existing metadata
+        # Cast data.id to uuid in WHERE clause to avoid SQLAlchemy param parsing issues
+        sql = f"""
+        UPDATE messages m
+        SET 
+            metadata = COALESCE(m.metadata, '{{}}'::jsonb) 
+                || jsonb_build_object(
+                    'compressed', true,
+                    'compressed_content', data.compressed_content,
+                    'omitted', data.is_omission
+                ),
+            updated_at = NOW()
+        FROM (VALUES {', '.join(values_parts)}) AS data(id, compressed_content, is_omission)
+        WHERE m.message_id = data.id::uuid  -- Cast string to uuid for comparison
+        """
+        
+        try:
+            await execute_mutate(sql, params)
+            total_saved += len(batch)
+        except Exception as e:
+            logger.warning(f"Failed to save compressed messages batch: {e}")
+            # Fallback to individual saves for this batch
+            for msg_id, content, is_omit in batch:
+                try:
+                    await save_compressed_message(msg_id, content, is_omit)
+                    total_saved += 1
+                except Exception as e2:
+                    logger.warning(f"Failed to save compressed message {msg_id}: {e2}")
+    
+    return total_saved
+
+
+async def mark_tool_results_as_omitted(thread_id: str, tool_call_ids: List[str]) -> int:
+    """Mark tool result messages as omitted when their parent assistant message is omitted.
+    
+    This handles the case where tool results were compressed separately from their
+    parent assistant message, and the assistant was later omitted.
+    
+    Args:
+        thread_id: The thread ID
+        tool_call_ids: List of tool_call_ids whose tool results should be marked as omitted
+        
+    Returns:
+        Number of messages marked as omitted
+    """
+    from core.services.db import execute_mutate
+    
+    if not tool_call_ids:
+        return 0
+    
+    # Build the SQL to find and update tool results with matching tool_call_ids
+    # Tool results have content->'tool_call_id' matching one of the IDs
+    placeholders = ', '.join([f':id_{i}' for i in range(len(tool_call_ids))])
+    params = {'thread_id': thread_id}
+    for i, tc_id in enumerate(tool_call_ids):
+        params[f'id_{i}'] = tc_id
+    
+    sql = f"""
+    UPDATE messages
+    SET 
+        metadata = COALESCE(metadata, '{{}}'::jsonb) || '{{"omitted": true}}'::jsonb,
+        updated_at = NOW()
+    WHERE thread_id = :thread_id
+      AND is_llm_message = true
+      AND content->>'tool_call_id' IN ({placeholders})
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
+    RETURNING message_id
+    """
+    
+    try:
+        result = await execute_mutate(sql, params)
+        return len(result) if result else 0
+    except Exception as e:
+        logger.warning(f"Failed to mark tool results as omitted: {e}")
+        return 0
 
 
 async def get_kb_entry_count(agent_id: str) -> int:

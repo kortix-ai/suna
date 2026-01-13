@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withTiming,
   withDelay,
+  withRepeat,
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
@@ -28,7 +29,7 @@ import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } f
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
+import { MessageCircle, ArrowDown, AlertCircle, RefreshCw } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AgentLoader } from '../chat/AgentLoader';
 import { log } from '@/lib/logger';
@@ -42,6 +43,90 @@ interface ThreadPageProps {
     view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
   ) => void;
 }
+
+// Error banner shown when stream fails
+const StreamErrorBanner = React.memo(function StreamErrorBanner({
+  error,
+  onRetry,
+  hasActiveRun,
+  isRetrying,
+}: {
+  error: string | null;
+  onRetry: () => void;
+  hasActiveRun?: boolean;
+  isRetrying?: boolean;
+}) {
+  // Spinning animation for retry button (using Reanimated)
+  const spinValue = useSharedValue(0);
+  
+  React.useEffect(() => {
+    if (isRetrying) {
+      // Continuous rotation using withRepeat
+      spinValue.value = withRepeat(
+        withTiming(360, { duration: 1000, easing: Easing.linear }),
+        -1, // -1 = infinite repeat
+        false // don't reverse
+      );
+    } else {
+      spinValue.value = withTiming(0, { duration: 200 });
+    }
+  }, [isRetrying, spinValue]);
+  
+  const spinStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ rotate: `${spinValue.value}deg` }],
+    };
+  });
+
+  // Clean up verbose error messages for display
+  const displayError = React.useMemo(() => {
+    if (!error) return '';
+    // Extract just the key error info, not full HTML dumps
+    if (error.includes('500') || error.includes('Internal server error')) {
+      return 'Server error - please try again';
+    }
+    if (error.includes('timeout')) {
+      return 'Connection timeout - please check your internet';
+    }
+    if (error.includes('network') || error.includes('connection')) {
+      return 'Connection lost - please retry';
+    }
+    if (error.length > 100) {
+      return 'Something went wrong';
+    }
+    return error;
+  }, [error]);
+
+  if (!error) return null;
+
+  // Button text: if agent was running, we reconnect/refresh; otherwise resend
+  const buttonText = isRetrying ? 'Retrying...' : (hasActiveRun ? 'Refresh' : 'Retry');
+
+  return (
+    <View className="mx-4 mb-3">
+      <View className="flex-row items-center justify-between bg-destructive/10 border border-destructive/30 rounded-2xl px-4 py-3">
+        <View className="flex-row items-center flex-1 gap-3">
+          <View className="w-8 h-8 rounded-full bg-destructive/20 items-center justify-center">
+            <Icon as={AlertCircle} size={18} className="text-destructive" />
+          </View>
+          <Text className="text-sm text-destructive flex-1" numberOfLines={2}>
+            {displayError}
+          </Text>
+        </View>
+        <Pressable
+          onPress={onRetry}
+          disabled={isRetrying}
+          className={`flex-row items-center gap-1.5 bg-card border border-border rounded-full px-3 py-2 ml-2 ${isRetrying ? 'opacity-50' : 'active:opacity-70'}`}
+        >
+          <Animated.View style={spinStyle}>
+            <Icon as={RefreshCw} size={14} className="text-foreground" />
+          </Animated.View>
+          <Text className="text-sm font-roobert-medium text-foreground">{buttonText}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   isRefreshing,
@@ -437,20 +522,12 @@ export function ThreadPage({
       setShowScrollToBottom(true);
     }
 
-    // Track content height when push is activated, remove push only when AI adds enough content
-    if (pushToTop) {
-      // Capture initial height when push is first activated
-      if (pushActivatedContentHeightRef.current === null) {
-        pushActivatedContentHeightRef.current = contentHeight;
-      }
-
-      // Only remove push when content has grown by at least 200px (AI added content)
-      // AND actual content overflows the viewport
-      const contentGrowth = contentHeight - pushActivatedContentHeightRef.current;
-      if (hasOverflow && contentGrowth > 200) {
-        setPushToTop(false);
-        pushActivatedContentHeightRef.current = null;
-      }
+    // Track content height when push is activated
+    // NOTE: We NO LONGER remove pushToTop based on content growth during streaming
+    // This prevents the jarring shift when agent starts typing after "brewing ideas"
+    // pushToTop is now only removed when agent finishes (see effect below)
+    if (pushToTop && pushActivatedContentHeightRef.current === null) {
+      pushActivatedContentHeightRef.current = contentHeight;
     }
   }, [extraPushPadding, isUserScrolling, pushToTop]);
 
@@ -474,7 +551,27 @@ export function ThreadPage({
     pushActivatedContentHeightRef.current = null;
   }, [chat.activeThread?.id]);
 
-  // When user sends a NEW message - activate push to top
+  // Activate pushToTop immediately when user starts sending (before message appears)
+  // This ensures the layout is ready before the optimistic message renders
+  const wasSendingRef = React.useRef(false);
+  React.useEffect(() => {
+    if (chat.isSendingMessage && !wasSendingRef.current) {
+      // User just started sending - activate push immediately
+      // Only activate if there are already messages (not first message in empty thread)
+      if (messages.length > 0) {
+        setPushToTop(true);
+        scrollLockActiveRef.current = true;
+        setIsUserScrolling(false);
+        pushActivatedContentHeightRef.current = contentHeightRef.current;
+
+        // Scroll to end immediately
+        scrollViewRef.current?.scrollToEnd({ animated: false });
+      }
+    }
+    wasSendingRef.current = chat.isSendingMessage;
+  }, [chat.isSendingMessage, messages.length]);
+
+  // When user sends a NEW message - reinforce push to top and scroll
   // Only trigger for ACTUAL new messages (count increases by 1-2), NOT bulk thread loads
   React.useEffect(() => {
     const prevCount = lastUserMessageCountRef.current;
@@ -486,11 +583,15 @@ export function ThreadPage({
     const isActualNewMessage = diff > 0 && diff <= 2 && prevCount > 0;
 
     if (isActualNewMessage) {
-      setPushToTop(true);
+      // Reinforce pushToTop (might already be true from isSendingMessage effect)
+      if (!pushToTop) {
+        setPushToTop(true);
+        pushActivatedContentHeightRef.current = contentHeightRef.current;
+      }
       scrollLockActiveRef.current = true;
       setIsUserScrolling(false);
 
-      // Multiple scroll attempts
+      // Multiple scroll attempts to ensure we're at bottom
       const scrollAttempt = (ms: number) => {
         setTimeout(() => {
           scrollViewRef.current?.scrollToEnd({ animated: false });
@@ -506,18 +607,21 @@ export function ThreadPage({
     }
 
     lastUserMessageCountRef.current = userMessageCount;
-  }, [userMessageCount]);
+  }, [userMessageCount, pushToTop]);
 
-  // Track when agent is running - DON'T reset pushToTop, keep the padding
+  // Track when agent is running
+  // NOTE: We NO LONGER remove pushToTop when agent finishes
+  // This prevents the jarring shift when the agent completes
+  // The extra padding at the bottom is harmless - user can scroll naturally
+  // pushToTop is only reset when:
+  // 1. Thread changes (in the reset effect above)
+  // 2. User scrolls up significantly (handled below)
   React.useEffect(() => {
     const isRunning = chat.isStreaming || chat.isAgentRunning;
-
     if (isRunning) {
       agentWasRunningRef.current = true;
-    } else if (agentWasRunningRef.current) {
+    } else {
       agentWasRunningRef.current = false;
-      // DON'T remove pushToTop - keep the padding to avoid scroll jump
-      // The extra space at bottom is fine, user can scroll naturally
     }
   }, [chat.isStreaming, chat.isAgentRunning]);
 
@@ -578,7 +682,19 @@ export function ThreadPage({
       setIsUserScrolling(false);
       setShowScrollToBottom(false);
     }
-  }, [extraPushPadding]);
+
+    // Remove pushToTop padding when user scrolls up significantly
+    // This is user-initiated so it won't feel jarring
+    // Only do this when agent is NOT running to avoid mid-stream issues
+    if (pushToTop && hasOverflow && !chat.isStreaming && !chat.isAgentRunning) {
+      // If user has scrolled up more than 100px from bottom, remove the extra padding
+      const distanceFromBottom = actualMaxScrollY - currentScrollY;
+      if (distanceFromBottom > 100) {
+        setPushToTop(false);
+        pushActivatedContentHeightRef.current = null;
+      }
+    }
+  }, [extraPushPadding, pushToTop, chat.isStreaming, chat.isAgentRunning]);
 
   const scrollToBottom = React.useCallback(() => {
     if (pushToTop && extraPushPadding > 0) {
@@ -723,8 +839,8 @@ export function ThreadPage({
             className="flex-1"
             showsVerticalScrollIndicator={true}
             contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: 'flex-end',
+              // NOTE: No flexGrow or justifyContent - content starts at top and grows down
+              // This prevents scroll jump issues during streaming
               paddingTop: Math.max(insets.top, 16) + 80,
               paddingBottom: contentBottomPadding,
               paddingHorizontal: 16,
@@ -753,20 +869,31 @@ export function ThreadPage({
               />
             }>
             {isMounted && (
-              <ThreadContent
-                messages={messages}
-                streamingTextContent={streamingContent}
-                streamingToolCall={streamingToolCall}
-                agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
-                streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
-                sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
-                sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
-                handleToolClick={handleToolClick}
-                onToolPress={handleToolPress}
-                onFilePress={handleFilePress}
-                onPromptFill={chat.setInputValue}
-                isSendingMessage={chat.isSendingMessage}
-              />
+              <>
+                <ThreadContent
+                  messages={messages}
+                  streamingTextContent={streamingContent}
+                  streamingToolCall={streamingToolCall}
+                  agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
+                  streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
+                  sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+                  sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
+                  handleToolClick={handleToolClick}
+                  onToolPress={handleToolPress}
+                  onFilePress={handleFilePress}
+                  onPromptFill={chat.setInputValue}
+                  isSendingMessage={chat.isSendingMessage}
+                  isReconnecting={chat.isReconnecting}
+                  retryCount={chat.retryCount}
+                />
+                {/* Stream error banner with retry/refresh */}
+                <StreamErrorBanner 
+                  error={chat.streamError} 
+                  onRetry={chat.retryLastMessage}
+                  hasActiveRun={chat.hasActiveRun}
+                  isRetrying={chat.isRetrying}
+                />
+              </>
             )}
           </ScrollView>
         )}

@@ -67,29 +67,6 @@ services:
       worker:
         condition: service_started
 
-  worker:
-    image: ghcr.io/suna-ai/suna-backend:latest
-    platform: linux/amd64
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    command: uv run dramatiq --skip-logging --processes 4 --threads 4 run_agent_background
-    volumes:
-      - ./backend/.env:/app/.env:ro
-    environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - REDIS_PASSWORD=
-      - REDIS_SSL=False
-    # DNS configuration to reduce DNS lookup latency for third-party services
-    dns:
-      - 8.8.8.8
-      - 1.1.1.1
-    dns_search:
-      - .
-    depends_on:
-      redis:
-        condition: service_healthy
 
   frontend:
     init: true

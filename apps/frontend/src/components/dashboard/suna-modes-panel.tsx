@@ -21,6 +21,47 @@ import {
   X,
   Eye,
   Lock,
+  Sparkles,
+  Pencil,
+  Maximize2,
+  Scissors,
+  Camera,
+  Droplets,
+  Monitor,
+  Brush,
+  Minimize2,
+  Box,
+  Clock,
+  BookOpen,
+  Zap,
+  Sun,
+  Hexagon,
+  Shapes,
+  Flower2,
+  Mountain,
+  Layers,
+  FileCode,
+  Lightbulb,
+  ScrollText,
+  BookMarked,
+  Scale,
+  Users,
+  Clapperboard,
+  Package,
+  Play,
+  Leaf,
+  Wand2,
+  Compass,
+  PieChart,
+  TrendingUp,
+  CircleDot,
+  Grid3X3,
+  Flame,
+  Circle,
+  Cloud,
+  BarChart2,
+  AreaChart,
+  type LucideIcon,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Button } from '@/components/ui/button';
@@ -66,6 +107,7 @@ interface Mode {
       name: string;
       image?: string;
       description?: string;
+      icon?: string;
     }>;
   };
   chartTypes?: {
@@ -74,6 +116,7 @@ interface Mode {
       id: string;
       name: string;
       description?: string;
+      icon?: string;
     }>;
   };
 }
@@ -140,24 +183,24 @@ const modes: Mode[] = [
     options: {
       title: 'Choose output format',
       items: [
-        { id: 'spreadsheet', name: 'Spreadsheet', description: 'Table with formulas' },
-        { id: 'dashboard', name: 'Dashboard', description: 'Interactive charts' },
-        { id: 'report', name: 'Report', description: 'Analysis with visuals' },
-        { id: 'slides', name: 'Slides', description: 'Presentation format' },
+        { id: 'spreadsheet', name: 'Spreadsheet', description: 'Table with formulas', icon: 'table' },
+        { id: 'dashboard', name: 'Dashboard', description: 'Interactive charts', icon: 'dashboard' },
+        { id: 'report', name: 'Report', description: 'Analysis with visuals', icon: 'report' },
+        { id: 'slides', name: 'Slides', description: 'Presentation format', icon: 'presentation' },
       ],
     },
     chartTypes: {
       title: 'Preferred charts',
       items: [
-        { id: 'bar', name: 'Bar', description: 'Vertical bar chart' },
-        { id: 'line', name: 'Line', description: 'Line chart' },
-        { id: 'pie', name: 'Pie', description: 'Pie chart' },
-        { id: 'scatter', name: 'Scatter', description: 'Scatter plot' },
-        { id: 'heatmap', name: 'Heat map', description: 'Heat map' },
-        { id: 'bubble', name: 'Bubble', description: 'Bubble chart' },
-        { id: 'wordcloud', name: 'Word cloud', description: 'Word cloud visualization' },
-        { id: 'stacked', name: 'Stacked bar', description: 'Stacked bar chart' },
-        { id: 'area', name: 'Area', description: 'Area chart' },
+        { id: 'bar', name: 'Bar', description: 'Vertical bar chart', icon: 'barChart' },
+        { id: 'line', name: 'Line', description: 'Line chart', icon: 'trendingUp' },
+        { id: 'pie', name: 'Pie', description: 'Pie chart', icon: 'pieChart' },
+        { id: 'scatter', name: 'Scatter', description: 'Scatter plot', icon: 'circleDot' },
+        { id: 'heatmap', name: 'Heat map', description: 'Heat map', icon: 'grid' },
+        { id: 'bubble', name: 'Bubble', description: 'Bubble chart', icon: 'circle' },
+        { id: 'wordcloud', name: 'Word cloud', description: 'Word cloud visualization', icon: 'cloud' },
+        { id: 'stacked', name: 'Stacked bar', description: 'Stacked bar chart', icon: 'layers' },
+        { id: 'area', name: 'Area', description: 'Area chart', icon: 'areaChart' },
       ],
     },
   },
@@ -181,14 +224,14 @@ const modes: Mode[] = [
     options: {
       title: 'Choose a template',
       items: [
-        { id: 'prd', name: 'PRD', description: 'Product requirements document' },
-        { id: 'technical', name: 'Technical', description: 'Technical documentation' },
-        { id: 'proposal', name: 'Proposal', description: 'Business proposal' },
-        { id: 'report', name: 'Report', description: 'Detailed report format' },
-        { id: 'guide', name: 'Guide', description: 'Step-by-step guide' },
-        { id: 'wiki', name: 'Wiki', description: 'Knowledge base article' },
-        { id: 'policy', name: 'Policy', description: 'Policy document' },
-        { id: 'meeting-notes', name: 'Meeting Notes', description: 'Meeting minutes' },
+        { id: 'prd', name: 'PRD', description: 'Product requirements document', icon: 'fileText' },
+        { id: 'technical', name: 'Technical', description: 'Technical documentation', icon: 'fileCode' },
+        { id: 'proposal', name: 'Proposal', description: 'Business proposal', icon: 'lightbulb' },
+        { id: 'report', name: 'Report', description: 'Detailed report format', icon: 'fileBarChart' },
+        { id: 'guide', name: 'Guide', description: 'Step-by-step guide', icon: 'bookOpen' },
+        { id: 'wiki', name: 'Wiki', description: 'Knowledge base article', icon: 'bookMarked' },
+        { id: 'policy', name: 'Policy', description: 'Policy document', icon: 'scale' },
+        { id: 'meeting-notes', name: 'Meeting Notes', description: 'Meeting minutes', icon: 'users' },
       ],
     },
   },
@@ -212,10 +255,10 @@ const modes: Mode[] = [
     options: {
       title: 'Choose canvas action',
       items: [
-        { id: 'create', name: 'Create New', description: 'Generate from scratch', image: '/images/canvas/create.png' },
-        { id: 'edit', name: 'Edit Image', description: 'Modify existing images', image: '/images/canvas/edit.png' },
-        { id: 'upscale', name: 'Upscale', description: 'Enhance and improve', image: '/images/canvas/upscale.png' },
-        { id: 'remove-bg', name: 'Remove BG', description: 'Remove background', image: '/images/canvas/remove-bg.png' },
+        { id: 'create', name: 'Create New', description: 'Generate from scratch', icon: 'sparkles' },
+        { id: 'edit', name: 'Edit Image', description: 'Modify existing images', icon: 'pencil' },
+        { id: 'upscale', name: 'Upscale', description: 'Enhance and improve', icon: 'maximize' },
+        { id: 'remove-bg', name: 'Remove BG', description: 'Remove background', icon: 'scissors' },
       ],
     },
   },
@@ -310,6 +353,65 @@ const modes: Mode[] = [
     },
   },
 ];
+
+// Unified icon getter for all mode options
+const getOptionIcon = (iconType: string, className: string = "w-5 h-5") => {
+  const iconMap: Record<string, React.ReactNode> = {
+    // Image styles
+    camera: <Camera className={className} />,
+    droplets: <Droplets className={className} />,
+    monitor: <Monitor className={className} />,
+    brush: <Brush className={className} />,
+    minimize: <Minimize2 className={className} />,
+    box: <Box className={className} />,
+    clock: <Clock className={className} />,
+    zap: <Zap className={className} />,
+    sun: <Sun className={className} />,
+    flower: <Flower2 className={className} />,
+    hexagon: <Hexagon className={className} />,
+    shapes: <Shapes className={className} />,
+    sparkles: <Sparkles className={className} />,
+    mountain: <Mountain className={className} />,
+    layers: <Layers className={className} />,
+    // Docs templates
+    fileText: <FileText className={className} />,
+    fileCode: <FileCode className={className} />,
+    lightbulb: <Lightbulb className={className} />,
+    fileBarChart: <FileBarChart className={className} />,
+    bookOpen: <BookOpen className={className} />,
+    bookMarked: <BookMarked className={className} />,
+    scale: <Scale className={className} />,
+    users: <Users className={className} />,
+    // Slides templates
+    palette: <Palette className={className} />,
+    circle: <Circle className={className} />,
+    leaf: <Leaf className={className} />,
+    barChart: <BarChart3 className={className} />,
+    pieChart: <PieChart className={className} />,
+    trendingUp: <TrendingUp className={className} />,
+    // Video styles
+    clapperboard: <Clapperboard className={className} />,
+    package: <Package className={className} />,
+    play: <Play className={className} />,
+    compass: <Compass className={className} />,
+    // Data output formats
+    table: <Table className={className} />,
+    dashboard: <LayoutDashboard className={className} />,
+    report: <FileBarChart className={className} />,
+    presentation: <Presentation className={className} />,
+    // Canvas actions
+    pencil: <Pencil className={className} />,
+    maximize: <Maximize2 className={className} />,
+    scissors: <Scissors className={className} />,
+    // Chart types
+    circleDot: <CircleDot className={className} />,
+    grid: <Grid3X3 className={className} />,
+    cloud: <Cloud className={className} />,
+    areaChart: <AreaChart className={className} />,
+  };
+  
+  return iconMap[iconType] || <Palette className={className} />;
+};
 
 // Helper function to get random prompts
 const getRandomPrompts = (prompts: SamplePrompt[], count: number): SamplePrompt[] => {
@@ -1317,10 +1419,10 @@ export function SunaModesPanel({
                   "outline-none focus-visible:ring-ring/50 focus-visible:ring-[3px]",
                   "relative h-10 px-3 sm:px-4 gap-2 shrink-0 rounded-2xl cursor-pointer",
                   "border-[1.5px] transition-all duration-200",
-                  // Active state - clean, minimal Kortix style
+                  // Active state - clean, minimal style without colored accents
                   isActive
-                    ? "bg-background text-foreground border-border font-medium dark:bg-background"
-                    : "bg-background/50 border-border/40 text-muted-foreground hover:text-foreground hover:border-border hover:bg-background/80 dark:bg-card/30 dark:hover:bg-card/50"
+                    ? "bg-muted text-foreground border-border font-medium"
+                    : "bg-background/50 border-border/40 text-muted-foreground hover:text-foreground hover:border-border hover:bg-muted dark:bg-card/30 dark:hover:bg-muted"
                 )}
               >
                 {/* Icon */}
@@ -1337,6 +1439,290 @@ export function SunaModesPanel({
           })}
         </div>
       </div>
+
+      {/* Mode-specific Options - Only show when a mode is selected */}
+      {selectedMode && currentMode?.options && (
+        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-75">
+          <p className="text-xs text-muted-foreground/60">
+            {currentMode.options.title === 'Choose a style' ? t('chooseStyle') :
+             currentMode.options.title === 'Choose a template' ? t('chooseTemplate') :
+             currentMode.options.title === 'Choose output format' ? t('chooseOutputFormat') :
+             currentMode.options.title}
+          </p>
+          
+          {selectedMode === 'image' && (
+            <ScrollArea className="w-full">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pb-2">
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden"
+                    onClick={() => handlePromptSelect(`Generate an image using ${item.name.toLowerCase()} style`)}
+                  >
+                    <div className="w-full aspect-square bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 50vw, 25vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {t(`styles.${item.id}`) || item.name}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+
+          {selectedMode === 'slides' && (
+            <ScrollArea className="w-full">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pb-2">
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className={cn(
+                      "flex flex-col gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border rounded-xl relative",
+                      selectedTemplateId === item.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border"
+                    )}
+                    onClick={() => handleTemplateSelect(item.id)}
+                  >
+                    <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 50vw, 25vw"
+                          className="object-contain"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <SlideTemplateIcon 
+                          type={item.id} 
+                          className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                        />
+                      )}
+                      {/* Preview button overlay */}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="absolute top-2 right-2 h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 hover:bg-white dark:bg-zinc-800/90 dark:hover:bg-zinc-800 shadow-md"
+                        onMouseEnter={() => handlePreloadPdf(item.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePdfPreview(item.id, item.name);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors duration-200">
+                        {t(`templates.${item.id}.name`) || item.name}
+                      </p>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+
+          {selectedMode === 'docs' && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {currentMode.options.items.map((item) => (
+                <Card
+                  key={item.id}
+                  className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
+                  onClick={() =>
+                    handlePromptSelect(
+                      `Create a ${item.name} document: ${item.description}`
+                    )
+                  }
+                >
+                  <div className="w-12 h-12 rounded-2xl bg-muted/50 group-hover:bg-primary/10 border border-border/50 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
+                    {getOptionIcon((item as { icon?: string }).icon || '')}
+                  </div>
+                  <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                    {t(`templates.${item.id}.name`) || item.name}
+                  </span>
+                </Card>
+              ))}
+            </div>
+          )}
+
+          {selectedMode === 'data' && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {currentMode.options.items.map((item) => {
+                const isSelected = selectedOutputFormat === item.id;
+                
+                return (
+                  <Card
+                    key={item.id}
+                    className={cn(
+                      "flex flex-col items-center gap-3 cursor-pointer group p-4 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                      isSelected 
+                        ? "bg-primary/10 border-primary" 
+                        : "bg-transparent hover:bg-muted border-border"
+                    )}
+                    onClick={() => handleOutputFormatSelect(item.id)}
+                  >
+                    <div className={cn(
+                      "w-12 h-12 rounded-2xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                      isSelected
+                        ? "bg-primary/15 border-primary/30 text-primary"
+                        : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                    )}>
+                      {getOptionIcon((item as { icon?: string }).icon || '')}
+                    </div>
+                    <span className={cn(
+                      "text-xs text-center transition-colors duration-200 font-medium",
+                      isSelected
+                        ? "text-foreground"
+                        : "text-muted-foreground group-hover:text-foreground"
+                    )}>
+                      {t(`outputFormats.${item.id}.name`) || item.name}
+                    </span>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedMode === 'canvas' && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {currentMode.options.items.map((item) => {
+                // Generate action-specific prompts
+                const getCanvasPrompt = (actionId: string) => {
+                  switch (actionId) {
+                    case 'create':
+                      return 'Create a new image for me: [describe what you want]';
+                    case 'edit':
+                      return 'Edit my image: [I will upload the image and describe what changes I want]';
+                    case 'upscale':
+                      return 'Upscale my image to higher resolution - I will upload the image';
+                    case 'remove-bg':
+                      return 'Remove the background from my image - I will upload the image';
+                    default:
+                      return `${item.name}: ${item.description}`;
+                  }
+                };
+                
+                return (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
+                    onClick={() => handlePromptSelect(getCanvasPrompt(item.id))}
+                  >
+                    <div className="w-12 h-12 rounded-2xl bg-muted/50 group-hover:bg-primary/10 border border-border/50 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
+                      {getOptionIcon((item as { icon?: string }).icon || '')}
+                    </div>
+                    <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedMode === 'video' && (
+            <ScrollArea className="w-full">
+              <div className={cn(
+                "grid grid-cols-2 sm:grid-cols-4 gap-3 pb-2",
+                isFreeTier && "opacity-50 pointer-events-none"
+              )}>
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden relative"
+                    onClick={() => !isFreeTier && handlePromptSelect(`Generate a ${item.name.toLowerCase()} style video`)}
+                  >
+                    <div className="w-full aspect-square rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 50vw, 25vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                      {/* Lock overlay for free users */}
+                      {isFreeTier && (
+                        <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                          <Lock className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+        </div>
+      )}
+
+      {/* Chart Types Section (for Data mode) - Only show when data is selected */}
+      {selectedMode === 'data' && currentMode?.chartTypes && (
+        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-150">
+          <p className="text-xs text-muted-foreground/60">
+            {t('preferredCharts')}
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {currentMode.chartTypes.items.map((chart) => {
+              const isSelected = selectedCharts.includes(chart.id);
+              return (
+                <Card
+                  key={chart.id}
+                  className={cn(
+                    "flex flex-col items-center gap-3 cursor-pointer group p-4 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                    isSelected 
+                      ? "bg-primary/10 border-primary" 
+                      : "bg-transparent hover:bg-muted border-border"
+                  )}
+                  onClick={() => handleChartToggle(chart.id)}
+                >
+                  <div className={cn(
+                    "w-12 h-12 rounded-2xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                    isSelected
+                      ? "bg-primary/15 border-primary/30 text-primary"
+                      : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                  )}>
+                    {getOptionIcon((chart as { icon?: string }).icon || '')}
+                  </div>
+                  <span className={cn(
+                    "text-xs text-center transition-colors duration-200 font-medium",
+                    isSelected 
+                      ? "text-foreground" 
+                      : "text-muted-foreground group-hover:text-foreground"
+                  )}>
+                    {t(`charts.${chart.id}`) || chart.name}
+                  </span>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Sample Prompts - Visual Grid with Thumbnails */}
       {selectedMode && displayedPrompts && displayedPrompts.length > 0 && (
@@ -1366,15 +1752,18 @@ export function SunaModesPanel({
           )}
           
           <div className={cn(
+            "space-y-3",
             selectedMode === 'video' && isFreeTier && "opacity-50 pointer-events-none"
           )}>
-            <div className="flex items-center justify-between mb-3">
-              <span></span>
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground/60">
+                {t('samplePrompts')}
+              </p>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleRefreshPrompts}
-                className="h-7 px-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
+                className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground transition-colors duration-200"
               >
                 <motion.div
                   animate={{ rotate: isRefreshing ? 360 : 0 }}
@@ -1387,10 +1776,9 @@ export function SunaModesPanel({
             <PromptExamples
               prompts={displayedPrompts}
               onPromptClick={handlePromptSelect}
-              title={t('samplePrompts')}
-              variant="visual"
-              columns={4}
-              showTitle={true}
+              variant="text"
+              columns={1}
+              showTitle={false}
             />
           </div>
         </div>

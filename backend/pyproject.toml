@@ -123,6 +123,7 @@ asyncio_default_fixture_loop_scope = "function"
 markers = [
     "e2e: Full end-to-end tests",
     "slow: Tests taking >30s",
+    "large_context: Tests with large token contexts (200k+)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

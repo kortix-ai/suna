@@ -135,7 +135,7 @@ def _get_dsn() -> str:
     if url:
         if "@" in url:
             masked = url.split("@")[0][:40] + "...@" + url.split("@")[-1]
-            # logger.info(f"🔌 Database URL: {masked}")
+            logger.info(f"🔌 Database URL: {masked}")     
         
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)

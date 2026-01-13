@@ -2,10 +2,11 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Library, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search } from 'lucide-react';
+import { Library, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search, Users } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
 import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
+import { NavWorkers } from '@/components/sidebar/nav-workers';
 import { NavGlobalConfig } from '@/components/sidebar/nav-global-config';
 import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
 import { NavUserWithTeams } from '@/components/sidebar/nav-user-with-teams';
@@ -100,7 +101,7 @@ export function SidebarLeft({
   const isMobile = useIsMobile();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  const [activeView, setActiveView] = useState<'chats' | 'library' | 'starred'>('chats');
+  const [activeView, setActiveView] = useState<'chats' | 'library' | 'workers' | 'starred'>('chats');
   const [showEnterpriseCard, setShowEnterpriseCard] = useState(true);
   const [user, setUser] = useState<{
     name: string;
@@ -163,7 +164,7 @@ export function SidebarLeft({
   const [isLibraryChatSwitch, setIsLibraryChatSwitch] = useState(false);
 
   // Handle view switching with navigation
-  const handleViewChange = (view: 'chats' | 'library' | 'starred') => {
+  const handleViewChange = (view: 'chats' | 'library' | 'workers' | 'starred') => {
     // If switching to library while on a thread, navigate to that project's library
     if (view === 'library' && isOnThread && currentProjectId) {
       setIsLibraryChatSwitch(true);
@@ -376,7 +377,8 @@ export function SidebarLeft({
           <div className="w-full flex flex-col items-center space-y-3">
             {[
               { view: 'chats' as const, icon: MessageCircle },
-              { view: 'library' as const, icon: Library },
+              // { view: 'library' as const, icon: Library },
+              { view: 'workers' as const, icon: Users },
               { view: 'starred' as const, icon: Zap },
             ].map(({ view, icon: Icon }) => (
               <Button
@@ -441,7 +443,8 @@ export function SidebarLeft({
             <div className="flex justify-between items-center gap-2">
               {[
                 { view: 'chats' as const, icon: MessageCircle, label: t('chats') },
-                { view: 'library' as const, icon: Library, label: t('library') },
+                // { view: 'library' as const, icon: Library, label: t('library') },
+                { view: 'workers' as const, icon: Users, label: 'Workers' },
                 { view: 'starred' as const, icon: Zap, label: t('triggers') }
               ].map(({ view, icon: Icon, label }) => (
                 <button
@@ -466,6 +469,7 @@ export function SidebarLeft({
           <div className="px-6 flex-1 overflow-hidden">
             {activeView === 'chats' && <NavAgents />}
             {activeView === 'library' && <NavAgentsView />}
+            {activeView === 'workers' && <NavWorkers />}
             {activeView === 'starred' && (
               <>
                 <NavGlobalConfig />

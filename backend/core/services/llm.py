@@ -20,11 +20,11 @@ from datetime import datetime, timezone
 litellm.modify_params = True
 litellm.drop_params = True
 
-# Enable verbose logging for debugging
+# Suppress LiteLLM's verbose INFO logs (Provider List spam)
 litellm.set_verbose = False
-# litellm._turn_on_debug()  # Enable all debug logging
 import logging
-# litellm.verbose_logger.setLevel(logging.DEBUG)
+logging.getLogger("LiteLLM").setLevel(logging.WARNING)
+logging.getLogger("litellm").setLevel(logging.WARNING)
 
 # # Ensure verbose logger has a handler (uses structlog format)
 # if not litellm.verbose_logger.handlers:
@@ -49,90 +49,48 @@ litellm.stream_timeout = int(os.environ.get("LITELLM_STREAM_TIMEOUT", 120))
 from litellm.integrations.custom_logger import CustomLogger
 
 class LLMTimingCallback(CustomLogger):
-    """Callback to log LiteLLM call timing and retry behavior."""
+    """Callback to log LiteLLM retries and failures only (not every call)."""
     
     def __init__(self):
         super().__init__()
-        self.call_times = {}  # Track timing per call
+        self._retry_counts = {}  # Track retries per call
     
     def log_pre_api_call(self, model, messages, kwargs):
-        """Called before each API call attempt (including retries)."""
-        import time
-        call_id = id(kwargs)
-        self.call_times[call_id] = time.monotonic()
-        
-        # Check retry information from litellm_params (handle None cases)
+        """Only log if this is a retry attempt."""
         litellm_params = kwargs.get("litellm_params") or {}
         metadata = litellm_params.get("metadata") if isinstance(litellm_params, dict) else {}
         if metadata is None:
             metadata = {}
         
-        # Log model and message count
-        msg_count = len(messages) if messages else 0
-        logger.info(f"[LLM] 🚀 PRE-API-CALL: model={model}, messages={msg_count}, call_id={call_id}")
-        
-        # Log if this is a retry
         retry_count = metadata.get("_litellm_retry_count", 0) if isinstance(metadata, dict) else 0
         if retry_count > 0:
-            logger.warning(f"[LLM] 🔄 RETRY ATTEMPT #{retry_count} for {model}")
+            logger.warning(f"[LLM] 🔄 RETRY #{retry_count} for {model}")
     
     def log_post_api_call(self, kwargs, response_obj, start_time, end_time):
-        """Called after each API call attempt (success or retry pending)."""
-        import time
-        call_id = id(kwargs)
-        model = kwargs.get("model", "unknown")
-        
-        # Calculate duration - start_time and end_time are datetime objects
-        try:
-            duration = (end_time - start_time).total_seconds()
-        except:
-            duration = 0
-        
-        # Calculate time since pre_api_call if we have it
-        if call_id in self.call_times:
-            since_pre = time.monotonic() - self.call_times[call_id]
-            logger.info(f"[LLM] ⏱️ POST-API-CALL: {model} | litellm_duration={duration:.2f}s | since_pre={since_pre:.2f}s | call_id={call_id}")
-            del self.call_times[call_id]  # Clean up
-        else:
-            logger.info(f"[LLM] ⏱️ POST-API-CALL: {model} | duration={duration:.2f}s | call_id={call_id}")
+        """Silent - we log completion in our own code."""
+        pass
     
     def log_success_event(self, kwargs, response_obj, start_time, end_time):
-        """Called when an API call succeeds (synchronous handler)."""
-        model = kwargs.get("model", "unknown")
+        """Only log slow successes (>30s)."""
         try:
             duration = (end_time - start_time).total_seconds()
+            if duration > 30.0:
+                model = kwargs.get("model", "unknown")
+                logger.warning(f"[LLM] ⚠️ SLOW: {model} took {duration:.2f}s")
         except:
-            duration = 0
-        
-        if duration > 10.0:
-            logger.warning(f"[LLM] ⚠️ SLOW SUCCESS: {model} took {duration:.2f}s")
-        elif LLM_DEBUG:
-            logger.debug(f"[LLM] ✅ success: {model} in {duration:.2f}s")
+            pass
     
     def log_failure_event(self, kwargs, response_obj, start_time, end_time):
-        """Called when an API call fails (including before retries)."""
+        """Log failures - indicates retry or final error."""
         model = kwargs.get("model", "unknown")
         try:
             duration = (end_time - start_time).total_seconds()
         except:
             duration = 0
         
-        # Get exception details
         exception = kwargs.get("exception", response_obj)
-        error_str = str(exception)[:300] if exception else "unknown error"
-        
-        # This is CRITICAL - log every failure as it indicates a retry is happening
-        logger.error(f"[LLM] ❌ FAILURE (will retry if retries remain): {model} after {duration:.2f}s - {error_str}")
-        
-        # Log litellm_params for debugging (handle None cases)
-        litellm_params = kwargs.get("litellm_params") or {}
-        if isinstance(litellm_params, dict):
-            api_base = litellm_params.get("api_base", "default")
-            custom_provider = litellm_params.get("custom_llm_provider", "unknown")
-        else:
-            api_base = "default"
-            custom_provider = "unknown"
-        logger.error(f"[LLM]    ↳ Provider: {custom_provider}, API base: {api_base}")
+        error_str = str(exception)[:200] if exception else "unknown"
+        logger.error(f"[LLM] ❌ FAIL: {model} after {duration:.2f}s - {error_str}")
 
 # Register timing callback
 _timing_callback = LLMTimingCallback()
@@ -141,8 +99,6 @@ if os.getenv("BRAINTRUST_API_KEY"):
     litellm.callbacks = ["braintrust", _timing_callback]
 else:
     litellm.callbacks = [_timing_callback]
-
-LLM_DEBUG = True
 
 class LLMError(Exception):
     pass
@@ -190,7 +146,7 @@ def _save_debug_input(params: Dict[str, Any]) -> None:
         
         with open(debug_file, 'w', encoding='utf-8') as f:
             json.dump(debug_data, f, indent=2, ensure_ascii=False)
-        logger.info(f"[LLM] 📁 Saved input to: {debug_file}")
+        logger.debug(f"[LLM] 📁 Saved input to: {debug_file}")
     except Exception as e:
         logger.warning(f"[LLM] ⚠️ Error saving debug input: {e}")
 
@@ -290,69 +246,27 @@ async def make_llm_api_call(
     call_start = time_module.monotonic()
     
     try:
-        import psutil
-        cpu_at_start = psutil.cpu_percent(interval=None)
-        mem_at_start = psutil.Process().memory_info().rss / 1024 / 1024
-    except Exception as e:
-        cpu_at_start = None
-        mem_at_start = None
-        logger.warning(f"[LLM] psutil failed: {e}")
-    
-    try:
         _save_debug_input(params)
         
-        actual_model = params.get("model", model_name)
-        msg_count = len(params.get("messages", []))
-        tool_count = len(params.get("tools", []) or [])
-        
-        if cpu_at_start is not None:
-            logger.info(f"[LLM] Starting: model={model_name} cpu={cpu_at_start}% mem={mem_at_start:.0f}MB")
-        
-        logger.info(f"[LLM] 🎯 BEFORE litellm.acompletion: {actual_model}")
-        logger.info(f"[LLM] 📋 Config: num_retries={litellm.num_retries}, timeout={litellm.request_timeout}s")
-        
         if stream:
-            pre_call_time = time_module.monotonic()
-            logger.info(f"[LLM] ⏰ T+{(pre_call_time - call_start)*1000:.1f}ms: Calling litellm.acompletion()")
-            
-            # Direct LiteLLM call - Router removed due to 250+ second delays
             response = await litellm.acompletion(**params)
+            ttft = time_module.monotonic() - call_start
             
-            post_call_time = time_module.monotonic()
-            ttft = post_call_time - call_start
-            call_time = post_call_time - pre_call_time
-            
-            logger.info(f"[LLM] ⏰ T+{(post_call_time - call_start)*1000:.1f}ms: litellm.acompletion() returned (call_time={call_time:.2f}s)")
-            
-            # Check what type of response we got
-            logger.info(f"[LLM] 📦 Response type: {type(response).__name__}, hasattr(__aiter__)={hasattr(response, '__aiter__')}")
-            
-            try:
-                import psutil
-                cpu_now = psutil.cpu_percent(interval=None)
-                mem_now = psutil.Process().memory_info().rss / 1024 / 1024
-                cpu_info = f"cpu_start={cpu_at_start}% cpu_now={cpu_now}% mem={mem_now:.0f}MB"
-            except Exception:
-                cpu_info = ""
-            
+            # Log TTFT with severity based on duration
             if ttft > 30.0:
-                logger.error(
-                    f"[LLM] 🚨 CRITICAL SLOW: TTFT={ttft:.2f}s model={model_name} {cpu_info}"
-                )
+                logger.error(f"[LLM] 🚨 TTFT={ttft:.2f}s (CRITICAL) {model_name}")
             elif ttft > 10.0:
-                logger.warning(f"[LLM] ⚠️ SLOW: TTFT={ttft:.2f}s model={model_name} {cpu_info}")
+                logger.warning(f"[LLM] ⚠️ TTFT={ttft:.2f}s (slow) {model_name}")
             else:
-                logger.info(f"[LLM] ✅ TTFT={ttft:.2f}s model={model_name} {cpu_info}")
+                logger.info(f"[LLM] ✅ TTFT={ttft:.2f}s {model_name}")
             
             if hasattr(response, '__aiter__'):
-                logger.info(f"[LLM] 🎁 Wrapping streaming response (TTFT={ttft:.2f}s)")
                 return _wrap_streaming_response(response, call_start, model_name, ttft_seconds=ttft)
             return response
         else:
             response = await litellm.acompletion(**params)
-            call_duration = time_module.monotonic() - call_start
-            if LLM_DEBUG:
-                logger.info(f"[LLM] completed: {call_duration:.2f}s for {model_name}")
+            duration = time_module.monotonic() - call_start
+            logger.info(f"[LLM] ✅ {duration:.2f}s {model_name}")
             return response
         
     except Exception as e:
@@ -380,9 +294,9 @@ async def _wrap_streaming_response(response, start_time: float, model_name: str,
         ErrorProcessor.log_error(processed_error)
         raise LLMError(processed_error.message)
     finally:
-        call_duration = time_module.monotonic() - start_time if start_time else 0.0
-        if LLM_DEBUG and call_duration > 0:
-            logger.info(f"[LLM] stream completed: {call_duration:.2f}s, {chunk_count} chunks for {model_name}")
+        duration = time_module.monotonic() - start_time if start_time else 0.0
+        if duration > 0:
+            logger.info(f"[LLM] 🏁 {duration:.2f}s total, {chunk_count} chunks - {model_name}")
 
 setup_api_keys()
 logger.info(f"[LLM] ✅ Module initialized (DIRECT MODE): retries={litellm.num_retries}, timeout={litellm.request_timeout}s, stream_timeout={litellm.stream_timeout}s")

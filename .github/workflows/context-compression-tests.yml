@@ -1,0 +1,96 @@
+name: Context Compression Tests
+
+on:
+  pull_request:
+    paths:
+      - 'backend/core/agentpress/context_manager.py'
+      - 'backend/core/agentpress/prompt_caching.py'
+      - 'backend/tests/core/agentpress/test_context_manager_compression.py'
+      - 'backend/core/ai_models/**'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'backend/core/agentpress/context_manager.py'
+      - 'backend/core/agentpress/prompt_caching.py'
+      - 'backend/tests/core/agentpress/test_context_manager_compression.py'
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+          
+      - name: Run unit tests
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: |
+          uv run pytest tests/core/agentpress/test_context_manager_compression.py \
+            -v \
+            -m "not large_context and not slow" \
+            --tb=short \
+            --timeout=60
+
+  large-context-tests:
+    name: Large Context Tests (${{ matrix.context_size }})
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    # Only run on push to main/develop, not on PRs
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    timeout-minutes: 20
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        context_size: ['200k', '500k', '1M']
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+          
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+          
+      - name: Run ${{ matrix.context_size }} context test
+        working-directory: backend
+        env:
+          PYTHONPATH: ${{ github.workspace }}/backend
+        run: |
+          echo "🧪 Running ${{ matrix.context_size }} context compression test"
+          
+          uv run pytest tests/core/agentpress/test_context_manager_compression.py \
+            -v \
+            -k "TestRealLargeContext${{ matrix.context_size }}" \
+            --tb=short \
+            --timeout=600
