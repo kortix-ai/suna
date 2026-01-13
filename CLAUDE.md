@@ -51,3 +51,43 @@ tmux send-keys -t backend 'cd /Users/markokraemer/Projects/agentpress/backend &&
 - Check session: `tmux has-session -t <session> 2>/dev/null`
 - View output: `tmux capture-pane -t <session> -p | tail -20`
 - Attach to session: `tmux attach -t <session>`
+
+## Backend Python Development
+
+The backend uses **uv** for Python dependency management and execution. Always use `uv` instead of direct `python` or `pip` commands.
+
+### Running Python Scripts
+```bash
+cd backend && uv run api.py
+```
+
+### Python Dependency Management
+```bash
+# Install dependencies
+cd backend && uv sync
+
+# Add a new dependency
+cd backend && uv add <package-name>
+
+# Run Python scripts
+cd backend && uv run <script.py>
+
+# Run Python module
+cd backend && uv run python -m <module>
+```
+
+### Syntax Validation
+To check Python files for syntax errors:
+```bash
+cd backend && uv run python -m py_compile <file.py>
+```
+
+### Testing Backend Changes
+After modifying backend code:
+1. Check syntax: `uv run python -m py_compile <file.py>`
+2. Restart backend server: `tmux send-keys -t backend C-c` then resend start command
+3. Monitor logs: `tmux capture-pane -t backend -p | tail -50`
+
+## Commit Messages
+
+Keep commit messages short - 1 line, no fluff.
