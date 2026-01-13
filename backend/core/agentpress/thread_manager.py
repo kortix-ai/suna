@@ -775,7 +775,13 @@ class ThreadManager:
                 fetch_start = time.time()
                 messages = await self.get_llm_messages(thread_id)
                 logger.debug(f"⏱️ [TIMING] get_llm_messages(): {(time.time() - fetch_start) * 1000:.1f}ms ({len(messages)} messages)")
-            
+
+            # Refresh expired image URLs before LLM call
+            from core.files.url_refresh import refresh_image_urls_in_messages
+            refresh_start = time.time()
+            messages, refresh_count = await refresh_image_urls_in_messages(messages, thread_id)
+            logger.debug(f"⏱️ [TIMING] URL refresh check: {(time.time() - refresh_start) * 1000:.1f}ms ({refresh_count} refreshed)")
+
             # Note: We no longer need to manually append partial assistant messages
             # because we now save complete assistant messages with tool calls before auto-continuing
 
