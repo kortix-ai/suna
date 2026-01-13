@@ -2,6 +2,29 @@ from typing import Optional, List, Dict, Any, Tuple
 from core.services.db import execute, execute_one, serialize_row, serialize_rows
 from core.utils.logger import logger
 
+
+# ============================================================================
+# MESSAGE CACHE HELPERS - Invalidate Redis cache on message mutations
+# ============================================================================
+
+async def _invalidate_message_cache(thread_id: str, operation: str = "unknown") -> None:
+    """
+    Invalidate message history cache when messages are created/deleted.
+    This ensures the LLM always sees fresh message data.
+
+    Args:
+        thread_id: The thread whose cache should be invalidated
+        operation: Description of the operation for debug logging
+    """
+    try:
+        from core.cache.runtime_cache import invalidate_message_history_cache
+        await invalidate_message_history_cache(thread_id)
+        logger.debug(f"🗑️ [CACHE] Invalidated message cache for thread {thread_id} (op: {operation})")
+    except Exception as e:
+        # Non-fatal: log and continue - better to have stale cache than fail the operation
+        logger.warning(f"Failed to invalidate message cache for {thread_id}: {e}")
+
+
 async def list_user_threads(
     account_id: str,
     limit: int = 100,
@@ -242,16 +265,16 @@ async def create_message(
     from datetime import datetime, timezone
     from core.services.db import execute_one
     import uuid
-    
+
     if message_id is None:
         message_id = str(uuid.uuid4())
-    
+
     sql = """
     INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, created_at)
     VALUES (:message_id, :thread_id, :type, :is_llm_message, :content, :created_at)
     RETURNING *
     """
-    
+
     result = await execute_one(sql, {
         "message_id": message_id,
         "thread_id": thread_id,
@@ -260,27 +283,37 @@ async def create_message(
         "content": content,
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
-    
+
+    # Invalidate cache so LLM sees fresh messages
+    if result and is_llm_message:
+        await _invalidate_message_cache(thread_id, f"create_message:{message_type}")
+
     return dict(result) if result else None
 
 
 async def delete_message(thread_id: str, message_id: str, is_llm_message: bool = True) -> bool:
     from core.services.db import execute_mutate
-    
+
     sql = """
-    DELETE FROM messages 
-    WHERE message_id = :message_id 
-      AND thread_id = :thread_id 
+    DELETE FROM messages
+    WHERE message_id = :message_id
+      AND thread_id = :thread_id
       AND is_llm_message = :is_llm_message
     """
-    
+
     result = await execute_mutate(sql, {
         "message_id": message_id,
         "thread_id": thread_id,
         "is_llm_message": is_llm_message
     })
-    
-    return len(result) > 0
+
+    deleted = len(result) > 0
+
+    # Invalidate cache so LLM sees fresh messages
+    if deleted and is_llm_message:
+        await _invalidate_message_cache(thread_id, "delete_message")
+
+    return deleted
 
 
 async def get_thread_with_project(thread_id: str) -> Optional[Dict[str, Any]]:
@@ -545,13 +578,13 @@ async def create_message_full(
     metadata: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     from datetime import datetime, timezone
-    
+
     sql = """
     INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, metadata, created_at)
     VALUES (:message_id, :thread_id, :type, :is_llm_message, :content, :metadata, :created_at)
     RETURNING *
     """
-    
+
     result = await execute_one(sql, {
         "message_id": message_id,
         "thread_id": thread_id,
@@ -561,7 +594,11 @@ async def create_message_full(
         "metadata": metadata,
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
-    
+
+    # Invalidate cache so LLM sees fresh messages
+    if result and is_llm_message:
+        await _invalidate_message_cache(thread_id, f"create_message_full:{message_type}")
+
     return dict(result) if result else None
 
 
@@ -861,15 +898,21 @@ async def update_message_metadata(message_id: str, metadata: Dict[str, Any]) -> 
 
 async def delete_message_by_id(message_id: str, thread_id: Optional[str] = None) -> bool:
     from core.services.db import execute_mutate
-    
+
     if thread_id:
         sql = "DELETE FROM messages WHERE message_id = :message_id AND thread_id = :thread_id"
         result = await execute_mutate(sql, {"message_id": message_id, "thread_id": thread_id})
     else:
         sql = "DELETE FROM messages WHERE message_id = :message_id"
         result = await execute_mutate(sql, {"message_id": message_id})
-    
-    return len(result) > 0 if result else False
+
+    deleted = len(result) > 0 if result else False
+
+    # Invalidate cache if we know the thread_id
+    if deleted and thread_id:
+        await _invalidate_message_cache(thread_id, "delete_message_by_id")
+
+    return deleted
 
 
 async def update_messages_is_llm_message(message_ids: List[str], is_llm_message: bool = True) -> int:
@@ -1135,13 +1178,13 @@ async def insert_message(
 ) -> Optional[Dict[str, Any]]:
     from datetime import datetime, timezone
     import uuid
-    
+
     message_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
-    
+
     sql = """
     INSERT INTO messages (
-        message_id, thread_id, type, content, is_llm_message, 
+        message_id, thread_id, type, content, is_llm_message,
         metadata, agent_id, agent_version_id, created_at
     )
     VALUES (
@@ -1150,7 +1193,7 @@ async def insert_message(
     )
     RETURNING *
     """
-    
+
     result = await execute_one(sql, {
         "message_id": message_id,
         "thread_id": thread_id,
@@ -1162,7 +1205,11 @@ async def insert_message(
         "agent_version_id": agent_version_id,
         "created_at": now
     }, commit=True)
-    
+
+    # Invalidate cache so LLM sees fresh messages
+    if result and is_llm_message:
+        await _invalidate_message_cache(thread_id, f"insert_message:{message_type}")
+
     return dict(result) if result else None
 
 

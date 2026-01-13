@@ -1,5 +1,8 @@
 .DS_Store
 
+CLAUDE.md
+WARP.md
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
