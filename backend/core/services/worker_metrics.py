@@ -169,3 +169,73 @@ async def start_cloudwatch_publisher(interval_seconds: int = 60):
             raise
         except Exception as e:
             logger.error(f"Error in CloudWatch API instance publisher loop: {e}")
+
+
+async def cleanup_orphaned_redis_streams(max_age_seconds: int = 3600) -> int:
+    """
+    Clean up Redis streams that have no TTL set (TTL = -1).
+    
+    This handles streams that were created before TTL was set, or where
+    the process crashed before reaching the finally block that sets TTL.
+    
+    Args:
+        max_age_seconds: TTL to set on orphaned streams (default 1 hour)
+        
+    Returns:
+        Number of streams that had TTL set
+    """
+    from core.services import redis
+    
+    fixed_count = 0
+    try:
+        redis_client = await redis.get_client()
+        
+        # Scan for all stream keys
+        cursor = 0
+        pattern = "agent_run:*:stream"
+        
+        while True:
+            cursor, keys = await redis_client.scan(cursor, match=pattern, count=100)
+            
+            for key in keys:
+                try:
+                    ttl = await redis_client.ttl(key)
+                    if ttl == -1:  # No TTL set
+                        await redis_client.expire(key, max_age_seconds)
+                        fixed_count += 1
+                except Exception:
+                    pass  # Skip individual key errors
+            
+            if cursor == 0:
+                break
+        
+        if fixed_count > 0:
+            logger.warning(f"🧹 Set TTL on {fixed_count} orphaned Redis streams (no TTL)")
+        
+        return fixed_count
+    except Exception as e:
+        logger.error(f"Failed to cleanup orphaned Redis streams: {e}")
+        return 0
+
+
+async def start_stream_cleanup_task(interval_seconds: int = 300):
+    """
+    Background task to periodically clean up orphaned Redis streams.
+    
+    Runs every 5 minutes by default to catch any streams that somehow
+    escaped TTL setting (crash before finally block, etc).
+    
+    Args:
+        interval_seconds: How often to run cleanup (default 5 minutes)
+    """
+    logger.info(f"Starting Redis stream cleanup task (interval: {interval_seconds}s)")
+    
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            await cleanup_orphaned_redis_streams()
+        except asyncio.CancelledError:
+            logger.info("Redis stream cleanup task stopped")
+            raise
+        except Exception as e:
+            logger.error(f"Error in stream cleanup task: {e}")

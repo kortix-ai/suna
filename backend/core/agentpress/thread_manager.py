@@ -575,6 +575,11 @@ class ThreadManager:
         prefetch_messages_task: Optional[asyncio.Task] = None, prefetch_llm_end_task: Optional[asyncio.Task] = None
     ) -> Union[Dict[str, Any], AsyncGenerator]:
         """Execute a single LLM run."""
+        # CRITICAL: Check for cancellation at the very start to prevent race conditions
+        if cancellation_event and cancellation_event.is_set():
+            logger.info(f"🛑 Cancellation detected at start of _execute_run for thread {thread_id} - aborting")
+            return {"type": "status", "status": "stopped", "message": "Agent run was stopped"}
+        
         # Simple run counter - increments with each call
         run_number = auto_continue_state['count'] + 1
         
@@ -954,6 +959,11 @@ class ThreadManager:
                 logger.info(f"📤 POST-COMPRESSION: {len(prepared_messages)} messages, {actual_tokens} tokens")
             
             llm_call_start = time.time()
+
+            # CRITICAL: Check for cancellation before making LLM call to prevent race condition
+            if cancellation_event and cancellation_event.is_set():
+                logger.info(f"🛑 Cancellation detected before LLM call for thread {thread_id} - aborting")
+                return {"type": "status", "status": "stopped", "message": "Agent run was stopped"}
 
             # Make LLM call
             try:

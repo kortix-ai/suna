@@ -384,6 +384,7 @@ export const optimisticAgentStart = async (options: {
   model_name?: string;
   agent_id?: string;
   memory_enabled?: boolean;
+  mode?: string;  // Mode: slides, sheets, docs, canvas, video, research
 }): Promise<OptimisticAgentStartResponse> => {
   try {
     if (!API_URL) {
@@ -417,6 +418,10 @@ export const optimisticAgentStart = async (options: {
     
     if (options.memory_enabled !== undefined) {
       formData.append('memory_enabled', String(options.memory_enabled));
+    }
+    
+    if (options.mode) {
+      formData.append('mode', options.mode);
     }
 
     const response = await backendApi.upload<OptimisticAgentStartResponse>(

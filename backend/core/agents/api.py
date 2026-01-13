@@ -228,6 +228,7 @@ async def start_agent_run(
     memory_enabled: Optional[bool] = None,
     is_optimistic: bool = False,
     emit_timing: bool = False,
+    mode: Optional[str] = None,  # Mode: slides, sheets, docs, canvas, video, research
 ) -> Dict[str, Any]:
     """Start an agent run - core business logic."""
     from core.agents.config import load_agent_config
@@ -293,7 +294,9 @@ async def start_agent_run(
         from core.cache.runtime_cache import set_cached_project_metadata, increment_thread_count_cache
         from core.utils.thread_name_generator import generate_and_update_thread_name
         
-        asyncio.create_task(set_cached_project_metadata(project_id, {}))
+        # Cache project metadata with mode if provided
+        project_metadata = {"mode": mode} if mode else {}
+        asyncio.create_task(set_cached_project_metadata(project_id, project_metadata))
         asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
         if prompt:
             asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
@@ -462,6 +465,7 @@ async def unified_agent_start(
     file_ids: List[str] = Form(default=[]),
     optimistic: Optional[str] = Form(None),
     memory_enabled: Optional[str] = Form(None),
+    mode: Optional[str] = Form(None),  # Mode: slides, sheets, docs, canvas, video, research
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Start an agent run. Files must be staged via /files/stage first."""
@@ -534,6 +538,7 @@ async def unified_agent_start(
             is_optimistic=is_optimistic,
             skip_limits_check=skip_limits,
             emit_timing=emit_timing,
+            mode=mode,
         )
         
         response = {

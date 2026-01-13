@@ -70,7 +70,7 @@ class ToolGuideRegistry:
             "",
             "**🚨 CRITICAL - Tool Guides Give You Function Names:**",
             "Each tool provides SPECIFIC FUNCTIONS. Loading the guide reveals what you can use:",
-            "- sb_presentation_tool → create_slide, load_template_design, validate_slide",
+            "- sb_presentation_tool → create_slide, load_template_design",
             "- sb_files_tool → create_file, edit_file, full_file_rewrite",
             "- sb_file_reader_tool → read_file - read PDFs, documents, text files, CSV, JSON, code",
             "- browser_tool → browser_navigate, browser_click, browser_screenshot",
