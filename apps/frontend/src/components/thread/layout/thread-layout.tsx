@@ -275,14 +275,21 @@ export const ThreadLayout = memo(function ThreadLayout({
           />
         ) : modeStarter === 'sheets' ? (
           <SheetsModeStarter
-            sandboxId={sandboxId || undefined}
-            project={project || undefined}
+            onSelectPrompt={(prompt, placeholderInfo) => {
+              console.log('[ThreadLayout] SheetsModeStarter onSelectPrompt called, onStarterPrompt exists:', !!onStarterPrompt);
+              onStarterPrompt?.(prompt, placeholderInfo);
+            }}
             onClose={onModeStarterClose}
             className="h-full"
+            sandboxId={sandboxId}
+            project={project}
           />
         ) : modeStarter === 'docs' ? (
           <DocsStarter
-            onSelectPrompt={(prompt, placeholderInfo) => onStarterPrompt?.(prompt, placeholderInfo)}
+            onSelectPrompt={(prompt, placeholderInfo) => {
+              console.log('[ThreadLayout] DocsStarter onSelectPrompt called, onStarterPrompt exists:', !!onStarterPrompt);
+              onStarterPrompt?.(prompt, placeholderInfo);
+            }}
             onClose={onModeStarterClose}
             className="h-full"
             sandboxId={sandboxId}
@@ -404,14 +411,21 @@ export const ThreadLayout = memo(function ThreadLayout({
             />
           ) : modeStarter === 'sheets' ? (
             <SheetsModeStarter
-              sandboxId={sandboxId || undefined}
-              project={project || undefined}
+              onSelectPrompt={(prompt, placeholderInfo) => {
+                console.log('[ThreadLayout-mobile] SheetsModeStarter onSelectPrompt called, onStarterPrompt exists:', !!onStarterPrompt);
+                onStarterPrompt?.(prompt, placeholderInfo);
+              }}
               onClose={onModeStarterClose}
               className="h-full"
+              sandboxId={sandboxId}
+              project={project}
             />
           ) : modeStarter === 'docs' ? (
             <DocsStarter
-              onSelectPrompt={(prompt, placeholderInfo) => onStarterPrompt?.(prompt, placeholderInfo)}
+              onSelectPrompt={(prompt, placeholderInfo) => {
+                console.log('[ThreadLayout-mobile] DocsStarter onSelectPrompt called, onStarterPrompt exists:', !!onStarterPrompt);
+                onStarterPrompt?.(prompt, placeholderInfo);
+              }}
               onClose={onModeStarterClose}
               className="h-full"
               sandboxId={sandboxId}

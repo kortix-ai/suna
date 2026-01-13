@@ -757,24 +757,28 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   // Handler for mode starter prompt selection (works for all modes except presentation)
   const handleStarterPrompt = useCallback((prompt: string, placeholderInfo?: { start: number; end: number }) => {
     console.log('[ThreadComponent] Starter prompt:', prompt, 'placeholder:', placeholderInfo);
-    
-    // Fill the chat input with the selected prompt
-    chatInputRef.current?.setValue(prompt);
-    chatInputRef.current?.focus();
-    
-    // Select the placeholder text if it exists (use setTimeout to ensure value is set)
-    if (placeholderInfo) {
-      setTimeout(() => {
-        chatInputRef.current?.selectRange(placeholderInfo.start, placeholderInfo.end);
-      }, 50);
-    }
-    
-    // Close the mode starter and remove the query param
+
+    // Close the mode starter and remove the query param first
     setModeStarter(null);
     const url = new URL(window.location.href);
     url.searchParams.delete('modeStarter');
     window.history.replaceState({}, '', url.pathname + url.search);
-    
+
+    // Fill the chat input with the selected prompt after a small delay
+    // This ensures the mode starter is closed and ChatInput is ready
+    setTimeout(() => {
+      console.log('[ThreadComponent] Setting chat input value:', prompt);
+      chatInputRef.current?.setValue(prompt);
+      chatInputRef.current?.focus();
+
+      // Select the placeholder text if it exists
+      if (placeholderInfo) {
+        setTimeout(() => {
+          chatInputRef.current?.selectRange(placeholderInfo.start, placeholderInfo.end);
+        }, 50);
+      }
+    }, 100);
+
     // Keep the side panel open to show KortixComputer
     if (!isSidePanelOpen) {
       toggleSidePanel();
@@ -1759,6 +1763,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         onModeStarterAction={handleModeStarterAction}
         onModeStarterTemplate={handleModeStarterTemplate}
         onModeStarterClose={handleModeStarterClose}
+        onStarterPrompt={handleStarterPrompt}
       >
         <ThreadContent
           messages={isShared ? playback.playbackState.visibleMessages : displayMessages}

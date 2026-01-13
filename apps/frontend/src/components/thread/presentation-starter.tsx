@@ -130,7 +130,7 @@ function SpotlightCard({ children, className }: SpotlightCardProps) {
   );
 }
 
-// Template slide preview component - mimics PresentationSlideCard iframe approach
+// Simple slide preview component - displays slide at full width with proper aspect ratio
 interface TemplateSlidePreviewProps {
   slideNumber: number;
   templateId: string;
@@ -146,81 +146,32 @@ function TemplateSlidePreview({
   backendUrl,
   animationDelay = 0,
 }: TemplateSlidePreviewProps) {
-  const [containerRef, setContainerRef] = useState<HTMLDivElement | null>(null);
-  const [scale, setScale] = useState(1);
-
-  useEffect(() => {
-    if (!containerRef) return;
-
-    const updateScale = () => {
-      const containerWidth = containerRef.offsetWidth;
-      const containerHeight = containerRef.offsetHeight;
-      
-      // Calculate scale to fit 1920x1080 into container while maintaining aspect ratio
-      const scaleX = containerWidth / 1920;
-      const scaleY = containerHeight / 1080;
-      const newScale = Math.min(scaleX, scaleY);
-      
-      if (Math.abs(newScale - scale) > 0.001) {
-        setScale(newScale);
-      }
-    };
-
-    updateScale();
-
-    const resizeObserver = new ResizeObserver(() => {
-      updateScale();
-    });
-    resizeObserver.observe(containerRef);
-
-    return () => {
-      resizeObserver.disconnect();
-    };
-  }, [containerRef, scale]);
-
   return (
     <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
       transition={{ delay: animationDelay, duration: 0.15 }}
-      className="relative bg-background border border-border/50 rounded-xl overflow-hidden shadow-sm"
+      className="w-full"
     >
-      {/* Slide header */}
-      <div className="px-3 py-2 bg-muted/20 border-b border-border/40 flex items-center">
-        <span className="text-xs font-mono text-muted-foreground">
+      {/* Slide label */}
+      <div className="mb-2 px-4">
+        <span className="text-xs font-medium text-muted-foreground">
           Slide {slideNumber}
         </span>
       </div>
-      
-      {/* Slide Preview - aspect-video container */}
-      <div className="relative aspect-video bg-muted/30">
-        <div 
-          ref={setContainerRef}
-          className="w-full h-full bg-white overflow-hidden"
-          style={{
-            containIntrinsicSize: '1920px 1080px',
-            contain: 'layout style'
-          }}
-        >
-          <iframe
-            src={`${backendUrl}/presentation-templates/${templateId}/slides/${slideNumber}`}
-            title={`${templateName} - Slide ${slideNumber}`}
-            className="border-0"
-            sandbox="allow-same-origin"
-            style={{
-              width: '1920px',
-              height: '1080px',
-              border: 'none',
-              display: 'block',
-              transform: `scale(${scale})`,
-              transformOrigin: '0 0',
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              pointerEvents: 'none',
-            }}
-          />
-        </div>
+
+      {/* Slide iframe - full width, 16:9 aspect ratio */}
+      <div
+        className="relative w-full bg-white"
+        style={{ paddingBottom: '56.25%' }}
+      >
+        <iframe
+          src={`${backendUrl}/presentation-templates/${templateId}/slides/${slideNumber}`}
+          title={`${templateName} - Slide ${slideNumber}`}
+          className="absolute inset-0 w-full h-full border-0"
+          sandbox="allow-same-origin"
+          style={{ pointerEvents: 'none' }}
+        />
       </div>
     </motion.div>
   );
@@ -556,11 +507,11 @@ export function PresentationStarter({
               </Button>
             </div>
 
-            {/* All Slides - Vertical Stack */}
-            <ScrollArea className="flex-1 min-h-0">
-              <div className="p-4 space-y-4">
+            {/* All Slides - Full Width Vertical List */}
+            <div className="flex-1 overflow-y-auto">
+              <div className="py-4 space-y-4">
                 {isLoadingInfo ? (
-                  <div className="flex flex-col items-center justify-center py-12 gap-3">
+                  <div className="flex flex-col items-center justify-center py-20 gap-3">
                     <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
                     <span className="text-sm text-muted-foreground">Loading slides...</span>
                   </div>
@@ -577,7 +528,7 @@ export function PresentationStarter({
                   ))
                 ) : (
                   // Fallback to PDF
-                  <div className="w-full aspect-video rounded-lg overflow-hidden border border-border/50 shadow-sm">
+                  <div className="w-full h-[600px] overflow-hidden">
                     <iframe
                       src={`${backendUrl}/presentation-templates/${previewTemplate.id}/pdf#toolbar=0&navpanes=0&view=FitH`}
                       className="w-full h-full border-0"
@@ -586,7 +537,7 @@ export function PresentationStarter({
                   </div>
                 )}
               </div>
-            </ScrollArea>
+            </div>
 
             {/* Use Template Footer */}
             <div className="px-5 py-4 border-t border-border/50 bg-card/80">
