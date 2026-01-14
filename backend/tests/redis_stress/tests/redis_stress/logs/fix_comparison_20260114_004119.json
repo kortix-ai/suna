@@ -1,0 +1,42 @@
+{
+  "timestamp": "2026-01-14T00:41:19.279513",
+  "config": {
+    "pool_size": 15,
+    "num_readers": 20,
+    "num_workers": 5,
+    "duration": 15
+  },
+  "broken": {
+    "name": "broken_single_pool",
+    "duration_s": 15,
+    "get": {
+      "attempts": 1338,
+      "successes": 1338,
+      "timeouts": 0,
+      "pool_failures": 0,
+      "success_rate": 1.0
+    },
+    "xread_ops": 87499,
+    "latency": {
+      "avg_ms": 4.524867452669928,
+      "max_ms": 11.415719985961914
+    }
+  },
+  "fixed": {
+    "name": "fixed_split_pools",
+    "duration_s": 15,
+    "get": {
+      "attempts": 1348,
+      "successes": 1348,
+      "timeouts": 0,
+      "pool_failures": 0,
+      "success_rate": 1.0
+    },
+    "xread_ops": 88860,
+    "latency": {
+      "avg_ms": 4.192978939599737,
+      "max_ms": 20.968914031982422
+    }
+  },
+  "verdict": "INCONCLUSIVE"
+}

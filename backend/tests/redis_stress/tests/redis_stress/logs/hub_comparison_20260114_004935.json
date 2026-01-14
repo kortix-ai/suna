@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-01-14T00:49:35.103295",
+  "config": {
+    "num_clients": 50,
+    "duration": 10
+  },
+  "without_hub": {
+    "pattern": "without_hub",
+    "clients": 50,
+    "max_connections_used": 50,
+    "total_messages": 5100
+  },
+  "with_hub": {
+    "pattern": "with_hub",
+    "clients": 50,
+    "streams_active": 1,
+    "stream_connections_used": 1,
+    "total_messages": 5350,
+    "messages_dropped": 0
+  },
+  "verdict": "HUB_WORKS"
+}

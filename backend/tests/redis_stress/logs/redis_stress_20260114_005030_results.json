@@ -1,0 +1,252 @@
+{
+  "timestamp": "2026-01-14T00:49:41.106604",
+  "config": {
+    "host": "localhost",
+    "port": 6379,
+    "pool_size": 15,
+    "pool_timeout": 0.2,
+    "op_timeout": 2.0,
+    "mode": "quick"
+  },
+  "tests": [
+    {
+      "test": "connection_starvation",
+      "description": "XREAD BLOCK operations starving GET/SET operations",
+      "config": {
+        "pool_size": 15,
+        "blocking_readers": 20,
+        "getset_workers": 5,
+        "block_ms": 500,
+        "op_timeout_s": 2.0,
+        "duration_s": 15
+      },
+      "xread": {
+        "total_ops": 1294
+      },
+      "get": {
+        "attempts": 284,
+        "successes": 141,
+        "timeouts": 0,
+        "pool_wait_failures": 140,
+        "timeout_rate": 0.0,
+        "avg_latency_ms": 21.085784790363718,
+        "p95_latency_ms": 59.68904495239258,
+        "max_latency_ms": 204.0231227874756
+      },
+      "set": {
+        "attempts": 281,
+        "successes": 139,
+        "timeouts": 0
+      },
+      "pool_snapshots": [
+        {
+          "ts": 1768348187.125153,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348188.1264052,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348189.127719,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348190.129004,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348191.130612,
+          "in_use": 1,
+          "available": 14,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348192.131967,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348193.1332722,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348194.133562,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768348195.134979,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 15
+        },
+        {
+          "ts": 1768348196.135505,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 15
+        }
+      ],
+      "conclusion": "CONNECTION STARVATION REPLICATED! GET timeouts: 0 (0.0%), Pool wait failures: 140. This matches your prod issue!",
+      "issue_confirmed": true
+    },
+    {
+      "test": "mixed_workload",
+      "description": "Realistic production traffic - all ops sharing one pool",
+      "config": {
+        "agent_runs": 3,
+        "sse_clients_per_run": 3,
+        "total_xread_clients": 9,
+        "cache_workers": 5,
+        "pool_size": 15
+      },
+      "operations": {
+        "xread": {
+          "attempts": 1299,
+          "successes": 1290,
+          "timeouts": 0,
+          "timeout_rate": 0.0,
+          "avg_latency_ms": 103.99659844331963,
+          "max_latency_ms": 112.48898506164551
+        },
+        "xadd": {
+          "attempts": 429,
+          "successes": 429,
+          "timeouts": 0,
+          "timeout_rate": 0.0,
+          "avg_latency_ms": 4.12337096421035,
+          "max_latency_ms": 10.193109512329102
+        },
+        "get_cache": {
+          "attempts": 1365,
+          "successes": 1365,
+          "timeouts": 0,
+          "timeout_rate": 0.0,
+          "avg_latency_ms": 2.7365831228402944,
+          "max_latency_ms": 12.152910232543945
+        },
+        "get_stop_signal": {
+          "attempts": 24,
+          "successes": 24,
+          "timeouts": 0,
+          "timeout_rate": 0.0,
+          "avg_latency_ms": 3.42602531115214,
+          "max_latency_ms": 11.57689094543457
+        },
+        "set": {
+          "attempts": 1365,
+          "successes": 1365,
+          "timeouts": 0,
+          "timeout_rate": 0.0,
+          "avg_latency_ms": 1.515070073333852,
+          "max_latency_ms": 14.288187026977539
+        }
+      },
+      "conclusion": "Mixed workload handled OK - no timeouts observed",
+      "issues_found": false
+    },
+    {
+      "test": "pool_exhaustion",
+      "description": "Burst traffic exceeding pool capacity",
+      "config": {
+        "bursts": 5,
+        "burst_size": 30,
+        "pool_size": 15,
+        "pool_timeout_s": 0.2
+      },
+      "totals": {
+        "requests": 150,
+        "successes": 150,
+        "pool_timeouts": 0,
+        "op_timeouts": 0,
+        "success_rate": 1.0
+      },
+      "latency": {
+        "avg_ms": 10.54461638132731,
+        "max_ms": 17.011165618896484
+      },
+      "bursts": [
+        {
+          "burst": 1,
+          "successes": 30,
+          "total": 30,
+          "pool_timeouts": 0,
+          "avg_latency_ms": 14.73375161488851
+        },
+        {
+          "burst": 2,
+          "successes": 30,
+          "total": 30,
+          "pool_timeouts": 0,
+          "avg_latency_ms": 12.832967440287273
+        },
+        {
+          "burst": 3,
+          "successes": 30,
+          "total": 30,
+          "pool_timeouts": 0,
+          "avg_latency_ms": 10.448169708251953
+        },
+        {
+          "burst": 4,
+          "successes": 30,
+          "total": 30,
+          "pool_timeouts": 0,
+          "avg_latency_ms": 5.835294723510742
+        },
+        {
+          "burst": 5,
+          "successes": 30,
+          "total": 30,
+          "pool_timeouts": 0,
+          "avg_latency_ms": 8.872898419698078
+        }
+      ],
+      "conclusion": "Pool handled burst traffic OK",
+      "issue_confirmed": false
+    },
+    {
+      "test": "split_pool_solution",
+      "description": "Testing fix: separate pools for blocking vs non-blocking ops",
+      "config": {
+        "blocking_readers": 20,
+        "getset_workers": 5,
+        "general_pool_size": 15,
+        "stream_pool_size": 25
+      },
+      "get": {
+        "attempts": 1351,
+        "successes": 1351,
+        "timeouts": 0,
+        "timeout_rate": 0.0,
+        "avg_latency_ms": 4.082558333300202
+      },
+      "xread_ops": 89991,
+      "conclusion": "SPLIT POOL FIX WORKS! 0 GET timeouts with 20 blocking readers. Avg latency: 4.1ms",
+      "fix_verified": true
+    }
+  ]
+}

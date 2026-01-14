@@ -1,0 +1,117 @@
+{
+  "timestamp": "2026-01-14T00:42:48.478806",
+  "config": {
+    "host": "localhost",
+    "port": 6379,
+    "pool_size": 15,
+    "pool_timeout": 0.2,
+    "op_timeout": 2.0,
+    "mode": "quick"
+  },
+  "tests": [
+    {
+      "test": "connection_starvation",
+      "description": "XREAD BLOCK operations starving GET/SET operations",
+      "config": {
+        "pool_size": 15,
+        "blocking_readers": 20,
+        "getset_workers": 5,
+        "block_ms": 500,
+        "op_timeout_s": 2.0,
+        "duration_s": 15
+      },
+      "xread": {
+        "total_ops": 1300
+      },
+      "get": {
+        "attempts": 276,
+        "successes": 136,
+        "timeouts": 0,
+        "pool_wait_failures": 140,
+        "timeout_rate": 0.0,
+        "avg_latency_ms": 23.71055063079385,
+        "p95_latency_ms": 134.3231201171875,
+        "max_latency_ms": 200.9570598602295
+      },
+      "set": {
+        "attempts": 276,
+        "successes": 133,
+        "timeouts": 0
+      },
+      "pool_snapshots": [
+        {
+          "ts": 1768347774.498455,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347775.49921,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347776.5004091,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347777.501672,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347778.503,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347779.504321,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347780.505377,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347781.508895,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347782.510589,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 20
+        },
+        {
+          "ts": 1768347783.51207,
+          "in_use": 15,
+          "available": 0,
+          "max": 15,
+          "blocked_readers": 15
+        }
+      ],
+      "conclusion": "CONNECTION STARVATION REPLICATED! GET timeouts: 0 (0.0%), Pool wait failures: 140. This matches your prod issue!",
+      "issue_confirmed": true
+    }
+  ]
+}
