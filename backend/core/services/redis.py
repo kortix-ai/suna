@@ -147,6 +147,21 @@ class StreamHub:
         """Context manager for safe subscribe/unsubscribe."""
         return _HubSubscription(self, stream_key, last_id)
 
+    async def close(self):
+        """Cancel all pump tasks on shutdown."""
+        async with self._lock:
+            tasks = list(self._pumps.values())
+            self._pumps.clear()
+            self._subs.clear()
+        for t in tasks:
+            t.cancel()
+        for t in tasks:
+            try:
+                await t
+            except asyncio.CancelledError:
+                pass
+        logger.debug(f"Hub: Closed, cancelled {len(tasks)} pumps")
+
     def get_stats(self) -> Dict[str, Any]:
         return {
             "streams_active": self.streams_active,
@@ -344,7 +359,15 @@ class RedisClient:
                 finally:
                     self._stream_pool = None
 
-            self._hub = None
+            # Close hub (cancels all pump tasks)
+            if self._hub:
+                try:
+                    await self._hub.close()
+                except Exception as e:
+                    logger.warning(f"Error closing StreamHub: {e}")
+                finally:
+                    self._hub = None
+
             self._initialized = False
             logger.info("Redis connections and pools closed")
     

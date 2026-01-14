@@ -641,16 +641,27 @@ async def stream_agent_run(
 
     stream_key = f"agent_run:{agent_run_id}:stream"
 
+    def compare_stream_ids(id1: str, id2: str) -> int:
+        """Compare Redis stream IDs. Returns -1 if id1 < id2, 0 if equal, 1 if id1 > id2."""
+        try:
+            t1, s1 = id1.split('-')
+            t2, s2 = id2.split('-')
+            if int(t1) != int(t2):
+                return -1 if int(t1) < int(t2) else 1
+            return -1 if int(s1) < int(s2) else (0 if int(s1) == int(s2) else 1)
+        except Exception:
+            return -1 if id1 < id2 else (0 if id1 == id2 else 1)
+
     def find_last_safe_boundary(entries):
         """Find last safe trim boundary in stream entries."""
         last_safe = -1
         open_responses = 0
-        
+
         for i, (_, fields) in enumerate(entries):
             try:
                 data = json.loads(fields.get('data', '{}'))
                 msg_type = data.get('type')
-                
+
                 if msg_type == 'llm_response_start':
                     open_responses += 1
                 elif msg_type == 'llm_response_end':
@@ -661,7 +672,7 @@ async def stream_agent_run(
                     last_safe = i
             except Exception:
                 continue
-        
+
         if open_responses > 0:
             return -1
         return last_safe
@@ -714,6 +725,9 @@ async def stream_agent_run(
 
                         if msg is not None:
                             entry_id, fields = msg
+                            # Dedupe: skip if we already saw this in catch-up
+                            if compare_stream_ids(entry_id, last_id) <= 0:
+                                continue
                             received_data = True
                             timeout_count = 0
                             ping_count = 0
