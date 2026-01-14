@@ -172,8 +172,8 @@ export function useOptimisticAgentStart(
       }
 
       // Navigate immediately for optimistic UX
-      const modeStarterParam = modeStarter ? `&modeStarter=${modeStarter}` : '';
-      router.push(`/projects/${projectId}/thread/${threadId}?new=true${modeStarterParam}`);
+      const modeStarterParam = modeStarter ? `?modeStarter=${modeStarter}` : '';
+      router.push(`/projects/${projectId}/thread/${threadId}${modeStarterParam}`);
 
       // Start agent in background - only pass file_ids, backend handles everything
       optimisticAgentStart({
