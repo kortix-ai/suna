@@ -494,10 +494,14 @@ export function useActiveAgentRuns(
         const data = await res.json();
         return data.active_runs || [];
       } catch (error) {
+        // IMPORTANT: Re-throw network errors so fetchQuery catches them for retry logic
+        // This allows retryLastMessage to detect network failures
         log.error('Error fetching active runs:', error);
-        return [];
+        throw error;
       }
     },
+    // Don't retry on error for this query - let the UI handle retry
+    retry: false,
     staleTime: 10 * 1000, // Cache for 10 seconds
     refetchInterval: (query) => {
       // Smart polling: only poll every 15 seconds if there are active runs

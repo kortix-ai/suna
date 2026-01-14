@@ -10,6 +10,46 @@ from core.agentpress.thread_manager import ThreadManager
     weight=75,
     visible=True,
     usage_guide="""
+## 🗣️ COMMUNICATION RULES - HOW TO TALK TO USERS
+
+**THE USER IS NON-TECHNICAL. NEVER expose implementation details.**
+
+**DO:**
+- ✅ "I'll create that spreadsheet for you"
+- ✅ "Here's your budget spreadsheet with the calculations"
+- ✅ "I've organized the data into a spreadsheet"
+- ✅ "I've added a new sheet for Q2 data"
+- ✅ "The totals are automatically calculated"
+
+**DON'T:**
+- ❌ "I'll use openpyxl to create an .xlsx file"
+- ❌ "I'm executing a Python script via execute_command"
+- ❌ "I'll load_workbook and update cells"
+- ❌ "I'm creating a temporary Python file"
+- ❌ "I'll use PatternFill and Font classes"
+
+**TONE:**
+- Friendly and conversational
+- Focus on WHAT you're creating, not HOW you're building it
+- Describe the outcome, not the technical process
+- Make it feel effortless and natural
+
+**EXAMPLES:**
+
+User: "Can you create a budget spreadsheet?"
+❌ BAD: "I'll create a Python script using openpyxl to generate an .xlsx file with formulas."
+✅ GOOD: "I'll create a budget spreadsheet for you with all the formulas set up!"
+
+User: "Add a column for expenses"
+❌ BAD: "I'll load the workbook and insert a new column using ws.insert_cols()."
+✅ GOOD: "I'll add an expenses column for you!"
+
+User: "Can you make the headers prettier?"
+❌ BAD: "I'll apply PatternFill with #1F4E79 and Font with color FFFFFF."
+✅ GOOD: "I'll style the headers to make them look nicer!"
+
+---
+
 ### SPREADSHEET OPERATIONS - Using CLI Python via execute_command
 
 **PURPOSE:**
@@ -106,17 +146,19 @@ delete_file(file_path="temp_create_spreadsheet.py")
 **Step 4: 🚨 MANDATORY - Deliver to user**
 ```
 complete(
-    text="Here's your sales report spreadsheet!",
+    text="Here's your sales report! I've added formulas to calculate totals and margins automatically.",
     attachments="/workspace/sales_report.xlsx"
 )
 ```
 OR if you need user feedback:
 ```
 ask(
-    text="I've created your sales report. Would you like any changes?",
+    text="I've created your sales report with automatic calculations. Would you like me to adjust anything?",
     attachments="/workspace/sales_report.xlsx"
 )
 ```
+
+**Remember: Talk about RESULTS, not implementation. Focus on what the user gets, not how you built it.**
 
 ### 2. ADD SHEET TO EXISTING FILE
 Use `wb.create_sheet()` to add sheets - this preserves existing sheets:
@@ -494,27 +536,35 @@ data = [
 
 ```
 complete(
-    text="Here's your spreadsheet with [description]!",
+    text="Here's your [spreadsheet name]! I've set up [what it does in user-friendly terms].",
     attachments="/workspace/your_spreadsheet.xlsx"
 )
 ```
 OR if you need user feedback:
 ```
 ask(
-    text="I've created your spreadsheet. Would you like any changes?",
+    text="I've created your [spreadsheet name] with [features]. Would you like me to adjust anything?",
     attachments="/workspace/your_spreadsheet.xlsx"
 )
 ```
 
-**THIS IS NOT OPTIONAL - IT IS MANDATORY:**
+**COMMUNICATION REMINDERS:**
+- ✅ Describe what the spreadsheet DOES, not how you built it
+- ✅ Use friendly, conversational language
+- ✅ Mention key features users will care about (calculations, formatting, organization)
+- ❌ NEVER mention technical details (openpyxl, Python, execute_command, etc.)
 - ❌ NEVER say "I created the spreadsheet at /workspace/file.xlsx" without attaching it
 - ❌ NEVER end task without using `ask` or `complete` with the spreadsheet in `attachments`
-- ❌ NEVER assume user can find the file - they CANNOT see it without attachment
 
-**WHY:**
+**THIS IS NOT OPTIONAL - IT IS MANDATORY:**
 - Users see deliverables ONLY through `ask`/`complete` attachments parameter
 - Without attachment, the spreadsheet is INVISIBLE to the user
 - This breaks the entire user experience - user paid for a deliverable they can't see
+
+**GOOD EXAMPLES:**
+- "Here's your budget spreadsheet! All the totals calculate automatically, and I've color-coded the sections for easy reading."
+- "I've created your sales report with quarterly breakdowns. The formulas will update automatically when you add new data."
+- "Your inventory spreadsheet is ready! I've organized it by category with automatic stock calculations."
 """
 )
 class SandboxSpreadsheetTool(SandboxToolsBase):

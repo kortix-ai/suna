@@ -7,6 +7,7 @@ import Animated, {
   useSharedValue,
   withTiming,
   withDelay,
+  withRepeat,
   Easing,
 } from 'react-native-reanimated';
 import LottieView from 'lottie-react-native';
@@ -28,7 +29,7 @@ import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } f
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { MessageCircle, ArrowDown, AlertCircle } from 'lucide-react-native';
+import { MessageCircle, ArrowDown, AlertCircle, RefreshCw } from 'lucide-react-native';
 import { useRouter } from 'expo-router';
 import { AgentLoader } from '../chat/AgentLoader';
 import { log } from '@/lib/logger';
@@ -42,6 +43,90 @@ interface ThreadPageProps {
     view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
   ) => void;
 }
+
+// Error banner shown when stream fails
+const StreamErrorBanner = React.memo(function StreamErrorBanner({
+  error,
+  onRetry,
+  hasActiveRun,
+  isRetrying,
+}: {
+  error: string | null;
+  onRetry: () => void;
+  hasActiveRun?: boolean;
+  isRetrying?: boolean;
+}) {
+  // Spinning animation for retry button (using Reanimated)
+  const spinValue = useSharedValue(0);
+  
+  React.useEffect(() => {
+    if (isRetrying) {
+      // Continuous rotation using withRepeat
+      spinValue.value = withRepeat(
+        withTiming(360, { duration: 1000, easing: Easing.linear }),
+        -1, // -1 = infinite repeat
+        false // don't reverse
+      );
+    } else {
+      spinValue.value = withTiming(0, { duration: 200 });
+    }
+  }, [isRetrying, spinValue]);
+  
+  const spinStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ rotate: `${spinValue.value}deg` }],
+    };
+  });
+
+  // Clean up verbose error messages for display
+  const displayError = React.useMemo(() => {
+    if (!error) return '';
+    // Extract just the key error info, not full HTML dumps
+    if (error.includes('500') || error.includes('Internal server error')) {
+      return 'Server error - please try again';
+    }
+    if (error.includes('timeout')) {
+      return 'Connection timeout - please check your internet';
+    }
+    if (error.includes('network') || error.includes('connection')) {
+      return 'Connection lost - please retry';
+    }
+    if (error.length > 100) {
+      return 'Something went wrong';
+    }
+    return error;
+  }, [error]);
+
+  if (!error) return null;
+
+  // Button text: if agent was running, we reconnect/refresh; otherwise resend
+  const buttonText = isRetrying ? 'Retrying...' : (hasActiveRun ? 'Refresh' : 'Retry');
+
+  return (
+    <View className="mx-4 mb-3">
+      <View className="flex-row items-center justify-between bg-destructive/10 border border-destructive/30 rounded-2xl px-4 py-3">
+        <View className="flex-row items-center flex-1 gap-3">
+          <View className="w-8 h-8 rounded-full bg-destructive/20 items-center justify-center">
+            <Icon as={AlertCircle} size={18} className="text-destructive" />
+          </View>
+          <Text className="text-sm text-destructive flex-1" numberOfLines={2}>
+            {displayError}
+          </Text>
+        </View>
+        <Pressable
+          onPress={onRetry}
+          disabled={isRetrying}
+          className={`flex-row items-center gap-1.5 bg-card border border-border rounded-full px-3 py-2 ml-2 ${isRetrying ? 'opacity-50' : 'active:opacity-70'}`}
+        >
+          <Animated.View style={spinStyle}>
+            <Icon as={RefreshCw} size={14} className="text-foreground" />
+          </Animated.View>
+          <Text className="text-sm font-roobert-medium text-foreground">{buttonText}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+});
 
 const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
   isRefreshing,
@@ -754,8 +839,8 @@ export function ThreadPage({
             className="flex-1"
             showsVerticalScrollIndicator={true}
             contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: 'flex-end',
+              // NOTE: No flexGrow or justifyContent - content starts at top and grows down
+              // This prevents scroll jump issues during streaming
               paddingTop: Math.max(insets.top, 16) + 80,
               paddingBottom: contentBottomPadding,
               paddingHorizontal: 16,
@@ -784,20 +869,31 @@ export function ThreadPage({
               />
             }>
             {isMounted && (
-              <ThreadContent
-                messages={messages}
-                streamingTextContent={streamingContent}
-                streamingToolCall={streamingToolCall}
-                agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
-                streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
-                sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
-                sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
-                handleToolClick={handleToolClick}
-                onToolPress={handleToolPress}
-                onFilePress={handleFilePress}
-                onPromptFill={chat.setInputValue}
-                isSendingMessage={chat.isSendingMessage}
-              />
+              <>
+                <ThreadContent
+                  messages={messages}
+                  streamingTextContent={streamingContent}
+                  streamingToolCall={streamingToolCall}
+                  agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
+                  streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}
+                  sandboxId={chat.activeSandboxId || fullThreadData?.project?.sandbox?.id}
+                  sandboxUrl={fullThreadData?.project?.sandbox?.sandbox_url}
+                  handleToolClick={handleToolClick}
+                  onToolPress={handleToolPress}
+                  onFilePress={handleFilePress}
+                  onPromptFill={chat.setInputValue}
+                  isSendingMessage={chat.isSendingMessage}
+                  isReconnecting={chat.isReconnecting}
+                  retryCount={chat.retryCount}
+                />
+                {/* Stream error banner with retry/refresh */}
+                <StreamErrorBanner 
+                  error={chat.streamError} 
+                  onRetry={chat.retryLastMessage}
+                  hasActiveRun={chat.hasActiveRun}
+                  isRetrying={chat.isRetrying}
+                />
+              </>
             )}
           </ScrollView>
         )}

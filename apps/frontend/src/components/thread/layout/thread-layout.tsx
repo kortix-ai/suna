@@ -44,6 +44,11 @@ interface ThreadLayoutProps {
   leftSidebarState?: 'collapsed' | 'expanded';
   streamingTextContent?: string;
   streamingToolCall?: any;
+  modeStarter?: 'presentation' | 'sheets' | 'docs' | 'canvas' | 'video' | 'research' | null;
+  onModeStarterAction?: (method: 'prompt' | 'pdf' | 'link', template?: string, data?: { url?: string; file?: File }) => void;
+  onModeStarterTemplate?: (templateId: string) => void;
+  onModeStarterClose?: () => void;
+  onStarterPrompt?: (prompt: string, placeholderInfo?: { start: number; end: number }) => void;
 }
 
 export const ThreadLayout = memo(function ThreadLayout({

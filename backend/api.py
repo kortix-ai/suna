@@ -64,9 +64,10 @@ instance_id = INSTANCE_ID  # Keep backward compatibility
 ip_tracker = OrderedDict()
 MAX_CONCURRENT_IPS = 25
 
-# Background task handle for CloudWatch metrics
+# Background task handles
 _worker_metrics_task = None
 _memory_watchdog_task = None
+_stream_cleanup_task = None
 
 # Graceful shutdown flag for health checks
 # When True, health check will return unhealthy to stop receiving traffic
@@ -74,7 +75,7 @@ _is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
+    global _worker_metrics_task, _memory_watchdog_task, _stream_cleanup_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
@@ -123,6 +124,10 @@ async def lifespan(app: FastAPI):
         if config.ENV_MODE == EnvMode.PRODUCTION:
             from core.services import worker_metrics
             _worker_metrics_task = asyncio.create_task(worker_metrics.start_cloudwatch_publisher())
+        
+        # Start Redis stream cleanup task (catches orphaned streams with no TTL)
+        from core.services import worker_metrics
+        _stream_cleanup_task = asyncio.create_task(worker_metrics.start_stream_cleanup_task())
         
         # Start memory watchdog for observability
         _memory_watchdog_task = asyncio.create_task(_memory_watchdog())
@@ -473,15 +478,16 @@ app.include_router(api_router, prefix="/v1")
 
 
 async def _memory_watchdog():
-    """Monitor worker memory usage and log warnings when thresholds are exceeded.
+    """Monitor worker memory and detect stale agent runs.
     
     Dynamically calculates per-worker memory limit based on total RAM and worker count.
-    Thresholds: Critical (>87%), Warning (>80%), Info (>67%)
+    Also tracks _cancellation_events and lifecycle_tracker for cleanup failure detection.
     """
+    import time as time_module
+    
     # Calculate per-worker memory limit dynamically
     workers = int(os.getenv("WORKERS", "16"))
     total_ram_mb = psutil.virtual_memory().total / 1024 / 1024
-    # Reserve 20% for OS/system, divide rest among workers
     per_worker_limit_mb = (total_ram_mb * 0.8) / workers
     
     critical_threshold_mb = per_worker_limit_mb * 0.87
@@ -501,20 +507,58 @@ async def _memory_watchdog():
                 mem_mb = mem_info.rss / 1024 / 1024
                 mem_percent = (mem_mb / per_worker_limit_mb) * 100
                 
+                # === NEW: Cleanup state tracking ===
+                from core.agents.api import _cancellation_events
+                try:
+                    from core.utils.lifecycle_tracker import get_active_runs
+                    active_runs = get_active_runs()
+                    stale_runs = [
+                        rid for rid, start in active_runs.items() 
+                        if (time_module.time() - start) > 3600  # > 1 hour
+                    ]
+                except ImportError:
+                    active_runs = {}
+                    stale_runs = []
+                
+                cancellation_count = len(_cancellation_events)
+                active_count = len(active_runs)
+                stale_count = len(stale_runs)
+                
+                # Always log cleanup state if there are issues
+                if stale_count > 0 or cancellation_count > 10:
+                    logger.warning(
+                        f"[WATCHDOG] mem={mem_mb:.0f}MB "
+                        f"cancellation_events={cancellation_count} "
+                        f"active_runs={active_count} "
+                        f"stale_runs={stale_count} "
+                        f"instance={instance_id}"
+                    )
+                    if stale_runs:
+                        logger.warning(f"[WATCHDOG] stale_run_ids={stale_runs[:5]}")
+                # === END NEW ===
+                
+                # Existing memory threshold logging
                 if mem_mb > critical_threshold_mb:
                     logger.error(
-                        f"🚨 CRITICAL: Worker memory {mem_mb:.0f}MB ({mem_percent:.1f}% of {per_worker_limit_mb:.0f}MB limit) "
-                        f"(instance: {instance_id})"
+                        f"🚨 CRITICAL: Worker memory {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"cancellation_events={cancellation_count} "
+                        f"active_runs={active_count} "
+                        f"instance={instance_id}"
                     )
                     import gc
                     gc.collect()
                 elif mem_mb > warning_threshold_mb:
                     logger.warning(
                         f"⚠️ Worker memory high: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
-                        f"(instance: {instance_id})"
+                        f"cancellation_events={cancellation_count} "
+                        f"instance={instance_id}"
                     )
                 elif mem_mb > info_threshold_mb:
-                    logger.info(f"Worker memory: {mem_mb:.0f}MB ({mem_percent:.1f}%) (instance: {instance_id})")
+                    logger.info(
+                        f"Worker memory: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"cancellation_events={cancellation_count} "
+                        f"instance={instance_id}"
+                    )
                 
             except Exception as e:
                 logger.debug(f"Memory watchdog error: {e}")

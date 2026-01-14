@@ -1,6 +1,22 @@
 import { ToolCallData, ToolResultData } from '../types';
 
 /**
+ * Enriched image data with description and dimensions
+ */
+export interface EnrichedImage {
+  url: string;
+  imageUrl?: string;  // alias for url (from image_search)
+  title?: string;
+  width?: number;
+  height?: number;
+  description?: string;  // AI-generated image description from Moondream2
+  source?: string;
+  link?: string;
+  thumbnailUrl?: string;
+  domain?: string;
+}
+
+/**
  * Extract web search data from structured metadata props
  * NO CONTENT PARSING - uses toolCall.arguments and toolResult.output directly
  */
@@ -14,7 +30,7 @@ export function extractWebSearchData(
   query: string | null;
   searchResults: Array<{ title: string; url: string; snippet?: string }>;
   answer: string | null;
-  images: string[];
+  images: EnrichedImage[];
   actualIsSuccess: boolean;
   actualToolTimestamp?: string;
   actualAssistantTimestamp?: string;
@@ -24,15 +40,39 @@ export function extractWebSearchData(
     success: boolean;
     results: Array<{ title: string; url: string; snippet?: string }>;
     answer: string;
-    images: string[];
+    images: EnrichedImage[];
   }>;
 } {
+  // Helper to normalize image data to EnrichedImage format
+  const normalizeImage = (img: any): EnrichedImage | null => {
+    if (typeof img === 'string') {
+      return { url: img };
+    }
+    if (img && typeof img === 'object') {
+      const url = img.url || img.imageUrl || '';
+      if (!url) return null;
+      return {
+        url,
+        imageUrl: img.imageUrl,
+        title: img.title || '',
+        width: img.width || 0,
+        height: img.height || 0,
+        description: img.description || '',
+        source: img.source || '',
+        link: img.link || '',
+        thumbnailUrl: img.thumbnailUrl || '',
+        domain: img.domain || ''
+      };
+    }
+    return null;
+  };
+
   // Default return value - ensures function ALWAYS returns
   const defaultReturn = {
     query: null,
     searchResults: [],
     answer: null,
-    images: [],
+    images: [] as EnrichedImage[],
     actualIsSuccess: isSuccess,
     actualToolTimestamp: toolTimestamp,
     actualAssistantTimestamp: assistantTimestamp,
@@ -65,14 +105,14 @@ export function extractWebSearchData(
     // Parse output to extract results, answer, images
     let searchResults: Array<{ title: string; url: string; snippet?: string }> = [];
     let answer: string | null = null;
-    let images: string[] = [];
+    let images: EnrichedImage[] = [];
     let isBatch = false;
     let batchResults: Array<{
       query: string;
       success: boolean;
       results: Array<{ title: string; url: string; snippet?: string }>;
       answer: string;
-      images: string[];
+      images: EnrichedImage[];
     }> | undefined = undefined;
 
     if (output && typeof output === 'object' && output !== null) {
@@ -84,9 +124,9 @@ export function extractWebSearchData(
           success: batchItem.success !== false,
           results: [], // image_search doesn't have text results
           answer: '',
-          images: Array.isArray(batchItem.images) ? batchItem.images.map((img: any) => 
-            typeof img === 'string' ? img : img.url || ''
-          ).filter(Boolean) : []
+          images: Array.isArray(batchItem.images) 
+            ? batchItem.images.map(normalizeImage).filter((img): img is EnrichedImage => img !== null)
+            : []
         }));
 
         // Flatten all images for combined display
@@ -122,9 +162,9 @@ export function extractWebSearchData(
             snippet: result.content || result.snippet || ''
           })),
           answer: batchItem.answer || '',
-          images: Array.isArray(batchItem.images) ? batchItem.images.map((img: any) => 
-            typeof img === 'string' ? img : img.url || ''
-          ).filter(Boolean) : []
+          images: Array.isArray(batchItem.images) 
+            ? batchItem.images.map(normalizeImage).filter((img): img is EnrichedImage => img !== null)
+            : []
         }));
 
         // Flatten for combined display
@@ -170,9 +210,7 @@ export function extractWebSearchData(
 
       // Extract images (for single result mode)
       if (Array.isArray(output.images)) {
-        images = output.images.map((img: any) => 
-          typeof img === 'string' ? img : img.url || ''
-        ).filter(Boolean);
+        images = output.images.map(normalizeImage).filter((img): img is EnrichedImage => img !== null);
       }
     } else if (typeof output === 'string') {
       // Handle string output - try to parse as JSON
@@ -188,9 +226,7 @@ export function extractWebSearchData(
           }
           answer = parsed.answer || parsed.summary || null;
           if (Array.isArray(parsed.images)) {
-            images = parsed.images.map((img: any) => 
-              typeof img === 'string' ? img : img.url || ''
-            ).filter(Boolean);
+            images = parsed.images.map(normalizeImage).filter((img): img is EnrichedImage => img !== null);
           }
         }
       } catch (e) {

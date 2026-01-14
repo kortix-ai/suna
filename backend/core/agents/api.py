@@ -228,6 +228,7 @@ async def start_agent_run(
     memory_enabled: Optional[bool] = None,
     is_optimistic: bool = False,
     emit_timing: bool = False,
+    mode: Optional[str] = None,  # Mode: slides, sheets, docs, canvas, video, research
 ) -> Dict[str, Any]:
     """Start an agent run - core business logic."""
     from core.agents.config import load_agent_config
@@ -293,7 +294,9 @@ async def start_agent_run(
         from core.cache.runtime_cache import set_cached_project_metadata, increment_thread_count_cache
         from core.utils.thread_name_generator import generate_and_update_thread_name
         
-        asyncio.create_task(set_cached_project_metadata(project_id, {}))
+        # Cache project metadata with mode if provided
+        project_metadata = {"mode": mode} if mode else {}
+        asyncio.create_task(set_cached_project_metadata(project_id, project_metadata))
         asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
         if prompt:
             asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
@@ -387,6 +390,13 @@ async def start_agent_run(
     _cancellation_events[agent_run_id] = cancellation_event
     
     async def execute_run():
+        from core.utils.lifecycle_tracker import log_run_start, log_run_cleanup
+        
+        log_run_start(agent_run_id, thread_id)
+        cleanup_reason = None
+        final_status = "unknown"
+        cleanup_errors = []
+        
         try:
             await execute_agent_run(
                 agent_run_id=agent_run_id,
@@ -398,8 +408,32 @@ async def start_agent_run(
                 cancellation_event=cancellation_event,
                 is_new_thread=is_new_thread
             )
+            final_status = "completed"
+        except asyncio.CancelledError:
+            final_status = "cancelled"
+            cleanup_reason = "Task cancelled"
+        except Exception as e:
+            final_status = "failed"
+            cleanup_reason = f"{type(e).__name__}: {str(e)[:100]}"
+            logger.error(f"[LIFECYCLE] EXCEPTION agent_run={agent_run_id} error={cleanup_reason}")
         finally:
-            _cancellation_events.pop(agent_run_id, None)
+            # Track _cancellation_events cleanup
+            was_in_events = _cancellation_events.pop(agent_run_id, None) is not None
+            if not was_in_events:
+                cleanup_errors.append("not_in_cancellation_events")
+                logger.warning(
+                    f"[LIFECYCLE] agent_run={agent_run_id} "
+                    f"was NOT in _cancellation_events at cleanup"
+                )
+            
+            # Log final cleanup status
+            log_run_cleanup(
+                agent_run_id, 
+                success=(cleanup_reason is None),
+                reason=cleanup_reason,
+                final_status=final_status,
+                cleanup_errors=cleanup_errors if cleanup_errors else None
+            )
     
     asyncio.create_task(execute_run())
     logger.info(f"✅ Started agent run {agent_run_id} as background task")
@@ -431,6 +465,7 @@ async def unified_agent_start(
     file_ids: List[str] = Form(default=[]),
     optimistic: Optional[str] = Form(None),
     memory_enabled: Optional[str] = Form(None),
+    mode: Optional[str] = Form(None),  # Mode: slides, sheets, docs, canvas, video, research
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """Start an agent run. Files must be staged via /files/stage first."""
@@ -503,6 +538,7 @@ async def unified_agent_start(
             is_optimistic=is_optimistic,
             skip_limits_check=skip_limits,
             emit_timing=emit_timing,
+            mode=mode,
         )
         
         response = {

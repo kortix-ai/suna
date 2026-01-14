@@ -354,7 +354,8 @@ async def get_analytics_summary(
         ) = await asyncio.gather(
             client.schema('basejump').from_('accounts').select('id', count='exact').limit(1).execute(),
             client.from_('threads').select('thread_id', count='exact').limit(1).execute(),
-            client.from_('threads').select('account_id').gte('updated_at', week_start.isoformat()).execute(),
+            # Use RPC for COUNT(DISTINCT) - don't fetch rows in Python
+            client.rpc('get_active_users_week', {'p_week_start': week_start.isoformat()}).execute(),
             client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', today_start.isoformat()).limit(1).execute(),
             client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', week_start.isoformat()).limit(1).execute(),
             # Use Stripe directly to count paid subscriptions (excludes free tier)
@@ -363,7 +364,7 @@ async def get_analytics_summary(
         
         total_users = total_users_result.count or 0
         total_threads = total_threads_result.count or 0
-        active_users_week = len(set(t['account_id'] for t in active_week_result.data or [] if t.get('account_id')))
+        active_users_week = active_week_result.data[0]['count'] if active_week_result.data else 0
         new_signups_today = signups_today_result.count or 0
         new_signups_week = signups_week_result.count or 0
         # Extract count from search_paid_subscriptions result
@@ -2517,48 +2518,30 @@ async def get_task_performance(
         today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
         today_end = today_start + timedelta(days=1)
         
-        # Get all runs for today
-        runs_result = await client.from_('agent_runs').select(
-            'id, status, started_at, completed_at'
-        ).gte('created_at', today_start.isoformat()).lt('created_at', today_end.isoformat()).execute()
+        # Use RPC for aggregation - don't fetch rows in Python
+        result = await client.rpc('get_task_performance', {
+            'p_start': today_start.isoformat(),
+            'p_end': today_end.isoformat(),
+        }).execute()
         
-        runs = runs_result.data or []
-        
-        # Count by status
-        runs_by_status: Dict[str, int] = {}
-        total_duration_seconds = 0.0
-        completed_with_duration = 0
-        
-        for run in runs:
-            status = run.get('status', 'unknown')
-            runs_by_status[status] = runs_by_status.get(status, 0) + 1
-            
-            # Calculate duration for finished runs (completed, failed, stopped)
-            if status in ['completed', 'failed', 'stopped'] and run.get('started_at') and run.get('completed_at'):
-                try:
-                    started = datetime.fromisoformat(run['started_at'].replace('Z', '+00:00'))
-                    completed = datetime.fromisoformat(run['completed_at'].replace('Z', '+00:00'))
-                    duration = (completed - started).total_seconds()
-                    if duration > 0:
-                        total_duration_seconds += duration
-                        completed_with_duration += 1
-                except (ValueError, TypeError):
-                    pass
-        
-        total_runs = len(runs)
-        completed_runs = runs_by_status.get('completed', 0)
-        failed_runs = runs_by_status.get('failed', 0) + runs_by_status.get('error', 0)
-        stopped_runs = runs_by_status.get('stopped', 0)
-        running_runs = runs_by_status.get('running', 0)
-        pending_runs = runs_by_status.get('pending', 0)
+        if result.data and len(result.data) > 0:
+            data = result.data[0]
+            total_runs = data.get('total_runs', 0) or 0
+            completed_runs = data.get('completed_runs', 0) or 0
+            failed_runs = data.get('failed_runs', 0) or 0
+            stopped_runs = data.get('stopped_runs', 0) or 0
+            running_runs = data.get('running_runs', 0) or 0
+            pending_runs = data.get('pending_runs', 0) or 0
+            avg_duration = data.get('avg_duration_seconds')
+            runs_by_status = data.get('runs_by_status', {}) or {}
+        else:
+            total_runs = completed_runs = failed_runs = stopped_runs = running_runs = pending_runs = 0
+            avg_duration = None
+            runs_by_status = {}
         
         # Success rate: completed / (completed + failed + stopped)
-        # 'stopped' means user cancelled, 'running'/'pending' are not finished yet
         finished_runs = completed_runs + failed_runs + stopped_runs
         success_rate = (completed_runs / finished_runs * 100) if finished_runs > 0 else 0.0
-        
-        # Average duration
-        avg_duration = total_duration_seconds / completed_with_duration if completed_with_duration > 0 else None
         
         return TaskPerformance(
             total_runs=total_runs,
