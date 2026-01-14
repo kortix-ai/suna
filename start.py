@@ -6,7 +6,7 @@ import platform
 import os
 import json
 
-IS_WINDOWS = platform.system() == "Windows"
+from start_helpers import detect_docker_compose_command, format_compose_cmd, IS_WINDOWS
 PROGRESS_FILE = ".setup_progress"
 
 
@@ -37,32 +37,6 @@ def get_setup_method():
     """Gets the setup method chosen during setup."""
     progress = load_progress()
     return progress.get("data", {}).get("setup_method")
-
-def detect_docker_compose_command():
-    """Detects whether 'docker compose' or 'docker-compose' is available."""
-    candidates = [
-        ["docker", "compose"],
-        ["docker-compose"],
-    ]
-    for cmd in candidates:
-        try:
-            subprocess.run(
-                cmd + ["version"],
-                capture_output=True,
-                text=True,
-                check=True,
-                shell=IS_WINDOWS,
-            )
-            return cmd
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            continue
-
-    print(f"{Colors.RED}Docker Compose command not found. Install Docker Desktop or docker-compose.{Colors.ENDC}")
-    return None
-
-def format_compose_cmd(compose_cmd):
-    """Formats the compose command list for display."""
-    return " ".join(compose_cmd) if compose_cmd else "docker compose"
 
 def check_docker_available():
     """Check if Docker is available and running."""
@@ -148,59 +122,166 @@ def main():
         setup_method = "docker"
 
     if setup_method == "manual":
-        # For manual setup, we only manage infrastructure services (redis)
-        # and show instructions for the rest
-        print(f"{Colors.BLUE}{Colors.BOLD}Manual Setup Detected{Colors.ENDC}")
-        print("Managing infrastructure services (Redis)...\n")
+        # Check if automatic flag is set (from setup.py automatic option)
+        # If so, start all containers, otherwise just manage Redis
+        automatic_mode = "--automatic" in sys.argv or "-a" in sys.argv
+        
+        if automatic_mode:
+            # Automatic mode: start Redis in Docker, backend/frontend natively
+            print(f"{Colors.BLUE}{Colors.BOLD}Automatic Startup Mode (Manual Setup){Colors.ENDC}")
+            print("Starting Redis (Docker), Backend (uv), Frontend (pnpm)...\n")
 
-        force = "-f" in sys.argv
-        if force:
-            print("Force awakened. Skipping confirmation.")
+            force = "-f" in sys.argv
+            if force:
+                print("Force awakened. Skipping confirmation.")
 
-        if not check_docker_available():
-            return
+            if not check_docker_available():
+                return
 
-        compose_cmd = detect_docker_compose_command()
-        if not compose_cmd:
-            return
-        compose_cmd_str = format_compose_cmd(compose_cmd)
-        print(f"Using Docker Compose command: {compose_cmd_str}")
+            compose_cmd = detect_docker_compose_command()
+            if not compose_cmd:
+                return
+            compose_cmd_str = format_compose_cmd(compose_cmd)
+            print(f"Using Docker Compose command: {compose_cmd_str}")
 
-        is_infra_up = subprocess.run(
-            compose_cmd + ["ps", "-q", "redis"],
-            capture_output=True,
-            text=True,
-            shell=IS_WINDOWS,
-        )
-        is_up = len(is_infra_up.stdout.strip()) > 0
-
-        if is_up:
-            action = "stop"
-            msg = "🛑 Stop infrastructure services? [y/N] "
-        else:
-            action = "start"
-            msg = "⚡ Start infrastructure services? [Y/n] "
-
-        if not force:
-            response = input(msg).strip().lower()
-            if action == "stop":
-                if response != "y":
-                    print("Aborting.")
-                    return
-            else:
-                if response == "n":
-                    print("Aborting.")
-                    return
-
-        if action == "stop":
-            subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
-            print(f"\n{Colors.GREEN}✅ Infrastructure services stopped.{Colors.ENDC}")
-        else:
-            subprocess.run(
-                compose_cmd + ["up", "redis", "-d"], shell=IS_WINDOWS
+            # Check if Redis is running
+            redis_check = subprocess.run(
+                compose_cmd + ["ps", "-q", "redis"],
+                capture_output=True,
+                text=True,
+                shell=IS_WINDOWS,
             )
-            print(f"\n{Colors.GREEN}✅ Infrastructure services started.{Colors.ENDC}")
-            print_manual_instructions(compose_cmd_str)
+            redis_up = len(redis_check.stdout.strip()) > 0
+
+            if not force:
+                if redis_up:
+                    response = input("🛑 Stop all Suna services? [y/N] ").strip().lower()
+                    if response != "y":
+                        print("Aborting.")
+                        return
+                    # Stop services
+                    subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
+                    # Kill backend and frontend processes
+                    if not IS_WINDOWS:
+                        subprocess.run(["pkill", "-f", "uv run api.py"], capture_output=True)
+                        subprocess.run(["pkill", "-f", "pnpm run dev"], capture_output=True)
+                    print(f"\n{Colors.GREEN}✅ All Suna services stopped.{Colors.ENDC}")
+                    return
+                else:
+                    response = input("⚡ Start all Suna services? [Y/n] ").strip().lower()
+                    if response == "n":
+                        print("Aborting.")
+                        return
+
+            # Start Redis
+            print("Starting Redis...")
+            subprocess.run(compose_cmd + ["up", "-d", "redis"], shell=IS_WINDOWS)
+            print(f"{Colors.GREEN}✅ Redis started.{Colors.ENDC}")
+
+            # Start Backend
+            print("Starting Backend...")
+            backend_dir = os.path.join(os.getcwd(), "backend")
+            if IS_WINDOWS:
+                subprocess.Popen(
+                    ["start", "cmd", "/k", "uv run api.py"],
+                    cwd=backend_dir,
+                    shell=True,
+                )
+            else:
+                backend_log = os.path.join(os.getcwd(), "backend.log")
+                with open(backend_log, "w") as log_file:
+                    subprocess.Popen(
+                        ["uv", "run", "api.py"],
+                        cwd=backend_dir,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=True,
+                    )
+                print(f"  Backend logs: {backend_log}")
+            print(f"{Colors.GREEN}✅ Backend starting...{Colors.ENDC}")
+
+            # Start Frontend
+            print("Starting Frontend...")
+            frontend_dir = os.path.join(os.getcwd(), "apps", "frontend")
+            if IS_WINDOWS:
+                subprocess.Popen(
+                    ["start", "cmd", "/k", "pnpm run dev"],
+                    cwd=frontend_dir,
+                    shell=True,
+                )
+            else:
+                frontend_log = os.path.join(os.getcwd(), "frontend.log")
+                with open(frontend_log, "w") as log_file:
+                    subprocess.Popen(
+                        ["pnpm", "run", "dev"],
+                        cwd=frontend_dir,
+                        stdout=log_file,
+                        stderr=subprocess.STDOUT,
+                        start_new_session=True,
+                    )
+                print(f"  Frontend logs: {frontend_log}")
+            print(f"{Colors.GREEN}✅ Frontend starting...{Colors.ENDC}")
+
+            print(f"\n{Colors.GREEN}✅ All Suna services started.{Colors.ENDC}")
+            print(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
+            if not IS_WINDOWS:
+                print(f"\nTo view logs:")
+                print(f"  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
+                print(f"  {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
+        else:
+            # Manual mode: only manage infrastructure services (redis)
+            # and show instructions for the rest
+            print(f"{Colors.BLUE}{Colors.BOLD}Manual Setup Detected{Colors.ENDC}")
+            print("Managing infrastructure services (Redis)...\n")
+
+            force = "-f" in sys.argv
+            if force:
+                print("Force awakened. Skipping confirmation.")
+
+            if not check_docker_available():
+                return
+
+            compose_cmd = detect_docker_compose_command()
+            if not compose_cmd:
+                return
+            compose_cmd_str = format_compose_cmd(compose_cmd)
+            print(f"Using Docker Compose command: {compose_cmd_str}")
+
+            is_infra_up = subprocess.run(
+                compose_cmd + ["ps", "-q", "redis"],
+                capture_output=True,
+                text=True,
+                shell=IS_WINDOWS,
+            )
+            is_up = len(is_infra_up.stdout.strip()) > 0
+
+            if is_up:
+                action = "stop"
+                msg = "🛑 Stop infrastructure services? [y/N] "
+            else:
+                action = "start"
+                msg = "⚡ Start infrastructure services? [Y/n] "
+
+            if not force:
+                response = input(msg).strip().lower()
+                if action == "stop":
+                    if response != "y":
+                        print("Aborting.")
+                        return
+                else:
+                    if response == "n":
+                        print("Aborting.")
+                        return
+
+            if action == "stop":
+                subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
+                print(f"\n{Colors.GREEN}✅ Infrastructure services stopped.{Colors.ENDC}")
+            else:
+                subprocess.run(
+                    compose_cmd + ["up", "redis", "-d"], shell=IS_WINDOWS
+                )
+                print(f"\n{Colors.GREEN}✅ Infrastructure services started.{Colors.ENDC}")
+                print_manual_instructions(compose_cmd_str)
 
     else:  # docker setup
         print(f"{Colors.BLUE}{Colors.BOLD}Docker Setup Detected{Colors.ENDC}")

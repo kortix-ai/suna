@@ -107,6 +107,14 @@ def setup_api_keys() -> None:
     if not config:
         return
     
+    # Set Anthropic API key for LiteLLM
+    if getattr(config, 'ANTHROPIC_API_KEY', None):
+        os.environ["ANTHROPIC_API_KEY"] = config.ANTHROPIC_API_KEY
+    
+    # Set OpenAI API key for LiteLLM
+    if getattr(config, 'OPENAI_API_KEY', None):
+        os.environ["OPENAI_API_KEY"] = config.OPENAI_API_KEY
+    
     if getattr(config, 'OPENROUTER_API_KEY', None) and getattr(config, 'OPENROUTER_API_BASE', None):
         os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
     

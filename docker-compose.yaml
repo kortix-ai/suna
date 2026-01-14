@@ -64,19 +64,21 @@ services:
     depends_on:
       redis:
         condition: service_healthy
-      worker:
-        condition: service_started
 
 
   frontend:
     init: true
     build:
-      context: ./apps/frontend
-      dockerfile: Dockerfile
+      # Use the monorepo root as build context so workspace packages
+      # (e.g. packages/shared) are available during the frontend Docker build.
+      context: .
+      dockerfile: apps/frontend/Dockerfile
       args:
         NEXT_PUBLIC_BACKEND_URL: ${NEXT_PUBLIC_BACKEND_URL:-http://localhost:8000/v1}
         NEXT_PUBLIC_URL: ${NEXT_PUBLIC_URL:-http://localhost:3000}
         NEXT_PUBLIC_ENV_MODE: ${NEXT_PUBLIC_ENV_MODE:-LOCAL}
+        # Use relaxed lockfile mode for local dev; prod uses --frozen-lockfile by default
+        PNPM_LOCKFILE_MODE: --no-frozen-lockfile
     ports:
       - "3000:3000"
     depends_on:

@@ -8,7 +8,16 @@ import re
 import json
 import secrets
 import base64
-from urllib.parse import quote, urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse, unquote
+
+# Ensure backend modules are importable for introspecting the current default model
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.join(ROOT_DIR, "backend")
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+# Shared helpers for Docker Compose detection/formatting
+from start_helpers import detect_docker_compose_command, format_compose_cmd
 
 # --- Constants ---
 IS_WINDOWS = platform.system() == "Windows"
@@ -258,33 +267,6 @@ def print_api_key_prompt(provider_key, optional=False, existing_value=""):
     print()
 
 
-
-def detect_docker_compose_command():
-    """Detects whether 'docker compose' or 'docker-compose' is available."""
-    candidates = [
-        ["docker", "compose"],
-        ["docker-compose"],
-    ]
-    for cmd in candidates:
-        try:
-            subprocess.run(
-                cmd + ["version"],
-                capture_output=True,
-                text=True,
-                check=True,
-                shell=IS_WINDOWS,
-            )
-            return cmd
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            continue
-
-    print_error("Docker Compose command not found. Install Docker Desktop or docker-compose.")
-    return None
-
-
-def format_compose_cmd(compose_cmd):
-    """Formats the compose command list for display."""
-    return " ".join(compose_cmd) if compose_cmd else "docker compose"
 
 # --- Environment File Parsing ---
 def parse_env_file(filepath):
@@ -536,7 +518,7 @@ def normalize_database_url(url):
     """
     Normalizes a database URL:
     - Converts postgres:// to postgresql://
-    - Ensures password is properly URL-encoded
+    - Ensures password is properly URL-encoded (handles double-encoding)
     - Validates structure
     """
     if not url:
@@ -551,8 +533,19 @@ def normalize_database_url(url):
         
         # URL-encode the password if present
         if parsed.password:
-            # Reconstruct with URL-encoded password
-            encoded_password = quote(parsed.password, safe='')
+            # Decode password until no more URL-encoded sequences remain (handles double/triple encoding)
+            decoded_password = parsed.password
+            while '%' in decoded_password:
+                try:
+                    new_decoded = unquote(decoded_password)
+                    if new_decoded == decoded_password:
+                        break  # No more decoding possible
+                    decoded_password = new_decoded
+                except Exception:
+                    break  # Stop if decoding fails
+            
+            # Reconstruct with properly URL-encoded password (encode once)
+            encoded_password = quote(decoded_password, safe='')
             netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
             if parsed.port:
                 netloc += f":{parsed.port}"
@@ -825,7 +818,9 @@ class SetupWizard:
             
             if choice == "1":
                 print_info("Starting Kortix Super Worker with Docker Compose...")
-                self.start_suna()
+                # User explicitly chose Docker Compose start from the completion menu,
+                # so don't ask again how to start – just use automatic Docker mode.
+                self.start_suna(ask_start_method=False)
                 return
             elif choice == "2":
                 self.final_instructions()
@@ -1450,7 +1445,41 @@ class SetupWizard:
         
         print_success("OpenAI API key saved for background tasks.")
         
-        # Explain Bedrock configuration for cloud Supabase users
+        # Collect AWS Bedrock credentials - Required as default LLM provider
+        print()
+        print(f"{Colors.YELLOW}{'═'*70}{Colors.ENDC}")
+        print(f"{Colors.YELLOW}{Colors.BOLD}  ☁️  AWS Bedrock Configuration (Default LLM Provider){Colors.ENDC}")
+        print(f"{Colors.YELLOW}{'═'*70}{Colors.ENDC}")
+        print_info("AWS Bedrock is the DEFAULT LLM provider for Kortix Super Worker.")
+        print_info("All main LLM calls will use AWS Bedrock (Claude models).")
+        print_info("\nTo use Bedrock, you need:")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} AWS credentials configured (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Bedrock enabled in your AWS region")
+        print(f"  {Colors.CYAN}•{Colors.ENDC} Optional: Bearer token (if required by your setup)")
+        print()
+        print_warning("⚠️  IMPORTANT: Configure AWS credentials before running Kortix Super Worker!")
+        print_info("Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as environment variables or in AWS credentials file.")
+        print()
+        
+        # Check if already exists
+        existing_bedrock_token = self.env_vars["llm"].get("AWS_BEARER_TOKEN_BEDROCK", "")
+        print_api_key_prompt("AWS_BEARER_TOKEN_BEDROCK", optional=True, existing_value=existing_bedrock_token)
+        print_info("Note: Bearer token is optional for most Bedrock setups. Leave blank if not needed.")
+        
+        bedrock_token = self._get_input(
+            f"{Colors.YELLOW}Enter your AWS Bedrock Bearer Token (optional, press Enter to skip){Colors.ENDC}: ",
+            validate_api_key,
+            "Invalid token format. It should be at least 10 characters long.",
+            allow_empty=True,
+            default_value=existing_bedrock_token,
+        )
+        
+        if bedrock_token:
+            self.env_vars["llm"]["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
+            print_success("AWS Bedrock Bearer Token saved.")
+        else:
+            print_info("No Bearer Token provided - will use AWS credentials only.")
+        
         print_info("\n" + "="*60)
         print_info("LLM Model Configuration")
         print_info("="*60)
@@ -1458,7 +1487,7 @@ class SetupWizard:
         print_info("  • USE_BEDROCK_FOR_LOCAL=true will be set in backend/.env")
         print_info("  • All LLM calls will use AWS Bedrock (Claude models)")
         print_info("  • Make sure your AWS credentials are configured")
-        print_info("\nTo use a different LLM provider, configure it in backend/.env after setup.")
+        print_info("\nYou can configure additional LLM providers in the next step (optional).")
         
         print_success("Supabase information saved.")
 
@@ -1526,8 +1555,88 @@ class SetupWizard:
         input("Press Enter to continue once you have created the snapshot...")
 
     def collect_llm_api_keys(self):
-        """Collects LLM API keys for various providers."""
-        print_step(5, self.total_steps, "Collecting LLM API Keys")
+        """Collects optional LLM API keys for additional providers (Bedrock is default, OpenAI is required for background tasks)."""
+        print_step(5, self.total_steps, "Collecting Additional LLM API Keys (Optional)")
+
+        # --- Always alert about the primary backend model/provider and its API key ---
+        default_model_id = None
+        default_env_key = None
+        default_provider_name = None
+        try:
+            # Import lazily so setup.py can still run even if backend deps change
+            # Suppress output during import since backend config may not exist yet
+            import io
+            import contextlib
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                from core.ai_models.registry import ModelRegistry, FREE_MODEL_ID
+                from core.ai_models.models import ModelProvider
+
+                registry = ModelRegistry()
+                default_model = registry.get_model(FREE_MODEL_ID)
+
+            if default_model:
+                default_model_id = default_model.id
+                provider = default_model.provider
+
+                provider_to_env = {
+                    ModelProvider.OPENROUTER: "OPENROUTER_API_KEY",
+                    ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
+                    ModelProvider.OPENAI: "OPENAI_API_KEY",
+                    ModelProvider.BEDROCK: "AWS_BEARER_TOKEN_BEDROCK",
+                    ModelProvider.GOOGLE: "GEMINI_API_KEY",
+                    ModelProvider.XAI: "XAI_API_KEY",
+                }
+                default_env_key = provider_to_env.get(provider)
+                default_provider_name = provider.value if hasattr(provider, "value") else str(provider)
+        except Exception:
+            # If anything goes wrong while introspecting backend models,
+            # fall back to the existing optional flow below.
+            default_model_id = None
+            default_env_key = None
+            default_provider_name = None
+
+        if default_env_key:
+            existing_default_key = self.env_vars["llm"].get(default_env_key, "")
+            provider_info = API_PROVIDER_INFO.get(default_env_key, {})
+            pretty_name = provider_info.get("name", default_provider_name or default_env_key)
+
+            if default_model_id:
+                print_info(
+                    f"Backend default chat model is '{default_model_id}' using {pretty_name}."
+                )
+            else:
+                print_info(
+                    f"The backend default chat provider is {pretty_name}."
+                )
+
+            print_warning(
+                f"{pretty_name} requires an API key. Without it, core agent runs may fail with authentication errors."
+            )
+
+            if existing_default_key:
+                print_info(
+                    f"{pretty_name} API key is already configured: "
+                    f"{mask_sensitive_value(existing_default_key)}"
+                )
+            else:
+                # Ask the user explicitly for the key, but still allow skipping with a clear warning
+                print_api_key_prompt(default_env_key, optional=False, existing_value="")
+                api_key = self._get_input(
+                    f"{provider_info.get('color', Colors.CYAN)}Enter your {pretty_name} API key (or press Enter to skip){Colors.ENDC}: ",
+                    validate_api_key,
+                    "The key seems invalid, but continuing. You can edit it later in backend/.env",
+                    allow_empty=True,
+                    default_value="",
+                )
+                if api_key:
+                    self.env_vars["llm"][default_env_key] = api_key
+                    print_success(f"{pretty_name} API key saved for the default backend model.")
+                else:
+                    print_warning(
+                        f"No {pretty_name} API key configured. Default model calls may fail until you add it to backend/.env."
+                    )
+
+            print()
 
         # Check if we already have any LLM keys configured
         existing_keys = {
@@ -1552,84 +1661,93 @@ class SetupWizard:
             )
             print_warning("RECOMMENDED: Start with Anthropic Claude for the best experience.")
 
-        # Don't clear existing keys if we're updating
-        if not has_existing:
-            self.env_vars["llm"] = {}
+        while True:
+            print(f"\n{Colors.CYAN}Would you like to configure additional LLM providers?{Colors.ENDC}")
+            choice = input("Enter 'y' to add providers, or press Enter to skip: ").strip().lower()
+            
+            if choice in ['', 'n', 'no']:
+                print_info("Skipping additional LLM provider configuration.")
+                break
+            elif choice in ['y', 'yes']:
+                # Show available providers (excluding OpenAI and Bedrock)
+                providers = {
+                    "1": ("Anthropic (Direct API)", "ANTHROPIC_API_KEY"),
+                    "2": ("Groq", "GROQ_API_KEY"),
+                    "3": ("OpenRouter", "OPENROUTER_API_KEY"),
+                    "4": ("xAI", "XAI_API_KEY"),
+                    "5": ("Google Gemini", "GEMINI_API_KEY"),
+                    "6": ("OpenAI Compatible", "OPENAI_COMPATIBLE_API_KEY"),
+                }
+                
+                print(f"\n{Colors.CYAN}Select additional LLM providers to configure (e.g., 1,3):{Colors.ENDC}")
+                for key, (name, env_key) in providers.items():
+                    current_value = self.env_vars["llm"].get(env_key, "")
+                    provider_info = API_PROVIDER_INFO.get(env_key, {})
+                    provider_color = provider_info.get("color", Colors.GREEN)
+                    provider_icon = provider_info.get("icon", "🔑")
+                    status = (
+                        f" {Colors.GREEN}(configured){Colors.ENDC}" if current_value else ""
+                    )
+                    print(
+                        f"{Colors.CYAN}[{key}]{Colors.ENDC} {provider_color}{provider_icon} {name}{Colors.ENDC}{status}")
 
-        while not any(
-            k
-            for k in self.env_vars["llm"]
-            if self.env_vars["llm"][k]
-        ):
-            providers = {
-                "1": ("Anthropic (Recommended)", "ANTHROPIC_API_KEY"),
-                "2": ("OpenAI", "OPENAI_API_KEY"),
-                "3": ("Groq", "GROQ_API_KEY"),
-                "4": ("OpenRouter", "OPENROUTER_API_KEY"),
-                "5": ("xAI", "XAI_API_KEY"),
-                "6": ("Google Gemini", "GEMINI_API_KEY"),
-                "7": ("OpenAI Compatible", "OPENAI_COMPATIBLE_API_KEY"),
-                "8": ("AWS Bedrock", "AWS_BEARER_TOKEN_BEDROCK"),
-            }
-            print(
-                f"\n{Colors.CYAN}Select LLM providers to configure (e.g., 1,3):{Colors.ENDC}"
-            )
-            for key, (name, env_key) in providers.items():
-                current_value = self.env_vars["llm"].get(env_key, "")
-                provider_info = API_PROVIDER_INFO.get(env_key, {})
-                provider_color = provider_info.get("color", Colors.GREEN)
-                provider_icon = provider_info.get("icon", "🔑")
-                status = (
-                    f" {Colors.GREEN}(configured){Colors.ENDC}" if current_value else ""
-                )
-                print(
-                    f"{Colors.CYAN}[{key}]{Colors.ENDC} {provider_color}{provider_icon} {name}{Colors.ENDC}{status}")
-
-            # Allow Enter to skip if we already have keys configured
-            if has_existing:
-                choices_input = input(
-                    "Select providers (or press Enter to skip): "
-                ).strip()
+                choices_input = input("Select providers (or press Enter to skip): ").strip()
                 if not choices_input:
                     break
+
+                choices = choices_input.replace(",", " ").split()
+                selected_keys = {providers[c][1] for c in choices if c in providers}
+
+                if not selected_keys:
+                    print_warning("No providers selected. Skipping.")
+                    break
+
+                for key in selected_keys:
+                    existing_value = self.env_vars["llm"].get(key, "")
+                    print_api_key_prompt(key, optional=True, existing_value=existing_value)
+                    
+                    provider = API_PROVIDER_INFO.get(key, {})
+                    provider_name = provider.get("name", key.split("_")[0].capitalize())
+                    
+                    api_key = self._get_input(
+                        f"{provider.get('color', Colors.CYAN)}Enter your {provider_name} API key (optional){Colors.ENDC}: ",
+                        validate_api_key,
+                        "Invalid API key format.",
+                        allow_empty=True,
+                        default_value=existing_value,
+                    )
+                    if api_key:
+                        self.env_vars["llm"][key] = api_key
+                        print_success(f"{provider_name} API key saved!")
+                    print()
+                
+                # Ask if they want to add more
+                more = input(f"{Colors.CYAN}Add more providers? (y/n): {Colors.ENDC}").strip().lower()
+                if more not in ['y', 'yes']:
+                    break
             else:
-                choices_input = input("Select providers: ").strip()
+                print_error("Invalid choice. Please enter 'y' or press Enter to skip.")
 
-            choices = choices_input.replace(",", " ").split()
-            selected_keys = {providers[c][1]
-                             for c in choices if c in providers}
-
-            if not selected_keys and not has_existing:
-                print_error(
-                    "Invalid selection. Please choose at least one provider.")
-                continue
-
-            for key in selected_keys:
-                existing_value = self.env_vars["llm"].get(key, "")
-                print_api_key_prompt(key, optional=False, existing_value=existing_value)
-                
-                provider = API_PROVIDER_INFO.get(key, {})
-                provider_name = provider.get("name", key.split("_")[0].capitalize())
-                
-                api_key = self._get_input(
-                    f"{provider.get('color', Colors.CYAN)}Enter your {provider_name} API key{Colors.ENDC}: ",
-                    validate_api_key,
-                    "Invalid API key format.",
-                    default_value=existing_value,
-                )
-                self.env_vars["llm"][key] = api_key
-                if api_key:
-                    print_success(f"{provider_name} API key saved!")
-                print()
-
-        # Validate that at least one LLM provider is configured
-        configured_providers = [k for k in self.env_vars["llm"] if self.env_vars["llm"][k]]
+        # Show summary of configured providers
+        configured_providers = []
+        if self.env_vars["llm"].get("AWS_BEARER_TOKEN_BEDROCK") or True:  # Bedrock is always configured
+            configured_providers.append("AWS Bedrock (default)")
+        if self.env_vars["llm"].get("OPENAI_API_KEY"):
+            configured_providers.append("OpenAI (background tasks)")
+        
+        additional_providers = [
+            k for k in self.env_vars["llm"] 
+            if self.env_vars["llm"][k] and k not in ["OPENAI_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"]
+        ]
+        if additional_providers:
+            configured_providers.extend(additional_providers)
+        
         if configured_providers:
             print_success(f"LLM providers configured: {', '.join(configured_providers)}")
         else:
-            print_warning("No LLM providers configured - Kortix Super Worker will work but AI features will be disabled.")
+            print_warning("Only Bedrock and OpenAI configured - additional providers can be added later.")
         
-        print_success("LLM keys saved.")
+        print_success("LLM configuration saved.")
 
     def collect_morph_api_key(self):
         """Collects the optional MorphLLM API key for code editing."""
@@ -1968,13 +2086,11 @@ class SetupWizard:
                 print_warning("Expected format: postgresql://[username]:[password]@[host]:[port]/[database]")
                 # Don't exit - let user fix manually if needed
         
-        # Determine if using cloud Supabase (indicates Bedrock usage)
-        is_cloud_supabase = self.env_vars["setup_method"] == "cloud"
-        
+        # Always use Bedrock as default LLM provider
         backend_env = {
             "ENV_MODE": "local",
-            # Use Bedrock in LOCAL mode if using cloud Supabase (since cloud setup typically uses Bedrock)
-            "USE_BEDROCK_FOR_LOCAL": "true" if is_cloud_supabase else "false",
+            # Always use Bedrock as default LLM provider
+            "USE_BEDROCK_FOR_LOCAL": "true",
             # Backend only needs these Supabase variables
             "SUPABASE_URL": supabase_url,
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
@@ -2015,10 +2131,7 @@ class SetupWizard:
         with open(os.path.join("backend", ".env"), "w") as f:
             f.write(backend_env_content)
         print_success("Created backend/.env file with ENCRYPTION_KEY.")
-        
-        # Confirm Bedrock configuration if using cloud Supabase
-        if is_cloud_supabase:
-            print_info(f"  → USE_BEDROCK_FOR_LOCAL=true (Bedrock enabled for LOCAL mode)")
+        print_info(f"  → USE_BEDROCK_FOR_LOCAL=true (Bedrock enabled as default LLM provider)")
 
         # --- Frontend .env.local ---
         # Always use localhost for base .env files
@@ -2267,33 +2380,117 @@ class SetupWizard:
                 "Please install dependencies manually and run the script again.")
             sys.exit(1)
 
-    def start_suna(self):
-        """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup."""
+    def ensure_frontend_lockfile(self) -> bool:
+        """Ensures a JS lockfile exists in apps/frontend for Docker builds.
+
+        For Docker-based setups we need a lockfile in apps/frontend so that the
+        frontend Dockerfile can install dependencies deterministically. If no
+        lockfile is present, we attempt to generate one automatically.
+        """
+        frontend_dir = os.path.join("apps", "frontend")
+        lockfiles = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock"]
+
+        # 1) If there's already a lockfile next to apps/frontend/package.json, we're good.
+        if any(os.path.exists(os.path.join(frontend_dir, lf)) for lf in lockfiles):
+            return True
+
+        print_info("No frontend lockfile found in apps/frontend.")
+        print_info("Attempting to generate a lockfile automatically with pnpm...")
+
+        try:
+            # In a pnpm workspace, installs typically use a single lockfile at the root.
+            # Running from apps/frontend will still operate on the workspace lockfile.
+            subprocess.run(
+                ["pnpm", "install"],
+                cwd=frontend_dir,
+                check=True,
+                shell=IS_WINDOWS,
+            )
+
+            # 2) Check again for a per-app lockfile.
+            if any(os.path.exists(os.path.join(frontend_dir, lf)) for lf in lockfiles):
+                print_success("Frontend lockfile generated successfully in apps/frontend.")
+                return True
+
+            # 3) Fallback: if we're in a pnpm workspace with a root pnpm-lock.yaml that
+            # includes apps/frontend as an importer, copy it into apps/frontend so the
+            # Dockerfile has a lockfile within its build context.
+            root_pnpm_lock = "pnpm-lock.yaml"
+            if os.path.exists(root_pnpm_lock):
+                try:
+                    # Quick heuristic: ensure apps/frontend appears in the lockfile to
+                    # avoid copying some unrelated lockfile.
+                    with open(root_pnpm_lock, "r", encoding="utf-8") as f:
+                        lock_contents = f.read()
+                    if "apps/frontend:" in lock_contents or "apps/frontend" in lock_contents:
+                        target_lock = os.path.join(frontend_dir, "pnpm-lock.yaml")
+                        with open(root_pnpm_lock, "rb") as src, open(
+                            target_lock, "wb"
+                        ) as dst:
+                            dst.write(src.read())
+                        print_success(
+                            "Copied workspace pnpm-lock.yaml into apps/frontend for Docker build."
+                        )
+                        return True
+                except Exception as e:
+                    print_warning(f"Failed to copy root pnpm-lock.yaml into apps/frontend: {e}")
+
+            print_warning(
+                "Tried to generate a frontend lockfile, but none was created."
+            )
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            print_warning(f"Failed to generate frontend lockfile automatically: {e}")
+
+        print_warning(
+            "Docker Compose builds may fail without a frontend lockfile.\n"
+            "To fix this, run 'cd apps/frontend && pnpm install' and then re-run this script."
+        )
+        return False
+
+    def start_suna(self, ask_start_method: bool = True):
+        """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup.
+
+        If ask_start_method is False and setup_method is 'docker', we skip the
+        automatic/manual prompt and start via Docker Compose automatically.
+        """
         print_step(17, self.total_steps, "Starting Kortix Super Worker")
         
         compose_cmd = self.get_compose_command()
         if not compose_cmd:
             print_warning("Docker Compose command not detected. Install Docker Desktop or docker-compose and rerun.")
+            # Set a default command so the code doesn't crash, though it will likely fail when executed
+            compose_cmd = ["docker", "compose"]
             compose_cmd_str = "docker compose"
         else:
             compose_cmd_str = format_compose_cmd(compose_cmd)
         
-        # Ask user how they want to start
-        print_info("\nHow would you like to start Kortix Super Worker?")
-        print(f"  {Colors.CYAN}[1]{Colors.ENDC} Automatic - Start services automatically")
-        print(f"  {Colors.CYAN}[2]{Colors.ENDC} Manual - Show commands to run manually")
+        # Determine how to start services
+        if not ask_start_method and self.env_vars.get("setup_method") == "docker":
+            # Called from the "Start with Docker Compose" menu: force automatic Docker start
+            choice = "1"
+            self.env_vars["start_method"] = "automatic"
+        else:
+            # Ask user how they want to start
+            print_info("\nHow would you like to start Kortix Super Worker?")
+            print(f"  {Colors.CYAN}[1]{Colors.ENDC} Automatic - Start services automatically")
+            print(f"  {Colors.CYAN}[2]{Colors.ENDC} Manual - Show commands to run manually")
+            
+            while True:
+                choice = input("Enter your choice (1-2, default: 1): ").strip() or "1"
+                if choice in ["1", "2"]:
+                    break
+                print_error("Invalid choice. Please enter 1 or 2.")
+            
+            self.env_vars["start_method"] = "automatic" if choice == "1" else "manual"
         
-        while True:
-            choice = input("Enter your choice (1-2, default: 1): ").strip() or "1"
-            if choice in ["1", "2"]:
-                break
-            print_error("Invalid choice. Please enter 1 or 2.")
-        
-        self.env_vars["start_method"] = "automatic" if choice == "1" else "manual"
-        
-        if self.env_vars["setup_method"] == "docker":
+        if self.env_vars.get("setup_method") == "docker":
             if choice == "1":
                 # Automatic Docker start
+                # Ensure the frontend lockfile exists so the Docker build can succeed.
+                if not self.ensure_frontend_lockfile():
+                    # We already printed detailed guidance; don't attempt a build that will likely fail.
+                    return
+
                 print_info("Starting Kortix Super Worker with Docker Compose...")
                 try:
                     subprocess.run(
@@ -2339,29 +2536,90 @@ class SetupWizard:
                 print_info(f"  {Colors.CYAN}{compose_cmd_str} logs -f{Colors.ENDC} - View logs")
                 print_info(f"  {Colors.CYAN}python start.py{Colors.ENDC} - Start/stop services")
         else:
-            # Manual setup
+            # Manual setup - run services natively (not in Docker containers)
             if choice == "1":
-                # Automatic manual start - use start.py
-                print_info("Starting Kortix Super Worker automatically...")
-                print_info("This will start Redis, Backend, and Frontend services.")
+                # Automatic manual start - start Redis in Docker, backend/frontend natively
+                print_info("Starting Kortix Super Worker automatically (manual mode)...")
+                print_info("This will start Redis (Docker), Backend (uv), and Frontend (pnpm).")
                 try:
-                    # Use start.py to handle automatic start
+                    # Step 1: Start Redis via Docker
+                    print_info("Starting Redis...")
                     subprocess.run(
-                        [sys.executable, "start.py"],
+                        compose_cmd + ["up", "-d", "redis"],
                         check=True,
                         shell=IS_WINDOWS,
                     )
+                    print_success("Redis started.")
+
+                    # Step 2: Start Backend in background
+                    print_info("Starting Backend...")
+                    backend_dir = os.path.join(os.getcwd(), "backend")
+                    if IS_WINDOWS:
+                        # Windows: use start command to open new window
+                        subprocess.Popen(
+                            ["start", "cmd", "/k", "uv run api.py"],
+                            cwd=backend_dir,
+                            shell=True,
+                        )
+                    else:
+                        # Unix: run in background, redirect output to file
+                        backend_log = os.path.join(os.getcwd(), "backend.log")
+                        with open(backend_log, "w") as log_file:
+                            subprocess.Popen(
+                                ["uv", "run", "api.py"],
+                                cwd=backend_dir,
+                                stdout=log_file,
+                                stderr=subprocess.STDOUT,
+                                start_new_session=True,
+                            )
+                        print_info(f"Backend logs: {backend_log}")
+                    print_success("Backend starting...")
+
+                    # Step 3: Start Frontend in background
+                    print_info("Starting Frontend...")
+                    frontend_dir = os.path.join(os.getcwd(), "apps", "frontend")
+                    if IS_WINDOWS:
+                        subprocess.Popen(
+                            ["start", "cmd", "/k", "pnpm run dev"],
+                            cwd=frontend_dir,
+                            shell=True,
+                        )
+                    else:
+                        frontend_log = os.path.join(os.getcwd(), "frontend.log")
+                        with open(frontend_log, "w") as log_file:
+                            subprocess.Popen(
+                                ["pnpm", "run", "dev"],
+                                cwd=frontend_dir,
+                                stdout=log_file,
+                                stderr=subprocess.STDOUT,
+                                start_new_session=True,
+                            )
+                        print_info(f"Frontend logs: {frontend_log}")
+                    print_success("Frontend starting...")
+
+                    print_info("Waiting for services to initialize...")
+                    time.sleep(5)
+
                     print_success("Kortix Super Worker services started!")
+                    print_info(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
+                    print_info(f"\nTo view logs:")
+                    print_info(f"  Backend:  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
+                    print_info(f"  Frontend: {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
+                    print_info(f"\nTo stop services:")
+                    print_info(f"  {Colors.CYAN}pkill -f 'uv run api.py' && pkill -f 'pnpm run dev' && {compose_cmd_str} down{Colors.ENDC}")
                 except subprocess.SubprocessError as e:
                     print_error(f"Failed to start services automatically: {e}")
                     print_info("You can start services manually using the commands shown below.")
             else:
                 # Manual manual start - show commands
                 print_info("Manual start selected. Run these commands in separate terminals:")
-                print_info(f"  {Colors.CYAN}cd backend && uv run api.py{Colors.ENDC} - Start backend")
-                print_info(f"  {Colors.CYAN}cd apps/frontend && pnpm run dev{Colors.ENDC} - Start frontend")
-                print_info(f"  {Colors.CYAN}{compose_cmd_str} up redis -d{Colors.ENDC} - Start Redis")
-                print_info(f"\nOr use: {Colors.CYAN}python start.py{Colors.ENDC} to start automatically")
+                print_info(f"\n1. Start Redis (in project root):")
+                print_info(f"   {Colors.CYAN}{compose_cmd_str} up redis -d{Colors.ENDC}")
+                print_info(f"\n2. Start Backend (in a new terminal):")
+                print_info(f"   {Colors.CYAN}cd backend && uv run api.py{Colors.ENDC}")
+                print_info(f"\n3. Start Frontend (in a new terminal):")
+                print_info(f"   {Colors.CYAN}cd apps/frontend && pnpm run dev{Colors.ENDC}")
+                print_info(f"\n💡 Tip: Use '{Colors.CYAN}python start.py{Colors.ENDC}' for guided startup")
 
     def final_instructions(self):
         """Shows final instructions to the user."""
@@ -2414,45 +2672,52 @@ class SetupWizard:
         else:
             # Manual setup
             if start_method == "automatic":
-                print_info("Services are starting automatically via start.py.")
-                print_info("To manage services manually, use these commands:")
+                # Services are already running - just show management commands
+                print_info("Services are running! Access Kortix Super Worker at: http://localhost:3000")
+                print(f"\n{Colors.BOLD}View logs:{Colors.ENDC}")
+                print(f"  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
+                print(f"  {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
+                print(f"\n{Colors.BOLD}Stop all services:{Colors.ENDC}")
+                print(f"  {Colors.CYAN}pkill -f 'uv run api.py' && pkill -f 'pnpm run dev' && {compose_cmd_str} down{Colors.ENDC}")
+                print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' to manage services")
             else:
-                print_info("To start Kortix Super Worker manually, run these commands in separate terminals:")
-            
-            # Show Supabase start command for local setup
-            step_num = 1
-            if self.env_vars.get("supabase_setup_method") == "local":
+                # Manual start - show startup commands
+                print_info("To start Kortix Super Worker, run these commands in separate terminals:")
+
+                # Show Supabase start command for local setup
+                step_num = 1
+                if self.env_vars.get("supabase_setup_method") == "local":
+                    print(
+                        f"\n{Colors.BOLD}{step_num}. Start Local Supabase (in backend directory):{Colors.ENDC}"
+                    )
+                    print(f"{Colors.CYAN}   cd backend && npx supabase start{Colors.ENDC}")
+                    step_num += 1
+
                 print(
-                    f"\n{Colors.BOLD}{step_num}. Start Local Supabase (in backend directory):{Colors.ENDC}"
+                    f"\n{Colors.BOLD}{step_num}. Start Infrastructure (in project root):{Colors.ENDC}"
                 )
-                print(f"{Colors.CYAN}   cd backend && npx supabase start{Colors.ENDC}")
+                print(f"{Colors.CYAN}   {compose_cmd_str} up redis -d{Colors.ENDC}")
                 step_num += 1
-            
-            print(
-                f"\n{Colors.BOLD}{step_num}. Start Infrastructure (in project root):{Colors.ENDC}"
-            )
-            print(f"{Colors.CYAN}   {compose_cmd_str} up redis -d{Colors.ENDC}")
-            step_num += 1
 
-            print(
-                f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
-            print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
-
-
-            print(
-                f"n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
-            print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
-            
-            print(f"n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
-            
-            # Show stop commands for local Supabase
-            if self.env_vars.get("supabase_setup_method") == "local":
                 print(
-                    f"\n{Colors.BOLD}To stop Local Supabase:{Colors.ENDC}"
-                )
-                print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}")
+                    f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
+                print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
+                step_num += 1
 
-        print("\nOnce all services are running, access Kortix Super Worker at: http://localhost:3000")
+                print(
+                    f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
+                print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
+
+                print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
+
+                # Show stop commands for local Supabase
+                if self.env_vars.get("supabase_setup_method") == "local":
+                    print(
+                        f"\n{Colors.BOLD}To stop Local Supabase:{Colors.ENDC}"
+                    )
+                    print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}")
+
+                print("\nOnce all services are running, access Kortix Super Worker at: http://localhost:3000")
 
 
 if __name__ == "__main__":
