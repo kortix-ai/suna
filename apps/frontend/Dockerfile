@@ -8,6 +8,9 @@ FROM base AS deps
 
 WORKDIR /app
 
+# Lockfile mode: use --frozen-lockfile for prod (default), --no-frozen-lockfile for local dev
+ARG PNPM_LOCKFILE_MODE=--frozen-lockfile
+
 # Copy only the files needed for dependency resolution and workspace linking.
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc* ./
 COPY apps ./apps
@@ -27,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install only the frontend workspace project (and its deps) using pnpm.
-RUN corepack enable pnpm && pnpm install --filter ./apps/frontend --no-frozen-lockfile
+RUN corepack enable pnpm && pnpm install --filter ./apps/frontend ${PNPM_LOCKFILE_MODE}
 
 
 # ---- Builder Stage ----

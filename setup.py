@@ -2454,6 +2454,8 @@ class SetupWizard:
         compose_cmd = self.get_compose_command()
         if not compose_cmd:
             print_warning("Docker Compose command not detected. Install Docker Desktop or docker-compose and rerun.")
+            # Set a default command so the code doesn't crash, though it will likely fail when executed
+            compose_cmd = ["docker", "compose"]
             compose_cmd_str = "docker compose"
         else:
             compose_cmd_str = format_compose_cmd(compose_cmd)

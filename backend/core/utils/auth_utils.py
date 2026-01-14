@@ -93,13 +93,17 @@ def _get_public_key_from_jwks(jwks: Dict, kid: str):
                 crv = key.get('crv')
                 x = key.get('x')
                 y = key.get('y')
-                
+
                 if crv != 'P-256':
                     raise ValueError(f"Unsupported curve: {crv}")
-                
-                # Decode base64url encoded coordinates
-                x_bytes = base64.urlsafe_b64decode(x + '==')
-                y_bytes = base64.urlsafe_b64decode(y + '==')
+
+                if not x or not y:
+                    raise ValueError("Malformed JWKS key: missing x or y coordinate")
+
+                # Decode base64url encoded coordinates with proper padding
+                # Base64url strings need padding to be a multiple of 4 characters
+                x_bytes = base64.urlsafe_b64decode(x + '=' * (-len(x) % 4))
+                y_bytes = base64.urlsafe_b64decode(y + '=' * (-len(y) % 4))
                 
                 # Create public key from coordinates
                 public_numbers = ec.EllipticCurvePublicNumbers(
