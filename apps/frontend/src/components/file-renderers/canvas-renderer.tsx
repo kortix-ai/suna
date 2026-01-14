@@ -55,119 +55,53 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/lib/toast';
 import { useAuth } from '@/components/AuthProvider';
 
-// OCR detected text region with polygon bounding box
-interface TextRegion {
-  id: string;
-  text: string;
-  bbox: [number, number, number, number]; // [x1, y1, x2, y2]
-  polygon: [number, number][]; // [[x1,y1], [x2,y2], [x3,y3], [x4,y4]] - perspective-aware corners
-  confidence: number;
-}
-
-// Base element properties shared by all element types
-interface BaseCanvasElement {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotation?: number;
-  opacity?: number;
-  locked?: boolean;
-  name: string;
-  visible?: boolean;
-}
-
-// Image element - has src for image data
-interface ImageCanvasElement extends BaseCanvasElement {
-  type: 'image';
-  src: string;
-  scaleX?: number;
-  scaleY?: number;
-}
-
-// Frame element - container/viewport for exporting, no src needed
-interface FrameCanvasElement extends BaseCanvasElement {
-  type: 'frame';
-  backgroundColor?: string; // Optional fill color, default transparent
-}
-
-type CanvasElement = ImageCanvasElement | FrameCanvasElement;
-
-// Snap guide for visual alignment feedback
-interface SnapGuide {
-  type: 'vertical' | 'horizontal';
-  position: number; // Canvas coordinate (not screen)
-  frameId: string; // Which frame this guide belongs to
-}
-
-interface CanvasData {
-  name: string;
-  version: string;
-  background: string;
-  elements: CanvasElement[];
-  width?: number;
-  height?: number;
-  description?: string;
-  created_at?: string;
-  updated_at?: string;
-}
-
-// Sanitize element to ensure all numeric fields are actually numbers
-// (AI sometimes passes strings like "700" instead of 700)
-function sanitizeElement(el: Partial<CanvasElement> & { type?: string }): CanvasElement {
-  const base = {
-    id: el.id || '',
-    name: el.name || '',
-    x: Number(el.x) || 0,
-    y: Number(el.y) || 0,
-    width: Number(el.width) || 100,
-    height: Number(el.height) || 100,
-    rotation: Number(el.rotation) || 0,
-    opacity: el.opacity !== undefined ? Number(el.opacity) : 1,
-    locked: Boolean(el.locked),
-    visible: el.visible !== false,
-  };
-
-  if (el.type === 'frame') {
-    return {
-      ...base,
-      type: 'frame',
-      backgroundColor: (el as Partial<FrameCanvasElement>).backgroundColor || undefined,
-    } as FrameCanvasElement;
-  }
-
-  // Default to image type
-  return {
-    ...base,
-    type: 'image',
-    src: (el as Partial<ImageCanvasElement>).src || '',
-    scaleX: Number((el as Partial<ImageCanvasElement>).scaleX) || 1,
-    scaleY: Number((el as Partial<ImageCanvasElement>).scaleY) || 1,
-  } as ImageCanvasElement;
-}
-
-function sanitizeElements(elements: (Partial<CanvasElement> & { type?: string })[]): CanvasElement[] {
-  return (elements || []).map(sanitizeElement);
-}
-
-interface CanvasRendererProps {
-  content: string | null;
-  filePath?: string;
-  fileName: string;
-  sandboxId?: string;
-  className?: string;
-  onSave?: (content: string) => Promise<void>;
-}
+// Import core types and utilities from @agentpress/kanvax
+import type {
+  TextRegion,
+  ImageCanvasElement,
+  FrameCanvasElement,
+  CanvasElement,
+  SnapGuide,
+  CanvasData,
+  CanvasRendererProps,
+  ResizeHandle,
+} from '@agentpress/kanvax/core';
+import {
+  sanitizeElements,
+  createEmptyCanvas,
+  // Constants
+  SNAP_THRESHOLD,
+  // Coordinate conversions
+  getElementScreenPosition,
+  // Snap calculations
+  calculateSnapResult,
+  applySnapToPosition,
+  // Bounds calculations
+  getContentBounds,
+  calculateFitScale,
+  calculateCenterPosition,
+  // Element position utilities
+  findElementsInSelection,
+  findElementsInFrame,
+  getNextImagePosition as getNextImagePositionCore,
+  // Resize calculations
+  calculateAspectRatioResize,
+  calculateFreeResize,
+  // Zoom calculations
+  calculateZoomToPoint,
+  // Path utilities
+  buildSandboxFileUrl,
+  // Image scaling
+  calculateScaledDimensions,
+  // Clip path calculations
+  calculateClipPath,
+  doesElementOverlapFrame,
+} from '@agentpress/kanvax/core';
 
 function getSandboxFileUrl(sandboxId: string | undefined, path: string): string {
   if (!sandboxId) return path;
-  let normalizedPath = path;
-  if (normalizedPath.startsWith('/')) normalizedPath = normalizedPath.substring(1);
-  if (normalizedPath.startsWith('workspace/')) normalizedPath = normalizedPath.substring(10);
-  normalizedPath = `/workspace/${normalizedPath}`;
   const baseUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';
-  return `${baseUrl}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(normalizedPath)}`;
+  return buildSandboxFileUrl(baseUrl, sandboxId, path);
 }
 
 // AI Processing Overlay with strong diagonal shimmer waves
@@ -293,41 +227,6 @@ function SnapGuidesOverlay({
       })}
     </div>
   );
-}
-
-// Calculate snap guides and snapped position for an element
-const SNAP_THRESHOLD = 12; // Pixels threshold for snapping (in canvas coords)
-
-function calculateSnapResult(
-  elemCenterX: number,
-  elemCenterY: number,
-  frames: FrameCanvasElement[],
-  excludeFrameId?: string
-): { snapX: number | null; snapY: number | null; guides: SnapGuide[] } {
-  let snapX: number | null = null;
-  let snapY: number | null = null;
-  const guides: SnapGuide[] = [];
-
-  for (const frame of frames) {
-    if (frame.id === excludeFrameId) continue;
-
-    const frameCenterX = frame.x + frame.width / 2;
-    const frameCenterY = frame.y + frame.height / 2;
-
-    // Check vertical center alignment (element center X == frame center X)
-    if (Math.abs(elemCenterX - frameCenterX) < SNAP_THRESHOLD) {
-      snapX = frameCenterX;
-      guides.push({ type: 'vertical', position: frameCenterX, frameId: frame.id });
-    }
-
-    // Check horizontal center alignment (element center Y == frame center Y)
-    if (Math.abs(elemCenterY - frameCenterY) < SNAP_THRESHOLD) {
-      snapY = frameCenterY;
-      guides.push({ type: 'horizontal', position: frameCenterY, frameId: frame.id });
-    }
-  }
-
-  return { snapX, snapY, guides };
 }
 
 // Image element with drag and resize

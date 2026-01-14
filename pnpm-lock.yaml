@@ -29,6 +29,9 @@ importers:
 
   apps/frontend:
     dependencies:
+      '@agentpress/kanvax':
+        specifier: workspace:*
+        version: link:../../packages/kanvax
       '@agentpress/shared':
         specifier: workspace:*
         version: link:../../packages/shared
@@ -1062,6 +1065,12 @@ importers:
         version: 1.5.2(react-native-svg@15.12.1(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.2.8)(react@19.1.0))(react@19.1.0))(react-native@0.81.5(@babel/core@7.28.6)(@types/react@19.2.8)(react@19.1.0))(typescript@5.9.3)
       typescript:
         specifier: ~5.9.2
+        version: 5.9.3
+
+  packages/kanvax:
+    devDependencies:
+      typescript:
+        specifier: ^5.0.0
         version: 5.9.3
 
   packages/shared:
