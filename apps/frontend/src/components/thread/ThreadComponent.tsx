@@ -24,7 +24,7 @@ import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { NewThreadEmptyState } from '@/components/thread/content/NewThreadEmptyState';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
 import { PlaybackFloatingControls } from '@/components/thread/content/PlaybackFloatingControls';
-import { usePlaybackController, useAddUserMessageMutation } from '@/hooks/messages';
+import { usePlaybackController } from '@/hooks/messages';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import {
   useStartAgentMutation,
@@ -346,7 +346,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     userClosedPanelRef,
   });
 
-  const addUserMessageMutation = useAddUserMessageMutation();
   const startAgentMutation = useStartAgentMutation();
   const stopAgentMutation = useStopAgentMutation();
 
@@ -988,7 +987,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       message: string,
       options?: { model_name?: string; file_ids?: string[] },
     ) => {
-      if (!message.trim() || isShared || !addUserMessageMutation || !startAgentMutation) return;
+      if (!message.trim() || isShared || !startAgentMutation) return;
 
       // Message queue feature flag - when disabled, don't queue messages while agent is running
       const ENABLE_MESSAGE_QUEUE = false;
@@ -1009,13 +1008,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       pendingMessageRef.current = message;
 
       try {
-        const messagePromise = addUserMessageMutation.mutateAsync({
+        // Pass message as prompt to /agent/start - it handles both message creation and agent start atomically
+        const result = await startAgentMutation.mutateAsync({
           threadId,
-          message,
-        });
-
-        const agentPromise = startAgentMutation.mutateAsync({
-          threadId,
+          prompt: message,
           options: {
             ...options,
             agent_id: selectedAgentId,
@@ -1023,18 +1019,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           },
         });
 
-        const results = await Promise.allSettled([
-          messagePromise,
-          agentPromise,
-        ]);
-
-        if (results[0].status === 'rejected') {
-          const reason = results[0].reason;
-          console.error('Failed to send message:', reason);
-          pendingMessageRef.current = null;
-          throw new Error(
-            `Failed to send message: ${reason?.message || reason}`,
-          );
+        // Set agentRunId directly from mutation result to start streaming immediately
+        if (result.agent_run_id) {
+          setAgentRunId(result.agent_run_id);
+          setAgentStatus('running');
         }
 
         // Close mode starter when user sends their first message
@@ -1045,51 +1033,36 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           url.searchParams.delete('modeStarter');
           window.history.replaceState({}, '', url.pathname + url.search);
         }
-
-        if (results[1].status === 'rejected') {
-          const error = results[1].reason;
-          console.error('Failed to start agent:', error);
-          pendingMessageRef.current = null;
-
-          if (error instanceof BillingError) {
-            openBillingModal(error);
-            return;
-          }
-
-          if (error instanceof AgentRunLimitError) {
-            const { running_thread_ids, running_count } = error.detail;
-
-            setAgentLimitData({
-              runningCount: running_count,
-              runningThreadIds: running_thread_ids,
-            });
-            setShowAgentLimitBanner(true);
-            return;
-          }
-
-          if (error instanceof ProjectLimitError) {
-            openBillingModal(error);
-            return;
-          }
-
-          throw new Error(`Failed to start agent: ${error?.message || error}`);
-        }
-
         // Clear input text and uploaded files after successful submission
         chatInputRef.current?.setValue('');
         chatInputRef.current?.clearUploadedFiles();
 
-        const agentResult = results[1].value;
         setUserInitiatedRun(true);
-        setAgentRunId(agentResult.agent_run_id);
-      } catch (err) {
-        console.error('Error sending message or starting agent:', err);
-        if (
-          !(err instanceof BillingError) &&
-          !(err instanceof AgentRunLimitError)
-        ) {
-          toast.error(err instanceof Error ? err.message : 'Operation failed');
+      } catch (error) {
+        console.error('Failed to start agent:', error);
+        pendingMessageRef.current = null;
+
+        if (error instanceof BillingError) {
+          openBillingModal(error);
+          return;
         }
+
+        if (error instanceof AgentRunLimitError) {
+          const { running_thread_ids, running_count } = error.detail;
+          setAgentLimitData({
+            runningCount: running_count,
+            runningThreadIds: running_thread_ids,
+          });
+          setShowAgentLimitBanner(true);
+          return;
+        }
+
+        if (error instanceof ProjectLimitError) {
+          openBillingModal(error);
+          return;
+        }
+
+        toast.error(error instanceof Error ? error.message : 'Failed to start agent');
       } finally {
         setIsSending(false);
       }
@@ -1097,7 +1070,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     [
       threadId,
       project?.account_id,
-      addUserMessageMutation,
       startAgentMutation,
       setMessages,
       openBillingModal,
