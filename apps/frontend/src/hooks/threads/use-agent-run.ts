@@ -27,13 +27,15 @@ export const useAgentRunsQuery = (threadId: string, options?) => {
 
 export const useStartAgentMutation = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: ({
       threadId,
+      prompt,
       options,
     }: {
       threadId: string;
+      prompt?: string;
       options?: {
         model_name?: string;
         agent_id?: string;
@@ -41,6 +43,7 @@ export const useStartAgentMutation = () => {
       };
     }) => unifiedAgentStart({
       threadId,
+      prompt,
       model_name: options?.model_name && options.model_name.trim() ? options.model_name.trim() : undefined,
       agent_id: options?.agent_id,
       file_ids: options?.file_ids,
