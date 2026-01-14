@@ -2532,43 +2532,90 @@ class SetupWizard:
                 print_info(f"  {Colors.CYAN}{compose_cmd_str} logs -f{Colors.ENDC} - View logs")
                 print_info(f"  {Colors.CYAN}python start.py{Colors.ENDC} - Start/stop services")
         else:
-            # Manual setup
+            # Manual setup - run services natively (not in Docker containers)
             if choice == "1":
-                # Automatic manual start - start all Docker containers
-                print_info("Starting Kortix Super Worker automatically...")
-                print_info("This will start Redis, Backend, and Frontend services.")
+                # Automatic manual start - start Redis in Docker, backend/frontend natively
+                print_info("Starting Kortix Super Worker automatically (manual mode)...")
+                print_info("This will start Redis (Docker), Backend (uv), and Frontend (pnpm).")
                 try:
-                    # Start all containers via docker compose (excluding worker)
+                    # Step 1: Start Redis via Docker
+                    print_info("Starting Redis...")
                     subprocess.run(
-                        compose_cmd + ["up", "-d", "redis", "backend", "frontend"],
+                        compose_cmd + ["up", "-d", "redis"],
                         check=True,
                         shell=IS_WINDOWS,
                     )
-                    print_info("Waiting for services to spin up...")
-                    time.sleep(5)
-                    result = subprocess.run(
-                        compose_cmd + ["ps"],
-                        capture_output=True,
-                        text=True,
-                        shell=IS_WINDOWS,
-                    )
-                    if "backend" in result.stdout and "frontend" in result.stdout:
-                        print_success("Kortix Super Worker services started!")
-                        print_info(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
-                    else:
-                        print_warning(
-                            f"Some services might not be running. Check '{compose_cmd_str} ps' for details."
+                    print_success("Redis started.")
+
+                    # Step 2: Start Backend in background
+                    print_info("Starting Backend...")
+                    backend_dir = os.path.join(os.getcwd(), "backend")
+                    if IS_WINDOWS:
+                        # Windows: use start command to open new window
+                        subprocess.Popen(
+                            ["start", "cmd", "/k", "uv run api.py"],
+                            cwd=backend_dir,
+                            shell=True,
                         )
+                    else:
+                        # Unix: run in background, redirect output to file
+                        backend_log = os.path.join(os.getcwd(), "backend.log")
+                        with open(backend_log, "w") as log_file:
+                            subprocess.Popen(
+                                ["uv", "run", "api.py"],
+                                cwd=backend_dir,
+                                stdout=log_file,
+                                stderr=subprocess.STDOUT,
+                                start_new_session=True,
+                            )
+                        print_info(f"Backend logs: {backend_log}")
+                    print_success("Backend starting...")
+
+                    # Step 3: Start Frontend in background
+                    print_info("Starting Frontend...")
+                    frontend_dir = os.path.join(os.getcwd(), "apps", "frontend")
+                    if IS_WINDOWS:
+                        subprocess.Popen(
+                            ["start", "cmd", "/k", "pnpm run dev"],
+                            cwd=frontend_dir,
+                            shell=True,
+                        )
+                    else:
+                        frontend_log = os.path.join(os.getcwd(), "frontend.log")
+                        with open(frontend_log, "w") as log_file:
+                            subprocess.Popen(
+                                ["pnpm", "run", "dev"],
+                                cwd=frontend_dir,
+                                stdout=log_file,
+                                stderr=subprocess.STDOUT,
+                                start_new_session=True,
+                            )
+                        print_info(f"Frontend logs: {frontend_log}")
+                    print_success("Frontend starting...")
+
+                    print_info("Waiting for services to initialize...")
+                    time.sleep(5)
+
+                    print_success("Kortix Super Worker services started!")
+                    print_info(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
+                    print_info(f"\nTo view logs:")
+                    print_info(f"  Backend:  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
+                    print_info(f"  Frontend: {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
+                    print_info(f"\nTo stop services:")
+                    print_info(f"  {Colors.CYAN}pkill -f 'uv run api.py' && pkill -f 'pnpm run dev' && {compose_cmd_str} down{Colors.ENDC}")
                 except subprocess.SubprocessError as e:
                     print_error(f"Failed to start services automatically: {e}")
                     print_info("You can start services manually using the commands shown below.")
             else:
                 # Manual manual start - show commands
                 print_info("Manual start selected. Run these commands in separate terminals:")
-                print_info(f"  {Colors.CYAN}cd backend && uv run api.py{Colors.ENDC} - Start backend")
-                print_info(f"  {Colors.CYAN}cd apps/frontend && pnpm run dev{Colors.ENDC} - Start frontend")
-                print_info(f"  {Colors.CYAN}{compose_cmd_str} up redis -d{Colors.ENDC} - Start Redis")
-                print_info(f"\nOr use: {Colors.CYAN}python start.py{Colors.ENDC} to start automatically")
+                print_info(f"\n1. Start Redis (in project root):")
+                print_info(f"   {Colors.CYAN}{compose_cmd_str} up redis -d{Colors.ENDC}")
+                print_info(f"\n2. Start Backend (in a new terminal):")
+                print_info(f"   {Colors.CYAN}cd backend && uv run api.py{Colors.ENDC}")
+                print_info(f"\n3. Start Frontend (in a new terminal):")
+                print_info(f"   {Colors.CYAN}cd apps/frontend && pnpm run dev{Colors.ENDC}")
+                print_info(f"\n💡 Tip: Use '{Colors.CYAN}python start.py{Colors.ENDC}' for guided startup")
 
     def final_instructions(self):
         """Shows final instructions to the user."""
@@ -2644,13 +2691,13 @@ class SetupWizard:
             print(
                 f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
-
+            step_num += 1
 
             print(
-                f"n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
+                f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
             print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
-            
-            print(f"n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
+
+            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
             
             # Show stop commands for local Supabase
             if self.env_vars.get("supabase_setup_method") == "local":
