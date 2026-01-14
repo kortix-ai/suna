@@ -641,16 +641,27 @@ async def stream_agent_run(
 
     stream_key = f"agent_run:{agent_run_id}:stream"
 
+    def compare_stream_ids(id1: str, id2: str) -> int:
+        """Compare Redis stream IDs. Returns -1 if id1 < id2, 0 if equal, 1 if id1 > id2."""
+        try:
+            t1, s1 = id1.split('-')
+            t2, s2 = id2.split('-')
+            if int(t1) != int(t2):
+                return -1 if int(t1) < int(t2) else 1
+            return -1 if int(s1) < int(s2) else (0 if int(s1) == int(s2) else 1)
+        except Exception:
+            return -1 if id1 < id2 else (0 if id1 == id2 else 1)
+
     def find_last_safe_boundary(entries):
         """Find last safe trim boundary in stream entries."""
         last_safe = -1
         open_responses = 0
-        
+
         for i, (_, fields) in enumerate(entries):
             try:
                 data = json.loads(fields.get('data', '{}'))
                 msg_type = data.get('type')
-                
+
                 if msg_type == 'llm_response_start':
                     open_responses += 1
                 elif msg_type == 'llm_response_end':
@@ -661,7 +672,7 @@ async def stream_agent_run(
                     last_safe = i
             except Exception:
                 continue
-        
+
         if open_responses > 0:
             return -1
         return last_safe
@@ -699,60 +710,63 @@ async def stream_agent_run(
                 yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
                 return
 
-            # Polling loop - increased block time to reduce Redis load
-            # 500ms block = 2 Redis calls/second per client (was 10/second with 100ms)
-            BLOCK_MS = 500
-            POLLS_PER_PING = 10  # Adjusted to maintain ~5 second ping interval
-            polls = 0
-            pings = 0
+            # Use hub for fan-out: N clients watching same stream = 1 Redis XREAD + N queues
+            # This fixes connection starvation when many SSE clients connect
+            timeout_count = 0
+            ping_count = 0
             received_data = bool(entries)
-            MAX_PINGS = 4
-            
-            while not terminate:
-                try:
-                    new_entries = await redis.stream_read(stream_key, last_id, block_ms=BLOCK_MS)
-                    
-                    if new_entries:
-                        received_data = True
-                        pings = 0
-                        polls = 0
-                        
-                        for entry_id, fields in new_entries:
+            MAX_PINGS_WITHOUT_DATA = 4  # ~20 seconds without data = check for dead worker
+
+            try:
+                async with redis.redis.hub.subscription(stream_key, last_id) as queue:
+                    async for msg in redis.redis.hub.iter_queue(queue, timeout=0.5):
+                        if terminate:
+                            break
+
+                        if msg is not None:
+                            entry_id, fields = msg
+                            # Dedupe: skip if we already saw this in catch-up
+                            if compare_stream_ids(entry_id, last_id) <= 0:
+                                continue
+                            received_data = True
+                            timeout_count = 0
+                            ping_count = 0
                             data = fields.get('data', '{}')
                             yield f"data: {data}\n\n"
                             last_id = entry_id
-                            
+
                             try:
                                 response = json.loads(data)
                                 if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                                     return
                             except Exception:
                                 pass
-                    else:
-                        polls += 1
-                        if polls >= POLLS_PER_PING:
-                            polls = 0
-                            pings += 1
-                            
-                            if not received_data and pings >= MAX_PINGS:
-                                from core.agents import repo as agents_repo
-                                run_check = await agents_repo.get_agent_run_status(agent_run_id)
-                                status = run_check.get('status') if run_check else None
-                                if status == 'running':
-                                    await agents_repo.update_agent_run_status(agent_run_id, 'failed', error='Worker timeout')
-                                    yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Worker timeout'})}\n\n"
-                                    return
-                                elif status in ['completed', 'failed', 'stopped']:
-                                    yield f"data: {json.dumps({'type': 'status', 'status': status})}\n\n"
-                                    return
-                            
-                            yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+                        else:
+                            # Timeout (0.5s) - send ping every ~5 seconds
+                            timeout_count += 1
+                            if timeout_count >= 10:
+                                timeout_count = 0
+                                ping_count += 1
 
-                except asyncio.CancelledError:
-                    break
-                except Exception as e:
-                    yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': str(e)})}\n\n"
-                    break
+                                # Check for dead worker if no data received
+                                if not received_data and ping_count >= MAX_PINGS_WITHOUT_DATA:
+                                    from core.agents import repo as agents_repo
+                                    run_check = await agents_repo.get_agent_run_status(agent_run_id)
+                                    status = run_check.get('status') if run_check else None
+                                    if status == 'running':
+                                        await agents_repo.update_agent_run_status(agent_run_id, 'failed', error='Worker timeout')
+                                        yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Worker timeout'})}\n\n"
+                                        return
+                                    elif status in ['completed', 'failed', 'stopped']:
+                                        yield f"data: {json.dumps({'type': 'status', 'status': status})}\n\n"
+                                        return
+
+                                yield f"data: {json.dumps({'type': 'ping'})}\n\n"
+
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': str(e)})}\n\n"
 
         except Exception as e:
             logger.error(f"Stream error for {agent_run_id}: {e}", exc_info=True)
