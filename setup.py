@@ -2672,45 +2672,52 @@ class SetupWizard:
         else:
             # Manual setup
             if start_method == "automatic":
-                print_info("Services are starting automatically via start.py.")
-                print_info("To manage services manually, use these commands:")
+                # Services are already running - just show management commands
+                print_info("Services are running! Access Kortix Super Worker at: http://localhost:3000")
+                print(f"\n{Colors.BOLD}View logs:{Colors.ENDC}")
+                print(f"  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
+                print(f"  {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
+                print(f"\n{Colors.BOLD}Stop all services:{Colors.ENDC}")
+                print(f"  {Colors.CYAN}pkill -f 'uv run api.py' && pkill -f 'pnpm run dev' && {compose_cmd_str} down{Colors.ENDC}")
+                print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' to manage services")
             else:
-                print_info("To start Kortix Super Worker manually, run these commands in separate terminals:")
-            
-            # Show Supabase start command for local setup
-            step_num = 1
-            if self.env_vars.get("supabase_setup_method") == "local":
+                # Manual start - show startup commands
+                print_info("To start Kortix Super Worker, run these commands in separate terminals:")
+
+                # Show Supabase start command for local setup
+                step_num = 1
+                if self.env_vars.get("supabase_setup_method") == "local":
+                    print(
+                        f"\n{Colors.BOLD}{step_num}. Start Local Supabase (in backend directory):{Colors.ENDC}"
+                    )
+                    print(f"{Colors.CYAN}   cd backend && npx supabase start{Colors.ENDC}")
+                    step_num += 1
+
                 print(
-                    f"\n{Colors.BOLD}{step_num}. Start Local Supabase (in backend directory):{Colors.ENDC}"
+                    f"\n{Colors.BOLD}{step_num}. Start Infrastructure (in project root):{Colors.ENDC}"
                 )
-                print(f"{Colors.CYAN}   cd backend && npx supabase start{Colors.ENDC}")
+                print(f"{Colors.CYAN}   {compose_cmd_str} up redis -d{Colors.ENDC}")
                 step_num += 1
-            
-            print(
-                f"\n{Colors.BOLD}{step_num}. Start Infrastructure (in project root):{Colors.ENDC}"
-            )
-            print(f"{Colors.CYAN}   {compose_cmd_str} up redis -d{Colors.ENDC}")
-            step_num += 1
 
-            print(
-                f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
-            print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
-            step_num += 1
-
-            print(
-                f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
-            print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
-
-            print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
-            
-            # Show stop commands for local Supabase
-            if self.env_vars.get("supabase_setup_method") == "local":
                 print(
-                    f"\n{Colors.BOLD}To stop Local Supabase:{Colors.ENDC}"
-                )
-                print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}")
+                    f"\n{Colors.BOLD}{step_num}. Start Backend (in a new terminal):{Colors.ENDC}")
+                print(f"{Colors.CYAN}   cd backend && uv run api.py{Colors.ENDC}")
+                step_num += 1
 
-        print("\nOnce all services are running, access Kortix Super Worker at: http://localhost:3000")
+                print(
+                    f"\n{Colors.BOLD}{step_num}. Start Frontend (in a new terminal):{Colors.ENDC}")
+                print(f"{Colors.CYAN}   cd apps/frontend && pnpm run dev{Colors.ENDC}")
+
+                print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' for automatic start/stop")
+
+                # Show stop commands for local Supabase
+                if self.env_vars.get("supabase_setup_method") == "local":
+                    print(
+                        f"\n{Colors.BOLD}To stop Local Supabase:{Colors.ENDC}"
+                    )
+                    print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}")
+
+                print("\nOnce all services are running, access Kortix Super Worker at: http://localhost:3000")
 
 
 if __name__ == "__main__":
