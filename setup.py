@@ -1564,11 +1564,15 @@ class SetupWizard:
         default_provider_name = None
         try:
             # Import lazily so setup.py can still run even if backend deps change
-            from core.ai_models.registry import ModelRegistry, FREE_MODEL_ID
-            from core.ai_models.models import ModelProvider
+            # Suppress output during import since backend config may not exist yet
+            import io
+            import contextlib
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+                from core.ai_models.registry import ModelRegistry, FREE_MODEL_ID
+                from core.ai_models.models import ModelProvider
 
-            registry = ModelRegistry()
-            default_model = registry.get_model(FREE_MODEL_ID)
+                registry = ModelRegistry()
+                default_model = registry.get_model(FREE_MODEL_ID)
 
             if default_model:
                 default_model_id = default_model.id
