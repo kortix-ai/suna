@@ -10,6 +10,15 @@ import secrets
 import base64
 from urllib.parse import quote, urlparse, urlunparse, unquote
 
+# Ensure backend modules are importable for introspecting the current default model
+ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+BACKEND_DIR = os.path.join(ROOT_DIR, "backend")
+if BACKEND_DIR not in sys.path:
+    sys.path.insert(0, BACKEND_DIR)
+
+# Shared helpers for Docker Compose detection/formatting
+from start_helpers import detect_docker_compose_command, format_compose_cmd
+
 # --- Constants ---
 IS_WINDOWS = platform.system() == "Windows"
 PROGRESS_FILE = ".setup_progress"
@@ -258,33 +267,6 @@ def print_api_key_prompt(provider_key, optional=False, existing_value=""):
     print()
 
 
-
-def detect_docker_compose_command():
-    """Detects whether 'docker compose' or 'docker-compose' is available."""
-    candidates = [
-        ["docker", "compose"],
-        ["docker-compose"],
-    ]
-    for cmd in candidates:
-        try:
-            subprocess.run(
-                cmd + ["version"],
-                capture_output=True,
-                text=True,
-                check=True,
-                shell=IS_WINDOWS,
-            )
-            return cmd
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            continue
-
-    print_error("Docker Compose command not found. Install Docker Desktop or docker-compose.")
-    return None
-
-
-def format_compose_cmd(compose_cmd):
-    """Formats the compose command list for display."""
-    return " ".join(compose_cmd) if compose_cmd else "docker compose"
 
 # --- Environment File Parsing ---
 def parse_env_file(filepath):
@@ -836,7 +818,9 @@ class SetupWizard:
             
             if choice == "1":
                 print_info("Starting Kortix Super Worker with Docker Compose...")
-                self.start_suna()
+                # User explicitly chose Docker Compose start from the completion menu,
+                # so don't ask again how to start – just use automatic Docker mode.
+                self.start_suna(ask_start_method=False)
                 return
             elif choice == "2":
                 self.final_instructions()
@@ -1573,6 +1557,82 @@ class SetupWizard:
     def collect_llm_api_keys(self):
         """Collects optional LLM API keys for additional providers (Bedrock is default, OpenAI is required for background tasks)."""
         print_step(5, self.total_steps, "Collecting Additional LLM API Keys (Optional)")
+
+        # --- Always alert about the primary backend model/provider and its API key ---
+        default_model_id = None
+        default_env_key = None
+        default_provider_name = None
+        try:
+            # Import lazily so setup.py can still run even if backend deps change
+            from core.ai_models.registry import ModelRegistry, FREE_MODEL_ID
+            from core.ai_models.models import ModelProvider
+
+            registry = ModelRegistry()
+            default_model = registry.get_model(FREE_MODEL_ID)
+
+            if default_model:
+                default_model_id = default_model.id
+                provider = default_model.provider
+
+                provider_to_env = {
+                    ModelProvider.OPENROUTER: "OPENROUTER_API_KEY",
+                    ModelProvider.ANTHROPIC: "ANTHROPIC_API_KEY",
+                    ModelProvider.OPENAI: "OPENAI_API_KEY",
+                    ModelProvider.BEDROCK: "AWS_BEARER_TOKEN_BEDROCK",
+                    ModelProvider.GOOGLE: "GEMINI_API_KEY",
+                    ModelProvider.XAI: "XAI_API_KEY",
+                }
+                default_env_key = provider_to_env.get(provider)
+                default_provider_name = provider.value if hasattr(provider, "value") else str(provider)
+        except Exception:
+            # If anything goes wrong while introspecting backend models,
+            # fall back to the existing optional flow below.
+            default_model_id = None
+            default_env_key = None
+            default_provider_name = None
+
+        if default_env_key:
+            existing_default_key = self.env_vars["llm"].get(default_env_key, "")
+            provider_info = API_PROVIDER_INFO.get(default_env_key, {})
+            pretty_name = provider_info.get("name", default_provider_name or default_env_key)
+
+            if default_model_id:
+                print_info(
+                    f"Backend default chat model is '{default_model_id}' using {pretty_name}."
+                )
+            else:
+                print_info(
+                    f"The backend default chat provider is {pretty_name}."
+                )
+
+            print_warning(
+                f"{pretty_name} requires an API key. Without it, core agent runs may fail with authentication errors."
+            )
+
+            if existing_default_key:
+                print_info(
+                    f"{pretty_name} API key is already configured: "
+                    f"{mask_sensitive_value(existing_default_key)}"
+                )
+            else:
+                # Ask the user explicitly for the key, but still allow skipping with a clear warning
+                print_api_key_prompt(default_env_key, optional=False, existing_value="")
+                api_key = self._get_input(
+                    f"{provider_info.get('color', Colors.CYAN)}Enter your {pretty_name} API key (or press Enter to skip){Colors.ENDC}: ",
+                    validate_api_key,
+                    "The key seems invalid, but continuing. You can edit it later in backend/.env",
+                    allow_empty=True,
+                    default_value="",
+                )
+                if api_key:
+                    self.env_vars["llm"][default_env_key] = api_key
+                    print_success(f"{pretty_name} API key saved for the default backend model.")
+                else:
+                    print_warning(
+                        f"No {pretty_name} API key configured. Default model calls may fail until you add it to backend/.env."
+                    )
+
+            print()
 
         # Check if we already have any LLM keys configured
         existing_keys = {
@@ -2316,8 +2376,79 @@ class SetupWizard:
                 "Please install dependencies manually and run the script again.")
             sys.exit(1)
 
-    def start_suna(self):
-        """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup."""
+    def ensure_frontend_lockfile(self) -> bool:
+        """Ensures a JS lockfile exists in apps/frontend for Docker builds.
+
+        For Docker-based setups we need a lockfile in apps/frontend so that the
+        frontend Dockerfile can install dependencies deterministically. If no
+        lockfile is present, we attempt to generate one automatically.
+        """
+        frontend_dir = os.path.join("apps", "frontend")
+        lockfiles = ["pnpm-lock.yaml", "package-lock.json", "yarn.lock"]
+
+        # 1) If there's already a lockfile next to apps/frontend/package.json, we're good.
+        if any(os.path.exists(os.path.join(frontend_dir, lf)) for lf in lockfiles):
+            return True
+
+        print_info("No frontend lockfile found in apps/frontend.")
+        print_info("Attempting to generate a lockfile automatically with pnpm...")
+
+        try:
+            # In a pnpm workspace, installs typically use a single lockfile at the root.
+            # Running from apps/frontend will still operate on the workspace lockfile.
+            subprocess.run(
+                ["pnpm", "install"],
+                cwd=frontend_dir,
+                check=True,
+                shell=IS_WINDOWS,
+            )
+
+            # 2) Check again for a per-app lockfile.
+            if any(os.path.exists(os.path.join(frontend_dir, lf)) for lf in lockfiles):
+                print_success("Frontend lockfile generated successfully in apps/frontend.")
+                return True
+
+            # 3) Fallback: if we're in a pnpm workspace with a root pnpm-lock.yaml that
+            # includes apps/frontend as an importer, copy it into apps/frontend so the
+            # Dockerfile has a lockfile within its build context.
+            root_pnpm_lock = "pnpm-lock.yaml"
+            if os.path.exists(root_pnpm_lock):
+                try:
+                    # Quick heuristic: ensure apps/frontend appears in the lockfile to
+                    # avoid copying some unrelated lockfile.
+                    with open(root_pnpm_lock, "r", encoding="utf-8") as f:
+                        lock_contents = f.read()
+                    if "apps/frontend:" in lock_contents or "apps/frontend" in lock_contents:
+                        target_lock = os.path.join(frontend_dir, "pnpm-lock.yaml")
+                        with open(root_pnpm_lock, "rb") as src, open(
+                            target_lock, "wb"
+                        ) as dst:
+                            dst.write(src.read())
+                        print_success(
+                            "Copied workspace pnpm-lock.yaml into apps/frontend for Docker build."
+                        )
+                        return True
+                except Exception as e:
+                    print_warning(f"Failed to copy root pnpm-lock.yaml into apps/frontend: {e}")
+
+            print_warning(
+                "Tried to generate a frontend lockfile, but none was created."
+            )
+        except (subprocess.SubprocessError, FileNotFoundError) as e:
+            print_warning(f"Failed to generate frontend lockfile automatically: {e}")
+
+        print_warning(
+            "Docker Compose builds may fail without a frontend lockfile.\n"
+            "To fix this, run 'cd apps/frontend && pnpm install' and then re-run this script."
+        )
+        return False
+
+    def start_suna(self, ask_start_method: bool = True):
+        """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup.
+
+        If ask_start_method is False and setup_method is 'docker', we skip the
+        automatic/manual prompt and start via Docker Compose automatically.
+        """
         print_step(17, self.total_steps, "Starting Kortix Super Worker")
         
         compose_cmd = self.get_compose_command()
@@ -2327,22 +2458,33 @@ class SetupWizard:
         else:
             compose_cmd_str = format_compose_cmd(compose_cmd)
         
-        # Ask user how they want to start
-        print_info("\nHow would you like to start Kortix Super Worker?")
-        print(f"  {Colors.CYAN}[1]{Colors.ENDC} Automatic - Start services automatically")
-        print(f"  {Colors.CYAN}[2]{Colors.ENDC} Manual - Show commands to run manually")
+        # Determine how to start services
+        if not ask_start_method and self.env_vars.get("setup_method") == "docker":
+            # Called from the "Start with Docker Compose" menu: force automatic Docker start
+            choice = "1"
+            self.env_vars["start_method"] = "automatic"
+        else:
+            # Ask user how they want to start
+            print_info("\nHow would you like to start Kortix Super Worker?")
+            print(f"  {Colors.CYAN}[1]{Colors.ENDC} Automatic - Start services automatically")
+            print(f"  {Colors.CYAN}[2]{Colors.ENDC} Manual - Show commands to run manually")
+            
+            while True:
+                choice = input("Enter your choice (1-2, default: 1): ").strip() or "1"
+                if choice in ["1", "2"]:
+                    break
+                print_error("Invalid choice. Please enter 1 or 2.")
+            
+            self.env_vars["start_method"] = "automatic" if choice == "1" else "manual"
         
-        while True:
-            choice = input("Enter your choice (1-2, default: 1): ").strip() or "1"
-            if choice in ["1", "2"]:
-                break
-            print_error("Invalid choice. Please enter 1 or 2.")
-        
-        self.env_vars["start_method"] = "automatic" if choice == "1" else "manual"
-        
-        if self.env_vars["setup_method"] == "docker":
+        if self.env_vars.get("setup_method") == "docker":
             if choice == "1":
                 # Automatic Docker start
+                # Ensure the frontend lockfile exists so the Docker build can succeed.
+                if not self.ensure_frontend_lockfile():
+                    # We already printed detailed guidance; don't attempt a build that will likely fail.
+                    return
+
                 print_info("Starting Kortix Super Worker with Docker Compose...")
                 try:
                     subprocess.run(

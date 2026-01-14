@@ -6,7 +6,7 @@ import platform
 import os
 import json
 
-IS_WINDOWS = platform.system() == "Windows"
+from start_helpers import detect_docker_compose_command, format_compose_cmd, IS_WINDOWS
 PROGRESS_FILE = ".setup_progress"
 
 
@@ -37,32 +37,6 @@ def get_setup_method():
     """Gets the setup method chosen during setup."""
     progress = load_progress()
     return progress.get("data", {}).get("setup_method")
-
-def detect_docker_compose_command():
-    """Detects whether 'docker compose' or 'docker-compose' is available."""
-    candidates = [
-        ["docker", "compose"],
-        ["docker-compose"],
-    ]
-    for cmd in candidates:
-        try:
-            subprocess.run(
-                cmd + ["version"],
-                capture_output=True,
-                text=True,
-                check=True,
-                shell=IS_WINDOWS,
-            )
-            return cmd
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            continue
-
-    print(f"{Colors.RED}Docker Compose command not found. Install Docker Desktop or docker-compose.{Colors.ENDC}")
-    return None
-
-def format_compose_cmd(compose_cmd):
-    """Formats the compose command list for display."""
-    return " ".join(compose_cmd) if compose_cmd else "docker compose"
 
 def check_docker_available():
     """Check if Docker is available and running."""
@@ -201,58 +175,58 @@ def main():
                 print(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
         else:
             # Manual mode: only manage infrastructure services (redis)
-        # and show instructions for the rest
-        print(f"{Colors.BLUE}{Colors.BOLD}Manual Setup Detected{Colors.ENDC}")
-        print("Managing infrastructure services (Redis)...\n")
+            # and show instructions for the rest
+            print(f"{Colors.BLUE}{Colors.BOLD}Manual Setup Detected{Colors.ENDC}")
+            print("Managing infrastructure services (Redis)...\n")
 
-        force = "-f" in sys.argv
-        if force:
-            print("Force awakened. Skipping confirmation.")
+            force = "-f" in sys.argv
+            if force:
+                print("Force awakened. Skipping confirmation.")
 
-        if not check_docker_available():
-            return
+            if not check_docker_available():
+                return
 
-        compose_cmd = detect_docker_compose_command()
-        if not compose_cmd:
-            return
-        compose_cmd_str = format_compose_cmd(compose_cmd)
-        print(f"Using Docker Compose command: {compose_cmd_str}")
+            compose_cmd = detect_docker_compose_command()
+            if not compose_cmd:
+                return
+            compose_cmd_str = format_compose_cmd(compose_cmd)
+            print(f"Using Docker Compose command: {compose_cmd_str}")
 
-        is_infra_up = subprocess.run(
-            compose_cmd + ["ps", "-q", "redis"],
-            capture_output=True,
-            text=True,
-            shell=IS_WINDOWS,
-        )
-        is_up = len(is_infra_up.stdout.strip()) > 0
-
-        if is_up:
-            action = "stop"
-            msg = "🛑 Stop infrastructure services? [y/N] "
-        else:
-            action = "start"
-            msg = "⚡ Start infrastructure services? [Y/n] "
-
-        if not force:
-            response = input(msg).strip().lower()
-            if action == "stop":
-                if response != "y":
-                    print("Aborting.")
-                    return
-            else:
-                if response == "n":
-                    print("Aborting.")
-                    return
-
-        if action == "stop":
-            subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
-            print(f"\n{Colors.GREEN}✅ Infrastructure services stopped.{Colors.ENDC}")
-        else:
-            subprocess.run(
-                compose_cmd + ["up", "redis", "-d"], shell=IS_WINDOWS
+            is_infra_up = subprocess.run(
+                compose_cmd + ["ps", "-q", "redis"],
+                capture_output=True,
+                text=True,
+                shell=IS_WINDOWS,
             )
-            print(f"\n{Colors.GREEN}✅ Infrastructure services started.{Colors.ENDC}")
-            print_manual_instructions(compose_cmd_str)
+            is_up = len(is_infra_up.stdout.strip()) > 0
+
+            if is_up:
+                action = "stop"
+                msg = "🛑 Stop infrastructure services? [y/N] "
+            else:
+                action = "start"
+                msg = "⚡ Start infrastructure services? [Y/n] "
+
+            if not force:
+                response = input(msg).strip().lower()
+                if action == "stop":
+                    if response != "y":
+                        print("Aborting.")
+                        return
+                else:
+                    if response == "n":
+                        print("Aborting.")
+                        return
+
+            if action == "stop":
+                subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
+                print(f"\n{Colors.GREEN}✅ Infrastructure services stopped.{Colors.ENDC}")
+            else:
+                subprocess.run(
+                    compose_cmd + ["up", "redis", "-d"], shell=IS_WINDOWS
+                )
+                print(f"\n{Colors.GREEN}✅ Infrastructure services started.{Colors.ENDC}")
+                print_manual_instructions(compose_cmd_str)
 
     else:  # docker setup
         print(f"{Colors.BLUE}{Colors.BOLD}Docker Setup Detected{Colors.ENDC}")
