@@ -125,7 +125,7 @@ export default function SplashScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background items-center justify-center">
-        <KortixLoader size="large" />
+        <KortixLoader customSize={56} />
       </View>
     </>
   );
