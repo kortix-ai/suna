@@ -81,8 +81,8 @@ TIERS: Dict[str, Tier] = {
         },
         daily_credit_config={
             'enabled': True,
-            'amount': Decimal('1.00'),
-            'refresh_interval_hours': 24
+            'amount': Decimal('3.00'),
+            'refresh_interval_hours': 168
         },
         monthly_refill_enabled=False
     ),
