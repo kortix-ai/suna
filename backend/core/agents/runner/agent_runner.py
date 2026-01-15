@@ -249,15 +249,12 @@ class AgentRunner:
                 logger.warning(f"Prefetch llm_end failed (will retry): {e}")
                 return None
 
-        # Start prefetch tasks immediately - these run in parallel with everything else
         self._prefetch_messages_task = asyncio.create_task(safe_prefetch_messages())
         self._prefetch_llm_end_task = asyncio.create_task(safe_prefetch_llm_end())
         self._prefetch_consumed = False
 
         await stream_status_message("initializing", "Registering tools...")
 
-        # Run tool setup, dynamic tool restoration, AND system prompt building in parallel
-        # This saves ~0.5-1s by not waiting for tools before starting prompt build
         async def build_prompt():
             return await PromptManager.build_system_prompt(
                 self.config.model_name,
@@ -271,7 +268,6 @@ class AgentRunner:
                 mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
             )
 
-        # Execute all three in parallel
         results = await asyncio.gather(
             self._setup_tools_async(),
             self._restore_dynamic_tools(),
@@ -279,7 +275,6 @@ class AgentRunner:
             return_exceptions=True
         )
 
-        # Extract prompt result (third item)
         prompt_result = results[2]
         if isinstance(prompt_result, Exception):
             logger.error(f"System prompt build failed: {prompt_result}")
@@ -287,7 +282,6 @@ class AgentRunner:
         
         system_message, memory_context = prompt_result
 
-        # Clean up legacy MCP tools if needed
         if (hasattr(self.thread_manager, 'mcp_loader') and
             self.config.agent_config and
             (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps"))):
@@ -298,7 +292,6 @@ class AgentRunner:
             self.thread_manager.set_memory_context(memory_context)
 
         await stream_status_message("ready", "Agent ready, starting execution...")
-
         return system_message
 
     async def _run_loop(
