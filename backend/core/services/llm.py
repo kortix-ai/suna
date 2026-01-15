@@ -43,7 +43,8 @@ litellm.num_retries = int(os.environ.get("LITELLM_NUM_RETRIES", 1))
 litellm.request_timeout = 1800  # 30 min for long streams
 
 # Stream timeout: max time to wait between stream chunks (prevents indefinite hangs)
-litellm.stream_timeout = int(os.environ.get("LITELLM_STREAM_TIMEOUT", 120))
+# Increased to 300s (5 min) to allow MiniMax reasoning mode to work on complex outputs
+litellm.stream_timeout = int(os.environ.get("LITELLM_STREAM_TIMEOUT", 300))
 
 # Custom callback to track LiteLLM retries and timing
 from litellm.integrations.custom_logger import CustomLogger
