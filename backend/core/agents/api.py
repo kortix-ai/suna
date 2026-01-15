@@ -413,7 +413,7 @@ async def _background_setup_and_execute(
     from core.utils.lifecycle_tracker import log_run_start, log_run_cleanup
     from core.agents.runner.setup_manager import (
         prepopulate_caches_for_new_thread,
-        invalidate_caches_for_existing_thread,
+        append_user_message_to_cache,
         write_user_message_for_existing_thread,
         prewarm_user_context,
         create_new_thread_records,
@@ -452,9 +452,12 @@ async def _background_setup_and_execute(
                 image_contexts=image_contexts_to_inject,
                 mode=mode,
             )
+            cache_updated = False  # New threads handle message in create_new_thread_records
         else:
-            await invalidate_caches_for_existing_thread(thread_id)
-            await write_user_message_for_existing_thread(thread_id, final_message_content)
+            cache_updated = await append_user_message_to_cache(thread_id, final_message_content)
+            if not cache_updated:
+                logger.debug(f"⚠️ Cache miss for thread {thread_id}, writing message to DB first")
+                await write_user_message_for_existing_thread(thread_id, final_message_content)
         
         logger.debug(f"⚡ [BG] Caches ready, starting agent + DB writes in parallel")
         
@@ -476,6 +479,8 @@ async def _background_setup_and_execute(
                         memory_enabled=memory_enabled,
                     )
                 else:
+                    if cache_updated:
+                        await write_user_message_for_existing_thread(thread_id, final_message_content)
                     await create_agent_run_record(
                         agent_run_id=agent_run_id,
                         thread_id=thread_id,
@@ -736,14 +741,40 @@ async def stream_agent_run(
     token: Optional[str] = None,
     request: Request = None
 ):
-    """Stream agent run responses via SSE."""
+    from core.agents import repo as agents_repo
+    
     user_id = await get_user_id_from_stream_auth(request, token)
-    agent_run_data = await _get_agent_run_with_access_check(agent_run_id, user_id)
-
     stream_key = f"agent_run:{agent_run_id}:stream"
+    
+    agent_run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
+    
+    if not agent_run_data:
+        for attempt in range(15):
+            await asyncio.sleep(0.2)
+            agent_run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
+            if agent_run_data:
+                break
+            if attempt >= 5:
+                try:
+                    stream_len = await redis.stream_len(stream_key)
+                    if stream_len > 0:
+                        continue
+                except Exception:
+                    pass
+        
+        if not agent_run_data:
+            raise HTTPException(status_code=404, detail="Worker run not found")
+    
+    thread_id = agent_run_data['thread_id']
+    account_id = agent_run_data['thread_account_id']
+    
+    if user_id != account_id:
+        metadata = agent_run_data.get('metadata', {}) or {}
+        shared_users = metadata.get('shared_users', [])
+        if user_id not in shared_users:
+            raise HTTPException(status_code=403, detail="Access denied")
 
     def compare_stream_ids(id1: str, id2: str) -> int:
-        """Compare Redis stream IDs. Returns -1 if id1 < id2, 0 if equal, 1 if id1 > id2."""
         try:
             t1, s1 = id1.split('-')
             t2, s2 = id2.split('-')
@@ -754,7 +785,6 @@ async def stream_agent_run(
             return -1 if id1 < id2 else (0 if id1 == id2 else 1)
 
     def find_last_safe_boundary(entries):
-        """Find last safe trim boundary in stream entries."""
         last_safe = -1
         open_responses = 0
 

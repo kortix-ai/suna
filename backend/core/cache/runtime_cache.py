@@ -620,6 +620,25 @@ async def invalidate_message_history_cache(thread_id: str) -> None:
         logger.warning(f"Failed to invalidate message history cache: {e}")
 
 
+async def append_to_cached_message_history(thread_id: str, message: dict) -> bool:
+    cache_key = _get_message_history_key(thread_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            messages = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
+            messages.append(message)
+            await redis_service.set(cache_key, _json_dumps(messages), ex=MESSAGE_HISTORY_TTL)
+            logger.debug(f"✅ Appended message to cached history: {thread_id} ({len(messages)} messages)")
+            return True
+    except Exception as e:
+        logger.warning(f"Failed to append to message history cache: {e}")
+    
+    return False
+
+
 TIER_INFO_TTL = 3600
 
 def _get_tier_info_key(account_id: str) -> str:

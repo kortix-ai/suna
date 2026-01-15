@@ -1038,8 +1038,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           },
         });
 
-        // Set agentRunId directly from mutation result to start streaming immediately
         if (result.agent_run_id) {
+          setUserInitiatedRun(true);
           setAgentRunId(result.agent_run_id);
           setAgentStatus('running');
         }
@@ -1055,8 +1055,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         // Clear input text and uploaded files after successful submission
         chatInputRef.current?.setValue('');
         chatInputRef.current?.clearUploadedFiles();
-
-        setUserInitiatedRun(true);
       } catch (error) {
         console.error('Failed to start agent:', error);
         pendingMessageRef.current = null;

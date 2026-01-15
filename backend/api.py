@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
         
         # ===== CRITICAL: Stop all running agent runs on this instance =====
         from core.agents.api import _cancellation_events
-        from core.agents.runner.agent_runner import update_agent_run_status
+        from core.agents.runner import update_agent_run_status
         
         active_run_ids = list(_cancellation_events.keys())
         if active_run_ids:

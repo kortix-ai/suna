@@ -44,6 +44,21 @@ async def invalidate_caches_for_existing_thread(thread_id: str) -> None:
     logger.debug(f"🗑️ Invalidated message cache for thread {thread_id}")
 
 
+async def append_user_message_to_cache(thread_id: str, message_content: str) -> bool:
+    from core.cache.runtime_cache import append_to_cached_message_history
+    import uuid
+    
+    if not message_content or not message_content.strip():
+        return False
+    
+    message = {
+        "role": "user",
+        "content": message_content,
+        "message_id": str(uuid.uuid4())
+    }
+    return await append_to_cached_message_history(thread_id, message)
+
+
 async def write_user_message_for_existing_thread(
     thread_id: str,
     message_content: str,
@@ -196,7 +211,6 @@ async def create_agent_run_record(
     await agents_repo.create_agent_run_with_id(
         agent_run_id=agent_run_id,
         thread_id=thread_id,
-        status="running",
         agent_id=agent_config.get("agent_id") if agent_config else None,
         agent_version_id=agent_config.get("agent_version_id") if agent_config else None,
         metadata=run_metadata
