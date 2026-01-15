@@ -115,8 +115,12 @@ def setup_api_keys() -> None:
     if getattr(config, 'OPENAI_API_KEY', None):
         os.environ["OPENAI_API_KEY"] = config.OPENAI_API_KEY
     
-    if getattr(config, 'OPENROUTER_API_KEY', None) and getattr(config, 'OPENROUTER_API_BASE', None):
-        os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
+    # Set OpenRouter API key and base URL for LiteLLM
+    if getattr(config, 'OPENROUTER_API_KEY', None):
+        os.environ["OPENROUTER_API_KEY"] = config.OPENROUTER_API_KEY
+        # Use configured base URL or default to official OpenRouter API
+        openrouter_base = getattr(config, 'OPENROUTER_API_BASE', None) or "https://openrouter.ai/api/v1"
+        os.environ["OPENROUTER_API_BASE"] = openrouter_base
     
     if getattr(config, 'OR_APP_NAME', None):
         os.environ["OR_APP_NAME"] = config.OR_APP_NAME
