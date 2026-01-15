@@ -534,18 +534,29 @@ async def _browse_threads_by_email(
 
 
 async def _browse_threads_simple(
-    client, params: PaginationParams, 
+    client, params: PaginationParams,
     date_from: Optional[str], date_to: Optional[str],
     sort_by: str, sort_order: str
 ) -> PaginatedResponse[ThreadAnalytics]:
     """Fast path: paginate threads directly from DB, then enrich only the page."""
-    
+
+    # Convert date parameters to Berlin timezone (same as _browse_threads_filtered)
+    date_from_param = None
+    date_to_param = None
+
+    if date_from:
+        from_dt = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_from else datetime.fromisoformat(date_from)
+        date_from_param = from_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if date_to:
+        to_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_to else datetime.fromisoformat(date_to)
+        date_to_param = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+
     # Get total count for pagination
     count_query = client.from_('threads').select('thread_id', count='exact')
-    if date_from:
-        count_query = count_query.gte('created_at', date_from)
-    if date_to:
-        count_query = count_query.lte('created_at', date_to)
+    if date_from_param:
+        count_query = count_query.gte('created_at', date_from_param)
+    if date_to_param:
+        count_query = count_query.lte('created_at', date_to_param)
     count_result = await count_query.execute()
     total_count = count_result.count or 0
     
@@ -559,10 +570,10 @@ async def _browse_threads_simple(
     threads_query = client.from_('threads').select(
         'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
     )
-    if date_from:
-        threads_query = threads_query.gte('created_at', date_from)
-    if date_to:
-        threads_query = threads_query.lte('created_at', date_to)
+    if date_from_param:
+        threads_query = threads_query.gte('created_at', date_from_param)
+    if date_to_param:
+        threads_query = threads_query.lte('created_at', date_to_param)
     
     if sort_by == 'created_at':
         threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
