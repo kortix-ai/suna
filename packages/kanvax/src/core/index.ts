@@ -76,3 +76,34 @@ export {
   calculateClipPath,
   doesElementOverlapFrame,
 } from './canvas-logic';
+
+// Export alignment types
+export type {
+  AlignmentType,
+  DistributeType,
+  LayoutType,
+  AlignmentGuide,
+  AlignmentResult,
+  ElementUpdate,
+  LayoutOptions,
+} from './alignment';
+
+// Export alignment functions and constants
+export {
+  // Constants
+  POTENTIAL_SNAP_THRESHOLD,
+  ACTIVE_SNAP_THRESHOLD,
+  MIN_SPACING_GAP,
+  // Alignment detection
+  calculateAlignmentGuides,
+  // Alignment operations
+  alignElements,
+  distributeElements,
+  // Layout algorithms
+  applyMasonryLayout,
+  applyBentoLayout,
+  applyGridLayout,
+  // Animation helpers
+  interpolatePosition,
+  isAnimationComplete,
+} from './alignment';

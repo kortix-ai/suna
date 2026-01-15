@@ -23,6 +23,15 @@ import {
   Scissors,
   Frame,
   Palette,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  AlignStartVertical,
+  AlignCenterVertical,
+  AlignEndVertical,
+  LayoutGrid,
+  GalleryVertical,
+  LayoutDashboard,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { cn } from '@/lib/utils';
@@ -65,6 +74,10 @@ import type {
   CanvasData,
   CanvasRendererProps,
   ResizeHandle,
+  AlignmentGuide,
+  AlignmentType,
+  DistributeType,
+  ElementUpdate,
 } from '@agentpress/kanvax/core';
 import {
   sanitizeElements,
@@ -96,6 +109,13 @@ import {
   // Clip path calculations
   calculateClipPath,
   doesElementOverlapFrame,
+  // Alignment
+  calculateAlignmentGuides,
+  alignElements,
+  distributeElements,
+  applyMasonryLayout,
+  applyBentoLayout,
+  applyGridLayout,
 } from '@agentpress/kanvax/core';
 
 function getSandboxFileUrl(sandboxId: string | undefined, path: string): string {
@@ -163,63 +183,122 @@ function AIProcessingOverlay({ isVisible }: { isVisible: boolean }) {
   );
 }
 
-// Snap Guides Overlay - shows alignment lines when dragging near frame centers
-function SnapGuidesOverlay({
-  guides,
-  frames,
+// Drop Zone Preview - shows ghost rectangle at snap position
+function DropZonePreview({
+  dropPreview,
   scale,
   stagePosition,
 }: {
-  guides: SnapGuide[];
-  frames: FrameCanvasElement[];
+  dropPreview: { x: number; y: number; width: number; height: number } | null;
   scale: number;
   stagePosition: { x: number; y: number };
+}) {
+  if (!dropPreview) return null;
+
+  const screenX = dropPreview.x * scale + stagePosition.x;
+  const screenY = dropPreview.y * scale + stagePosition.y;
+  const screenWidth = dropPreview.width * scale;
+  const screenHeight = dropPreview.height * scale;
+
+  return (
+    <div
+      className="pointer-events-none animate-in fade-in-0 duration-100"
+      style={{
+        position: 'absolute',
+        left: screenX,
+        top: screenY,
+        width: screenWidth,
+        height: screenHeight,
+        border: '2px dashed #3b82f6',
+        borderRadius: '4px',
+        backgroundColor: 'rgba(59, 130, 246, 0.08)',
+        zIndex: 45,
+      }}
+    >
+      {/* Size indicator */}
+      <div
+        className="absolute left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded text-[10px] font-mono whitespace-nowrap"
+        style={{
+          bottom: '-20px',
+          backgroundColor: '#3b82f6',
+          color: 'white',
+        }}
+      >
+        {Math.round(dropPreview.width)} × {Math.round(dropPreview.height)}
+      </div>
+    </div>
+  );
+}
+
+// Enhanced Snap Guides Overlay - shows dashed (potential) and solid (active) alignment lines
+function SnapGuidesOverlay({
+  guides,
+  scale,
+  stagePosition,
+  containerSize,
+}: {
+  guides: (SnapGuide | AlignmentGuide)[];
+  scale: number;
+  stagePosition: { x: number; y: number };
+  containerSize: { width: number; height: number };
 }) {
   if (guides.length === 0) return null;
 
   return (
     <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 50 }}>
       {guides.map((guide, idx) => {
-        const frame = frames.find(f => f.id === guide.frameId);
-        if (!frame) return null;
+        // Check if this is an enhanced AlignmentGuide
+        const isAlignmentGuide = 'strength' in guide;
+        const strength = isAlignmentGuide ? (guide as AlignmentGuide).strength : 'active';
+        const isActive = strength === 'active';
+
+        // Colors based on strength
+        const color = isActive ? '#3b82f6' : '#94a3b8'; // Blue for active, gray for potential
+        const opacity = isActive ? 1 : 0.6;
 
         if (guide.type === 'vertical') {
-          // Vertical line at frame center X
           const screenX = guide.position * scale + stagePosition.x;
-          const frameTop = frame.y * scale + stagePosition.y;
-          const frameBottom = (frame.y + frame.height) * scale + stagePosition.y;
 
           return (
             <div
               key={`guide-${idx}`}
+              className={cn(
+                'transition-all duration-75',
+                isActive && 'animate-in fade-in-0 duration-100'
+              )}
               style={{
                 position: 'absolute',
                 left: screenX,
-                top: frameTop,
-                width: 1,
-                height: frameBottom - frameTop,
-                backgroundColor: '#ff3366',
-                boxShadow: '0 0 4px #ff3366',
+                top: 0,
+                width: isActive ? 1.5 : 1,
+                height: containerSize.height,
+                backgroundColor: isActive ? color : 'transparent',
+                borderLeft: isActive ? 'none' : `1px dashed ${color}`,
+                boxShadow: isActive ? `0 0 6px ${color}` : 'none',
+                opacity,
               }}
             />
           );
         } else {
-          // Horizontal line at frame center Y
           const screenY = guide.position * scale + stagePosition.y;
-          const frameLeft = frame.x * scale + stagePosition.x;
-          const frameRight = (frame.x + frame.width) * scale + stagePosition.x;
 
           return (
             <div
               key={`guide-${idx}`}
+              className={cn(
+                'transition-all duration-75',
+                isActive && 'animate-in fade-in-0 duration-100'
+              )}
               style={{
                 position: 'absolute',
-                left: frameLeft,
+                left: 0,
                 top: screenY,
-                width: frameRight - frameLeft,
-                height: 1,
-                backgroundColor: '#ff3366',
-                boxShadow: '0 0 4px #ff3366',
+                width: containerSize.width,
+                height: isActive ? 1.5 : 1,
+                backgroundColor: isActive ? color : 'transparent',
+                borderTop: isActive ? 'none' : `1px dashed ${color}`,
+                boxShadow: isActive ? `0 0 6px ${color}` : 'none',
+                opacity,
               }}
             />
           );
@@ -229,10 +308,62 @@ function SnapGuidesOverlay({
   );
 }
 
+// Group Selection Box - shows a single box around all selected elements
+function GroupSelectionBox({
+  elements,
+  scale,
+  stagePosition,
+}: {
+  elements: CanvasElement[];
+  scale: number;
+  stagePosition: { x: number; y: number };
+}) {
+  if (elements.length < 2) return null;
+
+  // Calculate bounds of all selected elements
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const el of elements) {
+    minX = Math.min(minX, el.x);
+    minY = Math.min(minY, el.y);
+    maxX = Math.max(maxX, el.x + el.width);
+    maxY = Math.max(maxY, el.y + el.height);
+  }
+
+  const padding = 8; // Padding around group
+  const screenLeft = minX * scale + stagePosition.x - padding;
+  const screenTop = minY * scale + stagePosition.y - padding;
+  const screenWidth = (maxX - minX) * scale + padding * 2;
+  const screenHeight = (maxY - minY) * scale + padding * 2;
+
+  return (
+    <div
+      className="pointer-events-none"
+      style={{
+        position: 'absolute',
+        left: screenLeft,
+        top: screenTop,
+        width: screenWidth,
+        height: screenHeight,
+        border: '2px solid #3b82f6',
+        borderRadius: '6px',
+        boxShadow: '0 0 0 1px rgba(59, 130, 246, 0.2)',
+        zIndex: 50,
+      }}
+    >
+      {/* Corner indicators */}
+      <div className="absolute -top-1 -left-1 w-2.5 h-2.5 bg-white border-2 border-blue-500 rounded-sm" />
+      <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-white border-2 border-blue-500 rounded-sm" />
+      <div className="absolute -bottom-1 -left-1 w-2.5 h-2.5 bg-white border-2 border-blue-500 rounded-sm" />
+      <div className="absolute -bottom-1 -right-1 w-2.5 h-2.5 bg-white border-2 border-blue-500 rounded-sm" />
+    </div>
+  );
+}
+
 // Image element with drag and resize
 function CanvasImageElement({
   element,
   isSelected,
+  showSelectionRing = true,
   onSelect,
   onChange,
   sandboxId,
@@ -242,10 +373,13 @@ function CanvasImageElement({
   isProcessing = false,
   clipPath,
   frames = [],
+  otherElements = [],
   onSnapChange,
+  onDropPreviewChange,
 }: {
   element: ImageCanvasElement;
   isSelected: boolean;
+  showSelectionRing?: boolean;
   onSelect: (e: React.MouseEvent) => void;
   onChange: (newAttrs: Partial<ImageCanvasElement>) => void;
   sandboxId?: string;
@@ -255,7 +389,9 @@ function CanvasImageElement({
   isProcessing?: boolean;
   clipPath?: string; // CSS clip-path for frame clipping
   frames?: FrameCanvasElement[]; // Available frames for snapping
+  otherElements?: CanvasElement[]; // Other elements for element-to-element snapping
   onSnapChange?: (guides: SnapGuide[]) => void; // Callback to update snap guides
+  onDropPreviewChange?: (preview: { x: number; y: number; width: number; height: number } | null) => void; // Callback to update drop preview
 }) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -270,6 +406,27 @@ function CanvasImageElement({
     startWidth: number;
     startHeight: number;
   } | null>(null);
+
+  // Track previous canvas position for animation detection (canvas coords, not screen)
+  const prevCanvasPosRef = useRef({ x: element.x, y: element.y });
+  const [animating, setAnimating] = useState(false);
+
+  // Detect canvas position change (not affected by zoom/pan)
+  const canvasPosChanged = prevCanvasPosRef.current.x !== element.x || prevCanvasPosRef.current.y !== element.y;
+  // Animate when position changed AND not currently dragging
+  const shouldAnimate = (canvasPosChanged && !dragState) || animating;
+
+  // Update previous position ref after comparison
+  useEffect(() => {
+    if (canvasPosChanged && !dragState) {
+      // Position changed while not dragging - trigger animation
+      setAnimating(true);
+      const timer = setTimeout(() => setAnimating(false), 200);
+      prevCanvasPosRef.current = { x: element.x, y: element.y };
+      return () => clearTimeout(timer);
+    }
+    prevCanvasPosRef.current = { x: element.x, y: element.y };
+  }, [element.x, element.y, dragState, canvasPosChanged]);
 
   useEffect(() => {
     // For temp merge placeholders with no src, just show loading state
@@ -361,28 +518,148 @@ function CanvasImageElement({
       const dy = (e.clientY - dragState.startY) / scale;
 
       if (dragState.type === 'move') {
-        let newX = dragState.startElemX + dx;
-        let newY = dragState.startElemY + dy;
+        const newX = dragState.startElemX + dx;
+        const newY = dragState.startElemY + dy;
 
-        // Calculate element center for snapping
+        // Calculate element edges and center for snap detection
+        const elemLeft = newX;
+        const elemRight = newX + element.width;
+        const elemTop = newY;
+        const elemBottom = newY + element.height;
         const elemCenterX = newX + element.width / 2;
         const elemCenterY = newY + element.height / 2;
 
-        // Check for snap points against frames
-        const { snapX, snapY, guides } = calculateSnapResult(elemCenterX, elemCenterY, frames);
+        // Snap configuration
+        const ELEMENT_SNAP_THRESHOLD = 24; // Larger threshold for easier snapping
+        const ELEMENT_PADDING = 16; // Standard padding between elements
 
-        // Apply snapping - adjust position so element center aligns with snap point
+        // Snap results - find closest snap for each axis
+        let snapX: number | null = null;
+        let snapY: number | null = null;
+        let snapXDist = ELEMENT_SNAP_THRESHOLD;
+        let snapYDist = ELEMENT_SNAP_THRESHOLD;
+        const guides: SnapGuide[] = [];
+
+        // Check for snap points against frames (center alignment)
+        const frameSnapResult = calculateSnapResult(elemCenterX, elemCenterY, frames);
+        if (frameSnapResult.snapX !== null) {
+          const dist = Math.abs(elemCenterX - frameSnapResult.snapX);
+          if (dist < snapXDist) {
+            snapX = frameSnapResult.snapX - element.width / 2;
+            snapXDist = dist;
+            guides.push(...frameSnapResult.guides.filter(g => g.type === 'vertical'));
+          }
+        }
+        if (frameSnapResult.snapY !== null) {
+          const dist = Math.abs(elemCenterY - frameSnapResult.snapY);
+          if (dist < snapYDist) {
+            snapY = frameSnapResult.snapY - element.height / 2;
+            snapYDist = dist;
+            guides.push(...frameSnapResult.guides.filter(g => g.type === 'horizontal'));
+          }
+        }
+
+        // Check for snap points against other elements (edge alignment with padding)
+        for (let i = 0; i < otherElements.length; i++) {
+          const other = otherElements[i];
+          const otherLeft = other.x;
+          const otherRight = other.x + other.width;
+          const otherTop = other.y;
+          const otherBottom = other.y + other.height;
+
+          // Horizontal snapping (X position) - check if vertically overlapping or close
+          const verticallyClose = elemBottom > otherTop - 150 && elemTop < otherBottom + 150;
+          if (verticallyClose) {
+            // Snap: element right edge -> other left edge (with padding gap)
+            const target1 = otherLeft - ELEMENT_PADDING - element.width;
+            const dist1 = Math.abs(newX - target1);
+            if (dist1 < snapXDist) {
+              snapX = target1;
+              snapXDist = dist1;
+            }
+            // Snap: element left edge -> other right edge (with padding gap)
+            const target2 = otherRight + ELEMENT_PADDING;
+            const dist2 = Math.abs(newX - target2);
+            if (dist2 < snapXDist) {
+              snapX = target2;
+              snapXDist = dist2;
+            }
+            // Snap: left edges align
+            const dist3 = Math.abs(elemLeft - otherLeft);
+            if (dist3 < snapXDist) {
+              snapX = otherLeft;
+              snapXDist = dist3;
+            }
+            // Snap: right edges align
+            const dist4 = Math.abs(elemRight - otherRight);
+            if (dist4 < snapXDist) {
+              snapX = otherRight - element.width;
+              snapXDist = dist4;
+            }
+          }
+
+          // Vertical snapping (Y position) - check if horizontally overlapping or close
+          const horizontallyClose = elemRight > otherLeft - 150 && elemLeft < otherRight + 150;
+          if (horizontallyClose) {
+            // Snap: element bottom edge -> other top edge (with padding gap)
+            const target1 = otherTop - ELEMENT_PADDING - element.height;
+            const dist1 = Math.abs(newY - target1);
+            if (dist1 < snapYDist) {
+              snapY = target1;
+              snapYDist = dist1;
+            }
+            // Snap: element top edge -> other bottom edge (with padding gap)
+            const target2 = otherBottom + ELEMENT_PADDING;
+            const dist2 = Math.abs(newY - target2);
+            if (dist2 < snapYDist) {
+              snapY = target2;
+              snapYDist = dist2;
+            }
+            // Snap: top edges align
+            const dist3 = Math.abs(elemTop - otherTop);
+            if (dist3 < snapYDist) {
+              snapY = otherTop;
+              snapYDist = dist3;
+            }
+            // Snap: bottom edges align
+            const dist4 = Math.abs(elemBottom - otherBottom);
+            if (dist4 < snapYDist) {
+              snapY = otherBottom - element.height;
+              snapYDist = dist4;
+            }
+          }
+        }
+
+        // Calculate final snapped position - element snaps IMMEDIATELY during drag
+        const finalX = snapX !== null ? snapX : newX;
+        const finalY = snapY !== null ? snapY : newY;
+
+        // Build guides for visualization
         if (snapX !== null) {
-          newX = snapX - element.width / 2;
+          guides.push({ type: 'vertical', position: finalX + element.width / 2, frameId: '' });
         }
         if (snapY !== null) {
-          newY = snapY - element.height / 2;
+          guides.push({ type: 'horizontal', position: finalY + element.height / 2, frameId: '' });
+        }
+
+        // Show drop preview at snap position
+        const hasActiveSnap = snapX !== null || snapY !== null;
+        if (hasActiveSnap) {
+          onDropPreviewChange?.({
+            x: finalX,
+            y: finalY,
+            width: element.width,
+            height: element.height,
+          });
+        } else {
+          onDropPreviewChange?.(null);
         }
 
         // Update snap guides visualization
         onSnapChange?.(guides);
 
-        onChange({ x: newX, y: newY });
+        // Move element to snapped position immediately
+        onChange({ x: finalX, y: finalY });
       } else if (dragState.type === 'resize' && dragState.handle) {
         const aspectRatio = dragState.startWidth / dragState.startHeight;
         let newX = dragState.startElemX;
@@ -460,8 +737,9 @@ function CanvasImageElement({
 
     const handleMouseUp = () => {
       setDragState(null);
-      // Clear snap guides when drag ends
+      // Clear snap guides and drop preview when drag ends
       onSnapChange?.([]);
+      onDropPreviewChange?.(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -470,7 +748,7 @@ function CanvasImageElement({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [dragState, scale, onChange, frames, element.width, element.height, onSnapChange]);
+  }, [dragState, scale, onChange, frames, otherElements, element.width, element.height, element.id, onSnapChange, onDropPreviewChange]);
 
   // Only show loading placeholder if image is actually loading, not if processing
   // Processing shimmer is now rendered as a separate overlay layer
@@ -536,6 +814,8 @@ function CanvasImageElement({
         transform: `rotate(${element.rotation || 0}deg)`,
         transformOrigin: 'center center',
         zIndex: 2,
+        // Snappy animation ONLY when element position actually changes (not zoom/pan)
+        transition: shouldAnimate ? 'left 0.15s cubic-bezier(0.22, 1, 0.36, 1), top 0.15s cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
         // NO clipPath here - selection UI must be fully visible
       }}
     >
@@ -547,16 +827,16 @@ function CanvasImageElement({
         <img src={imageSrc} alt={element.name} draggable={false} className="w-full h-full object-fill pointer-events-none" />
       </div>
 
-      {/* Selection ring - OUTSIDE clipped area, always fully visible */}
-      {isSelected && (
+      {/* Selection ring - OUTSIDE clipped area, always fully visible (hidden in group selection) */}
+      {isSelected && showSelectionRing && (
         <div
           className="absolute inset-0 rounded ring-2 ring-blue-500 pointer-events-none"
           style={{ zIndex: 5 }}
         />
       )}
 
-      {/* Resize handles - OUTSIDE clipped area, always fully visible */}
-      {isSelected && !element.locked && (
+      {/* Resize handles - OUTSIDE clipped area, always fully visible (hidden in group selection) */}
+      {isSelected && showSelectionRing && !element.locked && (
         <>
           {/* Corner handles - blue */}
           <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border-2 border-blue-500 rounded-full cursor-nwse-resize z-10" onMouseDown={(e) => handleMouseDown(e, 'resize', 'nw')} />
@@ -606,6 +886,27 @@ function CanvasFrameElement({
     childIds?: string[]; // IDs of elements inside this frame at drag start
     childStartPositions?: { id: string; x: number; y: number }[]; // Starting positions of children
   } | null>(null);
+
+  // Track previous canvas position for animation detection (canvas coords, not screen)
+  const prevCanvasPosRef = useRef({ x: element.x, y: element.y });
+  const [animating, setAnimating] = useState(false);
+
+  // Detect canvas position change (not affected by zoom/pan)
+  const canvasPosChanged = prevCanvasPosRef.current.x !== element.x || prevCanvasPosRef.current.y !== element.y;
+  // Animate when position changed AND not currently dragging
+  const shouldAnimate = (canvasPosChanged && !dragState) || animating;
+
+  // Update previous position ref after comparison
+  useEffect(() => {
+    if (canvasPosChanged && !dragState) {
+      // Position changed while not dragging - trigger animation
+      setAnimating(true);
+      const timer = setTimeout(() => setAnimating(false), 200);
+      prevCanvasPosRef.current = { x: element.x, y: element.y };
+      return () => clearTimeout(timer);
+    }
+    prevCanvasPosRef.current = { x: element.x, y: element.y };
+  }, [element.x, element.y, dragState, canvasPosChanged]);
 
   const posX = element.x * scale + stagePosition.x;
   const posY = element.y * scale + stagePosition.y;
@@ -721,6 +1022,7 @@ function CanvasFrameElement({
   }, [dragState, scale, onChange]);
 
   const isDragging = dragState?.type === 'move';
+  const isResizing = dragState?.type === 'resize';
 
   return (
     <div
@@ -735,6 +1037,8 @@ function CanvasFrameElement({
         transformOrigin: 'center center',
         zIndex: 10, // Frames always on top
         pointerEvents: 'none', // Frame area doesn't catch clicks - only label and handles do
+        // Snappy animation ONLY when element position actually changes (not zoom/pan)
+        transition: shouldAnimate ? 'left 0.15s cubic-bezier(0.22, 1, 0.36, 1), top 0.15s cubic-bezier(0.22, 1, 0.36, 1)' : 'none',
       }}
     >
       {/* Frame border only - background rendered separately */}
@@ -2050,7 +2354,7 @@ function FrameFloatingToolbar({
   );
 }
 
-// Multi-select toolbar for merging multiple images
+// Multi-select toolbar for alignment, layout, and merging
 function MultiSelectToolbar({
   elements,
   scale,
@@ -2060,6 +2364,9 @@ function MultiSelectToolbar({
   onMergeFailed,
   onDelete,
   onProcessingChange,
+  onAlign,
+  onDistribute,
+  onLayout,
   authToken,
   sandboxId,
 }: {
@@ -2071,6 +2378,9 @@ function MultiSelectToolbar({
   onMergeFailed: (tempId: string) => void;
   onDelete: () => void;
   onProcessingChange: (isProcessing: boolean) => void;
+  onAlign: (alignment: AlignmentType) => void;
+  onDistribute: (direction: DistributeType) => void;
+  onLayout: (layout: 'masonry' | 'bento' | 'grid') => void;
   authToken?: string;
   sandboxId?: string;
 }) {
@@ -2207,9 +2517,83 @@ function MultiSelectToolbar({
         <span className="text-xs text-muted-foreground">{elements.length} images selected</span>
       </div>
 
-      {/* Merge toolbar */}
-      <div className="flex items-center gap-1 bg-card border border-border rounded-full px-2 py-1">
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 bg-card border border-border rounded-full px-2 py-1 shadow-lg">
         <TooltipProvider delayDuration={0}>
+          {/* Alignment buttons */}
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" disabled={isProcessing}>
+                    <AlignLeft className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Align</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="center" className="min-w-[140px]">
+              <DropdownMenuItem onClick={() => onAlign('left')} className="gap-2">
+                <AlignLeft className="h-4 w-4" /> Align Left
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onAlign('center')} className="gap-2">
+                <AlignCenter className="h-4 w-4" /> Align Center
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onAlign('right')} className="gap-2">
+                <AlignRight className="h-4 w-4" /> Align Right
+              </DropdownMenuItem>
+              <div className="h-px bg-border my-1" />
+              <DropdownMenuItem onClick={() => onAlign('top')} className="gap-2">
+                <AlignStartVertical className="h-4 w-4" /> Align Top
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onAlign('middle')} className="gap-2">
+                <AlignCenterVertical className="h-4 w-4" /> Align Middle
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onAlign('bottom')} className="gap-2">
+                <AlignEndVertical className="h-4 w-4" /> Align Bottom
+              </DropdownMenuItem>
+              {elements.length >= 3 && (
+                <>
+                  <div className="h-px bg-border my-1" />
+                  <DropdownMenuItem onClick={() => onDistribute('horizontal')} className="gap-2">
+                    <ArrowLeftRight className="h-4 w-4" /> Distribute H
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => onDistribute('vertical')} className="gap-2">
+                    <ArrowLeftRight className="h-4 w-4 rotate-90" /> Distribute V
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Layout buttons */}
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 rounded-full" disabled={isProcessing}>
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Layout</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="center" className="min-w-[140px]">
+              <DropdownMenuItem onClick={() => onLayout('grid')} className="gap-2">
+                <LayoutGrid className="h-4 w-4" /> Grid
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onLayout('masonry')} className="gap-2">
+                <GalleryVertical className="h-4 w-4" /> Masonry
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => onLayout('bento')} className="gap-2">
+                <LayoutDashboard className="h-4 w-4" /> Bento
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+
+          {/* Separator */}
+          <div className="w-px h-4 bg-border mx-1" />
+
           {/* Merge button - opens dialog */}
           <Tooltip>
             <TooltipTrigger asChild>
@@ -2358,6 +2742,8 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
 
   // Snap guides state - for visual alignment feedback when dragging
   const [snapGuides, setSnapGuides] = useState<SnapGuide[]>([]);
+  // Drop zone preview - shows ghost rectangle at snap position during drag
+  const [dropPreview, setDropPreview] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
 
   const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
   const [scale, setScale] = useState(1);
@@ -3536,12 +3922,15 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
               {images.map((img) => {
                 const overlappingFrame = getOverlappingFrame(img);
                 const clipPath = overlappingFrame ? getClipPath(img, overlappingFrame) : undefined;
+                // Other elements for snapping (exclude current element)
+                const otherElements = elements.filter(el => el.id !== img.id);
 
                 return (
                   <CanvasImageElement
                     key={img.id}
                     element={img}
                     isSelected={selectedIds.includes(img.id)}
+                    showSelectionRing={selectedIds.length === 1}
                     onSelect={(e) => handleElementSelect(img.id, e)}
                     onChange={(newAttrs) => handleElementChange(img.id, newAttrs)}
                     authToken={authToken}
@@ -3551,7 +3940,9 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                     isProcessing={processingElementId === img.id}
                     clipPath={clipPath}
                     frames={frames}
+                    otherElements={otherElements}
                     onSnapChange={setSnapGuides}
+                    onDropPreviewChange={setDropPreview}
                   />
                 );
               })}
@@ -3579,6 +3970,15 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
                   }}
                 />
               ))}
+
+              {/* 4. Group selection box - shown when multiple elements are selected */}
+              {selectedIds.length > 1 && (
+                <GroupSelectionBox
+                  elements={elements.filter(el => selectedIds.includes(el.id))}
+                  scale={scale}
+                  stagePosition={stagePosition}
+                />
+              )}
 
             </>
           );
@@ -3647,7 +4047,14 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
         {/* Snap Guides Overlay - shows alignment lines when dragging */}
         <SnapGuidesOverlay
           guides={snapGuides}
-          frames={frames}
+          scale={scale}
+          stagePosition={stagePosition}
+          containerSize={containerSize}
+        />
+
+        {/* Drop Zone Preview - shows ghost rectangle at snap position during drag */}
+        <DropZonePreview
+          dropPreview={dropPreview}
           scale={scale}
           stagePosition={stagePosition}
         />
@@ -4135,6 +4542,46 @@ export function CanvasRenderer({ content, filePath, fileName, sandboxId, classNa
             onProcessingChange={(isProcessing) => {
               // Set processing for all selected elements
               setProcessingElementId(isProcessing ? selectedIds[0] : null);
+            }}
+            onAlign={(alignment) => {
+              const selectedEls = elements.filter(el => selectedIds.includes(el.id));
+              const updates = alignElements(selectedEls, alignment);
+              setElements(prev => prev.map(el => {
+                const update = updates.find(u => u.id === el.id);
+                return update ? { ...el, x: update.x, y: update.y } : el;
+              }));
+            }}
+            onDistribute={(direction) => {
+              const selectedEls = elements.filter(el => selectedIds.includes(el.id));
+              const updates = distributeElements(selectedEls, direction);
+              setElements(prev => prev.map(el => {
+                const update = updates.find(u => u.id === el.id);
+                return update ? { ...el, x: update.x, y: update.y } : el;
+              }));
+            }}
+            onLayout={(layout) => {
+              const selectedEls = elements.filter(el => selectedIds.includes(el.id));
+              // Calculate bounds to get starting position
+              const bounds = getContentBounds(selectedEls);
+              const startX = bounds?.minX ?? 0;
+              const startY = bounds?.minY ?? 0;
+
+              let updates: ElementUpdate[] = [];
+              switch (layout) {
+                case 'grid':
+                  updates = applyGridLayout(selectedEls, { startX, startY, gap: 16, columns: Math.ceil(Math.sqrt(selectedEls.length)) });
+                  break;
+                case 'masonry':
+                  updates = applyMasonryLayout(selectedEls, { startX, startY, gap: 16, columns: 2 });
+                  break;
+                case 'bento':
+                  updates = applyBentoLayout(selectedEls, { startX, startY, gap: 16, maxWidth: 600 });
+                  break;
+              }
+              setElements(prev => prev.map(el => {
+                const update = updates.find(u => u.id === el.id);
+                return update ? { ...el, x: update.x, y: update.y } : el;
+              }));
             }}
             authToken={authToken}
             sandboxId={sandboxId}
