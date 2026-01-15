@@ -86,14 +86,6 @@ class MCPManager:
             return None
     
     async def initialize_jit_loader(self, agent_config: Dict[str, Any], cache_only: bool = False) -> None:
-        """
-        Initialize MCP JIT loader with optional cache-only mode.
-        
-        REFACTORED: Added timeouts to prevent 10s+ hangs from version_service calls.
-        - Version service call: 2s timeout
-        - Build tool map: 2s timeout
-        - Total function is called with 3s timeout from agent_runner.py
-        """
         jit_start = time.time()
         if not agent_config:
             return
@@ -101,8 +93,10 @@ class MCPManager:
         fresh_config = None
         agent_id = agent_config.get('agent_id')
         
-        # Version service call with timeout - was causing 10s hangs
-        if agent_id:
+        has_mcps = agent_config.get('custom_mcps') or agent_config.get('configured_mcps')
+        needs_loading = agent_config.get('_mcps_need_loading', False)
+        
+        if agent_id and (needs_loading or not has_mcps):
             version_start = time.time()
             try:
                 from core.versioning.version_service import get_version_service
@@ -118,6 +112,8 @@ class MCPManager:
             except Exception as e:
                 logger.warning(f"⚠️ [MCP JIT] Version service unavailable, using cached config: {e}")
                 fresh_config = None
+        else:
+            logger.debug(f"⚡ [MCP JIT] Skipping version service - MCPs already loaded (has_mcps={has_mcps})")
         
         if fresh_config:
             agent_config_update = {

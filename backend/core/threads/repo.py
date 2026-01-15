@@ -479,6 +479,85 @@ async def create_project_and_thread(
     return serialize_row(dict(result)) if result else None
 
 
+async def create_thread_with_message_and_run(
+    project_id: str,
+    thread_id: str,
+    account_id: str,
+    project_name: str,
+    thread_name: str,
+    agent_run_id: str,
+    message_content: Optional[str],
+    agent_id: Optional[str] = None,
+    agent_version_id: Optional[str] = None,
+    run_metadata: Optional[Dict[str, Any]] = None,
+    memory_enabled: Optional[bool] = None
+) -> Dict[str, Any]:
+    from datetime import datetime, timezone
+    from core.services.db import execute_one
+    import uuid
+    
+    now = datetime.now(timezone.utc)
+    has_message = bool(message_content and message_content.strip())
+    message_id = str(uuid.uuid4()) if has_message else None
+    
+    sql = """
+    WITH new_project AS (
+        INSERT INTO projects (project_id, account_id, name, created_at)
+        VALUES (:project_id, :account_id, :project_name, :created_at)
+        RETURNING project_id
+    ),
+    new_thread AS (
+        INSERT INTO threads (thread_id, project_id, account_id, name, status, memory_enabled, created_at, updated_at)
+        SELECT :thread_id, project_id, :account_id, :thread_name, 'ready', :memory_enabled, :created_at, :updated_at
+        FROM new_project
+        RETURNING thread_id
+    ),
+    new_message AS (
+        INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, created_at)
+        SELECT CAST(:message_id AS uuid), thread_id, 'user', true, :message_content, :created_at
+        FROM new_thread
+        WHERE :has_message = true
+        RETURNING message_id
+    ),
+    new_run AS (
+        INSERT INTO agent_runs (id, thread_id, status, started_at, agent_id, agent_version_id, metadata)
+        SELECT :agent_run_id, thread_id, 'running', :created_at, :agent_id, :agent_version_id, :run_metadata
+        FROM new_thread
+        RETURNING id
+    )
+    SELECT 
+        (SELECT project_id FROM new_project) as project_id,
+        (SELECT thread_id FROM new_thread) as thread_id,
+        (SELECT message_id FROM new_message) as message_id,
+        (SELECT id FROM new_run) as agent_run_id
+    """
+    
+    result = await execute_one(sql, {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "account_id": account_id,
+        "project_name": project_name,
+        "thread_name": thread_name,
+        "memory_enabled": memory_enabled,
+        "message_id": message_id,
+        "message_content": {"role": "user", "content": message_content} if has_message else None,
+        "has_message": has_message,
+        "agent_run_id": agent_run_id,
+        "agent_id": agent_id,
+        "agent_version_id": agent_version_id,
+        "run_metadata": run_metadata or {},
+        "created_at": now,
+        "updated_at": now
+    }, commit=True)
+    
+    return {
+        "project_id": result["project_id"] if result else project_id,
+        "thread_id": result["thread_id"] if result else thread_id,
+        "message_id": result["message_id"] if result else message_id,
+        "agent_run_id": result["agent_run_id"] if result else agent_run_id
+    }
+
+
 async def update_thread_status(
     thread_id: str,
     status: str,

@@ -314,17 +314,53 @@ async def get_thread(
     logger.debug(f"Fetching thread: {thread_id}")
     from core.threads import repo as threads_repo
     from core.utils.auth_utils import get_optional_user_id
+    from core.cache.runtime_cache import get_pending_thread
     
     user_id = await get_optional_user_id(request)
     
     try:
         client = await db.client
-        await verify_and_authorize_thread_access(client, thread_id, user_id)
         
+        # First try to get from database
         thread = await threads_repo.get_thread_with_details(thread_id)
         
+        # If not in DB, check pending thread cache (optimistic response pattern)
         if not thread:
+            pending = await get_pending_thread(thread_id)
+            if pending:
+                logger.debug(f"Thread {thread_id} is pending, returning optimistic response")
+                # Return minimal response for pending thread
+                return {
+                    "thread_id": thread_id,
+                    "project_id": pending.get('project_id'),
+                    "name": pending.get('name', 'New Chat'),
+                    "metadata": {},
+                    "is_public": False,
+                    "created_at": pending.get('created_at'),
+                    "updated_at": pending.get('created_at'),
+                    "project": {
+                        "project_id": pending.get('project_id'),
+                        "name": pending.get('name', 'New Project'),
+                        "description": "",
+                        "sandbox": {},
+                        "is_public": False,
+                        "icon_name": None,
+                        "created_at": pending.get('created_at'),
+                        "updated_at": pending.get('created_at')
+                    },
+                    "message_count": 0,
+                    "recent_agent_runs": [{
+                        "id": pending.get('agent_run_id'),
+                        "status": "running",
+                        "started_at": pending.get('created_at'),
+                        "completed_at": None
+                    }] if pending.get('agent_run_id') else [],
+                    "_pending": True  # Flag to indicate this is a pending thread
+                }
             raise HTTPException(status_code=404, detail="Thread not found")
+        
+        # Verify access for existing threads
+        await verify_and_authorize_thread_access(client, thread_id, user_id)
         
         project_data = None
         if thread.get('project_id'):
@@ -541,12 +577,22 @@ async def get_thread_messages(
     optimized: bool = Query(True, description="Return optimized messages (filtered types, minimal fields) or full messages (all types, all fields)"),
 ):
     from core.threads import repo as threads_repo
+    from core.cache.runtime_cache import get_pending_thread
     
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
     client = await db.client
     
     from core.utils.auth_utils import get_optional_user_id
     user_id = await get_optional_user_id(request)
+    
+    thread = await threads_repo.get_thread_by_id(thread_id)
+    
+    if not thread:
+        pending = await get_pending_thread(thread_id)
+        if pending:
+            logger.debug(f"Thread {thread_id} is pending, returning empty messages")
+            return {"messages": [], "_pending": True}
+        raise HTTPException(status_code=404, detail="Thread not found")
     
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:

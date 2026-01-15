@@ -172,8 +172,13 @@ export function useOptimisticAgentStart(
       }
 
       // Navigate immediately for optimistic UX
-      const modeStarterParam = modeStarter ? `?modeStarter=${modeStarter}` : '';
-      router.push(`/projects/${projectId}/thread/${threadId}${modeStarterParam}`);
+      // Always add ?new=true so ThreadComponent knows to show optimistic UI instead of skeleton
+      const queryParams = new URLSearchParams();
+      queryParams.set('new', 'true');
+      if (modeStarter) {
+        queryParams.set('modeStarter', modeStarter);
+      }
+      router.push(`/projects/${projectId}/thread/${threadId}?${queryParams.toString()}`);
 
       // Start agent in background - only pass file_ids, backend handles everything
       optimisticAgentStart({

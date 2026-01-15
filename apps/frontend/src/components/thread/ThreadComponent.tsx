@@ -260,6 +260,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }
   
+  // Also check for optimistic data even if isNewThread is false (fallback for race conditions)
+  // This ensures we never show skeleton when we have the user's message to display
+  if (!optimisticPrompt && !showOptimisticUI && !initialLoadCompleted) {
+    try {
+      const stored = sessionStorage.getItem('optimistic_prompt');
+      const storedThread = sessionStorage.getItem('optimistic_thread');
+      if (stored && storedThread === threadId) {
+        setOptimisticPrompt(stored);
+        setShowOptimisticUI(true);
+        if (!isMobile && !compact) {
+          setStorePanelOpen(true);
+        }
+        sessionStorage.removeItem('optimistic_prompt');
+        sessionStorage.removeItem('optimistic_thread');
+      }
+    } catch (e) {
+    }
+  }
+  
   useEffect(() => {
     if (isNewThread && !hasDataLoaded.current && agentRunId) {
       hasDataLoaded.current = true;
@@ -1461,8 +1480,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const displayStreamingText = showOptimisticUI ? '' : streamingTextContent;
   const displayProjectName = showOptimisticUI ? 'New Conversation' : projectName;
   
-  // Skip skeleton for new threads - show empty state immediately
-  if (!isNewThread && !hasDataLoaded.current && !showOptimisticUI && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
+  // Check if we have pending optimistic data in sessionStorage
+  // This prevents showing skeleton when we're about to show optimistic UI
+  const hasOptimisticDataPending = typeof window !== 'undefined' && 
+    sessionStorage.getItem('optimistic_thread') === threadId &&
+    sessionStorage.getItem('optimistic_prompt');
+  
+  // Skip skeleton for new threads or when we have optimistic data - show content immediately
+  if (!isNewThread && !hasDataLoaded.current && !showOptimisticUI && !hasOptimisticDataPending && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
     return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} compact={compact} initializingMessage={
       isThreadInitializing ? 'Setting up your conversation...' : undefined
     } />;

@@ -90,6 +90,7 @@ async def _build_account_state(account_id: str) -> Dict:
     - Fetches tier info ONCE and passes to all limit checkers
     - Caches Stripe subscription data (5 min TTL)
     - Runs all limit checks in parallel
+    - Populates credit_balance cache for billing checks
     """
     import time
     t_start = time.time()
@@ -121,6 +122,21 @@ async def _build_account_state(account_id: str) -> Dict:
     monthly_dollars = float(credit_account.get('expiring_credits', 0) or 0)
     extra_dollars = float(credit_account.get('non_expiring_credits', 0) or 0)
     last_daily_refresh = credit_account.get('last_daily_refresh')
+    
+    # Get the total balance from credit_account (this is the authoritative source)
+    total_balance_dollars = float(credit_account.get('balance', 0) or 0)
+    
+    # Populate the credit_balance cache so billing checks don't need to hit DB
+    # This is the key optimization - dashboard visit warms the billing cache
+    try:
+        balance_data = {
+            'total': total_balance_dollars,
+            'account_id': account_id
+        }
+        await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
+        logger.debug(f"⚡ [ACCOUNT_STATE] Populated credit_balance cache for {account_id}")
+    except Exception as e:
+        logger.debug(f"[ACCOUNT_STATE] Failed to populate credit_balance cache: {e}")
     
     # Convert to credits
     daily_credits = daily_dollars * CREDITS_PER_DOLLAR
