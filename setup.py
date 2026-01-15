@@ -1444,51 +1444,16 @@ class SetupWizard:
             sys.exit(1)
         
         print_success("OpenAI API key saved for background tasks.")
-        
-        # Collect AWS Bedrock credentials - Required as default LLM provider
-        print()
-        print(f"{Colors.YELLOW}{'═'*70}{Colors.ENDC}")
-        print(f"{Colors.YELLOW}{Colors.BOLD}  ☁️  AWS Bedrock Configuration (Default LLM Provider){Colors.ENDC}")
-        print(f"{Colors.YELLOW}{'═'*70}{Colors.ENDC}")
-        print_info("AWS Bedrock is the DEFAULT LLM provider for Kortix Super Worker.")
-        print_info("All main LLM calls will use AWS Bedrock (Claude models).")
-        print_info("\nTo use Bedrock, you need:")
-        print(f"  {Colors.CYAN}•{Colors.ENDC} AWS credentials configured (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)")
-        print(f"  {Colors.CYAN}•{Colors.ENDC} Bedrock enabled in your AWS region")
-        print(f"  {Colors.CYAN}•{Colors.ENDC} Optional: Bearer token (if required by your setup)")
-        print()
-        print_warning("⚠️  IMPORTANT: Configure AWS credentials before running Kortix Super Worker!")
-        print_info("Set AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY as environment variables or in AWS credentials file.")
-        print()
-        
-        # Check if already exists
-        existing_bedrock_token = self.env_vars["llm"].get("AWS_BEARER_TOKEN_BEDROCK", "")
-        print_api_key_prompt("AWS_BEARER_TOKEN_BEDROCK", optional=True, existing_value=existing_bedrock_token)
-        print_info("Note: Bearer token is optional for most Bedrock setups. Leave blank if not needed.")
-        
-        bedrock_token = self._get_input(
-            f"{Colors.YELLOW}Enter your AWS Bedrock Bearer Token (optional, press Enter to skip){Colors.ENDC}: ",
-            validate_api_key,
-            "Invalid token format. It should be at least 10 characters long.",
-            allow_empty=True,
-            default_value=existing_bedrock_token,
-        )
-        
-        if bedrock_token:
-            self.env_vars["llm"]["AWS_BEARER_TOKEN_BEDROCK"] = bedrock_token
-            print_success("AWS Bedrock Bearer Token saved.")
-        else:
-            print_info("No Bearer Token provided - will use AWS credentials only.")
-        
+
         print_info("\n" + "="*60)
-        print_info("LLM Model Configuration")
+        print_info("LLM Model Configuration Summary")
         print_info("="*60)
-        print_info("Default model provider: AWS Bedrock")
-        print_info("  • USE_BEDROCK_FOR_LOCAL=true will be set in backend/.env")
-        print_info("  • All LLM calls will use AWS Bedrock (Claude models)")
-        print_info("  • Make sure your AWS credentials are configured")
+        print_info("Default chat model: OpenRouter (minimax/minimax-m2.1)")
+        print_info("  • Requires OPENROUTER_API_KEY (collected in next step)")
+        print_info("Background tasks: OpenAI (gpt-5-nano)")
+        print_info("  • Uses OPENAI_API_KEY (just configured)")
         print_info("\nYou can configure additional LLM providers in the next step (optional).")
-        
+
         print_success("Supabase information saved.")
 
     def collect_daytona_info(self):
@@ -1730,22 +1695,22 @@ class SetupWizard:
 
         # Show summary of configured providers
         configured_providers = []
-        if self.env_vars["llm"].get("AWS_BEARER_TOKEN_BEDROCK") or True:  # Bedrock is always configured
-            configured_providers.append("AWS Bedrock (default)")
+        if self.env_vars["llm"].get("OPENROUTER_API_KEY"):
+            configured_providers.append("OpenRouter (default chat)")
         if self.env_vars["llm"].get("OPENAI_API_KEY"):
             configured_providers.append("OpenAI (background tasks)")
-        
+
         additional_providers = [
-            k for k in self.env_vars["llm"] 
-            if self.env_vars["llm"][k] and k not in ["OPENAI_API_KEY", "AWS_BEARER_TOKEN_BEDROCK"]
+            k for k in self.env_vars["llm"]
+            if self.env_vars["llm"][k] and k not in ["OPENAI_API_KEY", "OPENROUTER_API_KEY"]
         ]
         if additional_providers:
             configured_providers.extend(additional_providers)
-        
+
         if configured_providers:
             print_success(f"LLM providers configured: {', '.join(configured_providers)}")
         else:
-            print_warning("Only Bedrock and OpenAI configured - additional providers can be added later.")
+            print_warning("No LLM providers configured - add them before running Kortix.")
         
         print_success("LLM configuration saved.")
 
@@ -2086,11 +2051,8 @@ class SetupWizard:
                 print_warning("Expected format: postgresql://[username]:[password]@[host]:[port]/[database]")
                 # Don't exit - let user fix manually if needed
         
-        # Always use Bedrock as default LLM provider
         backend_env = {
             "ENV_MODE": "local",
-            # Always use Bedrock as default LLM provider
-            "USE_BEDROCK_FOR_LOCAL": "true",
             # Backend only needs these Supabase variables
             "SUPABASE_URL": supabase_url,
             "SUPABASE_ANON_KEY": self.env_vars["supabase"].get("SUPABASE_ANON_KEY", ""),
@@ -2131,7 +2093,6 @@ class SetupWizard:
         with open(os.path.join("backend", ".env"), "w") as f:
             f.write(backend_env_content)
         print_success("Created backend/.env file with ENCRYPTION_KEY.")
-        print_info(f"  → USE_BEDROCK_FOR_LOCAL=true (Bedrock enabled as default LLM provider)")
 
         # --- Frontend .env.local ---
         # Always use localhost for base .env files
