@@ -135,8 +135,7 @@ def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_ba
     
     if not key or not base:
         raise LLMError("OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE required for openai-compatible models")
-    
-    # Configuration is handled via params in make_llm_api_call
+
 
 def _save_debug_input(params: Dict[str, Any]) -> None:
     if not (config and getattr(config, 'DEBUG_SAVE_LLM_IO', False)):
@@ -309,6 +308,63 @@ async def _wrap_streaming_response(response, start_time: float, model_name: str,
 setup_api_keys()
 logger.info(f"[LLM] ✅ Module initialized (DIRECT MODE): retries={litellm.num_retries}, timeout={litellm.request_timeout}s, stream_timeout={litellm.stream_timeout}s")
 
+
+_prewarm_cache: Dict[str, float] = {}
+_PREWARM_CACHE_TTL = 60.0
+
+async def prewarm_llm_connection(model_name: str) -> None:
+    import time as time_module
+    
+    cache_key = model_name
+    now = time_module.monotonic()
+    if cache_key in _prewarm_cache:
+        if now - _prewarm_cache[cache_key] < _PREWARM_CACHE_TTL:
+            logger.debug(f"[LLM] Connection already warm for {model_name}")
+            return
+    
+    try:
+        from core.ai_models import model_manager
+        resolved_model_name = model_manager.resolve_model_id(model_name) or model_name
+        
+        actual_model_id = resolved_model_name.lower()
+        
+        start = time_module.monotonic()
+        
+        params = model_manager.get_litellm_params(
+            resolved_model_name,
+            messages=[{"role": "user", "content": "hi"}],
+            temperature=0,
+            max_tokens=1,
+            stream=False,
+        )
+        
+        try:
+            await asyncio.wait_for(
+                litellm.acompletion(**params),
+                timeout=5.0
+            )
+        except asyncio.TimeoutError:
+            pass
+        except Exception:
+            pass
+        
+        elapsed = (time_module.monotonic() - start) * 1000
+        _prewarm_cache[cache_key] = now
+        logger.info(f"[LLM] 🔥 Connection pre-warmed for {model_name} in {elapsed:.0f}ms")
+        
+    except Exception as e:
+        logger.debug(f"[LLM] Connection pre-warm failed for {model_name}: {e}")
+
+
+async def prewarm_llm_connection_background(model_name: str) -> None:
+    asyncio.create_task(_safe_prewarm(model_name))
+
+
+async def _safe_prewarm(model_name: str) -> None:
+    try:
+        await prewarm_llm_connection(model_name)
+    except Exception as e:
+        logger.debug(f"[LLM] Background prewarm error: {e}")
 
 
 

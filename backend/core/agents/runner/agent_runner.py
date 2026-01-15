@@ -89,6 +89,9 @@ class AgentRunner:
 
         await stream_status_message("initializing", "Setting up MCP tools...")
 
+        from core.services.llm import prewarm_llm_connection_background
+        asyncio.create_task(prewarm_llm_connection_background(self.config.model_name))
+
         async def init_mcp():
             if self.config.agent_config:
                 mcp_manager = MCPManager(self.thread_manager, self.account_id)
@@ -246,37 +249,50 @@ class AgentRunner:
                 logger.warning(f"Prefetch llm_end failed (will retry): {e}")
                 return None
 
+        # Start prefetch tasks immediately - these run in parallel with everything else
         self._prefetch_messages_task = asyncio.create_task(safe_prefetch_messages())
         self._prefetch_llm_end_task = asyncio.create_task(safe_prefetch_llm_end())
         self._prefetch_consumed = False
 
         await stream_status_message("initializing", "Registering tools...")
 
-        await asyncio.gather(
+        # Run tool setup, dynamic tool restoration, AND system prompt building in parallel
+        # This saves ~0.5-1s by not waiting for tools before starting prompt build
+        async def build_prompt():
+            return await PromptManager.build_system_prompt(
+                self.config.model_name,
+                self.config.agent_config,
+                self.config.thread_id,
+                getattr(self, 'mcp_wrapper_instance', None),
+                self.client,
+                tool_registry=self.thread_manager.tool_registry,
+                xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
+                user_id=self.account_id,
+                mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
+            )
+
+        # Execute all three in parallel
+        results = await asyncio.gather(
             self._setup_tools_async(),
             self._restore_dynamic_tools(),
+            build_prompt(),
             return_exceptions=True
         )
 
+        # Extract prompt result (third item)
+        prompt_result = results[2]
+        if isinstance(prompt_result, Exception):
+            logger.error(f"System prompt build failed: {prompt_result}")
+            raise prompt_result
+        
+        system_message, memory_context = prompt_result
+
+        # Clean up legacy MCP tools if needed
         if (hasattr(self.thread_manager, 'mcp_loader') and
             self.config.agent_config and
             (self.config.agent_config.get("custom_mcps") or self.config.agent_config.get("configured_mcps"))):
             mcp_manager = MCPManager(self.thread_manager, self.account_id)
             mcp_manager.clean_legacy_mcp_tools()
-
-        await stream_status_message("initializing", "Building system prompt...")
-
-        system_message, memory_context = await PromptManager.build_system_prompt(
-            self.config.model_name,
-            self.config.agent_config,
-            self.config.thread_id,
-            getattr(self, 'mcp_wrapper_instance', None),
-            self.client,
-            tool_registry=self.thread_manager.tool_registry,
-            xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
-            user_id=self.account_id,
-            mcp_loader=getattr(self.thread_manager, 'mcp_loader', None)
-        )
 
         if memory_context:
             self.thread_manager.set_memory_context(memory_context)

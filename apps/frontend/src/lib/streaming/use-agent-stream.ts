@@ -26,6 +26,10 @@ import {
   reconstructToolCalls,
 } from './tool-accumulator';
 import { StreamConnection } from './stream-connection';
+import { 
+  getStreamPreconnectService, 
+  consumePreconnectInfo,
+} from './stream-preconnect';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -500,6 +504,49 @@ export function useAgentStream(
     setStatus('connecting');
     callbacksRef.current.onStatusChange?.('connecting');
     callbacksRef.current.onAssistantStart?.();
+    
+    // Try to adopt a pre-connected stream first (saves ~1-2s)
+    const preconnectService = getStreamPreconnectService();
+    const adopted = preconnectService.adopt(runId);
+    
+    if (adopted) {
+      console.log(`[useAgentStream] Adopting pre-connected stream for ${runId}`);
+      
+      // Use the pre-connected stream's connection
+      connectionRef.current = adopted.stream.connection;
+      
+      // Process any buffered messages immediately
+      if (adopted.bufferedMessages.length > 0) {
+        console.log(`[useAgentStream] Processing ${adopted.bufferedMessages.length} buffered messages`);
+        setStatus('streaming');
+        callbacksRef.current.onStatusChange?.('streaming');
+        
+        for (const data of adopted.bufferedMessages) {
+          stableMessageHandler(data);
+        }
+      }
+      
+      // Add listener for new messages
+      const removeListener = preconnectService.addListener(runId, stableMessageHandler);
+      
+      // Store cleanup function
+      const originalDestroy = connectionRef.current.destroy.bind(connectionRef.current);
+      connectionRef.current.destroy = () => {
+        removeListener();
+        originalDestroy();
+      };
+      
+      // Update status based on connection state
+      if (connectionRef.current.isConnected()) {
+        setStatus('running');
+        callbacksRef.current.onStatusChange?.('running');
+      }
+      
+      return;
+    }
+    
+    // No pre-connected stream, create a new connection
+    console.log(`[useAgentStream] Creating new stream connection for ${runId}`);
     
     const connection = new StreamConnection({
       apiUrl: API_URL,

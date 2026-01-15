@@ -16,6 +16,10 @@ import {
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { normalizeFilenameToNFC } from '@agentpress/shared';
+import { 
+  getStreamPreconnectService, 
+  storePreconnectInfo 
+} from '@/lib/streaming/stream-preconnect';
 
 export interface OptimisticAgentStartOptions {
   message: string;
@@ -189,13 +193,32 @@ export function useOptimisticAgentStart(
         model_name: modelName,
         agent_id: agentId || undefined,
         mode: mode,
-      }).then((response) => {
+      }).then(async (response) => {
         console.log('[OptimisticAgentStart] API succeeded, response:', response);
         
         // Store agent_run_id so thread page can use it immediately (no polling needed)
         if (response.agent_run_id) {
           sessionStorage.setItem('optimistic_agent_run_id', response.agent_run_id);
           sessionStorage.setItem('optimistic_agent_run_thread', threadId);
+          
+          // Pre-connect to stream immediately - this saves ~1-2s of connection overhead
+          // The ThreadComponent will adopt this connection when it mounts
+          try {
+            const preconnectService = getStreamPreconnectService();
+            const getAuthToken = async () => {
+              const { createClient } = await import('@/lib/supabase/client');
+              const supabase = createClient();
+              const { data: { session } } = await supabase.auth.getSession();
+              return session?.access_token || null;
+            };
+            
+            storePreconnectInfo(response.agent_run_id, threadId);
+            await preconnectService.preconnect(response.agent_run_id, threadId, getAuthToken);
+            console.log('[OptimisticAgentStart] Stream pre-connected for', response.agent_run_id);
+          } catch (preconnectError) {
+            // Non-fatal - ThreadComponent will create its own connection
+            console.warn('[OptimisticAgentStart] Stream pre-connect failed:', preconnectError);
+          }
         }
         
         // Invalidate all relevant queries so the thread page picks up the new data

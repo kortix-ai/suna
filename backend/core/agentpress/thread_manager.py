@@ -637,13 +637,30 @@ class ThreadManager:
                     
                     if prefetch_messages_task and prefetch_llm_end_task:
                         try:
-                            if not prefetch_messages_task.done():
-                                await asyncio.wait_for(asyncio.shield(prefetch_messages_task), timeout=10.0)
-                            if not prefetch_llm_end_task.done():
-                                await asyncio.wait_for(asyncio.shield(prefetch_llm_end_task), timeout=5.0)
+                            done, pending = await asyncio.wait(
+                                [prefetch_messages_task, prefetch_llm_end_task],
+                                timeout=10.0,
+                                return_when=asyncio.ALL_COMPLETED
+                            )
                             
-                            prefetch_messages_result = prefetch_messages_task.result()
-                            prefetch_llm_end_result = prefetch_llm_end_task.result()
+                            for task in pending:
+                                task.cancel()
+                            
+                            if prefetch_messages_task in done and not prefetch_messages_task.cancelled():
+                                try:
+                                    prefetch_messages_result = prefetch_messages_task.result()
+                                except Exception:
+                                    prefetch_messages_result = None
+                            else:
+                                prefetch_messages_result = None
+                            
+                            if prefetch_llm_end_task in done and not prefetch_llm_end_task.cancelled():
+                                try:
+                                    prefetch_llm_end_result = prefetch_llm_end_task.result()
+                                except Exception:
+                                    prefetch_llm_end_result = None
+                            else:
+                                prefetch_llm_end_result = None
                             
                             if prefetch_messages_result is not None:
                                 messages = prefetch_messages_result
@@ -679,13 +696,9 @@ class ThreadManager:
                         stored_model = llm_end_content.get('model', '')
                         
                         logger.debug(f"Fast check data - stored model: {stored_model}, current model: {llm_model}")
-                        
-                        # Use fast path if we have usage data
+
                         if usage:
                             last_total_tokens = int(usage.get('total_tokens', 0))
-                            # Note: cache_creation_input_tokens is NOT added here - it's a billing metric,
-                            # not actual context window usage. The context window is just prompt_tokens.
-                            
                             new_msg_tokens = 0
                             
                             if is_auto_continue:
