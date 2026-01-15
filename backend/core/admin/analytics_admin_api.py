@@ -1284,19 +1284,17 @@ async def get_conversion_funnel(
 
         # Define async functions for parallel execution
         async def get_visitors():
-            """Sum visitors across all days in the range."""
+            """Sum visitors across all days in the range (single RPC call)."""
             try:
-                total_visitors = 0
-                current = start_date
-                while current <= end_date:
-                    date_str = current.strftime("%Y-%m-%d")
-                    if source == "vercel":
-                        data = await query_vercel_analytics(date_str)
-                    else:
-                        data = query_google_analytics(date_str)
-                    total_visitors += data["unique_visitors"]
-                    current += timedelta(days=1)
-                return total_visitors
+                start_str = start_date.strftime("%Y-%m-%d")
+                end_str = end_date.strftime("%Y-%m-%d")
+                if source == "vercel":
+                    _, total = await query_vercel_analytics_range(start_str, end_str)
+                    return total
+                else:
+                    # GA fallback - single day only
+                    data = query_google_analytics(start_str)
+                    return data["unique_visitors"]
             except Exception as e:
                 logger.warning(f"Failed to get {source} visitors: {e}")
                 return 0
