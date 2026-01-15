@@ -639,6 +639,7 @@ export type SubscriptionStatus = 'no_subscription' | 'active';
 export interface ChatInputHandles {
   getPendingFiles: () => File[];
   getUploadedFileIds: () => string[];
+  getUploadedFiles: () => UploadedFile[];
   clearPendingFiles: () => void;
   clearUploadedFiles: () => void;
   setValue: (value: string) => void;
@@ -926,6 +927,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       getUploadedFileIds: () => uploadedFiles
         .filter((f) => f.fileId && f.status === 'ready')
         .map((f) => f.fileId!),
+      getUploadedFiles: () => uploadedFiles,
       clearPendingFiles: () => setPendingFiles([]),
       clearUploadedFiles: () => setUploadedFiles([]),
       setValue: (newValue: string) => {

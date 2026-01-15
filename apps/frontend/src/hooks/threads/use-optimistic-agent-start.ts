@@ -258,6 +258,7 @@ export function useOptimisticAgentStart(
       sessionStorage.removeItem('optimistic_prompt');
       sessionStorage.removeItem('optimistic_thread');
       sessionStorage.removeItem('optimistic_files');
+      sessionStorage.removeItem('optimistic_file_previews');
       
       if (error instanceof BillingError) {
         handleBillingError(error);

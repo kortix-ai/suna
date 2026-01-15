@@ -34,6 +34,7 @@ export function renderAttachments(
   fileViewerHandler?: (filePath?: string, filePathList?: string[]) => void,
   sandboxId?: string,
   project?: Project,
+  localPreviewUrls?: Record<string, string>,
 ) {
   if (!attachments || attachments.length === 0) return null;
   const validAttachments = attachments.filter(
@@ -47,6 +48,7 @@ export function renderAttachments(
       showPreviews={true}
       sandboxId={sandboxId}
       project={project}
+      localPreviewUrls={localPreviewUrls}
     />
   );
 }
@@ -90,12 +92,14 @@ const UserMessageRow = memo(function UserMessageRow({
   handleOpenFileViewer,
   sandboxId,
   project,
+  localPreviewUrls = {},
 }: {
   message: UnifiedMessage;
   groupKey: string;
   handleOpenFileViewer: (filePath?: string, filePathList?: string[]) => void;
   sandboxId?: string;
   project?: Project;
+  localPreviewUrls?: Record<string, string>;
 }) {
   const messageContent = useMemo(() => {
     try {
@@ -142,6 +146,7 @@ const UserMessageRow = memo(function UserMessageRow({
             handleOpenFileViewer,
             sandboxId,
             project,
+            localPreviewUrls,
           )}
         </div>
       </div>
@@ -813,6 +818,7 @@ export interface ThreadContentProps {
   scrollContainerRef?: React.RefObject<HTMLDivElement>;
   threadId?: string;
   onPromptFill?: (message: string) => void;
+  localPreviewUrls?: Record<string, string>;
 }
 
 export const ThreadContent: React.FC<ThreadContentProps> = memo(
@@ -840,6 +846,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     scrollContainerRef,
     threadId,
     onPromptFill,
+    localPreviewUrls = {},
   }) {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);
@@ -1168,6 +1175,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
               handleOpenFileViewer={handleOpenFileViewer}
               sandboxId={sandboxId}
               project={project}
+              localPreviewUrls={localPreviewUrls}
             />
           </div>
         );

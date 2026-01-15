@@ -208,6 +208,7 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     options?: { model_name?: string; enable_thinking?: boolean; enable_context_manager?: boolean }
   ) => {
     const fileIds = chatInputRef.current?.getUploadedFileIds() || [];
+    const uploadedFiles = chatInputRef.current?.getUploadedFiles() || [];
 
     if ((!message.trim() && !fileIds.length) || isSubmitting || isRedirecting || isOptimisticStarting) {
       return;
@@ -223,6 +224,20 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     setIsSubmitting(true);
     setIsRedirecting(true);
     localStorage.removeItem(PENDING_PROMPT_KEY);
+
+    // Store file preview URLs for optimistic rendering
+    // Map filename -> localUrl so thread page can show previews before sandbox is ready
+    if (uploadedFiles.length > 0) {
+      const filePreviewUrls: Record<string, string> = {};
+      uploadedFiles.forEach(file => {
+        if (file.localUrl) {
+          filePreviewUrls[file.name] = file.localUrl;
+        }
+      });
+      if (Object.keys(filePreviewUrls).length > 0) {
+        sessionStorage.setItem('optimistic_file_previews', JSON.stringify(filePreviewUrls));
+      }
+    }
 
     console.log(`${logPrefix} Starting agent with:`, {
       prompt: message.substring(0, 100),

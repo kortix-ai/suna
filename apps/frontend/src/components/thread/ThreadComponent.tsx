@@ -184,6 +184,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const hasDataLoaded = useRef(false);
   const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(null);
   const [showOptimisticUI, setShowOptimisticUI] = useState(false);
+  const [storedFilePreviewUrls, setStoredFilePreviewUrls] = useState<Record<string, string>>({});
   const setStorePanelOpen = useSetIsSidePanelOpen();
   
   const allOptimisticFiles = useOptimisticFilesStore((state) => state.files);
@@ -253,6 +254,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         if (!isMobile && !compact) {
           setStorePanelOpen(true);
         }
+        // Retrieve stored file preview URLs
+        const storedPreviews = sessionStorage.getItem('optimistic_file_previews');
+        if (storedPreviews) {
+          try {
+            setStoredFilePreviewUrls(JSON.parse(storedPreviews));
+          } catch (e) {
+            // Ignore parse errors
+          }
+          sessionStorage.removeItem('optimistic_file_previews');
+        }
         sessionStorage.removeItem('optimistic_prompt');
         sessionStorage.removeItem('optimistic_thread');
       }
@@ -271,6 +282,16 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         setShowOptimisticUI(true);
         if (!isMobile && !compact) {
           setStorePanelOpen(true);
+        }
+        // Retrieve stored file preview URLs
+        const storedPreviews = sessionStorage.getItem('optimistic_file_previews');
+        if (storedPreviews) {
+          try {
+            setStoredFilePreviewUrls(JSON.parse(storedPreviews));
+          } catch (e) {
+            // Ignore parse errors
+          }
+          sessionStorage.removeItem('optimistic_file_previews');
         }
         sessionStorage.removeItem('optimistic_prompt');
         sessionStorage.removeItem('optimistic_thread');
@@ -1302,6 +1323,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     if (initialLoadCompleted) {
       sessionStorage.removeItem('optimistic_prompt');
       sessionStorage.removeItem('optimistic_thread');
+      sessionStorage.removeItem('optimistic_file_previews');
     }
   }, [initialLoadCompleted]);
 
@@ -1478,6 +1500,22 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const displayStreamingText = showOptimisticUI ? '' : streamingTextContent;
   const displayProjectName = showOptimisticUI ? 'New Conversation' : projectName;
   
+  // Create a map of filename -> localUrl for optimistic file previews
+  // Combines URLs from the optimistic files store and stored session URLs
+  const localPreviewUrls = useMemo(() => {
+    const urls: Record<string, string> = {};
+    // First, add URLs from stored session (from dashboard submission)
+    Object.entries(storedFilePreviewUrls).forEach(([name, url]) => {
+      urls[name] = url;
+    });
+    // Then, add URLs from optimistic files store (overrides if same name)
+    optimisticFiles.forEach((file) => {
+      // Map by filename so it can be matched against attachment paths
+      urls[file.name] = file.localUrl;
+    });
+    return urls;
+  }, [optimisticFiles, storedFilePreviewUrls]);
+  
   // Check if we have pending optimistic data in sessionStorage
   // This prevents showing skeleton when we're about to show optimistic UI
   const hasOptimisticDataPending = typeof window !== 'undefined' && 
@@ -1617,6 +1655,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 isPreviewMode={true}
                 onPromptFill={!isShared ? handlePromptFill : undefined}
                 threadId={threadId}
+                localPreviewUrls={localPreviewUrls}
                 emptyStateComponent={isNewThread && displayMessages.length === 0 ? <NewThreadEmptyState onSubmit={handleSubmitMessage} sandboxId={sandboxId} project={project} /> : undefined}
               />
             </div>
@@ -1786,6 +1825,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           scrollContainerRef={scrollContainerRef}
           threadId={threadId}
           onPromptFill={!isShared ? handlePromptFill : undefined}
+          localPreviewUrls={localPreviewUrls}
           emptyStateComponent={isNewThread && displayMessages.length === 0 ? <NewThreadEmptyState onSubmit={handleSubmitMessage} sandboxId={sandboxId} project={project} /> : undefined}
         />
 

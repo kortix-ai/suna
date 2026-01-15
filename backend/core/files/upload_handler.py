@@ -325,12 +325,6 @@ async def handle_staged_files_for_thread(
 
 
 async def ensure_sandbox_for_thread(client, project_id: str, files: Optional[List[Any]] = None):
-    """
-    Ensure a sandbox exists for the thread, creating one if needed.
-    
-    Returns:
-        Tuple of (sandbox, sandbox_id) or (None, None) if not available
-    """
     from core.resources import ResourceService, ResourceType, ResourceStatus
     from core.threads import repo as threads_repo
     
@@ -345,7 +339,6 @@ async def ensure_sandbox_for_thread(client, project_id: str, files: Optional[Lis
     
     resource_service = ResourceService(client)
     
-    # Try to get existing sandbox resource
     sandbox_resource = None
     if sandbox_resource_id:
         sandbox_resource = await resource_service.get_resource_by_id(sandbox_resource_id)
@@ -369,6 +362,25 @@ async def ensure_sandbox_for_thread(client, project_id: str, files: Optional[Lis
     if not files or len(files) == 0:
         logger.debug(f"No files to upload and no sandbox exists for project {project_id}")
         return None, None
+    
+    if account_id:
+        try:
+            from core.sandbox.pool_service import claim_sandbox_from_pool
+            claimed = await claim_sandbox_from_pool(account_id, project_id)
+            
+            if claimed:
+                sandbox_id, config = claimed
+                logger.info(f"[POOL] Claimed sandbox {sandbox_id} from pool for project {project_id}")
+                
+                try:
+                    sandbox = await get_or_start_sandbox(sandbox_id)
+                    return sandbox, sandbox_id
+                except Exception as e:
+                    logger.error(f"[POOL] Failed to start claimed sandbox {sandbox_id}: {e}")
+            else:
+                logger.debug(f"[POOL] No sandbox available in pool, creating new one")
+        except Exception as e:
+            logger.warning(f"[POOL] Failed to claim from pool: {e}, falling back to create")
     
     try:
         sandbox_pass = str(uuid.uuid4())

@@ -42,6 +42,7 @@ from core.admin.notification_admin_api import router as notification_admin_route
 from core.admin.analytics_admin_api import router as analytics_admin_router
 from core.admin.stress_test_admin_api import router as stress_test_admin_router
 from core.admin.system_status_admin_api import router as system_status_admin_router
+from core.admin.sandbox_pool_admin_api import router as sandbox_pool_admin_router
 from core.endpoints.system_status_api import router as system_status_router
 from core.services import transcription as transcription_api
 import sys
@@ -139,6 +140,10 @@ async def lifespan(app: FastAPI):
         # Start memory watchdog for observability
         _memory_watchdog_task = asyncio.create_task(_memory_watchdog())
         
+        # Start sandbox pool service (maintains pre-warmed sandboxes)
+        from core.sandbox.pool_background import start_pool_service
+        asyncio.create_task(start_pool_service())
+        
         yield
 
         # Shutdown sequence: Set flag first so health checks fail
@@ -208,6 +213,10 @@ async def lifespan(app: FastAPI):
                 await _memory_watchdog_task
             except asyncio.CancelledError:
                 pass
+        
+        # Stop sandbox pool service
+        from core.sandbox.pool_background import stop_pool_service
+        await stop_pool_service()
         
         try:
             logger.debug("Closing Redis connection")
@@ -323,6 +332,7 @@ api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
 api_router.include_router(stress_test_admin_router)
 api_router.include_router(system_status_admin_router)
+api_router.include_router(sandbox_pool_admin_router)
 api_router.include_router(system_status_router)
 
 from core.mcp_module import api as mcp_api
