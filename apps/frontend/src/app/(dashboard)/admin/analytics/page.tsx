@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -26,7 +26,8 @@ import {
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format } from 'date-fns';
+import { format, addDays, subDays } from 'date-fns';
+import type { DateRange } from 'react-day-picker';
 import {
   useAnalyticsSummary,
   useMessageDistribution,
@@ -53,7 +54,11 @@ function getBerlinToday(): Date {
 }
 
 export default function AdminAnalyticsPage() {
-  const [distributionDate, setDistributionDate] = useState<Date>(getBerlinToday);
+  const [dateRange, setDateRange] = useState<DateRange>({
+    from: getBerlinToday(),
+    to: getBerlinToday(),
+  });
+  const clickedDateRef = useRef<Date | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [tierFilter, setTierFilter] = useState<string | null>(null);
@@ -128,22 +133,23 @@ export default function AdminAnalyticsPage() {
   };
 
   const berlinToday = getBerlinToday();
-  const dateString = format(distributionDate, 'yyyy-MM-dd');
+  const dateFromString = dateRange.from ? format(dateRange.from, 'yyyy-MM-dd') : undefined;
+  const dateToString = dateRange.to ? format(dateRange.to, 'yyyy-MM-dd') : dateFromString;
 
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
 
   // Only fetch threads-related data when on threads tab
   const isThreadsTab = activeTab === 'threads';
-  const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateString, isThreadsTab);
-  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateString, tierFilter, isThreadsTab);
-  const { data: tierDistribution, isFetching: tierFetching } = useTierDistribution(dateString, isThreadsTab);
+  const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateFromString, dateToString, isThreadsTab);
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateFromString, dateToString, tierFilter, isThreadsTab);
+  const { data: tierDistribution, isFetching: tierFetching } = useTierDistribution(dateFromString, dateToString, isThreadsTab);
 
   // Overview tab data
-  const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateString, analyticsSource);
+  const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateFromString, dateToString, analyticsSource);
 
   // Executive Overview data hooks
-  const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateString);
-  const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateString);
+  const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateFromString, dateToString);
+  const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateFromString, dateToString);
 
   // Combined fetching state for the Daily Analytics card
   const isDailyAnalyticsFetching = distributionFetching || categoryFetching || tierFetching || funnelFetching;
@@ -238,52 +244,97 @@ export default function AdminAnalyticsPage() {
               )}
             </div>
 
-            {/* Date Picker for Overview */}
-            <div className="flex items-center justify-end gap-2">
-              <span className="text-sm text-muted-foreground">Date:</span>
+            {/* Date Range Picker for Overview */}
+            <div className="flex items-center justify-end gap-1">
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
                 onClick={() => {
-                  const prev = new Date(distributionDate);
-                  prev.setDate(prev.getDate() - 1);
-                  setDistributionDate(prev);
+                  if (dateRange.from) {
+                    const toDate = dateRange.to || dateRange.from;
+                    const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
+                    setDateRange({
+                      from: subDays(dateRange.from, daysDiff + 1),
+                      to: subDays(toDate, daysDiff + 1),
+                    });
+                  }
                 }}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[140px] justify-start text-left font-normal h-8">
-                    <CalendarIcon className="mr-2 h-3.5 w-3.5" />
-                    {format(distributionDate, 'MMM d, yyyy')}
+                  <Button variant="outline" className="min-w-[200px] justify-start text-left font-normal h-9">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
+                      ? format(dateRange.from, 'MMM d, yyyy')
+                      : dateRange.from && dateRange.to
+                        ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
+                        : dateRange.from
+                          ? format(dateRange.from, 'MMM d, yyyy')
+                          : 'Select date range'}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
                   <Calendar
-                    mode="single"
-                    selected={distributionDate}
-                    onSelect={(date) => {
-                      if (date) {
-                        setDistributionDate(date);
-                        setCalendarOpen(false);
+                    mode="range"
+                    selected={dateRange}
+                    onDayClick={(day) => {
+                      clickedDateRef.current = day;
+                    }}
+                    onSelect={(newRange) => {
+                      // If we had a complete range, start fresh with clicked date
+                      if (dateRange.from && dateRange.to && clickedDateRef.current) {
+                        setDateRange({ from: clickedDateRef.current, to: undefined });
+                        clickedDateRef.current = null;
+                        return;
                       }
+
+                      if (newRange?.from) {
+                        setDateRange(newRange);
+                      }
+                      clickedDateRef.current = null;
                     }}
                     disabled={(date) => date > berlinToday}
+                    numberOfMonths={1}
                     initialFocus
                   />
+                  <div className="border-t p-2 flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">
+                      {dateRange.from && dateRange.to
+                        ? dateRange.from.getTime() === dateRange.to.getTime()
+                          ? format(dateRange.from, 'MMM d, yyyy')
+                          : `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
+                        : dateRange.from
+                          ? `${format(dateRange.from, 'MMM d, yyyy')} - ...`
+                          : 'Select dates'}
+                    </span>
+                    <Button
+                      size="sm"
+                      onClick={() => setCalendarOpen(false)}
+                      disabled={!dateRange.from || !dateRange.to}
+                    >
+                      Apply
+                    </Button>
+                  </div>
                 </PopoverContent>
               </Popover>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                disabled={format(distributionDate, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
+                disabled={(dateRange.to || dateRange.from) && format(dateRange.to || dateRange.from!, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
                 onClick={() => {
-                  const next = new Date(distributionDate);
-                  next.setDate(next.getDate() + 1);
-                  setDistributionDate(next);
+                  if (dateRange.from) {
+                    const toDate = dateRange.to || dateRange.from;
+                    const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
+                    const newTo = addDays(toDate, daysDiff + 1);
+                    const cappedTo = newTo > berlinToday ? berlinToday : newTo;
+                    const newFrom = addDays(dateRange.from, daysDiff + 1);
+                    const cappedFrom = newFrom > berlinToday ? berlinToday : newFrom;
+                    setDateRange({ from: cappedFrom, to: cappedTo });
+                  }
                 }}
               >
                 <ChevronRight className="h-4 w-4" />
@@ -300,7 +351,13 @@ export default function AdminAnalyticsPage() {
                     Conversion Funnel
                   </CardTitle>
                   <CardDescription>
-                    Visitors → Signups → Subscriptions for {format(distributionDate, 'MMM d')}
+                    Visitors → Signups → Subscriptions for {
+                      dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
+                        ? format(dateRange.from, 'MMM d')
+                        : dateRange.from && dateRange.to
+                          ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d')}`
+                          : ''
+                    }
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -341,7 +398,7 @@ export default function AdminAnalyticsPage() {
                                   ))}
                                 </ul>
                               ) : (
-                                <p className="text-sm text-muted-foreground">No subscriber emails for this date</p>
+                                <p className="text-sm text-muted-foreground">No subscriber emails for this period</p>
                               )}
                             </div>
                           </PopoverContent>
@@ -434,7 +491,13 @@ export default function AdminAnalyticsPage() {
                     Task Performance
                   </CardTitle>
                   <CardDescription>
-                    Agent run statistics for {format(distributionDate, 'MMM d')}
+                    Agent run statistics for {
+                      dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
+                        ? format(dateRange.from, 'MMM d')
+                        : dateRange.from && dateRange.to
+                          ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d')}`
+                          : ''
+                    }
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -512,52 +575,98 @@ export default function AdminAnalyticsPage() {
                     Thread Analytics
                   </CardTitle>
                   <CardDescription>
-                    Distribution by messages and categories for {format(distributionDate, 'MMM d, yyyy')}
+                    Distribution by messages and categories for {
+                      dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
+                        ? format(dateRange.from, 'MMM d, yyyy')
+                        : dateRange.from && dateRange.to
+                          ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
+                          : ''
+                    }
                   </CardDescription>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
                     onClick={() => {
-                      const prev = new Date(distributionDate);
-                      prev.setDate(prev.getDate() - 1);
-                      setDistributionDate(prev);
+                      if (dateRange.from) {
+                        const toDate = dateRange.to || dateRange.from;
+                        const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
+                        setDateRange({
+                          from: subDays(dateRange.from, daysDiff + 1),
+                          to: subDays(toDate, daysDiff + 1),
+                        });
+                      }
                     }}
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <Popover>
                     <PopoverTrigger asChild>
-                      <Button variant="outline" className="min-w-[140px] justify-start text-left font-normal h-8 text-sm">
-                        <CalendarIcon className="mr-2 h-3 w-3" />
-                        {format(distributionDate, 'MMM d, yyyy')}
+                      <Button variant="outline" className="min-w-[200px] justify-start text-left font-normal h-9">
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
+                          ? format(dateRange.from, 'MMM d, yyyy')
+                          : dateRange.from && dateRange.to
+                            ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
+                            : dateRange.from
+                              ? format(dateRange.from, 'MMM d, yyyy')
+                              : 'Select date range'}
                       </Button>
                     </PopoverTrigger>
                     <PopoverContent className="w-auto p-0" align="end">
                       <Calendar
-                        mode="single"
-                        selected={distributionDate}
-                        onSelect={(date) => {
-                          if (date) {
-                            setDistributionDate(date);
+                        mode="range"
+                        selected={dateRange}
+                        onDayClick={(day) => {
+                          clickedDateRef.current = day;
+                        }}
+                        onSelect={(newRange) => {
+                          // If we had a complete range, start fresh with clicked date
+                          if (dateRange.from && dateRange.to && clickedDateRef.current) {
+                            setDateRange({ from: clickedDateRef.current, to: undefined });
+                            clickedDateRef.current = null;
+                            return;
                           }
+
+                          if (newRange?.from) {
+                            setDateRange(newRange);
+                          }
+                          clickedDateRef.current = null;
                         }}
                         disabled={(date) => date > berlinToday}
+                        numberOfMonths={1}
                         initialFocus
                       />
+                      <div className="border-t p-2 flex justify-between items-center">
+                        <span className="text-sm text-muted-foreground">
+                          {dateRange.from && dateRange.to
+                            ? dateRange.from.getTime() === dateRange.to.getTime()
+                              ? format(dateRange.from, 'MMM d, yyyy')
+                              : `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
+                            : dateRange.from
+                              ? `${format(dateRange.from, 'MMM d, yyyy')} - ...`
+                              : 'Select dates'}
+                        </span>
+                      </div>
                     </PopoverContent>
                   </Popover>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    disabled={format(distributionDate, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
+                    disabled={(dateRange.to || dateRange.from) && format(dateRange.to || dateRange.from!, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
                     onClick={() => {
-                      const next = new Date(distributionDate);
-                      next.setDate(next.getDate() + 1);
-                      setDistributionDate(next);
+                      if (dateRange.from) {
+                        const toDate = dateRange.to || dateRange.from;
+                        const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
+                        const newTo = addDays(toDate, daysDiff + 1);
+                        const cappedTo = newTo > berlinToday ? berlinToday : newTo;
+                        const newFrom = addDays(dateRange.from, daysDiff + 1);
+                        const cappedFrom = newFrom > berlinToday ? berlinToday : newFrom;
+                        setDateRange({ from: cappedFrom, to: cappedTo });
+                      }
                     }}
                   >
                     <ChevronRight className="h-4 w-4" />
@@ -677,7 +786,8 @@ export default function AdminAnalyticsPage() {
             <ThreadBrowser
               categoryFilter={categoryFilter}
               tierFilter={tierFilter}
-              filterDate={dateString}
+              filterDateFrom={dateFromString}
+              filterDateTo={dateToString}
               onClearCategory={() => setCategoryFilter(null)}
               onClearTier={() => setTierFilter(null)}
               onUserClick={handleUserEmailClick}

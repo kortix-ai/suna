@@ -23,7 +23,8 @@ import type { ThreadBrowserProps } from '../types';
 export function ThreadBrowser({
   categoryFilter,
   tierFilter,
-  filterDate,
+  filterDateFrom,
+  filterDateTo,
   onClearCategory,
   onClearTier,
   onUserClick
@@ -41,20 +42,23 @@ export function ThreadBrowser({
   // Reset page to 1 when category/tier filter or date changes
   const prevCategoryRef = useRef(categoryFilter);
   const prevTierRef = useRef(tierFilter);
-  const prevDateRef = useRef(filterDate);
+  const prevDateFromRef = useRef(filterDateFrom);
+  const prevDateToRef = useRef(filterDateTo);
   useEffect(() => {
     const categoryChanged = prevCategoryRef.current !== categoryFilter;
     const tierChanged = prevTierRef.current !== tierFilter;
-    const dateChanged = prevDateRef.current !== filterDate;
+    const dateFromChanged = prevDateFromRef.current !== filterDateFrom;
+    const dateToChanged = prevDateToRef.current !== filterDateTo;
 
-    if (categoryChanged || tierChanged || dateChanged) {
+    if (categoryChanged || tierChanged || dateFromChanged || dateToChanged) {
       setParams(p => ({ ...p, page: 1 }));
     }
 
     prevCategoryRef.current = categoryFilter;
     prevTierRef.current = tierFilter;
-    prevDateRef.current = filterDate;
-  }, [categoryFilter, tierFilter, filterDate]);
+    prevDateFromRef.current = filterDateFrom;
+    prevDateToRef.current = filterDateTo;
+  }, [categoryFilter, tierFilter, filterDateFrom, filterDateTo]);
 
   // Include category/tier filter and date filter in query params
   // Always filter by date to match the distribution stats shown above
@@ -62,8 +66,8 @@ export function ThreadBrowser({
     ...params,
     category: categoryFilter || undefined,
     tier: tierFilter || undefined,
-    date_from: filterDate || undefined,
-    date_to: filterDate || undefined,
+    date_from: filterDateFrom || undefined,
+    date_to: filterDateTo || undefined,
   };
 
   const { data: threadsData, isLoading } = useThreadBrowser(queryParams);
@@ -268,9 +272,9 @@ export function ThreadBrowser({
               <Badge variant="secondary" className="mt-1 flex items-center gap-1 h-10 px-3">
                 <Filter className="h-3 w-3" />
                 {categoryFilter}
-                {filterDate && (
+                {filterDateFrom && (
                   <span className="text-muted-foreground">
-                    ({filterDate})
+                    ({filterDateFrom === filterDateTo ? filterDateFrom : `${filterDateFrom} - ${filterDateTo}`})
                   </span>
                 )}
                 <button
