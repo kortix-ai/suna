@@ -98,7 +98,8 @@ export interface UseChatReturn {
   isLoading: boolean;
   isSendingMessage: boolean;
   isAgentRunning: boolean;
-  
+  isNewThreadOptimistic: boolean;
+
   // Error state for stream errors
   streamError: string | null;
   retryLastMessage: () => void;
@@ -302,8 +303,10 @@ export function useChat(): UseChatReturn {
     }
   }, [selectedModelId, currentModel, accessibleModels, hasActiveSubscription, availableModels.length, modelsLoading, modelsError]);
   
-  const shouldFetchThread = !!activeThreadId;
-  const shouldFetchMessages = !!activeThreadId;
+  // Don't fetch for optimistic threads (they don't exist on server yet)
+  const isOptimisticThread = activeThreadId?.startsWith('optimistic-') ?? false;
+  const shouldFetchThread = !!activeThreadId && !isOptimisticThread;
+  const shouldFetchMessages = !!activeThreadId && !isOptimisticThread;
 
   const { data: threadData, isLoading: isThreadLoading } = useThread(shouldFetchThread ? activeThreadId : undefined);
   const { data: messagesData, isLoading: isMessagesLoading, refetch: refetchMessages } = useMessages(shouldFetchMessages ? activeThreadId : undefined);
@@ -395,11 +398,14 @@ export function useChat(): UseChatReturn {
         case 'error':
         case 'failed':
           setAgentRunId(null);
+          setUserInitiatedRun(false); // Reset when stream ends
           break;
         case 'connecting':
         case 'streaming':
         case 'reconnecting':
-          // Keep agentRunId during active states
+          // Stream is active - safe to reset userInitiatedRun now
+          // This allows isSendingMessage to become false once streaming is confirmed
+          setUserInitiatedRun(false);
           break;
       }
     },
@@ -480,18 +486,22 @@ export function useChat(): UseChatReturn {
   }, [currentHookRunId, agentRunId, resumeStream]);
 
   const prevThreadIdRef = useRef<string | undefined>(undefined);
-  
+
   useEffect(() => {
     const prevThread = prevThreadIdRef.current;
     const isThreadSwitch = prevThread && activeThreadId && prevThread !== activeThreadId;
-    
-    if (isThreadSwitch) {
+
+    // Don't clear messages when transitioning from optimistic to real thread ID
+    // This is NOT a real thread switch - it's the same conversation getting its real ID
+    const isOptimisticToRealTransition = prevThread?.startsWith('optimistic-') && !activeThreadId?.startsWith('optimistic-');
+
+    if (isThreadSwitch && !isOptimisticToRealTransition) {
       log.log('[useChat] Thread switched from', prevThread, 'to', activeThreadId);
-      
+
       setMessages([]);
       lastStreamStartedRef.current = null;
     }
-    
+
     prevThreadIdRef.current = activeThreadId;
 
     if (messagesData) {
@@ -575,7 +585,8 @@ export function useChat(): UseChatReturn {
     if (userInitiatedRun) {
       log.log(`[useChat] Starting user-initiated stream for runId: ${agentRunId}`);
       lastStreamStartedRef.current = agentRunId;
-      setUserInitiatedRun(false);
+      // Don't reset userInitiatedRun here - let it reset when streaming actually starts
+      // This prevents the loader from disappearing during the connection phase
       startStreaming(agentRunId);
       return;
     }
@@ -589,6 +600,19 @@ export function useChat(): UseChatReturn {
   }, [agentRunId, startStreaming, userInitiatedRun, activeRuns]);
 
   useEffect(() => {
+    // CRITICAL: Only react to completion if we actually started streaming for this run
+    // This prevents false completion when streamHookStatus is stale from previous run
+    if (!lastStreamStartedRef.current) {
+      return;
+    }
+
+    // CRITICAL: Only process completion if the hook's current run matches what we started
+    // This prevents stale 'completed' status from old run triggering completion for new run
+    if (currentHookRunId !== lastStreamStartedRef.current) {
+      log.log('[useChat] Ignoring stale status:', streamHookStatus, 'for run:', currentHookRunId, 'we started:', lastStreamStartedRef.current);
+      return;
+    }
+
     if (
       (streamHookStatus === 'completed' ||
         streamHookStatus === 'stopped' ||
@@ -596,33 +620,34 @@ export function useChat(): UseChatReturn {
         streamHookStatus === 'error')
     ) {
       // Track the run ID that just completed to prevent immediate resume
-      if (agentRunId) {
-        lastCompletedRunIdRef.current = agentRunId;
-        
+      // Use currentHookRunId since that's the run that actually completed
+      if (currentHookRunId) {
+        lastCompletedRunIdRef.current = currentHookRunId;
+
         // On error, also track for retry - agent WAS started, don't resend
         if (streamHookStatus === 'error') {
-          lastErrorRunIdRef.current = agentRunId;
-          log.log('[useChat] Stored error runId for retry:', agentRunId);
+          lastErrorRunIdRef.current = currentHookRunId;
+          log.log('[useChat] Stored error runId for retry:', currentHookRunId);
         }
       }
-      
+
       setAgentRunId(null);
       lastStreamStartedRef.current = null;
-      
+
       if (streamHookStatus === 'completed' && activeThreadId) {
         log.log('[useChat] Streaming completed, refetching in background');
         setIsNewThreadOptimistic(false);
-        
-        queryClient.invalidateQueries({ 
+
+        queryClient.invalidateQueries({
           queryKey: chatKeys.messages(activeThreadId),
         });
         // Also invalidate activeRuns to get updated status
-        queryClient.invalidateQueries({ 
+        queryClient.invalidateQueries({
           queryKey: ['activeRuns'],
         });
       }
     }
-  }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient, agentRunId]);
+  }, [streamHookStatus, setAgentRunId, activeThreadId, queryClient, currentHookRunId]);
 
   // Check for running agents when thread becomes active or app comes to foreground
   useEffect(() => {
@@ -641,17 +666,18 @@ export function useChat(): UseChatReturn {
       run => run.thread_id === activeThreadId && run.status === 'running'
     );
 
-    // Don't resume a run that we just completed
+    // Don't resume a run that we just completed or if user just initiated a new run
     if (
-      runningAgentForThread && 
-      !agentRunId && 
+      runningAgentForThread &&
+      !agentRunId &&
       !lastStreamStartedRef.current &&
+      !userInitiatedRun && // Don't interfere with user-initiated runs
       runningAgentForThread.id !== lastCompletedRunIdRef.current
     ) {
       log.log('🔄 [useChat] Detected active run for current thread, resuming:', runningAgentForThread.id);
       setAgentRunId(runningAgentForThread.id);
     }
-  }, [activeThreadId, activeRuns, agentRunId, streamHookStatus]);
+  }, [activeThreadId, activeRuns, agentRunId, streamHookStatus, userInitiatedRun]);
 
   const refreshMessages = useCallback(async () => {
     if (!activeThreadId || isStreaming) {
@@ -684,8 +710,15 @@ export function useChat(): UseChatReturn {
 
   const loadThread = useCallback((threadId: string) => {
     log.log('[useChat] Loading thread:', threadId);
+
+    // Don't load optimistic threads - they're already active
+    if (threadId.startsWith('optimistic-')) {
+      log.log('[useChat] Skipping load for optimistic thread');
+      return;
+    }
+
     log.log('🔄 [useChat] Thread loading initiated');
-    
+
     // Clear all error state from previous thread
     setAgentRunId(null);
     lastErrorRunIdRef.current = null;
@@ -798,10 +831,10 @@ export function useChat(): UseChatReturn {
       
       if (!currentThreadId) {
         log.log('[useChat] Creating new thread via /agent/start with optimistic UI');
-        
+
         // Store attachments before clearing for optimistic display
         const pendingAttachments = [...attachments];
-        
+
         // Build optimistic content with attachment placeholders for preview
         let optimisticContent = content;
         if (pendingAttachments.length > 0) {
@@ -810,13 +843,37 @@ export function useChat(): UseChatReturn {
             .join('\n');
           optimisticContent = content ? `${content}\n\n${attachmentRefs}` : attachmentRefs;
         }
-        
+
+        // Generate optimistic thread ID for instant side menu display
+        const optimisticThreadId = 'optimistic-thread-' + Date.now();
+        const optimisticTimestamp = new Date().toISOString();
+
+        // Create optimistic thread title from first ~50 chars of content
+        const optimisticTitle = content.trim().substring(0, 50) + (content.length > 50 ? '...' : '');
+
+        // Add optimistic thread to threads cache for instant side menu update
+        queryClient.setQueryData(
+          [...chatKeys.threads(), { projectId: undefined }],
+          (oldThreads: any[] | undefined) => {
+            const optimisticThread = {
+              thread_id: optimisticThreadId,
+              title: optimisticTitle || 'New Chat',
+              created_at: optimisticTimestamp,
+              updated_at: optimisticTimestamp,
+              is_public: false,
+              metadata: { mode: selectedQuickAction, isOptimistic: true },
+            };
+            log.log('✨ [useChat] Adding optimistic thread to side menu:', optimisticThreadId);
+            return [optimisticThread, ...(oldThreads || [])];
+          }
+        );
+
         const optimisticUserMessage: UnifiedMessage = {
           message_id: 'optimistic-user-' + Date.now(),
-          thread_id: 'optimistic',
+          thread_id: optimisticThreadId,
           type: 'user',
           content: JSON.stringify({ content: optimisticContent }),
-          metadata: JSON.stringify({ 
+          metadata: JSON.stringify({
             pendingAttachments: pendingAttachments.map(a => ({
               uri: a.uri,
               name: a.name,
@@ -825,13 +882,18 @@ export function useChat(): UseChatReturn {
             }))
           }),
           is_llm_message: false,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          created_at: optimisticTimestamp,
+          updated_at: optimisticTimestamp,
         };
         setMessages([optimisticUserMessage]);
         setIsNewThreadOptimistic(true);
-        log.log('✨ [useChat] INSTANT user message display with', pendingAttachments.length, 'attachments');
-        
+
+        // CRITICAL: Set activeThreadId IMMEDIATELY so UI navigates to ThreadPage
+        // This makes hasActiveThread = true, triggering instant navigation
+        setActiveThreadId(optimisticThreadId);
+        setModeViewState('thread');
+        log.log('✨ [useChat] INSTANT navigation to thread + message display with', pendingAttachments.length, 'attachments');
+
         // Clear input and attachments immediately for instant feedback
         setInputValue('');
         setAttachments([]);
@@ -902,15 +964,40 @@ export function useChat(): UseChatReturn {
             files: formDataFiles as any,
             threadMetadata: Object.keys(threadMetadata).length > 0 ? threadMetadata : undefined,
           });
-          
+
           currentThreadId = createResult.thread_id;
-      
+
+          // Replace optimistic thread with real thread in cache
+          queryClient.setQueryData(
+            [...chatKeys.threads(), { projectId: undefined }],
+            (oldThreads: any[] | undefined) => {
+              if (!oldThreads) return oldThreads;
+              // Remove the optimistic thread, real thread will be added via invalidation
+              const filtered = oldThreads.filter((t: any) => t.thread_id !== optimisticThreadId);
+              log.log('✅ [useChat] Replaced optimistic thread with real thread:', currentThreadId);
+              return filtered;
+            }
+          );
+
+          // Update optimistic message's thread_id to real thread_id
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.thread_id === optimisticThreadId
+                ? { ...m, thread_id: currentThreadId }
+                : m
+            )
+          );
+
           setActiveThreadId(currentThreadId);
-          
-          queryClient.refetchQueries({ 
+
+          // Invalidate to fetch real thread data (includes title generated by server)
+          queryClient.invalidateQueries({
+            queryKey: chatKeys.threads(),
+          });
+          queryClient.refetchQueries({
             queryKey: chatKeys.thread(currentThreadId),
           });
-          
+
           if (createResult.agent_run_id) {
             log.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
             setUserInitiatedRun(true);
@@ -919,7 +1006,23 @@ export function useChat(): UseChatReturn {
           }
         } catch (agentStartError: any) {
           log.error('[useChat] Error starting agent for new thread:', agentStartError);
-          
+
+          // Remove optimistic thread from cache on error
+          queryClient.setQueryData(
+            [...chatKeys.threads(), { projectId: undefined }],
+            (oldThreads: any[] | undefined) => {
+              if (!oldThreads) return oldThreads;
+              const filtered = oldThreads.filter((t: any) => t.thread_id !== optimisticThreadId);
+              log.log('❌ [useChat] Removed optimistic thread due to error');
+              return filtered;
+            }
+          );
+
+          // Clear optimistic state on error - go back to dashboard
+          setMessages([]);
+          setIsNewThreadOptimistic(false);
+          setActiveThreadId(undefined); // Navigate back to HomePage
+
           const errorMessage = agentStartError?.message || '';
           const errorCode = agentStartError?.code || agentStartError?.detail?.error_code;
           
@@ -1628,8 +1731,36 @@ export function useChat(): UseChatReturn {
   }, [t]);
 
   const activeThread = useMemo(() => {
-    if (!activeThreadId || !threadData) return null;
-    
+    if (!activeThreadId) return null;
+
+    // For optimistic threads OR during optimistic-to-real transition, create synthetic data
+    // This prevents flicker when threadData hasn't loaded yet
+    const needsSyntheticData = activeThreadId.startsWith('optimistic-') ||
+      (isNewThreadOptimistic && !threadData);
+
+    if (needsSyntheticData) {
+      const firstUserMessage = messages.find(m => m.type === 'user');
+      let optimisticTitle = 'New Chat';
+      if (firstUserMessage) {
+        try {
+          const parsed = JSON.parse(firstUserMessage.content as string);
+          const content = parsed.content || '';
+          optimisticTitle = content.substring(0, 50) + (content.length > 50 ? '...' : '');
+        } catch {
+          // Use default title
+        }
+      }
+      return {
+        id: activeThreadId,
+        title: optimisticTitle,
+        messages,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+    }
+
+    if (!threadData) return null;
+
     return {
       id: activeThreadId,
       title: threadData.title,
@@ -1637,7 +1768,7 @@ export function useChat(): UseChatReturn {
       createdAt: new Date(threadData.created_at),
       updatedAt: new Date(threadData.updated_at),
     };
-  }, [activeThreadId, threadData, messages]);
+  }, [activeThreadId, threadData, messages, isNewThreadOptimistic]);
 
   const isLoading = (isThreadLoading || isMessagesLoading) && 
     !!activeThreadId && 
@@ -1674,8 +1805,12 @@ export function useChat(): UseChatReturn {
     setSelectedToolData,
     
     isLoading,
-    isSendingMessage: sendMessageMutation.isPending || unifiedAgentStartMutation.isPending,
+    // Keep isSendingMessage true during the gap between mutation completing and stream starting
+    // This prevents the loader from disappearing briefly during the transition
+    isSendingMessage: sendMessageMutation.isPending || unifiedAgentStartMutation.isPending || (userInitiatedRun && !isStreaming),
     isAgentRunning: isStreaming,
+    // Expose for ThreadPage to skip pushToTop on first message
+    isNewThreadOptimistic,
     
     // Error state for stream errors
     streamError: streamError,
