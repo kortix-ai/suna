@@ -111,11 +111,8 @@ class ThreadManager:
             
             if saved_message and 'message_id' in saved_message:
                 if is_llm_message:
-                    try:
-                        from core.cache.runtime_cache import invalidate_message_history_cache
-                        await invalidate_message_history_cache(thread_id)
-                    except Exception as e:
-                        logger.debug(f"Failed to invalidate message history cache: {e}")
+                    from core.cache.runtime_cache import invalidate_message_history_cache
+                    await invalidate_message_history_cache(thread_id)
                 
                 if type == "llm_response_end" and isinstance(content, dict):
                     await BillingHandler.handle(thread_id, content, saved_message, self.account_id)

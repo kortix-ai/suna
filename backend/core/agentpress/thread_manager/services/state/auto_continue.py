@@ -172,7 +172,11 @@ class AutoContinueManager:
                 if account_id:
                     try:
                         from core.billing.credits.integration import billing_integration
-                        can_run, message, _ = await billing_integration.check_and_reserve_credits(account_id)
+                        is_first_turn = auto_continue_state['count'] == 0
+                        wait_ms = 3000 if is_first_turn else 0
+                        can_run, message, _ = await billing_integration.check_and_reserve_credits(
+                            account_id, wait_for_cache_ms=wait_ms
+                        )
                         if not can_run:
                             logger.warning(f"Stopping auto-continue - insufficient credits: {message}")
                             yield {

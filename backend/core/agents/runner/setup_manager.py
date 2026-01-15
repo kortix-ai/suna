@@ -181,7 +181,6 @@ async def create_new_thread_records(
     if prompt:
         asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
     asyncio.create_task(increment_thread_count_cache(account_id))
-    asyncio.create_task(prewarm_credit_balance(account_id))
 
 
 async def create_agent_run_record(

@@ -225,15 +225,26 @@ class ExecutionOrchestrator:
             force_rebuild = await self.message_preparer.check_cache_rebuild_needed(thread_id)
         
         if ExecutionConfig.ENABLE_PROMPT_CACHING and len(messages) > 2:
-            prepared_messages = await self.message_preparer.prepare_messages_with_caching(
-                system_prompt=system_prompt,
-                messages=messages,
-                memory_context=memory_context,
-                llm_model=llm_model,
-                thread_id=thread_id,
-                force_rebuild=force_rebuild,
-                db=db
-            )
+            if is_auto_continue and not force_rebuild:
+                from core.agentpress.prompt_caching import add_cache_control
+                
+                messages_with_context = messages
+                if memory_context and len(messages) > 0:
+                    messages_with_context = [memory_context] + messages
+                
+                cached_system = add_cache_control(system_prompt)
+                prepared_messages = [cached_system] + messages_with_context
+                logger.debug(f"⚡ [AUTO-CONTINUE] Fast path: {len(messages)} messages (skipped token counting)")
+            else:
+                prepared_messages = await self.message_preparer.prepare_messages_with_caching(
+                    system_prompt=system_prompt,
+                    messages=messages,
+                    memory_context=memory_context,
+                    llm_model=llm_model,
+                    thread_id=thread_id,
+                    force_rebuild=force_rebuild,
+                    db=db
+                )
         else:
             messages_with_context = messages
             if memory_context and len(messages) > 0:

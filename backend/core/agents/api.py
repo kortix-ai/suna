@@ -463,6 +463,9 @@ async def _background_setup_and_execute(
         
         asyncio.create_task(prewarm_user_context(account_id))
         
+        from core.agents.runner.setup_manager import prewarm_credit_balance
+        credit_prewarm_task = asyncio.create_task(prewarm_credit_balance(account_id))
+        
         async def do_db_writes():
             db_start = time.time()
             try:

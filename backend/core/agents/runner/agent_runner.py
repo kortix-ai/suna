@@ -9,7 +9,6 @@ from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.response_processor import ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
 from core.utils.logger import logger
-from core.billing.credits.integration import billing_integration
 from core.services.langfuse import langfuse
 from core.services import redis
 
@@ -337,11 +336,6 @@ class AgentRunner:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         if cancellation_event and cancellation_event.is_set():
             yield {"type": "status", "status": "stopped", "message": "Execution cancelled"}
-            return
-
-        can_run, message, _ = await billing_integration.check_and_reserve_credits(self.account_id)
-        if not can_run:
-            yield {"type": "status", "status": "stopped", "message": f"Insufficient credits: {message}"}
             return
 
         if self.turn_number > 1:
