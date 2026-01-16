@@ -325,6 +325,8 @@ async def start_agent_run(
 ) -> Dict[str, Any]:
     from core.agents.config import load_agent_config_fast
     from core.agents.pipeline.slot_manager import reserve_slot
+    from core.agents.pipeline.time_estimator import time_estimator
+    from core.agents.pipeline.ux_streaming import stream_ack, stream_estimate
     
     total_start = time.time()
     is_new_thread = thread_id is None or is_optimistic
@@ -372,6 +374,23 @@ async def start_agent_run(
     
     cancellation_event = asyncio.Event()
     _cancellation_events[agent_run_id] = cancellation_event
+    
+    stream_key = f"agent_run:{agent_run_id}:stream"
+    
+    asyncio.create_task(stream_ack(stream_key, agent_run_id))
+    
+    has_mcp = bool(agent_config and agent_config.get('mcp_servers'))
+    estimate = time_estimator.estimate(
+        model_name=effective_model,
+        has_mcp=has_mcp,
+        is_continuation=False
+    )
+    asyncio.create_task(stream_estimate(
+        stream_key,
+        estimate.estimated_seconds,
+        estimate.confidence,
+        estimate.breakdown.to_dict()
+    ))
 
     if is_new_thread:
         from core.cache.runtime_cache import set_pending_thread, set_agent_run_stream_data

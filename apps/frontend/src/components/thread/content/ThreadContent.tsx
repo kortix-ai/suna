@@ -840,7 +840,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     scrollContainerRef,
     threadId,
     onPromptFill,
-    localPreviewUrls = {},
+    localPreviewUrls = {}
   }) {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);

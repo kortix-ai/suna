@@ -7,6 +7,12 @@ import type {
   ToolCallAccumulatorState,
   ToolOutputStreamData,
   ConnectionState,
+  AckEvent,
+  EstimateEvent,
+  PrepStageEvent,
+  DegradationEvent,
+  ThinkingEvent,
+  ErrorEvent,
 } from './types';
 import type { UnifiedMessage } from '@/components/thread/types';
 import { STREAM_CONFIG, TERMINAL_STATUSES } from './constants';
@@ -42,6 +48,12 @@ export interface AgentStreamCallbacks {
   onAssistantChunk?: (chunk: { content: string }) => void;
   onToolCallChunk?: (message: UnifiedMessage) => void;
   onToolOutputStream?: (data: ToolOutputStreamData) => void;
+  onAck?: (event: AckEvent) => void;
+  onEstimate?: (event: EstimateEvent) => void;
+  onPrepStage?: (event: PrepStageEvent) => void;
+  onDegradation?: (event: DegradationEvent) => void;
+  onThinking?: (event: ThinkingEvent) => void;
+  onUXError?: (event: ErrorEvent) => void;
 }
 
 export interface UseAgentStreamOptions {
@@ -359,6 +371,42 @@ export function useAgentStream(
       case 'tool_output_stream':
         if (processed.toolOutputStream) {
           callbacksRef.current.onToolOutputStream?.(processed.toolOutputStream);
+        }
+        break;
+      
+      case 'ux_ack':
+        if (processed.uxAck) {
+          callbacksRef.current.onAck?.(processed.uxAck);
+        }
+        break;
+      
+      case 'ux_estimate':
+        if (processed.uxEstimate) {
+          callbacksRef.current.onEstimate?.(processed.uxEstimate);
+        }
+        break;
+      
+      case 'ux_prep_stage':
+        if (processed.uxPrepStage) {
+          callbacksRef.current.onPrepStage?.(processed.uxPrepStage);
+        }
+        break;
+      
+      case 'ux_degradation':
+        if (processed.uxDegradation) {
+          callbacksRef.current.onDegradation?.(processed.uxDegradation);
+        }
+        break;
+      
+      case 'ux_thinking':
+        if (processed.uxThinking) {
+          callbacksRef.current.onThinking?.(processed.uxThinking);
+        }
+        break;
+      
+      case 'ux_error':
+        if (processed.uxError) {
+          callbacksRef.current.onUXError?.(processed.uxError);
         }
         break;
       

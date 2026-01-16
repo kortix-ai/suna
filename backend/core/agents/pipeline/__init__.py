@@ -9,6 +9,16 @@ from core.agents.pipeline.slot_manager import (
     reconcile_all_active as reconcile_all_slots,
     SlotReservation,
 )
+from core.agents.pipeline.ux_streaming import (
+    stream_ack,
+    stream_estimate,
+    stream_prep_stage,
+    stream_degradation,
+    stream_thinking,
+    stream_user_error,
+)
+from core.agents.pipeline.time_estimator import TimeEstimator, time_estimator
+from core.agents.pipeline.error_mapping import ErrorMapper, error_mapper
 
 __all__ = [
     'PipelineCoordinator',
@@ -21,4 +31,14 @@ __all__ = [
     'sync_slot_from_db',
     'reconcile_all_slots',
     'SlotReservation',
+    'stream_ack',
+    'stream_estimate',
+    'stream_prep_stage',
+    'stream_degradation',
+    'stream_thinking',
+    'stream_user_error',
+    'TimeEstimator',
+    'time_estimator',
+    'ErrorMapper',
+    'error_mapper',
 ]

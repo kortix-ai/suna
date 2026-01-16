@@ -16,6 +16,11 @@ from core.agents.pipeline.context import (
 )
 from core.agents.pipeline.task_registry import task_registry
 from core.agents.pipeline import prep_tasks
+from core.agents.pipeline.ux_streaming import (
+    stream_prep_stage,
+    stream_degradation,
+    stream_thinking,
+)
 
 
 class PipelineCoordinator:
@@ -97,7 +102,10 @@ class PipelineCoordinator:
         result = PrepResult()
         
         try:
+            await stream_prep_stage(ctx.stream_key, "initializing", "Setting up managers", 10)
             await self._init_managers(ctx)
+            
+            await stream_prep_stage(ctx.stream_key, "preparing", "Loading context", 30)
             
             tasks = {}
             
@@ -137,6 +145,8 @@ class PipelineCoordinator:
             asyncio.create_task(prep_tasks.prep_llm_connection(ctx.model_name))
             asyncio.create_task(prep_tasks.prep_project_metadata(ctx.project_id))
             
+            await stream_prep_stage(ctx.stream_key, "loading", "Fetching data", 60)
+            
             try:
                 results = await asyncio.wait_for(
                     asyncio.gather(*tasks.values(), return_exceptions=True),
@@ -145,13 +155,30 @@ class PipelineCoordinator:
             except asyncio.TimeoutError:
                 logger.error(f"Prep timeout after {self.PREP_TIMEOUT}s")
                 result.errors.append(f"Preparation timed out after {self.PREP_TIMEOUT}s")
+                await stream_degradation(
+                    ctx.stream_key,
+                    "prep",
+                    "Preparation took longer than expected",
+                    "warning",
+                    "Response may be slower"
+                )
                 return result
+            
+            await stream_prep_stage(ctx.stream_key, "ready", "Preparation complete", 100)
             
             task_names = list(tasks.keys())
             for i, (name, task_result) in enumerate(zip(task_names, results)):
                 if isinstance(task_result, Exception):
                     logger.error(f"Prep task {name} failed: {task_result}")
                     result.errors.append(f"{name}: {str(task_result)[:100]}")
+                    if name == 'mcp':
+                        await stream_degradation(
+                            ctx.stream_key,
+                            "mcp",
+                            "Integration connection failed",
+                            "warning",
+                            "Some integrations may not be available"
+                        )
                 else:
                     setattr(result, name, task_result)
             
@@ -284,6 +311,8 @@ class PipelineCoordinator:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         from core.agentpress.response_processor import ProcessorConfig
         from core.agentpress.thread_manager.services.execution.llm_executor import LLMExecutor
+        
+        await stream_thinking(ctx.stream_key)
         
         processor_config = ProcessorConfig(
             xml_tool_calling=config.AGENT_XML_TOOL_CALLING,

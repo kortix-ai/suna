@@ -1029,7 +1029,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     ) => {
       if (!message.trim() || isShared || !startAgentMutation) return;
 
-      // Message queue feature flag - when disabled, don't queue messages while agent is running
       const ENABLE_MESSAGE_QUEUE = false;
       if (ENABLE_MESSAGE_QUEUE && (agentStatus === 'running' || agentStatus === 'connecting')) {
         const queuedId = queueMessage(threadId, message, {
@@ -1048,7 +1047,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       pendingMessageRef.current = message;
 
       try {
-        // Pass message as prompt to /agent/start - it handles both message creation and agent start atomically
         const result = await startAgentMutation.mutateAsync({
           threadId,
           prompt: message,
@@ -1064,8 +1062,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           setAgentRunId(result.agent_run_id);
           setAgentStatus('running');
         }
-
-        // Close mode starter when user sends their first message
         if (modeStarter) {
           console.log('[ThreadComponent] Closing mode starter on first message');
           setModeStarter(null);
@@ -1073,7 +1069,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           url.searchParams.delete('modeStarter');
           window.history.replaceState({}, '', url.pathname + url.search);
         }
-        // Clear input text and uploaded files after successful submission
         chatInputRef.current?.setValue('');
         chatInputRef.current?.clearUploadedFiles();
       } catch (error) {

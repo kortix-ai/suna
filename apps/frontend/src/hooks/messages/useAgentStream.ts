@@ -3,6 +3,12 @@ import type { UnifiedMessage } from '@/components/thread/types';
 import { 
   useAgentStream as useAgentStreamNew,
   type ToolOutputStreamData,
+  type AckEvent,
+  type EstimateEvent,
+  type PrepStageEvent,
+  type DegradationEvent,
+  type ThinkingEvent,
+  type ErrorEvent,
 } from '@/lib/streaming';
 import { toast } from '@/lib/toast';
 import { agentKeys } from '@/hooks/agents/keys';
@@ -34,9 +40,15 @@ export interface AgentStreamCallbacks {
   onAssistantChunk?: (chunk: { content: string }) => void;
   onToolCallChunk?: (message: UnifiedMessage) => void;
   onToolOutputStream?: (data: ToolOutputStreamData) => void;
+  onAck?: (event: AckEvent) => void;
+  onEstimate?: (event: EstimateEvent) => void;
+  onPrepStage?: (event: PrepStageEvent) => void;
+  onDegradation?: (event: DegradationEvent) => void;
+  onThinking?: (event: ThinkingEvent) => void;
+  onUXError?: (event: ErrorEvent) => void;
 }
 
-export { ToolOutputStreamData };
+export { ToolOutputStreamData, AckEvent, EstimateEvent, PrepStageEvent, DegradationEvent, ThinkingEvent, ErrorEvent };
 
 export function useAgentStream(
   callbacks: AgentStreamCallbacks,
