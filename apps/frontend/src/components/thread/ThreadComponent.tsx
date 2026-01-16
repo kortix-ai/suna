@@ -184,8 +184,38 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const setLeftSidebarOpen: ((open: boolean) => void) | undefined = sidebarContext?.setOpen;
 
   const hasDataLoaded = useRef(false);
-  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(null);
-  const [showOptimisticUI, setShowOptimisticUI] = useState(false);
+  const [optimisticPrompt, setOptimisticPrompt] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('optimistic_prompt');
+      const storedThread = sessionStorage.getItem('optimistic_thread');
+      if (stored && storedThread === threadId) {
+        console.log('[optimisticPrompt init] Found in sessionStorage:', stored?.slice(0, 50));
+        return stored;
+      }
+      try {
+        const pendingIntent = localStorage.getItem('pending_thread_intent');
+        if (pendingIntent) {
+          const intent = JSON.parse(pendingIntent);
+          if (intent.threadId === threadId && intent.prompt) {
+            console.log('[optimisticPrompt init] Found in localStorage:', intent.prompt?.slice(0, 50));
+            return intent.prompt;
+          }
+        }
+      } catch (e) {}
+    }
+    console.log('[optimisticPrompt init] Not found, returning null');
+    return null;
+  });
+  const [showOptimisticUI, setShowOptimisticUI] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('optimistic_prompt');
+      const storedThread = sessionStorage.getItem('optimistic_thread');
+      if (stored && storedThread === threadId) {
+        return true;
+      }
+    }
+    return false;
+  });
   const [storedFilePreviewUrls, setStoredFilePreviewUrls] = useState<Record<string, string>>({});
   const setStorePanelOpen = useSetIsSidePanelOpen();
   
@@ -253,9 +283,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       if (stored && storedThread === threadId) {
         setOptimisticPrompt(stored);
         setShowOptimisticUI(true);
-        if (!isMobile && !compact) {
-          setStorePanelOpen(true);
-        }
+        // Don't open panel during optimistic UI - it will open when tool calls arrive
         const storedPreviews = sessionStorage.getItem('optimistic_file_previews');
         if (storedPreviews) {
           try {
@@ -278,9 +306,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       if (stored && storedThread === threadId) {
         setOptimisticPrompt(stored);
         setShowOptimisticUI(true);
-        if (!isMobile && !compact) {
-          setStorePanelOpen(true);
-        }
         const storedPreviews = sessionStorage.getItem('optimistic_file_previews');
         if (storedPreviews) {
           try {
@@ -310,8 +335,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [isNewThread, agentRunId]);
   
-  
-  const effectivePanelOpen = isSidePanelOpen || showOptimisticUI;
+  const effectivePanelOpen = isSidePanelOpen;
 
   const handleSidePanelClose = useCallback(() => {
     setIsSidePanelOpen(false);
@@ -1034,7 +1058,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleStreamClose = useCallback(() => { }, []);
 
-  // Use individual selectors to avoid subscribing to entire store (prevents unnecessary re-renders)
   const appendOutput = useToolStreamStore((state) => state.appendOutput);
   const markComplete = useToolStreamStore((state) => state.markComplete);
   const processSpreadsheetOperation = useProcessStreamOperation();
@@ -1093,15 +1116,12 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     (!!streamingTextContent && streamingTextContent.length > 0) ||
     toolCalls.length > 0;
   
-  // CRITICAL: For new threads, immediately check StreamPreconnect for agentRunId and start streaming
-  // This bypasses the delay from useThreadData polling and ensures stream content appears immediately
   const earlyStreamStartedRef = useRef(false);
   useEffect(() => {
     if (!isNewThread || !showOptimisticUI || earlyStreamStartedRef.current || currentHookRunId) {
       return;
     }
 
-    // Check StreamPreconnect service for pre-connected stream
     const checkAndStartStream = () => {
       const preconnectService = getStreamPreconnectService();
       const preconnectAgentRunId = preconnectService.getAgentRunIdForThread(threadId);
@@ -1111,25 +1131,21 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         earlyStreamStartedRef.current = true;
         lastStreamStartedRef.current = preconnectAgentRunId;
         
-        // Set agent status immediately
         setAgentRunId(preconnectAgentRunId);
         setAgentStatus('running');
         
-        // Start streaming - this will adopt the pre-connected stream and process buffered messages
         startStreaming(preconnectAgentRunId);
         return true;
       }
       return false;
     };
 
-    // Check immediately
     if (checkAndStartStream()) {
       return;
     }
 
-    // Poll frequently to catch the stream as soon as it's available
     let pollCount = 0;
-    const maxPolls = 100; // 5 seconds at 50ms intervals
+    const maxPolls = 100;
     
     const pollInterval = setInterval(() => {
       pollCount++;
@@ -1141,27 +1157,24 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     return () => clearInterval(pollInterval);
   }, [isNewThread, showOptimisticUI, threadId, currentHookRunId, startStreaming, setAgentRunId, setAgentStatus]);
 
-  // For new threads, transition is purely content-driven (stream content triggers transition)
-  // For existing threads, also consider initialLoadCompleted
   const shouldHideOptimisticUI = isNewThread 
-    ? hasStreamedContent  // New threads: only hide when we have actual streamed content
+    ? hasStreamedContent
     : hasStreamedContent || (initialLoadCompleted && (!!agentRunId || messages.length > 0));
 
-  // Track if we've already handled the optimistic -> real transition to prevent flicker
   const optimisticTransitionHandledRef = useRef(false);
   
   useEffect(() => {
-    // If we have any content (streamed or loaded), immediately hide optimistic UI
     if (showOptimisticUI && (shouldHideOptimisticUI || hasStreamedContent)) {
       if (!optimisticTransitionHandledRef.current) {
         optimisticTransitionHandledRef.current = true;
-        if (!isMobile && !compact) {
+        // Only open panel if there are tool calls to show
+        if (!isMobile && !compact && toolCalls.length > 0) {
           setIsSidePanelOpen(true);
         }
         setShowOptimisticUI(false);
       }
     }
-  }, [shouldHideOptimisticUI, showOptimisticUI, hasStreamedContent, isMobile, compact]);
+  }, [shouldHideOptimisticUI, showOptimisticUI, hasStreamedContent, isMobile, compact, setIsSidePanelOpen, toolCalls.length]);
 
   const handleSubmitMessage = useCallback(
     async (
@@ -1371,8 +1384,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         if (toolCalls.length > 0) {
           setIsSidePanelOpen(true);
           setCurrentToolIndex(toolCalls.length - 1);
-        } else if (messages.length > 0) {
-          setIsSidePanelOpen(true);
         }
       }
     }
@@ -1501,13 +1512,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [subscriptionData, subscriptionStatus, initialLoadCompleted, openBillingModal]);
 
-
-  // Note: handleStreamingToolCall is called via the onToolCallChunk callback in useAgentStream
-  // No need for a separate useEffect here - it would cause duplicate processing
-
   useEffect(() => {
     setIsSidePanelAnimating(true);
-    const timer = setTimeout(() => setIsSidePanelAnimating(false), 200); // Match transition duration
+    const timer = setTimeout(() => setIsSidePanelAnimating(false), 200);
     return () => clearTimeout(timer);
   }, [isSidePanelOpen]);
 
@@ -1603,7 +1610,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [initialLoadCompleted, messages.length, hasActiveSelection]);
 
   const optimisticMessages: UnifiedMessage[] = useMemo(() => {
-    if (!showOptimisticUI || !optimisticPrompt) return [];
+    if (!optimisticPrompt) return [];
     
     return [{
       message_id: 'optimistic-user',
@@ -1615,55 +1622,42 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }];
-  }, [showOptimisticUI, optimisticPrompt, threadId]);
+  }, [optimisticPrompt, threadId]);
 
-  // Hybrid display mode: during optimistic UI, show optimistic user message + any streamed messages
-  // This allows stream content to appear immediately while still showing the optimistic state
   const displayMessages = useMemo(() => {
-    if (showOptimisticUI) {
-      // Filter out any user messages from the stream that match the optimistic prompt
-      // to avoid duplicates when the real user message arrives
+    const hasRealUserMessage = messages.some(m => m.type === 'user' && m.message_id !== 'optimistic-user');
+    if (showOptimisticUI || (optimisticPrompt && !hasRealUserMessage)) {
       const streamedNonUserMessages = messages.filter(m => 
         m.type !== 'user' || m.message_id !== 'optimistic-user'
       );
       
-      // Combine optimistic user message with any streamed assistant/tool messages
       return [...optimisticMessages, ...streamedNonUserMessages];
     }
     return messages;
-  }, [showOptimisticUI, optimisticMessages, messages]);
+  }, [showOptimisticUI, optimisticMessages, messages, optimisticPrompt]);
 
   const displayAgentStatus = showOptimisticUI ? (agentStatus === 'idle' ? 'running' : agentStatus) : agentStatus;
   const displayStreamHookStatus = showOptimisticUI 
     ? (streamHookStatus === 'idle' ? 'connecting' : streamHookStatus) 
     : streamHookStatus;
-  // CRITICAL: Show streaming content even during optimistic UI - this is the key fix
   const displayStreamingText = streamingTextContent;
   const displayProjectName = showOptimisticUI ? 'New Conversation' : projectName;
-  
-  // Create a map of filename -> localUrl for optimistic file previews
-  // Combines URLs from the optimistic files store and stored session URLs
+  const effectiveInitialLoadCompleted = showOptimisticUI || optimisticTransitionHandledRef.current || initialLoadCompleted;
   const localPreviewUrls = useMemo(() => {
     const urls: Record<string, string> = {};
-    // First, add URLs from stored session (from dashboard submission)
     Object.entries(storedFilePreviewUrls).forEach(([name, url]) => {
       urls[name] = url;
     });
-    // Then, add URLs from optimistic files store (overrides if same name)
     optimisticFiles.forEach((file) => {
-      // Map by filename so it can be matched against attachment paths
       urls[file.name] = file.localUrl;
     });
     return urls;
   }, [optimisticFiles, storedFilePreviewUrls]);
   
-  // Check if we have pending optimistic data in sessionStorage
-  // This prevents showing skeleton when we're about to show optimistic UI
   const hasOptimisticDataPending = typeof window !== 'undefined' && 
     sessionStorage.getItem('optimistic_thread') === threadId &&
     sessionStorage.getItem('optimistic_prompt');
   
-  // Skip skeleton for new threads or when we have optimistic data - show content immediately
   if (!isNewThread && !hasDataLoaded.current && !showOptimisticUI && !hasOptimisticDataPending && !hasStreamedContent && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
     return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} compact={compact} initializingMessage={
       isThreadInitializing ? 'Setting up your conversation...' : undefined
@@ -1747,20 +1741,20 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           onToggleSidePanel={showOptimisticUI ? () => {} : toggleSidePanel}
           onProjectRenamed={handleProjectRenamed}
           onViewFiles={showOptimisticUI ? () => {} : handleOpenFileViewer}
-          toolCalls={showOptimisticUI ? [] : toolCalls}
+          toolCalls={toolCalls}
           messages={displayMessages as ApiMessageType[]}
-          externalNavIndex={showOptimisticUI ? 0 : externalNavIndex}
+          externalNavIndex={externalNavIndex}
           agentStatus={displayAgentStatus}
-          currentToolIndex={showOptimisticUI ? 0 : currentToolIndex}
-          onSidePanelNavigate={showOptimisticUI ? () => {} : handleSidePanelNavigate}
-          onSidePanelClose={showOptimisticUI ? () => {} : handleSidePanelClose}
+          currentToolIndex={currentToolIndex}
+          onSidePanelNavigate={handleSidePanelNavigate}
+          onSidePanelClose={handleSidePanelClose}
           renderAssistantMessage={toolViewAssistant}
           renderToolResult={toolViewResult}
-          isLoading={showOptimisticUI || hasStreamedContent ? false : (!initialLoadCompleted || isLoading)}
+          isLoading={showOptimisticUI || hasStreamedContent ? false : (!effectiveInitialLoadCompleted || isLoading)}
           isMobile={isMobile}
-          initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
+          initialLoadCompleted={effectiveInitialLoadCompleted}
           agentName={derivedAgentInfo.agentName}
-          disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
+          disableInitialAnimation={showOptimisticUI || isNewThread || (!effectiveInitialLoadCompleted && toolCalls.length > 0)}
           compact={true}
           streamingTextContent={isShared ? '' : displayStreamingText}
           streamingToolCall={isShared ? undefined : streamingToolCall}
@@ -1824,9 +1818,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 selectedAgentId={selectedAgentId}
                 onAgentSelect={handleAgentSelect}
                 hideAgentSelection={!!configuredAgentId}
-                toolCalls={showOptimisticUI ? [] : toolCalls}
-                toolCallIndex={showOptimisticUI ? 0 : currentToolIndex}
-                showToolPreview={!showOptimisticUI && !isSidePanelOpen && toolCalls.length > 0}
+                toolCalls={toolCalls}
+                toolCallIndex={currentToolIndex}
+                showToolPreview={!isSidePanelOpen && toolCalls.length > 0}
                 onExpandToolPreview={handleExpandToolPreview}
                 defaultShowSnackbar="tokens"
                 showScrollToBottomIndicator={showScrollToBottom}
@@ -1849,7 +1843,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             />
           )}
         </ThreadLayout>
-
         <PlanSelectionModal
           open={showBillingModal}
           onOpenChange={closeBillingModal}
@@ -1896,9 +1889,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         onAgentSelect={handleAgentSelect}
         threadId={threadId}
         hideAgentSelection={!!configuredAgentId}
-        toolCalls={showOptimisticUI ? [] : toolCalls}
-        toolCallIndex={showOptimisticUI ? 0 : currentToolIndex}
-        showToolPreview={!showOptimisticUI && !effectivePanelOpen && toolCalls.length > 0}
+        toolCalls={toolCalls}
+        toolCallIndex={currentToolIndex}
+        showToolPreview={!effectivePanelOpen && toolCalls.length > 0}
         onExpandToolPreview={handleExpandToolPreview}
         defaultShowSnackbar="tokens"
         showScrollToBottomIndicator={showScrollToBottom}
@@ -1920,20 +1913,20 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         onToggleSidePanel={showOptimisticUI ? () => {} : toggleSidePanel}
         onProjectRenamed={handleProjectRenamed}
         onViewFiles={showOptimisticUI ? () => {} : handleOpenFileViewer}
-        toolCalls={showOptimisticUI ? [] : toolCalls}
+        toolCalls={toolCalls}
         messages={displayMessages as ApiMessageType[]}
-        externalNavIndex={showOptimisticUI ? 0 : externalNavIndex}
+        externalNavIndex={externalNavIndex}
         agentStatus={displayAgentStatus}
-        currentToolIndex={showOptimisticUI ? 0 : currentToolIndex}
-        onSidePanelNavigate={showOptimisticUI ? () => {} : handleSidePanelNavigate}
-        onSidePanelClose={showOptimisticUI ? () => {} : handleSidePanelClose}
+        currentToolIndex={currentToolIndex}
+        onSidePanelNavigate={handleSidePanelNavigate}
+        onSidePanelClose={handleSidePanelClose}
         renderAssistantMessage={toolViewAssistant}
         renderToolResult={toolViewResult}
-        isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
+        isLoading={showOptimisticUI || hasStreamedContent ? false : (!effectiveInitialLoadCompleted || isLoading)}
         isMobile={isMobile}
-        initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
+        initialLoadCompleted={effectiveInitialLoadCompleted}
         agentName={derivedAgentInfo.agentName}
-        disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
+        disableInitialAnimation={showOptimisticUI || isNewThread || (!effectiveInitialLoadCompleted && toolCalls.length > 0)}
         variant={isShared ? 'shared' : 'default'}
         chatInput={chatInputElement}
         leftSidebarState={leftSidebarState}
