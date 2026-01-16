@@ -162,6 +162,9 @@ export const ALLOWED_EXTENSIONS = [
   
   // Notebooks
   '.ipynb',
+
+  // Canvas
+  '.kanvax',
 ] as const;
 
 export const EXTRACTABLE_EXTENSIONS = ['.zip'] as const;
