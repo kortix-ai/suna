@@ -682,6 +682,63 @@ async def invalidate_tier_info_cache(account_id: str) -> None:
         logger.warning(f"Failed to invalidate tier info cache: {e}")
 
 
+AGENT_RUN_STREAM_TTL = 3600
+
+def _get_agent_run_stream_key(agent_run_id: str) -> str:
+    return f"agent_run_stream:{agent_run_id}"
+
+
+async def set_agent_run_stream_data(
+    agent_run_id: str,
+    thread_id: str,
+    account_id: str,
+    status: str = "running",
+    metadata: Optional[Dict[str, Any]] = None
+) -> None:
+    cache_key = _get_agent_run_stream_key(agent_run_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        stream_data = {
+            "id": agent_run_id,
+            "thread_id": thread_id,
+            "thread_account_id": account_id,
+            "status": status,
+            "metadata": metadata or {},
+        }
+        await redis_service.set(cache_key, _json_dumps(stream_data), ex=AGENT_RUN_STREAM_TTL)
+        logger.debug(f"✅ Cached agent run stream data: {agent_run_id}")
+    except Exception as e:
+        logger.warning(f"Failed to cache agent run stream data: {e}")
+
+
+async def get_agent_run_stream_data(agent_run_id: str) -> Optional[Dict[str, Any]]:
+    cache_key = _get_agent_run_stream_key(agent_run_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
+            logger.debug(f"⚡ Redis cache hit for agent run stream: {agent_run_id}")
+            return data
+    except Exception as e:
+        logger.warning(f"Failed to get agent run stream data from cache: {e}")
+    
+    return None
+
+
+async def delete_agent_run_stream_data(agent_run_id: str) -> None:
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(_get_agent_run_stream_key(agent_run_id))
+        logger.debug(f"🗑️ Deleted agent run stream cache: {agent_run_id}")
+    except Exception as e:
+        logger.warning(f"Failed to delete agent run stream cache: {e}")
+
+
 PENDING_THREAD_TTL = 60
 
 def _get_pending_thread_key(thread_id: str) -> str:

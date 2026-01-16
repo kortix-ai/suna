@@ -12,6 +12,7 @@ class SmoothStreamStore {
   private animationId: number | null = null;
   private listeners = new Set<() => void>();
   private enabled = true;
+  private isFinishingAnimation = false;
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -25,13 +26,12 @@ class SmoothStreamStore {
   }
 
   private tick = () => {
-    if (!this.enabled) return;
-    
     const now = performance.now();
     const targetLen = this.targetText.length;
     
     if (this.revealedLen >= targetLen) {
       this.animationId = null;
+      this.isFinishingAnimation = false;
       return;
     }
 
@@ -52,6 +52,7 @@ class SmoothStreamStore {
       this.animationId = requestAnimationFrame(this.tick);
     } else {
       this.animationId = null;
+      this.isFinishingAnimation = false;
     }
   };
 
@@ -71,13 +72,41 @@ class SmoothStreamStore {
   update(newText: string, isEnabled: boolean) {
     const wasEnabled = this.enabled;
     this.enabled = isEnabled;
+    if (!newText && this.targetText && this.revealedLen < this.targetText.length) {
+      this.isFinishingAnimation = true;
+      this.startAnimation();
+      return;
+    }
+    if (!newText && this.isFinishingAnimation && this.targetText) {
+      if (this.revealedLen < this.targetText.length) {
+        this.startAnimation();
+      }
+      return;
+    }
 
     if (!newText) {
       this.stopAnimation();
       this.targetText = '';
       this.revealedLen = 0;
       this.lastUpdateTime = 0;
+      this.isFinishingAnimation = false;
       this.notify();
+      return;
+    }
+    if (!isEnabled && wasEnabled) {
+      this.isFinishingAnimation = true;
+      this.targetText = newText;
+      if (this.revealedLen < newText.length) {
+        this.startAnimation();
+      }
+      return;
+    }
+
+    if (!isEnabled && this.isFinishingAnimation) {
+      this.targetText = newText;
+      if (this.revealedLen < newText.length) {
+        this.startAnimation();
+      }
       return;
     }
 
@@ -95,6 +124,7 @@ class SmoothStreamStore {
       this.stopAnimation();
       this.revealedLen = 0;
       this.lastUpdateTime = 0;
+      this.isFinishingAnimation = false;
     }
     
     this.targetText = newText;

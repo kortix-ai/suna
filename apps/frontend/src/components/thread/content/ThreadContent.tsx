@@ -350,20 +350,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
-    // Render streaming content immediately - no animation delay
-    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
-    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
-    
-    // If agent is not running and not streaming, immediately hide
-    if (!isAgentRunning && !isStreaming) {
-      return null;
-    }
-    
-    const shouldRender = isLastGroup && !readOnly && displayStreamingText && isStreaming;
+    const hasTextToShow = displayStreamingText && displayStreamingText.length > 0;
+    const shouldRender = isLastGroup && !readOnly && hasTextToShow;
     
     if (!shouldRender) {
       return null;
     }
+
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
     let detectedTag: string | null = null;
     let tagStartIndex = -1;

@@ -356,13 +356,31 @@ async def start_agent_run(
     _cancellation_events[agent_run_id] = cancellation_event
 
     if is_new_thread:
-        from core.cache.runtime_cache import set_pending_thread
+        from core.cache.runtime_cache import set_pending_thread, set_agent_run_stream_data
         await set_pending_thread(
             thread_id=thread_id,
             project_id=project_id,
             account_id=account_id,
             agent_run_id=agent_run_id,
             prompt=prompt
+        )
+        # Cache agent run data for fast SSE stream lookup
+        await set_agent_run_stream_data(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            account_id=account_id,
+            status="running",
+            metadata=metadata
+        )
+    else:
+        # For existing threads, also cache the stream data
+        from core.cache.runtime_cache import set_agent_run_stream_data
+        await set_agent_run_stream_data(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            account_id=account_id,
+            status="running",
+            metadata=metadata
         )
 
     setup_time_ms = round((time.time() - total_start) * 1000, 1)
@@ -745,15 +763,23 @@ async def stream_agent_run(
     request: Request = None
 ):
     from core.agents import repo as agents_repo
+    from core.cache.runtime_cache import get_agent_run_stream_data
     
     user_id = await get_user_id_from_stream_auth(request, token)
     stream_key = f"agent_run:{agent_run_id}:stream"
     
-    agent_run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
+    agent_run_data = await get_agent_run_stream_data(agent_run_id)
+    
+    if not agent_run_data:
+        agent_run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
     
     if not agent_run_data:
         for attempt in range(15):
             await asyncio.sleep(0.2)
+            agent_run_data = await get_agent_run_stream_data(agent_run_id)
+            if agent_run_data:
+                break
+
             agent_run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
             if agent_run_data:
                 break
@@ -816,7 +842,6 @@ async def stream_agent_run(
         last_id = "0"
 
         try:
-            # Initial catch-up
             entries = await redis.stream_range(stream_key)
             if entries:
                 for entry_id, fields in entries:
@@ -826,7 +851,6 @@ async def stream_agent_run(
                     if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                         return
                 
-                # Trim processed entries
                 if last_id != "0":
                     try:
                         safe_idx = find_last_safe_boundary(entries)
