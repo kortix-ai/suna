@@ -25,10 +25,7 @@ from core.agents.runner.services import (
     send_completion_notification,
 )
 
-
-# Feature flag for new pipeline
 USE_FAST_PIPELINE = True
-
 
 async def execute_agent_run(
     agent_run_id: str,
@@ -40,11 +37,6 @@ async def execute_agent_run(
     cancellation_event: asyncio.Event,
     is_new_thread: bool = False
 ) -> None:
-    """
-    Execute an agent run.
-    
-    Routes to either the new fast pipeline or legacy runner based on feature flag.
-    """
     if USE_FAST_PIPELINE:
         await execute_agent_run_fast(
             agent_run_id=agent_run_id,
@@ -79,11 +71,6 @@ async def execute_agent_run_fast(
     cancellation_event: asyncio.Event,
     is_new_thread: bool = False
 ) -> None:
-    """
-    Fast parallel pipeline execution.
-    
-    All prep work runs in parallel, minimizing time to first token.
-    """
     execution_start = time.time()
     
     structlog.contextvars.clear_contextvars()
@@ -138,7 +125,6 @@ async def execute_agent_run_fast(
         
         set_tool_output_streaming_context(agent_run_id=agent_run_id, stream_key=stream_key)
         
-        # Create pipeline context
         from core.agents.pipeline.context import PipelineContext
         from core.agents.pipeline.coordinator import PipelineCoordinator
         
@@ -162,7 +148,6 @@ async def execute_agent_run_fast(
         stream_ttl_set = False
         error_message = None
         
-        # Execute pipeline
         async for response in coordinator.execute(ctx):
             if cancellation_event.is_set() or stop_state['received']:
                 logger.warning(f"🛑 Agent run stopped: {stop_state.get('reason', 'cancellation_event')}")
@@ -265,7 +250,6 @@ async def execute_agent_run_fast(
                 log_cleanup_error(agent_run_id, "stop_checker", e)
                 cleanup_errors.append(f"stop_checker: {e}")
         
-        # Clean up pipeline tasks
         try:
             from core.agents.pipeline.task_registry import task_registry
             await task_registry.cancel_all(agent_run_id, reason="executor_cleanup")
@@ -296,7 +280,6 @@ async def execute_agent_run_legacy(
     cancellation_event: asyncio.Event,
     is_new_thread: bool = False
 ) -> None:
-    """Legacy serial execution path (kept for fallback)."""
     execution_start = time.time()
 
     structlog.contextvars.clear_contextvars()

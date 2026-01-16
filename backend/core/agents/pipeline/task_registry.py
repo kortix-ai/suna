@@ -20,7 +20,7 @@ class TaskInfo:
     task: asyncio.Task
     name: str
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    critical: bool = False  # If True, failure stops the pipeline
+    critical: bool = False
 
 
 class TaskRegistry:
@@ -66,7 +66,6 @@ class TaskRegistry:
                 critical=critical
             )
             
-            # Auto-remove when task completes
             task.add_done_callback(
                 lambda t, rid=run_id, tid=task_id: asyncio.create_task(
                     self._on_task_done(rid, tid)
@@ -107,11 +106,10 @@ class TaskRegistry:
                         f"Task {task_info.name} did not complete within timeout during {reason}"
                     )
                 except asyncio.CancelledError:
-                    pass  # Expected
+                    pass
                 except Exception as e:
                     logger.warning(f"Error cancelling task {task_info.name}: {e}")
         
-        # Clean up registry
         async with self._lock:
             self._runs.pop(run_id, None)
         
@@ -150,5 +148,4 @@ class TaskRegistry:
         return cleaned
 
 
-# Global instance
 task_registry = TaskRegistry.get_instance()

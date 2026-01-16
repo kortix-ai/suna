@@ -26,13 +26,7 @@ from core.agents.pipeline.context import (
 )
 
 
-async def prep_billing(account_id: str) -> BillingResult:
-    """
-    Check billing/credits for the account.
-    
-    This is the most expensive prep task (~2.5s on cache miss).
-    Returns immediately if cache is warm.
-    """
+async def prep_billing(account_id: str, wait_for_cache_ms: int = 3000) -> BillingResult:
     if config.ENV_MODE == EnvMode.LOCAL:
         return BillingResult(can_run=True, message="Local mode", balance=999999)
     
@@ -40,7 +34,9 @@ async def prep_billing(account_id: str) -> BillingResult:
     
     try:
         from core.billing.credits.integration import billing_integration
-        can_run, message, _ = await billing_integration.check_and_reserve_credits(account_id)
+        can_run, message, _ = await billing_integration.check_and_reserve_credits(
+            account_id, wait_for_cache_ms=wait_for_cache_ms
+        )
         
         elapsed_ms = (time.time() - start) * 1000
         logger.debug(f"⏱️ [PREP] Billing check: {elapsed_ms:.1f}ms")
@@ -60,9 +56,6 @@ async def prep_billing(account_id: str) -> BillingResult:
 
 
 async def prep_limits(account_id: str, skip_check: bool = False) -> LimitsResult:
-    """
-    Check tier limits (concurrent runs, etc).
-    """
     if skip_check or config.ENV_MODE == EnvMode.LOCAL:
         return LimitsResult(can_run=True, message="Limits check skipped")
     
@@ -102,7 +95,6 @@ async def prep_limits(account_id: str, skip_check: bool = False) -> LimitsResult
         )
     except Exception as e:
         logger.error(f"Limits check failed: {e}")
-        # Fail open - allow the run but log the error
         return LimitsResult(
             can_run=True,
             message=f"Limits check failed (allowing): {str(e)[:100]}"
@@ -113,16 +105,10 @@ async def prep_messages(
     thread_id: str,
     prefetch_task: Optional[asyncio.Task] = None
 ) -> MessagesResult:
-    """
-    Fetch message history for the thread.
-    
-    Uses prefetch task if available, otherwise fetches directly.
-    """
     start = time.time()
     from_cache = False
     
     try:
-        # Try to use prefetch result
         if prefetch_task and not prefetch_task.done():
             try:
                 messages = await asyncio.wait_for(prefetch_task, timeout=5.0)
@@ -139,7 +125,6 @@ async def prep_messages(
         else:
             messages = None
         
-        # Fetch if prefetch didn't work
         if messages is None:
             from core.agentpress.thread_manager.services.messages.fetcher import MessageFetcher
             fetcher = MessageFetcher()
@@ -173,11 +158,7 @@ async def prep_prompt(
     mcp_loader=None,
     client=None
 ) -> PromptResult:
-    """
-    Build the system prompt.
-    
-    This includes user context, tool guides, MCP info, etc.
-    """
+    """Build the system prompt."""
     start = time.time()
     
     try:
@@ -205,13 +186,11 @@ async def prep_prompt(
         )
     except Exception as e:
         logger.error(f"Prompt build failed: {e}", exc_info=True)
-        raise  # This is critical, can't proceed without prompt
+        raise
 
 
 async def prep_tools(tool_registry) -> ToolsResult:
-    """
-    Get OpenAPI tool schemas.
-    """
+    """Get OpenAPI tool schemas."""
     start = time.time()
     
     try:
@@ -236,9 +215,7 @@ async def prep_mcp(
     account_id: str,
     thread_manager
 ) -> MCPResult:
-    """
-    Initialize MCP tools.
-    """
+    """Initialize MCP tools."""
     if not agent_config:
         return MCPResult(initialized=False)
     
@@ -250,7 +227,6 @@ async def prep_mcp(
         mcp_manager = MCPManager(thread_manager, account_id)
         await mcp_manager.initialize_jit_loader(agent_config, cache_only=True)
         
-        # Get tool count from loader
         tool_count = 0
         if hasattr(thread_manager, 'mcp_loader') and thread_manager.mcp_loader:
             tool_count = len(thread_manager.mcp_loader.tool_map) if hasattr(thread_manager.mcp_loader, 'tool_map') else 0
@@ -269,11 +245,7 @@ async def prep_mcp(
 
 
 async def prep_llm_connection(model_name: str) -> bool:
-    """
-    Prewarm the LLM connection.
-    
-    This is fire-and-forget, doesn't block the pipeline.
-    """
+    """Prewarm the LLM connection."""
     try:
         from core.services.llm import prewarm_llm_connection_background
         asyncio.create_task(prewarm_llm_connection_background(model_name))
@@ -284,9 +256,7 @@ async def prep_llm_connection(model_name: str) -> bool:
 
 
 async def prep_project_metadata(project_id: str) -> bool:
-    """
-    Ensure project metadata is cached.
-    """
+    """Ensure project metadata is cached."""
     try:
         from core.agents.runner.services import ensure_project_metadata_cached
         await ensure_project_metadata_cached(project_id)

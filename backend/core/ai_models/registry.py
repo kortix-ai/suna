@@ -3,8 +3,9 @@ from .models import Model, ModelProvider, ModelCapability, ModelPricing, ModelCo
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 
-# Use Bedrock for STAGING and PRODUCTION, LOCAL uses native APIs (Anthropic API, etc.)
 SHOULD_USE_BEDROCK = config.ENV_MODE in (EnvMode.STAGING, EnvMode.PRODUCTION)
+
+USE_ANTHROPIC = config.USE_ANTHROPIC
 
 AWS_BEDROCK_REGION = "us-west-2"
 AWS_BEDROCK_ACCOUNT_ID = "935064898258"
@@ -47,10 +48,8 @@ class ModelRegistry:
         self._initialize_models()
     
     def _initialize_models(self):
-        # Register Haiku Bedrock ARN pricing for billing resolution
         self._litellm_id_to_pricing[HAIKU_BEDROCK_ARN] = HAIKU_PRICING
         
-        # MiniMax M2.1 pricing (LiteLLM may return model ID without openrouter/ prefix)
         minimax_m2_pricing = ModelPricing(
             input_cost_per_million_tokens=0.30,
             output_cost_per_million_tokens=1.20,
@@ -60,55 +59,78 @@ class ModelRegistry:
         self._litellm_id_to_pricing["minimax/minimax-m2.1"] = minimax_m2_pricing
         self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = minimax_m2_pricing
         
-        # Kortix Basic - using MiniMax M2.1
-        # Anthropic: basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
-        basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
+        if USE_ANTHROPIC:
+            basic_litellm_id = HAIKU_BEDROCK_ARN if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+            basic_provider = ModelProvider.BEDROCK if SHOULD_USE_BEDROCK else ModelProvider.ANTHROPIC
+            basic_pricing = HAIKU_PRICING
+            basic_config = ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19"
+                },
+            )
+        else:
+            basic_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
+            basic_provider = ModelProvider.OPENROUTER
+            basic_pricing = minimax_m2_pricing
+            basic_config = ModelConfig()
         
         self.register(Model(
             id="kortix/basic",
             name="Kortix Basic",
             litellm_model_id=basic_litellm_id,
-            provider=ModelProvider.OPENROUTER,
+            provider=basic_provider,
             aliases=["kortix-basic", "Kortix Basic"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
-                # ModelCapability.VISION,
+                ModelCapability.VISION if USE_ANTHROPIC else ModelCapability.CHAT,  # Vision only with Anthropic
                 ModelCapability.PROMPT_CACHING,
             ],
-            pricing=minimax_m2_pricing,
+            pricing=basic_pricing,
             tier_availability=["free", "paid"],
             priority=102,
             recommended=True,
             enabled=True,
-            config=ModelConfig()
+            config=basic_config
         ))
         
-        # Kortix Power - using MiniMax M2.1
-        # Anthropic: power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
-        power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
+        # Kortix Power - using Anthropic Haiku or MiniMax M2.1 based on USE_ANTHROPIC toggle
+        if USE_ANTHROPIC:
+            power_litellm_id = HAIKU_BEDROCK_ARN if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
+            power_provider = ModelProvider.BEDROCK if SHOULD_USE_BEDROCK else ModelProvider.ANTHROPIC
+            power_pricing = HAIKU_PRICING
+            power_config = ModelConfig(
+                extra_headers={
+                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19"
+                },
+            )
+        else:
+            power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
+            power_provider = ModelProvider.OPENROUTER
+            power_pricing = minimax_m2_pricing
+            power_config = ModelConfig()
         
         self.register(Model(
             id="kortix/power",
             name="Kortix Advanced Mode",
             litellm_model_id=power_litellm_id,
-            provider=ModelProvider.OPENROUTER,
+            provider=power_provider,
             aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
-                # ModelCapability.VISION,
+                ModelCapability.VISION if USE_ANTHROPIC else ModelCapability.CHAT,  # Vision only with Anthropic
                 ModelCapability.THINKING,
                 ModelCapability.PROMPT_CACHING,
             ],
-            pricing=minimax_m2_pricing,
+            pricing=power_pricing,
             tier_availability=["paid"],
             priority=101,
             recommended=True,
             enabled=True,
-            config=ModelConfig()
+            config=power_config
         ))
         
         # Claude Haiku 4.5 - can be used as a fallback for vision tasks

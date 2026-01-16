@@ -49,6 +49,9 @@ class Configuration:
     AGENT_NATIVE_TOOL_CALLING: bool = True  # Enable OpenAI-style native function calling
     AGENT_EXECUTE_ON_STREAM: bool = True     # Execute tools as they stream (vs. at end)
     AGENT_TOOL_EXECUTION_STRATEGY: str = "parallel"  # "parallel" or "sequential"
+    
+    # Model selection toggle
+    USE_ANTHROPIC: bool = True  # True = Anthropic Haiku (faster TTFT), False = MiniMax M2.1
     # ============================================
     
     # ===== PRESENCE CONFIGURATION =====

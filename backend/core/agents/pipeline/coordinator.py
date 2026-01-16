@@ -1,14 +1,3 @@
-"""
-Pipeline Coordinator - Orchestrates parallel execution of all prep work.
-
-This is the heart of the fast pipeline. It:
-1. Starts all prep tasks simultaneously
-2. Tracks tasks for cleanup
-3. Validates results
-4. Executes LLM call
-5. Handles auto-continue loop
-"""
-
 import asyncio
 import time
 import json
@@ -26,84 +15,73 @@ from core.agents.pipeline.context import (
     AutoContinueState,
 )
 from core.agents.pipeline.task_registry import task_registry
-from core.agents.pipeline.limits import LimitEnforcer
 from core.agents.pipeline import prep_tasks
 
 
 class PipelineCoordinator:
-    """
-    Coordinates the parallel execution pipeline for agent runs.
-    
-    Key principles:
-    - All prep work runs in parallel
-    - Fail fast on any critical error
-    - Track all tasks for cleanup
-    - No memory/CPU leaks
-    """
-    
-    # Timeouts
-    PREP_TIMEOUT = 30.0  # Max time for all prep work
-    LLM_TIMEOUT = 300.0  # Max time for LLM call
+    PREP_TIMEOUT = 30.0
+    LLM_TIMEOUT = 300.0
     
     def __init__(self):
         self._thread_manager = None
         self._tool_registry = None
         self._response_processor = None
+        self._trace = None
     
     async def execute(
         self,
         ctx: PipelineContext,
         max_auto_continues: int = 25
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """
-        Execute the full pipeline with auto-continue support.
-        
-        Yields response chunks as they arrive.
-        """
         execution_start = time.time()
         auto_state = AutoContinueState()
         
         try:
-            # Phase 1: Parallel prep (first call only does full prep)
+            prep_start = time.time()
             prep_result = await self._parallel_prep(ctx)
             
-            prep_time_ms = (time.time() - execution_start) * 1000
+            prep_time_ms = (time.time() - prep_start) * 1000
             logger.info(f"⚡ [PIPELINE] Prep complete: {prep_time_ms:.1f}ms")
             
-            # Check if we can proceed
             if not prep_result.can_proceed:
-                yield prep_result.get_error_response()
+                error_resp = prep_result.get_error_response()
+                logger.warning(f"[PIPELINE] Cannot proceed: {error_resp.get('error')}")
+                yield error_resp
                 return
             
-            # Phase 2: Auto-continue loop
             while auto_state.active and auto_state.count < max_auto_continues:
                 auto_state.active = False
+                iteration_start = time.time()
                 
-                # Check cancellation
                 if ctx.cancellation_event and ctx.cancellation_event.is_set():
                     logger.info(f"🛑 Pipeline cancelled for {ctx.agent_run_id}")
                     yield {"type": "status", "status": "stopped", "message": "Cancelled"}
                     break
                 
-                # For subsequent calls, do lightweight prep
                 if auto_state.count > 0:
+                    lightweight_start = time.time()
                     prep_result = await self._lightweight_prep(ctx, prep_result)
+                    logger.debug(f"⚡ [PIPELINE] Lightweight prep #{auto_state.count + 1}: {(time.time() - lightweight_start) * 1000:.1f}ms")
                     if not prep_result.can_proceed:
                         yield prep_result.get_error_response()
                         break
                 
-                # Execute LLM call
+                llm_start = time.time()
+                chunk_count = 0
                 async for chunk in self._execute_llm_call(ctx, prep_result, auto_state):
+                    chunk_count += 1
                     yield chunk
                     
-                    # Check for auto-continue trigger
                     if self._should_auto_continue(chunk, auto_state, max_auto_continues):
                         auto_state.active = True
+                
+                iteration_time_ms = (time.time() - iteration_start) * 1000
+                logger.debug(f"📊 [PIPELINE] Iteration #{auto_state.count + 1}: {iteration_time_ms:.1f}ms, {chunk_count} chunks")
                 
                 auto_state.count += 1
             
             total_time_ms = (time.time() - execution_start) * 1000
-            logger.info(f"✅ [PIPELINE] Complete: {total_time_ms:.1f}ms, {auto_state.count} iterations")
+            logger.info(f"✅ [PIPELINE] Complete: {total_time_ms:.1f}ms total, {auto_state.count} iterations")
             
         except asyncio.CancelledError:
             logger.info(f"Pipeline cancelled: {ctx.agent_run_id}")
@@ -115,40 +93,24 @@ class PipelineCoordinator:
             await self._cleanup(ctx)
     
     async def _parallel_prep(self, ctx: PipelineContext) -> PrepResult:
-        """
-        Execute all prep tasks in parallel.
-        
-        This is the key optimization - all tasks start simultaneously.
-        """
         start = time.time()
         result = PrepResult()
         
         try:
-            # Initialize thread manager and tool registry
             await self._init_managers(ctx)
             
-            # Create all prep tasks
             tasks = {}
             
-            # Billing check (most expensive, ~2.5s on miss)
             tasks['billing'] = asyncio.create_task(
-                prep_tasks.prep_billing(ctx.account_id)
+                prep_tasks.prep_billing(ctx.account_id, wait_for_cache_ms=3000)
             )
             await task_registry.register(ctx.agent_run_id, tasks['billing'], 'billing', critical=True)
             
-            # Limits check
-            tasks['limits'] = asyncio.create_task(
-                prep_tasks.prep_limits(ctx.account_id, ctx.skip_limits_check)
-            )
-            await task_registry.register(ctx.agent_run_id, tasks['limits'], 'limits', critical=True)
-            
-            # Messages fetch
             tasks['messages'] = asyncio.create_task(
                 prep_tasks.prep_messages(ctx.thread_id)
             )
             await task_registry.register(ctx.agent_run_id, tasks['messages'], 'messages', critical=True)
             
-            # System prompt build
             tasks['prompt'] = asyncio.create_task(
                 prep_tasks.prep_prompt(
                     model_name=ctx.model_name,
@@ -162,25 +124,19 @@ class PipelineCoordinator:
             )
             await task_registry.register(ctx.agent_run_id, tasks['prompt'], 'prompt', critical=True)
             
-            # Tool schemas
             tasks['tools'] = asyncio.create_task(
                 prep_tasks.prep_tools(self._tool_registry)
             )
             await task_registry.register(ctx.agent_run_id, tasks['tools'], 'tools', critical=False)
             
-            # MCP init
             tasks['mcp'] = asyncio.create_task(
                 prep_tasks.prep_mcp(ctx.agent_config, ctx.account_id, self._thread_manager)
             )
             await task_registry.register(ctx.agent_run_id, tasks['mcp'], 'mcp', critical=False)
             
-            # LLM connection prewarm (fire and forget)
             asyncio.create_task(prep_tasks.prep_llm_connection(ctx.model_name))
-            
-            # Project metadata cache
             asyncio.create_task(prep_tasks.prep_project_metadata(ctx.project_id))
             
-            # Wait for all tasks with timeout
             try:
                 results = await asyncio.wait_for(
                     asyncio.gather(*tasks.values(), return_exceptions=True),
@@ -191,7 +147,6 @@ class PipelineCoordinator:
                 result.errors.append(f"Preparation timed out after {self.PREP_TIMEOUT}s")
                 return result
             
-            # Map results back to named fields
             task_names = list(tasks.keys())
             for i, (name, task_result) in enumerate(zip(task_names, results)):
                 if isinstance(task_result, Exception):
@@ -201,8 +156,6 @@ class PipelineCoordinator:
                     setattr(result, name, task_result)
             
             result.total_prep_time_ms = (time.time() - start) * 1000
-            
-            # Log timing breakdown
             self._log_prep_timing(result)
             
             return result
@@ -217,21 +170,14 @@ class PipelineCoordinator:
         ctx: PipelineContext,
         prev_result: PrepResult
     ) -> PrepResult:
-        """
-        Lightweight prep for auto-continue iterations.
-        
-        Reuses cached data, only refreshes messages.
-        """
         start = time.time()
         result = PrepResult()
         
         try:
-            # Quick billing check (should hit cache)
             billing_task = asyncio.create_task(
-                prep_tasks.prep_billing(ctx.account_id)
+                prep_tasks.prep_billing(ctx.account_id, wait_for_cache_ms=0)
             )
             
-            # Refresh messages
             messages_task = asyncio.create_task(
                 prep_tasks.prep_messages(ctx.thread_id)
             )
@@ -250,8 +196,6 @@ class PipelineCoordinator:
             else:
                 result.messages = messages_result
             
-            # Reuse previous results
-            result.limits = prev_result.limits
             result.prompt = prev_result.prompt
             result.tools = prev_result.tools
             result.mcp = prev_result.mcp
@@ -267,19 +211,16 @@ class PipelineCoordinator:
             return result
     
     async def _init_managers(self, ctx: PipelineContext) -> None:
-        """Initialize thread manager and tool registry."""
         from core.agentpress.thread_manager import ThreadManager
         from core.agentpress.tool_registry import ToolRegistry
         from core.jit.config import JITConfig
         
-        # Create JIT config
         jit_config = JITConfig.from_run_context(
             agent_config=ctx.agent_config,
             disabled_tools=self._get_disabled_tools(ctx.agent_config)
         )
         
-        # Create thread manager
-        trace = langfuse.trace(
+        self._trace = langfuse.trace(
             name="pipeline_run",
             id=ctx.agent_run_id,
             session_id=ctx.thread_id,
@@ -287,7 +228,7 @@ class PipelineCoordinator:
         )
         
         self._thread_manager = ThreadManager(
-            trace=trace,
+            trace=self._trace,
             agent_config=ctx.agent_config,
             project_id=ctx.project_id,
             thread_id=ctx.thread_id,
@@ -297,7 +238,6 @@ class PipelineCoordinator:
         
         self._tool_registry = self._thread_manager.tool_registry
         
-        # Register tools
         from core.agents.runner.tool_manager import ToolManager
         tool_manager = ToolManager(
             self._thread_manager,
@@ -308,7 +248,6 @@ class PipelineCoordinator:
         tool_manager.register_core_tools()
     
     def _get_disabled_tools(self, agent_config: Optional[Dict[str, Any]]) -> List[str]:
-        """Get list of disabled tools from config."""
         if not agent_config or 'agentpress_tools' not in agent_config:
             return []
         
@@ -343,10 +282,9 @@ class PipelineCoordinator:
         prep: PrepResult,
         auto_state: AutoContinueState
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """Execute the LLM call and stream response."""
         from core.agentpress.response_processor import ProcessorConfig
+        from core.agentpress.thread_manager.services.execution.llm_executor import LLMExecutor
         
-        # Build processor config
         processor_config = ProcessorConfig(
             xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
             native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING,
@@ -355,55 +293,56 @@ class PipelineCoordinator:
             tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
         )
         
-        # Prepare messages with system prompt
         messages = prep.messages.messages if prep.messages else []
         system_prompt = prep.prompt.system_prompt if prep.prompt else {"role": "system", "content": "You are a helpful assistant."}
         memory_context = prep.prompt.memory_context if prep.prompt else None
-        
-        # Add memory context if present
-        if memory_context and messages:
-            messages = [memory_context] + messages
-        
-        prepared_messages = [system_prompt] + messages
-        
-        # Get tool schemas
         tool_schemas = prep.tools.schemas if prep.tools else None
         
-        # Execute via orchestrator
-        from core.agentpress.thread_manager.services.execution.orchestrator import ExecutionOrchestrator
+        messages_with_context = messages
+        if memory_context and messages:
+            messages_with_context = [memory_context] + messages
         
-        orchestrator = ExecutionOrchestrator()
+        from core.agentpress.prompt_caching import add_cache_control
+        cached_system = add_cache_control(system_prompt)
+        prepared_messages = [cached_system] + messages_with_context
         
-        response = await orchestrator.execute_pipeline(
-            thread_id=ctx.thread_id,
-            system_prompt=system_prompt,
-            llm_model=ctx.model_name,
-            registry_model_id=ctx.model_name,
-            llm_temperature=0,
-            llm_max_tokens=None,
-            tool_choice="auto",
-            config=processor_config,
-            stream=True,
-            generation=None,
-            auto_continue_state=auto_state.to_dict(),
-            memory_context=memory_context,
-            latest_user_message_content=None,
-            cancellation_event=ctx.cancellation_event,
-            prefetch_messages_task=None,
-            prefetch_llm_end_task=None,
-            tool_registry=self._tool_registry,
-            get_llm_messages_func=self._thread_manager.get_llm_messages,
-            thread_has_images_func=self._thread_manager.thread_has_images,
-            response_processor=self._thread_manager.response_processor,
-            db=self._thread_manager.db
+        import litellm
+        actual_tokens = await asyncio.to_thread(
+            litellm.token_counter,
+            model=ctx.model_name,
+            messages=prepared_messages
         )
         
-        # Stream response
-        if hasattr(response, '__aiter__'):
-            async for chunk in response:
+        logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (fast path)")
+        
+        llm_executor = LLMExecutor()
+        llm_response = await llm_executor.execute(
+            prepared_messages=prepared_messages,
+            llm_model=ctx.model_name,
+            llm_temperature=0,
+            llm_max_tokens=None,
+            openapi_tool_schemas=tool_schemas,
+            tool_choice="auto",
+            native_tool_calling=processor_config.native_tool_calling,
+            xml_tool_calling=processor_config.xml_tool_calling,
+            stream=True
+        )
+        
+        if isinstance(llm_response, dict) and llm_response.get("status") == "error":
+            yield llm_response
+            return
+        
+        if hasattr(llm_response, '__aiter__'):
+            response_processor = self._thread_manager.response_processor
+            async for chunk in response_processor.process_streaming_response(
+                llm_response, ctx.thread_id, prepared_messages,
+                ctx.model_name, processor_config, True,
+                auto_state.count, auto_state.to_dict().get('continuous_state', {}),
+                None, actual_tokens, ctx.cancellation_event
+            ):
                 yield chunk
-        elif isinstance(response, dict):
-            yield response
+        elif isinstance(llm_response, dict):
+            yield llm_response
     
     def _should_auto_continue(
         self,
@@ -411,7 +350,6 @@ class PipelineCoordinator:
         auto_state: AutoContinueState,
         max_continues: int
     ) -> bool:
-        """Check if we should auto-continue based on response chunk."""
         if auto_state.count >= max_continues:
             return False
         
@@ -425,24 +363,19 @@ class PipelineCoordinator:
             
             finish_reason = content.get('finish_reason') if isinstance(content, dict) else None
             
-            # Continue on tool_calls or length
             if finish_reason in ('tool_calls', 'length'):
                 return True
             
-            # Stop on explicit stop reasons
             if finish_reason in ('stop', 'agent_terminated'):
                 return False
         
         return False
     
     def _log_prep_timing(self, result: PrepResult) -> None:
-        """Log detailed timing breakdown."""
         parts = []
-        
+
         if result.billing:
             parts.append(f"billing=OK")
-        if result.limits:
-            parts.append(f"limits=OK")
         if result.messages:
             parts.append(f"msgs={result.messages.count}({result.messages.fetch_time_ms:.0f}ms)")
         if result.prompt:
@@ -455,12 +388,9 @@ class PipelineCoordinator:
         logger.info(f"📊 [PREP] {result.total_prep_time_ms:.0f}ms total | {' | '.join(parts)}")
     
     async def _cleanup(self, ctx: PipelineContext) -> None:
-        """Clean up all resources."""
         try:
-            # Cancel all tracked tasks
             await task_registry.cancel_all(ctx.agent_run_id, reason="pipeline_cleanup")
             
-            # Clean up thread manager
             if self._thread_manager:
                 await self._thread_manager.cleanup()
                 self._thread_manager = None

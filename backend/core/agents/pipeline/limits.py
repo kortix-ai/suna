@@ -1,8 +1,5 @@
 """
 Limit Enforcer - Parallel tier limit checks.
-
-All limit checks run in parallel for speed.
-Fails fast on any violation.
 """
 
 import asyncio
@@ -25,15 +22,7 @@ class AllLimitsResult:
 
 
 class LimitEnforcer:
-    """
-    Enforces all tier limits in parallel.
-    
-    Checks:
-    - Concurrent runs limit
-    - Credit balance
-    - Model access
-    - Project/thread limits (if applicable)
-    """
+    """Enforces all tier limits in parallel."""
     
     @staticmethod
     async def check_all(
@@ -43,12 +32,7 @@ class LimitEnforcer:
         check_project_limit: bool = False,
         check_thread_limit: bool = False
     ) -> AllLimitsResult:
-        """
-        Run all limit checks in parallel.
-        
-        Returns as soon as all checks complete.
-        Fails fast if any check fails.
-        """
+        """Run all limit checks in parallel."""
         if config.ENV_MODE == EnvMode.LOCAL:
             return AllLimitsResult(
                 can_run=True,
@@ -57,7 +41,6 @@ class LimitEnforcer:
         
         start = time.time()
         
-        # Define all checks
         async def check_concurrent():
             if skip_limits:
                 return {'can_run': True, 'type': 'concurrent'}
@@ -122,7 +105,6 @@ class LimitEnforcer:
                 }
             return {'can_run': True, 'type': 'model'}
         
-        # Run all checks in parallel
         try:
             results = await asyncio.gather(
                 check_concurrent(),
@@ -141,7 +123,6 @@ class LimitEnforcer:
         
         elapsed_ms = (time.time() - start) * 1000
         
-        # Process results
         for result in results:
             if isinstance(result, Exception):
                 logger.error(f"Limit check exception: {result}")
@@ -166,10 +147,7 @@ class LimitEnforcer:
     
     @staticmethod
     async def check_concurrent_only(account_id: str, skip: bool = False) -> Tuple[bool, str]:
-        """
-        Quick check for concurrent runs only.
-        Used during auto-continue where we don't need full checks.
-        """
+        """Quick check for concurrent runs only."""
         if skip or config.ENV_MODE == EnvMode.LOCAL:
             return True, "Skipped"
         
