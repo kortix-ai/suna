@@ -2315,6 +2315,56 @@ class RevenueSummary(BaseModel):
     churned_this_month: int
 
 
+class TierProfitability(BaseModel):
+    """Profitability metrics for a single tier."""
+    tier: str
+    display_name: str
+    provider: str  # 'stripe' or 'revenuecat'
+    payment_count: int  # Number of payments in the period
+    unique_users: int  # Unique paying users
+    total_revenue: float  # Actual revenue from payments
+    total_cost: float  # Sum of LLM usage costs (what we charge users)
+    total_actual_cost: float  # Actual LLM costs (before markup)
+    gross_profit: float  # revenue - actual_cost
+    gross_margin_percent: float  # (gross_profit / revenue) * 100
+    avg_cost_per_user: float
+    avg_revenue_per_user: float
+    avg_profit_per_user: float
+
+
+class ProfitabilitySummary(BaseModel):
+    """Overall profitability summary across all tiers and platforms."""
+    # Overall metrics
+    total_revenue: float
+    total_cost: float  # What we charge users (with markup)
+    total_actual_cost: float  # What we pay LLM providers
+    gross_profit: float
+    gross_margin_percent: float
+
+    # Breakdown by tier
+    by_tier: List[TierProfitability]
+
+    # Breakdown by platform
+    web_revenue: float
+    web_cost: float
+    web_profit: float
+    app_revenue: float
+    app_cost: float
+    app_profit: float
+
+    # Per-user averages (users who had activity in the period)
+    avg_revenue_per_paid_user: float
+    avg_cost_per_paid_user: float
+    avg_profit_per_paid_user: float
+
+    # Meta
+    period_start: str
+    period_end: str
+    total_payments: int  # Total payment transactions
+    unique_paying_users: int  # Unique users who paid in this period
+    paying_user_emails: List[str] = []  # Emails of paying users (for clickable list)
+
+
 class EngagementSummary(BaseModel):
     """User engagement metrics."""
     dau: int  # Daily Active Users (unique accounts with activity today)
@@ -2707,14 +2757,602 @@ async def get_tool_adoption(
         
         # Tool adoption rate (% of threads using any tool)
         tool_adoption_rate = (len(threads_with_tools) / total_threads * 100) if total_threads > 0 else 0.0
-        
+
         return ToolAdoptionSummary(
             total_tool_calls=total_tool_calls,
             total_threads_with_tools=len(threads_with_tools),
             top_tools=top_tools,
             tool_adoption_rate=round(tool_adoption_rate, 1),
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to get tool adoption: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get tool adoption")
+
+
+# ============================================================================
+# PROFITABILITY ENDPOINT
+# ============================================================================
+
+# Display names for tiers
+TIER_DISPLAY_NAMES: Dict[str, str] = {
+    'none': 'No Plan',
+    'free': 'Basic',
+    'tier_2_20': 'Plus',
+    'tier_6_50': 'Pro',
+    'tier_25_200': 'Ultra',
+    'tier_2_20_yearly': 'Plus (Yearly)',
+    'tier_6_50_yearly': 'Pro (Yearly)',
+    'tier_25_200_yearly': 'Ultra (Yearly)',
+    'tier_12_100': 'Legacy Pro',
+    'tier_50_400': 'Legacy Business',
+    'tier_125_800': 'Legacy Enterprise',
+    'tier_200_1000': 'Legacy Enterprise Plus',
+    'tier_150_1200': 'Legacy Enterprise Max',
+}
+
+# Token price multiplier (markup applied to LLM costs)
+from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
+
+
+def _infer_tier_from_amount(amount_cents: int) -> str:
+    """Infer tier from payment amount in cents."""
+    amount_dollars = amount_cents / 100
+    # Map common amounts to tiers (with some tolerance for cents)
+    amount_to_tier = {
+        20: 'tier_2_20',
+        50: 'tier_6_50',
+        200: 'tier_25_200',
+        # Yearly plans (full year payment)
+        204: 'tier_2_20_yearly',
+        504: 'tier_6_50_yearly',
+        2040: 'tier_25_200_yearly',
+        # Monthly equivalent for yearly commitment
+        17: 'tier_2_20_yearly',
+        42: 'tier_6_50_yearly',
+        170: 'tier_25_200_yearly',
+        # Legacy tiers
+        100: 'tier_12_100',
+        400: 'tier_50_400',
+        800: 'tier_125_800',
+        1000: 'tier_200_1000',
+        1200: 'tier_150_1200',
+    }
+    # Find closest match
+    closest = min(amount_to_tier.keys(), key=lambda x: abs(x - amount_dollars))
+    if abs(closest - amount_dollars) < 5:  # Within $5 tolerance
+        return amount_to_tier[closest]
+    return 'unknown'
+
+
+# Semaphore to limit concurrent Stripe API calls (avoid rate limiting)
+_stripe_semaphore = asyncio.Semaphore(10)
+
+
+async def _fetch_stripe_revenue_for_day(day_start_ts: int, day_end_ts: int) -> Dict[str, Any]:
+    """
+    Fetch Stripe charges for a single day.
+    Helper function for parallel fetching.
+    """
+    async with _stripe_semaphore:
+        day_results: Dict[str, Any] = {
+            'total_revenue': 0.0,
+            'payment_count': 0,
+            'by_tier': {},
+            'user_revenue': {},
+            'user_tiers': {},
+            'user_emails': {},  # customer_id -> email
+        }
+
+        try:
+            # Fetch charges for this day - single API call with limit
+            # Most days won't have more than 100 charges
+            # expand customer to get email without extra API calls
+            charges = await stripe.Charge.list_async(
+                created={'gte': day_start_ts, 'lt': day_end_ts},
+                limit=100,
+                expand=['data.customer'],
+            )
+
+            # Process all charges from the response
+            all_charges = list(charges.data)
+
+            # If there's more data, fetch additional pages (rare for single day)
+            while charges.has_more and len(all_charges) < 500:
+                charges = await stripe.Charge.list_async(
+                    created={'gte': day_start_ts, 'lt': day_end_ts},
+                    limit=100,
+                    starting_after=all_charges[-1].id,
+                    expand=['data.customer'],
+                )
+                all_charges.extend(charges.data)
+
+            for charge in all_charges:
+                if not charge.paid or charge.refunded or charge.amount <= 0:
+                    continue
+
+                amount = charge.amount / 100
+                customer = charge.customer
+                customer_id = 'unknown'
+                customer_email = None
+
+                if customer:
+                    if hasattr(customer, 'id'):
+                        # Expanded customer object
+                        customer_id = customer.id
+                        customer_email = getattr(customer, 'email', None)
+                    else:
+                        # Just the customer ID string
+                        customer_id = customer
+
+                tier = 'unknown'
+                metadata = getattr(charge, 'metadata', None) or {}
+
+                if metadata.get('type') == 'credit_purchase':
+                    tier = 'credit_purchase'
+                else:
+                    tier = metadata.get('tier', 'unknown')
+                    if tier == 'unknown':
+                        tier = _infer_tier_from_amount(charge.amount)
+
+                if tier == 'free':
+                    continue
+
+                day_results['total_revenue'] += amount
+                day_results['payment_count'] += 1
+
+                if tier not in day_results['by_tier']:
+                    day_results['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
+                day_results['by_tier'][tier]['revenue'] += amount
+                day_results['by_tier'][tier]['count'] += 1
+                day_results['by_tier'][tier]['users'].add(customer_id)
+
+                day_results['user_revenue'][customer_id] = day_results['user_revenue'].get(customer_id, 0) + amount
+                day_results['user_tiers'][customer_id] = tier
+                if customer_email:
+                    day_results['user_emails'][customer_id] = customer_email
+
+        except stripe.StripeError as e:
+            logger.error(f"Stripe API error fetching revenue for day (ts {day_start_ts}-{day_end_ts}): {e}")
+            # Re-raise so asyncio.gather can track it as a failure
+            raise
+
+        return day_results
+
+
+async def _fetch_stripe_revenue(start_ts: int, end_ts: int) -> Dict[str, Any]:
+    """
+    Fetch actual revenue from Stripe Charges for a date range.
+    Uses Charges (not Invoices) because they represent actual money collected after coupons/discounts.
+    Returns revenue by tier with customer mapping.
+
+    Optimized: Fetches daily chunks in parallel for faster performance on large date ranges.
+    """
+    stripe.api_key = config.STRIPE_SECRET_KEY
+
+    results: Dict[str, Any] = {
+        'total_revenue': 0.0,
+        'payment_count': 0,
+        'by_tier': {},
+        'user_revenue': {},
+        'user_tiers': {},
+        'user_emails': {},  # customer_id -> email
+    }
+
+    # Split into daily chunks for parallel fetching
+    day_seconds = 86400  # 24 * 60 * 60
+    daily_tasks = []
+    day_timestamps = []  # Track timestamps for logging
+    current_ts = start_ts
+
+    while current_ts < end_ts:
+        day_end = min(current_ts + day_seconds, end_ts)
+        daily_tasks.append(_fetch_stripe_revenue_for_day(current_ts, day_end))
+        day_timestamps.append((current_ts, day_end))
+        current_ts = day_end
+
+    logger.info(f"Stripe revenue: fetching {len(daily_tasks)} days in parallel (ts range: {start_ts} to {end_ts})")
+
+    # Fetch all days in parallel
+    if daily_tasks:
+        day_results_list = await asyncio.gather(*daily_tasks, return_exceptions=True)
+
+        # Retry failed days (up to 2 retries each)
+        failed_indices = []
+        for idx, day_results in enumerate(day_results_list):
+            if isinstance(day_results, Exception):
+                failed_indices.append(idx)
+
+        if failed_indices:
+            logger.warning(f"Stripe revenue: {len(failed_indices)} days failed, retrying...")
+            for retry in range(2):  # Up to 2 retries
+                if not failed_indices:
+                    break
+                retry_tasks = [_fetch_stripe_revenue_for_day(*day_timestamps[idx]) for idx in failed_indices]
+                retry_results = await asyncio.gather(*retry_tasks, return_exceptions=True)
+
+                still_failed = []
+                for i, (idx, result) in enumerate(zip(failed_indices, retry_results)):
+                    if isinstance(result, Exception):
+                        still_failed.append(idx)
+                    else:
+                        day_results_list[idx] = result
+                        logger.info(f"Stripe revenue: day {idx} succeeded on retry {retry + 1}")
+
+                failed_indices = still_failed
+                if failed_indices:
+                    await asyncio.sleep(1)  # Brief pause before next retry
+
+        # Merge results from all days
+        successful_days = 0
+        failed_days = 0
+        for idx, day_results in enumerate(day_results_list):
+            if isinstance(day_results, Exception):
+                failed_days += 1
+                ts_start, ts_end = day_timestamps[idx] if idx < len(day_timestamps) else (0, 0)
+                logger.error(f"Error fetching day {idx} revenue (ts {ts_start}-{ts_end}): {day_results}")
+                continue
+
+            successful_days += 1
+            results['total_revenue'] += day_results['total_revenue']
+            results['payment_count'] += day_results['payment_count']
+
+            # Merge by_tier
+            for tier, data in day_results['by_tier'].items():
+                if tier not in results['by_tier']:
+                    results['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
+                results['by_tier'][tier]['revenue'] += data['revenue']
+                results['by_tier'][tier]['count'] += data['count']
+                results['by_tier'][tier]['users'].update(data['users'])
+
+            # Merge user_revenue
+            for customer_id, revenue in day_results['user_revenue'].items():
+                results['user_revenue'][customer_id] = results['user_revenue'].get(customer_id, 0) + revenue
+
+            # Merge user_tiers (last tier wins for a user across days)
+            results['user_tiers'].update(day_results['user_tiers'])
+
+            # Merge user_emails
+            results['user_emails'].update(day_results.get('user_emails', {}))
+
+        logger.info(f"Stripe revenue fetch complete: {successful_days} days succeeded, {failed_days} days failed, total=${results['total_revenue']:.2f}")
+
+    return results
+
+
+async def _fetch_revenuecat_revenue(client, range_start: datetime, range_end: datetime) -> Dict[str, Any]:
+    """
+    Fetch RevenueCat revenue from webhook_events table.
+    Returns revenue by tier with user mapping.
+    """
+    results: Dict[str, Any] = {
+        'total_revenue': 0.0,
+        'payment_count': 0,
+        'by_tier': {},  # tier -> {'revenue': float, 'count': int, 'users': set}
+        'user_revenue': {},  # app_user_id -> revenue
+        'user_tiers': {},  # app_user_id -> tier
+    }
+
+    try:
+        # Fetch RevenueCat webhook events for INITIAL_PURCHASE and RENEWAL
+        # These events contain the price field
+        events_result = await client.from_('webhook_events').select(
+            'event_id, event_type, payload, created_at'
+        ).in_('event_type', ['INITIAL_PURCHASE', 'RENEWAL']).gte(
+            'created_at', range_start.isoformat()
+        ).lte(
+            'created_at', range_end.isoformat()
+        ).eq('status', 'completed').execute()
+
+        for event in (events_result.data or []):
+            payload = event.get('payload', {})
+            if not payload:
+                continue
+
+            event_data = payload.get('event', {})
+            app_user_id = event_data.get('app_user_id')
+            product_id = event_data.get('product_id', '')
+            price = event_data.get('price', 0)
+
+            # Skip anonymous users
+            if not app_user_id or app_user_id.startswith('$RCAnonymousID:'):
+                continue
+
+            if price <= 0:
+                continue
+
+            # Infer tier from product_id
+            # Known patterns: kortix_plus_monthly, plus:plus-monthly, kortix_pro_monthly, etc.
+            tier = 'unknown'
+            product_lower = product_id.lower()
+            is_yearly = 'yearly' in product_lower or 'annual' in product_lower
+
+            if 'plus' in product_lower:
+                tier = 'tier_2_20_yearly' if is_yearly else 'tier_2_20'
+            elif 'pro' in product_lower:
+                tier = 'tier_6_50_yearly' if is_yearly else 'tier_6_50'
+            elif 'ultra' in product_lower:
+                tier = 'tier_25_200_yearly' if is_yearly else 'tier_25_200'
+
+            results['total_revenue'] += price
+            results['payment_count'] += 1
+
+            # Track by tier
+            if tier not in results['by_tier']:
+                results['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
+            results['by_tier'][tier]['revenue'] += price
+            results['by_tier'][tier]['count'] += 1
+            results['by_tier'][tier]['users'].add(app_user_id)
+
+            # Track by user
+            results['user_revenue'][app_user_id] = results['user_revenue'].get(app_user_id, 0) + price
+            results['user_tiers'][app_user_id] = tier
+
+    except Exception as e:
+        logger.error(f"Error fetching RevenueCat revenue: {e}", exc_info=True)
+
+    return results
+
+
+@router.get("/profitability")
+async def get_profitability(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> ProfitabilitySummary:
+    """
+    Get profitability metrics broken down by tier and platform.
+
+    Fetches ACTUAL revenue from:
+    - Stripe: Paid invoices and credit purchases
+    - RevenueCat: Payment events from webhook_events table
+
+    Calculates:
+    - Revenue: Actual payments received in the date range
+    - Cost: Sum of LLM usage costs from credit_ledger (with markup)
+    - Actual Cost: LLM costs before markup (what we pay providers)
+    - Profit: Revenue - Actual Cost
+
+    Super admin only due to sensitive financial data.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Parse date range
+        start_date, end_date = parse_date_range(None, date_from, date_to)
+        range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        range_end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # Use UTC for Stripe queries to match Stripe dashboard analytics
+        UTC = ZoneInfo('UTC')
+        range_start_utc = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC)
+        range_end_utc = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=UTC)
+        start_ts = int(range_start_utc.timestamp())
+        end_ts = int(range_end_utc.timestamp())
+
+        # 1. Fetch actual revenue from Stripe and RevenueCat (both use UTC)
+        stripe_revenue, revenuecat_revenue = await asyncio.gather(
+            _fetch_stripe_revenue(start_ts, end_ts),
+            _fetch_revenuecat_revenue(client, range_start_utc, range_end_utc)
+        )
+
+        logger.info(f"Stripe revenue: ${stripe_revenue['total_revenue']:.2f} ({stripe_revenue['payment_count']} payments)")
+        logger.info(f"RevenueCat revenue: ${revenuecat_revenue['total_revenue']:.2f} ({revenuecat_revenue['payment_count']} payments)")
+
+        # 2. Get account tier mappings for cost attribution
+        accounts_result = await client.from_('credit_accounts').select(
+            'account_id, tier, provider'
+        ).execute()
+
+        # Build account_id -> (tier, provider) mapping
+        account_tiers: Dict[str, tuple] = {}
+
+        for acc in (accounts_result.data or []):
+            account_id = acc.get('account_id')
+            tier = acc.get('tier', 'unknown')
+            provider = acc.get('provider', 'stripe')
+            account_tiers[account_id] = (tier, provider)
+
+        # 3. Get usage costs from credit_ledger for the date range
+        usage_records = []
+        batch_size = 1000
+        offset = 0
+
+        while True:
+            usage_result = await client.from_('credit_ledger').select(
+                'account_id, amount'
+            ).eq('type', 'usage').gte(
+                'created_at', range_start_utc.isoformat()
+            ).lte(
+                'created_at', range_end_utc.isoformat()
+            ).range(offset, offset + batch_size - 1).execute()
+
+            batch = usage_result.data or []
+            usage_records.extend(batch)
+
+            if len(batch) < batch_size:
+                break
+            offset += batch_size
+
+        # Aggregate costs by account_id
+        account_costs: Dict[str, float] = {}
+        for record in usage_records:
+            account_id = record.get('account_id')
+            amount = float(record.get('amount', 0))
+            account_costs[account_id] = account_costs.get(account_id, 0) + abs(amount)
+
+        # 4. Build tier metrics combining revenue and costs
+        # Combine Stripe and RevenueCat tier data
+        all_tiers = set(stripe_revenue['by_tier'].keys()) | set(revenuecat_revenue['by_tier'].keys())
+
+        tier_metrics: Dict[str, Dict] = {}
+        for tier in all_tiers:
+            tier_metrics[tier] = {
+                'stripe_revenue': stripe_revenue['by_tier'].get(tier, {}).get('revenue', 0),
+                'stripe_count': stripe_revenue['by_tier'].get(tier, {}).get('count', 0),
+                'stripe_users': stripe_revenue['by_tier'].get(tier, {}).get('users', set()),
+                'revenuecat_revenue': revenuecat_revenue['by_tier'].get(tier, {}).get('revenue', 0),
+                'revenuecat_count': revenuecat_revenue['by_tier'].get(tier, {}).get('count', 0),
+                'revenuecat_users': revenuecat_revenue['by_tier'].get(tier, {}).get('users', set()),
+                'total_cost': 0.0,
+            }
+
+        # Assign costs to tiers based on account's current tier
+        # Also track costs for tiers not in revenue (e.g., free tier)
+        unmatched_costs = 0.0
+        for account_id, cost in account_costs.items():
+            if account_id in account_tiers:
+                tier, provider = account_tiers[account_id]
+                if tier in tier_metrics:
+                    tier_metrics[tier]['total_cost'] += cost
+                else:
+                    # Cost from tier with no revenue in this period (e.g., free tier)
+                    unmatched_costs += cost
+
+        logger.info(f"Costs assigned to tiers. Unmatched costs (free tier etc): ${unmatched_costs:.2f}")
+
+        # 5. Build profitability response
+        by_tier: List[TierProfitability] = []
+        total_revenue = 0.0
+        total_cost = 0.0
+        total_actual_cost = 0.0
+        total_payments = 0
+        all_paying_users: set = set()
+
+        web_revenue = 0.0
+        web_cost = 0.0
+        app_revenue = 0.0
+        app_cost = 0.0
+
+        for tier, metrics in tier_metrics.items():
+            # Calculate totals for this tier
+            stripe_rev = metrics['stripe_revenue']
+            rc_rev = metrics['revenuecat_revenue']
+            tier_revenue = stripe_rev + rc_rev
+            cost_with_markup = metrics['total_cost']
+
+            stripe_count = metrics['stripe_count']
+            rc_count = metrics['revenuecat_count']
+            payment_count = stripe_count + rc_count
+
+            stripe_users = metrics['stripe_users']
+            rc_users = metrics['revenuecat_users']
+            unique_users = len(stripe_users | rc_users)
+
+            display_name = TIER_DISPLAY_NAMES.get(tier, tier)
+            if tier == 'credit_purchase':
+                display_name = 'Credit Purchases'
+
+            # Calculate actual cost (remove markup)
+            actual_cost = float(cost_with_markup / float(TOKEN_PRICE_MULTIPLIER))
+
+            # Calculate profit
+            gross_profit = tier_revenue - actual_cost
+            gross_margin = (gross_profit / tier_revenue * 100) if tier_revenue > 0 else 0.0
+
+            # Per-user averages
+            avg_cost = cost_with_markup / unique_users if unique_users > 0 else 0.0
+            avg_revenue = tier_revenue / unique_users if unique_users > 0 else 0.0
+            avg_profit = gross_profit / unique_users if unique_users > 0 else 0.0
+
+            # Determine primary provider for this tier entry
+            provider = 'stripe' if stripe_rev >= rc_rev else 'revenuecat'
+
+            # Add separate entries for each provider if both have data
+            if stripe_rev > 0:
+                by_tier.append(TierProfitability(
+                    tier=tier,
+                    display_name=display_name,
+                    provider='stripe',
+                    payment_count=stripe_count,
+                    unique_users=len(stripe_users),
+                    total_revenue=round(stripe_rev, 2),
+                    total_cost=round(cost_with_markup * (stripe_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
+                    total_actual_cost=round(actual_cost * (stripe_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
+                    gross_profit=round(stripe_rev - (actual_cost * (stripe_rev / tier_revenue) if tier_revenue > 0 else 0), 2),
+                    gross_margin_percent=round(gross_margin, 1),
+                    avg_cost_per_user=round(avg_cost, 2),
+                    avg_revenue_per_user=round(stripe_rev / len(stripe_users) if stripe_users else 0, 2),
+                    avg_profit_per_user=round(avg_profit, 2),
+                ))
+                web_revenue += stripe_rev
+
+            if rc_rev > 0:
+                by_tier.append(TierProfitability(
+                    tier=tier,
+                    display_name=display_name,
+                    provider='revenuecat',
+                    payment_count=rc_count,
+                    unique_users=len(rc_users),
+                    total_revenue=round(rc_rev, 2),
+                    total_cost=round(cost_with_markup * (rc_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
+                    total_actual_cost=round(actual_cost * (rc_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
+                    gross_profit=round(rc_rev - (actual_cost * (rc_rev / tier_revenue) if tier_revenue > 0 else 0), 2),
+                    gross_margin_percent=round(gross_margin, 1),
+                    avg_cost_per_user=round(avg_cost, 2),
+                    avg_revenue_per_user=round(rc_rev / len(rc_users) if rc_users else 0, 2),
+                    avg_profit_per_user=round(avg_profit, 2),
+                ))
+                app_revenue += rc_rev
+
+            # Aggregate totals
+            total_revenue += tier_revenue
+            total_cost += cost_with_markup
+            total_actual_cost += actual_cost
+            total_payments += payment_count
+            all_paying_users.update(stripe_users)
+            all_paying_users.update(rc_users)
+
+        # Calculate web/app costs proportionally
+        if total_revenue > 0:
+            web_cost = total_actual_cost * (web_revenue / total_revenue)
+            app_cost = total_actual_cost * (app_revenue / total_revenue)
+
+        # Sort by revenue descending
+        by_tier.sort(key=lambda x: x.total_revenue, reverse=True)
+
+        # Calculate totals
+        total_gross_profit = total_revenue - total_actual_cost
+        total_margin = (total_gross_profit / total_revenue * 100) if total_revenue > 0 else 0.0
+
+        unique_paying_users = len(all_paying_users)
+        avg_revenue_per_user = total_revenue / unique_paying_users if unique_paying_users > 0 else 0.0
+        avg_cost_per_user = total_cost / unique_paying_users if unique_paying_users > 0 else 0.0
+        avg_profit_per_user = total_gross_profit / unique_paying_users if unique_paying_users > 0 else 0.0
+
+        # Collect emails from Stripe customers
+        stripe_user_emails = stripe_revenue.get('user_emails', {})
+        paying_user_emails = [
+            email for customer_id, email in stripe_user_emails.items()
+            if email and customer_id in all_paying_users
+        ]
+        # Sort by email for consistency
+        paying_user_emails.sort()
+
+        return ProfitabilitySummary(
+            total_revenue=round(total_revenue, 2),
+            total_cost=round(total_cost, 2),
+            total_actual_cost=round(total_actual_cost, 2),
+            gross_profit=round(total_gross_profit, 2),
+            gross_margin_percent=round(total_margin, 1),
+            by_tier=by_tier,
+            web_revenue=round(web_revenue, 2),
+            web_cost=round(web_cost, 2),
+            web_profit=round(web_revenue - web_cost, 2),
+            app_revenue=round(app_revenue, 2),
+            app_cost=round(app_cost, 2),
+            app_profit=round(app_revenue - app_cost, 2),
+            avg_revenue_per_paid_user=round(avg_revenue_per_user, 2),
+            avg_cost_per_paid_user=round(avg_cost_per_user, 2),
+            avg_profit_per_paid_user=round(avg_profit_per_user, 2),
+            period_start=range_start.strftime('%Y-%m-%d'),
+            period_end=range_end.strftime('%Y-%m-%d'),
+            total_payments=total_payments,
+            unique_paying_users=unique_paying_users,
+            paying_user_emails=paying_user_emails,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get profitability: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get profitability data")

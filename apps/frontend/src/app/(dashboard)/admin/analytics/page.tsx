@@ -22,6 +22,7 @@ import {
   CreditCard,
   Zap,
   CheckCircle2,
+  DollarSign,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Calendar } from '@/components/ui/calendar';
@@ -36,6 +37,7 @@ import {
   useConversionFunnel,
   useEngagementSummary,
   useTaskPerformance,
+  useProfitability,
   type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
 import { AdminUserTable } from '@/components/admin/admin-user-table';
@@ -150,10 +152,11 @@ export default function AdminAnalyticsPage() {
   // Executive Overview data hooks
   const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateFromString, dateToString);
   const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateFromString, dateToString);
+  const { data: profitability, isLoading: profitabilityLoading, isFetching: profitabilityFetching } = useProfitability(dateFromString, dateToString);
 
   // Combined fetching state for the Daily Analytics card
   const isDailyAnalyticsFetching = distributionFetching || categoryFetching || tierFetching || funnelFetching;
-  const isOverviewFetching = engagementFetching || taskFetching;
+  const isOverviewFetching = engagementFetching || taskFetching || profitabilityFetching;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
@@ -558,6 +561,155 @@ export default function AdminAnalyticsPage() {
                     <div className="text-center py-4 text-muted-foreground text-sm">
                       <Zap className="h-5 w-5 mx-auto mb-1 opacity-50" />
                       Task data unavailable
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Profitability Card - Simplified */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <DollarSign className="h-4 w-4" />
+                    Profitability
+                  </CardTitle>
+                  <CardDescription className="flex items-center gap-1">
+                    {dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
+                      ? format(dateRange.from, 'MMM d')
+                      : dateRange.from && dateRange.to
+                        ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d')}`
+                        : ''
+                    } ·{' '}
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="text-primary hover:underline cursor-pointer">
+                          {profitability?.unique_paying_users || 0} paying users
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-80 max-h-64 overflow-y-auto">
+                        <div className="space-y-2">
+                          <h4 className="font-medium text-sm">Paying User Emails</h4>
+                          {profitability?.paying_user_emails && profitability.paying_user_emails.length > 0 ? (
+                            <ul className="space-y-1">
+                              {profitability.paying_user_emails.map((email, idx) => (
+                                <li key={idx} className="text-sm flex items-center gap-2">
+                                  <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
+                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No paying user emails for this period</p>
+                          )}
+                        </div>
+                      </PopoverContent>
+                    </Popover>
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {profitabilityLoading ? (
+                    <div className="space-y-3">
+                      <Skeleton className="h-20" />
+                      <Skeleton className="h-32" />
+                    </div>
+                  ) : profitability ? (
+                    <div className="space-y-5">
+                      {/* Hero Profit Number */}
+                      <div className="text-center py-2">
+                        <div className="text-3xl font-bold text-green-600">
+                          ${profitability.gross_profit.toLocaleString()}
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Net Profit · {profitability.gross_margin_percent}% margin
+                        </p>
+                      </div>
+
+                      {/* Revenue & Cost Summary */}
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">Revenue</span>
+                            <span className="text-sm font-semibold">${profitability.total_revenue.toLocaleString()}</span>
+                          </div>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div className="h-full bg-green-500 rounded-full" style={{ width: '100%' }} />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-muted-foreground">Cost</span>
+                            <span className="text-sm font-semibold">${profitability.total_actual_cost.toLocaleString()}</span>
+                          </div>
+                          <div className="h-2 bg-muted rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-red-400 rounded-full"
+                              style={{ width: `${Math.min(100, (profitability.total_actual_cost / profitability.total_revenue) * 100)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Per User - Simple */}
+                      <div className="bg-muted/40 rounded-lg p-3">
+                        <div className="text-xs font-medium text-muted-foreground mb-2">Per Paying User</div>
+                        <div className="grid grid-cols-3 gap-4 text-center">
+                          <div>
+                            <div className="text-lg font-bold">${profitability.avg_revenue_per_paid_user.toFixed(0)}</div>
+                            <div className="text-xs text-muted-foreground">Revenue</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-bold">${profitability.avg_cost_per_paid_user.toFixed(2)}</div>
+                            <div className="text-xs text-muted-foreground">Cost</div>
+                          </div>
+                          <div>
+                            <div className="text-lg font-bold text-green-600">${profitability.avg_profit_per_paid_user.toFixed(0)}</div>
+                            <div className="text-xs text-muted-foreground">Profit</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* By Tier - With Cost & Profit */}
+                      {profitability.by_tier && profitability.by_tier.length > 0 && (
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground mb-2">Profitability by Plan</div>
+                          {/* Header */}
+                          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1 px-1">
+                            <div className="flex-1">Plan</div>
+                            <div className="w-16 text-right">Revenue</div>
+                            <div className="w-14 text-right">Cost</div>
+                            <div className="w-16 text-right">Profit</div>
+                            <div className="w-12 text-right">Margin</div>
+                          </div>
+                          <div className="space-y-1">
+                            {profitability.by_tier.map((tier, idx) => (
+                              <div key={idx} className="flex items-center gap-2 py-1 px-1 rounded hover:bg-muted/30">
+                                <div className="flex-1 flex items-center gap-1">
+                                  <span className="text-sm">{tier.display_name}</span>
+                                  <span className="text-xs text-muted-foreground">
+                                    {tier.provider === 'stripe' ? '(Web)' : '(App)'}
+                                  </span>
+                                </div>
+                                <div className="w-16 text-sm text-right">${tier.total_revenue.toLocaleString()}</div>
+                                <div className="w-14 text-sm text-right text-muted-foreground">${tier.total_actual_cost.toLocaleString()}</div>
+                                <div className="w-16 text-sm text-right text-green-600">${tier.gross_profit.toLocaleString()}</div>
+                                <div className="w-12 text-xs text-right text-muted-foreground">{tier.gross_margin_percent}%</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Platform Split - Minimal */}
+                      <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground pt-2 border-t">
+                        <span>Web: ${profitability.web_revenue.toLocaleString()}</span>
+                        <span>·</span>
+                        <span>App: ${profitability.app_revenue.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 text-muted-foreground text-sm">
+                      <DollarSign className="h-5 w-5 mx-auto mb-1 opacity-50" />
+                      No profitability data available
                     </div>
                   )}
                 </CardContent>
