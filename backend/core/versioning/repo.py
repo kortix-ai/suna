@@ -20,15 +20,27 @@ async def check_agent_access(agent_id: str, user_id: str) -> Dict[str, bool]:
 
 
 async def get_next_version_number(agent_id: str) -> int:
-    sql = """
-    SELECT version_number
+    sql_update = """
+    UPDATE agents 
+    SET version_count = COALESCE(version_count, 0) + 1 
+    WHERE agent_id = :agent_id
+    RETURNING version_count
+    """
+    
+    try:
+        result = await execute_one(sql_update, {"agent_id": agent_id}, commit=True)
+        if result:
+            return result["version_count"]
+    except Exception:
+        pass
+    
+    sql_fallback = """
+    SELECT COALESCE(MAX(version_number), 0) + 1 as next_version
     FROM agent_versions
     WHERE agent_id = :agent_id
-    ORDER BY version_number DESC
-    LIMIT 1
     """
-    result = await execute_one(sql, {"agent_id": agent_id})
-    return (result["version_number"] + 1) if result else 1
+    result = await execute_one(sql_fallback, {"agent_id": agent_id})
+    return result["next_version"] if result else 1
 
 
 async def count_agent_versions(agent_id: str) -> int:
