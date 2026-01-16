@@ -304,20 +304,14 @@ async def update_agent(
             try:
                 print(f"[DEBUG] update_agent DB UPDATE: About to update agent {agent_id} with data: {update_data}")
                 
-                success = await agents_repo.update_agent_fields(
-                    agent_id, user_id,
-                    name=update_data.get("name"),
-                    is_default=update_data.get("is_default"),
-                    icon_name=update_data.get("icon_name"),
-                    icon_color=update_data.get("icon_color"),
-                    icon_background=update_data.get("icon_background"),
-                    current_version_id=update_data.get("current_version_id"),
-                    version_count=update_data.get("version_count")
+                success = await agents_repo.update_agent(
+                    agent_id,
+                    user_id, 
+                    update_data
                 )
                 
-                # Debug logging after DB update
                 if config.ENV_MODE == EnvMode.STAGING:
-                    print(f"[DEBUG] update_agent DB UPDATE SUCCESS: {success}")
+                    print(f"[DEBUG] update_agent DB UPDATE SUCCESS: {success is not None}")
                 
                 if not success:
                     raise HTTPException(status_code=500, detail="Failed to update agent - no rows affected")
@@ -327,16 +321,12 @@ async def update_agent(
                     print(f"[DEBUG] update_agent DB UPDATE ERROR: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
         
-        updated_agent = await agents_repo.get_agent_by_id_and_account(agent_id, user_id)
+        updated_agent = await agents_repo.get_agent_by_id(agent_id, user_id)
         
         if not updated_agent:
             raise HTTPException(status_code=500, detail="Failed to fetch updated agent")
         
         agent = updated_agent
-        
-        print(f"[DEBUG] update_agent AFTER UPDATE FETCH: agent_id={agent.get('agent_id')}")
-        print(f"[DEBUG] update_agent AFTER UPDATE FETCH: icon_name={agent.get('icon_name')}, icon_color={agent.get('icon_color')}, icon_background={agent.get('icon_background')}")
-        print(f"[DEBUG] update_agent AFTER UPDATE FETCH: All keys in agent: {agent.keys()}")
         
         current_version = None
         if agent.get('current_version_id'):
