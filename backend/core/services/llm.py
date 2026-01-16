@@ -154,7 +154,7 @@ def _save_debug_input(params: Dict[str, Any]) -> None:
         debug_file = debug_dir / f"input_{timestamp}.json"
         
         debug_data = {k: params.get(k) for k in 
-            ["model", "messages", "temperature", "max_tokens", "stop", "stream", "tools", "tool_choice"]}
+            ["model", "messages", "temperature", "max_tokens", "stop", "stream", "tools", "tool_choice", "frequency_penalty"]}
         debug_data["timestamp"] = timestamp
         
         with open(debug_file, 'w', encoding='utf-8') as f:
@@ -193,6 +193,7 @@ async def make_llm_api_call(
     headers: Optional[Dict[str, str]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
     stop: Optional[List[str]] = None,
+    frequency_penalty: Optional[float] = 0.2,
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     messages = _strip_internal_properties(messages)
     
@@ -228,6 +229,7 @@ async def make_llm_api_call(
     if stop is not None: override_params["stop"] = stop
     if headers is not None: override_params["headers"] = headers
     if extra_headers is not None: override_params["extra_headers"] = extra_headers
+    if frequency_penalty is not None: override_params["frequency_penalty"] = frequency_penalty
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
