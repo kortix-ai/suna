@@ -433,9 +433,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   useEffect(() => {
     if (!isNewThread || hasDataLoaded.current || !showOptimisticUI) return;
     
-    const timeoutId = setTimeout(() => {
+    const hardTimeoutId = setTimeout(() => {
       if (!hasDataLoaded.current && showOptimisticUI) {
-        console.warn('[ThreadComponent] Polling timeout reached, no agent detected after 30s');
+        console.warn('[ThreadComponent] Hard timeout reached, no agent detected after 30s');
         hasDataLoaded.current = true;
         setShowOptimisticUI(false);
         if (typeof window !== 'undefined') {
@@ -449,8 +449,31 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
     }, 30000);
     
-    return () => clearTimeout(timeoutId);
+    return () => clearTimeout(hardTimeoutId);
   }, [isNewThread, showOptimisticUI]);
+
+  // Soft fallback: if initialLoadCompleted is true and we have messages but no stream content after 5s,
+  // transition anyway to prevent stuck states (e.g., if stream connection failed silently)
+  useEffect(() => {
+    if (!isNewThread || !showOptimisticUI || !initialLoadCompleted) return;
+    
+    const softTimeoutId = setTimeout(() => {
+      if (showOptimisticUI && initialLoadCompleted && messages.length > 0) {
+        console.log('[ThreadComponent] Soft fallback: transitioning after initialLoadCompleted with messages');
+        hasDataLoaded.current = true;
+        setShowOptimisticUI(false);
+        if (typeof window !== 'undefined') {
+          const url = new URL(window.location.href);
+          if (url.searchParams.get('new') === 'true') {
+            url.searchParams.delete('new');
+            window.history.replaceState({}, '', url.pathname + url.search);
+          }
+        }
+      }
+    }, 5000);
+    
+    return () => clearTimeout(softTimeoutId);
+  }, [isNewThread, showOptimisticUI, initialLoadCompleted, messages.length]);
 
   const retryAttemptedRef = useRef(false);
   useEffect(() => {
@@ -1070,22 +1093,75 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     (!!streamingTextContent && streamingTextContent.length > 0) ||
     toolCalls.length > 0;
   
-  const shouldHideOptimisticUI = hasStreamedContent || (isNewThread 
-    ? (agentRunId && initialLoadCompleted)
-    : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted));
+  // CRITICAL: For new threads, immediately check StreamPreconnect for agentRunId and start streaming
+  // This bypasses the delay from useThreadData polling and ensures stream content appears immediately
+  const earlyStreamStartedRef = useRef(false);
+  useEffect(() => {
+    if (!isNewThread || !showOptimisticUI || earlyStreamStartedRef.current || currentHookRunId) {
+      return;
+    }
+
+    // Check StreamPreconnect service for pre-connected stream
+    const checkAndStartStream = () => {
+      const preconnectService = getStreamPreconnectService();
+      const preconnectAgentRunId = preconnectService.getAgentRunIdForThread(threadId);
+      
+      if (preconnectAgentRunId && !earlyStreamStartedRef.current) {
+        console.log('[ThreadComponent] Early stream start from StreamPreconnect:', preconnectAgentRunId);
+        earlyStreamStartedRef.current = true;
+        lastStreamStartedRef.current = preconnectAgentRunId;
+        
+        // Set agent status immediately
+        setAgentRunId(preconnectAgentRunId);
+        setAgentStatus('running');
+        
+        // Start streaming - this will adopt the pre-connected stream and process buffered messages
+        startStreaming(preconnectAgentRunId);
+        return true;
+      }
+      return false;
+    };
+
+    // Check immediately
+    if (checkAndStartStream()) {
+      return;
+    }
+
+    // Poll frequently to catch the stream as soon as it's available
+    let pollCount = 0;
+    const maxPolls = 100; // 5 seconds at 50ms intervals
+    
+    const pollInterval = setInterval(() => {
+      pollCount++;
+      if (checkAndStartStream() || pollCount >= maxPolls) {
+        clearInterval(pollInterval);
+      }
+    }, 50);
+
+    return () => clearInterval(pollInterval);
+  }, [isNewThread, showOptimisticUI, threadId, currentHookRunId, startStreaming, setAgentRunId, setAgentStatus]);
+
+  // For new threads, transition is purely content-driven (stream content triggers transition)
+  // For existing threads, also consider initialLoadCompleted
+  const shouldHideOptimisticUI = isNewThread 
+    ? hasStreamedContent  // New threads: only hide when we have actual streamed content
+    : hasStreamedContent || (initialLoadCompleted && (!!agentRunId || messages.length > 0));
 
   // Track if we've already handled the optimistic -> real transition to prevent flicker
   const optimisticTransitionHandledRef = useRef(false);
   
   useEffect(() => {
-    if (shouldHideOptimisticUI && showOptimisticUI && !optimisticTransitionHandledRef.current) {
-      optimisticTransitionHandledRef.current = true;
-      if (!isMobile && !compact) {
-        setIsSidePanelOpen(true);
+    // If we have any content (streamed or loaded), immediately hide optimistic UI
+    if (showOptimisticUI && (shouldHideOptimisticUI || hasStreamedContent)) {
+      if (!optimisticTransitionHandledRef.current) {
+        optimisticTransitionHandledRef.current = true;
+        if (!isMobile && !compact) {
+          setIsSidePanelOpen(true);
+        }
+        setShowOptimisticUI(false);
       }
-      setShowOptimisticUI(false);
     }
-  }, [shouldHideOptimisticUI, showOptimisticUI]);
+  }, [shouldHideOptimisticUI, showOptimisticUI, hasStreamedContent, isMobile, compact]);
 
   const handleSubmitMessage = useCallback(
     async (
@@ -1313,86 +1389,38 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   ]);
 
   useEffect(() => {
-    if (isNewThread && !agentRunId && !initialLoadCompleted) {
-      try {
-        const preconnectService = getStreamPreconnectService();
-        const pendingRunId = preconnectService.getAgentRunIdForThread(threadId);
-        if (pendingRunId) {
-          console.log('[ThreadComponent] Found pending pre-connected run:', pendingRunId);
-          setAgentRunId(pendingRunId);
-          setAgentStatus('running');
-          startStreaming(pendingRunId);
-          lastStreamStartedRef.current = pendingRunId;
-        }
-      } catch (e) {
-      }
-    }
-  }, [isNewThread, agentRunId, initialLoadCompleted, threadId, startStreaming, setAgentRunId, setAgentStatus]);
+    if (!agentRunId) return;
 
-  useEffect(() => {
-    if (isNewThread && !agentRunId && !initialLoadCompleted) {
-      try {
-        const preconnectService = getStreamPreconnectService();
-        const pendingRunId = preconnectService.getAgentRunIdForThread(threadId);
-        if (pendingRunId) {
-          console.log('[ThreadComponent] Found pending pre-connected run:', pendingRunId);
-          setAgentRunId(pendingRunId);
-          setAgentStatus('running');
-          startStreaming(pendingRunId);
-          lastStreamStartedRef.current = pendingRunId;
-        }
-      } catch (e) {
-      }
-    }
-  }, [isNewThread, agentRunId, initialLoadCompleted, threadId, startStreaming, setAgentRunId, setAgentStatus]);
-
-  useEffect(() => {
-    if (agentRunId && lastStreamStartedRef.current === agentRunId) {
-      return;
-    }
-
+    if (currentHookRunId === agentRunId) return;
+    if (streamHookStatus === 'connecting' && currentHookRunId === agentRunId) return;
     const shouldAutoStart = userInitiatedRun || isNewThread;
-
-    // Debug logging for stream connection
-    if (process.env.NODE_ENV !== 'production' && agentRunId) {
-      console.log('[ThreadComponent] Stream effect triggered:', {
-        agentRunId,
-        currentHookRunId,
-        shouldAutoStart,
-        userInitiatedRun,
-        isNewThread,
-        initialLoadCompleted,
-        agentStatus,
-      });
-    }
-
-    if (agentRunId && agentRunId !== currentHookRunId && shouldAutoStart) {
-      console.log('[ThreadComponent] Starting stream for new thread:', agentRunId);
-      startStreaming(agentRunId);
+    
+    if (shouldAutoStart) {
+      if (lastStreamStartedRef.current === agentRunId) return;
+      
+      console.log('[ThreadComponent] Starting stream for new/user action:', agentRunId);
       lastStreamStartedRef.current = agentRunId;
+      startStreaming(agentRunId);
       setUserInitiatedRun(false);
       return;
     }
 
-    if (
-      agentRunId &&
-      agentRunId !== currentHookRunId &&
-      initialLoadCompleted &&
-      !shouldAutoStart &&
-      agentStatus === 'running'
-    ) {
-      console.log('[ThreadComponent] Starting stream for existing thread:', agentRunId);
-      startStreaming(agentRunId);
+    if (initialLoadCompleted && agentStatus === 'running') {
+      if (lastStreamStartedRef.current === agentRunId) return;
+
+      console.log('[ThreadComponent] Resuming stream for existing thread:', agentRunId);
       lastStreamStartedRef.current = agentRunId;
+      startStreaming(agentRunId);
     }
   }, [
     agentRunId,
-    startStreaming,
     currentHookRunId,
-    initialLoadCompleted,
+    streamHookStatus,
+    startStreaming,
     userInitiatedRun,
-    agentStatus,
     isNewThread,
+    initialLoadCompleted,
+    agentStatus
   ]);
 
   useEffect(() => {
@@ -1411,6 +1439,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   useEffect(() => {
     lastStreamStartedRef.current = null;
+    earlyStreamStartedRef.current = false;
   }, [threadId]);
 
   useEffect(() => {
@@ -1588,10 +1617,28 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }];
   }, [showOptimisticUI, optimisticPrompt, threadId]);
 
-  const displayMessages = showOptimisticUI ? optimisticMessages : messages;
-  const displayAgentStatus = showOptimisticUI ? 'running' : agentStatus;
-  const displayStreamHookStatus = showOptimisticUI ? 'connecting' : streamHookStatus;
-  const displayStreamingText = showOptimisticUI ? '' : streamingTextContent;
+  // Hybrid display mode: during optimistic UI, show optimistic user message + any streamed messages
+  // This allows stream content to appear immediately while still showing the optimistic state
+  const displayMessages = useMemo(() => {
+    if (showOptimisticUI) {
+      // Filter out any user messages from the stream that match the optimistic prompt
+      // to avoid duplicates when the real user message arrives
+      const streamedNonUserMessages = messages.filter(m => 
+        m.type !== 'user' || m.message_id !== 'optimistic-user'
+      );
+      
+      // Combine optimistic user message with any streamed assistant/tool messages
+      return [...optimisticMessages, ...streamedNonUserMessages];
+    }
+    return messages;
+  }, [showOptimisticUI, optimisticMessages, messages]);
+
+  const displayAgentStatus = showOptimisticUI ? (agentStatus === 'idle' ? 'running' : agentStatus) : agentStatus;
+  const displayStreamHookStatus = showOptimisticUI 
+    ? (streamHookStatus === 'idle' ? 'connecting' : streamHookStatus) 
+    : streamHookStatus;
+  // CRITICAL: Show streaming content even during optimistic UI - this is the key fix
+  const displayStreamingText = streamingTextContent;
   const displayProjectName = showOptimisticUI ? 'New Conversation' : projectName;
   
   // Create a map of filename -> localUrl for optimistic file previews
@@ -1716,7 +1763,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           disableInitialAnimation={showOptimisticUI || isNewThread || (!initialLoadCompleted && toolCalls.length > 0)}
           compact={true}
           streamingTextContent={isShared ? '' : displayStreamingText}
-          streamingToolCall={isShared || showOptimisticUI ? undefined : streamingToolCall}
+          streamingToolCall={isShared ? undefined : streamingToolCall}
           modeStarter={modeStarter}
           onModeStarterAction={handleModeStarterAction}
           onModeStarterTemplate={handleModeStarterTemplate}
@@ -1731,7 +1778,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               <ThreadContent
                 messages={isShared ? playback.playbackState.visibleMessages : displayMessages}
                 streamingTextContent={isShared ? '' : displayStreamingText}
-                streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
+                streamingToolCall={isShared ? playback.playbackState.currentToolCall : streamingToolCall}
                 agentStatus={displayAgentStatus}
                 handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
                 handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
@@ -1891,7 +1938,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         chatInput={chatInputElement}
         leftSidebarState={leftSidebarState}
         streamingTextContent={isShared ? '' : displayStreamingText}
-        streamingToolCall={isShared || showOptimisticUI ? undefined : streamingToolCall}
+        streamingToolCall={isShared ? undefined : streamingToolCall}
         modeStarter={modeStarter}
         onModeStarterAction={handleModeStarterAction}
         onModeStarterTemplate={handleModeStarterTemplate}
@@ -1902,7 +1949,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           messages={isShared ? playback.playbackState.visibleMessages : displayMessages}
           streamingTextContent={isShared ? '' : displayStreamingText}
           streamingReasoningContent={isShared ? '' : streamingReasoningContent}
-          streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
+          streamingToolCall={isShared ? playback.playbackState.currentToolCall : streamingToolCall}
           agentStatus={displayAgentStatus}
           handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
           handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
