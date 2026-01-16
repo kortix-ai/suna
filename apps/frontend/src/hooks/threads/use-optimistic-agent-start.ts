@@ -158,10 +158,20 @@ export function useOptimisticAgentStart(
     const projectId = crypto.randomUUID();
 
     try {
-      // Store optimistic data for the thread component to pick up
-      // Backend will build file references from staged files
       sessionStorage.setItem('optimistic_prompt', message);
       sessionStorage.setItem('optimistic_thread', threadId);
+      
+      const pendingIntent = {
+        threadId,
+        projectId,
+        prompt: message,
+        fileIds: fileIds.length > 0 ? fileIds : undefined,
+        modelName,
+        agentId: agentId || undefined,
+        mode,
+        createdAt: Date.now(),
+      };
+      localStorage.setItem('pending_thread_intent', JSON.stringify(pendingIntent));
 
       if (process.env.NODE_ENV !== 'production') {
         console.log('[OptimisticAgentStart] Starting new thread:', {
@@ -175,8 +185,6 @@ export function useOptimisticAgentStart(
         });
       }
 
-      // Navigate immediately for optimistic UX
-      // Always add ?new=true so ThreadComponent knows to show optimistic UI instead of skeleton
       const queryParams = new URLSearchParams();
       queryParams.set('new', 'true');
       if (modeStarter) {
@@ -184,7 +192,6 @@ export function useOptimisticAgentStart(
       }
       router.push(`/projects/${projectId}/thread/${threadId}?${queryParams.toString()}`);
 
-      // Start agent in background - only pass file_ids, backend handles everything
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
@@ -195,6 +202,9 @@ export function useOptimisticAgentStart(
         mode: mode,
       }).then(async (response) => {
         console.log('[OptimisticAgentStart] API succeeded, response:', response);
+        
+        // Clear pending intent - thread was successfully created
+        localStorage.removeItem('pending_thread_intent');
         
         // Store agent_run_id so thread page can use it immediately (no polling needed)
         if (response.agent_run_id) {
@@ -234,6 +244,20 @@ export function useOptimisticAgentStart(
       }).catch((error) => {
         console.error('[OptimisticAgentStart] Background agent start failed:', error);
         setIsStarting(false);
+        
+        // Clear pending intent on billing/limit errors (user action required)
+        // Keep it for network errors so retry can happen
+        const isBillingOrLimitError = 
+          error instanceof BillingError || 
+          error?.status === 402 ||
+          error instanceof AgentRunLimitError ||
+          error instanceof ProjectLimitError ||
+          error instanceof ThreadLimitError ||
+          error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED';
+        
+        if (isBillingOrLimitError) {
+          localStorage.removeItem('pending_thread_intent');
+        }
         
         if (error instanceof BillingError || error?.status === 402) {
           handleBillingError(error as BillingError);

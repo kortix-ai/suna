@@ -706,6 +706,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
     if (streamingTextContent || streamingToolCall) return false;
+    // Don't show loader if we have reasoning content streaming
+    if (streamingReasoningContent && streamingReasoningContent.trim().length > 0) return false;
     // Don't show loader if we have ask/complete text
     if (askCompleteText) return false;
     if (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
@@ -730,6 +732,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     readOnly,
     agentStatus,
     streamingTextContent,
+    streamingReasoningContent,
     streamingToolCall,
     streamHookStatus,
     group.messages,

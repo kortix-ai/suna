@@ -77,7 +77,10 @@ class PipelineCoordinator:
                     chunk_count += 1
                     yield chunk
                     
-                    if self._should_auto_continue(chunk, auto_state, max_auto_continues):
+                    should_continue, should_terminate = self._check_auto_continue(chunk, auto_state, max_auto_continues)
+                    if should_terminate:
+                        auto_state.active = False
+                    elif should_continue:
                         auto_state.active = True
                 
                 iteration_time_ms = (time.time() - iteration_start) * 1000
@@ -373,16 +376,35 @@ class PipelineCoordinator:
         elif isinstance(llm_response, dict):
             yield llm_response
     
-    def _should_auto_continue(
+    def _check_auto_continue(
         self,
         chunk: Dict[str, Any],
         auto_state: AutoContinueState,
         max_continues: int
-    ) -> bool:
+    ) -> tuple[bool, bool]:
+        """
+        Check if the pipeline should auto-continue or terminate.
+        
+        Returns:
+            tuple[bool, bool]: (should_continue, should_terminate)
+            - should_continue: True if we should continue to next iteration
+            - should_terminate: True if we should forcefully stop (terminating tool called)
+        """
         if auto_state.count >= max_continues:
-            return False
+            return False, False
         
         if chunk.get('type') == 'status':
+            metadata = chunk.get('metadata', {})
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except:
+                    metadata = {}
+            
+            if metadata.get('agent_should_terminate'):
+                logger.debug("🛑 [PIPELINE] Auto-continue disabled: agent_should_terminate flag set")
+                return False, True
+            
             content = chunk.get('content', {})
             if isinstance(content, str):
                 try:
@@ -392,13 +414,18 @@ class PipelineCoordinator:
             
             finish_reason = content.get('finish_reason') if isinstance(content, dict) else None
             
+            function_name = content.get('function_name') if isinstance(content, dict) else None
+            if function_name in ('ask', 'complete'):
+                logger.debug(f"🛑 [PIPELINE] Auto-continue disabled: terminating tool '{function_name}' was called")
+                return False, True
+            
             if finish_reason in ('tool_calls', 'length'):
-                return True
+                return True, False
             
             if finish_reason in ('stop', 'agent_terminated'):
-                return False
+                return False, False
         
-        return False
+        return False, False
     
     def _log_prep_timing(self, result: PrepResult) -> None:
         parts = []

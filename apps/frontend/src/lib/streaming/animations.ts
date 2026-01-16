@@ -2,7 +2,9 @@
 
 import { useRef, useSyncExternalStore, useEffect, useLayoutEffect } from 'react';
 
-const CHARS_PER_SECOND = 300;
+const SMOOTH_STREAMING_ENABLED = false;
+
+const CHARS_PER_SECOND = 600;
 const MS_PER_CHAR = 1000 / CHARS_PER_SECOND;
 
 class SmoothStreamStore {
@@ -149,6 +151,10 @@ export function useSmoothStream(
   enabled: boolean = true,
   _speed?: number
 ): string {
+  if (!SMOOTH_STREAMING_ENABLED) {
+    return text;
+  }
+
   const storeRef = useRef<SmoothStreamStore | null>(null);
   
   if (!storeRef.current) {

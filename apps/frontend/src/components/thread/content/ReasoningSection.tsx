@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
@@ -12,7 +12,21 @@ interface ReasoningSectionProps {
 }
 
 export function ReasoningSection({ content, className, isStreaming = false }: ReasoningSectionProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
+  // Auto-expand when streaming starts, user can still collapse manually
+  const [isExpanded, setIsExpanded] = useState(isStreaming);
+  const [hasAutoExpanded, setHasAutoExpanded] = useState(false);
+  
+  // Auto-expand when streaming starts (only once per stream)
+  useEffect(() => {
+    if (isStreaming && !hasAutoExpanded) {
+      setIsExpanded(true);
+      setHasAutoExpanded(true);
+    }
+    // Reset the flag when streaming stops so next stream can auto-expand
+    if (!isStreaming) {
+      setHasAutoExpanded(false);
+    }
+  }, [isStreaming, hasAutoExpanded]);
   
   // User controls expansion manually - no auto-expand
   // Section appears immediately when streaming starts, user can expand/collapse as needed

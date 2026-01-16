@@ -13,6 +13,7 @@ import {
   ProjectLimitError, 
   BillingError 
 } from '@/lib/api/errors';
+import { optimisticAgentStart } from '@/lib/api/agents';
 import { toast } from '@/lib/toast';
 import { ChatInput, ChatInputHandles } from '@/components/thread/chat-input/chat-input';
 import { SidebarContext } from '@/components/ui/sidebar';
@@ -303,6 +304,8 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   useEffect(() => {
     if (isNewThread && !hasDataLoaded.current && agentRunId) {
       hasDataLoaded.current = true;
+      // Thread was successfully created - clear any pending intent
+      localStorage.removeItem('pending_thread_intent');
       if (typeof window !== 'undefined') {
         const url = new URL(window.location.href);
         if (url.searchParams.get('new') === 'true') {
@@ -480,6 +483,86 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     
     return () => clearTimeout(timeoutId);
   }, [isNewThread, showOptimisticUI]);
+
+  // Recovery effect: If thread doesn't exist and we have a pending intent, retry the API call
+  // This handles cases where the server restarted or the API call was interrupted
+  const retryAttemptedRef = useRef(false);
+  useEffect(() => {
+    // Only attempt recovery once per mount
+    if (retryAttemptedRef.current) return;
+    
+    // Only try recovery if:
+    // 1. Thread query failed with 404/not found
+    // 2. We're on a new thread page
+    // 3. We haven't successfully loaded data yet
+    const is404 = threadQuery.error?.message?.toLowerCase()?.includes('404') || 
+                  threadQuery.error?.message?.toLowerCase()?.includes('not found');
+    
+    if (!is404 || !isNewThread || hasDataLoaded.current) return;
+    
+    // Check for pending intent in localStorage
+    try {
+      const pendingIntentStr = localStorage.getItem('pending_thread_intent');
+      if (!pendingIntentStr) return;
+      
+      const pendingIntent = JSON.parse(pendingIntentStr);
+      
+      // Verify this intent matches the current thread
+      if (pendingIntent.threadId !== threadId || pendingIntent.projectId !== projectId) {
+        // Intent is for a different thread, clean it up if it's old (> 5 minutes)
+        if (Date.now() - pendingIntent.createdAt > 5 * 60 * 1000) {
+          localStorage.removeItem('pending_thread_intent');
+        }
+        return;
+      }
+      
+      // Intent is stale if older than 2 minutes
+      if (Date.now() - pendingIntent.createdAt > 2 * 60 * 1000) {
+        console.warn('[ThreadComponent] Pending intent is stale, cleaning up');
+        localStorage.removeItem('pending_thread_intent');
+        return;
+      }
+      
+      retryAttemptedRef.current = true;
+      console.log('[ThreadComponent] Found pending intent, retrying thread creation:', pendingIntent.threadId);
+      
+      // Retry the API call
+      optimisticAgentStart({
+        thread_id: pendingIntent.threadId,
+        project_id: pendingIntent.projectId,
+        prompt: pendingIntent.prompt,
+        file_ids: pendingIntent.fileIds,
+        model_name: pendingIntent.modelName,
+        agent_id: pendingIntent.agentId,
+        mode: pendingIntent.mode,
+      }).then((response) => {
+        console.log('[ThreadComponent] Retry succeeded:', response);
+        localStorage.removeItem('pending_thread_intent');
+        
+        if (response.agent_run_id) {
+          sessionStorage.setItem('optimistic_agent_run_id', response.agent_run_id);
+          sessionStorage.setItem('optimistic_agent_run_thread', threadId);
+          setAgentRunId(response.agent_run_id);
+          setAgentStatus('running');
+        }
+        
+        // Invalidate queries to pick up the new data
+        queryClient.invalidateQueries({ queryKey: ['thread', threadId] });
+        queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'agent-runs'] });
+        queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'messages'] });
+        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+        queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
+      }).catch((error) => {
+        console.error('[ThreadComponent] Retry failed:', error);
+        // Clear intent on failure - user will need to start fresh
+        localStorage.removeItem('pending_thread_intent');
+        toast.error('Failed to recover conversation. Please start a new one.');
+        router.push('/');
+      });
+    } catch (e) {
+      console.error('[ThreadComponent] Error checking pending intent:', e);
+    }
+  }, [threadQuery.error, isNewThread, threadId, projectId, queryClient, setAgentRunId, setAgentStatus, router]);
 
   useEffect(() => {
     const handleSandboxActive = (event: Event) => {
