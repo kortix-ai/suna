@@ -208,9 +208,6 @@ export function useOptimisticAgentStart(
         
         // Store agent_run_id so thread page can use it immediately (no polling needed)
         if (response.agent_run_id) {
-          sessionStorage.setItem('optimistic_agent_run_id', response.agent_run_id);
-          sessionStorage.setItem('optimistic_agent_run_thread', threadId);
-          
           // Pre-connect to stream immediately - this saves ~1-2s of connection overhead
           // The ThreadComponent will adopt this connection when it mounts
           try {
@@ -229,6 +226,11 @@ export function useOptimisticAgentStart(
             // Non-fatal - ThreadComponent will create its own connection
             console.warn('[OptimisticAgentStart] Stream pre-connect failed:', preconnectError);
           }
+
+          // Set session storage AFTER preconnect is established to avoid race condition
+          // where ThreadComponent tries to adopt before stream is ready
+          sessionStorage.setItem('optimistic_agent_run_id', response.agent_run_id);
+          sessionStorage.setItem('optimistic_agent_run_thread', threadId);
         }
         
         // Invalidate all relevant queries so the thread page picks up the new data

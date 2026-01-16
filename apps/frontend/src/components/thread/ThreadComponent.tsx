@@ -73,6 +73,7 @@ import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
 import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
 import { useClearNavigation } from '@/stores/thread-navigation-store';
 import { useModeViewerInit } from '@/hooks/threads/use-mode-viewer-init';
+import { getStreamPreconnectService } from '@/lib/streaming/stream-preconnect';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -255,13 +256,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         if (!isMobile && !compact) {
           setStorePanelOpen(true);
         }
-        // Retrieve stored file preview URLs
         const storedPreviews = sessionStorage.getItem('optimistic_file_previews');
         if (storedPreviews) {
           try {
             setStoredFilePreviewUrls(JSON.parse(storedPreviews));
           } catch (e) {
-            // Ignore parse errors
           }
           sessionStorage.removeItem('optimistic_file_previews');
         }
@@ -272,8 +271,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }
   
-  // Also check for optimistic data even if isNewThread is false (fallback for race conditions)
-  // This ensures we never show skeleton when we have the user's message to display
   if (!optimisticPrompt && !showOptimisticUI && !initialLoadCompleted) {
     try {
       const stored = sessionStorage.getItem('optimistic_prompt');
@@ -284,13 +281,11 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         if (!isMobile && !compact) {
           setStorePanelOpen(true);
         }
-        // Retrieve stored file preview URLs
         const storedPreviews = sessionStorage.getItem('optimistic_file_previews');
         if (storedPreviews) {
           try {
             setStoredFilePreviewUrls(JSON.parse(storedPreviews));
           } catch (e) {
-            // Ignore parse errors
           }
           sessionStorage.removeItem('optimistic_file_previews');
         }
@@ -304,7 +299,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   useEffect(() => {
     if (isNewThread && !hasDataLoaded.current && agentRunId) {
       hasDataLoaded.current = true;
-      // Thread was successfully created - clear any pending intent
       localStorage.removeItem('pending_thread_intent');
       if (typeof window !== 'undefined') {
         const url = new URL(window.location.href);
@@ -316,28 +310,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [isNewThread, agentRunId]);
   
-  const shouldHideOptimisticUI = isNewThread 
-    ? (agentRunId && initialLoadCompleted)
-    : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted);
   
-  // Track if we've already handled the optimistic -> real transition to prevent flicker
-  const optimisticTransitionHandledRef = useRef(false);
-  
-  useEffect(() => {
-    if (shouldHideOptimisticUI && showOptimisticUI && !optimisticTransitionHandledRef.current) {
-      optimisticTransitionHandledRef.current = true;
-      // IMPORTANT: Ensure isSidePanelOpen is true BEFORE clearing showOptimisticUI
-      // This prevents a flicker where effectivePanelOpen briefly becomes false
-      // during the transition from optimistic UI to real data
-      if (!isMobile && !compact) {
-        setIsSidePanelOpen(true);
-      }
-      setShowOptimisticUI(false);
-    }
-  }, [shouldHideOptimisticUI, showOptimisticUI]);
-  
-  // Use showOptimisticUI directly (not isNewThread && showOptimisticUI) because
-  // isNewThread becomes false when URL is updated before showOptimisticUI becomes false
   const effectivePanelOpen = isSidePanelOpen || showOptimisticUI;
 
   const handleSidePanelClose = useCallback(() => {
@@ -346,7 +319,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     setAutoOpenedPanel(true);
   }, [setIsSidePanelOpen, setAutoOpenedPanel]);
 
-  // Use individual selectors to avoid subscribing to entire store (prevents unnecessary re-renders)
   const openFileInComputer = useKortixComputerStore((state) => state.openFileInComputer);
   const openFileBrowser = useKortixComputerStore((state) => state.openFileBrowser);
   const setSandboxContext = useKortixComputerStore((state) => state.setSandboxContext);
@@ -446,18 +418,14 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   
   useEffect(() => {
     if (!isShared) {
-      // Invalidate thread-specific queries
       queryClient.invalidateQueries({ queryKey: threadKeys.agentRuns(threadId) });
       queryClient.invalidateQueries({ queryKey: threadKeys.messages(threadId) });
       prevThreadIdRef.current = threadId;
     }
   }, [threadId, queryClient, isShared]);
   
-  // Sync Kortix Computer sandbox context with current sandbox
-  // The store will automatically clear file state when sandbox changes
   useEffect(() => {
     if (!isShared) {
-      // Set the sandbox context - the store handles state clearing internally
       setSandboxContext(sandboxId || null);
     }
   }, [sandboxId, isShared, setSandboxContext]);
@@ -484,17 +452,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     return () => clearTimeout(timeoutId);
   }, [isNewThread, showOptimisticUI]);
 
-  // Recovery effect: If thread doesn't exist and we have a pending intent, retry the API call
-  // This handles cases where the server restarted or the API call was interrupted
   const retryAttemptedRef = useRef(false);
   useEffect(() => {
-    // Only attempt recovery once per mount
     if (retryAttemptedRef.current) return;
-    
-    // Only try recovery if:
-    // 1. Thread query failed with 404/not found
-    // 2. We're on a new thread page
-    // 3. We haven't successfully loaded data yet
     const is404 = threadQuery.error?.message?.toLowerCase()?.includes('404') || 
                   threadQuery.error?.message?.toLowerCase()?.includes('not found');
     
@@ -1105,6 +1065,28 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     derivedAgentId,
   );
 
+  const hasStreamedContent = 
+    (messages.length > 0 && messages.some(m => m.type === 'assistant' || m.type === 'tool')) ||
+    (!!streamingTextContent && streamingTextContent.length > 0) ||
+    toolCalls.length > 0;
+  
+  const shouldHideOptimisticUI = hasStreamedContent || (isNewThread 
+    ? (agentRunId && initialLoadCompleted)
+    : ((agentRunId || messages.length > 0 || threadStatus === 'ready') && initialLoadCompleted));
+
+  // Track if we've already handled the optimistic -> real transition to prevent flicker
+  const optimisticTransitionHandledRef = useRef(false);
+  
+  useEffect(() => {
+    if (shouldHideOptimisticUI && showOptimisticUI && !optimisticTransitionHandledRef.current) {
+      optimisticTransitionHandledRef.current = true;
+      if (!isMobile && !compact) {
+        setIsSidePanelOpen(true);
+      }
+      setShowOptimisticUI(false);
+    }
+  }, [shouldHideOptimisticUI, showOptimisticUI]);
+
   const handleSubmitMessage = useCallback(
     async (
       message: string,
@@ -1329,6 +1311,40 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     compact,
     isSidePanelOpen,
   ]);
+
+  useEffect(() => {
+    if (isNewThread && !agentRunId && !initialLoadCompleted) {
+      try {
+        const preconnectService = getStreamPreconnectService();
+        const pendingRunId = preconnectService.getAgentRunIdForThread(threadId);
+        if (pendingRunId) {
+          console.log('[ThreadComponent] Found pending pre-connected run:', pendingRunId);
+          setAgentRunId(pendingRunId);
+          setAgentStatus('running');
+          startStreaming(pendingRunId);
+          lastStreamStartedRef.current = pendingRunId;
+        }
+      } catch (e) {
+      }
+    }
+  }, [isNewThread, agentRunId, initialLoadCompleted, threadId, startStreaming, setAgentRunId, setAgentStatus]);
+
+  useEffect(() => {
+    if (isNewThread && !agentRunId && !initialLoadCompleted) {
+      try {
+        const preconnectService = getStreamPreconnectService();
+        const pendingRunId = preconnectService.getAgentRunIdForThread(threadId);
+        if (pendingRunId) {
+          console.log('[ThreadComponent] Found pending pre-connected run:', pendingRunId);
+          setAgentRunId(pendingRunId);
+          setAgentStatus('running');
+          startStreaming(pendingRunId);
+          lastStreamStartedRef.current = pendingRunId;
+        }
+      } catch (e) {
+      }
+    }
+  }, [isNewThread, agentRunId, initialLoadCompleted, threadId, startStreaming, setAgentRunId, setAgentStatus]);
 
   useEffect(() => {
     if (agentRunId && lastStreamStartedRef.current === agentRunId) {
@@ -1601,7 +1617,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     sessionStorage.getItem('optimistic_prompt');
   
   // Skip skeleton for new threads or when we have optimistic data - show content immediately
-  if (!isNewThread && !hasDataLoaded.current && !showOptimisticUI && !hasOptimisticDataPending && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
+  if (!isNewThread && !hasDataLoaded.current && !showOptimisticUI && !hasOptimisticDataPending && !hasStreamedContent && (!initialLoadCompleted || isLoading || isThreadInitializing)) {
     return <ThreadSkeleton isSidePanelOpen={isSidePanelOpen} compact={compact} initializingMessage={
       isThreadInitializing ? 'Setting up your conversation...' : undefined
     } />;
@@ -1693,7 +1709,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           onSidePanelClose={showOptimisticUI ? () => {} : handleSidePanelClose}
           renderAssistantMessage={toolViewAssistant}
           renderToolResult={toolViewResult}
-          isLoading={showOptimisticUI ? false : (!initialLoadCompleted || isLoading)}
+          isLoading={showOptimisticUI || hasStreamedContent ? false : (!initialLoadCompleted || isLoading)}
           isMobile={isMobile}
           initialLoadCompleted={showOptimisticUI ? true : initialLoadCompleted}
           agentName={derivedAgentInfo.agentName}

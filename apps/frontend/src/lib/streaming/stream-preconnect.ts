@@ -19,13 +19,14 @@ interface StreamPreconnectConfig {
 }
 
 const DEFAULT_CONFIG: StreamPreconnectConfig = {
-  maxBufferSize: 100,
+  maxBufferSize: 1000,
   staleTimeoutMs: 30000,
   cleanupIntervalMs: 5000,
 };
 
 class StreamPreconnectService {
   private streams: Map<string, PreconnectedStream> = new Map();
+  private threadRunMap: Map<string, string> = new Map(); // threadId -> agentRunId
   private config: StreamPreconnectConfig;
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
   private listeners: Map<string, Set<(data: string) => void>> = new Map();
@@ -112,6 +113,7 @@ class StreamPreconnectService {
 
     preconnectedStream.connection = connection;
     this.streams.set(agentRunId, preconnectedStream);
+    this.threadRunMap.set(threadId, agentRunId);
 
     connection.connect();
 
@@ -170,7 +172,19 @@ class StreamPreconnectService {
       stream.connection.destroy();
       this.streams.delete(agentRunId);
       this.listeners.delete(agentRunId);
+      
+      // Remove from threadRunMap
+      for (const [threadId, runId] of this.threadRunMap.entries()) {
+        if (runId === agentRunId) {
+          this.threadRunMap.delete(threadId);
+          break;
+        }
+      }
     }
+  }
+
+  getAgentRunIdForThread(threadId: string): string | undefined {
+    return this.threadRunMap.get(threadId);
   }
 
   destroy(): void {
@@ -184,6 +198,7 @@ class StreamPreconnectService {
     });
     this.streams.clear();
     this.listeners.clear();
+    this.threadRunMap.clear();
   }
 
   getStats(): {
@@ -219,6 +234,7 @@ export function getStreamPreconnectService() {
       get: () => undefined,
       destroyStream: () => {},
       destroy: () => {},
+      getAgentRunIdForThread: () => undefined,
       getStats: () => ({ activeStreams: 0, adoptedStreams: 0, totalBufferedMessages: 0 }),
     };
   }
