@@ -1667,25 +1667,23 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 {renderAgentIndicator(null)}
               </View>
               
-              {/* Contemplating state */}
-              {isContemplating && (
-                <View className="h-6 justify-center">
-                  <View className="flex-row items-center">
+              {/* Unified loader container - consistent height prevents layout shift */}
+              {/* Both contemplating and brewing share same container to avoid jump */}
+              {/* overflow-hidden prevents bouncing animations from expanding the container */}
+              {(isContemplating || isBrewing) && (
+                <View className="h-6 justify-center overflow-hidden">
+                  {isContemplating ? (
                     <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
-                  </View>
-                </View>
-              )}
-              
-              {/* Brewing ideas state - show until we have VISIBLE streaming content */}
-              {isBrewing && (
-                <View className="mt-4">
-                  <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
+                  ) : (
+                    <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
+                  )}
                 </View>
               )}
               
               {/* Streaming text content - only show when we have VISIBLE content */}
+              {/* No mt-2 margin here - the h-6 loader container provides consistent spacing */}
               {isStreaming && hasVisibleStreamingText && (
-                <View className="mt-2">
+                <View>
                   {(() => {
                     // Use raw content for tag detection
                     const rawContent = streamingTextContent || '';

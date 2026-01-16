@@ -115,6 +115,55 @@ class ConversionFunnel(BaseModel):
 # HELPER FUNCTIONS
 # ============================================================================
 
+def parse_date_range(
+    date: Optional[str],
+    date_from: Optional[str],
+    date_to: Optional[str]
+) -> tuple[datetime, datetime]:
+    """
+    Parse date range parameters with backwards compatibility.
+
+    Args:
+        date: Legacy single date parameter (deprecated)
+        date_from: Start date in YYYY-MM-DD format
+        date_to: End date in YYYY-MM-DD format
+
+    Returns:
+        Tuple of (start_date, end_date) as datetime objects with Berlin timezone
+
+    If only 'date' is provided, uses it for both start and end (single day).
+    If no dates provided, defaults to today.
+    """
+    # Backwards compatibility: if 'date' is provided without date_from/date_to
+    if date and not date_from:
+        date_from = date
+        date_to = date
+
+    # Parse start date or default to today
+    if date_from:
+        try:
+            start_date = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_from format. Use YYYY-MM-DD")
+    else:
+        start_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Parse end date or use start date (single day)
+    if date_to:
+        try:
+            end_date = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid date_to format. Use YYYY-MM-DD")
+    else:
+        end_date = start_date
+
+    # Ensure start <= end
+    if start_date > end_date:
+        raise HTTPException(status_code=400, detail="date_from must be before or equal to date_to")
+
+    return start_date, end_date
+
+
 async def get_openai_client():
     """Get OpenAI client for summarization."""
     api_key = config.OPENAI_API_KEY
@@ -977,31 +1026,27 @@ Rules:
 
 @router.get("/threads/message-distribution")
 async def get_message_distribution(
-    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    date: Optional[str] = Query(None, description="Single date (deprecated, use date_from/date_to)"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     admin: dict = Depends(require_admin)
 ) -> Dict[str, Any]:
-    """Get distribution of threads by user message count for a specific day."""
+    """Get distribution of threads by user message count for a date range."""
     try:
         db = DBConnection()
         client = await db.client
-        
-        # Parse date or default to today
-        if date:
-            try:
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-        else:
-            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Filter to selected day (start of day to end of day)
-        start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+
+        # Parse date range with backwards compatibility
+        start_date, end_date = parse_date_range(date, date_from, date_to)
+
+        # Convert to ISO format for queries
+        start_of_range = start_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_range = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
         
         # Use database function for efficient GROUP BY aggregation (bypasses row limits)
         result = await client.rpc('get_thread_message_distribution', {
-            'start_date': start_of_day,
-            'end_date': end_of_day
+            'start_date': start_of_range,
+            'end_date': end_of_range
         }).execute()
         
         if not result.data or len(result.data) == 0:
@@ -1036,40 +1081,36 @@ async def get_message_distribution(
 
 @router.get("/projects/category-distribution")
 async def get_category_distribution(
-    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    date: Optional[str] = Query(None, description="Single date (deprecated, use date_from/date_to)"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     tier: Optional[str] = Query(None, description="Filter by subscription tier"),
     admin: dict = Depends(require_admin)
 ) -> Dict[str, Any]:
-    """Get distribution of projects by category for a specific day, optionally filtered by tier."""
+    """Get distribution of projects by category for a date range, optionally filtered by tier."""
     try:
         db = DBConnection()
         client = await db.client
-        
-        # Parse date or default to today
-        if date:
-            try:
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-        else:
-            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Filter to selected day
-        start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
-        
+
+        # Parse date range with backwards compatibility
+        start_date, end_date = parse_date_range(date, date_from, date_to)
+
+        # Convert to ISO format for queries
+        start_of_range = start_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_range = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+
         # Use database function for efficient GROUP BY aggregation (bypasses row limits)
         # Build RPC params with optional tier filter
         rpc_params = {
-            'start_date': start_of_day,
-            'end_date': end_of_day,
+            'start_date': start_of_range,
+            'end_date': end_of_range,
             'p_tier': tier  # Will be NULL if not provided
         }
-        
+
         # Build count query with optional tier filter
         count_query = client.from_('projects').select('project_id', count='exact').gte(
-            'created_at', start_of_day
-        ).lte('created_at', end_of_day)
+            'created_at', start_of_range
+        ).lte('created_at', end_of_range)
         
         if tier:
             # Need to join with credit_accounts for tier filtering
@@ -1086,7 +1127,9 @@ async def get_category_distribution(
             return {
                 "distribution": {},
                 "total_projects": 0,
-                "date": date or selected_date.strftime("%Y-%m-%d"),
+                "date": start_date.strftime("%Y-%m-%d"),
+                "date_from": start_date.strftime("%Y-%m-%d"),
+                "date_to": end_date.strftime("%Y-%m-%d"),
                 "tier": tier
             }
         
@@ -1110,10 +1153,12 @@ async def get_category_distribution(
         return {
             "distribution": distribution,
             "total_projects": total_projects,
-            "date": date or selected_date.strftime("%Y-%m-%d"),
+            "date": start_date.strftime("%Y-%m-%d"),
+            "date_from": start_date.strftime("%Y-%m-%d"),
+            "date_to": end_date.strftime("%Y-%m-%d"),
             "tier": tier
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1123,40 +1168,38 @@ async def get_category_distribution(
 
 @router.get("/threads/tier-distribution")
 async def get_tier_distribution(
-    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    date: Optional[str] = Query(None, description="Single date (deprecated, use date_from/date_to)"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     admin: dict = Depends(require_admin)
 ) -> Dict[str, Any]:
-    """Get distribution of threads by subscription tier for a specific day."""
+    """Get distribution of threads by subscription tier for a date range."""
     try:
         db = DBConnection()
         client = await db.client
-        
-        # Parse date or default to today
-        if date:
-            try:
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-        else:
-            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Filter to selected day
-        start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
-        
+
+        # Parse date range with backwards compatibility
+        start_date, end_date = parse_date_range(date, date_from, date_to)
+
+        # Convert to ISO format for queries
+        start_of_range = start_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_range = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+
         # Use database function for efficient GROUP BY aggregation
         result = await client.rpc('get_thread_tier_distribution', {
-            'start_date': start_of_day,
-            'end_date': end_of_day
+            'start_date': start_of_range,
+            'end_date': end_of_range
         }).execute()
-        
+
         if not result.data:
             return {
                 "distribution": {},
                 "total_threads": 0,
-                "date": date or selected_date.strftime("%Y-%m-%d")
+                "date": start_date.strftime("%Y-%m-%d"),
+                "date_from": start_date.strftime("%Y-%m-%d"),
+                "date_to": end_date.strftime("%Y-%m-%d")
             }
-        
+
         # Build distribution from aggregated results
         distribution = {}
         total_threads = 0
@@ -1165,13 +1208,15 @@ async def get_tier_distribution(
             count = row.get('count', 0)
             distribution[tier] = count
             total_threads += count
-        
+
         return {
             "distribution": distribution,
             "total_threads": total_threads,
-            "date": date or selected_date.strftime("%Y-%m-%d")
+            "date": start_date.strftime("%Y-%m-%d"),
+            "date_from": start_date.strftime("%Y-%m-%d"),
+            "date_to": end_date.strftime("%Y-%m-%d")
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1220,68 +1265,68 @@ async def get_visitor_stats(
 
 @router.get("/conversion-funnel")
 async def get_conversion_funnel(
-    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    date: Optional[str] = Query(None, description="Single date (deprecated, use date_from/date_to)"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
     admin: dict = Depends(require_admin)
 ) -> ConversionFunnel:
-    """Get full conversion funnel: Visitors → Signups → Subscriptions."""
+    """Get full conversion funnel: Visitors → Signups → Subscriptions for a date range."""
     try:
         db = DBConnection()
         client = await db.client
-        
-        # Parse date or default to today
-        if date:
-            try:
-                selected_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
-            except ValueError:
-                raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
-        else:
-            selected_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        date_str = selected_date.strftime("%Y-%m-%d")
-        start_of_day = selected_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        end_of_day = selected_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
-        
+
+        # Parse date range with backwards compatibility
+        start_date, end_date = parse_date_range(date, date_from, date_to)
+
+        start_of_range = start_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_range = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+
         # Define async functions for parallel execution
         async def get_visitors():
+            """Sum visitors across all days in the range (single RPC call)."""
             try:
+                start_str = start_date.strftime("%Y-%m-%d")
+                end_str = end_date.strftime("%Y-%m-%d")
                 if source == "vercel":
-                    data = await query_vercel_analytics(date_str)
+                    _, total = await query_vercel_analytics_range(start_str, end_str)
+                    return total
                 else:
-                    data = query_google_analytics(date_str)
-                return data["unique_visitors"]
+                    # GA fallback - single day only
+                    data = query_google_analytics(start_str)
+                    return data["unique_visitors"]
             except Exception as e:
                 logger.warning(f"Failed to get {source} visitors: {e}")
                 return 0
-        
+
         async def get_signups():
             result = await client.schema('basejump').from_('accounts').select(
                 '*', count='exact'
-            ).gte('created_at', start_of_day).lte('created_at', end_of_day).execute()
+            ).gte('created_at', start_of_range).lte('created_at', end_of_range).execute()
             return result.count or 0
-        
+
         async def get_subscriptions():
             # Use Stripe directly to get paid subscriptions with emails (excludes free tier)
-            start_dt = datetime.fromisoformat(start_of_day.replace('Z', '+00:00')) if isinstance(start_of_day, str) else start_of_day
-            end_dt = datetime.fromisoformat(end_of_day.replace('Z', '+00:00')) if isinstance(end_of_day, str) else end_of_day
+            start_dt = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+            end_dt = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
             return await search_paid_subscriptions(start_dt, end_dt, include_emails=True)
-        
+
         # Execute all queries in parallel
         visitors, signups, subs_result = await asyncio.gather(
             get_visitors(),
             get_signups(),
             get_subscriptions()
         )
-        
+
         # Extract count and emails from subs_result
         subscriptions = subs_result['count']
         subscriber_emails = subs_result['emails']
-        
+
         # Calculate conversion rates
         visitor_to_signup = (signups / visitors * 100) if visitors > 0 else 0
         signup_to_sub = (subscriptions / signups * 100) if signups > 0 else 0
         overall = (subscriptions / visitors * 100) if visitors > 0 else 0
-        
+
         return ConversionFunnel(
             visitors=visitors,
             signups=signups,
@@ -1290,9 +1335,9 @@ async def get_conversion_funnel(
             visitor_to_signup_rate=round(visitor_to_signup, 2),
             signup_to_subscription_rate=round(signup_to_sub, 2),
             overall_conversion_rate=round(overall, 2),
-            date=date_str
+            date=start_date.strftime("%Y-%m-%d")
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -2445,35 +2490,41 @@ async def get_revenue_summary(
 
 @router.get("/engagement-summary")
 async def get_engagement_summary(
-    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    date: Optional[str] = Query(None, description="Single date (deprecated, use date_from/date_to)"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     admin: dict = Depends(require_admin)
 ) -> EngagementSummary:
     """
-    Get user engagement metrics including DAU, WAU, MAU, and retention.
+    Get user engagement metrics including DAU, WAU, MAU, and retention for a date range.
+    When a range is provided:
+    - DAU: unique active users across the entire range
+    - WAU: unique users in 7 days ending at date_to
+    - MAU: unique users in 30 days ending at date_to
+    - total_threads_today: threads created in the range
+    - total_threads_week: threads in 7 days ending at date_to
     """
     try:
         db = DBConnection()
         client = await db.client
-        
-        # Parse target date
-        if date:
-            target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
-        else:
-            target_date = datetime.now(BERLIN_TZ)
-        
-        today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
-        week_start = today_start - timedelta(days=6)  # 7 days including today
-        month_start = today_start - timedelta(days=29)  # 30 days including today
-        
+
+        # Parse date range with backwards compatibility
+        start_date, end_date = parse_date_range(date, date_from, date_to)
+
+        range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        range_end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        week_start = end_date.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=6)
+        month_start = end_date.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=29)
+
         # Use RPC for efficient COUNT(DISTINCT) queries
+        # Pass the range start/end for DAU calculation
         metrics_result = await client.rpc('get_engagement_metrics', {
-            'p_today_start': today_start.isoformat(),
-            'p_today_end': today_end.isoformat(),
+            'p_today_start': range_start.isoformat(),
+            'p_today_end': range_end.isoformat(),
             'p_week_start': week_start.isoformat(),
             'p_month_start': month_start.isoformat(),
         }).execute()
-        
+
         if metrics_result.data and len(metrics_result.data) > 0:
             metrics = metrics_result.data[0]
             dau = metrics.get('dau', 0) or 0
@@ -2483,13 +2534,13 @@ async def get_engagement_summary(
             total_threads_week = metrics.get('threads_week', 0) or 0
         else:
             dau = wau = mau = total_threads_today = total_threads_week = 0
-        
+
         # DAU/MAU ratio (stickiness)
         dau_mau_ratio = (dau / mau * 100) if mau > 0 else 0.0
-        
-        # Avg threads per active user (today)
+
+        # Avg threads per active user (in the range)
         avg_threads_per_active_user = total_threads_today / dau if dau > 0 else 0.0
-        
+
         return EngagementSummary(
             dau=dau,
             wau=wau,
@@ -2498,11 +2549,11 @@ async def get_engagement_summary(
             avg_threads_per_active_user=round(avg_threads_per_active_user, 2),
             total_threads_today=total_threads_today,
             total_threads_week=total_threads_week,
-            retention_d1=None,  # TODO: Calculate from cohort data
+            retention_d1=None,
             retention_d7=None,
             retention_d30=None,
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to get engagement summary: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get engagement summary")
@@ -2510,29 +2561,28 @@ async def get_engagement_summary(
 
 @router.get("/task-performance")
 async def get_task_performance(
-    date: Optional[str] = Query(None, description="Date in YYYY-MM-DD format, defaults to today"),
+    date: Optional[str] = Query(None, description="Single date (deprecated, use date_from/date_to)"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     admin: dict = Depends(require_admin)
 ) -> TaskPerformance:
     """
-    Get task/agent run performance metrics.
+    Get task/agent run performance metrics for a date range.
     """
     try:
         db = DBConnection()
         client = await db.client
-        
-        # Parse target date
-        if date:
-            target_date = datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
-        else:
-            target_date = datetime.now(BERLIN_TZ)
-        
-        today_start = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
-        
+
+        # Parse date range with backwards compatibility
+        start_date, end_date = parse_date_range(date, date_from, date_to)
+
+        range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        range_end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+
         # Use RPC for aggregation - don't fetch rows in Python
         result = await client.rpc('get_task_performance', {
-            'p_start': today_start.isoformat(),
-            'p_end': today_end.isoformat(),
+            'p_start': range_start.isoformat(),
+            'p_end': range_end.isoformat(),
         }).execute()
         
         if result.data and len(result.data) > 0:

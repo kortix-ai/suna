@@ -43,7 +43,8 @@ litellm.num_retries = int(os.environ.get("LITELLM_NUM_RETRIES", 1))
 litellm.request_timeout = 1800  # 30 min for long streams
 
 # Stream timeout: max time to wait between stream chunks (prevents indefinite hangs)
-litellm.stream_timeout = int(os.environ.get("LITELLM_STREAM_TIMEOUT", 120))
+# Increased to 300s (5 min) to allow MiniMax reasoning mode to work on complex outputs
+litellm.stream_timeout = int(os.environ.get("LITELLM_STREAM_TIMEOUT", 300))
 
 # Custom callback to track LiteLLM retries and timing
 from litellm.integrations.custom_logger import CustomLogger
@@ -115,8 +116,12 @@ def setup_api_keys() -> None:
     if getattr(config, 'OPENAI_API_KEY', None):
         os.environ["OPENAI_API_KEY"] = config.OPENAI_API_KEY
     
-    if getattr(config, 'OPENROUTER_API_KEY', None) and getattr(config, 'OPENROUTER_API_BASE', None):
-        os.environ["OPENROUTER_API_BASE"] = config.OPENROUTER_API_BASE
+    # Set OpenRouter API key and base URL for LiteLLM
+    if getattr(config, 'OPENROUTER_API_KEY', None):
+        os.environ["OPENROUTER_API_KEY"] = config.OPENROUTER_API_KEY
+        # Use configured base URL or default to official OpenRouter API
+        openrouter_base = getattr(config, 'OPENROUTER_API_BASE', None) or "https://openrouter.ai/api/v1"
+        os.environ["OPENROUTER_API_BASE"] = openrouter_base
     
     if getattr(config, 'OR_APP_NAME', None):
         os.environ["OR_APP_NAME"] = config.OR_APP_NAME
@@ -148,7 +153,7 @@ def _save_debug_input(params: Dict[str, Any]) -> None:
         debug_file = debug_dir / f"input_{timestamp}.json"
         
         debug_data = {k: params.get(k) for k in 
-            ["model", "messages", "temperature", "max_tokens", "stop", "stream", "tools", "tool_choice"]}
+            ["model", "messages", "temperature", "max_tokens", "stop", "stream", "tools", "tool_choice", "frequency_penalty"]}
         debug_data["timestamp"] = timestamp
         
         with open(debug_file, 'w', encoding='utf-8') as f:
@@ -187,6 +192,7 @@ async def make_llm_api_call(
     headers: Optional[Dict[str, str]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
     stop: Optional[List[str]] = None,
+    frequency_penalty: Optional[float] = 0.2,
 ) -> Union[Dict[str, Any], AsyncGenerator, ModelResponse]:
     messages = _strip_internal_properties(messages)
     
@@ -222,6 +228,7 @@ async def make_llm_api_call(
     if stop is not None: override_params["stop"] = stop
     if headers is not None: override_params["headers"] = headers
     if extra_headers is not None: override_params["extra_headers"] = extra_headers
+    if frequency_penalty is not None: override_params["frequency_penalty"] = frequency_penalty
     
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     

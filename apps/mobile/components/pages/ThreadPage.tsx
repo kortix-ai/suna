@@ -532,14 +532,15 @@ export function ThreadPage({
   }, [extraPushPadding, isUserScrolling, pushToTop]);
 
   // Scroll to bottom when thread first opens
+  // Skip for new optimistic threads - content is minimal and at top, no scroll needed
   React.useEffect(() => {
-    if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current && !pushToTop) {
+    if (messages.length > 0 && !hasScrolledToBottomOnOpenRef.current && !pushToTop && !chat.isNewThreadOptimistic) {
       setTimeout(() => {
         scrollViewRef.current?.scrollToEnd({ animated: false });
         hasScrolledToBottomOnOpenRef.current = true;
       }, 150);
     }
-  }, [messages.length, pushToTop]);
+  }, [messages.length, pushToTop, chat.isNewThreadOptimistic]);
 
   // Reset when thread changes
   React.useEffect(() => {
@@ -557,8 +558,9 @@ export function ThreadPage({
   React.useEffect(() => {
     if (chat.isSendingMessage && !wasSendingRef.current) {
       // User just started sending - activate push immediately
-      // Only activate if there are already messages (not first message in empty thread)
-      if (messages.length > 0) {
+      // Skip for first message in new thread (isNewThreadOptimistic) - content is minimal, no push needed
+      // Also check messages.length > 1 to ensure there are previous messages (not just the current optimistic one)
+      if (messages.length > 1 && !chat.isNewThreadOptimistic) {
         setPushToTop(true);
         scrollLockActiveRef.current = true;
         setIsUserScrolling(false);
@@ -569,7 +571,7 @@ export function ThreadPage({
       }
     }
     wasSendingRef.current = chat.isSendingMessage;
-  }, [chat.isSendingMessage, messages.length]);
+  }, [chat.isSendingMessage, messages.length, chat.isNewThreadOptimistic]);
 
   // When user sends a NEW message - reinforce push to top and scroll
   // Only trigger for ACTUAL new messages (count increases by 1-2), NOT bulk thread loads

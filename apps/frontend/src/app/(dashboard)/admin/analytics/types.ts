@@ -31,7 +31,8 @@ export interface StatCardProps {
 export interface ThreadBrowserProps {
   categoryFilter?: string | null;
   tierFilter?: string | null;
-  filterDate?: string | null;
+  filterDateFrom?: string | null;
+  filterDateTo?: string | null;
   onClearCategory?: () => void;
   onClearTier?: () => void;
   onUserClick: (email: string) => void;

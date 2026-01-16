@@ -508,8 +508,6 @@ export function useActiveAgentRuns(
       const hasActiveRuns = query.state.data && query.state.data.length > 0;
       return hasActiveRuns ? 15000 : false;
     },
-    retry: 1,
-    retryDelay: 5000,
     ...options,
   });
 }

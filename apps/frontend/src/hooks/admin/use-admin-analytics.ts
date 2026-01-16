@@ -175,12 +175,16 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
   });
 }
 
-export function useMessageDistribution(date?: string, enabled: boolean = true) {
+export function useMessageDistribution(dateFrom?: string, dateTo?: string, enabled: boolean = true) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'message-distribution', date],
+    queryKey: ['admin', 'analytics', 'message-distribution', dateFrom, dateTo],
     queryFn: async (): Promise<MessageDistribution> => {
-      const url = date
-        ? `/admin/analytics/threads/message-distribution?date=${date}`
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const queryString = params.toString();
+      const url = queryString
+        ? `/admin/analytics/threads/message-distribution?${queryString}`
         : '/admin/analytics/threads/message-distribution';
       const response = await backendApi.get(url);
       if (response.error) {
@@ -194,12 +198,13 @@ export function useMessageDistribution(date?: string, enabled: boolean = true) {
   });
 }
 
-export function useCategoryDistribution(date?: string, tier?: string | null, enabled: boolean = true) {
+export function useCategoryDistribution(dateFrom?: string, dateTo?: string, tier?: string | null, enabled: boolean = true) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'category-distribution', date, tier],
+    queryKey: ['admin', 'analytics', 'category-distribution', dateFrom, dateTo, tier],
     queryFn: async (): Promise<CategoryDistribution> => {
       const params = new URLSearchParams();
-      if (date) params.append('date', date);
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
       if (tier) params.append('tier', tier);
       const queryString = params.toString();
       const url = queryString
@@ -217,12 +222,16 @@ export function useCategoryDistribution(date?: string, tier?: string | null, ena
   });
 }
 
-export function useTierDistribution(date?: string, enabled: boolean = true) {
+export function useTierDistribution(dateFrom?: string, dateTo?: string, enabled: boolean = true) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'tier-distribution', date],
+    queryKey: ['admin', 'analytics', 'tier-distribution', dateFrom, dateTo],
     queryFn: async (): Promise<TierDistribution> => {
-      const url = date
-        ? `/admin/analytics/threads/tier-distribution?date=${date}`
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const queryString = params.toString();
+      const url = queryString
+        ? `/admin/analytics/threads/tier-distribution?${queryString}`
         : '/admin/analytics/threads/tier-distribution';
       const response = await backendApi.get(url);
       if (response.error) {
@@ -256,12 +265,13 @@ export function useVisitorStats(date?: string, source: AnalyticsSource = 'vercel
   });
 }
 
-export function useConversionFunnel(date?: string, source: AnalyticsSource = 'vercel') {
+export function useConversionFunnel(dateFrom?: string, dateTo?: string, source: AnalyticsSource = 'vercel') {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'conversion-funnel', date, source],
+    queryKey: ['admin', 'analytics', 'conversion-funnel', dateFrom, dateTo, source],
     queryFn: async (): Promise<ConversionFunnel> => {
       const params = new URLSearchParams();
-      if (date) params.append('date', date);
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
       params.append('source', source);
       const url = `/admin/analytics/conversion-funnel?${params.toString()}`;
       const response = await backendApi.get(url);
@@ -770,12 +780,16 @@ export function useRevenueSummary() {
   });
 }
 
-export function useEngagementSummary(date?: string) {
+export function useEngagementSummary(dateFrom?: string, dateTo?: string) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'engagement-summary', date],
+    queryKey: ['admin', 'analytics', 'engagement-summary', dateFrom, dateTo],
     queryFn: async (): Promise<EngagementSummary> => {
-      const url = date
-        ? `/admin/analytics/engagement-summary?date=${date}`
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const queryString = params.toString();
+      const url = queryString
+        ? `/admin/analytics/engagement-summary?${queryString}`
         : '/admin/analytics/engagement-summary';
       const response = await backendApi.get(url);
       if (response.error) {
@@ -788,12 +802,16 @@ export function useEngagementSummary(date?: string) {
   });
 }
 
-export function useTaskPerformance(date?: string) {
+export function useTaskPerformance(dateFrom?: string, dateTo?: string) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'task-performance', date],
+    queryKey: ['admin', 'analytics', 'task-performance', dateFrom, dateTo],
     queryFn: async (): Promise<TaskPerformance> => {
-      const url = date
-        ? `/admin/analytics/task-performance?date=${date}`
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const queryString = params.toString();
+      const url = queryString
+        ? `/admin/analytics/task-performance?${queryString}`
         : '/admin/analytics/task-performance';
       const response = await backendApi.get(url);
       if (response.error) {

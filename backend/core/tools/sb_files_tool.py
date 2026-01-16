@@ -55,6 +55,12 @@ from typing import Optional
 - **NO PURPLE COLORS:** Purple is absolutely forbidden in any form - no purple backgrounds, no purple text, no purple accents, no purple anything
 - **NO GENERIC AI/TECH GRADIENTS:** Explicitly forbidden: purple-to-blue gradients, blue-to-purple gradients, any purple/blue/teal gradient combinations, or any other generic "AI tech" gradient schemes
 - **SOLID COLORS ONLY:** Use only solid black, white, or shades of gray - no gradients, no color transitions, no fancy effects, NO PURPLE
+
+**🚨 FILE DELETION SAFETY:**
+- NEVER delete files without explicit user confirmation
+- Before calling `delete_file`, MUST use `ask` tool to request permission
+- Example: "Can I delete [filename]? This cannot be undone."
+- Only proceed with deletion after user explicitly approves
 """
 )
 class SandboxFilesTool(SandboxToolsBase):

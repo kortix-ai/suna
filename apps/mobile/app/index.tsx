@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View } from 'react-native';
+import { View, Text } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
 import { KortixLoader } from '@/components/ui';
 import { useAuthContext, useBillingContext } from '@/contexts';
@@ -65,6 +65,16 @@ export default function SplashScreen() {
   const onboardingReady = !isAuthenticated || !onboardingLoading;
   const allDataReady = authReady && billingReady && onboardingReady;
 
+  // Status text for debugging
+  const getStatusText = () => {
+    if (!authReady) return 'Checking session...';
+    if (!isAuthenticated) return 'Redirecting...';
+    if (billingLoading) return 'Loading account...';
+    if (!subscriptionData) return 'Fetching subscription...';
+    if (onboardingLoading) return 'Checking setup...';
+    return 'Almost there...';
+  };
+
   // Debug logging
   React.useEffect(() => {
     log.log('📊 Splash:', {
@@ -125,7 +135,10 @@ export default function SplashScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background items-center justify-center">
-        <KortixLoader size="large" />
+        <KortixLoader customSize={56} />
+        <Text className="text-muted-foreground text-sm mt-4">
+          {getStatusText()}
+        </Text>
       </View>
     </>
   );

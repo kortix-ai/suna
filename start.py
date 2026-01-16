@@ -57,6 +57,44 @@ def check_docker_compose_up(compose_cmd):
     )
     return len(result.stdout.strip()) > 0
 
+
+def check_native_processes_running():
+    """Check if backend and frontend processes are running natively."""
+    backend_running = False
+    frontend_running = False
+
+    if IS_WINDOWS:
+        # Windows: check tasklist
+        try:
+            result = subprocess.run(["tasklist"], capture_output=True, text=True, shell=True)
+            backend_running = "uv" in result.stdout and "api.py" in result.stdout
+            frontend_running = "node" in result.stdout
+        except Exception:
+            pass
+    else:
+        # Unix: use pgrep
+        try:
+            backend_result = subprocess.run(
+                ["pgrep", "-f", "uv run api.py"],
+                capture_output=True,
+                text=True,
+            )
+            backend_running = len(backend_result.stdout.strip()) > 0
+        except Exception:
+            pass
+
+        try:
+            frontend_result = subprocess.run(
+                ["pgrep", "-f", "next-server"],
+                capture_output=True,
+                text=True,
+            )
+            frontend_running = len(frontend_result.stdout.strip()) > 0
+        except Exception:
+            pass
+
+    return backend_running, frontend_running
+
 def print_manual_instructions(compose_cmd_str):
     """Prints instructions for manually starting Suna services."""
     progress = load_progress()
@@ -229,10 +267,8 @@ def main():
                 print(f"  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
                 print(f"  {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
         else:
-            # Manual mode: only manage infrastructure services (redis)
-            # and show instructions for the rest
+            # Manual setup: start all services (Redis + Backend + Frontend)
             print(f"{Colors.BLUE}{Colors.BOLD}Manual Setup Detected{Colors.ENDC}")
-            print("Managing infrastructure services (Redis)...\n")
 
             force = "-f" in sys.argv
             if force:
@@ -245,22 +281,34 @@ def main():
             if not compose_cmd:
                 return
             compose_cmd_str = format_compose_cmd(compose_cmd)
-            print(f"Using Docker Compose command: {compose_cmd_str}")
 
-            is_infra_up = subprocess.run(
+            # Check current state of all services
+            redis_check = subprocess.run(
                 compose_cmd + ["ps", "-q", "redis"],
                 capture_output=True,
                 text=True,
                 shell=IS_WINDOWS,
             )
-            is_up = len(is_infra_up.stdout.strip()) > 0
+            redis_running = len(redis_check.stdout.strip()) > 0
+            backend_running, frontend_running = check_native_processes_running()
 
-            if is_up:
+            # Determine if services are running
+            any_running = redis_running or backend_running or frontend_running
+            all_running = redis_running and backend_running and frontend_running
+
+            # Show current status
+            print(f"\n{Colors.BOLD}Service Status:{Colors.ENDC}")
+            print(f"  Redis:    {Colors.GREEN}Running{Colors.ENDC}" if redis_running else f"  Redis:    {Colors.RED}Stopped{Colors.ENDC}")
+            print(f"  Backend:  {Colors.GREEN}Running{Colors.ENDC}" if backend_running else f"  Backend:  {Colors.RED}Stopped{Colors.ENDC}")
+            print(f"  Frontend: {Colors.GREEN}Running{Colors.ENDC}" if frontend_running else f"  Frontend: {Colors.RED}Stopped{Colors.ENDC}")
+            print()
+
+            if any_running:
                 action = "stop"
-                msg = "🛑 Stop infrastructure services? [y/N] "
+                msg = "🛑 Stop all Suna services? [y/N] "
             else:
                 action = "start"
-                msg = "⚡ Start infrastructure services? [Y/n] "
+                msg = "⚡ Start all Suna services? [Y/n] "
 
             if not force:
                 response = input(msg).strip().lower()
@@ -274,18 +322,72 @@ def main():
                         return
 
             if action == "stop":
+                # Stop all services
                 subprocess.run(compose_cmd + ["down"], shell=IS_WINDOWS)
-                print(f"\n{Colors.GREEN}✅ Infrastructure services stopped.{Colors.ENDC}")
+                # Kill backend and frontend processes
+                if not IS_WINDOWS:
+                    subprocess.run(["pkill", "-f", "uv run api.py"], capture_output=True)
+                    subprocess.run(["pkill", "-f", "pnpm run dev"], capture_output=True)
+                print(f"\n{Colors.GREEN}✅ All Suna services stopped.{Colors.ENDC}")
             else:
-                subprocess.run(
-                    compose_cmd + ["up", "redis", "-d"], shell=IS_WINDOWS
-                )
-                print(f"\n{Colors.GREEN}✅ Infrastructure services started.{Colors.ENDC}")
-                print_manual_instructions(compose_cmd_str)
+                # Start Redis
+                print("Starting Redis...")
+                subprocess.run(compose_cmd + ["up", "-d", "redis"], shell=IS_WINDOWS)
+                print(f"{Colors.GREEN}✅ Redis started.{Colors.ENDC}")
+
+                # Start Backend
+                print("Starting Backend...")
+                backend_dir = os.path.join(os.getcwd(), "backend")
+                if IS_WINDOWS:
+                    subprocess.Popen(
+                        ["start", "cmd", "/k", "uv run api.py"],
+                        cwd=backend_dir,
+                        shell=True,
+                    )
+                else:
+                    backend_log = os.path.join(os.getcwd(), "backend.log")
+                    with open(backend_log, "w") as log_file:
+                        subprocess.Popen(
+                            ["uv", "run", "api.py"],
+                            cwd=backend_dir,
+                            stdout=log_file,
+                            stderr=subprocess.STDOUT,
+                            start_new_session=True,
+                        )
+                print(f"{Colors.GREEN}✅ Backend starting...{Colors.ENDC}")
+
+                # Start Frontend
+                print("Starting Frontend...")
+                frontend_dir = os.path.join(os.getcwd(), "apps", "frontend")
+                if IS_WINDOWS:
+                    subprocess.Popen(
+                        ["start", "cmd", "/k", "pnpm run dev"],
+                        cwd=frontend_dir,
+                        shell=True,
+                    )
+                else:
+                    frontend_log = os.path.join(os.getcwd(), "frontend.log")
+                    with open(frontend_log, "w") as log_file:
+                        subprocess.Popen(
+                            ["pnpm", "run", "dev"],
+                            cwd=frontend_dir,
+                            stdout=log_file,
+                            stderr=subprocess.STDOUT,
+                            start_new_session=True,
+                        )
+                print(f"{Colors.GREEN}✅ Frontend starting...{Colors.ENDC}")
+
+                print(f"\n{Colors.GREEN}✅ All Suna services started.{Colors.ENDC}")
+                print(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
+                if not IS_WINDOWS:
+                    print(f"\n{Colors.BOLD}View logs:{Colors.ENDC}")
+                    print(f"  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
+                    print(f"  {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
+                    print(f"\n{Colors.BOLD}Stop all services:{Colors.ENDC}")
+                    print(f"  {Colors.CYAN}python start.py{Colors.ENDC}  (and select stop)")
 
     else:  # docker setup
         print(f"{Colors.BLUE}{Colors.BOLD}Docker Setup Detected{Colors.ENDC}")
-        print("Managing all Suna services with Docker Compose...\n")
 
         force = "-f" in sys.argv
         if force:
@@ -293,16 +395,34 @@ def main():
 
         if not check_docker_available():
             return
-            
+
         compose_cmd = detect_docker_compose_command()
         if not compose_cmd:
             return
         compose_cmd_str = format_compose_cmd(compose_cmd)
-        print(f"Using Docker Compose command: {compose_cmd_str}")
 
-        is_up = check_docker_compose_up(compose_cmd)
+        # Check status of each service
+        services = ["redis", "backend", "frontend"]
+        service_status = {}
+        for service in services:
+            result = subprocess.run(
+                compose_cmd + ["ps", "-q", service],
+                capture_output=True,
+                text=True,
+                shell=IS_WINDOWS,
+            )
+            service_status[service] = len(result.stdout.strip()) > 0
 
-        if is_up:
+        # Show current status
+        print(f"\n{Colors.BOLD}Service Status:{Colors.ENDC}")
+        for service in services:
+            status = f"{Colors.GREEN}Running{Colors.ENDC}" if service_status[service] else f"{Colors.RED}Stopped{Colors.ENDC}"
+            print(f"  {service.capitalize():10} {status}")
+        print()
+
+        any_running = any(service_status.values())
+
+        if any_running:
             action = "stop"
             msg = "🛑 Stop all Suna services? [y/N] "
         else:
