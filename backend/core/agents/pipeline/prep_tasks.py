@@ -1,13 +1,3 @@
-"""
-Prep Tasks - Independent, stateless functions for parallel preparation.
-
-Each function:
-- Takes only the inputs it needs
-- Returns a typed result
-- Has no side effects on other prep tasks
-- Can be run in parallel with all other prep tasks
-"""
-
 import asyncio
 import time
 from typing import Dict, Any, List, Optional, Tuple
@@ -24,7 +14,6 @@ from core.agents.pipeline.context import (
     ToolsResult,
     MCPResult,
 )
-
 
 async def prep_billing(account_id: str, wait_for_cache_ms: int = 3000) -> BillingResult:
     if config.ENV_MODE == EnvMode.LOCAL:
@@ -158,7 +147,6 @@ async def prep_prompt(
     mcp_loader=None,
     client=None
 ) -> PromptResult:
-    """Build the system prompt."""
     start = time.time()
     
     try:
@@ -190,7 +178,6 @@ async def prep_prompt(
 
 
 async def prep_tools(tool_registry) -> ToolsResult:
-    """Get OpenAPI tool schemas."""
     start = time.time()
     
     try:
@@ -215,7 +202,6 @@ async def prep_mcp(
     account_id: str,
     thread_manager
 ) -> MCPResult:
-    """Initialize MCP tools."""
     if not agent_config:
         return MCPResult(initialized=False)
     
@@ -245,7 +231,6 @@ async def prep_mcp(
 
 
 async def prep_llm_connection(model_name: str) -> bool:
-    """Prewarm the LLM connection."""
     try:
         from core.services.llm import prewarm_llm_connection_background
         asyncio.create_task(prewarm_llm_connection_background(model_name))
@@ -256,7 +241,6 @@ async def prep_llm_connection(model_name: str) -> bool:
 
 
 async def prep_project_metadata(project_id: str) -> bool:
-    """Ensure project metadata is cached."""
     try:
         from core.agents.runner.services import ensure_project_metadata_cached
         await ensure_project_metadata_cached(project_id)

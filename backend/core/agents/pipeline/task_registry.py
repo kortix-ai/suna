@@ -1,10 +1,3 @@
-"""
-Task Registry - Tracks all spawned tasks to prevent memory/CPU leaks.
-
-Every asyncio.Task created during pipeline execution is registered here.
-On cleanup, all tasks are properly cancelled and awaited.
-"""
-
 import asyncio
 import weakref
 from typing import Dict, Set, Optional
@@ -16,7 +9,6 @@ from core.utils.logger import logger
 
 @dataclass
 class TaskInfo:
-    """Metadata about a tracked task."""
     task: asyncio.Task
     name: str
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
@@ -24,15 +16,6 @@ class TaskInfo:
 
 
 class TaskRegistry:
-    """
-    Thread-safe registry for tracking asyncio tasks per agent run.
-    
-    Ensures no task leaks by:
-    1. Tracking all spawned tasks
-    2. Cancelling all on cleanup
-    3. Awaiting cancellation to ensure proper cleanup
-    """
-    
     _instance: Optional['TaskRegistry'] = None
     _lock: asyncio.Lock = None
     
@@ -42,7 +25,6 @@ class TaskRegistry:
     
     @classmethod
     def get_instance(cls) -> 'TaskRegistry':
-        """Get singleton instance."""
         if cls._instance is None:
             cls._instance = TaskRegistry()
         return cls._instance
@@ -54,7 +36,6 @@ class TaskRegistry:
         name: str,
         critical: bool = False
     ) -> None:
-        """Register a task for tracking."""
         async with self._lock:
             if run_id not in self._runs:
                 self._runs[run_id] = {}
@@ -73,7 +54,6 @@ class TaskRegistry:
             )
     
     async def _on_task_done(self, run_id: str, task_id: str) -> None:
-        """Remove completed task from registry."""
         async with self._lock:
             if run_id in self._runs and task_id in self._runs[run_id]:
                 del self._runs[run_id][task_id]
@@ -81,10 +61,6 @@ class TaskRegistry:
                     del self._runs[run_id]
     
     async def cancel_all(self, run_id: str, reason: str = "cleanup") -> int:
-        """
-        Cancel all tasks for a run and await their completion.
-        Returns number of tasks cancelled.
-        """
         async with self._lock:
             if run_id not in self._runs:
                 return 0
@@ -119,7 +95,6 @@ class TaskRegistry:
         return cancelled_count
     
     async def get_active_count(self, run_id: str) -> int:
-        """Get count of active tasks for a run."""
         async with self._lock:
             if run_id not in self._runs:
                 return 0
@@ -129,7 +104,6 @@ class TaskRegistry:
             )
     
     async def cleanup_stale(self, max_age_seconds: int = 3600) -> int:
-        """Clean up tasks from runs older than max_age_seconds."""
         now = datetime.now(timezone.utc)
         stale_runs = []
         

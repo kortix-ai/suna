@@ -538,6 +538,54 @@ class RedisClient:
         )
         return result or 0
     
+    async def decr(self, key: str, timeout: float = None) -> int:
+        """Decrement a key with timeout protection."""
+        timeout = timeout or DEFAULT_OP_TIMEOUT
+        client = await self.get_client()
+        result = await self._with_timeout(
+            client.decr(key),
+            timeout_seconds=timeout,
+            operation_name=f"decr({key})",
+            default=0
+        )
+        return result or 0
+    
+    async def sadd(self, key: str, *members, timeout: float = None) -> int:
+        """Add members to a set with timeout protection."""
+        timeout = timeout or DEFAULT_OP_TIMEOUT
+        client = await self.get_client()
+        result = await self._with_timeout(
+            client.sadd(key, *members),
+            timeout_seconds=timeout,
+            operation_name=f"sadd({key})",
+            default=0
+        )
+        return result or 0
+    
+    async def srem(self, key: str, *members, timeout: float = None) -> int:
+        """Remove members from a set with timeout protection."""
+        timeout = timeout or DEFAULT_OP_TIMEOUT
+        client = await self.get_client()
+        result = await self._with_timeout(
+            client.srem(key, *members),
+            timeout_seconds=timeout,
+            operation_name=f"srem({key})",
+            default=0
+        )
+        return result or 0
+    
+    async def smembers(self, key: str, timeout: float = None) -> set:
+        """Get all members of a set with timeout protection."""
+        timeout = timeout or DEFAULT_OP_TIMEOUT
+        client = await self.get_client()
+        result = await self._with_timeout(
+            client.smembers(key),
+            timeout_seconds=timeout,
+            operation_name=f"smembers({key})",
+            default=set()
+        )
+        return result or set()
+    
     async def expire(self, key: str, seconds: int, timeout: float = None) -> bool:
         """Set key expiration with timeout protection."""
         timeout = timeout or DEFAULT_OP_TIMEOUT
@@ -955,6 +1003,18 @@ async def delete_multiple(keys: List[str], timeout: float = None) -> int:
 
 async def incr(key: str, timeout: float = None) -> int:
     return await redis.incr(key, timeout=timeout)
+
+async def decr(key: str, timeout: float = None) -> int:
+    return await redis.decr(key, timeout=timeout)
+
+async def sadd(key: str, *members, timeout: float = None) -> int:
+    return await redis.sadd(key, *members, timeout=timeout)
+
+async def srem(key: str, *members, timeout: float = None) -> int:
+    return await redis.srem(key, *members, timeout=timeout)
+
+async def smembers(key: str, timeout: float = None) -> set:
+    return await redis.smembers(key, timeout=timeout)
 
 async def expire(key: str, seconds: int, timeout: float = None):
     return await redis.expire(key, seconds, timeout=timeout)

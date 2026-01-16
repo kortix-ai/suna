@@ -323,8 +323,8 @@ async def start_agent_run(
     emit_timing: bool = False,
     mode: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Start agent run with optimistic response - returns immediately, DB writes in background."""
     from core.agents.config import load_agent_config_fast
+    from core.agents.pipeline.slot_manager import reserve_slot
     
     total_start = time.time()
     is_new_thread = thread_id is None or is_optimistic
@@ -352,6 +352,24 @@ async def start_agent_run(
     
     agent_run_id = str(uuid.uuid4())
     
+    slot_reservation = await reserve_slot(
+        account_id=account_id,
+        agent_run_id=agent_run_id,
+        skip=skip_limits_check
+    )
+    
+    if not slot_reservation.acquired:
+        logger.warning(f"⚠️ Slot rejected for {agent_run_id}: {slot_reservation.message}")
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "message": slot_reservation.message,
+                "running_count": slot_reservation.slot_count,
+                "limit": slot_reservation.limit,
+                "error_code": slot_reservation.error_code or "AGENT_RUN_LIMIT_EXCEEDED"
+            }
+        )
+    
     cancellation_event = asyncio.Event()
     _cancellation_events[agent_run_id] = cancellation_event
 
@@ -364,7 +382,6 @@ async def start_agent_run(
             agent_run_id=agent_run_id,
             prompt=prompt
         )
-        # Cache agent run data for fast SSE stream lookup
         await set_agent_run_stream_data(
             agent_run_id=agent_run_id,
             thread_id=thread_id,
@@ -373,7 +390,6 @@ async def start_agent_run(
             metadata=metadata
         )
     else:
-        # For existing threads, also cache the stream data
         from core.cache.runtime_cache import set_agent_run_stream_data
         await set_agent_run_stream_data(
             agent_run_id=agent_run_id,
@@ -437,7 +453,6 @@ async def _background_setup_and_execute(
         create_new_thread_records,
         create_agent_run_record,
         create_image_messages,
-        check_concurrent_runs_limit,
         notify_setup_error,
     )
     
@@ -519,9 +534,8 @@ async def _background_setup_and_execute(
         log_run_start(agent_run_id, thread_id)
         
         db_task = asyncio.create_task(do_db_writes())
-        asyncio.create_task(check_concurrent_runs_limit(
-            account_id, agent_run_id, cancellation_event, skip_limits_check
-        ))
+        # NOTE: Concurrent limit check is now done atomically via slot_manager.reserve_slot()
+        # BEFORE returning the optimistic response. No background check needed.
         
         logger.info(f"✅ [BG] Starting agent execution")
         
@@ -549,6 +563,14 @@ async def _background_setup_and_execute(
             cleanup_reason = f"{type(e).__name__}: {str(e)[:100]}"
             logger.error(f"[LIFECYCLE] EXCEPTION agent_run={agent_run_id} error={cleanup_reason}")
         finally:
+            # CRITICAL: Release the slot we reserved at the start
+            try:
+                from core.agents.pipeline.slot_manager import release_slot
+                await release_slot(account_id, agent_run_id)
+            except Exception as slot_err:
+                logger.error(f"[SLOT] Failed to release slot for {agent_run_id}: {slot_err}")
+                cleanup_errors.append(f"slot_release: {slot_err}")
+            
             try:
                 await asyncio.wait_for(db_task, timeout=30.0)
             except asyncio.TimeoutError:
@@ -570,6 +592,12 @@ async def _background_setup_and_execute(
     
     except Exception as e:
         logger.error(f"❌ [BG] Setup failed for agent_run={agent_run_id}: {e}")
+        # Release slot on setup failure too
+        try:
+            from core.agents.pipeline.slot_manager import release_slot
+            await release_slot(account_id, agent_run_id)
+        except Exception:
+            pass
         _cancellation_events.pop(agent_run_id, None)
         await notify_setup_error(agent_run_id, e)
 

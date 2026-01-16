@@ -1,7 +1,3 @@
-"""
-Limit Enforcer - Parallel tier limit checks.
-"""
-
 import asyncio
 import time
 from typing import Dict, Any, Optional, Tuple
@@ -13,7 +9,6 @@ from core.utils.config import config, EnvMode
 
 @dataclass
 class AllLimitsResult:
-    """Combined result of all limit checks."""
     can_run: bool
     message: str
     error_code: Optional[str] = None
@@ -22,8 +17,6 @@ class AllLimitsResult:
 
 
 class LimitEnforcer:
-    """Enforces all tier limits in parallel."""
-    
     @staticmethod
     async def check_all(
         account_id: str,
