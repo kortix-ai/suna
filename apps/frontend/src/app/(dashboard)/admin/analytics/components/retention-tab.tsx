@@ -1,14 +1,12 @@
 'use client';
 
 import { useState, useMemo } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pagination } from '@/components/agents/pagination';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
-import { UserCheck } from 'lucide-react';
 import { useRetentionData, type RetentionData } from '@/hooks/admin/use-admin-analytics';
 import { UserEmailLink } from './user-email-link';
 import type { RetentionTabProps } from '../types';
@@ -85,60 +83,60 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
   ], [onUserClick]);
 
   return (
-    <div className="space-y-4">
-      {/* Filters */}
-      <div className="flex gap-4">
-        <div className="w-[150px]">
-          <Label className="text-sm">Weeks to Analyze</Label>
-          <Select
-            value={params.weeks_back.toString()}
-            onValueChange={(v) => setParams({ ...params, weeks_back: parseInt(v), page: 1 })}
-          >
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="2">2 weeks</SelectItem>
-              <SelectItem value="4">4 weeks</SelectItem>
-              <SelectItem value="8">8 weeks</SelectItem>
-              <SelectItem value="12">12 weeks</SelectItem>
-            </SelectContent>
-          </Select>
+    <div className="space-y-6">
+      {/* Header with Filters */}
+      <div className="rounded-xl border bg-card">
+        <div className="p-5 border-b flex items-center justify-between">
+          <div>
+            <h2 className="text-sm font-medium">Recurring Users</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Users active in {params.min_weeks_active}+ different weeks over the past {params.weeks_back} weeks
+            </p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Weeks</Label>
+              <Select
+                value={params.weeks_back.toString()}
+                onValueChange={(v) => setParams({ ...params, weeks_back: parseInt(v), page: 1 })}
+              >
+                <SelectTrigger className="w-24 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="2">2 weeks</SelectItem>
+                  <SelectItem value="4">4 weeks</SelectItem>
+                  <SelectItem value="8">8 weeks</SelectItem>
+                  <SelectItem value="12">12 weeks</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Min Active</Label>
+              <Select
+                value={params.min_weeks_active.toString()}
+                onValueChange={(v) => setParams({ ...params, min_weeks_active: parseInt(v), page: 1 })}
+              >
+                <SelectTrigger className="w-24 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="1">1+ week</SelectItem>
+                  <SelectItem value="2">2+ weeks</SelectItem>
+                  <SelectItem value="3">3+ weeks</SelectItem>
+                  <SelectItem value="4">4+ weeks</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </div>
 
-        <div className="w-[180px]">
-          <Label className="text-sm">Min Weeks Active</Label>
-          <Select
-            value={params.min_weeks_active.toString()}
-            onValueChange={(v) => setParams({ ...params, min_weeks_active: parseInt(v), page: 1 })}
-          >
-            <SelectTrigger className="mt-1">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="1">1+ week</SelectItem>
-              <SelectItem value="2">2+ weeks</SelectItem>
-              <SelectItem value="3">3+ weeks</SelectItem>
-              <SelectItem value="4">4+ weeks</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <UserCheck className="h-5 w-5" />
-            Recurring Users
-          </CardTitle>
-          <CardDescription>
-            Users active in {params.min_weeks_active}+ different weeks over the past {params.weeks_back} weeks
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="p-0">
+        {/* Table */}
+        <div className="p-0">
           {isLoading ? (
-            <div className="p-6 space-y-3">
+            <div className="p-5 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
               ))}
@@ -151,8 +149,8 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
               getItemId={(user) => user.user_id}
             />
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
       {/* Pagination */}
       {retentionData?.pagination && (

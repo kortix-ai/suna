@@ -34,6 +34,23 @@ export const useAgentSelectionStore = create<AgentSelectionState>()(
       },
 
       initializeFromAgents: (agents: Agent[], threadAgentId?: string, onAgentSelect?: (agentId: string | undefined) => void) => {
+        // Always check URL params first - they represent explicit user intent (e.g., clicking "Start Chat" from worker config)
+        let agentIdFromUrl: string | null = null;
+        if (typeof window !== 'undefined') {
+          const urlParams = new URLSearchParams(window.location.search);
+          agentIdFromUrl = urlParams.get('agent_id');
+        }
+
+        // If URL has agent_id, always use it (even if already initialized)
+        if (agentIdFromUrl && agents.some(a => a.agent_id === agentIdFromUrl)) {
+          set({ selectedAgentId: agentIdFromUrl, hasInitialized: true });
+          if (onAgentSelect) {
+            onAgentSelect(agentIdFromUrl);
+          }
+          return;
+        }
+
+        // Skip rest of initialization if already initialized
         if (get().hasInitialized) {
           return;
         }
@@ -42,17 +59,11 @@ export const useAgentSelectionStore = create<AgentSelectionState>()(
 
         if (threadAgentId) {
           selectedId = threadAgentId;
-        } else if (typeof window !== 'undefined') {
-          const urlParams = new URLSearchParams(window.location.search);
-          const agentIdFromUrl = urlParams.get('agent_id');
-          if (agentIdFromUrl) {
-            selectedId = agentIdFromUrl;
-          }
         }
 
         if (!selectedId) {
           const current = get().selectedAgentId;
-          
+
           if (current && agents.some(a => a.agent_id === current)) {
             selectedId = current;
           } else if (agents.length > 0) {

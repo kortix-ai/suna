@@ -12,6 +12,7 @@ export const PREVIEWABLE_EXTENSIONS = [
   'xlsx', 'xls',
   'pdf',
   'txt',
+  'kanvax',
 ] as const;
 
 // Image extensions
@@ -115,6 +116,20 @@ export function isPdfExtension(ext: string): boolean {
 
 export function isTextExtension(ext: string): boolean {
   return ext.toLowerCase() === 'txt';
+}
+
+/**
+ * Check if file is a kanvax canvas file
+ */
+export function isKanvaxExtension(ext: string): boolean {
+  return ext.toLowerCase() === 'kanvax';
+}
+
+/**
+ * Check if file path is a kanvax canvas file
+ */
+export function isKanvaxFile(filepath: string): boolean {
+  return isKanvaxExtension(getExtension(filepath));
 }
 
 /**

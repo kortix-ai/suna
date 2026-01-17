@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -11,23 +10,23 @@ import {
   Users,
   MessageSquare,
   TrendingUp,
-  Activity,
   Calendar as CalendarIcon,
-  Eye,
-  Filter,
-  BarChart3,
-  UserCheck,
   ChevronLeft,
   ChevronRight,
   CreditCard,
+  ArrowRight,
+  Activity,
+  DollarSign,
+  BarChart3,
+  UserCheck,
   Zap,
-  CheckCircle2,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format, addDays, subDays } from 'date-fns';
+import { format, addDays, subDays, startOfWeek, startOfMonth, startOfQuarter, startOfYear } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
+import { cn } from '@/lib/utils';
 import {
   useAnalyticsSummary,
   useMessageDistribution,
@@ -36,14 +35,14 @@ import {
   useConversionFunnel,
   useEngagementSummary,
   useTaskPerformance,
+  useProfitability,
   type AnalyticsSource,
 } from '@/hooks/admin/use-admin-analytics';
 import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
 import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
 
-// Import extracted components
-import { UserEmailLink, StatCard, ThreadBrowser, RetentionTab, ARRSimulator } from './components';
+import { UserEmailLink, MetricCard, ThreadBrowser, RetentionTab, ARRSimulator } from './components';
 
 // Get current date in Berlin timezone
 function getBerlinToday(): Date {
@@ -65,20 +64,14 @@ export default function AdminAnalyticsPage() {
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   const [activeTab, setActiveTab] = useState<string>('overview');
 
-  // Helper to set category filter and auto-switch to threads tab
   const handleCategoryFilter = (category: string | null) => {
     setCategoryFilter(category);
-    if (category) {
-      setActiveTab('threads');
-    }
+    if (category) setActiveTab('threads');
   };
 
-  // Helper to set tier filter and auto-switch to threads tab
   const handleTierFilter = (tier: string | null) => {
     setTierFilter(tier);
-    if (tier && tier !== 'all') {
-      setActiveTab('threads');
-    }
+    if (tier && tier !== 'all') setActiveTab('threads');
   };
 
   // User details dialog state
@@ -86,7 +79,6 @@ export default function AdminAnalyticsPage() {
   const [isUserDialogOpen, setIsUserDialogOpen] = useState(false);
   const [pendingUserEmail, setPendingUserEmail] = useState<string | null>(null);
 
-  // Fetch user by email when clicked
   const { data: userSearchResult, isLoading: isSearchingUser, isFetching: isUserFetching } = useAdminUserList({
     page: 1,
     page_size: 1,
@@ -95,11 +87,8 @@ export default function AdminAnalyticsPage() {
 
   const { refreshUserList, refreshUserStats } = useRefreshUserData();
 
-  // When user search completes, open the dialog
   useEffect(() => {
-    if (!pendingUserEmail || isSearchingUser || isUserFetching) {
-      return;
-    }
+    if (!pendingUserEmail || isSearchingUser || isUserFetching) return;
 
     if (userSearchResult?.data && userSearchResult.data.length > 0) {
       setSelectedUser(userSearchResult.data[0]);
@@ -111,22 +100,15 @@ export default function AdminAnalyticsPage() {
     }
   }, [pendingUserEmail, userSearchResult, isSearchingUser, isUserFetching]);
 
-  // Handle user email click from anywhere in the app
-  const handleUserEmailClick = (email: string) => {
-    setPendingUserEmail(email);
-  };
-
-  // Handle user selection from the Users tab table
+  const handleUserEmailClick = (email: string) => setPendingUserEmail(email);
   const handleUserSelect = (user: UserSummary) => {
     setSelectedUser(user);
     setIsUserDialogOpen(true);
   };
-
   const handleCloseUserDialog = () => {
     setIsUserDialogOpen(false);
     setSelectedUser(null);
   };
-
   const handleRefreshUserData = () => {
     refreshUserList();
     refreshUserStats();
@@ -137,179 +119,130 @@ export default function AdminAnalyticsPage() {
   const dateToString = dateRange.to ? format(dateRange.to, 'yyyy-MM-dd') : dateFromString;
 
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
-
-  // Only fetch threads-related data when on threads tab
   const isThreadsTab = activeTab === 'threads';
+  const isOverviewOrThreads = activeTab === 'overview' || activeTab === 'threads';
   const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateFromString, dateToString, isThreadsTab);
-  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateFromString, dateToString, tierFilter, isThreadsTab);
-  const { data: tierDistribution, isFetching: tierFetching } = useTierDistribution(dateFromString, dateToString, isThreadsTab);
-
-  // Overview tab data
-  const { data: conversionFunnel, isLoading: funnelLoading, isFetching: funnelFetching } = useConversionFunnel(dateFromString, dateToString, analyticsSource);
-
-  // Executive Overview data hooks
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateFromString, dateToString, tierFilter, isOverviewOrThreads);
+  const { data: tierDistribution } = useTierDistribution(dateFromString, dateToString, isThreadsTab);
+  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateFromString, dateToString, analyticsSource);
   const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateFromString, dateToString);
   const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateFromString, dateToString);
+  const { data: profitability, isLoading: profitabilityLoading, isFetching: profitabilityFetching } = useProfitability(dateFromString, dateToString);
 
-  // Combined fetching state for the Daily Analytics card
-  const isDailyAnalyticsFetching = distributionFetching || categoryFetching || tierFetching || funnelFetching;
-  const isOverviewFetching = engagementFetching || taskFetching;
+  const isOverviewFetching = engagementFetching || taskFetching || profitabilityFetching;
+
+  // Navigation helpers
+  const navigateDateRange = (direction: 'prev' | 'next') => {
+    if (!dateRange.from) return;
+    const toDate = dateRange.to || dateRange.from;
+    const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
+
+    if (direction === 'prev') {
+      setDateRange({
+        from: subDays(dateRange.from, daysDiff + 1),
+        to: subDays(toDate, daysDiff + 1),
+      });
+    } else {
+      const newTo = addDays(toDate, daysDiff + 1);
+      const cappedTo = newTo > berlinToday ? berlinToday : newTo;
+      const newFrom = addDays(dateRange.from, daysDiff + 1);
+      const cappedFrom = newFrom > berlinToday ? berlinToday : newFrom;
+      setDateRange({ from: cappedFrom, to: cappedTo });
+    }
+  };
+
+  const isAtToday = (dateRange.to || dateRange.from) &&
+    format(dateRange.to || dateRange.from!, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd');
+
+  const dateLabel = dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
+    ? format(dateRange.from, 'MMM d, yyyy')
+    : dateRange.from && dateRange.to
+      ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
+      : dateRange.from
+        ? format(dateRange.from, 'MMM d, yyyy')
+        : 'Select date';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background to-muted/20">
-      <div className="max-w-7xl mx-auto p-6 space-y-8">
+    <div className="min-h-screen bg-background">
+      <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Analytics Dashboard
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Understand retention, conversion, and user behavior
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Visitor Source</span>
-            <Select value={analyticsSource} onValueChange={(v) => setAnalyticsSource(v as AnalyticsSource)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Source" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="vercel">Vercel</SelectItem>
-                <SelectItem value="ga">Google Analytics</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
-
-        {/* Tabs - at top for easy navigation */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="overview" className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4" />
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="threads" className="flex items-center gap-2">
-              <MessageSquare className="h-4 w-4" />
-              All Threads
-            </TabsTrigger>
-            <TabsTrigger value="users" className="flex items-center gap-2">
-              <CreditCard className="h-4 w-4" />
-              Users & Billing
-            </TabsTrigger>
-            <TabsTrigger value="retention" className="flex items-center gap-2">
-              <UserCheck className="h-4 w-4" />
-              Retention
-            </TabsTrigger>
-            <TabsTrigger value="simulator" className="flex items-center gap-2">
-              <TrendingUp className="h-4 w-4" />
-              ARR Simulator
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="overview" className="space-y-6">
-            {/* Executive Summary - Top KPIs Row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {(summaryLoading || engagementLoading) ? (
-                [...Array(4)].map((_, i) => (
-                  <Skeleton key={i} className="h-28" />
-                ))
-              ) : (
-                <>
-                  <StatCard
-                    title="Active Users Today"
-                    value={engagementSummary?.dau?.toLocaleString() || '0'}
-                    description={`${engagementSummary?.wau || 0} WAU · ${engagementSummary?.mau || 0} MAU`}
-                    icon={<Users className="h-4 w-4 text-primary" />}
-                  />
-                  <StatCard
-                    title="New Signups"
-                    value={summary?.new_signups_today || 0}
-                    description={`${summary?.new_signups_week || 0} this week`}
-                    icon={<TrendingUp className="h-4 w-4 text-primary" />}
-                  />
-                  <StatCard
-                    title="Threads Today"
-                    value={engagementSummary?.total_threads_today?.toLocaleString() || '0'}
-                    description={`${engagementSummary?.total_threads_week || 0} this week`}
-                    icon={<Activity className="h-4 w-4 text-primary" />}
-                  />
-                  <StatCard
-                    title="Success Rate"
-                    value={`${taskPerformance?.success_rate || 0}%`}
-                    description={`${taskPerformance?.total_runs || 0} runs today`}
-                    icon={<CheckCircle2 className="h-4 w-4 text-primary" />}
-                  />
-                </>
-              )}
+        <header className="mb-8">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">
+                Platform health and business metrics
+              </p>
             </div>
 
-            {/* Date Range Picker for Overview */}
-            <div className="flex items-center justify-end gap-1">
+            {/* Date Navigation */}
+            <div className="flex items-center gap-2">
+              {/* Date Presets */}
+              <div className="flex items-center gap-1 mr-2">
+                {[
+                  { label: 'Today', from: berlinToday, to: berlinToday },
+                  { label: '7D', from: subDays(berlinToday, 6), to: berlinToday },
+                  { label: '30D', from: subDays(berlinToday, 29), to: berlinToday },
+                  { label: 'WTD', from: startOfWeek(berlinToday, { weekStartsOn: 1 }), to: berlinToday },
+                  { label: 'MTD', from: startOfMonth(berlinToday), to: berlinToday },
+                  { label: 'QTD', from: startOfQuarter(berlinToday), to: berlinToday },
+                  { label: 'YTD', from: startOfYear(berlinToday), to: berlinToday },
+                ].map((preset) => {
+                  const isActive = dateRange.from && dateRange.to &&
+                    format(dateRange.from, 'yyyy-MM-dd') === format(preset.from, 'yyyy-MM-dd') &&
+                    format(dateRange.to, 'yyyy-MM-dd') === format(preset.to, 'yyyy-MM-dd');
+                  return (
+                    <Button
+                      key={preset.label}
+                      variant={isActive ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setDateRange({ from: preset.from, to: preset.to })}
+                    >
+                      {preset.label}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              <div className="h-6 w-px bg-border" />
+
+              {/* Custom Range */}
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                onClick={() => {
-                  if (dateRange.from) {
-                    const toDate = dateRange.to || dateRange.from;
-                    const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
-                    setDateRange({
-                      from: subDays(dateRange.from, daysDiff + 1),
-                      to: subDays(toDate, daysDiff + 1),
-                    });
-                  }
-                }}
+                onClick={() => navigateDateRange('prev')}
               >
                 <ChevronLeft className="h-4 w-4" />
               </Button>
+
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="min-w-[200px] justify-start text-left font-normal h-9">
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
-                      ? format(dateRange.from, 'MMM d, yyyy')
-                      : dateRange.from && dateRange.to
-                        ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
-                        : dateRange.from
-                          ? format(dateRange.from, 'MMM d, yyyy')
-                          : 'Select date range'}
+                  <Button variant="outline" className="h-8 px-3 font-normal text-xs">
+                    <CalendarIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
+                    {dateLabel}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="end">
                   <Calendar
                     mode="range"
                     selected={dateRange}
-                    onDayClick={(day) => {
-                      clickedDateRef.current = day;
-                    }}
+                    onDayClick={(day) => { clickedDateRef.current = day; }}
                     onSelect={(newRange) => {
-                      // If we had a complete range, start fresh with clicked date
                       if (dateRange.from && dateRange.to && clickedDateRef.current) {
                         setDateRange({ from: clickedDateRef.current, to: undefined });
                         clickedDateRef.current = null;
                         return;
                       }
-
-                      if (newRange?.from) {
-                        setDateRange(newRange);
-                      }
+                      if (newRange?.from) setDateRange(newRange);
                       clickedDateRef.current = null;
                     }}
                     disabled={(date) => date > berlinToday}
                     numberOfMonths={1}
                     initialFocus
                   />
-                  <div className="border-t p-2 flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">
-                      {dateRange.from && dateRange.to
-                        ? dateRange.from.getTime() === dateRange.to.getTime()
-                          ? format(dateRange.from, 'MMM d, yyyy')
-                          : `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
-                        : dateRange.from
-                          ? `${format(dateRange.from, 'MMM d, yyyy')} - ...`
-                          : 'Select dates'}
-                    </span>
+                  <div className="border-t p-2 flex justify-end">
                     <Button
                       size="sm"
                       onClick={() => setCalendarOpen(false)}
@@ -320,467 +253,548 @@ export default function AdminAnalyticsPage() {
                   </div>
                 </PopoverContent>
               </Popover>
+
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
-                disabled={(dateRange.to || dateRange.from) && format(dateRange.to || dateRange.from!, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
-                onClick={() => {
-                  if (dateRange.from) {
-                    const toDate = dateRange.to || dateRange.from;
-                    const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
-                    const newTo = addDays(toDate, daysDiff + 1);
-                    const cappedTo = newTo > berlinToday ? berlinToday : newTo;
-                    const newFrom = addDays(dateRange.from, daysDiff + 1);
-                    const cappedFrom = newFrom > berlinToday ? berlinToday : newFrom;
-                    setDateRange({ from: cappedFrom, to: cappedTo });
-                  }
-                }}
+                disabled={!!isAtToday}
+                onClick={() => navigateDateRange('next')}
               >
                 <ChevronRight className="h-4 w-4" />
               </Button>
             </div>
+          </div>
 
-            {/* Single Column Layout */}
-            <div className={`space-y-6 transition-opacity duration-200 ${isOverviewFetching ? 'opacity-60' : 'opacity-100'}`}>
-              {/* Conversion Funnel Card */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4" />
-                    Conversion Funnel
-                  </CardTitle>
-                  <CardDescription>
-                    Visitors → Signups → Subscriptions for {
-                      dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
-                        ? format(dateRange.from, 'MMM d')
-                        : dateRange.from && dateRange.to
-                          ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d')}`
-                          : ''
-                    }
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {funnelLoading ? (
-                    <div className="grid grid-cols-3 gap-3">
-                      {[...Array(3)].map((_, i) => (
-                        <Skeleton key={i} className="h-16" />
-                      ))}
+          {/* Tabs */}
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="bg-muted/50">
+              <TabsTrigger value="overview" className="gap-1.5">
+                <BarChart3 className="h-3.5 w-3.5" />
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="threads" className="gap-1.5">
+                <MessageSquare className="h-3.5 w-3.5" />
+                Threads
+              </TabsTrigger>
+              <TabsTrigger value="users" className="gap-1.5">
+                <Users className="h-3.5 w-3.5" />
+                Users
+              </TabsTrigger>
+              <TabsTrigger value="retention" className="gap-1.5">
+                <UserCheck className="h-3.5 w-3.5" />
+                Retention
+              </TabsTrigger>
+              <TabsTrigger value="simulator" className="gap-1.5">
+                <TrendingUp className="h-3.5 w-3.5" />
+                ARR
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+        </header>
+
+        {/* Content */}
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          {/* Overview Tab */}
+          <TabsContent value="overview" className="mt-0">
+            <div className={cn(
+              'space-y-6 transition-opacity duration-200',
+              isOverviewFetching && 'opacity-60'
+            )}>
+              {/* SECTION 1: Tasks & Users Analysis */}
+              <section className="rounded-xl border bg-card">
+                <div className="p-5 pb-4 border-b">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-muted-foreground" />
+                    Tasks & Users
+                  </h2>
+                </div>
+
+                <div className="p-5">
+                  {(summaryLoading || engagementLoading || taskLoading || funnelLoading) ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-5 gap-4">
+                        {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+                      </div>
+                      <Skeleton className="h-24" />
                     </div>
-                  ) : conversionFunnel ? (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="text-center p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-xl font-bold">{conversionFunnel.visitors.toLocaleString()}</div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Row 1: Core metrics */}
+                      <div className="grid grid-cols-7 gap-3">
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{conversionFunnel?.visitors?.toLocaleString() || 0}</p>
                           <p className="text-xs text-muted-foreground">Visitors</p>
                         </div>
-                        <div className="text-center p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-xl font-bold">{conversionFunnel.signups.toLocaleString()}</div>
-                          <p className="text-xs text-muted-foreground">Signups ({conversionFunnel.visitor_to_signup_rate}%)</p>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{conversionFunnel?.signups?.toLocaleString() || 0}</p>
+                          <p className="text-xs text-muted-foreground">New Signups</p>
                         </div>
-                        <Popover>
-                          <PopoverTrigger asChild>
-                            <div className="text-center p-2.5 rounded-lg bg-muted/50 cursor-pointer hover:bg-muted/70 transition-colors">
-                              <div className="text-xl font-bold">{conversionFunnel.subscriptions.toLocaleString()}</div>
-                              <p className="text-xs text-muted-foreground">Subs ({conversionFunnel.signup_to_subscription_rate}%)</p>
-                            </div>
-                          </PopoverTrigger>
-                          <PopoverContent className="w-80 max-h-64 overflow-y-auto">
-                            <div className="space-y-2">
-                              <h4 className="font-medium text-sm">Subscriber Emails</h4>
-                              {conversionFunnel.subscriber_emails && conversionFunnel.subscriber_emails.length > 0 ? (
-                                <ul className="space-y-1">
-                                  {conversionFunnel.subscriber_emails.map((email, idx) => (
-                                    <li key={idx} className="text-sm flex items-center gap-2">
-                                      <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">{idx + 1}</span>
-                                      <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <p className="text-sm text-muted-foreground">No subscriber emails for this period</p>
-                              )}
-                            </div>
-                          </PopoverContent>
-                        </Popover>
-                      </div>
-                      <p className="text-xs text-muted-foreground text-center">
-                        Overall: <span className="font-medium text-foreground">{conversionFunnel.overall_conversion_rate}%</span> conversion
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 text-muted-foreground text-sm">
-                      <Eye className="h-5 w-5 mx-auto mb-1 opacity-50" />
-                      Analytics not configured
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* User Engagement Card */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Activity className="h-4 w-4" />
-                    User Engagement
-                  </CardTitle>
-                  <CardDescription>
-                    Daily, weekly, and monthly active users
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {engagementLoading ? (
-                    <div className="space-y-3">
-                      <Skeleton className="h-16" />
-                      <Skeleton className="h-16" />
-                    </div>
-                  ) : engagementSummary ? (
-                    <div className="space-y-4">
-                      {/* DAU / WAU / MAU */}
-                      <div className="grid grid-cols-3 gap-3">
-                        <div className="text-center p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-xl font-bold">{engagementSummary.dau.toLocaleString()}</div>
-                          <p className="text-xs text-muted-foreground">DAU</p>
+                        <div className="text-center p-3 rounded-lg bg-emerald-500/10">
+                          <p className="text-2xl font-bold text-emerald-600">{conversionFunnel?.subscriptions || 0}</p>
+                          <p className="text-xs text-muted-foreground">New Paid</p>
                         </div>
-                        <div className="text-center p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-xl font-bold">{engagementSummary.wau.toLocaleString()}</div>
-                          <p className="text-xs text-muted-foreground">WAU</p>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{taskPerformance?.total_runs?.toLocaleString() || 0}</p>
+                          <p className="text-xs text-muted-foreground">Total Tasks</p>
                         </div>
-                        <div className="text-center p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-xl font-bold">{engagementSummary.mau.toLocaleString()}</div>
-                          <p className="text-xs text-muted-foreground">MAU</p>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{engagementSummary?.dau || 0}</p>
+                          <p className="text-xs text-muted-foreground">Active Users</p>
                         </div>
-                      </div>
-
-                      {/* Stickiness & Threads */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <div className="text-lg font-bold">{engagementSummary.dau_mau_ratio}%</div>
-                          <p className="text-xs text-muted-foreground">DAU/MAU Ratio (Stickiness)</p>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{engagementSummary?.avg_threads_per_active_user?.toFixed(1) || '0'}</p>
+                          <p className="text-xs text-muted-foreground">Tasks/User</p>
                         </div>
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <div className="text-lg font-bold">{engagementSummary.avg_threads_per_active_user.toFixed(1)}</div>
-                          <p className="text-xs text-muted-foreground">Avg Threads/User</p>
-                        </div>
-                      </div>
-
-                      {/* Thread counts */}
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Threads today:</span>
-                        <span className="font-medium">{engagementSummary.total_threads_today.toLocaleString()}</span>
-                      </div>
-                      <div className="flex items-center justify-between text-sm">
-                        <span className="text-muted-foreground">Threads this week:</span>
-                        <span className="font-medium">{engagementSummary.total_threads_week.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 text-muted-foreground text-sm">
-                      <Activity className="h-5 w-5 mx-auto mb-1 opacity-50" />
-                      Engagement data unavailable
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Task Performance Card */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Zap className="h-4 w-4" />
-                    Task Performance
-                  </CardTitle>
-                  <CardDescription>
-                    Agent run statistics for {
-                      dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
-                        ? format(dateRange.from, 'MMM d')
-                        : dateRange.from && dateRange.to
-                          ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d')}`
-                          : ''
-                    }
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {taskLoading ? (
-                    <div className="space-y-3">
-                      <Skeleton className="h-16" />
-                      <Skeleton className="h-16" />
-                    </div>
-                  ) : taskPerformance ? (
-                    <div className="space-y-4">
-                      {/* Success Rate & Total */}
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <div className="text-2xl font-bold">
-                            {taskPerformance.success_rate}%
-                          </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className={cn(
+                            "text-2xl font-bold",
+                            (taskPerformance?.success_rate || 0) >= 80 ? "text-emerald-600" :
+                            (taskPerformance?.success_rate || 0) >= 60 ? "text-amber-600" : "text-red-500"
+                          )}>
+                            {taskPerformance?.success_rate || 0}%
+                          </p>
                           <p className="text-xs text-muted-foreground">Success Rate</p>
                         </div>
-                        <div className="p-3 rounded-lg bg-muted/50">
-                          <div className="text-2xl font-bold">{taskPerformance.total_runs.toLocaleString()}</div>
-                          <p className="text-xs text-muted-foreground">Total Runs</p>
-                        </div>
                       </div>
 
-                      {/* Status Breakdown */}
-                      <div className="grid grid-cols-4 gap-2 text-center">
-                        <div className="p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-lg font-bold">{taskPerformance.completed_runs}</div>
-                          <p className="text-xs text-muted-foreground">Completed</p>
+                      {/* Row 2: Task Distribution & Duration */}
+                      <div className="grid grid-cols-6 gap-3">
+                        {/* Task Distribution - expanded */}
+                        <div className="col-span-5 p-4 rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-medium text-muted-foreground">Task Distribution by Category</p>
+                            {categoryDistribution && (
+                              <p className="text-xs text-muted-foreground">
+                                {Object.values(categoryDistribution.distribution).reduce((a, b) => a + b, 0)} total
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {categoryDistribution && Object.entries(categoryDistribution.distribution)
+                              .sort(([, a], [, b]) => b - a)
+                              .map(([cat, count]) => {
+                                const total = Object.values(categoryDistribution.distribution).reduce((a, b) => a + b, 0);
+                                const percent = total > 0 ? ((count / total) * 100).toFixed(0) : 0;
+                                return (
+                                  <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background border">
+                                    <span className="text-sm font-medium">{cat}</span>
+                                    <span className="text-xs text-muted-foreground">{count}</span>
+                                    <span className="text-[10px] text-muted-foreground/70">({percent}%)</span>
+                                  </div>
+                                );
+                              })}
+                            {(!categoryDistribution || Object.keys(categoryDistribution.distribution).length === 0) && (
+                              <p className="text-sm text-muted-foreground">No task data</p>
+                            )}
+                          </div>
                         </div>
-                        <div className="p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-lg font-bold">{taskPerformance.failed_runs}</div>
-                          <p className="text-xs text-muted-foreground">Failed</p>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-lg font-bold">{taskPerformance.stopped_runs}</div>
-                          <p className="text-xs text-muted-foreground">Stopped</p>
-                        </div>
-                        <div className="p-2.5 rounded-lg bg-muted/50">
-                          <div className="text-lg font-bold">{taskPerformance.running_runs}</div>
-                          <p className="text-xs text-muted-foreground">Running</p>
+
+                        {/* Avg Duration */}
+                        <div className="text-center p-4 rounded-lg bg-muted/30 flex flex-col justify-center">
+                          <p className="text-2xl font-bold">
+                            {taskPerformance?.avg_duration_seconds
+                              ? taskPerformance.avg_duration_seconds < 60
+                                ? `${taskPerformance.avg_duration_seconds.toFixed(0)}s`
+                                : `${(taskPerformance.avg_duration_seconds / 60).toFixed(1)}m`
+                              : '—'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Avg Task Duration</p>
                         </div>
                       </div>
-
-                      {/* Avg Duration */}
-                      {taskPerformance.avg_duration_seconds !== null && (
-                        <div className="flex items-center justify-between text-sm">
-                          <span className="text-muted-foreground">Avg Duration:</span>
-                          <span className="font-medium">
-                            {taskPerformance.avg_duration_seconds < 60
-                              ? `${taskPerformance.avg_duration_seconds.toFixed(0)}s`
-                              : `${(taskPerformance.avg_duration_seconds / 60).toFixed(1)}m`}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="text-center py-4 text-muted-foreground text-sm">
-                      <Zap className="h-5 w-5 mx-auto mb-1 opacity-50" />
-                      Task data unavailable
                     </div>
                   )}
-                </CardContent>
-              </Card>
+                </div>
+              </section>
+
+              {/* SECTION 2: DAU/WAU/MAU */}
+              <section className="rounded-xl border bg-card">
+                <div className="p-5 pb-4 border-b">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    Engagement
+                  </h2>
+                </div>
+
+                <div className="p-5">
+                  {engagementLoading ? (
+                    <div className="grid grid-cols-4 gap-4">
+                      {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                        <p className="text-3xl font-bold">{engagementSummary?.dau || 0}</p>
+                        <p className="text-xs text-muted-foreground mt-1">DAU</p>
+                        <p className="text-[10px] text-muted-foreground">Daily Active Users</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                        <p className="text-3xl font-bold">{engagementSummary?.wau || 0}</p>
+                        <p className="text-xs text-muted-foreground mt-1">WAU</p>
+                        <p className="text-[10px] text-muted-foreground">Weekly Active Users</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                        <p className="text-3xl font-bold">{engagementSummary?.mau || 0}</p>
+                        <p className="text-xs text-muted-foreground mt-1">MAU</p>
+                        <p className="text-[10px] text-muted-foreground">Monthly Active Users</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-blue-500/10">
+                        <p className="text-3xl font-bold text-blue-600">{engagementSummary?.dau_mau_ratio || 0}%</p>
+                        <p className="text-xs text-muted-foreground mt-1">DAU/MAU</p>
+                        <p className="text-[10px] text-muted-foreground">Stickiness Ratio</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* SECTION 3: Conversion Funnel */}
+              <section className="rounded-xl border bg-card">
+                <div className="flex items-center justify-between p-5 pb-4 border-b">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    Conversion Funnel
+                  </h2>
+                  <Select value={analyticsSource} onValueChange={(v) => setAnalyticsSource(v as AnalyticsSource)}>
+                    <SelectTrigger className="w-32 h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="vercel">Vercel</SelectItem>
+                      <SelectItem value="ga">Google Analytics</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="p-5">
+                  {funnelLoading ? (
+                    <Skeleton className="h-24" />
+                  ) : conversionFunnel ? (
+                    <div className="flex items-stretch">
+                      {/* Visitors */}
+                      <div className="flex-1 text-center p-4 rounded-l-lg bg-muted/30 border-r border-background">
+                        <p className="text-3xl font-bold tracking-tight">
+                          {conversionFunnel.visitors.toLocaleString()}
+                        </p>
+                        <p className="text-sm font-medium mt-1">Visitors</p>
+                        <p className="text-xs text-muted-foreground">100%</p>
+                      </div>
+
+                      {/* Arrow */}
+                      <div className="flex items-center justify-center px-2 bg-muted/30">
+                        <div className="text-center">
+                          <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
+                          <span className="text-xs font-medium text-muted-foreground">{conversionFunnel.visitor_to_signup_rate}%</span>
+                        </div>
+                      </div>
+
+                      {/* Signups */}
+                      <div className="flex-1 text-center p-4 bg-muted/30 border-r border-background">
+                        <p className="text-3xl font-bold tracking-tight">
+                          {conversionFunnel.signups.toLocaleString()}
+                        </p>
+                        <p className="text-sm font-medium mt-1">Signups</p>
+                        <p className="text-xs text-muted-foreground">{conversionFunnel.visitor_to_signup_rate}% of visitors</p>
+                      </div>
+
+                      {/* Arrow */}
+                      <div className="flex items-center justify-center px-2 bg-muted/30">
+                        <div className="text-center">
+                          <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
+                          <span className="text-xs font-medium text-muted-foreground">{conversionFunnel.signup_to_subscription_rate}%</span>
+                        </div>
+                      </div>
+
+                      {/* Paid */}
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <div className="flex-1 text-center p-4 rounded-r-lg bg-emerald-500/10 cursor-pointer hover:bg-emerald-500/20 transition-colors">
+                            <p className="text-3xl font-bold tracking-tight text-emerald-600">
+                              {conversionFunnel.subscriptions.toLocaleString()}
+                            </p>
+                            <p className="text-sm font-medium mt-1">Paid</p>
+                            <p className="text-xs text-muted-foreground">
+                              {conversionFunnel.visitors > 0
+                                ? ((conversionFunnel.subscriptions / conversionFunnel.visitors) * 100).toFixed(2)
+                                : 0}% of visitors
+                            </p>
+                          </div>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-72 max-h-60 overflow-y-auto">
+                          <h4 className="font-medium text-sm mb-2">New Subscribers</h4>
+                          {conversionFunnel.subscriber_emails?.length > 0 ? (
+                            <ul className="space-y-1">
+                              {conversionFunnel.subscriber_emails.map((email, idx) => (
+                                <li key={idx} className="text-sm">
+                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                                </li>
+                              ))}
+                            </ul>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">No new subscribers</p>
+                          )}
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      Analytics not configured
+                    </p>
+                  )}
+                </div>
+              </section>
+
+              {/* SECTION 4: Financials */}
+              <section className="rounded-xl border bg-card">
+                <div className="p-5 pb-4 border-b flex items-center justify-between">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    Financials
+                  </h2>
+                  {profitability && profitability.paying_user_emails?.length > 0 && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="text-xs text-primary hover:underline">
+                          View {profitability.unique_paying_users} paying users
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-72 max-h-60 overflow-y-auto">
+                        <h4 className="font-medium text-sm mb-2">Paying Users</h4>
+                        <ul className="space-y-1">
+                          {profitability.paying_user_emails.map((email, idx) => (
+                            <li key={idx} className="text-sm">
+                              <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                            </li>
+                          ))}
+                        </ul>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
+
+                <div className="p-5">
+                  {profitabilityLoading ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-6 gap-4">
+                        {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+                      </div>
+                      <Skeleton className="h-32" />
+                    </div>
+                  ) : profitability ? (
+                    <div className="space-y-6">
+                      {/* Row 1: Key financial metrics */}
+                      <div className="grid grid-cols-6 gap-4">
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">Total Active Subs</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">MRR</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">${profitability.avg_revenue_per_paid_user.toFixed(0)}</p>
+                          <p className="text-xs text-muted-foreground">ARPU</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">Churns</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">Churn Rate</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">LTV</p>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Revenue breakdown */}
+                      <div className="grid grid-cols-2 gap-6">
+                        {/* Revenue & Profit Summary */}
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between p-4 rounded-lg bg-emerald-500/10">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Revenue</p>
+                              <p className="text-2xl font-bold text-emerald-600">${profitability.total_revenue.toLocaleString()}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Cost</p>
+                              <p className="text-lg font-semibold">${profitability.total_actual_cost.toLocaleString()}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Profit</p>
+                              <p className={cn(
+                                "text-lg font-bold",
+                                profitability.gross_profit >= 0 ? "text-emerald-600" : "text-red-500"
+                              )}>
+                                {profitability.gross_profit < 0 ? '-' : ''}${Math.abs(profitability.gross_profit).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Margin</p>
+                              <p className="text-lg font-semibold">{profitability.gross_margin_percent}%</p>
+                            </div>
+                          </div>
+
+                          {/* Platform Split */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="p-3 rounded-lg border">
+                              <p className="text-xs text-muted-foreground mb-1">Web (Stripe)</p>
+                              <p className="text-lg font-bold">${profitability.web_revenue.toLocaleString()}</p>
+                              <p className="text-xs text-muted-foreground">Cost: ${profitability.web_cost.toFixed(2)}</p>
+                            </div>
+                            <div className="p-3 rounded-lg border">
+                              <p className="text-xs text-muted-foreground mb-1">App (RevenueCat)</p>
+                              <p className="text-lg font-bold">${profitability.app_revenue.toLocaleString()}</p>
+                              <p className="text-xs text-muted-foreground">Cost: ${profitability.app_cost.toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Users & Revenue per Tier */}
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">By Tier</p>
+                          {profitability.by_tier && profitability.by_tier.length > 0 ? (() => {
+                            const totalUsers = profitability.by_tier.reduce((sum, t) => sum + t.unique_users, 0);
+                            return (
+                              <div className="space-y-1.5">
+                                {/* Header */}
+                                <div className="grid grid-cols-4 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
+                                  <div>Tier</div>
+                                  <div className="text-right">Users</div>
+                                  <div className="text-right">Revenue</div>
+                                  <div className="text-right">Cost</div>
+                                </div>
+                                {/* Rows */}
+                                {profitability.by_tier.map((tier, idx) => {
+                                  const userPercent = totalUsers > 0 ? ((tier.unique_users / totalUsers) * 100).toFixed(0) : '0';
+                                  const revenuePercent = profitability.total_revenue > 0 ? ((tier.total_revenue / profitability.total_revenue) * 100).toFixed(0) : '0';
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="grid grid-cols-4 gap-2 text-xs py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
+                                    >
+                                      <div className="font-medium truncate flex items-center gap-1">
+                                        {tier.display_name}
+                                        <span className="text-[10px] text-muted-foreground">
+                                          ({tier.provider === 'stripe' ? 'W' : 'A'})
+                                        </span>
+                                      </div>
+                                      <div className="text-right">
+                                        {tier.unique_users}
+                                        <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
+                                      </div>
+                                      <div className="text-right">
+                                        ${tier.total_revenue.toLocaleString()}
+                                        <span className="text-[10px] text-muted-foreground ml-1">({revenuePercent}%)</span>
+                                      </div>
+                                      <div className="text-right text-muted-foreground">${tier.total_actual_cost.toFixed(2)}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })() : (
+                            <p className="text-sm text-muted-foreground text-center py-4">No tier data</p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No financial data available
+                    </p>
+                  )}
+                </div>
+              </section>
             </div>
           </TabsContent>
 
-          <TabsContent value="threads" className="space-y-4">
-            {/* Thread & Category Distribution - above the browser */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <div>
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4" />
-                    Thread Analytics
-                  </CardTitle>
-                  <CardDescription>
-                    Distribution by messages and categories for {
-                      dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
-                        ? format(dateRange.from, 'MMM d, yyyy')
-                        : dateRange.from && dateRange.to
-                          ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
-                          : ''
-                    }
-                  </CardDescription>
+          {/* Threads Tab */}
+          <TabsContent value="threads" className="mt-0 space-y-6">
+            {/* Quick Stats */}
+            {distribution && (
+              <div className="flex items-center gap-8 py-4">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">Total:</span>
+                  <span className="text-sm font-medium">{distribution.total_threads} threads</span>
                 </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    onClick={() => {
-                      if (dateRange.from) {
-                        const toDate = dateRange.to || dateRange.from;
-                        const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
-                        setDateRange({
-                          from: subDays(dateRange.from, daysDiff + 1),
-                          to: subDays(toDate, daysDiff + 1),
-                        });
-                      }
-                    }}
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </Button>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <Button variant="outline" className="min-w-[200px] justify-start text-left font-normal h-9">
-                        <CalendarIcon className="mr-2 h-4 w-4" />
-                        {dateRange.from && dateRange.to && dateRange.from.getTime() === dateRange.to.getTime()
-                          ? format(dateRange.from, 'MMM d, yyyy')
-                          : dateRange.from && dateRange.to
-                            ? `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
-                            : dateRange.from
-                              ? format(dateRange.from, 'MMM d, yyyy')
-                              : 'Select date range'}
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="end">
-                      <Calendar
-                        mode="range"
-                        selected={dateRange}
-                        onDayClick={(day) => {
-                          clickedDateRef.current = day;
-                        }}
-                        onSelect={(newRange) => {
-                          // If we had a complete range, start fresh with clicked date
-                          if (dateRange.from && dateRange.to && clickedDateRef.current) {
-                            setDateRange({ from: clickedDateRef.current, to: undefined });
-                            clickedDateRef.current = null;
-                            return;
-                          }
-
-                          if (newRange?.from) {
-                            setDateRange(newRange);
-                          }
-                          clickedDateRef.current = null;
-                        }}
-                        disabled={(date) => date > berlinToday}
-                        numberOfMonths={1}
-                        initialFocus
-                      />
-                      <div className="border-t p-2 flex justify-between items-center">
-                        <span className="text-sm text-muted-foreground">
-                          {dateRange.from && dateRange.to
-                            ? dateRange.from.getTime() === dateRange.to.getTime()
-                              ? format(dateRange.from, 'MMM d, yyyy')
-                              : `${format(dateRange.from, 'MMM d')} - ${format(dateRange.to, 'MMM d, yyyy')}`
-                            : dateRange.from
-                              ? `${format(dateRange.from, 'MMM d, yyyy')} - ...`
-                              : 'Select dates'}
-                        </span>
-                      </div>
-                    </PopoverContent>
-                  </Popover>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8"
-                    disabled={(dateRange.to || dateRange.from) && format(dateRange.to || dateRange.from!, 'yyyy-MM-dd') === format(berlinToday, 'yyyy-MM-dd')}
-                    onClick={() => {
-                      if (dateRange.from) {
-                        const toDate = dateRange.to || dateRange.from;
-                        const daysDiff = Math.round((toDate.getTime() - dateRange.from.getTime()) / (1000 * 60 * 60 * 24));
-                        const newTo = addDays(toDate, daysDiff + 1);
-                        const cappedTo = newTo > berlinToday ? berlinToday : newTo;
-                        const newFrom = addDays(dateRange.from, daysDiff + 1);
-                        const cappedFrom = newFrom > berlinToday ? berlinToday : newFrom;
-                        setDateRange({ from: cappedFrom, to: cappedTo });
-                      }
-                    }}
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent className={`space-y-4 transition-opacity duration-200 ${isDailyAnalyticsFetching ? 'opacity-60' : 'opacity-100'}`}>
-                {/* Thread Distribution Section */}
-                {distribution && (
-                  <div>
-                    <h3 className="text-sm font-medium mb-3 flex items-center gap-2">
-                      <MessageSquare className="h-4 w-4" />
-                      Message Distribution
-                    </h3>
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="text-center p-3 rounded-lg bg-muted/50">
-                        <div className="text-2xl font-bold">{distribution.distribution['1_message']}</div>
-                        <p className="text-xs text-muted-foreground">1 message ({distribution.total_threads > 0 ? ((distribution.distribution['1_message'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
-                      </div>
-                      <div className="text-center p-3 rounded-lg bg-muted/50">
-                        <div className="text-2xl font-bold">{distribution.distribution['2_3_messages']}</div>
-                        <p className="text-xs text-muted-foreground">2-3 msgs ({distribution.total_threads > 0 ? ((distribution.distribution['2_3_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
-                      </div>
-                      <div className="text-center p-3 rounded-lg bg-muted/50">
-                        <div className="text-2xl font-bold">{distribution.distribution['5_plus_messages']}</div>
-                        <p className="text-xs text-muted-foreground">5+ msgs ({distribution.total_threads > 0 ? ((distribution.distribution['5_plus_messages'] / distribution.total_threads) * 100).toFixed(1) : '0'}%)</p>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground text-center mt-2">
-                      Total: <span className="font-medium text-foreground">{distribution.total_threads}</span> threads
-                    </p>
-                  </div>
-                )}
-
-                {/* Divider */}
-                {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && distribution && (
-                  <div className="border-t" />
-                )}
-
-                {/* Category Distribution Section */}
-                {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-medium flex items-center gap-2">
-                        <Filter className="h-4 w-4" />
-                        Category Distribution
-                      </h3>
-                      {/* Tier Filter Dropdown */}
-                      {tierDistribution && Object.keys(tierDistribution.distribution).length > 0 && (
-                        <Select
-                          value={tierFilter || 'all'}
-                          onValueChange={(value) => setTierFilter(value === 'all' ? null : value)}
-                        >
-                          <SelectTrigger className="w-[150px] h-7 text-xs">
-                            <CreditCard className="h-3 w-3 mr-1 text-muted-foreground" />
-                            <SelectValue placeholder="All Tiers" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="all">All Tiers</SelectItem>
-                            {Object.entries(tierDistribution.distribution).map(([tier, count]) => {
-                              const displayName = tier === 'none' ? 'No Subscription' :
-                                tier === 'free' ? 'Free' :
-                                tier === 'tier_2_20' ? 'Plus' :
-                                tier === 'tier_6_50' ? 'Pro' :
-                                tier === 'tier_12_100' ? 'Business' :
-                                tier === 'tier_25_200' ? 'Ultra' :
-                                tier === 'tier_50_400' ? 'Enterprise' :
-                                tier === 'tier_125_800' ? 'Scale' :
-                                tier === 'tier_200_1000' ? 'Max' : tier;
-                              return (
-                                <SelectItem key={tier} value={tier} className="[font-variant-ligatures:none]">
-                                  {displayName} · {count}
-                                </SelectItem>
-                              );
-                            })}
-                          </SelectContent>
-                        </Select>
-                      )}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {Object.entries(categoryDistribution.distribution).map(([category, count]) => {
-                        const percentage = categoryDistribution.total_projects > 0
-                          ? ((count / categoryDistribution.total_projects) * 100).toFixed(1)
-                          : '0.0';
-                        const isSelected = categoryFilter === category;
-                        return (
-                          <button
-                            key={category}
-                            onClick={() => setCategoryFilter(isSelected ? null : category)}
-                            className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-sm transition-colors border ${
-                              isSelected
-                                ? 'bg-primary text-primary-foreground border-primary'
-                                : 'bg-muted/50 hover:bg-muted border-transparent'
-                            }`}
-                          >
-                            <span className="font-medium truncate max-w-[120px]" title={category}>
-                              {category}
-                            </span>
-                            <span className={`text-xs ${isSelected ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
-                              {count} ({percentage}%)
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {categoryFilter && (
-                      <p className="text-xs text-muted-foreground mt-2">
-                        <button onClick={() => setCategoryFilter(null)} className="text-primary hover:underline">Clear filter</button>
-                      </p>
+                <div className="h-4 w-px bg-border" />
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={() => handleCategoryFilter(null)}
+                    className={cn(
+                      'text-xs px-2.5 py-1 rounded-full transition-colors',
+                      !categoryFilter ? 'bg-primary text-primary-foreground' : 'bg-muted hover:bg-muted/80'
                     )}
-                  </div>
+                  >
+                    All
+                  </button>
+                  <span className="text-xs text-muted-foreground">
+                    1 msg: {distribution.distribution['1_message']} ·
+                    2-3: {distribution.distribution['2_3_messages']} ·
+                    5+: {distribution.distribution['5_plus_messages']}
+                  </span>
+                </div>
+
+                {/* Tier Filter */}
+                {tierDistribution && Object.keys(tierDistribution.distribution).length > 0 && (
+                  <>
+                    <div className="h-4 w-px bg-border" />
+                    <Select
+                      value={tierFilter || 'all'}
+                      onValueChange={(value) => setTierFilter(value === 'all' ? null : value)}
+                    >
+                      <SelectTrigger className="w-36 h-8 text-xs">
+                        <CreditCard className="h-3 w-3 mr-1.5 text-muted-foreground" />
+                        <SelectValue placeholder="All Tiers" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Tiers</SelectItem>
+                        {Object.entries(tierDistribution.distribution).map(([tier, count]) => {
+                          const displayName = tier === 'none' ? 'No Sub' :
+                            tier === 'free' ? 'Free' :
+                            tier === 'tier_2_20' ? 'Plus' :
+                            tier === 'tier_6_50' ? 'Pro' :
+                            tier === 'tier_12_100' ? 'Business' :
+                            tier === 'tier_25_200' ? 'Ultra' : tier;
+                          return (
+                            <SelectItem key={tier} value={tier}>
+                              {displayName} ({count})
+                            </SelectItem>
+                          );
+                        })}
+                      </SelectContent>
+                    </Select>
+                  </>
                 )}
-              </CardContent>
-            </Card>
+              </div>
+            )}
+
+            {/* Category Pills */}
+            {categoryDistribution && Object.keys(categoryDistribution.distribution).length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {Object.entries(categoryDistribution.distribution).map(([category, count]) => (
+                  <button
+                    key={category}
+                    onClick={() => setCategoryFilter(categoryFilter === category ? null : category)}
+                    className={cn(
+                      'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs transition-colors border',
+                      categoryFilter === category
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-background hover:bg-muted border-border'
+                    )}
+                  >
+                    <span className="font-medium truncate max-w-[100px]">{category}</span>
+                    <span className={categoryFilter === category ? 'text-primary-foreground/70' : 'text-muted-foreground'}>
+                      {count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
 
             {/* Thread Browser */}
             <ThreadBrowser
@@ -794,33 +808,33 @@ export default function AdminAnalyticsPage() {
             />
           </TabsContent>
 
-          <TabsContent value="users">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  User Management
-                </CardTitle>
-                <CardDescription>
-                  Search users, view billing details, and manage credits
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
+          {/* Users Tab */}
+          <TabsContent value="users" className="mt-0">
+            <div className="rounded-xl border bg-card">
+              <div className="p-5 border-b">
+                <h2 className="text-sm font-medium">User Management</h2>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Search users, view billing, manage credits
+                </p>
+              </div>
+              <div className="p-5">
                 <AdminUserTable onUserSelect={handleUserSelect} />
-              </CardContent>
-            </Card>
+              </div>
+            </div>
           </TabsContent>
 
-          <TabsContent value="retention">
+          {/* Retention Tab */}
+          <TabsContent value="retention" className="mt-0">
             <RetentionTab onUserClick={handleUserEmailClick} />
           </TabsContent>
 
-          <TabsContent value="simulator">
+          {/* ARR Simulator Tab */}
+          <TabsContent value="simulator" className="mt-0">
             <ARRSimulator analyticsSource={analyticsSource} />
           </TabsContent>
         </Tabs>
 
-        {/* User Details Dialog - accessible from anywhere */}
+        {/* User Details Dialog */}
         <AdminUserDetailsDialog
           user={selectedUser}
           isOpen={isUserDialogOpen}
@@ -828,11 +842,11 @@ export default function AdminAnalyticsPage() {
           onRefresh={handleRefreshUserData}
         />
 
-        {/* Loading indicator when searching for user */}
+        {/* Loading indicator */}
         {isSearchingUser && pendingUserEmail && (
-          <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-3 flex items-center gap-2">
+          <div className="fixed bottom-4 right-4 bg-card border rounded-lg shadow-lg p-3 flex items-center gap-2">
             <KortixLoader size="small" />
-            <span className="text-sm">Loading user: {pendingUserEmail}</span>
+            <span className="text-sm">Loading user...</span>
           </div>
         )}
       </div>
