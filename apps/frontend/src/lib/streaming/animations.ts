@@ -2,7 +2,7 @@
 
 import { useRef, useSyncExternalStore, useEffect, useLayoutEffect } from 'react';
 
-const SMOOTH_STREAMING_ENABLED = false;
+const SMOOTH_STREAMING_ENABLED = true;
 
 const CHARS_PER_SECOND = 600;
 const MS_PER_CHAR = 1000 / CHARS_PER_SECOND;
@@ -74,6 +74,13 @@ class SmoothStreamStore {
   update(newText: string, isEnabled: boolean) {
     const wasEnabled = this.enabled;
     this.enabled = isEnabled;
+    if (newText === this.targetText) {
+      if (isEnabled && this.revealedLen < this.targetText.length) {
+        this.startAnimation();
+      }
+      return;
+    }
+    
     if (!newText && this.targetText && this.revealedLen < this.targetText.length) {
       this.isFinishingAnimation = true;
       this.startAnimation();
@@ -120,8 +127,14 @@ class SmoothStreamStore {
       return;
     }
 
-    const isContinuation = this.targetText.length > 0 && newText.startsWith(this.targetText);
+    // Check if new text is a continuation (starts with current target)
+    // OR if current target starts with new text (text was trimmed/partial - don't reset)
+    const isContinuation = this.targetText.length > 0 && (
+      newText.startsWith(this.targetText) || 
+      this.targetText.startsWith(newText)
+    );
     
+    // Only reset if it's genuinely new/different content
     if (!isContinuation) {
       this.stopAnimation();
       this.revealedLen = 0;

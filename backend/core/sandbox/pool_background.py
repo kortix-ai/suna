@@ -11,7 +11,6 @@ _keepalive_task: Optional[asyncio.Task] = None
 
 KEEPALIVE_INTERVAL_SECONDS = 600
 
-
 async def _pool_replenishment_loop(service: SandboxPoolService) -> None:
     config = service.config
     
@@ -102,8 +101,51 @@ async def _pool_keepalive_loop(service: SandboxPoolService) -> None:
             break
 
 
+async def _initial_pool_warmup(service: SandboxPoolService) -> None:
+    config = service.config
+    
+    try:
+        pool_size = await service.get_pool_size()
+        logger.info(f"[SANDBOX_POOL] Initial pool size: {pool_size}")
+        
+        if pool_size >= config.replenish_below:
+            logger.info(f"[SANDBOX_POOL] Pool already at healthy size ({pool_size}), no warmup needed")
+            return
+        
+        logger.info(f"[SANDBOX_POOL] Pool below threshold ({pool_size} < {config.replenish_below}), starting warmup...")
+        target = config.min_size
+        to_create = min(target - pool_size, config.max_size - pool_size)
+        
+        if to_create <= 0:
+            return
+        
+        batch_size = config.parallel_create_limit
+        created_total = 0
+        
+        while created_total < to_create:
+            batch = min(batch_size, to_create - created_total)
+            tasks = [service.create_pooled_sandbox() for _ in range(batch)]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            created = sum(1 for r in results if r is not None and not isinstance(r, Exception))
+            created_total += created
+            
+            logger.info(f"[SANDBOX_POOL] Warmup progress: {created_total}/{to_create} sandboxes created")
+            
+            if created_total < to_create:
+                await asyncio.sleep(1)
+        
+        logger.info(f"[SANDBOX_POOL] Initial warmup complete: created {created_total} sandboxes")
+        
+    except Exception as e:
+        logger.error(f"[SANDBOX_POOL] Initial warmup failed: {e}")
+
+
+_warmup_task: Optional[asyncio.Task] = None
+
+
 async def start_pool_service() -> None:
-    global _pool_task, _cleanup_task, _keepalive_task
+    global _pool_task, _cleanup_task, _keepalive_task, _warmup_task
     
     config = get_pool_config()
     
@@ -113,30 +155,25 @@ async def start_pool_service() -> None:
     
     service = get_pool_service()
     
-    logger.info("[SANDBOX_POOL] Starting sandbox pool service...")
+    logger.info(
+        f"[SANDBOX_POOL] Starting sandbox pool service "
+        f"(min={config.min_size}, max={config.max_size}, parallel={config.parallel_create_limit})"
+    )
     
     _pool_task = asyncio.create_task(_pool_replenishment_loop(service))
     _cleanup_task = asyncio.create_task(_pool_cleanup_loop(service))
     _keepalive_task = asyncio.create_task(_pool_keepalive_loop(service))
+    _warmup_task = asyncio.create_task(_initial_pool_warmup(service))
     
-    try:
-        pool_size = await service.get_pool_size()
-        logger.info(f"[SANDBOX_POOL] Initial pool size: {pool_size}")
-        
-        if pool_size < config.replenish_below:
-            logger.info(f"[SANDBOX_POOL] Pool below threshold, triggering initial replenishment...")
-            created = await service.ensure_pool_size()
-            logger.info(f"[SANDBOX_POOL] Initial replenishment created {created} sandboxes")
-    except Exception as e:
-        logger.error(f"[SANDBOX_POOL] Failed initial pool check: {e}")
+    logger.info("[SANDBOX_POOL] All background tasks started (non-blocking)")
 
 
 async def stop_pool_service() -> None:
-    global _pool_task, _cleanup_task, _keepalive_task
+    global _pool_task, _cleanup_task, _keepalive_task, _warmup_task
     
     logger.info("[SANDBOX_POOL] Stopping sandbox pool service...")
     
-    tasks = [_pool_task, _cleanup_task, _keepalive_task]
+    tasks = [_pool_task, _cleanup_task, _keepalive_task, _warmup_task]
     
     for task in tasks:
         if task and not task.done():
@@ -152,6 +189,7 @@ async def stop_pool_service() -> None:
     _pool_task = None
     _cleanup_task = None
     _keepalive_task = None
+    _warmup_task = None
     
     logger.info("[SANDBOX_POOL] Sandbox pool service stopped")
 

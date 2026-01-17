@@ -1639,7 +1639,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const displayAgentStatus = showOptimisticUI ? (agentStatus === 'idle' ? 'running' : agentStatus) : agentStatus;
   const displayStreamHookStatus = showOptimisticUI 
     ? (streamHookStatus === 'idle' ? 'connecting' : streamHookStatus) 
-    : streamHookStatus;
+    : (agentStatus === 'running' && streamHookStatus === 'idle' ? 'connecting' : streamHookStatus);
   const displayStreamingText = streamingTextContent;
   const displayProjectName = showOptimisticUI ? 'New Conversation' : projectName;
   const effectiveInitialLoadCompleted = showOptimisticUI || optimisticTransitionHandledRef.current || initialLoadCompleted;

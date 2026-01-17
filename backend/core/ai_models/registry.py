@@ -423,6 +423,27 @@ class ModelFactory:
             enabled=True,
         )
 
+    @staticmethod
+    def create_gpt5_mini() -> Model:
+        return Model(
+            id="kortix/gpt-5-mini",
+            name="GPT-5 Mini",
+            litellm_model_id="openrouter/openai/gpt-4o-mini",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["gpt-4o-mini", "gpt4o-mini", "openai/gpt-4o-mini"],
+            context_window=128_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+            ],
+            pricing=PricingPresets.GPT_4O_MINI,
+            tier_availability=["free", "paid"],
+            priority=95,
+            recommended=True,
+            enabled=True,
+        )
+
 
 class ModelRegistry:
     
