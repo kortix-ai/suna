@@ -4,13 +4,12 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pagination } from '@/components/agents/pagination';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
 import { toast } from '@/lib/toast';
-import { ExternalLink, Languages, Filter } from 'lucide-react';
+import { ExternalLink, Languages, Search } from 'lucide-react';
 import {
   useThreadBrowser,
   useTranslate,
@@ -39,20 +38,19 @@ export function ThreadBrowser({
   const [messageFilter, setMessageFilter] = useState<string>('all');
   const [translations, setTranslations] = useState<Record<string, string>>({});
 
-  // Reset page to 1 when category/tier filter or date changes
+  // Reset page when filters change
   const prevCategoryRef = useRef(categoryFilter);
   const prevTierRef = useRef(tierFilter);
   const prevDateFromRef = useRef(filterDateFrom);
   const prevDateToRef = useRef(filterDateTo);
-  useEffect(() => {
-    const categoryChanged = prevCategoryRef.current !== categoryFilter;
-    const tierChanged = prevTierRef.current !== tierFilter;
-    const dateFromChanged = prevDateFromRef.current !== filterDateFrom;
-    const dateToChanged = prevDateToRef.current !== filterDateTo;
 
-    if (categoryChanged || tierChanged || dateFromChanged || dateToChanged) {
-      setParams(p => ({ ...p, page: 1 }));
-    }
+  useEffect(() => {
+    const changed = prevCategoryRef.current !== categoryFilter ||
+      prevTierRef.current !== tierFilter ||
+      prevDateFromRef.current !== filterDateFrom ||
+      prevDateToRef.current !== filterDateTo;
+
+    if (changed) setParams(p => ({ ...p, page: 1 }));
 
     prevCategoryRef.current = categoryFilter;
     prevTierRef.current = tierFilter;
@@ -60,8 +58,6 @@ export function ThreadBrowser({
     prevDateToRef.current = filterDateTo;
   }, [categoryFilter, tierFilter, filterDateFrom, filterDateTo]);
 
-  // Include category/tier filter and date filter in query params
-  // Always filter by date to match the distribution stats shown above
   const queryParams: ThreadBrowseParams = {
     ...params,
     category: categoryFilter || undefined,
@@ -75,7 +71,7 @@ export function ThreadBrowser({
 
   const handleFilterChange = (filter: string) => {
     setMessageFilter(filter);
-    let newParams = { ...params, page: 1 };
+    const newParams = { ...params, page: 1 };
 
     switch (filter) {
       case '1':
@@ -106,7 +102,7 @@ export function ThreadBrowser({
     try {
       const result = await translateMutation.mutateAsync({ text });
       setTranslations(prev => ({ ...prev, [threadId]: result.translated }));
-      toast.success('Translated to English');
+      toast.success('Translated');
     } catch (error: any) {
       toast.error(error.message || 'Failed to translate');
     }
@@ -116,7 +112,6 @@ export function ThreadBrowser({
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
-      year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
     });
@@ -127,35 +122,31 @@ export function ThreadBrowser({
       id: 'thread',
       header: 'Thread',
       cell: (thread) => (
-        <div className="min-w-[250px]">
+        <div className="min-w-[220px]">
           <div className="flex items-center gap-2">
-            <span className="font-medium truncate max-w-[200px]">
+            <span className="font-medium truncate max-w-[180px]">
               {thread.project_name || 'Untitled'}
             </span>
             {thread.is_public && (
-              <Badge variant="outline" className="text-xs">Public</Badge>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0">Public</Badge>
             )}
           </div>
-          <div className="text-xs mt-1">
+          <div className="text-xs mt-0.5">
             <UserEmailLink email={thread.user_email} onUserClick={onUserClick} />
           </div>
-          <p className="text-xs text-muted-foreground font-mono">
-            {thread.thread_id.slice(0, 8)}...
-          </p>
         </div>
       ),
     },
     {
       id: 'messages',
-      header: 'Messages',
+      header: 'Msgs',
       cell: (thread) => (
         <div className="text-center">
           <div className="font-semibold">{thread.user_message_count}</div>
-          <p className="text-xs text-muted-foreground">user msgs</p>
-          <p className="text-xs text-muted-foreground">{thread.message_count} total</p>
+          <p className="text-[10px] text-muted-foreground">{thread.message_count} total</p>
         </div>
       ),
-      width: 'w-24',
+      width: 'w-16',
     },
     {
       id: 'first_message',
@@ -165,7 +156,7 @@ export function ThreadBrowser({
         const displayText = translation || thread.first_user_message;
 
         return (
-          <div className="min-w-[300px] max-w-[400px]">
+          <div className="min-w-[280px] max-w-[360px]">
             {displayText ? (
               <div>
                 <p className="text-sm line-clamp-2">{displayText}</p>
@@ -173,7 +164,7 @@ export function ThreadBrowser({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="mt-1 h-6 text-xs"
+                    className="mt-1 h-6 text-xs px-2"
                     onClick={() => handleTranslate(thread.thread_id, thread.first_user_message!)}
                     disabled={translateMutation.isPending}
                   >
@@ -182,8 +173,7 @@ export function ThreadBrowser({
                   </Button>
                 )}
                 {translation && (
-                  <Badge variant="secondary" className="mt-1 text-xs">
-                    <Languages className="h-3 w-3 mr-1" />
+                  <Badge variant="secondary" className="mt-1 text-[10px]">
                     Translated
                   </Badge>
                 )}
@@ -199,111 +189,103 @@ export function ThreadBrowser({
       id: 'created',
       header: 'Created',
       cell: (thread) => (
-        <div className="text-sm text-muted-foreground whitespace-nowrap">
+        <div className="text-xs text-muted-foreground whitespace-nowrap">
           {formatDate(thread.created_at)}
         </div>
       ),
-      width: 'w-36',
+      width: 'w-28',
     },
     {
       id: 'actions',
-      header: 'Actions',
+      header: '',
       cell: (thread) => (
         <Button
-          variant="outline"
+          variant="ghost"
           size="sm"
+          className="h-7 w-7 p-0"
           asChild
         >
           <a
             href={`/share/${thread.thread_id}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1"
           >
-            <ExternalLink className="h-3 w-3" />
-            Open
+            <ExternalLink className="h-3.5 w-3.5" />
           </a>
         </Button>
       ),
-      width: 'w-24',
+      width: 'w-10',
     },
   ], [translations, translateMutation.isPending, onUserClick]);
 
   return (
     <div className="space-y-4">
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-4">
-        <div className="flex-1 min-w-[200px]">
-          <Label htmlFor="email-search" className="text-sm">Search by Email</Label>
-          <div className="flex gap-2 mt-1">
-            <Input
-              id="email-search"
-              placeholder="user@example.com"
-              value={emailSearch}
-              onChange={(e) => setEmailSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleEmailSearch()}
-            />
-            <Button onClick={handleEmailSearch} variant="outline">
-              Search
-            </Button>
+      <div className="rounded-xl border bg-card">
+        <div className="p-4 flex items-center gap-4">
+          <div className="flex-1 max-w-sm">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by email..."
+                value={emailSearch}
+                onChange={(e) => setEmailSearch(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleEmailSearch()}
+                className="pl-9 h-9"
+              />
+            </div>
           </div>
-        </div>
 
-        <div className="w-[180px]">
-          <Label className="text-sm">User Messages</Label>
           <Select value={messageFilter} onValueChange={handleFilterChange}>
-            <SelectTrigger className="mt-1">
-              <SelectValue placeholder="Filter by messages" />
+            <SelectTrigger className="w-32 h-9">
+              <SelectValue placeholder="Messages" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All threads</SelectItem>
-              <SelectItem value="1">1 message only</SelectItem>
+              <SelectItem value="1">1 message</SelectItem>
               <SelectItem value="2-3">2-3 messages</SelectItem>
               <SelectItem value="5+">5+ messages</SelectItem>
             </SelectContent>
           </Select>
+
+          {(categoryFilter || tierFilter) && (
+            <div className="flex items-center gap-2">
+              {categoryFilter && (
+                <Badge variant="secondary" className="flex items-center gap-1 h-9 px-3">
+                  {categoryFilter}
+                  <button onClick={onClearCategory} className="ml-1 hover:text-destructive">
+                    ×
+                  </button>
+                </Badge>
+              )}
+              {tierFilter && (
+                <Badge variant="secondary" className="flex items-center gap-1 h-9 px-3">
+                  {tierFilter}
+                  <button onClick={onClearTier} className="ml-1 hover:text-destructive">
+                    ×
+                  </button>
+                </Badge>
+              )}
+            </div>
+          )}
         </div>
 
-        {/* Active Category Filter */}
-        {categoryFilter && (
-          <div className="flex items-end">
-            <div>
-              <Label className="text-sm">Category</Label>
-              <Badge variant="secondary" className="mt-1 flex items-center gap-1 h-10 px-3">
-                <Filter className="h-3 w-3" />
-                {categoryFilter}
-                {filterDateFrom && (
-                  <span className="text-muted-foreground">
-                    ({filterDateFrom === filterDateTo ? filterDateFrom : `${filterDateFrom} - ${filterDateTo}`})
-                  </span>
-                )}
-                <button
-                  onClick={onClearCategory}
-                  className="ml-1 hover:text-destructive"
-                >
-                  ×
-                </button>
-              </Badge>
-            </div>
+        {/* Table */}
+        {isLoading ? (
+          <div className="p-4 pt-0 space-y-3">
+            {[...Array(5)].map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
+            ))}
           </div>
+        ) : (
+          <DataTable
+            columns={columns}
+            data={threadsData?.data || []}
+            emptyMessage="No threads found"
+            getItemId={(thread) => thread.thread_id}
+          />
         )}
       </div>
-
-      {/* Table */}
-      {isLoading ? (
-        <div className="p-6 space-y-3 rounded-2xl border">
-          {[...Array(5)].map((_, i) => (
-            <Skeleton key={i} className="h-16 w-full" />
-          ))}
-        </div>
-      ) : (
-        <DataTable
-          columns={columns}
-          data={threadsData?.data || []}
-          emptyMessage="No threads found matching your criteria"
-          getItemId={(thread) => thread.thread_id}
-        />
-      )}
 
       {/* Pagination */}
       {threadsData?.pagination && (

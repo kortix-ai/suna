@@ -710,51 +710,58 @@ async def _browse_threads_filtered(
         )
     
     else:
-        # No category filter - simple thread query
+        # No category/tier filter - message-only filter path
+        # Apply all filters directly in DB query for accuracy
+
+        # Build base query with all filters
         threads_query = client.from_('threads').select(
             'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
         )
-        if date_from:
-            threads_query = threads_query.gte('created_at', date_from)
-        if date_to:
-            threads_query = threads_query.lte('created_at', date_to)
-        
+        # Use properly formatted ISO dates with timezone (same as distribution endpoint)
+        if date_from_param:
+            threads_query = threads_query.gte('created_at', date_from_param)
+        if date_to_param:
+            threads_query = threads_query.lte('created_at', date_to_param)
+
+        # Apply message count filters directly in DB (not Python)
+        if min_messages is not None:
+            threads_query = threads_query.gte('user_message_count', min_messages)
+        if max_messages is not None:
+            threads_query = threads_query.lte('user_message_count', max_messages)
+
+        # Get total count with same filters
+        count_query = client.from_('threads').select('thread_id', count='exact')
+        if date_from_param:
+            count_query = count_query.gte('created_at', date_from_param)
+        if date_to_param:
+            count_query = count_query.lte('created_at', date_to_param)
+        if min_messages is not None:
+            count_query = count_query.gte('user_message_count', min_messages)
+        if max_messages is not None:
+            count_query = count_query.lte('user_message_count', max_messages)
+
+        count_result = await count_query.execute()
+        total_count = count_result.count or 0
+
+        if total_count == 0:
+            return await PaginationService.paginate_with_total_count(
+                items=[], total_count=0, params=params
+            )
+
+        # Apply sorting
         if sort_by == 'created_at':
             threads_query = threads_query.order('created_at', desc=(sort_order == 'desc'))
         elif sort_by == 'updated_at':
             threads_query = threads_query.order('updated_at', desc=(sort_order == 'desc'))
-        
-        threads_query = threads_query.limit(1000)
+
+        # Apply pagination in DB
+        threads_query = threads_query.range(offset, offset + params.page_size - 1)
         threads_result = await threads_query.execute()
-        all_threads = threads_result.data or []
-    
-    if not all_threads:
-        return await PaginationService.paginate_with_total_count(
-            items=[], total_count=0, params=params
-        )
-    
-    # Filter by message count only (category already filtered via JOIN)
-    # Note: Email search is handled separately in _browse_threads_by_email
-    filtered_threads = []
-    for thread in all_threads:
-        user_msg_count = thread.get('user_message_count') or 0
-        
-        if min_messages is not None and user_msg_count < min_messages:
-            continue
-        if max_messages is not None and user_msg_count > max_messages:
-            continue
-        
-        filtered_threads.append(thread)
-    
-    total_count = len(filtered_threads)
-    
-    # Paginate
-    offset = (params.page - 1) * params.page_size
-    page_threads = filtered_threads[offset:offset + params.page_size]
-    
+        page_threads = threads_result.data or []
+
     # Enrich only this page
     result = await _enrich_threads(client, page_threads)
-    
+
     return await PaginationService.paginate_with_total_count(
         items=result, total_count=total_count, params=params
     )
@@ -1305,17 +1312,59 @@ async def get_conversion_funnel(
             ).gte('created_at', start_of_range).lte('created_at', end_of_range).execute()
             return result.count or 0
 
-        async def get_subscriptions():
-            # Use Stripe directly to get paid subscriptions with emails (excludes free tier)
-            start_dt = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-            end_dt = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-            return await search_paid_subscriptions(start_dt, end_dt, include_emails=True)
+        async def get_paid_subscribers():
+            """
+            Get unique paying customers from actual charges/transactions (not subscription creation).
+            Includes both Stripe (web) and RevenueCat (app).
+            """
+            # Convert Berlin dates to UTC timestamps for Stripe
+            UTC = ZoneInfo('UTC')
+            range_start_utc = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=BERLIN_TZ).astimezone(UTC)
+            range_end_utc = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=BERLIN_TZ).astimezone(UTC)
+            start_ts = int(range_start_utc.timestamp())
+            end_ts = int(range_end_utc.timestamp())
+
+            # Fetch from both Stripe and RevenueCat in parallel
+            stripe_data, rc_data = await asyncio.gather(
+                _fetch_stripe_revenue(start_ts, end_ts),
+                _fetch_revenuecat_revenue(client, range_start_utc, range_end_utc)
+            )
+
+            # Collect unique paying customers
+            all_emails: List[str] = []
+
+            # Stripe: get emails from user_emails dict
+            stripe_emails = stripe_data.get('user_emails', {})
+            all_emails.extend([email for email in stripe_emails.values() if email])
+
+            # RevenueCat: get emails from billing_customers for app_user_ids
+            rc_user_ids = list(rc_data.get('user_revenue', {}).keys())
+            if rc_user_ids:
+                # Batch fetch emails for RevenueCat users
+                for i in range(0, len(rc_user_ids), 100):
+                    batch_ids = rc_user_ids[i:i+100]
+                    emails_result = await client.schema('basejump').from_('billing_customers').select(
+                        'account_id, email'
+                    ).in_('account_id', batch_ids).execute()
+                    for e in (emails_result.data or []):
+                        if e.get('email'):
+                            all_emails.append(e['email'])
+
+            # Deduplicate and sort
+            unique_emails = sorted(set(all_emails))
+
+            return {
+                'count': len(unique_emails),
+                'emails': unique_emails,
+                'web_count': stripe_data.get('payment_count', 0),
+                'app_count': rc_data.get('payment_count', 0),
+            }
 
         # Execute all queries in parallel
         visitors, signups, subs_result = await asyncio.gather(
             get_visitors(),
             get_signups(),
-            get_subscriptions()
+            get_paid_subscribers()
         )
 
         # Extract count and emails from subs_result
@@ -2352,17 +2401,19 @@ class ProfitabilitySummary(BaseModel):
     app_cost: float
     app_profit: float
 
-    # Per-user averages (users who had activity in the period)
-    avg_revenue_per_paid_user: float
-    avg_cost_per_paid_user: float
-    avg_profit_per_paid_user: float
+    # Per-user averages (industry standard)
+    avg_revenue_per_paid_user: float  # ARPU: revenue / paying users
+    avg_cost_per_active_user: float   # Cost to serve: costs / active users
+
+    # User counts
+    unique_paying_users: int   # Users who made a payment in this period
+    unique_active_users: int   # Users who had usage in this period (including free)
+    paying_user_emails: List[str] = []  # Emails of paying users (clickable)
 
     # Meta
     period_start: str
     period_end: str
     total_payments: int  # Total payment transactions
-    unique_paying_users: int  # Unique users who paid in this period
-    paying_user_emails: List[str] = []  # Emails of paying users (for clickable list)
 
 
 class EngagementSummary(BaseModel):
@@ -3199,18 +3250,31 @@ async def get_profitability(
             }
 
         # Assign costs to tiers based on account's current tier
-        # Also track costs for tiers not in revenue (e.g., free tier)
-        unmatched_costs = 0.0
+        # Include free tier and other cost-only tiers (no revenue but have usage)
+        free_tier_users: set = set()
         for account_id, cost in account_costs.items():
             if account_id in account_tiers:
                 tier, provider = account_tiers[account_id]
-                if tier in tier_metrics:
-                    tier_metrics[tier]['total_cost'] += cost
-                else:
-                    # Cost from tier with no revenue in this period (e.g., free tier)
-                    unmatched_costs += cost
+                if tier not in tier_metrics:
+                    # Create entry for cost-only tiers (like free tier)
+                    tier_metrics[tier] = {
+                        'stripe_revenue': 0,
+                        'stripe_count': 0,
+                        'stripe_users': set(),
+                        'revenuecat_revenue': 0,
+                        'revenuecat_count': 0,
+                        'revenuecat_users': set(),
+                        'total_cost': 0.0,
+                        'cost_only_users': set(),  # Track users for cost-only tiers
+                    }
+                tier_metrics[tier]['total_cost'] += cost
+                # Track users for free/cost-only tiers
+                if tier in ('free', 'none'):
+                    if 'cost_only_users' not in tier_metrics[tier]:
+                        tier_metrics[tier]['cost_only_users'] = set()
+                    tier_metrics[tier]['cost_only_users'].add(account_id)
 
-        logger.info(f"Costs assigned to tiers. Unmatched costs (free tier etc): ${unmatched_costs:.2f}")
+        logger.info(f"Costs assigned to {len(tier_metrics)} tiers including free/cost-only tiers")
 
         # 5. Build profitability response
         by_tier: List[TierProfitability] = []
@@ -3224,6 +3288,7 @@ async def get_profitability(
         web_cost = 0.0
         app_revenue = 0.0
         app_cost = 0.0
+        free_tier_cost = 0.0  # Track free tier cost separately
 
         for tier, metrics in tier_metrics.items():
             # Calculate totals for this tier
@@ -3296,6 +3361,28 @@ async def get_profitability(
                 ))
                 app_revenue += rc_rev
 
+            # Handle cost-only tiers (free tier, etc.) - no revenue but have costs
+            if tier_revenue == 0 and actual_cost > 0:
+                cost_only_users = metrics.get('cost_only_users', set())
+                num_users = len(cost_only_users) if cost_only_users else 1
+                by_tier.append(TierProfitability(
+                    tier=tier,
+                    display_name=display_name,
+                    provider='stripe',  # Default to stripe for free tier
+                    payment_count=0,
+                    unique_users=num_users,
+                    total_revenue=0,
+                    total_cost=round(cost_with_markup, 2),
+                    total_actual_cost=round(actual_cost, 2),
+                    gross_profit=round(-actual_cost, 2),  # Negative profit (loss)
+                    gross_margin_percent=0,  # No margin on free tier
+                    avg_cost_per_user=round(actual_cost / num_users, 2),
+                    avg_revenue_per_user=0,
+                    avg_profit_per_user=round(-actual_cost / num_users, 2),
+                ))
+                # Track free tier cost separately
+                free_tier_cost += actual_cost
+
             # Aggregate totals
             total_revenue += tier_revenue
             total_cost += cost_with_markup
@@ -3304,22 +3391,30 @@ async def get_profitability(
             all_paying_users.update(stripe_users)
             all_paying_users.update(rc_users)
 
-        # Calculate web/app costs proportionally
+        # Calculate web/app costs proportionally for paid tiers, then add free tier cost to web
         if total_revenue > 0:
-            web_cost = total_actual_cost * (web_revenue / total_revenue)
-            app_cost = total_actual_cost * (app_revenue / total_revenue)
+            paid_cost = total_actual_cost - free_tier_cost  # Cost attributable to paid tiers
+            web_cost = paid_cost * (web_revenue / total_revenue) + free_tier_cost  # Add free tier to web
+            app_cost = paid_cost * (app_revenue / total_revenue)
+        else:
+            # All costs are from free tier
+            web_cost = free_tier_cost
+            app_cost = 0.0
 
-        # Sort by revenue descending
+        # Sort by revenue descending (free tier will be at bottom)
         by_tier.sort(key=lambda x: x.total_revenue, reverse=True)
 
         # Calculate totals
         total_gross_profit = total_revenue - total_actual_cost
         total_margin = (total_gross_profit / total_revenue * 100) if total_revenue > 0 else 0.0
 
+        # User counts
         unique_paying_users = len(all_paying_users)
-        avg_revenue_per_user = total_revenue / unique_paying_users if unique_paying_users > 0 else 0.0
-        avg_cost_per_user = total_cost / unique_paying_users if unique_paying_users > 0 else 0.0
-        avg_profit_per_user = total_gross_profit / unique_paying_users if unique_paying_users > 0 else 0.0
+        unique_active_users = len(account_costs)  # Users who had usage (from credit_ledger)
+
+        # Industry standard metrics
+        avg_revenue_per_paid_user = total_revenue / unique_paying_users if unique_paying_users > 0 else 0.0
+        avg_cost_per_active_user = total_actual_cost / unique_active_users if unique_active_users > 0 else 0.0
 
         # Collect emails from Stripe customers
         stripe_user_emails = stripe_revenue.get('user_emails', {})
@@ -3343,14 +3438,14 @@ async def get_profitability(
             app_revenue=round(app_revenue, 2),
             app_cost=round(app_cost, 2),
             app_profit=round(app_revenue - app_cost, 2),
-            avg_revenue_per_paid_user=round(avg_revenue_per_user, 2),
-            avg_cost_per_paid_user=round(avg_cost_per_user, 2),
-            avg_profit_per_paid_user=round(avg_profit_per_user, 2),
+            avg_revenue_per_paid_user=round(avg_revenue_per_paid_user, 2),
+            avg_cost_per_active_user=round(avg_cost_per_active_user, 2),
+            unique_paying_users=unique_paying_users,
+            unique_active_users=unique_active_users,
+            paying_user_emails=paying_user_emails,
             period_start=range_start.strftime('%Y-%m-%d'),
             period_end=range_end.strftime('%Y-%m-%d'),
             total_payments=total_payments,
-            unique_paying_users=unique_paying_users,
-            paying_user_emails=paying_user_emails,
         )
 
     except Exception as e:

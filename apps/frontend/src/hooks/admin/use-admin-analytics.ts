@@ -882,17 +882,19 @@ export interface ProfitabilitySummary {
   app_cost: number;
   app_profit: number;
 
-  // Per-user averages
-  avg_revenue_per_paid_user: number;
-  avg_cost_per_paid_user: number;
-  avg_profit_per_paid_user: number;
+  // Per-user averages (industry standard)
+  avg_revenue_per_paid_user: number;  // ARPU: revenue / paying users
+  avg_cost_per_active_user: number;   // Cost to serve: costs / active users
+
+  // User counts
+  unique_paying_users: number;   // Users who made a payment
+  unique_active_users: number;   // Users who had usage (including free)
+  paying_user_emails: string[];  // Emails of paying users (clickable)
 
   // Meta
   period_start: string;
   period_end: string;
   total_payments: number;
-  unique_paying_users: number;
-  paying_user_emails: string[];  // Emails of paying users (clickable)
 }
 
 export function useProfitability(dateFrom?: string, dateTo?: string) {
