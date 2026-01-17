@@ -31,21 +31,27 @@ export function getServerUrl(): string {
 /**
  * Get the frontend URL based on environment
  * Used for auth redirects, sharing links, etc.
- * 
+ *
  * Priority:
  * 1. EXPO_PUBLIC_FRONTEND_URL if set (explicit override)
- * 2. Environment-based defaults (staging by default for Expo apps)
- * 
- * Note: Defaults to staging since localhost doesn't work on physical devices.
- * Set EXPO_PUBLIC_ENV_MODE=local explicitly if you want localhost (simulator only).
+ * 2. Infer from backend URL (if backend is production, frontend should be too)
+ * 3. Environment-based defaults (staging by default for Expo apps)
  */
 export function getFrontendUrl(): string {
   // If explicitly set, use that
   if (FRONTEND_URL) {
     return FRONTEND_URL.replace(/\/$/, ''); // Remove trailing slash
   }
-  
-  // Environment-based defaults
+
+  // Infer from backend URL - if backend is production, frontend should be too
+  if (BACKEND_URL.includes('api.kortix.com') || BACKEND_URL.includes('api.suna.so')) {
+    return 'https://kortix.com';
+  }
+  if (BACKEND_URL.includes('staging.api') || BACKEND_URL.includes('staging-api')) {
+    return 'https://staging.suna.so';
+  }
+
+  // Fall back to environment-based defaults
   switch (ENV_MODE) {
     case EnvMode.PRODUCTION:
       return 'https://kortix.com';
