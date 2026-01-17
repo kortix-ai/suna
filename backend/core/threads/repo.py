@@ -1324,12 +1324,14 @@ async def insert_message(
     is_llm_message: bool = False,
     metadata: Optional[Dict[str, Any]] = None,
     agent_id: Optional[str] = None,
-    agent_version_id: Optional[str] = None
+    agent_version_id: Optional[str] = None,
+    message_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     from datetime import datetime, timezone
     import uuid
     
-    message_id = str(uuid.uuid4())
+    if message_id is None:
+        message_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     
     sql = """

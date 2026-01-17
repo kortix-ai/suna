@@ -573,7 +573,7 @@ class RedisClient:
         )
         return result or 0
     
-    async def smembers(self, key: str, timeout: float = None) -> set:
+    async def smembers(self, key: str, timeout: float = None) -> _builtin_set:
         """Get all members of a set with timeout protection."""
         timeout = timeout or DEFAULT_OP_TIMEOUT
         client = await self.get_client()
@@ -581,9 +581,9 @@ class RedisClient:
             client.smembers(key),
             timeout_seconds=timeout,
             operation_name=f"smembers({key})",
-            default=set()
+            default=_builtin_set()
         )
-        return result or set()
+        return result or _builtin_set()
     
     async def expire(self, key: str, seconds: int, timeout: float = None) -> bool:
         """Set key expiration with timeout protection."""
@@ -1012,7 +1012,7 @@ async def sadd(key: str, *members, timeout: float = None) -> int:
 async def srem(key: str, *members, timeout: float = None) -> int:
     return await redis.srem(key, *members, timeout=timeout)
 
-async def smembers(key: str, timeout: float = None) -> set:
+async def smembers(key: str, timeout: float = None) -> _builtin_set:
     return await redis.smembers(key, timeout=timeout)
 
 async def expire(key: str, seconds: int, timeout: float = None):

@@ -147,6 +147,13 @@ async def lifespan(app: FastAPI):
         from core.sandbox.pool_background import start_pool_service
         asyncio.create_task(start_pool_service())
         
+        # Initialize stateless pipeline (if enabled)
+        from core.agents.runner.executor import USE_STATELESS_PIPELINE
+        if USE_STATELESS_PIPELINE:
+            from core.agents.pipeline.stateless import lifecycle
+            await lifecycle.initialize()
+            logger.info("[STARTUP] Stateless pipeline initialized")
+        
         yield
 
         # Shutdown sequence: Set flag first so health checks fail
@@ -198,6 +205,13 @@ async def lifespan(app: FastAPI):
                     logger.error(f"Failed to update agent run {agent_run_id} on shutdown: {e}")
         else:
             logger.info("No active agent runs to stop on shutdown")
+        
+        # Shutdown stateless pipeline (if enabled)
+        from core.agents.runner.executor import USE_STATELESS_PIPELINE
+        if USE_STATELESS_PIPELINE:
+            from core.agents.pipeline.stateless import lifecycle
+            await lifecycle.shutdown()
+            logger.info("[SHUTDOWN] Stateless pipeline shutdown complete")
         
         logger.debug("Cleaning up resources")
         
@@ -383,6 +397,9 @@ api_router.include_router(staged_files_router, prefix="/files")
 
 from core.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)
+
+from core.agents.pipeline.stateless.api import router as stateless_admin_router
+api_router.include_router(stateless_admin_router)
 
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
