@@ -231,11 +231,22 @@ class LifecycleService:
             f"subscription_tier:{account_id}",
             f"credit_balance:{account_id}",
             f"credit_summary:{account_id}",
-            f"project_count_limit:{account_id}"
+            f"project_count_limit:{account_id}",
+            f"thread_count_limit:{account_id}",
+            f"account_state:{account_id}",
+            f"tier_info:{account_id}",
         ]
         
         for key in cache_keys:
             await Cache.invalidate(key)
+        
+        try:
+            from core.agents.pipeline.slot_manager import invalidate_tier_cache
+            await invalidate_tier_cache(account_id)
+        except Exception as e:
+            logger.warning(f"[CACHE] Failed to invalidate slot_manager tier cache for {account_id}: {e}")
+        
+        logger.info(f"[SUBSCRIPTION] Invalidated all caches for {account_id}")
     
     def calculate_next_credit_grant(self, plan_type: str, billing_anchor: datetime, period_end_timestamp: int) -> datetime:
         if plan_type == 'yearly':

@@ -182,21 +182,20 @@ class VersionService:
         from core.agents import repo as agents_repo
         from core.versioning import repo as versioning_repo
         
-        # Get current agent info
         agent_info = await agents_repo.get_agent_by_id(agent_id)
         if not agent_info:
             raise Exception("Agent not found")
 
         previous_version_id = agent_info.get('current_version_id')
         
-        # Retry logic to handle race conditions in version number generation
+        auto_generate_version_name = version_name is None
+        
         max_retries = 3
         for attempt in range(max_retries):
             try:
-                # Get next version number
                 version_number = await versioning_repo.get_next_version_number(agent_id)
                 
-                if not version_name:
+                if auto_generate_version_name:
                     version_name = f"v{version_number}"
                         
                 triggers = await versioning_repo.get_agent_triggers(agent_id)
@@ -285,10 +284,16 @@ class VersionService:
                 
             except Exception as e:
                 error_msg = str(e)
-                if "duplicate key value violates unique constraint" in error_msg and "agent_versions_agent_id_version_number_key" in error_msg:
+                # Handle both version_number and version_name unique constraint violations
+                is_version_conflict = (
+                    "duplicate key value violates unique constraint" in error_msg and 
+                    ("agent_versions_agent_id_version_number_key" in error_msg or 
+                     "agent_versions_agent_id_version_name_key" in error_msg)
+                )
+                if is_version_conflict:
                     if attempt < max_retries - 1:
                         await asyncio.sleep(0.1 * (attempt + 1))
-                        logger.warning(f"Version number conflict for agent {agent_id}, attempt {attempt + 1}/{max_retries}, retrying...")
+                        logger.warning(f"Version conflict for agent {agent_id}, attempt {attempt + 1}/{max_retries}, retrying...")
                         continue
                     else:
                         logger.error(f"Failed to create version after {max_retries} attempts due to version conflicts")

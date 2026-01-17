@@ -102,26 +102,29 @@ async def lifespan(app: FastAPI):
         
         sandbox_api.initialize(db)
         
-        # Initialize Redis connection
         from core.services import redis
         try:
             await redis.initialize_async()
             logger.debug("Redis connection initialized successfully")
+            try:
+                tier_keys = await redis.scan_keys("tier_info:*")
+                sub_keys = await redis.scan_keys("subscription_tier:*")
+                all_keys = tier_keys + sub_keys
+                if all_keys:
+                    for key in all_keys:
+                        await redis.delete(key)
+                    logger.info(f"[STARTUP] Cleared {len(all_keys)} tier caches to pick up config changes")
+            except Exception as e:
+                logger.warning(f"[STARTUP] Failed to clear tier caches: {e}")
+                
         except Exception as e:
             logger.error(f"Failed to initialize Redis connection: {e}")
-            # Continue without Redis - the application will handle Redis failures gracefully
-        
-        # ===== Cleanup orphaned agent runs from previous instance =====
-        # On startup, ALL runs with status='running' are orphans from the previous instance
-        # Also cleans up orphaned Redis streams without matching DB records
+
         try:
             client = await db.client
             await cleanup_orphaned_agent_runs(client)
         except Exception as e:
             logger.error(f"Failed to cleanup orphaned agent runs on startup: {e}")
-        
-        # Start background tasks
-        # asyncio.create_task(core_api.restore_running_agent_runs())
         
         triggers_api.initialize(db)
         credentials_api.initialize(db)

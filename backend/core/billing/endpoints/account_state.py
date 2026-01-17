@@ -32,15 +32,52 @@ STRIPE_SUBSCRIPTION_CACHE_TTL = 600
 STRIPE_FETCH_TIMEOUT = 8.0  # 8 seconds max
 
 
-async def _get_cached_stripe_subscription(subscription_id: str, timeout: float = STRIPE_FETCH_TIMEOUT) -> Optional[Dict]:
-    """
-    Get Stripe subscription from cache to avoid slow API calls.
+def _extract_commitment_from_credit_account(credit_account: Dict) -> Dict:
+    commitment_type = credit_account.get('commitment_type')
+    commitment_end_date = credit_account.get('commitment_end_date')
     
-    PERFORMANCE OPTIMIZATIONS (Jan 2026):
-    - Extended cache TTL (10 min) to reduce Stripe API calls
-    - Timeout protection to prevent slow requests from blocking
-    - Graceful fallback on timeout/error (returns None, caller handles)
-    """
+    if not commitment_type or not commitment_end_date:
+        return {
+            'has_commitment': False,
+            'can_cancel': True,
+            'commitment_type': None,
+            'months_remaining': None,
+            'commitment_end_date': None
+        }
+    
+    try:
+        end_date = datetime.fromisoformat(str(commitment_end_date).replace('Z', '+00:00'))
+        now = datetime.now(timezone.utc)
+        
+        if now >= end_date:
+            return {
+                'has_commitment': False,
+                'can_cancel': True,
+                'commitment_type': None,
+                'months_remaining': None,
+                'commitment_end_date': None
+            }
+        
+        months_remaining = max(0, (end_date.year - now.year) * 12 + (end_date.month - now.month))
+        
+        return {
+            'has_commitment': True,
+            'can_cancel': False,
+            'commitment_type': commitment_type,
+            'months_remaining': months_remaining,
+            'commitment_end_date': commitment_end_date if isinstance(commitment_end_date, str) else commitment_end_date.isoformat()
+        }
+    except Exception:
+        return {
+            'has_commitment': False,
+            'can_cancel': True,
+            'commitment_type': None,
+            'months_remaining': None,
+            'commitment_end_date': None
+        }
+
+
+async def _get_cached_stripe_subscription(subscription_id: str, timeout: float = STRIPE_FETCH_TIMEOUT) -> Optional[Dict]:
     if not subscription_id:
         return None
     
@@ -53,7 +90,6 @@ async def _get_cached_stripe_subscription(subscription_id: str, timeout: float =
     except Exception:
         pass
     
-    # Cache miss - fetch from Stripe with timeout protection
     try:
         subscription_data = await asyncio.wait_for(
             StripeAPIWrapper.retrieve_subscription(subscription_id),
@@ -82,22 +118,12 @@ async def _get_cached_stripe_subscription(subscription_id: str, timeout: float =
         return None
 
 
-async def _build_account_state(account_id: str) -> Dict:
-    """
-    Build complete account state.
-    
-    PERFORMANCE OPTIMIZATIONS:
-    - Fetches tier info ONCE and passes to all limit checkers
-    - Caches Stripe subscription data (5 min TTL)
-    - Runs all limit checks in parallel
-    - Populates credit_balance cache for billing checks
-    """
+async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dict:
     import time
     t_start = time.time()
     
-    # Fetch credit account and tier info in parallel
     credit_account_task = get_credit_account(account_id)
-    tier_info_task = subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+    tier_info_task = subscription_service.get_user_subscription_tier(account_id, skip_cache=skip_cache)
     
     credit_account, subscription_tier_info = await asyncio.gather(
         credit_account_task,
@@ -110,6 +136,7 @@ async def _build_account_state(account_id: str) -> Dict:
     if not tier_info:
         tier_info = TIERS['none']
     
+    logger.info(f"[ACCOUNT_STATE] {account_id[:8]}... tier={tier_name} thread_limit={subscription_tier_info.get('thread_limit')} project_limit={subscription_tier_info.get('project_limit')} skip_cache={skip_cache}")
     logger.debug(f"[ACCOUNT_STATE] Fetched credit account + tier in {(time.time() - t_start) * 1000:.1f}ms")
     
     # Trial status
@@ -180,11 +207,24 @@ async def _build_account_state(account_id: str) -> Dict:
     provider = credit_account.get('provider', 'stripe')
     
     stripe_subscription_id = credit_account.get('stripe_subscription_id')
+    
+    # OPTIMIZATION: Run Stripe fetch and limits query in parallel
+    from core.utils.limits_checker import get_all_limits_fast
+    
+    stripe_task = None
     if stripe_subscription_id and provider == 'stripe':
-        # Use cached Stripe subscription (avoids 200-800ms API call)
-        subscription_data = await _get_cached_stripe_subscription(stripe_subscription_id)
-        
-        # Get billing period from subscription if not in credit_account
+        stripe_task = _get_cached_stripe_subscription(stripe_subscription_id)
+    
+    limits_task = get_all_limits_fast(account_id, tier_info=subscription_tier_info)
+    
+    # Run in parallel
+    if stripe_task:
+        subscription_data, all_limits = await asyncio.gather(stripe_task, limits_task)
+    else:
+        all_limits = await limits_task
+    
+    # Get billing period from subscription if not in credit_account
+    if stripe_subscription_id and provider == 'stripe':
         if not billing_period and subscription_data:
             items_data = subscription_data.get('items', {}).get('data', [])
             if items_data:
@@ -202,7 +242,6 @@ async def _build_account_state(account_id: str) -> Dict:
         elif 'monthly' in product_id_lower:
             billing_period = 'monthly'
     
-    # Determine subscription status
     if subscription_data:
         sub_status = subscription_data.get('status', 'active')
         if sub_status == 'trialing' or is_trial:
@@ -216,17 +255,14 @@ async def _build_account_state(account_id: str) -> Dict:
     else:
         status = 'no_subscription'
     
-    # Display name with trial indicator
     if is_trial and tier_name == 'tier_2_20':
         display_name = f"{tier_info.display_name} (Trial)"
     else:
         display_name = tier_info.display_name
     
-    # Cancellation status
     is_cancelled = False
     cancellation_effective_date = None
     
-    # Check Stripe cancellation
     if subscription_data:
         cancel_at_period_end = subscription_data.get('cancel_at_period_end', False)
         canceled_at = subscription_data.get('canceled_at')
@@ -242,7 +278,6 @@ async def _build_account_state(account_id: str) -> Dict:
                 except Exception:
                     pass
     
-    # Check RevenueCat cancellation
     if provider == 'revenuecat':
         revenuecat_cancelled_at = credit_account.get('revenuecat_cancelled_at')
         revenuecat_cancel_at_period_end = credit_account.get('revenuecat_cancel_at_period_end')
@@ -252,27 +287,16 @@ async def _build_account_state(account_id: str) -> Dict:
             if revenuecat_cancel_at_period_end:
                 cancellation_effective_date = revenuecat_cancel_at_period_end
     
-    # Get scheduled changes (pass subscription_data to avoid duplicate Stripe API calls)
     try:
         scheduled_changes = await subscription_service.get_scheduled_changes(account_id, subscription_data)
     except Exception as e:
         logger.warning(f"[ACCOUNT_STATE] Failed to get scheduled changes: {e}")
         scheduled_changes = {'has_scheduled_change': False, 'scheduled_change': None}
     
-    # Get commitment status
-    try:
-        commitment_info = await subscription_service.get_commitment_status(account_id)
-    except Exception as e:
-        logger.warning(f"[ACCOUNT_STATE] Failed to get commitment status: {e}")
-        commitment_info = {
-            'has_commitment': False,
-            'can_cancel': True,
-            'commitment_type': None,
-            'months_remaining': None,
-            'commitment_end_date': None
-        }
+    # OPTIMIZATION: Extract commitment info directly from credit_account (already fetched)
+    # instead of making another DB call via get_commitment_status()
+    commitment_info = _extract_commitment_from_credit_account(credit_account)
     
-    # Get available models
     all_models = model_manager.list_available_models(include_disabled=True)
     models = []
     for model in all_models:
@@ -287,12 +311,8 @@ async def _build_account_state(account_id: str) -> Dict:
             'recommended': model.get('recommended', False)
         })
     
-    # Get tier limits with detailed usage info
-    from core.utils.limits_checker import get_all_limits_fast
+    # all_limits already fetched above in parallel with Stripe
     
-    all_limits = await get_all_limits_fast(account_id, tier_info=subscription_tier_info)
-    
-    # Extract individual limits from combined result
     thread_limit = all_limits['threads']
     concurrent_runs_limit = all_limits['concurrent_runs']
     agent_count_limit = all_limits['agents']
@@ -300,21 +320,19 @@ async def _build_account_state(account_id: str) -> Dict:
     trigger_limit = all_limits['triggers']
     custom_mcp_limit = all_limits['custom_mcps']
     
+    # Note: get_all_limits_fast already warms the slot_manager caches
+    
     logger.debug(f"[ACCOUNT_STATE] Built complete state in {(time.time() - t_start) * 1000:.1f}ms")
     
-    # Build response
     return {
-        # Credits section
         'credits': {
             'total': total_credits,
             'daily': daily_credits,
             'monthly': monthly_credits,
             'extra': extra_credits,
-            'can_run': total_credits >= 1,  # 1 credit = $0.01
+            'can_run': total_credits >= 1,
             'daily_refresh': daily_credits_info
         },
-        
-        # Subscription section
         'subscription': {
             'tier_key': tier_name,
             'tier_display_name': display_name,
@@ -335,10 +353,8 @@ async def _build_account_state(account_id: str) -> Dict:
             'can_purchase_credits': tier_info.can_purchase_credits
         },
         
-        # Models section
         'models': models,
         
-        # Limits section - detailed usage info
         'limits': {
             'projects': {
                 'current': project_count_limit.get('current_count', 0),
@@ -385,7 +401,7 @@ async def _build_account_state(account_id: str) -> Dict:
             }
         },
         
-        # Tier config (for UI display)
+
         'tier': {
             'name': tier_name,
             'display_name': tier_info.display_name,
@@ -544,7 +560,7 @@ async def get_account_state(
                 # Continue - this is not critical for reading account state
             
             # Build fresh data (no client needed - uses repo)
-            account_state = await _build_account_state(account_id)
+            account_state = await _build_account_state(account_id, skip_cache=skip_cache)
             
             # Cache the result (non-blocking on failure)
             try:

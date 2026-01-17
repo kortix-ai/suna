@@ -324,7 +324,11 @@ async def start_agent_run(
     mode: Optional[str] = None,
 ) -> Dict[str, Any]:
     from core.agents.config import load_agent_config_fast
-    from core.agents.pipeline.slot_manager import reserve_slot
+    from core.agents.pipeline.slot_manager import (
+        reserve_slot,
+        check_thread_limit,
+        check_project_limit,
+    )
     from core.agents.pipeline.time_estimator import time_estimator
     from core.agents.pipeline.ux_streaming import stream_ack, stream_estimate
     
@@ -345,6 +349,36 @@ async def start_agent_run(
     if not is_new_thread and not project_id:
         from core.threads import repo as threads_repo
         project_id = await threads_repo.get_thread_project_id(thread_id)
+    
+    if is_new_thread and not skip_limits_check:
+        thread_check, project_check = await asyncio.gather(
+            check_thread_limit(account_id, skip=skip_limits_check),
+            check_project_limit(account_id, skip=skip_limits_check),
+        )
+        
+        if not thread_check.allowed:
+            logger.warning(f"⚠️ Thread limit exceeded for {account_id}: {thread_check.current_count}/{thread_check.limit}")
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": thread_check.message,
+                    "current_count": thread_check.current_count,
+                    "limit": thread_check.limit,
+                    "error_code": thread_check.error_code or "THREAD_LIMIT_EXCEEDED"
+                }
+            )
+        
+        if not project_check.allowed:
+            logger.warning(f"⚠️ Project limit exceeded for {account_id}: {project_check.current_count}/{project_check.limit}")
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": project_check.message,
+                    "current_count": project_check.current_count,
+                    "limit": project_check.limit,
+                    "error_code": project_check.error_code or "PROJECT_LIMIT_EXCEEDED"
+                }
+            )
     
     if is_new_thread:
         if not project_id:
@@ -533,6 +567,14 @@ async def _background_setup_and_execute(
                         metadata=metadata,
                         memory_enabled=memory_enabled,
                     )
+                    from core.agents.pipeline.slot_manager import (
+                        increment_thread_count,
+                        increment_project_count,
+                    )
+                    await asyncio.gather(
+                        increment_thread_count(account_id),
+                        increment_project_count(account_id),
+                    )
                 else:
                     if cache_updated:
                         await write_user_message_for_existing_thread(thread_id, final_message_content)
@@ -553,9 +595,6 @@ async def _background_setup_and_execute(
         log_run_start(agent_run_id, thread_id)
         
         db_task = asyncio.create_task(do_db_writes())
-        # NOTE: Concurrent limit check is now done atomically via slot_manager.reserve_slot()
-        # BEFORE returning the optimistic response. No background check needed.
-        
         logger.info(f"✅ [BG] Starting agent execution")
         
         cleanup_reason = None

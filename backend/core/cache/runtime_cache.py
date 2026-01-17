@@ -639,7 +639,7 @@ async def append_to_cached_message_history(thread_id: str, message: dict) -> boo
     return False
 
 
-TIER_INFO_TTL = 3600
+TIER_INFO_TTL = 600
 
 def _get_tier_info_key(account_id: str) -> str:
     return f"tier_info:{account_id}"
@@ -680,6 +680,12 @@ async def invalidate_tier_info_cache(account_id: str) -> None:
         logger.debug(f"🗑️ Invalidated tier info cache: {account_id}")
     except Exception as e:
         logger.warning(f"Failed to invalidate tier info cache: {e}")
+    
+    try:
+        from core.agents.pipeline.slot_manager import invalidate_tier_cache
+        await invalidate_tier_cache(account_id)
+    except Exception as e:
+        logger.warning(f"Failed to invalidate slot_manager tier cache: {e}")
 
 
 AGENT_RUN_STREAM_TTL = 3600
