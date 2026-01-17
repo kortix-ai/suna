@@ -20,11 +20,24 @@ export interface StatCardProps {
   title: string;
   value: string | number;
   description?: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
   trend?: {
     value: number;
     isPositive: boolean;
   };
+  className?: string;
+}
+
+export interface MetricCardProps {
+  label: string;
+  value: string | number;
+  subtext?: string;
+  trend?: {
+    value: number;
+    isPositive: boolean;
+  };
+  size?: 'sm' | 'md' | 'lg';
+  variant?: 'default' | 'success' | 'warning' | 'danger' | 'muted';
   className?: string;
 }
 

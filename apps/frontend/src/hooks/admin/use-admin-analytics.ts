@@ -841,3 +841,80 @@ export function useToolAdoption(date?: string) {
     placeholderData: (previousData) => previousData,
   });
 }
+
+
+// ============================================================================
+// PROFITABILITY
+// ============================================================================
+
+export interface TierProfitability {
+  tier: string;
+  display_name: string;
+  provider: 'stripe' | 'revenuecat';
+  payment_count: number;
+  unique_users: number;
+  total_revenue: number;
+  total_cost: number;
+  total_actual_cost: number;
+  gross_profit: number;
+  gross_margin_percent: number;
+  avg_cost_per_user: number;
+  avg_revenue_per_user: number;
+  avg_profit_per_user: number;
+}
+
+export interface ProfitabilitySummary {
+  // Overall metrics
+  total_revenue: number;
+  total_cost: number;
+  total_actual_cost: number;
+  gross_profit: number;
+  gross_margin_percent: number;
+
+  // Breakdown by tier
+  by_tier: TierProfitability[];
+
+  // Breakdown by platform
+  web_revenue: number;
+  web_cost: number;
+  web_profit: number;
+  app_revenue: number;
+  app_cost: number;
+  app_profit: number;
+
+  // Per-user averages (industry standard)
+  avg_revenue_per_paid_user: number;  // ARPU: revenue / paying users
+  avg_cost_per_active_user: number;   // Cost to serve: costs / active users
+
+  // User counts
+  unique_paying_users: number;   // Users who made a payment
+  unique_active_users: number;   // Users who had usage (including free)
+  paying_user_emails: string[];  // Emails of paying users (clickable)
+
+  // Meta
+  period_start: string;
+  period_end: string;
+  total_payments: number;
+}
+
+export function useProfitability(dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'profitability', dateFrom, dateTo],
+    queryFn: async (): Promise<ProfitabilitySummary> => {
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const queryString = params.toString();
+      const url = queryString
+        ? `/admin/analytics/profitability?${queryString}`
+        : '/admin/analytics/profitability';
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 60000, // 1 minute
+    placeholderData: (previousData) => previousData,
+  });
+}
