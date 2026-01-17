@@ -947,11 +947,11 @@ async def stream_agent_run(
                             safe_idx = find_last_safe_boundary(entries)
                             if safe_idx >= 0:
                                 safe_id = entries[safe_idx][0]
-                            if '-' in safe_id:
-                                parts = safe_id.split('-')
-                                if len(parts) == 2:
-                                    next_id = f"{parts[0]}-{int(parts[1]) + 1}"
-                                    await redis.xtrim_minid(stream_key, next_id, approximate=True)
+                                if '-' in safe_id:
+                                    parts = safe_id.split('-')
+                                    if len(parts) == 2:
+                                        next_id = f"{parts[0]}-{int(parts[1]) + 1}"
+                                        await redis.xtrim_minid(stream_key, next_id, approximate=True)
                         except Exception as e:
                             logger.warning(f"Error in stream catch-up: {e}")
 

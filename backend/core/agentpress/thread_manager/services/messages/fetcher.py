@@ -27,9 +27,21 @@ class MessageFetcher:
         try:
             all_messages = await self._fetch_from_db(thread_id, lightweight, threads_repo, _time)
             if not all_messages:
+                # Even with no regular messages, check for image contexts
+                image_contexts = await self._fetch_image_contexts(thread_id, threads_repo)
+                if image_contexts:
+                    logger.info(f"🖼️ Found {len(image_contexts)} image_context messages (no regular messages)")
+                    return image_contexts
                 return []
             
             messages = self._parse_messages(all_messages, lightweight)
+            
+            # Fetch and inject image_context messages
+            # These are stored separately to avoid breaking Bedrock's tool pairing
+            image_contexts = await self._fetch_image_contexts(thread_id, threads_repo)
+            if image_contexts:
+                messages = self._inject_image_contexts(messages, image_contexts)
+                logger.info(f"🖼️ Injected {len(image_contexts)} image_context messages into conversation")
             
             if not lightweight:
                 from core.cache.runtime_cache import set_cached_message_history
@@ -43,6 +55,78 @@ class MessageFetcher:
         except Exception as e:
             logger.error(f"Failed to get messages for thread {thread_id}: {str(e)}", exc_info=True)
             raise
+    
+    async def _fetch_image_contexts(self, thread_id: str, threads_repo) -> List[Dict[str, Any]]:
+        try:
+            image_messages = await threads_repo.get_image_context_messages(thread_id)
+            if not image_messages:
+                return []
+            
+            parsed_contexts = []
+            for item in image_messages:
+                content = item.get('content')
+                if isinstance(content, str):
+                    try:
+                        content = json.loads(content)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse image_context content: {content[:100]}")
+                        continue
+                
+                if isinstance(content, dict):
+                    content['message_id'] = item['message_id']
+                    content['_image_context'] = True
+                    content['_created_at'] = item.get('created_at')
+                    parsed_contexts.append(content)
+            
+            return parsed_contexts
+        except Exception as e:
+            logger.error(f"Failed to fetch image_context messages: {e}")
+            return []
+    
+    def _inject_image_contexts(self, messages: List[Dict[str, Any]], image_contexts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        if not image_contexts:
+            return messages
+        
+        result = []
+        pending_image_contexts = list(image_contexts) 
+        
+        i = 0
+        while i < len(messages):
+            msg = messages[i]
+            role = msg.get('role', '')
+            
+            if role == 'assistant' and (msg.get('tool_calls') or self._has_tool_use_content(msg)):
+                result.append(msg)
+                i += 1
+
+                while i < len(messages) and messages[i].get('role') == 'tool':
+                    result.append(messages[i])
+                    i += 1
+                
+                if pending_image_contexts:
+                    for img_ctx in pending_image_contexts:
+                        result.append(img_ctx)
+                        logger.debug(f"🖼️ Injected image_context after tool results")
+                    pending_image_contexts = []
+            else:
+                result.append(msg)
+                i += 1
+        
+        if pending_image_contexts:
+            for img_ctx in pending_image_contexts:
+                result.append(img_ctx)
+                logger.debug(f"🖼️ Appended image_context at end of conversation")
+        
+        return result
+    
+    def _has_tool_use_content(self, msg: Dict[str, Any]) -> bool:
+        """Check if message content contains tool_use blocks (Anthropic format)."""
+        content = msg.get('content')
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict) and item.get('type') == 'tool_use':
+                    return True
+        return False
     
     async def _fetch_from_db(self, thread_id: str, lightweight: bool, threads_repo, _time) -> List[Dict[str, Any]]:
         all_messages = []

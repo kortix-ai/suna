@@ -10,23 +10,26 @@ _DEFAULTS = {
         "max_size": 20,
         "check_interval": 30,
         "parallel_create_limit": 3,
+        "replenish_threshold": 0.3,
     },
     EnvMode.STAGING: {
         "min_size": 50,
         "max_size": 200,
         "check_interval": 20,
         "parallel_create_limit": 5,
+        "replenish_threshold": 0.5,
     },
     EnvMode.PRODUCTION: {
         "min_size": 100, 
         "max_size": 1000,
         "check_interval": 15,
         "parallel_create_limit": 10,
+        "replenish_threshold": 0.7,
     },
 }
 
 
-def _get_default(key: str) -> int:
+def _get_default(key: str):
     env_mode = config.ENV_MODE or EnvMode.LOCAL
     return _DEFAULTS[env_mode][key]
 
@@ -34,22 +37,11 @@ def _get_default(key: str) -> int:
 @dataclass
 class SandboxPoolConfig:
     min_size: int = 5
-    
-    # Maximum number of sandboxes in the pool (prevents runaway creation)
     max_size: int = 20
-    
     replenish_threshold: float = 0.3
-    
-    # Seconds between pool size checks
     check_interval: int = 30
-    
-    # Maximum age (seconds) a sandbox can stay in pool before being cleaned up
-    max_age: int = 3600  # 1 hour
-    
-    # Whether the pool service is enabled
+    max_age: int = 3600
     enabled: bool = True
-    
-    # Number of sandboxes to create in parallel during replenishment
     parallel_create_limit: int = 3
     
     @classmethod
@@ -57,7 +49,7 @@ class SandboxPoolConfig:
         return cls(
             min_size=int(os.getenv("SANDBOX_POOL_MIN_SIZE", str(_get_default("min_size")))),
             max_size=int(os.getenv("SANDBOX_POOL_MAX_SIZE", str(_get_default("max_size")))),
-            replenish_threshold=float(os.getenv("SANDBOX_POOL_REPLENISH_THRESHOLD", "0.3")),
+            replenish_threshold=float(os.getenv("SANDBOX_POOL_REPLENISH_THRESHOLD", str(_get_default("replenish_threshold")))),
             check_interval=int(os.getenv("SANDBOX_POOL_CHECK_INTERVAL", str(_get_default("check_interval")))),
             max_age=int(os.getenv("SANDBOX_POOL_MAX_AGE", "3600")),
             enabled=os.getenv("SANDBOX_POOL_ENABLED", "true").lower() in ("true", "1", "yes"),

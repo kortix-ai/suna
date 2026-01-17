@@ -733,7 +733,9 @@ async def get_llm_messages(
         sql = """
         SELECT message_id, type, content
         FROM messages
-        WHERE thread_id = :thread_id AND is_llm_message = true
+        WHERE thread_id = :thread_id 
+          AND is_llm_message = true
+          AND type != 'image_context'
         ORDER BY created_at ASC
         LIMIT :limit
         """
@@ -745,6 +747,7 @@ async def get_llm_messages(
         WHERE thread_id = :thread_id 
           AND is_llm_message = true
           AND is_omitted = false
+          AND type != 'image_context'
         ORDER BY created_at ASC
         LIMIT :limit
         """
@@ -764,6 +767,7 @@ async def get_llm_messages_paginated(
     WHERE thread_id = :thread_id 
       AND is_llm_message = true
       AND is_omitted = false
+      AND type != 'image_context'
     ORDER BY created_at ASC
     LIMIT :limit 
     OFFSET :offset
@@ -773,6 +777,19 @@ async def get_llm_messages_paginated(
         "limit": batch_size,
         "offset": offset
     })
+    return [dict(row) for row in rows] if rows else []
+
+
+async def get_image_context_messages(thread_id: str) -> List[Dict[str, Any]]:
+    sql = """
+    SELECT message_id, content, metadata, created_at
+    FROM messages
+    WHERE thread_id = :thread_id 
+      AND type = 'image_context'
+      AND is_omitted = false
+    ORDER BY created_at ASC
+    """
+    rows = await execute(sql, {"thread_id": thread_id})
     return [dict(row) for row in rows] if rows else []
 
 

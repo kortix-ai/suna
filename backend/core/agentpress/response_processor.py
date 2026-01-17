@@ -3391,17 +3391,19 @@ class ResponseProcessor:
                 return
             
             # Set has_images flag on thread metadata
-            from core.agentpress.thread_manager import set_thread_has_images
-            await set_thread_has_images(thread_id)
+            from core.agentpress.thread_manager import ThreadState
+            await ThreadState.set_has_images(thread_id)
             
-            # Save the image_context message AFTER the tool result
             await self.add_message(
                 thread_id=thread_id,
                 type="image_context",
                 content=message_content,
-                is_llm_message=True,
+                is_llm_message=False,
                 metadata=metadata
             )
+            
+            from core.cache.runtime_cache import invalidate_message_history_cache
+            await invalidate_message_history_cache(thread_id)
             
             file_path = metadata.get('file_path', 'unknown')
             logger.info(f"[LoadImage] Added '{file_path}' to context (deferred save after tool result)")
