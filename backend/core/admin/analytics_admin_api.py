@@ -896,91 +896,42 @@ async def get_retention_data(
     try:
         db = DBConnection()
         client = await db.client
-        
+
         pagination_params = PaginationParams(page=page, page_size=page_size)
-        
-        now = datetime.now(BERLIN_TZ)
-        start_date = now - timedelta(weeks=weeks_back)
-        
-        # Get all threads in the period
-        threads_result = await client.from_('threads').select(
-            'account_id, created_at, updated_at'
-        ).gte('created_at', start_date.isoformat()).execute()
-        
-        # Calculate activity by user by week
-        user_weeks = {}  # account_id -> set of week numbers
-        user_first_activity = {}
-        user_last_activity = {}
-        user_thread_counts = {}
-        
-        for thread in threads_result.data or []:
-            account_id = thread.get('account_id')
-            if not account_id:
-                continue
-            
-            created = datetime.fromisoformat(thread['created_at'].replace('Z', '+00:00'))
-            updated = datetime.fromisoformat(thread['updated_at'].replace('Z', '+00:00'))
-            
-            week_num = (created - start_date).days // 7
-            
-            if account_id not in user_weeks:
-                user_weeks[account_id] = set()
-                user_first_activity[account_id] = created
-                user_last_activity[account_id] = updated
-                user_thread_counts[account_id] = 0
-            
-            user_weeks[account_id].add(week_num)
-            user_thread_counts[account_id] += 1
-            
-            if created < user_first_activity[account_id]:
-                user_first_activity[account_id] = created
-            if updated > user_last_activity[account_id]:
-                user_last_activity[account_id] = updated
-        
-        # Filter to recurring users
-        recurring_users = [
-            uid for uid, weeks in user_weeks.items()
-            if len(weeks) >= min_weeks_active
-        ]
-        
-        # Sort by weeks active descending BEFORE pagination
-        recurring_users.sort(key=lambda uid: len(user_weeks[uid]), reverse=True)
-        
-        total_count = len(recurring_users)
-        
-        # Paginate
-        offset = (pagination_params.page - 1) * pagination_params.page_size
-        paginated_users = recurring_users[offset:offset + pagination_params.page_size]
-        
-        # Get user emails
-        user_emails = {}
-        if paginated_users:
-            emails_result = await client.schema('basejump').from_('billing_customers').select(
-                'account_id, email'
-            ).in_('account_id', paginated_users).execute()
-            
-            for e in emails_result.data or []:
-                user_emails[e['account_id']] = e['email']
-        
+
+        # Use RPC function to do aggregation in SQL
+        rpc_result = await client.rpc('get_retention_data', {
+            'p_weeks_back': weeks_back,
+            'p_min_weeks_active': min_weeks_active,
+            'p_page': page,
+            'p_page_size': page_size
+        }).execute()
+
+        rows = rpc_result.data or []
+
+        # Get total count from first row (all rows have same total_count)
+        total_count = rows[0]['total_count'] if rows else 0
+
         # Build response
-        result = []
-        for uid in paginated_users:
-            result.append(RetentionData(
-                user_id=uid,
-                email=user_emails.get(uid),
-                first_activity=user_first_activity[uid],
-                last_activity=user_last_activity[uid],
-                total_threads=user_thread_counts[uid],
-                weeks_active=len(user_weeks[uid]),
+        result = [
+            RetentionData(
+                user_id=row['user_id'],
+                email=row['email'],
+                first_activity=datetime.fromisoformat(row['first_activity'].replace('Z', '+00:00')),
+                last_activity=datetime.fromisoformat(row['last_activity'].replace('Z', '+00:00')),
+                total_threads=row['total_threads'],
+                weeks_active=row['weeks_active'],
                 is_recurring=True
-            ))
-        
+            )
+            for row in rows
+        ]
+
         return await PaginationService.paginate_with_total_count(
             items=result,
             total_count=total_count,
             params=pagination_params
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to get retention data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve retention data")

@@ -24,7 +24,7 @@ import {
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { format, addDays, subDays } from 'date-fns';
+import { format, addDays, subDays, startOfWeek, startOfMonth, startOfQuarter, startOfYear } from 'date-fns';
 import type { DateRange } from 'react-day-picker';
 import { cn } from '@/lib/utils';
 import {
@@ -120,8 +120,9 @@ export default function AdminAnalyticsPage() {
 
   const { data: summary, isLoading: summaryLoading } = useAnalyticsSummary();
   const isThreadsTab = activeTab === 'threads';
+  const isOverviewOrThreads = activeTab === 'overview' || activeTab === 'threads';
   const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateFromString, dateToString, isThreadsTab);
-  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateFromString, dateToString, tierFilter, isThreadsTab);
+  const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateFromString, dateToString, tierFilter, isOverviewOrThreads);
   const { data: tierDistribution } = useTierDistribution(dateFromString, dateToString, isThreadsTab);
   const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateFromString, dateToString, analyticsSource);
   const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateFromString, dateToString);
@@ -166,7 +167,7 @@ export default function AdminAnalyticsPage() {
       <div className="max-w-6xl mx-auto px-6 py-8">
         {/* Header */}
         <header className="mb-8">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">Analytics</h1>
               <p className="text-sm text-muted-foreground mt-0.5">
@@ -175,7 +176,38 @@ export default function AdminAnalyticsPage() {
             </div>
 
             {/* Date Navigation */}
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-2">
+              {/* Date Presets */}
+              <div className="flex items-center gap-1 mr-2">
+                {[
+                  { label: 'Today', from: berlinToday, to: berlinToday },
+                  { label: '7D', from: subDays(berlinToday, 6), to: berlinToday },
+                  { label: '30D', from: subDays(berlinToday, 29), to: berlinToday },
+                  { label: 'WTD', from: startOfWeek(berlinToday, { weekStartsOn: 1 }), to: berlinToday },
+                  { label: 'MTD', from: startOfMonth(berlinToday), to: berlinToday },
+                  { label: 'QTD', from: startOfQuarter(berlinToday), to: berlinToday },
+                  { label: 'YTD', from: startOfYear(berlinToday), to: berlinToday },
+                ].map((preset) => {
+                  const isActive = dateRange.from && dateRange.to &&
+                    format(dateRange.from, 'yyyy-MM-dd') === format(preset.from, 'yyyy-MM-dd') &&
+                    format(dateRange.to, 'yyyy-MM-dd') === format(preset.to, 'yyyy-MM-dd');
+                  return (
+                    <Button
+                      key={preset.label}
+                      variant={isActive ? 'default' : 'ghost'}
+                      size="sm"
+                      className="h-7 px-2 text-xs"
+                      onClick={() => setDateRange({ from: preset.from, to: preset.to })}
+                    >
+                      {preset.label}
+                    </Button>
+                  );
+                })}
+              </div>
+
+              <div className="h-6 w-px bg-border" />
+
+              {/* Custom Range */}
               <Button
                 variant="ghost"
                 size="icon"
@@ -187,8 +219,8 @@ export default function AdminAnalyticsPage() {
 
               <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                 <PopoverTrigger asChild>
-                  <Button variant="outline" className="h-9 px-3 font-normal">
-                    <CalendarIcon className="mr-2 h-4 w-4 text-muted-foreground" />
+                  <Button variant="outline" className="h-8 px-3 font-normal text-xs">
+                    <CalendarIcon className="mr-2 h-3.5 w-3.5 text-muted-foreground" />
                     {dateLabel}
                   </Button>
                 </PopoverTrigger>
@@ -266,72 +298,163 @@ export default function AdminAnalyticsPage() {
           {/* Overview Tab */}
           <TabsContent value="overview" className="mt-0">
             <div className={cn(
-              'space-y-8 transition-opacity duration-200',
+              'space-y-6 transition-opacity duration-200',
               isOverviewFetching && 'opacity-60'
             )}>
-              {/* Hero Metrics */}
-              <section className="grid grid-cols-5 gap-4">
-                {(summaryLoading || engagementLoading || profitabilityLoading) ? (
-                  [...Array(5)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
-                ) : (
-                  <>
-                    <div className="rounded-xl border bg-card p-5">
-                      <MetricCard
-                        label="Revenue"
-                        value={`$${(profitability?.total_revenue || 0).toLocaleString()}`}
-                        subtext={`${profitability?.unique_paying_users || 0} paying users`}
-                        size="md"
-                        variant="success"
-                      />
+              {/* SECTION 1: Tasks & Users Analysis */}
+              <section className="rounded-xl border bg-card">
+                <div className="p-5 pb-4 border-b">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Zap className="h-4 w-4 text-muted-foreground" />
+                    Tasks & Users
+                  </h2>
+                </div>
+
+                <div className="p-5">
+                  {(summaryLoading || engagementLoading || taskLoading || funnelLoading) ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-5 gap-4">
+                        {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+                      </div>
+                      <Skeleton className="h-24" />
                     </div>
-                    <div className="rounded-xl border bg-card p-5">
-                      <MetricCard
-                        label="Profit"
-                        value={`${(profitability?.gross_profit || 0) < 0 ? '-' : ''}$${Math.abs(profitability?.gross_profit || 0).toLocaleString()}`}
-                        subtext={`${profitability?.gross_margin_percent || 0}% margin`}
-                        size="md"
-                        variant={(profitability?.gross_profit || 0) >= 0 ? 'success' : 'danger'}
-                      />
+                  ) : (
+                    <div className="space-y-4">
+                      {/* Row 1: Core metrics */}
+                      <div className="grid grid-cols-7 gap-3">
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{conversionFunnel?.visitors?.toLocaleString() || 0}</p>
+                          <p className="text-xs text-muted-foreground">Visitors</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{conversionFunnel?.signups?.toLocaleString() || 0}</p>
+                          <p className="text-xs text-muted-foreground">New Signups</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-emerald-500/10">
+                          <p className="text-2xl font-bold text-emerald-600">{conversionFunnel?.subscriptions || 0}</p>
+                          <p className="text-xs text-muted-foreground">New Paid</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{taskPerformance?.total_runs?.toLocaleString() || 0}</p>
+                          <p className="text-xs text-muted-foreground">Total Tasks</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{engagementSummary?.dau || 0}</p>
+                          <p className="text-xs text-muted-foreground">Active Users</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-2xl font-bold">{engagementSummary?.avg_threads_per_active_user?.toFixed(1) || '0'}</p>
+                          <p className="text-xs text-muted-foreground">Tasks/User</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className={cn(
+                            "text-2xl font-bold",
+                            (taskPerformance?.success_rate || 0) >= 80 ? "text-emerald-600" :
+                            (taskPerformance?.success_rate || 0) >= 60 ? "text-amber-600" : "text-red-500"
+                          )}>
+                            {taskPerformance?.success_rate || 0}%
+                          </p>
+                          <p className="text-xs text-muted-foreground">Success Rate</p>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Task Distribution & Duration */}
+                      <div className="grid grid-cols-6 gap-3">
+                        {/* Task Distribution - expanded */}
+                        <div className="col-span-5 p-4 rounded-lg bg-muted/30">
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-medium text-muted-foreground">Task Distribution by Category</p>
+                            {categoryDistribution && (
+                              <p className="text-xs text-muted-foreground">
+                                {Object.values(categoryDistribution.distribution).reduce((a, b) => a + b, 0)} total
+                              </p>
+                            )}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            {categoryDistribution && Object.entries(categoryDistribution.distribution)
+                              .sort(([, a], [, b]) => b - a)
+                              .map(([cat, count]) => {
+                                const total = Object.values(categoryDistribution.distribution).reduce((a, b) => a + b, 0);
+                                const percent = total > 0 ? ((count / total) * 100).toFixed(0) : 0;
+                                return (
+                                  <div key={cat} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-background border">
+                                    <span className="text-sm font-medium">{cat}</span>
+                                    <span className="text-xs text-muted-foreground">{count}</span>
+                                    <span className="text-[10px] text-muted-foreground/70">({percent}%)</span>
+                                  </div>
+                                );
+                              })}
+                            {(!categoryDistribution || Object.keys(categoryDistribution.distribution).length === 0) && (
+                              <p className="text-sm text-muted-foreground">No task data</p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Avg Duration */}
+                        <div className="text-center p-4 rounded-lg bg-muted/30 flex flex-col justify-center">
+                          <p className="text-2xl font-bold">
+                            {taskPerformance?.avg_duration_seconds
+                              ? taskPerformance.avg_duration_seconds < 60
+                                ? `${taskPerformance.avg_duration_seconds.toFixed(0)}s`
+                                : `${(taskPerformance.avg_duration_seconds / 60).toFixed(1)}m`
+                              : '—'}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-1">Avg Task Duration</p>
+                        </div>
+                      </div>
                     </div>
-                    <div className="rounded-xl border bg-card p-5">
-                      <MetricCard
-                        label="Active Users"
-                        value={engagementSummary?.dau || 0}
-                        subtext={`${engagementSummary?.wau || 0} WAU · ${engagementSummary?.mau || 0} MAU`}
-                        size="md"
-                      />
-                    </div>
-                    <div className="rounded-xl border bg-card p-5">
-                      <MetricCard
-                        label="Signups"
-                        value={summary?.new_signups_today || 0}
-                        subtext={`${summary?.new_signups_week || 0} this week`}
-                        size="md"
-                      />
-                    </div>
-                    <div className="rounded-xl border bg-card p-5">
-                      <MetricCard
-                        label="Success Rate"
-                        value={`${taskPerformance?.success_rate || 0}%`}
-                        subtext={`${taskPerformance?.total_runs || 0} runs`}
-                        size="md"
-                        variant={
-                          (taskPerformance?.success_rate || 0) >= 90 ? 'success' :
-                          (taskPerformance?.success_rate || 0) >= 70 ? 'default' : 'warning'
-                        }
-                      />
-                    </div>
-                  </>
-                )}
+                  )}
+                </div>
               </section>
 
-              {/* Conversion Funnel */}
+              {/* SECTION 2: DAU/WAU/MAU */}
+              <section className="rounded-xl border bg-card">
+                <div className="p-5 pb-4 border-b">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    Engagement
+                  </h2>
+                </div>
+
+                <div className="p-5">
+                  {engagementLoading ? (
+                    <div className="grid grid-cols-4 gap-4">
+                      {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20" />)}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-4 gap-4">
+                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                        <p className="text-3xl font-bold">{engagementSummary?.dau || 0}</p>
+                        <p className="text-xs text-muted-foreground mt-1">DAU</p>
+                        <p className="text-[10px] text-muted-foreground">Daily Active Users</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                        <p className="text-3xl font-bold">{engagementSummary?.wau || 0}</p>
+                        <p className="text-xs text-muted-foreground mt-1">WAU</p>
+                        <p className="text-[10px] text-muted-foreground">Weekly Active Users</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-muted/30">
+                        <p className="text-3xl font-bold">{engagementSummary?.mau || 0}</p>
+                        <p className="text-xs text-muted-foreground mt-1">MAU</p>
+                        <p className="text-[10px] text-muted-foreground">Monthly Active Users</p>
+                      </div>
+                      <div className="text-center p-4 rounded-lg bg-blue-500/10">
+                        <p className="text-3xl font-bold text-blue-600">{engagementSummary?.dau_mau_ratio || 0}%</p>
+                        <p className="text-xs text-muted-foreground mt-1">DAU/MAU</p>
+                        <p className="text-[10px] text-muted-foreground">Stickiness Ratio</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </section>
+
+              {/* SECTION 3: Conversion Funnel */}
               <section className="rounded-xl border bg-card">
                 <div className="flex items-center justify-between p-5 pb-4 border-b">
-                  <div>
-                    <h2 className="text-sm font-medium">Conversion Funnel</h2>
-                    <p className="text-xs text-muted-foreground mt-0.5">{dateLabel}</p>
-                  </div>
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-muted-foreground" />
+                    Conversion Funnel
+                  </h2>
                   <Select value={analyticsSource} onValueChange={(v) => setAnalyticsSource(v as AnalyticsSource)}>
                     <SelectTrigger className="w-32 h-8 text-xs">
                       <SelectValue />
@@ -345,43 +468,56 @@ export default function AdminAnalyticsPage() {
 
                 <div className="p-5">
                   {funnelLoading ? (
-                    <Skeleton className="h-20" />
+                    <Skeleton className="h-24" />
                   ) : conversionFunnel ? (
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-stretch">
                       {/* Visitors */}
-                      <div className="flex-1">
+                      <div className="flex-1 text-center p-4 rounded-l-lg bg-muted/30 border-r border-background">
                         <p className="text-3xl font-bold tracking-tight">
                           {conversionFunnel.visitors.toLocaleString()}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">Visitors</p>
+                        <p className="text-sm font-medium mt-1">Visitors</p>
+                        <p className="text-xs text-muted-foreground">100%</p>
                       </div>
 
-                      <div className="flex items-center gap-2 text-muted-foreground/50 px-4">
-                        <ArrowRight className="h-4 w-4" />
-                        <span className="text-xs font-medium">{conversionFunnel.visitor_to_signup_rate}%</span>
+                      {/* Arrow */}
+                      <div className="flex items-center justify-center px-2 bg-muted/30">
+                        <div className="text-center">
+                          <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
+                          <span className="text-xs font-medium text-muted-foreground">{conversionFunnel.visitor_to_signup_rate}%</span>
+                        </div>
                       </div>
 
                       {/* Signups */}
-                      <div className="flex-1 text-center">
+                      <div className="flex-1 text-center p-4 bg-muted/30 border-r border-background">
                         <p className="text-3xl font-bold tracking-tight">
                           {conversionFunnel.signups.toLocaleString()}
                         </p>
-                        <p className="text-xs text-muted-foreground mt-1">Signups</p>
+                        <p className="text-sm font-medium mt-1">Signups</p>
+                        <p className="text-xs text-muted-foreground">{conversionFunnel.visitor_to_signup_rate}% of visitors</p>
                       </div>
 
-                      <div className="flex items-center gap-2 text-muted-foreground/50 px-4">
-                        <ArrowRight className="h-4 w-4" />
-                        <span className="text-xs font-medium">{conversionFunnel.signup_to_subscription_rate}%</span>
+                      {/* Arrow */}
+                      <div className="flex items-center justify-center px-2 bg-muted/30">
+                        <div className="text-center">
+                          <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
+                          <span className="text-xs font-medium text-muted-foreground">{conversionFunnel.signup_to_subscription_rate}%</span>
+                        </div>
                       </div>
 
-                      {/* Subscriptions */}
+                      {/* Paid */}
                       <Popover>
                         <PopoverTrigger asChild>
-                          <div className="flex-1 text-right cursor-pointer hover:opacity-80 transition-opacity">
+                          <div className="flex-1 text-center p-4 rounded-r-lg bg-emerald-500/10 cursor-pointer hover:bg-emerald-500/20 transition-colors">
                             <p className="text-3xl font-bold tracking-tight text-emerald-600">
                               {conversionFunnel.subscriptions.toLocaleString()}
                             </p>
-                            <p className="text-xs text-muted-foreground mt-1">Paid Subscribers</p>
+                            <p className="text-sm font-medium mt-1">Paid</p>
+                            <p className="text-xs text-muted-foreground">
+                              {conversionFunnel.visitors > 0
+                                ? ((conversionFunnel.subscriptions / conversionFunnel.visitors) * 100).toFixed(2)
+                                : 0}% of visitors
+                            </p>
                           </div>
                         </PopoverTrigger>
                         <PopoverContent className="w-72 max-h-60 overflow-y-auto">
@@ -408,235 +544,171 @@ export default function AdminAnalyticsPage() {
                 </div>
               </section>
 
-              {/* Two Column Layout: Engagement + Profitability */}
-              <div className="grid grid-cols-2 gap-6 items-start">
-                {/* Platform Health */}
-                <section className="rounded-xl border bg-card">
-                  <div className="p-5 pb-4 border-b">
-                    <h2 className="text-sm font-medium flex items-center gap-2">
-                      <Activity className="h-4 w-4 text-muted-foreground" />
-                      Platform Health
-                    </h2>
-                  </div>
+              {/* SECTION 4: Financials */}
+              <section className="rounded-xl border bg-card">
+                <div className="p-5 pb-4 border-b flex items-center justify-between">
+                  <h2 className="text-sm font-medium flex items-center gap-2">
+                    <DollarSign className="h-4 w-4 text-muted-foreground" />
+                    Financials
+                  </h2>
+                  {profitability && profitability.paying_user_emails?.length > 0 && (
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <button className="text-xs text-primary hover:underline">
+                          View {profitability.unique_paying_users} paying users
+                        </button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-72 max-h-60 overflow-y-auto">
+                        <h4 className="font-medium text-sm mb-2">Paying Users</h4>
+                        <ul className="space-y-1">
+                          {profitability.paying_user_emails.map((email, idx) => (
+                            <li key={idx} className="text-sm">
+                              <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                            </li>
+                          ))}
+                        </ul>
+                      </PopoverContent>
+                    </Popover>
+                  )}
+                </div>
 
-                  <div className="p-5 space-y-5">
-                    {engagementLoading || taskLoading ? (
-                      <div className="space-y-3">
-                        <Skeleton className="h-16" />
-                        <Skeleton className="h-16" />
+                <div className="p-5">
+                  {profitabilityLoading ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-6 gap-4">
+                        {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-20" />)}
                       </div>
-                    ) : (
-                      <>
-                        {/* Engagement Metrics */}
-                        <div className="grid grid-cols-3 gap-4">
-                          <div>
-                            <p className="text-2xl font-bold">{engagementSummary?.dau_mau_ratio || 0}%</p>
-                            <p className="text-xs text-muted-foreground">Stickiness (DAU/MAU)</p>
+                      <Skeleton className="h-32" />
+                    </div>
+                  ) : profitability ? (
+                    <div className="space-y-6">
+                      {/* Row 1: Key financial metrics */}
+                      <div className="grid grid-cols-6 gap-4">
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">Total Active Subs</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">MRR</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">${profitability.avg_revenue_per_paid_user.toFixed(0)}</p>
+                          <p className="text-xs text-muted-foreground">ARPU</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">Churns</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">Churn Rate</p>
+                        </div>
+                        <div className="text-center p-3 rounded-lg bg-muted/30">
+                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xs text-muted-foreground">LTV</p>
+                        </div>
+                      </div>
+
+                      {/* Row 2: Revenue breakdown */}
+                      <div className="grid grid-cols-2 gap-6">
+                        {/* Revenue & Profit Summary */}
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between p-4 rounded-lg bg-emerald-500/10">
+                            <div>
+                              <p className="text-xs text-muted-foreground">Revenue</p>
+                              <p className="text-2xl font-bold text-emerald-600">${profitability.total_revenue.toLocaleString()}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Cost</p>
+                              <p className="text-lg font-semibold">${profitability.total_actual_cost.toLocaleString()}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Profit</p>
+                              <p className={cn(
+                                "text-lg font-bold",
+                                profitability.gross_profit >= 0 ? "text-emerald-600" : "text-red-500"
+                              )}>
+                                {profitability.gross_profit < 0 ? '-' : ''}${Math.abs(profitability.gross_profit).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-xs text-muted-foreground">Margin</p>
+                              <p className="text-lg font-semibold">{profitability.gross_margin_percent}%</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-2xl font-bold">{engagementSummary?.avg_threads_per_active_user?.toFixed(1) || '0'}</p>
-                            <p className="text-xs text-muted-foreground">Threads/User</p>
-                          </div>
-                          <div>
-                            <p className="text-2xl font-bold">{taskPerformance?.total_runs?.toLocaleString() || 0}</p>
-                            <p className="text-xs text-muted-foreground">Agent Runs</p>
+
+                          {/* Platform Split */}
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="p-3 rounded-lg border">
+                              <p className="text-xs text-muted-foreground mb-1">Web (Stripe)</p>
+                              <p className="text-lg font-bold">${profitability.web_revenue.toLocaleString()}</p>
+                              <p className="text-xs text-muted-foreground">Cost: ${profitability.web_cost.toFixed(2)}</p>
+                            </div>
+                            <div className="p-3 rounded-lg border">
+                              <p className="text-xs text-muted-foreground mb-1">App (RevenueCat)</p>
+                              <p className="text-lg font-bold">${profitability.app_revenue.toLocaleString()}</p>
+                              <p className="text-xs text-muted-foreground">Cost: ${profitability.app_cost.toFixed(2)}</p>
+                            </div>
                           </div>
                         </div>
 
-                        <div className="h-px bg-border" />
-
-                        {/* Task Performance */}
+                        {/* Users & Revenue per Tier */}
                         <div>
-                          <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs font-medium text-muted-foreground">Task Status</span>
-                            {taskPerformance?.avg_duration_seconds !== null && (
-                              <span className="text-xs text-muted-foreground">
-                                Avg: {taskPerformance.avg_duration_seconds < 60
-                                  ? `${taskPerformance.avg_duration_seconds.toFixed(0)}s`
-                                  : `${(taskPerformance.avg_duration_seconds / 60).toFixed(1)}m`}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex gap-2">
-                            <div className="flex-1 rounded-lg bg-emerald-500/10 p-2.5 text-center">
-                              <p className="text-lg font-semibold text-emerald-600">{taskPerformance?.completed_runs || 0}</p>
-                              <p className="text-[10px] text-muted-foreground">Completed</p>
-                            </div>
-                            <div className="flex-1 rounded-lg bg-red-500/10 p-2.5 text-center">
-                              <p className="text-lg font-semibold text-red-500">{taskPerformance?.failed_runs || 0}</p>
-                              <p className="text-[10px] text-muted-foreground">Failed</p>
-                            </div>
-                            <div className="flex-1 rounded-lg bg-amber-500/10 p-2.5 text-center">
-                              <p className="text-lg font-semibold text-amber-600">{taskPerformance?.stopped_runs || 0}</p>
-                              <p className="text-[10px] text-muted-foreground">Stopped</p>
-                            </div>
-                            <div className="flex-1 rounded-lg bg-blue-500/10 p-2.5 text-center">
-                              <p className="text-lg font-semibold text-blue-600">{taskPerformance?.running_runs || 0}</p>
-                              <p className="text-[10px] text-muted-foreground">Running</p>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </section>
-
-                {/* Profitability */}
-                <section className="rounded-xl border bg-card">
-                  <div className="p-5 pb-4 border-b flex items-center justify-between">
-                    <h2 className="text-sm font-medium flex items-center gap-2">
-                      <DollarSign className="h-4 w-4 text-muted-foreground" />
-                      Profitability
-                    </h2>
-                    {profitability && (
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <button className="text-xs text-primary hover:underline">
-                            {profitability.unique_paying_users} paying users
-                          </button>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-72 max-h-60 overflow-y-auto">
-                          <h4 className="font-medium text-sm mb-2">Paying Users</h4>
-                          {profitability.paying_user_emails?.length > 0 ? (
-                            <ul className="space-y-1">
-                              {profitability.paying_user_emails.map((email, idx) => (
-                                <li key={idx} className="text-sm">
-                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No paying users</p>
-                          )}
-                        </PopoverContent>
-                      </Popover>
-                    )}
-                  </div>
-
-                  <div className="p-5">
-                    {profitabilityLoading ? (
-                      <div className="space-y-3">
-                        <Skeleton className="h-20" />
-                        <Skeleton className="h-16" />
-                      </div>
-                    ) : profitability ? (
-                      <div className="space-y-5">
-                        {/* Hero Profit */}
-                        <div className="text-center py-2">
-                          <p className={cn(
-                            "text-4xl font-bold tracking-tight",
-                            profitability.gross_profit >= 0 ? "text-emerald-600" : "text-red-500"
-                          )}>
-                            {profitability.gross_profit < 0 ? '-' : ''}${Math.abs(profitability.gross_profit).toLocaleString()}
-                          </p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Net Profit · {profitability.gross_margin_percent}% margin
-                          </p>
-                        </div>
-
-                        {/* Revenue vs Cost */}
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Revenue</span>
-                              <span className="font-semibold">${profitability.total_revenue.toLocaleString()}</span>
-                            </div>
-                            <div className="h-2 bg-muted rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 rounded-full" style={{ width: '100%' }} />
-                            </div>
-                          </div>
-                          <div className="space-y-1.5">
-                            <div className="flex items-center justify-between text-sm">
-                              <span className="text-muted-foreground">Cost</span>
-                              <span className="font-semibold">${profitability.total_actual_cost.toLocaleString()}</span>
-                            </div>
-                            <div className="h-2 bg-muted rounded-full overflow-hidden">
-                              <div
-                                className="h-full bg-red-400 rounded-full"
-                                style={{ width: `${Math.min(100, (profitability.total_actual_cost / profitability.total_revenue) * 100)}%` }}
-                              />
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Per User Metrics - Industry Standard */}
-                        {(profitability.unique_paying_users > 0 || profitability.unique_active_users > 0) && (
-                          <div className="rounded-lg bg-muted/40 p-3">
-                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Unit Economics</p>
-                            <div className="grid grid-cols-2 gap-4 text-center">
-                              <div>
-                                <p className="text-lg font-bold">${profitability.avg_revenue_per_paid_user.toFixed(0)}</p>
-                                <p className="text-[10px] text-muted-foreground">Revenue/Paying User</p>
-                                <p className="text-[10px] text-muted-foreground">({profitability.unique_paying_users} paying)</p>
-                              </div>
-                              <div>
-                                <p className="text-lg font-bold">${profitability.avg_cost_per_active_user.toFixed(2)}</p>
-                                <p className="text-[10px] text-muted-foreground">Cost/Active User</p>
-                                <p className="text-[10px] text-muted-foreground">({profitability.unique_active_users} active)</p>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* By Tier */}
-                        {profitability.by_tier && profitability.by_tier.length > 0 && (
-                          <div>
-                            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">By Plan</p>
-                            <div className="space-y-1">
-                              {/* Header */}
-                              <div className="grid grid-cols-5 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
-                                <div>Plan</div>
-                                <div className="text-right">Revenue</div>
-                                <div className="text-right">Cost</div>
-                                <div className="text-right">Profit</div>
-                                <div className="text-right">Margin</div>
-                              </div>
-                              {/* Rows */}
-                              {profitability.by_tier.map((tier, idx) => (
-                                <div
-                                  key={idx}
-                                  className="grid grid-cols-5 gap-2 text-xs py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
-                                >
-                                  <div className="font-medium truncate" title={tier.display_name}>
-                                    {tier.display_name}
-                                    <span className="text-muted-foreground text-[10px] ml-1">
-                                      {tier.provider === 'stripe' ? 'Web' : 'App'}
-                                    </span>
-                                  </div>
-                                  <div className="text-right">${tier.total_revenue.toLocaleString()}</div>
-                                  <div className="text-right text-muted-foreground">${tier.total_actual_cost.toLocaleString()}</div>
-                                  <div className={cn(
-                                    "text-right font-medium",
-                                    tier.gross_profit >= 0 ? "text-emerald-600" : "text-red-500"
-                                  )}>
-                                    {tier.gross_profit < 0 ? '-' : ''}${Math.abs(tier.gross_profit).toLocaleString()}
-                                  </div>
-                                  <div className="text-right text-muted-foreground">{tier.gross_margin_percent}%</div>
+                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">By Tier</p>
+                          {profitability.by_tier && profitability.by_tier.length > 0 ? (() => {
+                            const totalUsers = profitability.by_tier.reduce((sum, t) => sum + t.unique_users, 0);
+                            return (
+                              <div className="space-y-1.5">
+                                {/* Header */}
+                                <div className="grid grid-cols-4 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
+                                  <div>Tier</div>
+                                  <div className="text-right">Users</div>
+                                  <div className="text-right">Revenue</div>
+                                  <div className="text-right">Cost</div>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Platform Split */}
-                        <div className="flex items-center justify-between text-xs text-muted-foreground pt-2 border-t">
-                          <div className="flex items-center gap-4">
-                            <span>Web: ${profitability.web_revenue.toLocaleString()}</span>
-                            <span>App: ${profitability.app_revenue.toLocaleString()}</span>
-                          </div>
-                          <div className="flex items-center gap-4">
-                            <span className="text-muted-foreground/60">Cost: ${profitability.web_cost.toFixed(2)} / ${profitability.app_cost.toFixed(2)}</span>
-                          </div>
+                                {/* Rows */}
+                                {profitability.by_tier.map((tier, idx) => {
+                                  const userPercent = totalUsers > 0 ? ((tier.unique_users / totalUsers) * 100).toFixed(0) : '0';
+                                  const revenuePercent = profitability.total_revenue > 0 ? ((tier.total_revenue / profitability.total_revenue) * 100).toFixed(0) : '0';
+                                  return (
+                                    <div
+                                      key={idx}
+                                      className="grid grid-cols-4 gap-2 text-xs py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
+                                    >
+                                      <div className="font-medium truncate flex items-center gap-1">
+                                        {tier.display_name}
+                                        <span className="text-[10px] text-muted-foreground">
+                                          ({tier.provider === 'stripe' ? 'W' : 'A'})
+                                        </span>
+                                      </div>
+                                      <div className="text-right">
+                                        {tier.unique_users}
+                                        <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
+                                      </div>
+                                      <div className="text-right">
+                                        ${tier.total_revenue.toLocaleString()}
+                                        <span className="text-[10px] text-muted-foreground ml-1">({revenuePercent}%)</span>
+                                      </div>
+                                      <div className="text-right text-muted-foreground">${tier.total_actual_cost.toFixed(2)}</div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })() : (
+                            <p className="text-sm text-muted-foreground text-center py-4">No tier data</p>
+                          )}
                         </div>
                       </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground text-center py-8">
-                        No profitability data
-                      </p>
-                    )}
-                  </div>
-                </section>
-              </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-8">
+                      No financial data available
+                    </p>
+                  )}
+                </div>
+              </section>
             </div>
           </TabsContent>
 
