@@ -52,7 +52,7 @@ class Configuration:
     
     # Model selection
     # Options: "bedrock", "anthropic", "minimax", "grok", "openai"
-    MAIN_LLM: str = "minimax"
+    MAIN_LLM: str = "bedrock"
     # ============================================
     
     # ===== PRESENCE CONFIGURATION =====
