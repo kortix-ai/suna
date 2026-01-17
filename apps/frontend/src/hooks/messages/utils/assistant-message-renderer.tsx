@@ -1,5 +1,5 @@
 import React from 'react';
-import { Clock, LucideIcon } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { UnifiedMessage, ParsedMetadata } from '@/components/thread/types';
 import { safeJsonParse, getToolIcon } from '@/components/thread/utils';
 import { getUserFriendlyToolName, getCompletedToolName, isHiddenTool } from '@agentpress/shared/tools';
@@ -13,6 +13,7 @@ import { AppIcon } from '@/components/thread/tool-views/shared/AppIcon';
 import { ToolCard } from '@/components/thread/content/ToolCard';
 import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalInline';
 import { MediaGenerationInline } from '@/components/thread/content/MediaGenerationInline';
+import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
@@ -255,15 +256,15 @@ export interface SlideInfo {
 
 function extractSlideInfo(toolResult: UnifiedMessage | undefined): SlideInfo | undefined {
   if (!toolResult) return undefined;
-  
+
   try {
     const rawMetadata = toolResult.metadata;
-    const metadata = typeof rawMetadata === 'string' 
+    const metadata = typeof rawMetadata === 'string'
       ? safeJsonParse<any>(rawMetadata, {})
       : rawMetadata;
-    
+
     const output = metadata?.result?.output || metadata?.result || metadata?.output;
-    
+
     if (output?.presentation_name && output?.slide_number !== undefined) {
       return {
         presentationName: output.presentation_name,
@@ -276,6 +277,174 @@ function extractSlideInfo(toolResult: UnifiedMessage | undefined): SlideInfo | u
     console.error('extractSlideInfo error:', e);
   }
   return undefined;
+}
+
+/**
+ * Inline slide thumbnail component - renders like image thumbnails
+ * Fetches metadata and displays slide preview
+ */
+function SlideInlineThumbnail({
+  slideInfo,
+  project,
+  onClick,
+  isLoading: externalLoading
+}: {
+  slideInfo?: SlideInfo;
+  project?: Project;
+  onClick?: () => void;
+  isLoading?: boolean;
+}) {
+  const [iframeLoaded, setIframeLoaded] = React.useState(false);
+  const [slideUrl, setSlideUrl] = React.useState<string | null>(null);
+  const [isLoadingMetadata, setIsLoadingMetadata] = React.useState(true);
+
+  // Fetch metadata to get proper slide URL
+  React.useEffect(() => {
+    if (!project?.sandbox?.sandbox_url || !slideInfo?.presentationName) {
+      setIsLoadingMetadata(false);
+      return;
+    }
+
+    const fetchMetadata = async () => {
+      try {
+        const sanitizedName = slideInfo.presentationName.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
+        const metadataUrl = constructHtmlPreviewUrl(
+          project.sandbox.sandbox_url,
+          `presentations/${sanitizedName}/metadata.json`
+        );
+
+        const response = await fetch(`${metadataUrl}?t=${Date.now()}`, {
+          cache: 'no-cache',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          const slideData = data.slides?.[slideInfo.slideNumber];
+          if (slideData?.file_path) {
+            const url = constructHtmlPreviewUrl(project.sandbox.sandbox_url, slideData.file_path);
+            setSlideUrl(url);
+          }
+        }
+      } catch (e) {
+        console.error('Failed to load slide metadata:', e);
+      } finally {
+        setIsLoadingMetadata(false);
+      }
+    };
+
+    fetchMetadata();
+  }, [project?.sandbox?.sandbox_url, slideInfo?.presentationName, slideInfo?.slideNumber]);
+
+  const isLoading = externalLoading || isLoadingMetadata;
+  const showShimmer = isLoading || !slideUrl || !iframeLoaded;
+
+  // Shimmer skeleton
+  const shimmerElement = (
+    <>
+      <div className="absolute inset-0 bg-muted" />
+      <div className="absolute inset-0 shimmer-slide-inline" />
+      <style>{`
+        .shimmer-slide-inline {
+          background: linear-gradient(
+            90deg,
+            transparent 0%,
+            rgba(128, 128, 128, 0.15) 50%,
+            transparent 100%
+          );
+          background-size: 200% 100%;
+          animation: shimmerSlideInline 1.5s infinite;
+        }
+        @keyframes shimmerSlideInline {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
+    </>
+  );
+
+  // 480x270 is exactly 16:9, scale = 480/1920 = 0.25
+  const width = 480;
+  const height = 270;
+  const scale = width / 1920;
+
+  return (
+    <button
+      onClick={onClick}
+      className="relative rounded-lg overflow-hidden bg-muted border border-border hover:opacity-90 transition-opacity cursor-pointer block mt-2"
+      style={{ width: `${width}px`, height: `${height}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+    >
+      {showShimmer && shimmerElement}
+      {slideUrl && (
+        <div style={{ width: `${width}px`, height: `${height}px`, position: 'relative', overflow: 'hidden' }}>
+          <iframe
+            src={slideUrl}
+            title={`Slide ${slideInfo?.slideNumber}`}
+            className="border-0 pointer-events-none"
+            sandbox="allow-same-origin allow-scripts"
+            onLoad={() => setIframeLoaded(true)}
+            style={{
+              width: '1920px',
+              height: '1080px',
+              border: 'none',
+              display: 'block',
+              transform: `scale(${scale})`,
+              transformOrigin: '0 0',
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              opacity: iframeLoaded ? 1 : 0,
+            }}
+          />
+        </div>
+      )}
+    </button>
+  );
+}
+
+/**
+ * Renders a slide creation tool call - ToolCard header + preview below
+ */
+function renderSlideToolCall(
+  toolCall: { function_name: string; arguments?: Record<string, any>; tool_call_id?: string },
+  index: number,
+  props: AssistantMessageRendererProps
+): React.ReactNode {
+  const { toolResults = [], project, message, onToolClick } = props;
+
+  // Find the tool result for this call
+  const toolResult = toolResults.find(tr => {
+    const rawMeta = tr.metadata;
+    const trMeta = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
+    return trMeta.tool_call_id === toolCall.tool_call_id;
+  });
+
+  const slideInfo = extractSlideInfo(toolResult);
+  const isLoading = !toolResult || !slideInfo;
+  const toolName = toolCall.function_name.replace(/_/g, '-');
+  const IconComponent = getToolIcon(toolName);
+
+  return (
+    <div key={`slide-${index}`} className="my-1.5">
+      {/* Tool card header */}
+      <ToolCard
+        toolName={toolName}
+        displayName={getCompletedToolName(toolName)}
+        toolCall={toolCall}
+        toolCallId={toolCall.tool_call_id}
+        isStreaming={isLoading}
+        fallbackIcon={IconComponent}
+        onClick={() => onToolClick(message.message_id, 'create-slide', toolCall.tool_call_id)}
+      />
+      {/* Slide preview below */}
+      <SlideInlineThumbnail
+        slideInfo={slideInfo}
+        project={project}
+        onClick={() => onToolClick(message.message_id, 'create-slide', toolCall.tool_call_id)}
+        isLoading={isLoading}
+      />
+    </div>
+  );
 }
 
 function renderRegularToolCall(
@@ -346,6 +515,7 @@ function renderRegularToolCall(
         websiteUrls={websiteUrls}
         imageUrls={imageUrls}
         slideInfo={slideInfo}
+        project={props.project}
       />
     </div>
   );
@@ -433,6 +603,9 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
       contentParts.push(renderAskToolCall(normalizedToolCall, index, props));
     } else if (toolName === 'complete') {
       contentParts.push(renderCompleteToolCall(normalizedToolCall, index, props));
+    } else if (toolName === 'create-slide' || toolName === 'create_slide') {
+      // Render slide inline without header (like images)
+      contentParts.push(renderSlideToolCall(normalizedToolCall, index, props));
     } else if (toolName === 'image-edit-or-generate') {
       // Find matching tool result for this call
       const toolResult = toolResults.find(tr => {
