@@ -7,30 +7,37 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 const responsibilities = [
-  "Build and maintain AI agents that handle real tasks end-to-end",
-  "Work on prompt engineering, context management, and tool integrations",
-  "Develop evaluation systems to track agent performance",
-  "Debug agent failures and improve reliability",
-  "Ship features alongside the product and design team",
-  "Stay current with new models and techniques"
+  "Build and maintain infrastructure on AWS ECS and related services",
+  "Manage and optimize Supabase (PostgreSQL) for performance and reliability",
+  "Design and implement CI/CD pipelines with GitHub Actions for fast deployments",
+  "Set up monitoring, alerting, and observability across all services",
+  "Optimize application and infrastructure performance for scale",
+  "Ensure system reliability with a target of 99.99% uptime",
+  "Review code for scalability and performance issues",
+  "Automate infrastructure provisioning and management",
+  "Respond to incidents and conduct post-mortems to prevent recurrence"
 ];
 
 const qualifications = [
-  "Experience building LLM-powered products or agents",
-  "Solid understanding of prompting techniques and agent patterns",
-  "Proficient in Python",
-  "Experience shipping AI agents to production",
-  "Comfortable debugging unpredictable AI behavior"
+  "Strong experience with AWS ECS and container orchestration",
+  "Proficient with Supabase or PostgreSQL performance tuning and optimization",
+  "Experience building and maintaining CI/CD pipelines with GitHub Actions",
+  "Solid understanding of containerization with Docker",
+  "Experience with monitoring and observability tools (Datadog, Prometheus, Grafana, CloudWatch)",
+  "Comfortable debugging production issues under pressure",
+  "Strong scripting skills (Python, Bash, or similar)"
 ];
 
 const bonuses = [
-  "Experience with multi-agent systems or complex tool use",
-  "Background in reinforcement learning or planning",
-  "Open source contributions in AI",
-  "Published writing or research on AI topics"
+  "Experience scaling ECS services to handle high traffic",
+  "Background in security best practices and compliance",
+  "Experience with AWS cost optimization",
+  "Deep knowledge of PostgreSQL and Redis optimization",
+  "Experience with infrastructure-as-code (Terraform, CloudFormation)",
+  "Open source contributions to infrastructure tools"
 ];
 
-export default function AIEngineerPage() {
+export default function SREEngineerPage() {
   return (
     <main className="min-h-screen bg-background">
       {/* Back Link */}
@@ -55,7 +62,7 @@ export default function AIEngineerPage() {
           >
             <div className="flex items-center gap-3 flex-wrap">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted border border-border">
-                <span className="text-xs font-medium text-foreground">Engineering</span>
+                <span className="text-xs font-medium text-foreground">Infrastructure</span>
               </div>
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted border border-border">
                 <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
@@ -64,11 +71,11 @@ export default function AIEngineerPage() {
             </div>
             
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-medium tracking-tight">
-              AI Engineer
+              Infrastructure / SRE Engineer
             </h1>
             
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
-              Help us build AI agents that can complete real tasks. You'll work on improving reliability, adding new capabilities, and shipping features.
+              Make sure everything scales and stays rock solid. You'll own our infrastructure, optimize our systems, and keep us running at 99.99% uptime.
             </p>
           </motion.div>
         </div>
@@ -89,13 +96,13 @@ export default function AIEngineerPage() {
             </h2>
             <div className="prose prose-neutral dark:prose-invert max-w-none">
               <p className="text-muted-foreground leading-relaxed">
-                We're building the ultimate AI worker. Not just something that answers questions, but an AI agent that can handle real tasks from start to finish like a human would.
+                We're building AI agents that handle real work at scale. We need someone to make sure our infrastructure can keep up as we grow.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                In this role, you'll spend most of your time improving our agents. That includes writing better prompts, building evaluation systems, debugging failures, and trying new approaches when current ones hit limits.
+                You'll work across the stack, from optimizing application code for performance to architecting our AWS infrastructure. CI/CD, monitoring, alerting, observability—you'll own it all. When something breaks, you'll be the one who figures out why and makes sure it doesn't happen again.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                Small team, big impact. You'll have significant ownership over your work and direct impact on the product.
+                Small team, big impact. You'll have significant ownership over how we scale.
               </p>
             </div>
           </motion.div>
@@ -215,7 +222,7 @@ export default function AIEngineerPage() {
                 </p>
               </div>
               <Button asChild size="lg">
-                <a href="mailto:marko@kortix.com?subject=AI Engineer Application">
+                <a href="mailto:marko@kortix.com?subject=Infrastructure / SRE Engineer Application">
                   Apply now
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </a>
@@ -229,4 +236,3 @@ export default function AIEngineerPage() {
     </main>
   );
 }
-

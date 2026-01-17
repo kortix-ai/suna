@@ -11,14 +11,15 @@ type ParagraphItem =
   | { text: string; linkText: string; linkHref: string };
 
 const paragraphs: ParagraphItem[] = [
-  "We're Kortix. Eight people, no office.",
-  "We're building AI that does real work, not chatbots, not demos. The kind of thing that takes tasks off your plate so you can focus on what matters.",
-  "Our team is spread across the US, Europe, and Asia. We ship code, debate ideas, and keep things moving.",
-  "We travel a lot. Belgrade, Lisbon, San Francisco. New places keep things fresh and sometimes spark new ideas.",
-  "The way we work is simple: good ideas win, bad ones get called out. No politics, no unnecessary hierarchy.",
-  "There's a lot of noise in AI right now. We're focused on building something that actually works in the real world.",
-  "This is what we spend our time on. It's the problem we care about most.",
-  { text: "If you're interested, ", linkText: "come join us.", linkHref: "/careers" }
+  "Most AI tools stop at thinking. We built one that acts.",
+  "Kortix is an AI agent that doesn't just give you answers—it gets things done. Research, code, write, manage projects, execute workflows. The whole job.",
+  "We started with a simple problem: people spend too much time on execution and not enough on the work that actually moves things forward.",
+  "So we built an AI that handles the doing. The research. The drafts. The code. The follow-through. All the stuff that fills your day but doesn't define your value.",
+  "This isn't about replacing people. It's about freeing them. Give the grunt work to AI. Keep the strategy, creativity, and decisions for yourself.",
+  "We're not chasing hype. We're building something reliable enough to trust with real work. Something that ships. Something that works when you need it to.",
+  "The goal is simple: make everyone 10x more capable by giving them an AI teammate that never sleeps, never complains, and always executes.",
+  "That's what we're here for.",
+  { text: "Want to build it with us? ", linkText: "We're hiring.", linkHref: "/careers" }
 ];
 
 // Helper to get text content from paragraph item

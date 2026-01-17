@@ -8,35 +8,37 @@ import Link from 'next/link';
 
 const values = [
   {
-    title: "Speed matters",
+    title: "Ship fast",
     description: "We ship often. If something isn't working, we'd rather find out now than in three months."
   },
   {
-    title: "Say what you think",
-    description: "Good ideas can come from anyone. We argue, disagree, and figure things out together."
-  },
-  {
-    title: "Build for the long run",
-    description: "We're not interested in hype. We want to build something that's still useful in ten years."
+    title: "No politics",
+    description: "Good ideas win, bad ones get called out. We argue, disagree, and figure things out together."
   },
   {
     title: "Work from anywhere",
-    description: "No office, no set hours. Just get your work done and be online when it matters."
+    description: "Nomadic team. No office, no set hours. Be online when it matters."
   }
 ];
 
 const openings = [
   {
     title: "AI Engineer",
-    location: "Remote",
+    location: "Hybrid / Remote",
     description: "You'll work on our AI agents, making them reliable, fast, and actually useful. Experience with LLMs and building AI products required.",
     href: "/careers/ai-engineer",
   },
   {
-    title: "Design Engineer",
-    location: "Remote",
-    description: "Frontend engineer who cares about design. You'll own how things look and feel across the product.",
+    title: "Product / Design Engineer",
+    location: "Hybrid / Remote",
+    description: "Own UX/UI and build new features end-to-end. Design it, ship it, iterate on it.",
     href: "/careers/design-engineer",
+  },
+  {
+    title: "Infrastructure / SRE Engineer",
+    location: "Hybrid / Remote",
+    description: "Own our infrastructure and reliability. You'll optimize code and systems to scale while maintaining 99.99% uptime.",
+    href: "/careers/sre-engineer",
   }
 ];
 
@@ -57,12 +59,11 @@ export default function CareersPage() {
             </div>
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-medium tracking-tight text-balance">
-              Work with us
+              Work at Kortix
             </h1>
             
             <p className="text-foreground text-[1.375rem] md:text-[1.5rem] leading-[1.6] tracking-[-0.025em] font-medium max-w-2xl opacity-50">
-              Small team, big problem. We're building AI that can take over real work. 
-              Fully remote, flexible hours, and we travel together a few times a year.
+              We're building the ultimate AI worker. Join us.
             </p>
           </motion.div>
         </div>
