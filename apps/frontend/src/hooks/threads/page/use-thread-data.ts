@@ -422,14 +422,21 @@ export function useThreadData(
             return;
           }
 
-          // For user messages, also check for duplicate content (temp vs server race)
-          if (msg.type === 'user') {
+          // For user messages with temp IDs, skip if we already have a server message with same content
+          // This handles the race condition where temp message and server message both appear
+          // BUT: Don't skip legitimate duplicate messages (user sent same text twice intentionally)
+          if (msg.type === 'user' && msgId?.startsWith('temp-')) {
             const contentKey = String(msg.content || '').trim();
+            // Only skip if we already have a non-temp message with this content
             if (contentKey && seenUserContents.has(contentKey)) {
-              // Skip duplicate user message - prefer the one with real ID (already added)
               contentDupsRemoved++;
               return;
             }
+          }
+
+          // Track content for non-temp user messages (server-confirmed messages)
+          if (msg.type === 'user' && msgId && !msgId.startsWith('temp-')) {
+            const contentKey = String(msg.content || '').trim();
             if (contentKey) seenUserContents.add(contentKey);
           }
 

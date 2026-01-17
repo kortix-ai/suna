@@ -1124,13 +1124,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           return;
         }
 
-        // For user messages, also skip if we've seen the same content (temp vs server race)
-        if (messageType === 'user') {
+        // For user messages with temp IDs, skip if we already have a server message with same content
+        // This handles the race condition where temp message and server message both appear
+        // BUT: Don't skip legitimate duplicate messages (user sent same text twice intentionally)
+        if (messageType === 'user' && message.message_id?.startsWith('temp-')) {
           const contentKey = String(message.content || '').trim();
           if (contentKey && processedUserContents.has(contentKey)) {
-            skippedDuplicates.push(`content:${contentKey.slice(0, 10)}`);
+            skippedDuplicates.push(`temp-dup:${contentKey.slice(0, 10)}`);
             return;
           }
+        }
+
+        // Track content for non-temp user messages (server-confirmed messages)
+        if (messageType === 'user' && message.message_id && !message.message_id.startsWith('temp-')) {
+          const contentKey = String(message.content || '').trim();
           if (contentKey) processedUserContents.add(contentKey);
         }
 
