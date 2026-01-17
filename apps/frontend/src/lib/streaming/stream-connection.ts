@@ -22,6 +22,7 @@ export class StreamConnection {
   private reconnectTimeoutId: ReturnType<typeof setTimeout> | null = null;
   private heartbeatIntervalId: ReturnType<typeof setInterval> | null = null;
   private lastMessageTime = 0;
+  private lastEventId: string | null = null;
   private isDestroyed = false;
   private options: StreamConnectionOptions;
   private eventHandlers: Map<string, EventHandler> = new Map();
@@ -40,7 +41,7 @@ export class StreamConnection {
     
     try {
       const token = await this.options.getAuthToken();
-      const url = formatStreamUrl(this.options.apiUrl, this.options.runId, token);
+      const url = formatStreamUrl(this.options.apiUrl, this.options.runId, token, this.lastEventId || undefined);
       
       this.eventSource = new EventSource(url);
       this.setupEventHandlers();
@@ -69,6 +70,14 @@ export class StreamConnection {
       
       if (this.state === 'connected') {
         this.setState('streaming');
+      }
+      
+      try {
+        const parsed = JSON.parse(event.data);
+        if (parsed._event_id) {
+          this.lastEventId = parsed._event_id;
+        }
+      } catch {
       }
       
       this.options.onMessage(event.data);
@@ -211,6 +220,10 @@ export class StreamConnection {
   
   getReconnectAttempts(): number {
     return this.reconnectAttempts;
+  }
+  
+  getLastEventId(): string | null {
+    return this.lastEventId;
   }
 }
 

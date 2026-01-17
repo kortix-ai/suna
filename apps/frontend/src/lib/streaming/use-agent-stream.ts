@@ -553,25 +553,35 @@ export function useAgentStream(
     callbacksRef.current.onStatusChange?.('connecting');
     callbacksRef.current.onAssistantStart?.();
     
-    // Try to adopt a pre-connected stream first (saves ~1-2s)
     const preconnectService = getStreamPreconnectService();
     const adopted = preconnectService.adopt(runId);
     
     if (adopted) {
       console.log(`[useAgentStream] Adopting pre-connected stream for ${runId}`);
-      
-      // Use the pre-connected stream's connection
       connectionRef.current = adopted.stream.connection;
-      
-      // Process any buffered messages immediately
       if (adopted.bufferedMessages.length > 0) {
         console.log(`[useAgentStream] Processing ${adopted.bufferedMessages.length} buffered messages`);
         setStatus('streaming');
         callbacksRef.current.onStatusChange?.('streaming');
         
-        for (const data of adopted.bufferedMessages) {
-          stableMessageHandler(data);
-        }
+        const BATCH_SIZE = 5;
+        let index = 0;
+        
+        const processNextBatch = () => {
+          if (!isMountedRef.current || currentRunIdRef.current !== runId) return;
+          
+          const end = Math.min(index + BATCH_SIZE, adopted.bufferedMessages.length);
+          for (let i = index; i < end; i++) {
+            stableMessageHandler(adopted.bufferedMessages[i]);
+          }
+          index = end;
+          
+          if (index < adopted.bufferedMessages.length) {
+            requestAnimationFrame(processNextBatch);
+          }
+        };
+        
+        requestAnimationFrame(processNextBatch);
       }
       
       // Add listener for new messages

@@ -7,6 +7,9 @@ from core.sandbox.pool_service import get_pool_service, SandboxPoolService
 
 _pool_task: Optional[asyncio.Task] = None
 _cleanup_task: Optional[asyncio.Task] = None
+_keepalive_task: Optional[asyncio.Task] = None
+
+KEEPALIVE_INTERVAL_SECONDS = 600
 
 
 async def _pool_replenishment_loop(service: SandboxPoolService) -> None:
@@ -71,8 +74,36 @@ async def _pool_cleanup_loop(service: SandboxPoolService) -> None:
             break
 
 
+async def _pool_keepalive_loop(service: SandboxPoolService) -> None:
+    logger.info(
+        f"[SANDBOX_POOL] Starting keepalive loop "
+        f"(interval={KEEPALIVE_INTERVAL_SECONDS}s)"
+    )
+    
+    await asyncio.sleep(30)
+    
+    while True:
+        try:
+            pinged = await service.keepalive_pooled_sandboxes()
+            
+            if pinged > 0:
+                logger.debug(f"[SANDBOX_POOL] Keepalive pinged {pinged} sandboxes")
+            
+        except asyncio.CancelledError:
+            logger.info("[SANDBOX_POOL] Keepalive loop cancelled")
+            break
+        except Exception as e:
+            logger.error(f"[SANDBOX_POOL] Error in keepalive loop: {e}")
+        
+        try:
+            await asyncio.sleep(KEEPALIVE_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("[SANDBOX_POOL] Keepalive loop cancelled during sleep")
+            break
+
+
 async def start_pool_service() -> None:
-    global _pool_task, _cleanup_task
+    global _pool_task, _cleanup_task, _keepalive_task
     
     config = get_pool_config()
     
@@ -86,6 +117,7 @@ async def start_pool_service() -> None:
     
     _pool_task = asyncio.create_task(_pool_replenishment_loop(service))
     _cleanup_task = asyncio.create_task(_pool_cleanup_loop(service))
+    _keepalive_task = asyncio.create_task(_pool_keepalive_loop(service))
     
     try:
         pool_size = await service.get_pool_size()
@@ -100,26 +132,26 @@ async def start_pool_service() -> None:
 
 
 async def stop_pool_service() -> None:
-    global _pool_task, _cleanup_task
+    global _pool_task, _cleanup_task, _keepalive_task
     
     logger.info("[SANDBOX_POOL] Stopping sandbox pool service...")
     
-    if _pool_task and not _pool_task.done():
-        _pool_task.cancel()
-        try:
-            await _pool_task
-        except asyncio.CancelledError:
-            pass
+    tasks = [_pool_task, _cleanup_task, _keepalive_task]
     
-    if _cleanup_task and not _cleanup_task.done():
-        _cleanup_task.cancel()
-        try:
-            await _cleanup_task
-        except asyncio.CancelledError:
-            pass
+    for task in tasks:
+        if task and not task.done():
+            task.cancel()
+    
+    for task in tasks:
+        if task:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
     
     _pool_task = None
     _cleanup_task = None
+    _keepalive_task = None
     
     logger.info("[SANDBOX_POOL] Sandbox pool service stopped")
 
@@ -127,5 +159,6 @@ async def stop_pool_service() -> None:
 def is_pool_service_running() -> bool:
     return (
         _pool_task is not None and not _pool_task.done() and
-        _cleanup_task is not None and not _cleanup_task.done()
+        _cleanup_task is not None and not _cleanup_task.done() and
+        _keepalive_task is not None and not _keepalive_task.done()
     )

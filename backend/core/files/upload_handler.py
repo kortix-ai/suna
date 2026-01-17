@@ -1,13 +1,5 @@
-"""
-File upload handling for agent runs.
-
-Extracted from runs.py - handles file parsing, caching, and sandbox uploads.
-"""
-
-import asyncio
 import json
 import re
-import uuid
 from typing import Optional, List, Tuple, Dict, Any
 
 from fastapi import UploadFile
@@ -16,19 +8,12 @@ from core.services import redis
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
-from core.sandbox.sandbox import create_sandbox, delete_sandbox, get_or_start_sandbox
+from core.sandbox.resolver import resolve_sandbox
 
 db = DBConnection()
 
 
 async def fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:
-    """
-    Fast-parse uploaded files and extract content.
-    
-    Returns:
-        Tuple of (updated message content with file refs, list of file data tuples)
-        Each file tuple: (filename, content_bytes, mime_type, parsed_content)
-    """
     from core.utils.fast_parse import parse, FileType, format_file_size
     
     if not files:
@@ -38,7 +23,6 @@ async def fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[s
     files_for_upload: List[Tuple[str, bytes, str, Optional[str]]] = []
     file_refs = []
     
-    # Extract existing file references from prompt to avoid duplicates
     existing_refs = set()
     if prompt:
         existing_matches = re.findall(r'\[(?:Uploaded File|Attached|Image):\s*([^\]]+)\]', prompt)
@@ -85,61 +69,68 @@ async def fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[s
     return message_content, files_for_upload
 
 
-async def upload_files_to_sandbox_background(
+async def upload_files_to_sandbox(
     project_id: str,
     thread_id: str,
     files_data: List[Tuple[str, bytes, str, Optional[str]]],
+    account_id: Optional[str] = None,
 ):
-    """Upload files to sandbox in background (fire-and-forget)."""
     if not files_data:
         return
     
-    logger.info(f"🔄 Background sandbox upload starting for project {project_id} ({len(files_data)} files)")
+    logger.info(f"[UPLOAD] Uploading files for project {project_id} ({len(files_data)} files)")
     
     try:
         client = await db.client
         
-        sandbox, sandbox_id = await ensure_sandbox_for_thread(client, project_id, files_data)
+        if not account_id:
+            result = await client.table('projects').select('account_id').eq('project_id', project_id).execute()
+            if result.data:
+                account_id = str(result.data[0].get('account_id'))
         
-        if not sandbox:
-            logger.info(f"⚠️ Sandbox not available for project {project_id} - files cached in Redis, sandbox upload skipped")
+        sandbox_info = await resolve_sandbox(
+            project_id=project_id,
+            account_id=account_id,
+            db_client=client,
+            require_started=True
+        )
+        
+        if not sandbox_info:
+            logger.info(f"[UPLOAD] No sandbox for project {project_id} - files cached in Redis only")
             return
         
-        logger.info(f"✅ Sandbox {sandbox_id} ready for project {project_id}, uploading {len(files_data)} files...")
+        logger.info(f"[UPLOAD] Sandbox {sandbox_info.sandbox_id} ready, uploading {len(files_data)} files...")
         uploads_dir = get_uploads_directory()
         uploaded_count = 0
         
         for filename, content_bytes, mime_type, _ in files_data:
             try:
-                unique_filename = await generate_unique_filename(sandbox, uploads_dir, filename)
+                unique_filename = await generate_unique_filename(sandbox_info.sandbox, uploads_dir, filename)
                 target_path = f"{uploads_dir}/{unique_filename}"
                 
-                if hasattr(sandbox, 'fs') and hasattr(sandbox.fs, 'upload_file'):
-                    await sandbox.fs.upload_file(content_bytes, target_path)
+                if hasattr(sandbox_info.sandbox, 'fs') and hasattr(sandbox_info.sandbox.fs, 'upload_file'):
+                    await sandbox_info.sandbox.fs.upload_file(content_bytes, target_path)
                     uploaded_count += 1
-                    logger.debug(f"Background upload complete: {filename} -> {target_path}")
-                else:
-                    logger.warning(f"Sandbox missing upload method for {filename}")
+                    logger.debug(f"[UPLOAD] Complete: {filename} -> {target_path}")
             except Exception as e:
-                logger.warning(f"Background upload failed for {filename}: {str(e)}")
+                logger.warning(f"[UPLOAD] Failed for {filename}: {str(e)}")
         
-        logger.info(f"✅ Background sandbox upload complete: {uploaded_count}/{len(files_data)} files to sandbox {sandbox_id}")
+        logger.info(f"[UPLOAD] Complete: {uploaded_count}/{len(files_data)} files to sandbox {sandbox_info.sandbox_id}")
                 
     except Exception as e:
-        logger.warning(f"⚠️ Sandbox upload error for project {project_id}: {str(e)} - files still available via Redis cache")
+        logger.warning(f"[UPLOAD] Error for project {project_id}: {str(e)}")
 
 
-async def upload_staged_files_to_sandbox_background(
+async def upload_staged_files_to_sandbox(
     project_id: str,
     thread_id: str,
     staged_files: List[Dict[str, Any]],
     account_id: str,
 ):
-    """Upload staged files to sandbox in background."""
     if not staged_files:
         return
     
-    logger.info(f"🔄 Background staged files -> sandbox upload starting for project {project_id} ({len(staged_files)} files)")
+    logger.info(f"[UPLOAD] Uploading staged files for project {project_id} ({len(staged_files)} files)")
     
     try:
         from core.files import get_staged_file_content
@@ -157,44 +148,46 @@ async def upload_staged_files_to_sandbox_background(
                     sf.get('parsed_content')
                 ))
             else:
-                logger.warning(f"Could not download staged file {sf['file_id']} for sandbox upload")
+                logger.warning(f"[UPLOAD] Could not download staged file {sf['file_id']}")
         
         if not files_data:
-            logger.warning(f"No staged files could be downloaded for sandbox upload")
+            logger.warning(f"[UPLOAD] No staged files could be downloaded")
             return
         
-        sandbox, sandbox_id = await ensure_sandbox_for_thread(client, project_id, files_data)
+        sandbox_info = await resolve_sandbox(
+            project_id=project_id,
+            account_id=account_id,
+            db_client=client,
+            require_started=True
+        )
         
-        if not sandbox:
-            logger.info(f"⚠️ Sandbox not available for project {project_id} - sandbox upload skipped")
+        if not sandbox_info:
+            logger.info(f"[UPLOAD] No sandbox for project {project_id}")
             return
         
-        logger.info(f"✅ Sandbox {sandbox_id} ready for project {project_id}, uploading {len(files_data)} staged files...")
+        logger.info(f"[UPLOAD] Sandbox {sandbox_info.sandbox_id} ready, uploading {len(files_data)} staged files...")
         uploads_dir = get_uploads_directory()
         uploaded_count = 0
         
         for filename, content_bytes, mime_type, _ in files_data:
             try:
-                unique_filename = await generate_unique_filename(sandbox, uploads_dir, filename)
+                unique_filename = await generate_unique_filename(sandbox_info.sandbox, uploads_dir, filename)
                 target_path = f"{uploads_dir}/{unique_filename}"
                 
-                if hasattr(sandbox, 'fs') and hasattr(sandbox.fs, 'upload_file'):
-                    await sandbox.fs.upload_file(content_bytes, target_path)
+                if hasattr(sandbox_info.sandbox, 'fs') and hasattr(sandbox_info.sandbox.fs, 'upload_file'):
+                    await sandbox_info.sandbox.fs.upload_file(content_bytes, target_path)
                     uploaded_count += 1
-                    logger.debug(f"Background staged file upload complete: {filename} -> {target_path}")
-                else:
-                    logger.warning(f"Sandbox missing upload method for {filename}")
+                    logger.debug(f"[UPLOAD] Staged complete: {filename} -> {target_path}")
             except Exception as e:
-                logger.warning(f"Background staged file upload failed for {filename}: {str(e)}")
+                logger.warning(f"[UPLOAD] Staged failed for {filename}: {str(e)}")
         
-        logger.info(f"✅ Background staged files upload complete: {uploaded_count}/{len(files_data)} files to sandbox {sandbox_id}")
+        logger.info(f"[UPLOAD] Staged complete: {uploaded_count}/{len(files_data)} files to sandbox {sandbox_info.sandbox_id}")
                 
     except Exception as e:
-        logger.warning(f"⚠️ Staged files sandbox upload error for project {project_id}: {str(e)}")
+        logger.warning(f"[UPLOAD] Staged error for project {project_id}: {str(e)}")
 
 
 async def get_cached_file_context(thread_id: str) -> Optional[List[Dict[str, Any]]]:
-    """Get cached file context for a thread from Redis."""
     try:
         cache_key = f"file_context:{thread_id}"
         cached = await redis.get(cache_key)
@@ -206,7 +199,6 @@ async def get_cached_file_context(thread_id: str) -> Optional[List[Dict[str, Any
 
 
 def format_file_context_for_agent(files: List[Dict[str, Any]]) -> str:
-    """Format cached file context for inclusion in agent prompt."""
     if not files:
         return ""
     
@@ -228,13 +220,8 @@ async def handle_file_uploads_fast(
     project_id: str,
     prompt: str = "",
     thread_id: Optional[str] = None,
+    account_id: Optional[str] = None,
 ) -> str:
-    """
-    Handle file uploads with fast parsing.
-    
-    Returns updated message content with file references.
-    Schedules background sandbox upload.
-    """
     message_content, files_data = await fast_parse_files(files, prompt)
     
     if files_data:
@@ -254,13 +241,12 @@ async def handle_file_uploads_fast(
             try:
                 cache_key = f"file_context:{tid}"
                 await redis.set(cache_key, json.dumps(parsed_contents), ex=3600)
-                logger.info(f"✅ Cached {len(parsed_contents)} parsed files for thread {tid}")
+                logger.info(f"[UPLOAD] Cached {len(parsed_contents)} parsed files for thread {tid}")
             except Exception as cache_error:
                 logger.warning(f"Failed to cache parsed files: {cache_error}")
         
         if project_id:
-            asyncio.create_task(upload_files_to_sandbox_background(project_id, tid, files_data))
-            logger.debug(f"Scheduled background sandbox upload for {len(files_data)} files")
+            await upload_files_to_sandbox(project_id, tid, files_data, account_id)
     
     return message_content
 
@@ -272,12 +258,6 @@ async def handle_staged_files_for_thread(
     prompt: str,
     account_id: str,
 ) -> Tuple[str, List[Dict[str, Any]]]:
-    """
-    Handle staged files for a thread.
-    
-    Returns:
-        Tuple of (updated message content, list of image contexts to inject)
-    """
     file_refs = []
     parsed_contents = []
     image_contexts = []
@@ -292,7 +272,6 @@ async def handle_staged_files_for_thread(
                 "mime_type": sf['mime_type']
             })
         
-        # Use consistent [Uploaded File: ...] format that frontend expects
         file_refs.append(f"[Uploaded File: uploads/{filename}]")
         
         if sf.get('parsed_content'):
@@ -309,146 +288,41 @@ async def handle_staged_files_for_thread(
         try:
             cache_key = f"file_context:{thread_id}"
             await redis.set(cache_key, json.dumps(parsed_contents), ex=3600)
-            logger.info(f"✅ Cached {len(parsed_contents)} staged files for thread {thread_id}")
+            logger.info(f"[UPLOAD] Cached {len(parsed_contents)} staged files for thread {thread_id}")
         except Exception as cache_error:
             logger.warning(f"Failed to cache staged files: {cache_error}")
     
-    asyncio.create_task(upload_staged_files_to_sandbox_background(
+    await upload_staged_files_to_sandbox(
         project_id=project_id,
         thread_id=thread_id,
         staged_files=staged_files,
         account_id=account_id
-    ))
-    logger.debug(f"Scheduled background sandbox upload for {len(staged_files)} staged files")
+    )
     
     return message_content, image_contexts
 
 
 async def ensure_sandbox_for_thread(client, project_id: str, files: Optional[List[Any]] = None):
-    from core.resources import ResourceService, ResourceType, ResourceStatus
-    from core.threads import repo as threads_repo
+    result = await client.table('projects').select('account_id').eq('project_id', project_id).execute()
     
-    project_data = await threads_repo.get_project_for_sandbox(project_id)
-    
-    if not project_data:
-        logger.warning(f"Project {project_id} not found when checking for sandbox")
+    if not result.data:
+        logger.warning(f"Project {project_id} not found")
         return None, None
     
-    account_id = str(project_data.get('account_id')) if project_data.get('account_id') else None
-    sandbox_resource_id = project_data.get('sandbox_resource_id')
-    
-    resource_service = ResourceService(client)
-    
-    sandbox_resource = None
-    if sandbox_resource_id:
-        sandbox_resource = await resource_service.get_resource_by_id(sandbox_resource_id)
-    
-    if sandbox_resource and sandbox_resource.get('status') == ResourceStatus.ACTIVE.value:
-        sandbox_id = sandbox_resource.get('external_id')
-        logger.debug(f"Project {project_id} already has sandbox {sandbox_id}, retrieving it...")
-        
-        try:
-            sandbox = await get_or_start_sandbox(sandbox_id)
-            logger.debug(f"Successfully retrieved existing sandbox {sandbox_id}")
-            try:
-                await resource_service.update_last_used(sandbox_resource_id)
-            except Exception:
-                logger.warning(f"Failed to update last_used_at for resource {sandbox_resource_id}")
-            return sandbox, sandbox_id
-        except Exception as e:
-            logger.error(f"Error retrieving existing sandbox {sandbox_id}: {str(e)}")
-            return None, None
+    account_id = str(result.data[0].get('account_id')) if result.data[0].get('account_id') else None
     
     if not files or len(files) == 0:
-        logger.debug(f"No files to upload and no sandbox exists for project {project_id}")
+        logger.debug(f"No files to upload for project {project_id}")
         return None, None
     
-    if account_id:
-        try:
-            from core.sandbox.pool_service import claim_sandbox_from_pool
-            claimed = await claim_sandbox_from_pool(account_id, project_id)
-            
-            if claimed:
-                sandbox_id, config = claimed
-                logger.info(f"[POOL] Claimed sandbox {sandbox_id} from pool for project {project_id}")
-                
-                try:
-                    sandbox = await get_or_start_sandbox(sandbox_id)
-                    return sandbox, sandbox_id
-                except Exception as e:
-                    logger.error(f"[POOL] Failed to start claimed sandbox {sandbox_id}: {e}")
-            else:
-                logger.debug(f"[POOL] No sandbox available in pool, creating new one")
-        except Exception as e:
-            logger.warning(f"[POOL] Failed to claim from pool: {e}, falling back to create")
+    sandbox_info = await resolve_sandbox(
+        project_id=project_id,
+        account_id=account_id,
+        db_client=client,
+        require_started=True
+    )
     
-    try:
-        sandbox_pass = str(uuid.uuid4())
-        sandbox = await create_sandbox(sandbox_pass, project_id)
-        sandbox_id = sandbox.id
-        logger.info(f"Created new sandbox {sandbox_id} for project {project_id}")
-
-        vnc_link = await sandbox.get_preview_link(6080)
-        website_link = await sandbox.get_preview_link(8080)
-        vnc_url = vnc_link.url if hasattr(vnc_link, 'url') else str(vnc_link).split("url='")[1].split("'")[0]
-        website_url = website_link.url if hasattr(website_link, 'url') else str(website_link).split("url='")[1].split("'")[0]
-        token = None
-        if hasattr(vnc_link, 'token'):
-            token = vnc_link.token
-        elif "token='" in str(vnc_link):
-            token = str(vnc_link).split("token='")[1].split("'")[0]
-
-        sandbox_config = {
-            'pass': sandbox_pass,
-            'vnc_preview': vnc_url,
-            'sandbox_url': website_url,
-            'token': token
-        }
-        
-        try:
-            resource = await resource_service.create_resource(
-                account_id=account_id,
-                resource_type=ResourceType.SANDBOX,
-                external_id=sandbox_id,
-                config=sandbox_config,
-                status=ResourceStatus.ACTIVE
-            )
-            resource_id = resource['id']
-            
-            if not await resource_service.link_resource_to_project(project_id, resource_id):
-                logger.error(f"Failed to link resource {resource_id} to project {project_id}")
-                if sandbox_id:
-                    try:
-                        await delete_sandbox(sandbox_id)
-                        await resource_service.delete_resource(resource_id)
-                    except Exception as e:
-                        logger.error(f"Error deleting sandbox: {str(e)}")
-                raise Exception("Database update failed")
-        except Exception as e:
-            logger.error(f"Failed to create resource for sandbox {sandbox_id}: {str(e)}")
-            if sandbox_id:
-                try:
-                    await delete_sandbox(sandbox_id)
-                except Exception as e:
-                    logger.error(f"Error deleting sandbox: {str(e)}")
-            raise Exception(f"Failed to create sandbox resource: {str(e)}")
-        
-        try:
-            from core.cache.runtime_cache import set_cached_project_metadata
-            sandbox_cache_data = {
-                'id': sandbox_id,
-                'pass': sandbox_pass,
-                'vnc_preview': vnc_url,
-                'sandbox_url': website_url,
-                'token': token
-            }
-            await set_cached_project_metadata(project_id, sandbox_cache_data)
-            logger.debug(f"✅ Updated project cache with sandbox data: {project_id}")
-        except Exception as cache_error:
-            logger.warning(f"Failed to update project cache: {cache_error}")
-        
-        return sandbox, sandbox_id
-    except Exception as e:
-        logger.error(f"Error creating sandbox: {str(e)}")
-        raise Exception(f"Failed to create sandbox: {str(e)}")
-
+    if sandbox_info:
+        return sandbox_info.sandbox, sandbox_info.sandbox_id
+    
+    return None, None

@@ -106,11 +106,10 @@ class StreamHub:
                 self._subs.pop(stream_key, None)
 
     async def _pump(self, stream_key: str, last_id: str):
-        """Single reader per stream, fans out to all subscribers."""
         try:
             while True:
                 try:
-                    result = await self._redis.xread({stream_key: last_id}, block=500, count=100)
+                    result = await self._redis.xread({stream_key: last_id}, block=500, count=10)
                     if not result:
                         continue
                     for stream_name, entries in result:

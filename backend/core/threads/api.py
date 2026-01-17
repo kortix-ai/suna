@@ -533,7 +533,7 @@ async def create_thread(
         try:
             from core.cache.runtime_cache import set_cached_project_metadata
             sandbox_cache_data = {
-                'id': sandbox_id,
+                'sandbox_id': sandbox_id,
                 'pass': sandbox_pass,
                 'vnc_preview': vnc_url,
                 'sandbox_url': website_url,

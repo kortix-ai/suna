@@ -23,7 +23,7 @@ async def ensure_project_metadata_cached(project_id: str) -> None:
         if project_data.get('resource_external_id'):
             resource_config = project_data.get('resource_config') or {}
             sandbox_info = {
-                'id': project_data['resource_external_id'],
+                'sandbox_id': project_data['resource_external_id'],
                 **resource_config
             }
 

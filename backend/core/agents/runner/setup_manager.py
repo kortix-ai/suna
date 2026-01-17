@@ -20,7 +20,7 @@ async def prepopulate_caches_for_new_thread(
     image_contexts: List[Dict[str, Any]],
     mode: Optional[str],
 ) -> None:
-    from core.cache.runtime_cache import set_cached_message_history, set_cached_project_metadata
+    from core.cache.runtime_cache import set_cached_message_history, get_cached_project_metadata, set_cached_project_metadata
     
     if message_content and message_content.strip():
         initial_messages = [{
@@ -34,8 +34,11 @@ async def prepopulate_caches_for_new_thread(
     cache_key = f"thread_has_images:{thread_id}"
     await redis.set(cache_key, "1" if has_images else "0", ex=7200 if has_images else 300)
     
-    project_metadata = {"mode": mode} if mode else {}
-    await set_cached_project_metadata(project_id, project_metadata)
+    if mode:
+        existing = await get_cached_project_metadata(project_id)
+        existing_sandbox = existing.get('sandbox', {}) if existing else {}
+        project_metadata = {**existing_sandbox, "mode": mode}
+        await set_cached_project_metadata(project_id, project_metadata)
 
 
 async def invalidate_caches_for_existing_thread(thread_id: str) -> None:

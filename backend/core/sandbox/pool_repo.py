@@ -139,3 +139,27 @@ async def get_project_sandbox(project_id: str) -> Optional[Dict[str, Any]]:
     WHERE p.project_id = :project_id AND r.status = 'active'
     """
     return await execute_one(sql, {"project_id": project_id})
+
+
+async def get_pooled_sandboxes_for_keepalive(limit: int = 50) -> List[Dict[str, Any]]:
+    sql = """
+    SELECT id, external_id, config, pooled_at
+    FROM resources
+    WHERE type = 'sandbox' AND status = 'pooled'
+    ORDER BY pooled_at ASC
+    LIMIT :limit
+    """
+    rows = await execute(sql, {"limit": limit})
+    return rows or []
+
+
+async def update_sandbox_last_ping(resource_id: str) -> bool:
+    now = datetime.now(timezone.utc).isoformat()
+    sql = """
+    UPDATE resources
+    SET updated_at = :now
+    WHERE id = :resource_id
+    RETURNING id
+    """
+    rows = await execute_mutate(sql, {"resource_id": resource_id, "now": now})
+    return len(rows) > 0

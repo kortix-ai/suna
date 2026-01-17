@@ -262,12 +262,20 @@ async def make_llm_api_call(
 async def _wrap_streaming_response(response, start_time: float, model_name: str, ttft_seconds: float = None) -> AsyncGenerator:
     import time as time_module
     chunk_count = 0
+    last_chunk_time = time_module.monotonic()
     try:
         if ttft_seconds is not None:
             yield {"__llm_ttft_seconds__": ttft_seconds, "model": model_name}
         
         async for chunk in response:
             chunk_count += 1
+            current_time = time_module.monotonic()
+            gap_ms = (current_time - last_chunk_time) * 1000
+            
+            if gap_ms > 500 and chunk_count > 1:
+                logger.warning(f"[LLM] ⚠️ Chunk #{chunk_count} gap: {gap_ms:.0f}ms (model={model_name})")
+            
+            last_chunk_time = current_time
             yield chunk
     except Exception as e:
         processed_error = ErrorProcessor.process_llm_error(e)

@@ -2,7 +2,7 @@
 
 import { useRef, useSyncExternalStore, useEffect, useLayoutEffect } from 'react';
 
-const SMOOTH_STREAMING_ENABLED = false;
+const SMOOTH_STREAMING_ENABLED = true;
 
 const CHARS_PER_SECOND = 600;
 const MS_PER_CHAR = 1000 / CHARS_PER_SECOND;

@@ -90,9 +90,13 @@ export function createAbortController(): { controller: AbortController; signal: 
   return { controller, signal: controller.signal };
 }
 
-export function formatStreamUrl(apiUrl: string, runId: string, token: string | null): string {
+export function formatStreamUrl(apiUrl: string, runId: string, token: string | null, lastEventId?: string): string {
   const baseUrl = `${apiUrl}/agent-run/${runId}/stream`;
-  return token ? `${baseUrl}?token=${token}` : baseUrl;
+  const params = new URLSearchParams();
+  if (token) params.append('token', token);
+  if (lastEventId && lastEventId !== '0') params.append('last_id', lastEventId);
+  const queryString = params.toString();
+  return queryString ? `${baseUrl}?${queryString}` : baseUrl;
 }
 
 export function debounce<T extends (...args: unknown[]) => unknown>(

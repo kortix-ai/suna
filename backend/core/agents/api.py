@@ -807,6 +807,7 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
 async def stream_agent_run(
     agent_run_id: str,
     token: Optional[str] = None,
+    last_id: Optional[str] = None,
     request: Request = None
 ):
     from core.agents import repo as agents_repo
@@ -884,43 +885,45 @@ async def stream_agent_run(
             return -1
         return last_safe
 
-    async def stream_generator(agent_run_data):
+    async def stream_generator(agent_run_data, client_last_id: Optional[str] = None):
         terminate = False
-        last_id = "0"
+        last_id = client_last_id if client_last_id and client_last_id != "0" else "0"
+        skip_catchup = client_last_id and client_last_id != "0"
 
         try:
-            entries = await redis.stream_range(stream_key)
-            if entries:
-                for entry_id, fields in entries:
-                    response = json.loads(fields.get('data', '{}'))
-                    yield f"data: {json.dumps(response)}\n\n"
-                    last_id = entry_id
-                    if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
-                        return
-                
-                if last_id != "0":
-                    try:
-                        safe_idx = find_last_safe_boundary(entries)
-                        if safe_idx >= 0:
-                            safe_id = entries[safe_idx][0]
+            entries = []
+            if not skip_catchup:
+                entries = await redis.stream_range(stream_key) or []
+                if entries:
+                    for entry_id, fields in entries:
+                        response = json.loads(fields.get('data', '{}'))
+                        response['_event_id'] = entry_id
+                        yield f"data: {json.dumps(response)}\n\n"
+                        last_id = entry_id
+                        if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
+                            return
+                    
+                    if last_id != "0":
+                        try:
+                            safe_idx = find_last_safe_boundary(entries)
+                            if safe_idx >= 0:
+                                safe_id = entries[safe_idx][0]
                             if '-' in safe_id:
                                 parts = safe_id.split('-')
                                 if len(parts) == 2:
                                     next_id = f"{parts[0]}-{int(parts[1]) + 1}"
                                     await redis.xtrim_minid(stream_key, next_id, approximate=True)
-                    except Exception:
-                        pass
+                        except Exception as e:
+                            logger.warning(f"Error in stream catch-up: {e}")
 
             if agent_run_data.get('status') != 'running':
                 yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
                 return
 
-            # Use hub for fan-out: N clients watching same stream = 1 Redis XREAD + N queues
-            # This fixes connection starvation when many SSE clients connect
             timeout_count = 0
             ping_count = 0
-            received_data = bool(entries)
-            MAX_PINGS_WITHOUT_DATA = 4  # ~20 seconds without data = check for dead worker
+            received_data = bool(entries) if not skip_catchup else False
+            MAX_PINGS_WITHOUT_DATA = 4
 
             try:
                 async with redis.redis.hub.subscription(stream_key, last_id) as queue:
@@ -937,15 +940,16 @@ async def stream_agent_run(
                             timeout_count = 0
                             ping_count = 0
                             data = fields.get('data', '{}')
-                            yield f"data: {data}\n\n"
-                            last_id = entry_id
-
+                            # Include event ID in response for client tracking
                             try:
                                 response = json.loads(data)
+                                response['_event_id'] = entry_id
+                                yield f"data: {json.dumps(response)}\n\n"
                                 if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                                     return
                             except Exception:
-                                pass
+                                yield f"data: {data}\n\n"
+                            last_id = entry_id
                         else:
                             # Timeout (0.5s) - send ping every ~5 seconds
                             timeout_count += 1
@@ -978,7 +982,7 @@ async def stream_agent_run(
             yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
-        stream_generator(agent_run_data), 
+        stream_generator(agent_run_data, last_id), 
         media_type="text/event-stream", 
         headers={
             "Cache-Control": "no-cache, no-transform", 
