@@ -6,7 +6,6 @@ import { useMessagesQuery } from '@/hooks/messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
-import { debugLog } from '@/lib/debug-logger';
 
 interface UseThreadDataReturn {
   messages: UnifiedMessage[];
@@ -333,12 +332,6 @@ export function useThreadData(
   // This ensures reasoning_content and other metadata updates from server are reflected
   useEffect(() => {
     if (messagesQuery.data && messagesQuery.status === 'success' && !isLoading) {
-      debugLog('[useThreadData] Merge effect triggered', {
-        serverMessageCount: messagesQuery.data?.length,
-        queryStatus: messagesQuery.status,
-        dataUpdatedAt: messagesQuery.dataUpdatedAt,
-      });
-
       const unifiedMessages = (messagesQuery.data || [])
         .map((msg: ApiMessageType) => ({
           message_id: msg.message_id || null,
@@ -354,11 +347,6 @@ export function useThreadData(
         }));
 
       setMessages((prev) => {
-        debugLog('[useThreadData] setMessages callback', {
-          prevCount: prev?.length || 0,
-          prevMessages: (prev || []).map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
-        });
-
         // Create a map of server messages by ID for quick lookup
         const serverMessageMap = new Map(
           unifiedMessages
@@ -447,16 +435,6 @@ export function useThreadData(
 
           finalDeduped.push(msg);
           if (msgId) seenIds.add(msgId);
-        });
-
-        debugLog('[useThreadData] Merge result', {
-          mergedCount: merged.length,
-          finalCount: finalDeduped.length,
-          skippedDuplicates,
-          addedFromServer,
-          finalDupsRemoved,
-          contentDupsRemoved,
-          finalMessages: finalDeduped.map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
         });
 
         return finalDeduped;

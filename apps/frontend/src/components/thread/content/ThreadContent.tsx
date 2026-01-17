@@ -28,7 +28,6 @@ import { useSmoothStream } from "@/lib/streaming/animations";
 import { isHiddenTool } from "@agentpress/shared/tools";
 import { ReasoningSection } from "./ReasoningSection";
 import { StreamingText } from "./StreamingText";
-import { debugLog } from "@/lib/debug-logger";
 
 export function renderAttachments(
   attachments: string[],
@@ -354,13 +353,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       : null;
 
   const renderedMessages = useMemo(() => {
-    debugLog('[renderedMessages] Computing for group', {
-      groupKey: group.key,
-      isLastGroup,
-      messageCount: group.messages.length,
-      messageIds: group.messages.map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
-    });
-
     const elements: React.ReactNode[] = [];
     let assistantMessageCount = 0;
 
@@ -418,23 +410,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
 
-    debugLog('[streamingContent] Evaluating', {
-      groupKey: group.key,
-      isLastGroup,
-      readOnly,
-      rawStreamingTextLength: streamingTextContent?.length || 0,
-      smoothedTextLength: displayStreamingText?.length || 0,
-      isStreaming,
-      isAgentRunning,
-      streamHookStatus,
-      agentStatus,
-      groupMessagesCount: group.messages.length,
-      groupMessageIds: group.messages.map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
-    });
-
     // Only render for last group in non-readonly mode with content
     if (!isLastGroup || readOnly || !displayStreamingText) {
-      debugLog('[streamingContent] Returning null', { reason: 'not last group, readonly, or no content' });
       return null;
     }
 
@@ -456,21 +433,9 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       return typeof textContent === 'string' && textContent.trim().length > 0;
     });
 
-    debugLog('[streamingContent] persisted check', {
-      hasRealPersistedMessage,
-      hasAssistantWithContent: !!persistedAssistantWithContent,
-      messageId: persistedAssistantWithContent?.message_id?.slice(-8),
-      isStreaming,
-      isAgentRunning,
-      streamingTextLength: displayStreamingText.trim().length,
-    });
-
     // If agent is idle and we have persisted messages with actual text content,
     // let renderedMessages handle it - no need for streaming content anymore
     if (!isStreaming && !isAgentRunning && persistedAssistantWithContent) {
-      debugLog('[streamingContent] Returning null', {
-        reason: 'agent idle and has persisted assistant with text content',
-      });
       return null;
     }
 
@@ -500,27 +465,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
       if (hasAskOrCompleteTool) {
         // The ask/complete tool will render the text, no need for streaming content
-        debugLog('[streamingContent] Returning null', {
-          reason: 'agent idle, has ask/complete tool that will render text',
-          streamingTextLength,
-        });
         return null;
       }
 
       if (streamingTextLength <= 5) {
         // Minimal streaming text (probably just tool call) - safe to hide
-        debugLog('[streamingContent] Returning null', {
-          reason: 'agent idle, has real persisted messages, minimal streaming text',
-          streamingTextLength,
-        });
         return null;
       }
       // Substantial streaming text but no persisted text content - KEEP showing streaming
-      debugLog('[streamingContent] Keeping streaming content', {
-        reason: 'agent idle but persisted messages have no text content, keeping streaming text',
-        streamingTextLength,
-      });
-      // Don't return null - continue to render streaming content
     }
 
     // If still streaming but we have persisted assistant with content, check lengths
@@ -533,13 +485,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       const persistedIsLongerOrEqual = String(persistedText).trim().length >= displayStreamingText.trim().length;
 
       if (isComplete || persistedIsLongerOrEqual) {
-        debugLog('[streamingContent] Returning null', {
-          reason: 'has persisted content that can take over (fallback check)',
-          isComplete,
-          persistedIsLongerOrEqual,
-          persistedLength: String(persistedText).trim().length,
-          streamingLength: displayStreamingText.trim().length,
-        });
         return null;
       }
     }
@@ -547,8 +492,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     // NOTE: We no longer return null just because agent stopped streaming.
     // We keep showing streaming content until hasPersistedContent is true.
     // This prevents the empty gap between streaming end and server merge.
-
-    debugLog('[streamingContent] Will render streaming content', {});
 
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
@@ -953,18 +896,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting" ||
                         agentStatus === "running" || agentStatus === "connecting";
 
-    debugLog('[reasoningSection] Evaluating', {
-      groupKey: group.key,
-      isLastGroup,
-      readOnly,
-      isStreaming,
-      isReasoningActive,
-      hasStreamingReasoningContent,
-      hasPersistedReasoningContent: !!persistedReasoningContent,
-      displayReasoningLength: displayReasoningContent?.length || 0,
-      persistedReasoningLength: persistedReasoningContent?.length || 0,
-    });
-
     // For last group: prefer streaming content, fall back to persisted
     if (isLastGroup && !readOnly) {
       // Show streaming reasoning if active OR has content (including cached during transition)
@@ -975,10 +906,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         const usePersistedInstead = !isStreaming && persistedReasoningContent;
 
         if (usePersistedInstead) {
-          debugLog('[reasoningSection] Using persisted content (agent idle)', {
-            persistedLength: persistedReasoningContent.length,
-            streamingLength: displayReasoningContent?.length || 0,
-          });
           return (
             <div className="mb-2" key={`reasoning-${group.key}`}>
               <ReasoningSection
@@ -1179,11 +1106,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     }, [threadMetadata, displayMessages, agentName, agentAvatar]);
 
     const baseGroups = useMemo(() => {
-      debugLog('[baseGroups] Computing groups from displayMessages', {
-        count: displayMessages.length,
-        messages: displayMessages.map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
-      });
-
       const groups: MessageGroup[] = [];
       let currentGroup: MessageGroup | null = null;
       let assistantGroupCounter = 0;
@@ -1294,20 +1216,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       if (currentMergedGroup) {
         mergedGroups.push(currentMergedGroup);
       }
-
-      if (skippedDuplicates.length > 0) {
-        debugLog('[baseGroups] Skipped duplicates', { ids: skippedDuplicates });
-      }
-
-      debugLog('[baseGroups] Result', {
-        groupCount: mergedGroups.length,
-        groups: mergedGroups.map(g => ({
-          type: g.type,
-          key: g.key,
-          messageCount: g.messages.length,
-          messageIds: g.messages.map(m => m.message_id?.slice(-8)),
-        })),
-      });
 
       return mergedGroups;
     }, [displayMessages]);
