@@ -20,6 +20,7 @@ import { useAgentStream } from '@/hooks/messages';
 import { cn } from '@/lib/utils';
 import { useIsMobile } from '@/hooks/utils';
 import { isLocalMode } from '@/lib/config';
+import { debugLog } from '@/lib/debug-logger';
 import { ThreadContent } from '@/components/thread/content/ThreadContent';
 import { NewThreadEmptyState } from '@/components/thread/content/NewThreadEmptyState';
 import { ThreadSkeleton } from '@/components/thread/content/ThreadSkeleton';
@@ -794,11 +795,25 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
+      debugLog('[handleNewMessageFromStream] Received message', {
+        id: message.message_id?.slice(-8),
+        type: message.type,
+        contentPreview: String(message.content).slice(0, 50),
+      });
+
       setMessages((prev) => {
         const messageExists = prev.some(
           (m) => m.message_id === message.message_id,
         );
+
+        debugLog('[handleNewMessageFromStream] setMessages callback', {
+          prevCount: prev.length,
+          messageExists,
+          prevIds: prev.map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
+        });
+
         if (messageExists) {
+          debugLog('[handleNewMessageFromStream] Updating existing message', {});
           return prev.map((m) =>
             m.message_id === message.message_id ? message : m,
           );
@@ -811,11 +826,13 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
                 m.content === message.content,
             );
             if (optimisticIndex !== -1) {
+              debugLog('[handleNewMessageFromStream] Replacing temp user message', { index: optimisticIndex });
               return prev.map((m, index) =>
                 index === optimisticIndex ? message : m,
               );
             }
           }
+          debugLog('[handleNewMessageFromStream] Adding new message', {});
           return [...prev, message];
         }
       });
@@ -970,6 +987,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     status: streamHookStatus,
     textContent: streamingTextContent,
     reasoningContent: streamingReasoningContent,
+    isReasoningComplete,
     toolCall: streamingToolCall,
     error: streamError,
     agentRunId: currentHookRunId,
@@ -1576,8 +1594,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               <ThreadContent
                 messages={isShared ? playback.playbackState.visibleMessages : displayMessages}
                 streamingTextContent={isShared ? '' : displayStreamingText}
+                streamingReasoningContent={isShared ? '' : streamingReasoningContent}
                 streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
                 agentStatus={displayAgentStatus}
+                isReasoningComplete={isShared ? true : isReasoningComplete}
                 handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
                 handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
                 readOnly={isShared}
@@ -1748,6 +1768,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           streamingReasoningContent={isShared ? '' : streamingReasoningContent}
           streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
           agentStatus={displayAgentStatus}
+          isReasoningComplete={isShared ? true : isReasoningComplete}
           handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
           handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
           readOnly={isShared}

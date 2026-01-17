@@ -1328,7 +1328,11 @@ class ResponseProcessor:
                 text_content = strip_xml_tool_calls(final_content) if config.xml_tool_calling else final_content
                 if text_content.strip():
                     assistant_metadata["text_content"] = text_content
-                
+
+                # Add reasoning content if accumulated (for frontend persistence)
+                if accumulated_reasoning_content:
+                    assistant_metadata["reasoning_content"] = accumulated_reasoning_content
+
                 # Unify all tool calls into single tool_calls array
                 unified_tool_calls = []
                 
@@ -2190,10 +2194,14 @@ class ResponseProcessor:
             text_content = strip_xml_tool_calls(content) if config.xml_tool_calling else content
             if text_content.strip():
                 assistant_metadata["text_content"] = text_content
-            
+
+            # Add reasoning content if accumulated (for frontend persistence)
+            if accumulated_reasoning_content:
+                assistant_metadata["reasoning_content"] = accumulated_reasoning_content
+
             # Unify all tool calls into single tool_calls array
             unified_tool_calls = []
-            
+
             # Add native tool calls
             if config.native_tool_calling and native_tool_calls_for_message:
                 for tc in native_tool_calls_for_message:
@@ -2912,10 +2920,14 @@ class ResponseProcessor:
             text_content = strip_xml_tool_calls(final_content) if config.xml_tool_calling else final_content
             if text_content.strip():
                 assistant_metadata["text_content"] = text_content
-            
+
+            # Add reasoning content if accumulated (for frontend persistence)
+            if accumulated_reasoning_content:
+                assistant_metadata["reasoning_content"] = accumulated_reasoning_content
+
             # Unify all tool calls into single tool_calls array
             unified_tool_calls = []
-            
+
             # Add native tool calls
             if config.native_tool_calling and complete_native_tool_calls:
                 for tc in complete_native_tool_calls:

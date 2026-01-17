@@ -6,6 +6,7 @@ import { useMessagesQuery } from '@/hooks/messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
+import { debugLog } from '@/lib/debug-logger';
 
 interface UseThreadDataReturn {
   messages: UnifiedMessage[];
@@ -254,7 +255,25 @@ export function useThreadData(
             return aTime - bTime;
           });
 
-          setMessages(mergedMessages);
+          // Deduplicate by message_id and by content for user messages
+          const dedupedMessages: UnifiedMessage[] = [];
+          const seenIds = new Set<string>();
+          const seenUserContents = new Set<string>();
+          mergedMessages.forEach((msg) => {
+            const msgId = msg.message_id;
+            // Skip if we've seen this ID
+            if (msgId && seenIds.has(msgId)) return;
+            // For user messages, also check content to handle temp vs server race
+            if (msg.type === 'user') {
+              const contentKey = String(msg.content || '').trim();
+              if (contentKey && seenUserContents.has(contentKey)) return;
+              if (contentKey) seenUserContents.add(contentKey);
+            }
+            dedupedMessages.push(msg);
+            if (msgId) seenIds.add(msgId);
+          });
+
+          setMessages(dedupedMessages);
           messagesLoadedRef.current = true;
 
           if (!hasInitiallyScrolled.current) {
@@ -310,47 +329,140 @@ export function useThreadData(
     messages
   ]);
 
-  // Force message reload when new data arrives (but not via polling)
+  // Merge server data with local state when query data updates
+  // This ensures reasoning_content and other metadata updates from server are reflected
   useEffect(() => {
     if (messagesQuery.data && messagesQuery.status === 'success' && !isLoading) {
-      const shouldReload = messages.length === 0 || messagesQuery.data.length > messages.length + 50;
-      
-      if (shouldReload) {
-        const unifiedMessages = (messagesQuery.data || [])
-          .map((msg: ApiMessageType) => ({
-            message_id: msg.message_id || null,
-            thread_id: msg.thread_id || threadId,
-            type: (msg.type || 'system') as UnifiedMessage['type'],
-            is_llm_message: Boolean(msg.is_llm_message),
-            content: msg.content || '',
-            metadata: msg.metadata || '{}',
-            created_at: msg.created_at || new Date().toISOString(),
-            updated_at: msg.updated_at || new Date().toISOString(),
-            agent_id: (msg as any).agent_id,
-            agents: (msg as any).agents,
-          }));
+      debugLog('[useThreadData] Merge effect triggered', {
+        serverMessageCount: messagesQuery.data?.length,
+        queryStatus: messagesQuery.status,
+        dataUpdatedAt: messagesQuery.dataUpdatedAt,
+      });
 
-        setMessages((prev) => {
-          const serverIds = new Set(
-            unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[],
-          );
-          const localExtras = (prev || []).filter(
-            (m) =>
-              !m.message_id ||
-              (typeof m.message_id === 'string' && m.message_id.startsWith('temp-')) ||
-              !serverIds.has(m.message_id as string),
-          );
-          const merged = [...unifiedMessages, ...localExtras].sort((a, b) => {
-            const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return aTime - bTime;
-          });
-          
-          return merged;
+      const unifiedMessages = (messagesQuery.data || [])
+        .map((msg: ApiMessageType) => ({
+          message_id: msg.message_id || null,
+          thread_id: msg.thread_id || threadId,
+          type: (msg.type || 'system') as UnifiedMessage['type'],
+          is_llm_message: Boolean(msg.is_llm_message),
+          content: msg.content || '',
+          metadata: msg.metadata || '{}',
+          created_at: msg.created_at || new Date().toISOString(),
+          updated_at: msg.updated_at || new Date().toISOString(),
+          agent_id: (msg as any).agent_id,
+          agents: (msg as any).agents,
+        }));
+
+      setMessages((prev) => {
+        debugLog('[useThreadData] setMessages callback', {
+          prevCount: prev?.length || 0,
+          prevMessages: (prev || []).map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
         });
-      }
+
+        // Create a map of server messages by ID for quick lookup
+        const serverMessageMap = new Map(
+          unifiedMessages
+            .filter((m) => m.message_id)
+            .map((m) => [m.message_id, m])
+        );
+
+        // Merge: use server version for existing messages (to get updated metadata),
+        // keep local-only messages (temp IDs or not in server response)
+        const merged: UnifiedMessage[] = [];
+        const processedIds = new Set<string | null>();
+        const skippedDuplicates: string[] = [];
+
+        // First, process local messages - replace with server version if available
+        (prev || []).forEach((localMsg) => {
+          const msgId = localMsg.message_id;
+
+          // Skip if we've already processed this message ID (prevents duplicates)
+          if (msgId && processedIds.has(msgId)) {
+            skippedDuplicates.push(msgId.slice(-8));
+            return;
+          }
+
+          if (msgId && serverMessageMap.has(msgId)) {
+            // Use server version (has updated metadata like reasoning_content)
+            merged.push(serverMessageMap.get(msgId)!);
+            processedIds.add(msgId);
+          } else if (
+            !msgId ||
+            (typeof msgId === 'string' && msgId.startsWith('temp-'))
+          ) {
+            // Keep local-only messages (temp IDs or no ID)
+            merged.push(localMsg);
+            if (msgId) processedIds.add(msgId);
+          } else {
+            // Keep local messages with real IDs that aren't in server response yet
+            // (might be recently added via streaming)
+            merged.push(localMsg);
+            if (msgId) processedIds.add(msgId);
+          }
+        });
+
+        // Add any server messages not in local state (new messages from refetch)
+        let addedFromServer = 0;
+        unifiedMessages.forEach((serverMsg) => {
+          if (serverMsg.message_id && !processedIds.has(serverMsg.message_id)) {
+            merged.push(serverMsg);
+            processedIds.add(serverMsg.message_id);
+            addedFromServer++;
+          }
+        });
+
+        // Sort by created_at
+        merged.sort((a, b) => {
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return aTime - bTime;
+        });
+
+        // Final deduplication pass - ensure no duplicate message_ids
+        // Also deduplicate user messages by content (handles temp vs server race condition)
+        const finalDeduped: UnifiedMessage[] = [];
+        const seenIds = new Set<string>();
+        const seenUserContents = new Set<string>();
+        let finalDupsRemoved = 0;
+        let contentDupsRemoved = 0;
+        merged.forEach((msg) => {
+          const msgId = msg.message_id;
+
+          // Check for duplicate by message_id
+          if (msgId && seenIds.has(msgId)) {
+            finalDupsRemoved++;
+            return;
+          }
+
+          // For user messages, also check for duplicate content (temp vs server race)
+          if (msg.type === 'user') {
+            const contentKey = String(msg.content || '').trim();
+            if (contentKey && seenUserContents.has(contentKey)) {
+              // Skip duplicate user message - prefer the one with real ID (already added)
+              contentDupsRemoved++;
+              return;
+            }
+            if (contentKey) seenUserContents.add(contentKey);
+          }
+
+          finalDeduped.push(msg);
+          if (msgId) seenIds.add(msgId);
+        });
+
+        debugLog('[useThreadData] Merge result', {
+          mergedCount: merged.length,
+          finalCount: finalDeduped.length,
+          skippedDuplicates,
+          addedFromServer,
+          finalDupsRemoved,
+          contentDupsRemoved,
+          finalMessages: finalDeduped.map(m => ({ id: m.message_id?.slice(-8), type: m.type })),
+        });
+
+        return finalDeduped;
+      });
     }
-  }, [messagesQuery.data, messagesQuery.status, isLoading, messages.length, threadId]);
+  }, [messagesQuery.data, messagesQuery.status, isLoading, threadId]);
 
   return {
     messages,

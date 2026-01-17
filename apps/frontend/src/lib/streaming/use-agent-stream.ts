@@ -51,6 +51,7 @@ export interface UseAgentStreamResult {
   status: AgentStatus;
   textContent: string;
   reasoningContent: string;
+  isReasoningComplete: boolean;
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;
@@ -69,6 +70,7 @@ export function useAgentStream(
   const [status, setStatus] = useState<AgentStatus>('idle');
   const [textChunks, setTextChunks] = useState<Array<{ content: string; sequence: number }>>([]);
   const [reasoningContent, setReasoningContent] = useState('');
+  const [isReasoningComplete, setIsReasoningComplete] = useState(false);
   const [toolCall, setToolCall] = useState<UnifiedMessage | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [agentRunId, setAgentRunId] = useState<string | null>(null);
@@ -203,6 +205,7 @@ export function useAgentStream(
   const resetState = useCallback(() => {
     setTextChunks([]);
     setReasoningContent('');
+    setIsReasoningComplete(false);
     setToolCall(null);
     setError(null);
     clearAccumulator(accumulatorRef.current);
@@ -291,6 +294,8 @@ export function useAgentStream(
     switch (processed.type) {
       case 'text_chunk':
         if (processed.content) {
+          // First text chunk marks reasoning phase as complete
+          setIsReasoningComplete(true);
           addTextChunk(processed.content, processed.message?.sequence ?? Date.now());
           callbacksRef.current.onAssistantChunk?.({ content: processed.content });
         }
@@ -323,10 +328,12 @@ export function useAgentStream(
       
       case 'message_complete':
         flushPendingChunks();
-        setTextChunks([]);
+        // Don't clear textChunks here - keep content visible until agent run completes
+        // This prevents the flash where streaming content disappears before persisted messages load
+        // textChunks will be cleared in resetState() when a new run starts
         setToolCall(null);
         clearAccumulator(accumulatorRef.current);
-        
+
         if (processed.message?.message_id) {
           callbacksRef.current.onMessage(streamMessageToUnifiedMessage(processed.message));
         }
@@ -570,6 +577,7 @@ export function useAgentStream(
     status,
     textContent,
     reasoningContent,
+    isReasoningComplete,
     toolCall,
     error,
     agentRunId,
