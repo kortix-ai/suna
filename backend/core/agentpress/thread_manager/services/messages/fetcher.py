@@ -75,7 +75,6 @@ class MessageFetcher:
                 if isinstance(content, dict):
                     content['message_id'] = item['message_id']
                     content['_image_context'] = True
-                    content['_created_at'] = item.get('created_at')
                     parsed_contexts.append(content)
             
             return parsed_contexts
