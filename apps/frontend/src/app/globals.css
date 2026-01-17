@@ -919,3 +919,33 @@
   animation: stream-blue-blur 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   display: inline;
 }
+
+/* Pulse heartbeat animation for reasoning section Kortix icon */
+@keyframes pulse-heartbeat {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.85;
+  }
+}
+
+.animate-pulse-heartbeat {
+  animation: pulse-heartbeat 1.2s ease-in-out infinite;
+}
+
+/* Text shimmer animation for reasoning label */
+@keyframes text-shimmer {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.animate-text-shimmer {
+  animation: text-shimmer 1.2s ease-in-out infinite;
+}
