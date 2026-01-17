@@ -521,6 +521,15 @@ async def _background_setup_and_execute(
         final_message_content = prompt
         image_contexts_to_inject = []
         
+        if is_new_thread and staged_files:
+            from core.threads import repo as threads_repo
+            placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
+            logger.debug(f"⚡ [BG] Creating project row first (before sandbox claim)")
+            try:
+                await threads_repo.create_project(project_id, account_id, placeholder_name)
+            except Exception as e:
+                logger.debug(f"Project creation skipped (may already exist): {e}")
+        
         if staged_files:
             final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
                 staged_files=staged_files,
@@ -538,7 +547,7 @@ async def _background_setup_and_execute(
                 image_contexts=image_contexts_to_inject,
                 mode=mode,
             )
-            cache_updated = False  # New threads handle message in create_new_thread_records
+            cache_updated = False
         else:
             cache_updated = await append_user_message_to_cache(thread_id, final_message_content)
             if not cache_updated:

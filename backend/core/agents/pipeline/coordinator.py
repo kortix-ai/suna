@@ -32,6 +32,7 @@ class PipelineCoordinator:
         self._tool_registry = None
         self._response_processor = None
         self._trace = None
+        self._effective_model_name = None
     
     async def execute(
         self,
@@ -100,6 +101,24 @@ class PipelineCoordinator:
         finally:
             await self._cleanup(ctx)
     
+    async def _determine_effective_model(self, ctx: PipelineContext) -> None:
+        from core.ai_models import model_manager
+        from core.ai_models.registry import BedrockConfig
+        from core.agentpress.thread_manager.services.state.thread_state import ThreadState
+        
+        self._effective_model_name = ctx.model_name
+        
+        if model_manager.supports_vision(ctx.model_name):
+            logger.debug(f"Model {ctx.model_name} supports vision, no switch needed")
+            return
+        
+        has_images = await ThreadState.check_has_images(ctx.thread_id)
+        
+        if has_images:
+            new_model = BedrockConfig.get_haiku_arn()
+            logger.info(f"🖼️ Thread has images - switching from {ctx.model_name} to Bedrock image model: {new_model}")
+            self._effective_model_name = new_model
+    
     async def _parallel_prep(self, ctx: PipelineContext) -> PrepResult:
         start = time.time()
         result = PrepResult()
@@ -107,7 +126,7 @@ class PipelineCoordinator:
         try:
             await stream_prep_stage(ctx.stream_key, "initializing", "Setting up managers", 10)
             await self._init_managers(ctx)
-            
+            await self._determine_effective_model(ctx)
             await stream_prep_stage(ctx.stream_key, "preparing", "Loading context", 30)
             
             tasks = {}
@@ -338,10 +357,13 @@ class PipelineCoordinator:
         cached_system = add_cache_control(system_prompt)
         prepared_messages = [cached_system] + messages_with_context
         
+        # Use effective model (may have been switched for image support)
+        effective_model = self._effective_model_name or ctx.model_name
+        
         import litellm
         actual_tokens = await asyncio.to_thread(
             litellm.token_counter,
-            model=ctx.model_name,
+            model=effective_model,
             messages=prepared_messages
         )
         
@@ -350,7 +372,7 @@ class PipelineCoordinator:
         llm_executor = LLMExecutor()
         llm_response = await llm_executor.execute(
             prepared_messages=prepared_messages,
-            llm_model=ctx.model_name,
+            llm_model=effective_model,
             llm_temperature=0,
             llm_max_tokens=None,
             openapi_tool_schemas=tool_schemas,
@@ -368,7 +390,7 @@ class PipelineCoordinator:
             response_processor = self._thread_manager.response_processor
             async for chunk in response_processor.process_streaming_response(
                 llm_response, ctx.thread_id, prepared_messages,
-                ctx.model_name, processor_config, True,
+                effective_model, processor_config, True,
                 auto_state.count, auto_state.to_dict().get('continuous_state', {}),
                 None, actual_tokens, ctx.cancellation_event
             ):

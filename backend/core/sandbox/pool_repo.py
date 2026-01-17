@@ -50,7 +50,6 @@ async def claim_pooled_sandbox(
 ) -> Optional[Dict[str, Any]]:
     now = datetime.now(timezone.utc).isoformat()
     
-    # Atomic claim using FOR UPDATE SKIP LOCKED
     sql = """
     WITH claimed AS (
         SELECT id, external_id, config

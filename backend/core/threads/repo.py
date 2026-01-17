@@ -504,6 +504,7 @@ async def create_thread_with_message_and_run(
     WITH new_project AS (
         INSERT INTO projects (project_id, account_id, name, created_at)
         VALUES (:project_id, :account_id, :project_name, :created_at)
+        ON CONFLICT (project_id) DO UPDATE SET updated_at = EXCLUDED.created_at
         RETURNING project_id
     ),
     new_thread AS (
