@@ -211,5 +211,6 @@ class ResponseProcessor:
         )
         yield self._message_builder.build_finish_message("stop")
         
+        # Persist and yield llm_response_end
         self._state.add_llm_response_end(llm_response_id, thread_run_id)
         yield self._message_builder.build_llm_response_end()
