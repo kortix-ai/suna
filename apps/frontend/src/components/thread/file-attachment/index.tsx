@@ -331,6 +331,7 @@ export interface FileAttachmentGridProps {
     project?: Project;
     standalone?: boolean;
     alignRight?: boolean;
+    localPreviewUrls?: Record<string, string>;
 }
 
 // Helper function to check if a string is a URL
@@ -348,6 +349,7 @@ export function FileAttachmentGrid({
     project,
     standalone = false,
     alignRight = false,
+    localPreviewUrls = {},
 }: FileAttachmentGridProps) {
     // Call hooks at the top level before any early returns
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -453,57 +455,67 @@ export function FileAttachmentGrid({
                             onIndexChange={setCurrentIndex}
                             className={className}
                         >
-                            {(filepath, index) => (
-                                <FileAttachment
-                                    filepath={filepath}
-                                    onClick={() => handleFileClick(filepath)}
-                                    sandboxId={sandboxId}
-                                    showPreview={showPreviews}
-                                    collapsed={shouldCollapse}
-                                    project={project}
-                                    isSingleItemGrid={filePaths.length === 1}
-                                    standalone={standalone}
-                                    alignRight={alignRight}
-                                    customStyle={
-                                        isImageFile(filepath) ? {
-                                            width: '100%',
-                                            height: 'auto',
-                                            maxHeight: `${gridImageHeight}px`,
-                                            '--attachment-height': `${gridImageHeight}px`
-                                        } as React.CSSProperties : isPreviewableFile(filepath) ? {
-                                            gridColumn: '1 / -1',
-                                            width: '100%'
-                                        } : undefined
-                                    }
-                                />
-                            )}
+                            {(filepath, index) => {
+                                const filename = getFilename(filepath);
+                                const localUrl = localPreviewUrls[filename] || localPreviewUrls[filepath];
+                                return (
+                                    <FileAttachment
+                                        filepath={filepath}
+                                        onClick={() => handleFileClick(filepath)}
+                                        sandboxId={sandboxId}
+                                        showPreview={showPreviews}
+                                        collapsed={shouldCollapse}
+                                        project={project}
+                                        isSingleItemGrid={filePaths.length === 1}
+                                        standalone={standalone}
+                                        alignRight={alignRight}
+                                        localPreviewUrl={localUrl}
+                                        customStyle={
+                                            isImageFile(filepath) ? {
+                                                width: '100%',
+                                                height: 'auto',
+                                                maxHeight: `${gridImageHeight}px`,
+                                                '--attachment-height': `${gridImageHeight}px`
+                                            } as React.CSSProperties : isPreviewableFile(filepath) ? {
+                                                gridColumn: '1 / -1',
+                                                width: '100%'
+                                            } : undefined
+                                        }
+                                    />
+                                );
+                            }}
                         </FileCarousel>
                     ) : (
                         <FileGrid files={filePaths} className={className}>
-                            {(filepath, index) => (
-                                <FileAttachment
-                                    filepath={filepath}
-                                    onClick={() => handleFileClick(filepath)}
-                                    sandboxId={sandboxId}
-                                    showPreview={showPreviews}
-                                    collapsed={shouldCollapse}
-                                    project={project}
-                                    isSingleItemGrid={filePaths.length === 1}
-                                    standalone={standalone}
-                                    alignRight={alignRight}
-                                    customStyle={
-                                        isImageFile(filepath) ? {
-                                            width: '100%',
-                                            height: 'auto',
-                                            maxHeight: `${gridImageHeight}px`,
-                                            '--attachment-height': `${gridImageHeight}px`
-                                        } as React.CSSProperties : isPreviewableFile(filepath) ? {
-                                            gridColumn: '1 / -1',
-                                            width: '100%'
-                                        } : undefined
-                                    }
-                                />
-                            )}
+                            {(filepath, index) => {
+                                const filename = getFilename(filepath);
+                                const localUrl = localPreviewUrls[filename] || localPreviewUrls[filepath];
+                                return (
+                                    <FileAttachment
+                                        filepath={filepath}
+                                        onClick={() => handleFileClick(filepath)}
+                                        sandboxId={sandboxId}
+                                        showPreview={showPreviews}
+                                        collapsed={shouldCollapse}
+                                        project={project}
+                                        isSingleItemGrid={filePaths.length === 1}
+                                        standalone={standalone}
+                                        alignRight={alignRight}
+                                        localPreviewUrl={localUrl}
+                                        customStyle={
+                                            isImageFile(filepath) ? {
+                                                width: '100%',
+                                                height: 'auto',
+                                                maxHeight: `${gridImageHeight}px`,
+                                                '--attachment-height': `${gridImageHeight}px`
+                                            } as React.CSSProperties : isPreviewableFile(filepath) ? {
+                                                gridColumn: '1 / -1',
+                                                width: '100%'
+                                            } : undefined
+                                        }
+                                    />
+                                );
+                            }}
                         </FileGrid>
                     )}
                 </>

@@ -2,7 +2,10 @@ import React, { useState } from 'react';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
-import { Download, X, Presentation } from 'lucide-react';
+import { Download, X } from 'lucide-react';
+import { PresentationSlidePreview } from '../tool-views/presentation-tools/PresentationSlidePreview';
+import { PresentationSlideSkeleton } from '../tool-views/presentation-tools/PresentationSlideSkeleton';
+import type { Project } from '@/lib/api/threads';
 
 export interface SlideInfo {
   presentationName: string;
@@ -24,6 +27,7 @@ export interface ToolCardProps {
   websiteUrls?: string[];
   imageUrls?: string[];
   slideInfo?: SlideInfo;
+  project?: Project;
 }
 
 const getFavicon = (url: string): string | null => {
@@ -69,6 +73,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({
   websiteUrls,
   imageUrls,
   slideInfo,
+  project,
 }) => {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const favicons = websiteUrls?.slice(0, 4).map(getFavicon).filter(Boolean) as string[] || [];
@@ -80,7 +85,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({
       <button
         onClick={onClick}
         className={cn(
-          'inline-flex items-center gap-1.5 mt-4 cursor-pointer',
+          'inline-flex items-center gap-1.5 mt-2 cursor-pointer',
           'text-xs text-muted-foreground hover:opacity-80 transition-opacity duration-200',
           'max-w-full'
         )}
@@ -201,22 +206,26 @@ export const ToolCard: React.FC<ToolCardProps> = ({
       )}
 
       {slideInfo && (
-        <button
-          onClick={onClick}
-          className="flex items-center gap-3 mt-1 p-3 border rounded-xl bg-muted/30 border border-border hover:bg-muted/80 transition-colors w-fit max-w-xs"
-        >
-          <div className="flex items-center justify-center w-10 h-10 rounded-md bg-gradient-to-br from-orange-500 to-amber-500 text-white">
-            <Presentation className="w-5 h-5" />
+        project?.sandbox?.sandbox_url ? (
+          <div className="mt-2 max-w-sm">
+            <PresentationSlidePreview
+              presentationName={slideInfo.presentationName}
+              project={project}
+              initialSlide={slideInfo.slideNumber}
+              onFullScreenClick={onClick ? () => onClick() : undefined}
+              className="w-full"
+            />
           </div>
-          <div className="flex flex-col items-start min-w-0">
-            <span className="text-sm font-medium text-foreground truncate max-w-[180px]">
-              {slideInfo.slideTitle}
-            </span>
-            <span className="text-xs text-muted-foreground">
-              Slide {slideInfo.slideNumber} of {slideInfo.totalSlides} · {slideInfo.presentationName}
-            </span>
+        ) : (
+          <div className="mt-2 max-w-sm">
+            <PresentationSlideSkeleton
+              slideNumber={slideInfo.slideNumber}
+              slideTitle={slideInfo.slideTitle}
+              isGenerating={true}
+              className="w-full"
+            />
           </div>
-        </button>
+        )
       )}
 
       <Dialog open={!!selectedImage} onOpenChange={(open) => !open && setSelectedImage(null)}>

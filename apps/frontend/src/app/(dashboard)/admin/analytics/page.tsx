@@ -63,6 +63,7 @@ export default function AdminAnalyticsPage() {
   const [tierFilter, setTierFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   const [activeTab, setActiveTab] = useState<string>('overview');
+  const [tierViewMode, setTierViewMode] = useState<'revenue' | 'cost'>('revenue');
 
   const handleCategoryFilter = (category: string | null) => {
     setCategoryFilter(category);
@@ -655,26 +656,54 @@ export default function AdminAnalyticsPage() {
 
                         {/* Users & Revenue per Tier */}
                         <div>
-                          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">By Tier</p>
+                          <div className="flex items-center justify-between mb-3">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">By Tier</p>
+                            <div className="flex items-center gap-1 bg-muted rounded-full p-0.5">
+                              <button
+                                onClick={() => setTierViewMode('revenue')}
+                                className={cn(
+                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  tierViewMode === 'revenue' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                                )}
+                              >
+                                Revenue
+                              </button>
+                              <button
+                                onClick={() => setTierViewMode('cost')}
+                                className={cn(
+                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  tierViewMode === 'cost' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                                )}
+                              >
+                                Usage
+                              </button>
+                            </div>
+                          </div>
                           {profitability.by_tier && profitability.by_tier.length > 0 ? (() => {
-                            const totalUsers = profitability.by_tier.reduce((sum, t) => sum + t.unique_users, 0);
-                            return (
+                            const filteredTiers = profitability.by_tier.filter(t =>
+                              tierViewMode === 'revenue' ? t.total_revenue > 0 : t.total_actual_cost > 0
+                            );
+                            const totalUsers = filteredTiers.reduce((sum, t) => sum + t.unique_users, 0);
+                            const totalValue = tierViewMode === 'revenue'
+                              ? filteredTiers.reduce((sum, t) => sum + t.total_revenue, 0)
+                              : filteredTiers.reduce((sum, t) => sum + t.total_actual_cost, 0);
+                            return filteredTiers.length > 0 ? (
                               <div className="space-y-1.5">
                                 {/* Header */}
-                                <div className="grid grid-cols-4 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
+                                <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
                                   <div>Tier</div>
                                   <div className="text-right">Users</div>
-                                  <div className="text-right">Revenue</div>
-                                  <div className="text-right">Cost</div>
+                                  <div className="text-right">{tierViewMode === 'revenue' ? 'Revenue' : 'Cost'}</div>
                                 </div>
                                 {/* Rows */}
-                                {profitability.by_tier.map((tier, idx) => {
+                                {filteredTiers.map((tier, idx) => {
                                   const userPercent = totalUsers > 0 ? ((tier.unique_users / totalUsers) * 100).toFixed(0) : '0';
-                                  const revenuePercent = profitability.total_revenue > 0 ? ((tier.total_revenue / profitability.total_revenue) * 100).toFixed(0) : '0';
+                                  const value = tierViewMode === 'revenue' ? tier.total_revenue : tier.total_actual_cost;
+                                  const valuePercent = totalValue > 0 ? ((value / totalValue) * 100).toFixed(0) : '0';
                                   return (
                                     <div
                                       key={idx}
-                                      className="grid grid-cols-4 gap-2 text-xs py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
+                                      className="grid grid-cols-3 gap-2 text-xs py-1.5 px-2 rounded hover:bg-muted/50 transition-colors"
                                     >
                                       <div className="font-medium truncate flex items-center gap-1">
                                         {tier.display_name}
@@ -687,14 +716,17 @@ export default function AdminAnalyticsPage() {
                                         <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
                                       </div>
                                       <div className="text-right">
-                                        ${tier.total_revenue.toLocaleString()}
-                                        <span className="text-[10px] text-muted-foreground ml-1">({revenuePercent}%)</span>
+                                        ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                        <span className="text-[10px] text-muted-foreground ml-1">({valuePercent}%)</span>
                                       </div>
-                                      <div className="text-right text-muted-foreground">${tier.total_actual_cost.toFixed(2)}</div>
                                     </div>
                                   );
                                 })}
                               </div>
+                            ) : (
+                              <p className="text-sm text-muted-foreground text-center py-4">
+                                No {tierViewMode === 'revenue' ? 'paying' : 'usage'} data
+                              </p>
                             );
                           })() : (
                             <p className="text-sm text-muted-foreground text-center py-4">No tier data</p>

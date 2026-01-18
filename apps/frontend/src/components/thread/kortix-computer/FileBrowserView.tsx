@@ -66,6 +66,7 @@ import { VersionBanner } from './VersionBanner';
 import { KortixComputerHeader } from './KortixComputerHeader';
 import { useFileData } from '@/hooks/use-file-data';
 import { PresentationSlidePreview } from '../tool-views/presentation-tools/PresentationSlidePreview';
+import { PresentationSlideSkeleton } from '../tool-views/presentation-tools/PresentationSlideSkeleton';
 import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
 
@@ -476,12 +477,23 @@ function ThumbnailPreview({
   const hasError = blobError || textError;
   
   // For presentation folders, show the slide preview
-  if (isPresentationFolder && project?.sandbox?.sandbox_url) {
+  if (isPresentationFolder) {
     const presentationName = file.name;
+    if (project?.sandbox?.sandbox_url) {
+      return (
+        <PresentationSlidePreview
+          presentationName={presentationName}
+          project={project}
+          className="w-full h-full"
+        />
+      );
+    }
+    // Show skeleton while waiting for sandbox
     return (
-      <PresentationSlidePreview
-        presentationName={presentationName}
-        project={project}
+      <PresentationSlideSkeleton
+        slideNumber={1}
+        slideTitle={presentationName}
+        isGenerating={true}
         className="w-full h-full"
       />
     );

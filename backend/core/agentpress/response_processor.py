@@ -138,7 +138,10 @@ class ResponseProcessor:
         # Per-thread locks for race condition protection during parallel tool execution
         # Locks are used to serialize DB writes for the same thread while allowing
         # parallel execution across different threads
+        # Using deque with maxlen to prevent unbounded growth
+        from collections import deque
         self._thread_locks: Dict[str, asyncio.Lock] = {}
+        self._thread_lock_order: deque = deque(maxlen=100)  # Track order for LRU eviction
         self._locks_lock = asyncio.Lock()  # Lock for managing the thread_locks dict itself
 
     async def _get_thread_lock(self, thread_id: str) -> asyncio.Lock:
@@ -158,8 +161,21 @@ class ResponseProcessor:
             async with self._locks_lock:
                 # Check again after acquiring the lock (another coroutine might have created it)
                 if thread_id not in self._thread_locks:
+                    # Evict oldest lock if at max capacity
+                    if len(self._thread_locks) >= 100:
+                        oldest_thread_id = self._thread_lock_order[0] if self._thread_lock_order else None
+                        if oldest_thread_id and oldest_thread_id in self._thread_locks:
+                            self._thread_locks.pop(oldest_thread_id, None)
+                    
                     self._thread_locks[thread_id] = asyncio.Lock()
+                    self._thread_lock_order.append(thread_id)
         return self._thread_locks[thread_id]
+    
+    async def cleanup(self) -> None:
+        """Cleanup response processor resources."""
+        async with self._locks_lock:
+            self._thread_locks.clear()
+            self._thread_lock_order.clear()
 
     def _log_frontend_message(self, message: Dict[str, Any], debug_file: Optional[Path] = None):
         """Log a message being sent to the frontend to a debug file.
@@ -3403,17 +3419,19 @@ class ResponseProcessor:
                 return
             
             # Set has_images flag on thread metadata
-            from core.agentpress.thread_manager import set_thread_has_images
-            await set_thread_has_images(thread_id)
+            from core.agentpress.thread_manager import ThreadState
+            await ThreadState.set_has_images(thread_id)
             
-            # Save the image_context message AFTER the tool result
             await self.add_message(
                 thread_id=thread_id,
                 type="image_context",
                 content=message_content,
-                is_llm_message=True,
+                is_llm_message=False,
                 metadata=metadata
             )
+            
+            from core.cache.runtime_cache import invalidate_message_history_cache
+            await invalidate_message_history_cache(thread_id)
             
             file_path = metadata.get('file_path', 'unknown')
             logger.info(f"[LoadImage] Added '{file_path}' to context (deferred save after tool result)")

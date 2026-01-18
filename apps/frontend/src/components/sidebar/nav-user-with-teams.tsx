@@ -482,6 +482,22 @@ export function NavUserWithTeams({
                     )}
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
+                        <Link href="/admin/sandbox-pool" className="gap-2 p-2">
+                          <Bell className="h-4 w-4" />
+                          <span>Sandbox Pool</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
+                        <Link href="/admin/stateless" className="gap-2 p-2">
+                          <Bell className="h-4 w-4" />
+                          <span>Stateless</span>
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    {user.isAdmin && (
+                      <DropdownMenuItem asChild>
                         <Link href="/admin/stress-test" className="gap-2 p-2">
                           <Zap className="h-4 w-4" />
                           <span>Stress Test</span>

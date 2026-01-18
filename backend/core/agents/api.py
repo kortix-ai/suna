@@ -76,36 +76,87 @@ async def _check_billing_and_limits(
     check_project_limit: bool = False, 
     check_thread_limit: bool = False
 ):
-    """Check billing and limits in parallel."""
-    from core.utils.limits_checker import (
-        check_agent_run_limit, 
-        check_project_count_limit,
-        check_thread_limit as _check_thread_limit
-    )
+    import time
+    from core.billing.subscriptions import subscription_service
+    from core.utils.limits_repo import get_all_limits_counts
+    from core.cache.runtime_cache import get_cached_tier_info
     
+    t_start = time.time()
+    
+    # Skip all checks in local mode
+    if config.ENV_MODE == EnvMode.LOCAL:
+        return
+    
+    # Step 1: Get tier info ONCE (with caching)
+    # Note: subscription_service.get_user_subscription_tier already handles caching internally
+    tier_info = await get_cached_tier_info(account_id)
+    if not tier_info:
+        tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
+        # No need to call set_cached_tier_info here - it's already done inside get_user_subscription_tier
+    
+    tier_name = tier_info.get('name', 'free')
+    
+    # Step 2: Run billing check and limits check in parallel
     async def check_billing():
         if model_name == "mock-ai":
             return (True, None, {})
-        return await billing_integration.check_model_and_billing_access(account_id, model_name, client)
+        
+        # Check model access
+        from core.billing.shared.config import is_model_allowed
+        if not is_model_allowed(tier_name, model_name):
+            available_models = tier_info.get('models', [])
+            return False, f"Your current subscription plan does not include access to {model_name}. Please upgrade your subscription.", {
+                "allowed_models": available_models,
+                "tier_info": tier_info,
+                "tier_name": tier_name,
+                "error_type": "model_access_denied",
+                "error_code": "MODEL_ACCESS_DENIED"
+            }
+        
+        # Check credits
+        can_run, message, reservation_id = await billing_integration.check_and_reserve_credits(account_id)
+        if not can_run:
+            return False, f"Billing check failed: {message}", {
+                "tier_info": tier_info,
+                "error_type": "insufficient_credits"
+            }
+        
+        return True, "Access granted", {"tier_info": tier_info, "reservation_id": reservation_id}
     
-    async def check_agent_runs():
-        if config.ENV_MODE == EnvMode.LOCAL:
-            return {'can_start': True}
-        return await check_agent_run_limit(account_id)
+    async def check_all_limits():
+        """Get all limits in a single DB query."""
+        # Use the optimized single-query function
+        counts = await get_all_limits_counts(account_id)
+        
+        # Get tier limits
+        concurrent_limit = tier_info.get('concurrent_runs', 1)
+        project_limit = tier_info.get('project_limit', 3)
+        thread_limit = tier_info.get('thread_limit', 10)
+        
+        return {
+            'agent_runs': {
+                'can_start': counts['running_runs_count'] < concurrent_limit,
+                'running_count': counts['running_runs_count'],
+                'limit': concurrent_limit,
+            },
+            'projects': {
+                'can_create': counts['project_count'] < project_limit,
+                'current_count': counts['project_count'],
+                'limit': project_limit,
+            },
+            'threads': {
+                'can_create': counts['thread_count'] < thread_limit,
+                'current_count': counts['thread_count'],
+                'limit': thread_limit,
+            }
+        }
     
-    async def check_projects():
-        if config.ENV_MODE == EnvMode.LOCAL or not check_project_limit:
-            return {'can_create': True}
-        return await check_project_count_limit(account_id)
-    
-    async def check_threads():
-        if config.ENV_MODE == EnvMode.LOCAL or not check_thread_limit:
-            return {'can_create': True}
-        return await _check_thread_limit(account_id)
-    
-    billing_result, agent_run_result, project_result, thread_result = await asyncio.gather(
-        check_billing(), check_agent_runs(), check_projects(), check_threads()
+    # Run both in parallel
+    billing_result, limits_result = await asyncio.gather(
+        check_billing(), check_all_limits()
     )
+    
+    logger.debug(f"⚡ Billing + limits check completed in {(time.time() - t_start) * 1000:.1f}ms")
     
     # Process billing result
     can_proceed, error_message, context = billing_result
@@ -126,8 +177,12 @@ async def _check_billing_and_limits(
             raise HTTPException(status_code=500, detail={"message": error_message})
     
     # Check agent run limit
+    agent_run_result = limits_result['agent_runs']
     if not agent_run_result.get('can_start', True):
-        running_ids = [str(tid) for tid in agent_run_result.get('running_thread_ids', [])]
+        # Need to fetch running thread IDs for the error response
+        from core.utils.limits_repo import count_running_agent_runs
+        run_details = await count_running_agent_runs(account_id)
+        running_ids = [str(tid) for tid in run_details.get('running_thread_ids', [])]
         raise HTTPException(status_code=402, detail={
             "message": f"Maximum of {agent_run_result['limit']} concurrent runs. You have {agent_run_result['running_count']} running.",
             "running_thread_ids": running_ids,
@@ -137,6 +192,7 @@ async def _check_billing_and_limits(
         })
 
     # Check project limit
+    project_result = limits_result['projects']
     if check_project_limit and not project_result.get('can_create', True):
         raise HTTPException(status_code=402, detail={
             "message": f"Maximum of {project_result['limit']} projects allowed.",
@@ -146,6 +202,7 @@ async def _check_billing_and_limits(
         })
     
     # Check thread limit
+    thread_result = limits_result['threads']
     if check_thread_limit and not thread_result.get('can_create', True):
         raise HTTPException(status_code=402, detail={
             "message": f"Maximum of {thread_result['limit']} threads allowed.",
@@ -155,8 +212,48 @@ async def _check_billing_and_limits(
         })
 
 
+async def _check_concurrent_runs_limit(account_id: str):
+    from core.cache.runtime_cache import get_cached_running_runs, get_cached_tier_info
+    from core.billing.subscriptions import subscription_service
+    
+    tier_info = await get_cached_tier_info(account_id)
+    if not tier_info:
+        concurrent_limit = 1
+    else:
+        concurrent_limit = tier_info.get('concurrent_runs', 1)
+    
+    cached_runs = await get_cached_running_runs(account_id)
+    if cached_runs is not None:
+        running_count = len(cached_runs) if isinstance(cached_runs, list) else cached_runs
+        if running_count >= concurrent_limit:
+            from core.utils.limits_repo import count_running_agent_runs
+            run_details = await count_running_agent_runs(account_id)
+            running_ids = [str(tid) for tid in run_details.get('running_thread_ids', [])]
+            raise HTTPException(status_code=402, detail={
+                "message": f"Maximum of {concurrent_limit} concurrent runs. You have {running_count} running.",
+                "running_thread_ids": running_ids,
+                "running_count": running_count,
+                "limit": concurrent_limit,
+                "error_code": "AGENT_RUN_LIMIT_EXCEEDED"
+            })
+        return
+    
+    from core.utils.limits_repo import count_running_agent_runs
+    run_details = await count_running_agent_runs(account_id)
+    running_count = run_details.get('count', 0)
+    
+    if running_count >= concurrent_limit:
+        running_ids = [str(tid) for tid in run_details.get('running_thread_ids', [])]
+        raise HTTPException(status_code=402, detail={
+            "message": f"Maximum of {concurrent_limit} concurrent runs. You have {running_count} running.",
+            "running_thread_ids": running_ids,
+            "running_count": running_count,
+            "limit": concurrent_limit,
+            "error_code": "AGENT_RUN_LIMIT_EXCEEDED"
+        })
+
+
 async def _get_effective_model(model_name: Optional[str], agent_config: Optional[dict], client, account_id: str) -> str:
-    """Determine effective model to use."""
     if model_name:
         return model_name
     elif agent_config and agent_config.get('model'):
@@ -211,10 +308,6 @@ async def _create_agent_run_record(
     return agent_run_id
 
 
-# ============================================================================
-# Core Agent Start Logic
-# ============================================================================
-
 async def start_agent_run(
     account_id: str,
     prompt: str,
@@ -228,94 +321,214 @@ async def start_agent_run(
     memory_enabled: Optional[bool] = None,
     is_optimistic: bool = False,
     emit_timing: bool = False,
-    mode: Optional[str] = None,  # Mode: slides, sheets, docs, canvas, video, research
+    mode: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Start an agent run - core business logic."""
-    from core.agents.config import load_agent_config
-    from core.threads import repo as threads_repo
-    from core.utils.project_helpers import generate_and_update_project_name
+    from core.agents.config import load_agent_config_fast
+    from core.agents.pipeline.slot_manager import (
+        reserve_slot,
+        check_thread_limit,
+        check_project_limit,
+    )
+    from core.agents.pipeline.time_estimator import time_estimator
+    from core.agents.pipeline.ux_streaming import stream_ack, stream_estimate
     
-    # Timing instrumentation for stress testing
-    timing_breakdown = {}
     total_start = time.time()
-    
-    client = await db.client
     is_new_thread = thread_id is None or is_optimistic
-    now_iso = datetime.now(timezone.utc).isoformat()
     
     logger.info(f"🚀 start_agent_run: is_optimistic={is_optimistic}, is_new_thread={is_new_thread}")
     
-    image_contexts_to_inject = []
-    final_message_content = prompt
+    agent_config = await load_agent_config_fast(agent_id, account_id, user_id=account_id)
     
-    # Parallel: load config + check limits
-    step_start = time.time()
+    if model_name:
+        effective_model = model_name
+    elif agent_config and agent_config.get('model'):
+        effective_model = agent_config['model']
+    else:
+        effective_model = "anthropic/claude-sonnet-4-20250514"
     
-    async def load_config():
-        return await load_agent_config(agent_id, account_id, user_id=account_id, client=client, is_new_thread=is_new_thread)
-    
-    async def check_limits():
-        if not skip_limits_check:
-            await _check_billing_and_limits(client, account_id, model_name or "default", 
-                                           check_project_limit=is_new_thread, check_thread_limit=is_new_thread)
-    
-    agent_config, _ = await asyncio.gather(load_config(), check_limits())
-    timing_breakdown["load_config_ms"] = round((time.time() - step_start) * 1000, 1)
-    
-    step_start = time.time()
-    effective_model = await _get_effective_model(model_name, agent_config, client, account_id)
-    timing_breakdown["get_model_ms"] = round((time.time() - step_start) * 1000, 1)
-    
-    # For existing threads, fetch project_id
     if not is_new_thread and not project_id:
+        from core.threads import repo as threads_repo
         project_id = await threads_repo.get_thread_project_id(thread_id)
     
-    # Create project/thread for new threads
+    if is_new_thread and not skip_limits_check:
+        thread_check, project_check = await asyncio.gather(
+            check_thread_limit(account_id, skip=skip_limits_check),
+            check_project_limit(account_id, skip=skip_limits_check),
+        )
+        
+        if not thread_check.allowed:
+            logger.warning(f"⚠️ Thread limit exceeded for {account_id}: {thread_check.current_count}/{thread_check.limit}")
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": thread_check.message,
+                    "current_count": thread_check.current_count,
+                    "limit": thread_check.limit,
+                    "error_code": thread_check.error_code or "THREAD_LIMIT_EXCEEDED"
+                }
+            )
+        
+        if not project_check.allowed:
+            logger.warning(f"⚠️ Project limit exceeded for {account_id}: {project_check.current_count}/{project_check.limit}")
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "message": project_check.message,
+                    "current_count": project_check.current_count,
+                    "limit": project_check.limit,
+                    "error_code": project_check.error_code or "PROJECT_LIMIT_EXCEEDED"
+                }
+            )
+    
     if is_new_thread:
         if not project_id:
             project_id = str(uuid.uuid4())
         if not thread_id:
             thread_id = str(uuid.uuid4())
-        
-        placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
-        
-        step_start = time.time()
-        await threads_repo.create_project_and_thread(
+    
+    agent_run_id = str(uuid.uuid4())
+    
+    slot_reservation = await reserve_slot(
+        account_id=account_id,
+        agent_run_id=agent_run_id,
+        skip=skip_limits_check
+    )
+    
+    if not slot_reservation.acquired:
+        logger.warning(f"⚠️ Slot rejected for {agent_run_id}: {slot_reservation.message}")
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "message": slot_reservation.message,
+                "running_count": slot_reservation.slot_count,
+                "limit": slot_reservation.limit,
+                "error_code": slot_reservation.error_code or "AGENT_RUN_LIMIT_EXCEEDED"
+            }
+        )
+    
+    cancellation_event = asyncio.Event()
+    _cancellation_events[agent_run_id] = cancellation_event
+    
+    stream_key = f"agent_run:{agent_run_id}:stream"
+    
+    asyncio.create_task(stream_ack(stream_key, agent_run_id))
+    
+    has_mcp = bool(agent_config and agent_config.get('mcp_servers'))
+    estimate = time_estimator.estimate(
+        model_name=effective_model,
+        has_mcp=has_mcp,
+        is_continuation=False
+    )
+    asyncio.create_task(stream_estimate(
+        stream_key,
+        estimate.estimated_seconds,
+        estimate.confidence,
+        estimate.breakdown.to_dict()
+    ))
+
+    if is_new_thread:
+        from core.cache.runtime_cache import set_pending_thread, set_agent_run_stream_data
+        await set_pending_thread(
+            thread_id=thread_id,
             project_id=project_id,
+            account_id=account_id,
+            agent_run_id=agent_run_id,
+            prompt=prompt
+        )
+        await set_agent_run_stream_data(
+            agent_run_id=agent_run_id,
             thread_id=thread_id,
             account_id=account_id,
-            project_name=placeholder_name,
-            thread_name="New Chat",
-            status="pending",
-            memory_enabled=memory_enabled
+            status="running",
+            metadata=metadata
         )
-        timing_breakdown["create_project_and_thread_ms"] = round((time.time() - step_start) * 1000, 1)
+    else:
+        from core.cache.runtime_cache import set_agent_run_stream_data
+        await set_agent_run_stream_data(
+            agent_run_id=agent_run_id,
+            thread_id=thread_id,
+            account_id=account_id,
+            status="running",
+            metadata=metadata
+        )
+
+    setup_time_ms = round((time.time() - total_start) * 1000, 1)
+    logger.info(f"⚡ [FAST RESPONSE] Returning in {setup_time_ms}ms (thread={thread_id}, run={agent_run_id})")
+    
+    asyncio.create_task(_background_setup_and_execute(
+        account_id=account_id,
+        prompt=prompt,
+        thread_id=thread_id,
+        project_id=project_id,
+        agent_run_id=agent_run_id,
+        agent_config=agent_config,
+        effective_model=effective_model,
+        metadata=metadata,
+        staged_files=staged_files,
+        memory_enabled=memory_enabled,
+        is_new_thread=is_new_thread,
+        mode=mode,
+        cancellation_event=cancellation_event,
+        skip_limits_check=skip_limits_check,
+    ))
+    
+    return {
+        "thread_id": thread_id,
+        "agent_run_id": agent_run_id,
+        "project_id": project_id,
+        "status": "running",
+        "timing_breakdown": {"setup_ms": setup_time_ms} if emit_timing else None,
+    }
+
+
+async def _background_setup_and_execute(
+    account_id: str,
+    prompt: str,
+    thread_id: str,
+    project_id: str,
+    agent_run_id: str,
+    agent_config: dict,
+    effective_model: str,
+    metadata: Optional[Dict[str, Any]],
+    staged_files: Optional[List[Dict[str, Any]]],
+    memory_enabled: Optional[bool],
+    is_new_thread: bool,
+    mode: Optional[str],
+    cancellation_event: asyncio.Event,
+    skip_limits_check: bool = False,
+):
+    from core.utils.lifecycle_tracker import log_run_start, log_run_cleanup
+    from core.agents.runner.setup_manager import (
+        prepopulate_caches_for_new_thread,
+        append_user_message_to_cache,
+        write_user_message_for_existing_thread,
+        prewarm_user_context,
+        create_new_thread_records,
+        create_agent_run_record,
+        create_image_messages,
+        notify_setup_error,
+    )
+    
+    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.bind_contextvars(
+        agent_run_id=agent_run_id, 
+        thread_id=thread_id, 
+        project_id=project_id,
+        account_id=account_id
+    )
+    
+    try:
+        final_message_content = prompt
+        image_contexts_to_inject = []
         
-        from core.cache.runtime_cache import set_cached_project_metadata, increment_thread_count_cache
-        from core.utils.thread_name_generator import generate_and_update_thread_name
-        
-        # Cache project metadata with mode if provided
-        project_metadata = {"mode": mode} if mode else {}
-        asyncio.create_task(set_cached_project_metadata(project_id, project_metadata))
-        asyncio.create_task(generate_and_update_project_name(project_id=project_id, prompt=prompt))
-        if prompt:
-            asyncio.create_task(generate_and_update_thread_name(thread_id=thread_id, prompt=prompt))
-        asyncio.create_task(increment_thread_count_cache(account_id))
-        
-        if project_id != thread_id:
-            async def migrate_file_cache():
-                try:
-                    old_key = f"file_context:{project_id}"
-                    new_key = f"file_context:{thread_id}"
-                    cached = await redis.get(old_key)
-                    if cached:
-                        await redis.set(new_key, cached, ex=3600)
-                        await redis.delete(old_key)
-                except Exception:
-                    pass
-            asyncio.create_task(migrate_file_cache())
-        
-        structlog.contextvars.bind_contextvars(thread_id=thread_id, project_id=project_id, account_id=account_id)
+        if is_new_thread and staged_files:
+            from core.threads import repo as threads_repo
+            placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
+            logger.debug(f"⚡ [BG] Creating project row first (before sandbox claim)")
+            try:
+                await threads_repo.create_project(project_id, account_id, placeholder_name)
+            except Exception as e:
+                logger.debug(f"Project creation skipped (may already exist): {e}")
         
         if staged_files:
             final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
@@ -325,74 +538,74 @@ async def start_agent_run(
                 prompt=prompt,
                 account_id=account_id
             )
-    
-    elif not is_new_thread and staged_files:
-        final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
-            staged_files=staged_files,
-            thread_id=thread_id,
-            project_id=project_id,
-            prompt=prompt,
-            account_id=account_id
-        )
-    
-    async def create_message():
-        if not final_message_content or not final_message_content.strip():
-            return
-        await threads_repo.create_message_full(
-            message_id=str(uuid.uuid4()),
-            thread_id=thread_id,
-            message_type="user",
-            content={"role": "user", "content": final_message_content},
-            is_llm_message=True
-        )
-    
-    async def create_agent_run():
-        return await _create_agent_run_record(thread_id, agent_config, effective_model, account_id, metadata)
-    
-    async def update_thread_status():
-        await threads_repo.update_thread_status(
-            thread_id=thread_id,
-            status="ready",
-            initialization_started_at=now_iso,
-            initialization_completed_at=now_iso
-        )
-    
-    step_start = time.time()
-    _, agent_run_id, _ = await asyncio.gather(create_message(), create_agent_run(), update_thread_status())
-    timing_breakdown["create_message_and_run_ms"] = round((time.time() - step_start) * 1000, 1)
-    
-    # Insert image contexts in background
-    if image_contexts_to_inject:
-        async def insert_images():
-            await threads_repo.set_thread_has_images(thread_id)
-            for img in image_contexts_to_inject:
-                try:
-                    await threads_repo.create_message_full(
-                        message_id=str(uuid.uuid4()),
+        
+        if is_new_thread:
+            await prepopulate_caches_for_new_thread(
+                thread_id=thread_id,
+                project_id=project_id,
+                message_content=final_message_content,
+                image_contexts=image_contexts_to_inject,
+                mode=mode,
+            )
+            cache_updated = False
+        else:
+            cache_updated = await append_user_message_to_cache(thread_id, final_message_content)
+            if not cache_updated:
+                logger.debug(f"⚠️ Cache miss for thread {thread_id}, writing message to DB first")
+                await write_user_message_for_existing_thread(thread_id, final_message_content)
+        
+        logger.debug(f"⚡ [BG] Caches ready, starting agent + DB writes in parallel")
+        
+        asyncio.create_task(prewarm_user_context(account_id))
+        
+        from core.agents.runner.setup_manager import prewarm_credit_balance
+        credit_prewarm_task = asyncio.create_task(prewarm_credit_balance(account_id))
+        
+        async def do_db_writes():
+            db_start = time.time()
+            try:
+                if is_new_thread:
+                    await create_new_thread_records(
+                        project_id=project_id,
                         thread_id=thread_id,
-                        message_type="image_context",
-                        content={
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": f"[Image: {img['filename']}]"},
-                                {"type": "image_url", "image_url": {"url": img['url']}}
-                            ]
-                        },
-                        is_llm_message=True,
-                        metadata={"file_path": img['filename'], "mime_type": img['mime_type'], "source": "user_upload"}
+                        account_id=account_id,
+                        prompt=prompt,
+                        agent_run_id=agent_run_id,
+                        message_content=final_message_content,
+                        agent_config=agent_config,
+                        metadata=metadata,
+                        memory_enabled=memory_enabled,
                     )
-                except Exception:
-                    pass
-        asyncio.create_task(insert_images())
-    
-    # Execute agent run as background task
-    cancellation_event = asyncio.Event()
-    _cancellation_events[agent_run_id] = cancellation_event
-    
-    async def execute_run():
-        from core.utils.lifecycle_tracker import log_run_start, log_run_cleanup
+                    from core.agents.pipeline.slot_manager import (
+                        increment_thread_count,
+                        increment_project_count,
+                    )
+                    await asyncio.gather(
+                        increment_thread_count(account_id),
+                        increment_project_count(account_id),
+                    )
+                else:
+                    if cache_updated:
+                        await write_user_message_for_existing_thread(thread_id, final_message_content)
+                    await create_agent_run_record(
+                        agent_run_id=agent_run_id,
+                        thread_id=thread_id,
+                        agent_config=agent_config,
+                        effective_model=effective_model,
+                        account_id=account_id,
+                        extra_metadata=metadata,
+                    )
+                
+                await create_image_messages(thread_id, image_contexts_to_inject)
+                logger.debug(f"⏱️ [BG] DB writes completed: {(time.time() - db_start)*1000:.1f}ms")
+            except Exception as e:
+                logger.error(f"❌ [BG] DB write failed: {e}")
         
         log_run_start(agent_run_id, thread_id)
+        
+        db_task = asyncio.create_task(do_db_writes())
+        logger.info(f"✅ [BG] Starting agent execution")
+        
         cleanup_reason = None
         final_status = "unknown"
         cleanup_errors = []
@@ -406,7 +619,8 @@ async def start_agent_run(
                 agent_config=agent_config,
                 account_id=account_id,
                 cancellation_event=cancellation_event,
-                is_new_thread=is_new_thread
+                is_new_thread=is_new_thread,
+                user_message=final_message_content
             )
             final_status = "completed"
         except asyncio.CancelledError:
@@ -417,16 +631,25 @@ async def start_agent_run(
             cleanup_reason = f"{type(e).__name__}: {str(e)[:100]}"
             logger.error(f"[LIFECYCLE] EXCEPTION agent_run={agent_run_id} error={cleanup_reason}")
         finally:
-            # Track _cancellation_events cleanup
+            # CRITICAL: Release the slot we reserved at the start
+            try:
+                from core.agents.pipeline.slot_manager import release_slot
+                await release_slot(account_id, agent_run_id)
+            except Exception as slot_err:
+                logger.error(f"[SLOT] Failed to release slot for {agent_run_id}: {slot_err}")
+                cleanup_errors.append(f"slot_release: {slot_err}")
+            
+            try:
+                await asyncio.wait_for(db_task, timeout=30.0)
+            except asyncio.TimeoutError:
+                logger.warning(f"⚠️ [BG] DB writes timed out after 30s")
+            except Exception as e:
+                logger.warning(f"⚠️ [BG] DB writes failed: {e}")
+            
             was_in_events = _cancellation_events.pop(agent_run_id, None) is not None
             if not was_in_events:
                 cleanup_errors.append("not_in_cancellation_events")
-                logger.warning(
-                    f"[LIFECYCLE] agent_run={agent_run_id} "
-                    f"was NOT in _cancellation_events at cleanup"
-                )
             
-            # Log final cleanup status
             log_run_cleanup(
                 agent_run_id, 
                 success=(cleanup_reason is None),
@@ -435,24 +658,17 @@ async def start_agent_run(
                 cleanup_errors=cleanup_errors if cleanup_errors else None
             )
     
-    asyncio.create_task(execute_run())
-    logger.info(f"✅ Started agent run {agent_run_id} as background task")
-    
-    # Calculate total setup time
-    timing_breakdown["total_setup_ms"] = round((time.time() - total_start) * 1000, 1)
-    
-    return {
-        "thread_id": thread_id,
-        "agent_run_id": agent_run_id,
-        "project_id": project_id,
-        "status": "running",
-        "timing_breakdown": timing_breakdown if emit_timing else None,
-    }
+    except Exception as e:
+        logger.error(f"❌ [BG] Setup failed for agent_run={agent_run_id}: {e}")
+        # Release slot on setup failure too
+        try:
+            from core.agents.pipeline.slot_manager import release_slot
+            await release_slot(account_id, agent_run_id)
+        except Exception:
+            pass
+        _cancellation_events.pop(agent_run_id, None)
+        await notify_setup_error(agent_run_id, e)
 
-
-# ============================================================================
-# API Endpoints
-# ============================================================================
 
 @router.post("/agent/start", response_model=UnifiedAgentStartResponse, summary="Start Agent", operation_id="unified_agent_start")
 async def unified_agent_start(
@@ -465,25 +681,21 @@ async def unified_agent_start(
     file_ids: List[str] = Form(default=[]),
     optimistic: Optional[str] = Form(None),
     memory_enabled: Optional[str] = Form(None),
-    mode: Optional[str] = Form(None),  # Mode: slides, sheets, docs, canvas, video, research
+    mode: Optional[str] = Form(None),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Start an agent run. Files must be staged via /files/stage first."""
     client = await db.client
     account_id = user_id
     is_optimistic = optimistic and optimistic.lower() == 'true'
     
-    # Get staged files if file_ids provided
     staged_files_data = None
     if file_ids:
         target_id = thread_id or project_id or str(uuid.uuid4())
         staged_files_data = await get_staged_files_for_thread(file_ids, user_id, target_id)
     
-    # Validation
     if is_optimistic:
         if not thread_id or not project_id:
             raise HTTPException(status_code=400, detail="thread_id and project_id required for optimistic mode")
-        # Allow empty prompt if file_ids provided (file-only submission)
         if (not prompt or not prompt.strip()) and not file_ids:
             raise HTTPException(status_code=400, detail="prompt or file_ids required for optimistic mode")
         try:
@@ -495,7 +707,6 @@ async def unified_agent_start(
     if not is_optimistic and not thread_id and (not prompt or not prompt.strip()) and not file_ids:
         raise HTTPException(status_code=400, detail="prompt or file_ids required when creating new thread")
     
-    # Resolve model
     if model_name is None:
         model_name = await model_manager.get_default_model_for_user(client, account_id)
     elif model_name != "mock-ai":
@@ -503,8 +714,6 @@ async def unified_agent_start(
     
     memory_enabled_bool = memory_enabled.lower() == 'true' if memory_enabled else None
     
-    # Check for admin bypass header (for stress testing)
-    # Must verify user is super_admin before trusting the header
     skip_limits = False
     emit_timing = False
     if request.headers.get("X-Skip-Limits", "").lower() == "true":
@@ -512,11 +721,9 @@ async def unified_agent_start(
         role_info = await get_user_admin_role(user_id)
         if role_info.get('role') == 'super_admin':
             skip_limits = True
-            # Also check for timing emission (stress test feature)
             emit_timing = request.headers.get("X-Emit-Timing", "").lower() == "true"
     
     try:
-        # Verify access for existing threads
         if thread_id and not is_optimistic:
             from core.threads import repo as threads_repo
             thread_data = await threads_repo.get_thread_with_project(thread_id)
@@ -547,7 +754,6 @@ async def unified_agent_start(
             "project_id": result.get("project_id"),
             "status": result.get("status", "running")
         }
-        # Include timing breakdown for stress testing (only when emit_timing is True)
         if emit_timing and result.get("timing_breakdown"):
             response["timing_breakdown"] = result["timing_breakdown"]
         return response
@@ -592,8 +798,26 @@ async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_fr
 
 @router.get("/thread/{thread_id}/agent-runs", summary="List Thread Agent Runs", operation_id="list_thread_agent_runs")
 async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    """List agent runs for a thread."""
     from core.agents.repo import get_thread_agent_runs as repo_get_thread_runs
+    from core.cache.runtime_cache import get_pending_thread
+    from core.threads import repo as threads_repo
+    
+    thread = await threads_repo.get_thread_by_id(thread_id)
+    
+    if not thread:
+        pending = await get_pending_thread(thread_id)
+        if pending:
+            logger.debug(f"Thread {thread_id} is pending, returning pending agent run")
+            return {
+                "agent_runs": [{
+                    "id": pending.get('agent_run_id'),
+                    "status": "running",
+                    "started_at": pending.get('created_at'),
+                    "completed_at": None
+                }] if pending.get('agent_run_id') else [],
+                "_pending": True
+            }
+        raise HTTPException(status_code=404, detail="Thread not found")
     
     client = await db.client
     await verify_and_authorize_thread_access(client, thread_id, user_id)
@@ -603,7 +827,6 @@ async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_u
 
 @router.get("/agent-run/{agent_run_id}", summary="Get Agent Run", operation_id="get_agent_run")
 async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    """Get agent run details."""
     from core.agents.repo import get_agent_run_by_id as repo_get_run
     
     agent_run_data = await repo_get_run(agent_run_id)
@@ -633,16 +856,51 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
 async def stream_agent_run(
     agent_run_id: str,
     token: Optional[str] = None,
+    last_id: Optional[str] = None,
     request: Request = None
 ):
-    """Stream agent run responses via SSE."""
+    from core.agents import repo as agents_repo
+    from core.cache.runtime_cache import get_agent_run_stream_data
+    
     user_id = await get_user_id_from_stream_auth(request, token)
-    agent_run_data = await _get_agent_run_with_access_check(agent_run_id, user_id)
-
     stream_key = f"agent_run:{agent_run_id}:stream"
+    
+    agent_run_data = await get_agent_run_stream_data(agent_run_id)
+    
+    if not agent_run_data:
+        agent_run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
+    
+    if not agent_run_data:
+        for attempt in range(15):
+            await asyncio.sleep(0.2)
+            agent_run_data = await get_agent_run_stream_data(agent_run_id)
+            if agent_run_data:
+                break
+
+            agent_run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
+            if agent_run_data:
+                break
+            if attempt >= 5:
+                try:
+                    stream_len = await redis.stream_len(stream_key)
+                    if stream_len > 0:
+                        continue
+                except Exception:
+                    pass
+        
+        if not agent_run_data:
+            raise HTTPException(status_code=404, detail="Worker run not found")
+    
+    thread_id = agent_run_data['thread_id']
+    account_id = agent_run_data['thread_account_id']
+    
+    if user_id != account_id:
+        metadata = agent_run_data.get('metadata', {}) or {}
+        shared_users = metadata.get('shared_users', [])
+        if user_id not in shared_users:
+            raise HTTPException(status_code=403, detail="Access denied")
 
     def compare_stream_ids(id1: str, id2: str) -> int:
-        """Compare Redis stream IDs. Returns -1 if id1 < id2, 0 if equal, 1 if id1 > id2."""
         try:
             t1, s1 = id1.split('-')
             t2, s2 = id2.split('-')
@@ -653,7 +911,6 @@ async def stream_agent_run(
             return -1 if id1 < id2 else (0 if id1 == id2 else 1)
 
     def find_last_safe_boundary(entries):
-        """Find last safe trim boundary in stream entries."""
         last_safe = -1
         open_responses = 0
 
@@ -677,45 +934,45 @@ async def stream_agent_run(
             return -1
         return last_safe
 
-    async def stream_generator(agent_run_data):
+    async def stream_generator(agent_run_data, client_last_id: Optional[str] = None):
         terminate = False
-        last_id = "0"
+        last_id = client_last_id if client_last_id and client_last_id != "0" else "0"
+        skip_catchup = client_last_id and client_last_id != "0"
 
         try:
-            # Initial catch-up
-            entries = await redis.stream_range(stream_key)
-            if entries:
-                for entry_id, fields in entries:
-                    response = json.loads(fields.get('data', '{}'))
-                    yield f"data: {json.dumps(response)}\n\n"
-                    last_id = entry_id
-                    if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
-                        return
-                
-                # Trim processed entries
-                if last_id != "0":
-                    try:
-                        safe_idx = find_last_safe_boundary(entries)
-                        if safe_idx >= 0:
-                            safe_id = entries[safe_idx][0]
-                            if '-' in safe_id:
-                                parts = safe_id.split('-')
-                                if len(parts) == 2:
-                                    next_id = f"{parts[0]}-{int(parts[1]) + 1}"
-                                    await redis.xtrim_minid(stream_key, next_id, approximate=True)
-                    except Exception:
-                        pass
+            entries = []
+            if not skip_catchup:
+                entries = await redis.stream_range(stream_key) or []
+                if entries:
+                    for entry_id, fields in entries:
+                        response = json.loads(fields.get('data', '{}'))
+                        response['_event_id'] = entry_id
+                        yield f"data: {json.dumps(response)}\n\n"
+                        last_id = entry_id
+                        if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
+                            return
+                    
+                    if last_id != "0":
+                        try:
+                            safe_idx = find_last_safe_boundary(entries)
+                            if safe_idx >= 0:
+                                safe_id = entries[safe_idx][0]
+                                if '-' in safe_id:
+                                    parts = safe_id.split('-')
+                                    if len(parts) == 2:
+                                        next_id = f"{parts[0]}-{int(parts[1]) + 1}"
+                                        await redis.xtrim_minid(stream_key, next_id, approximate=True)
+                        except Exception as e:
+                            logger.warning(f"Error in stream catch-up: {e}")
 
             if agent_run_data.get('status') != 'running':
                 yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
                 return
 
-            # Use hub for fan-out: N clients watching same stream = 1 Redis XREAD + N queues
-            # This fixes connection starvation when many SSE clients connect
             timeout_count = 0
             ping_count = 0
-            received_data = bool(entries)
-            MAX_PINGS_WITHOUT_DATA = 4  # ~20 seconds without data = check for dead worker
+            received_data = bool(entries) if not skip_catchup else False
+            MAX_PINGS_WITHOUT_DATA = 4
 
             try:
                 async with redis.redis.hub.subscription(stream_key, last_id) as queue:
@@ -732,15 +989,16 @@ async def stream_agent_run(
                             timeout_count = 0
                             ping_count = 0
                             data = fields.get('data', '{}')
-                            yield f"data: {data}\n\n"
-                            last_id = entry_id
-
+                            # Include event ID in response for client tracking
                             try:
                                 response = json.loads(data)
+                                response['_event_id'] = entry_id
+                                yield f"data: {json.dumps(response)}\n\n"
                                 if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
                                     return
                             except Exception:
-                                pass
+                                yield f"data: {data}\n\n"
+                            last_id = entry_id
                         else:
                             # Timeout (0.5s) - send ping every ~5 seconds
                             timeout_count += 1
@@ -773,7 +1031,7 @@ async def stream_agent_run(
             yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': str(e)})}\n\n"
 
     return StreamingResponse(
-        stream_generator(agent_run_data), 
+        stream_generator(agent_run_data, last_id), 
         media_type="text/event-stream", 
         headers={
             "Cache-Control": "no-cache, no-transform", 

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, memo } from "react";
+import React, { useState, useRef, useEffect, memo } from "react";
 import { ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";

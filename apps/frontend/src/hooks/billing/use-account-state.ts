@@ -133,16 +133,14 @@ export function useAccountState(options?: UseAccountStateOptions) {
     queryKey: accountStateKeys.state(),
     queryFn: () => billingApi.getAccountState(options?.skipCache ?? false),
     enabled,
-    staleTime: options?.staleTime ?? 1000 * 60 * 10, // 10 minutes
-    gcTime: 1000 * 60 * 15, // 15 minutes
+    staleTime: options?.staleTime ?? 1000 * 60 * 2,
+    gcTime: 1000 * 60 * 15,
     refetchOnWindowFocus: options?.refetchOnWindowFocus ?? false,
-    refetchOnMount: options?.refetchOnMount ?? false,
+    refetchOnMount: options?.refetchOnMount ?? 'always',
     refetchOnReconnect: true,
-    // Enable request deduplication - React Query will batch simultaneous requests
     structuralSharing: true,
     retry: enabled ? (failureCount, error) => {
       const message = (error as Error).message || '';
-      // Don't retry on auth errors
       if (message.includes('401') || message.includes('403')) {
         return false;
       }

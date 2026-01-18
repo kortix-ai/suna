@@ -41,13 +41,19 @@ class CreditManager:
                 if result:
                     logger.info(f"[ATOMIC] Added ${amount} credits to {account_id} atomically")
                     
-                    await Cache.invalidate(f"credit_balance:{account_id}")
+                    new_balance = Decimal(str(result.get('new_balance', 0)))
+                    # Update cache with new balance instead of invalidating
+                    balance_data = {
+                        'total': float(new_balance),
+                        'account_id': account_id
+                    }
+                    await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
                     await Cache.invalidate(f"credit_summary:{account_id}")
                     
                     return {
                         'success': True,
                         'ledger_id': result.get('ledger_id'),
-                        'new_balance': Decimal(str(result.get('new_balance', 0))),
+                        'new_balance': new_balance,
                         'amount_added': amount
                     }
                 else:
@@ -92,14 +98,20 @@ class CreditManager:
                     if result.get('success'):
                         logger.info(f"[ATOMIC] Reset expiring credits to ${new_credits} for {account_id} atomically")
                         
-                        await Cache.invalidate(f"credit_balance:{account_id}")
+                        total_balance = result.get('total_balance', 0)
+                        # Update cache with new balance instead of invalidating
+                        balance_data = {
+                            'total': float(total_balance),
+                            'account_id': account_id
+                        }
+                        await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
                         await Cache.invalidate(f"credit_summary:{account_id}")
                         
                         return {
                             'success': True,
                             'new_expiring': result.get('new_expiring', 0),
                             'non_expiring': result.get('non_expiring', 0),
-                            'total_balance': result.get('total_balance', 0)
+                            'total_balance': total_balance
                         }
                     else:
                         logger.error(f"[ATOMIC] Failed to reset credits: {result.get('error')}")
@@ -151,7 +163,12 @@ class CreditManager:
             stripe_event_id=stripe_event_id
         )
         
-        await Cache.invalidate(f"credit_balance:{account_id}")
+        # Update cache with new balance instead of invalidating
+        balance_data = {
+            'total': float(new_total),
+            'account_id': account_id
+        }
+        await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
         await Cache.invalidate(f"credit_summary:{account_id}")
         
         return {
@@ -188,10 +205,15 @@ class CreditManager:
             stripe_event_id=stripe_event_id
         )
         
-        await Cache.invalidate(f"credit_balance:{account_id}")
-        await Cache.invalidate(f"credit_summary:{account_id}")
-        
         new_balance = Decimal(str(result.get('new_balance', 0)))
+        
+        # Update cache with new balance instead of invalidating
+        balance_data = {
+            'total': float(new_balance),
+            'account_id': account_id
+        }
+        await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
+        await Cache.invalidate(f"credit_summary:{account_id}")
         
         logger.info(f"[MANUAL] Successfully added ${amount} credits to {account_id}. New balance: ${new_balance}")
         
@@ -247,11 +269,16 @@ class CreditManager:
         if not ledger_result:
             raise Exception("Failed to insert new ledger record")
         
-        await Cache.invalidate(f"credit_balance:{account_id}")
-        await Cache.invalidate(f"credit_summary:{account_id}")
-        
-        balance_info = await self.get_balance(account_id)
+        balance_info = await self.get_balance(account_id, use_cache=False)
         new_balance = Decimal(str(balance_info.get('total', 0)))
+        
+        # Update cache with new balance instead of invalidating
+        balance_data = {
+            'total': float(new_balance),
+            'account_id': account_id
+        }
+        await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
+        await Cache.invalidate(f"credit_summary:{account_id}")
         
         logger.info(f"[MANUAL RESET] Successfully reset expiring credits to ${new_credits} for {account_id}. New balance: ${new_balance}")
         
@@ -299,7 +326,13 @@ class CreditManager:
                     amount_deducted = amount
                     success = result.get('success', True)
                     
-                    await Cache.invalidate(f"credit_balance:{account_id}")
+                    # Update cache with new balance instead of invalidating
+                    # This prevents slow DB queries on the next billing check
+                    balance_data = {
+                        'total': float(new_balance),
+                        'account_id': account_id
+                    }
+                    await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
                     await Cache.invalidate(f"credit_summary:{account_id}")
                     
                     logger.info(f"[ATOMIC] Deducted ${amount_deducted} from {account_id}. New balance: ${new_balance}")
@@ -346,10 +379,15 @@ class CreditManager:
             message_id=message_id
         )
         
-        await Cache.invalidate(f"credit_balance:{account_id}")
-        await Cache.invalidate(f"credit_summary:{account_id}")
-        
         new_balance = Decimal(str(result.get('new_balance', 0)))
+        
+        # Update cache with new balance instead of invalidating
+        balance_data = {
+            'total': float(new_balance),
+            'account_id': account_id
+        }
+        await Cache.set(f"credit_balance:{account_id}", balance_data, ttl=300)
+        await Cache.invalidate(f"credit_summary:{account_id}")
         
         logger.info(f"[MANUAL] Successfully deducted ${amount} from {account_id}. New balance: ${new_balance}")
         

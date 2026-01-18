@@ -8,14 +8,69 @@ from typing import Optional, Dict, Any
 from core.utils.logger import logger
 
 
+async def load_agent_config_fast(
+    agent_id: Optional[str], 
+    account_id: Optional[str], 
+    user_id: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    from core.cache.runtime_cache import (
+        get_static_suna_config, 
+        get_cached_user_mcps,
+        get_cached_agent_config
+    )
+    
+    t = time.time()
+    logger.info(f"⏱️ [AGENT CONFIG FAST] Starting for agent_id={agent_id}")
+    user_id = user_id or account_id
+    
+    try:
+        if not agent_id:
+            from core.agents import repo as agents_repo
+            agent_id = await agents_repo.get_default_agent_id(account_id)
+            if not agent_id:
+                logger.warning(f"[AGENT CONFIG FAST] No default agent for {account_id}")
+                return await load_agent_config(None, account_id, user_id)
+        
+        static_config = get_static_suna_config()
+        if static_config:
+            cached_mcps = await get_cached_user_mcps(agent_id)
+            
+            agent_config = {
+                'agent_id': agent_id,
+                'system_prompt': static_config['system_prompt'],
+                'model': static_config['model'],
+                'agentpress_tools': static_config['agentpress_tools'],
+                'centrally_managed': static_config['centrally_managed'],
+                'is_suna_default': static_config['is_suna_default'],
+                'restrictions': static_config['restrictions'],
+                'configured_mcps': cached_mcps.get('configured_mcps', []) if cached_mcps else [],
+                'custom_mcps': cached_mcps.get('custom_mcps', []) if cached_mcps else [],
+                'triggers': cached_mcps.get('triggers', []) if cached_mcps else [],
+                '_mcps_need_loading': cached_mcps is None,
+            }
+            logger.info(f"⏱️ [AGENT CONFIG FAST] Static config: {(time.time() - t) * 1000:.1f}ms (mcps_cached={cached_mcps is not None})")
+            return agent_config
+        
+        cached_config = await get_cached_agent_config(agent_id)
+        if cached_config:
+            logger.info(f"⏱️ [AGENT CONFIG FAST] Full cache hit: {(time.time() - t) * 1000:.1f}ms")
+            return cached_config
+        
+        logger.info(f"⏱️ [AGENT CONFIG FAST] Cache miss, falling back to full load")
+        return await load_agent_config(agent_id, account_id, user_id)
+        
+    except Exception as e:
+        logger.warning(f"[AGENT CONFIG FAST] Error: {e}, falling back to full load")
+        return await load_agent_config(agent_id, account_id, user_id)
+
+
 async def load_agent_config(
     agent_id: Optional[str], 
     account_id: Optional[str], 
     user_id: Optional[str] = None,
-    client = None,  # Kept for backward compatibility but not used for DB queries
+    client = None,
     is_new_thread: bool = False
 ) -> Optional[Dict[str, Any]]:
-    """Load agent configuration from cache or database."""
     from core.agents import repo as agents_repo
     
     t = time.time()
@@ -23,7 +78,6 @@ async def load_agent_config(
     user_id = user_id or account_id
     
     try:
-        # Handle default agent loading (agent_id is None)
         if not agent_id:
             logger.debug(f"[AGENT LOAD] Loading default agent")
             
@@ -34,7 +88,6 @@ async def load_agent_config(
             from core.agents.agent_loader import get_agent_loader
             loader = await get_agent_loader()
             
-            # Use repo for direct SQL query
             default_agent_id = await agents_repo.get_default_agent_id(account_id)
             
             if default_agent_id:
@@ -46,7 +99,6 @@ async def load_agent_config(
                 agent_data = await _find_shared_suna_agent()
                 
                 if not agent_data:
-                    # Fallback to any agent
                     any_agent_id = await agents_repo.get_any_agent_id(account_id)
                     
                     if any_agent_id:
@@ -59,7 +111,6 @@ async def load_agent_config(
                         raise HTTPException(status_code=404, detail="No agents available. Please create an agent first.")
                 return agent_data.to_dict()
         
-        # Handle specific agent loading
         from core.cache.runtime_cache import (
             get_static_suna_config, 
             get_cached_user_mcps,
@@ -116,14 +167,12 @@ async def load_agent_config(
 
 
 async def _find_shared_suna_agent():
-    """Find shared Suna agent (helper for default agent loading)."""
     from core.agents.agent_loader import get_agent_loader
     from core.utils.config import config
     from core.agents import repo as agents_repo
     
     admin_user_id = config.SYSTEM_ADMIN_USER_ID
     
-    # Use repo for direct SQL query
     shared_agent = await agents_repo.get_shared_suna_agent(admin_user_id)
     
     if shared_agent:

@@ -585,6 +585,45 @@ async def get_toolkit_icon(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.post("/toolkits/icons/batch")
+async def get_toolkit_icons_batch(
+    request: Request,
+    current_user_id: Optional[str] = Depends(get_optional_current_user_id_from_jwt)
+):
+    import asyncio
+    
+    try:
+        body = await request.json()
+        toolkit_slugs = body.get("toolkit_slugs", [])
+        
+        if not toolkit_slugs or not isinstance(toolkit_slugs, list):
+            raise HTTPException(status_code=400, detail="toolkit_slugs must be a non-empty list")
+        
+        if len(toolkit_slugs) > 50:
+            toolkit_slugs = toolkit_slugs[:50]
+        
+        toolkit_service = ToolkitService()
+        
+        async def fetch_icon(slug: str):
+            icon_url = await toolkit_service.get_toolkit_icon(slug)
+            return (slug, icon_url)
+        
+        results = await asyncio.gather(*[fetch_icon(slug) for slug in toolkit_slugs])
+        
+        icons = {slug: icon_url for slug, icon_url in results if icon_url}
+        
+        return {
+            "success": True,
+            "icons": icons
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting toolkit icons batch: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @router.post("/tools/list")
 async def list_toolkit_tools(
     request: ToolsListRequest,

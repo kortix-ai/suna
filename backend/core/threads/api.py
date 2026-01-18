@@ -183,17 +183,16 @@ async def create_thread_in_project(
             raise HTTPException(status_code=404, detail="Project not found or access denied")
         
         if config.ENV_MODE != EnvMode.LOCAL:
-            from core.utils.limits_checker import check_thread_limit
-            thread_limit_check = await check_thread_limit(account_id)
-            if not thread_limit_check['can_create']:
+            from core.agents.pipeline.slot_manager import check_thread_limit
+            thread_check = await check_thread_limit(account_id)
+            if not thread_check.allowed:
                 error_detail = {
-                    "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
-                    "current_count": thread_limit_check['current_count'],
-                    "limit": thread_limit_check['limit'],
-                    "tier_name": thread_limit_check['tier_name'],
-                    "error_code": "THREAD_LIMIT_EXCEEDED"
+                    "message": thread_check.message,
+                    "current_count": thread_check.current_count,
+                    "limit": thread_check.limit,
+                    "error_code": thread_check.error_code or "THREAD_LIMIT_EXCEEDED"
                 }
-                logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
+                logger.warning(f"Thread limit exceeded for account {account_id}: {thread_check.current_count}/{thread_check.limit}")
                 raise HTTPException(status_code=402, detail=error_detail)
         
         thread_id = str(uuid.uuid4())
@@ -217,6 +216,14 @@ async def create_thread_in_project(
         
         logger.debug(f"Created new thread: {thread_id} in project: {project_id}")
         
+        # Increment thread count in slot_manager (fast Redis-based counter)
+        try:
+            from core.agents.pipeline.slot_manager import increment_thread_count
+            asyncio.create_task(increment_thread_count(account_id))
+        except Exception:
+            pass
+        
+        # Also update the legacy runtime_cache (for backwards compatibility)
         try:
             from core.cache.runtime_cache import increment_thread_count_cache
             asyncio.create_task(increment_thread_count_cache(account_id))
@@ -256,6 +263,7 @@ async def delete_project(
         
         threads_result = await client.table('threads').select('thread_id').eq('project_id', project_id).execute()
         thread_ids = [t['thread_id'] for t in (threads_result.data or [])]
+        threads_deleted_count = len(thread_ids)
         
         from core.resources import ResourceService
         resource_service = ResourceService(client)
@@ -291,6 +299,16 @@ async def delete_project(
             raise HTTPException(status_code=500, detail="Failed to delete project")
         
         try:
+            from core.agents.pipeline.slot_manager import (
+                invalidate_thread_count,
+                decrement_project_count,
+            )
+            await invalidate_thread_count(user_id)
+            await decrement_project_count(user_id)
+        except Exception:
+            pass
+        
+        try:
             from core.cache.runtime_cache import invalidate_thread_count_cache, invalidate_project_cache
             await invalidate_thread_count_cache(user_id)
             await invalidate_project_cache(project_id)
@@ -298,7 +316,7 @@ async def delete_project(
             pass
         
         logger.debug(f"Successfully deleted project {project_id} and all associated data")
-        return {"message": "Project deleted successfully", "project_id": project_id, "threads_deleted": len(thread_ids)}
+        return {"message": "Project deleted successfully", "project_id": project_id, "threads_deleted": threads_deleted_count}
         
     except HTTPException:
         raise
@@ -314,17 +332,53 @@ async def get_thread(
     logger.debug(f"Fetching thread: {thread_id}")
     from core.threads import repo as threads_repo
     from core.utils.auth_utils import get_optional_user_id
+    from core.cache.runtime_cache import get_pending_thread
     
     user_id = await get_optional_user_id(request)
     
     try:
         client = await db.client
-        await verify_and_authorize_thread_access(client, thread_id, user_id)
         
+        # First try to get from database
         thread = await threads_repo.get_thread_with_details(thread_id)
         
+        # If not in DB, check pending thread cache (optimistic response pattern)
         if not thread:
+            pending = await get_pending_thread(thread_id)
+            if pending:
+                logger.debug(f"Thread {thread_id} is pending, returning optimistic response")
+                # Return minimal response for pending thread
+                return {
+                    "thread_id": thread_id,
+                    "project_id": pending.get('project_id'),
+                    "name": pending.get('name', 'New Chat'),
+                    "metadata": {},
+                    "is_public": False,
+                    "created_at": pending.get('created_at'),
+                    "updated_at": pending.get('created_at'),
+                    "project": {
+                        "project_id": pending.get('project_id'),
+                        "name": pending.get('name', 'New Project'),
+                        "description": "",
+                        "sandbox": {},
+                        "is_public": False,
+                        "icon_name": None,
+                        "created_at": pending.get('created_at'),
+                        "updated_at": pending.get('created_at')
+                    },
+                    "message_count": 0,
+                    "recent_agent_runs": [{
+                        "id": pending.get('agent_run_id'),
+                        "status": "running",
+                        "started_at": pending.get('created_at'),
+                        "completed_at": None
+                    }] if pending.get('agent_run_id') else [],
+                    "_pending": True  # Flag to indicate this is a pending thread
+                }
             raise HTTPException(status_code=404, detail="Thread not found")
+        
+        # Verify access for existing threads
+        await verify_and_authorize_thread_access(client, thread_id, user_id)
         
         project_data = None
         if thread.get('project_id'):
@@ -396,30 +450,31 @@ async def create_thread(
     
     try:
         if config.ENV_MODE != EnvMode.LOCAL:
-            from core.utils.limits_checker import check_thread_limit, check_project_count_limit
+            from core.agents.pipeline.slot_manager import check_thread_limit, check_project_limit
             
-            thread_limit_check = await check_thread_limit(account_id)
-            if not thread_limit_check['can_create']:
+            thread_check, project_check = await asyncio.gather(
+                check_thread_limit(account_id),
+                check_project_limit(account_id),
+            )
+            
+            if not thread_check.allowed:
                 error_detail = {
-                    "message": f"Maximum of {thread_limit_check['limit']} threads allowed for your current plan. You have {thread_limit_check['current_count']} threads.",
-                    "current_count": thread_limit_check['current_count'],
-                    "limit": thread_limit_check['limit'],
-                    "tier_name": thread_limit_check['tier_name'],
-                    "error_code": "THREAD_LIMIT_EXCEEDED"
+                    "message": thread_check.message,
+                    "current_count": thread_check.current_count,
+                    "limit": thread_check.limit,
+                    "error_code": thread_check.error_code or "THREAD_LIMIT_EXCEEDED"
                 }
-                logger.warning(f"Thread limit exceeded for account {account_id}: {thread_limit_check['current_count']}/{thread_limit_check['limit']}")
+                logger.warning(f"Thread limit exceeded for account {account_id}: {thread_check.current_count}/{thread_check.limit}")
                 raise HTTPException(status_code=402, detail=error_detail)
             
-            project_limit_check = await check_project_count_limit(account_id)
-            if not project_limit_check['can_create']:
+            if not project_check.allowed:
                 error_detail = {
-                    "message": f"Maximum of {project_limit_check['limit']} projects allowed for your current plan. You have {project_limit_check['current_count']} projects.",
-                    "current_count": project_limit_check['current_count'],
-                    "limit": project_limit_check['limit'],
-                    "tier_name": project_limit_check['tier_name'],
-                    "error_code": "PROJECT_LIMIT_EXCEEDED"
+                    "message": project_check.message,
+                    "current_count": project_check.current_count,
+                    "limit": project_check.limit,
+                    "error_code": project_check.error_code or "PROJECT_LIMIT_EXCEEDED"
                 }
-                logger.warning(f"Project limit exceeded for account {account_id}: {project_limit_check['current_count']}/{project_limit_check['limit']}")
+                logger.warning(f"Project limit exceeded for account {account_id}: {project_check.current_count}/{project_check.limit}")
                 raise HTTPException(status_code=402, detail=error_detail)
         
         from core.threads import repo as threads_repo
@@ -497,7 +552,7 @@ async def create_thread(
         try:
             from core.cache.runtime_cache import set_cached_project_metadata
             sandbox_cache_data = {
-                'id': sandbox_id,
+                'sandbox_id': sandbox_id,
                 'pass': sandbox_pass,
                 'vnc_preview': vnc_url,
                 'sandbox_url': website_url,
@@ -521,8 +576,21 @@ async def create_thread(
         logger.debug(f"Updated thread {thread_id} name to 'New Chat'")
 
         try:
+            from core.agents.pipeline.slot_manager import increment_thread_count, increment_project_count
+            asyncio.create_task(increment_thread_count(account_id))
+            asyncio.create_task(increment_project_count(account_id))
+        except Exception:
+            pass
+        
+        try:
             from core.cache.runtime_cache import increment_thread_count_cache
             asyncio.create_task(increment_thread_count_cache(account_id))
+        except Exception:
+            pass
+        
+        try:
+            from core.billing.shared.cache_utils import invalidate_account_state_cache
+            asyncio.create_task(invalidate_account_state_cache(account_id))
         except Exception:
             pass
 
@@ -541,12 +609,22 @@ async def get_thread_messages(
     optimized: bool = Query(True, description="Return optimized messages (filtered types, minimal fields) or full messages (all types, all fields)"),
 ):
     from core.threads import repo as threads_repo
+    from core.cache.runtime_cache import get_pending_thread
     
     logger.debug(f"Fetching all messages for thread: {thread_id}, order={order}")
     client = await db.client
     
     from core.utils.auth_utils import get_optional_user_id
     user_id = await get_optional_user_id(request)
+    
+    thread = await threads_repo.get_thread_by_id(thread_id)
+    
+    if not thread:
+        pending = await get_pending_thread(thread_id)
+        if pending:
+            logger.debug(f"Thread {thread_id} is pending, returning empty messages")
+            return {"messages": [], "_pending": True}
+        raise HTTPException(status_code=404, detail="Thread not found")
     
     await verify_and_authorize_thread_access(client, thread_id, user_id)
     try:
@@ -822,8 +900,20 @@ async def delete_thread(
             raise HTTPException(status_code=500, detail="Failed to delete thread")
         
         try:
+            from core.agents.pipeline.slot_manager import decrement_thread_count
+            await decrement_thread_count(auth.user_id)
+        except Exception:
+            pass
+        
+        try:
             from core.cache.runtime_cache import invalidate_thread_count_cache
             await invalidate_thread_count_cache(auth.user_id)
+        except Exception:
+            pass
+        
+        try:
+            from core.billing.shared.cache_utils import invalidate_account_state_cache
+            await invalidate_account_state_cache(auth.user_id)
         except Exception:
             pass
         
@@ -848,6 +938,12 @@ async def delete_thread(
                 
                 logger.debug(f"Deleting project {project_id}")
                 await repo_delete_project(project_id)
+                
+                try:
+                    from core.agents.pipeline.slot_manager import decrement_project_count
+                    await decrement_project_count(auth.user_id)
+                except Exception:
+                    pass
                 
                 try:
                     from core.cache.runtime_cache import invalidate_project_cache

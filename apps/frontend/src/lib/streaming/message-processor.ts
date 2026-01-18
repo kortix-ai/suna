@@ -5,6 +5,12 @@ import type {
   ReconstructedToolCall,
   ToolCallAccumulatorState,
   ToolOutputStreamData,
+  AckEvent,
+  EstimateEvent,
+  PrepStageEvent,
+  DegradationEvent,
+  ThinkingEvent,
+  ErrorEvent,
 } from './types';
 import type { UnifiedMessage } from '@/components/thread/types';
 import { 
@@ -20,13 +26,19 @@ import {
 } from './tool-accumulator';
 
 export interface ProcessedMessage {
-  type: 'text_chunk' | 'reasoning_chunk' | 'tool_call_chunk' | 'tool_result' | 'message_complete' | 'status' | 'error' | 'billing_error' | 'ping' | 'tool_output_stream' | 'ignore';
+  type: 'text_chunk' | 'reasoning_chunk' | 'tool_call_chunk' | 'tool_result' | 'message_complete' | 'status' | 'error' | 'billing_error' | 'ping' | 'tool_output_stream' | 'ux_ack' | 'ux_estimate' | 'ux_prep_stage' | 'ux_degradation' | 'ux_thinking' | 'ux_error' | 'ignore';
   content?: string;
   message?: StreamMessage;
   toolCalls?: ReconstructedToolCall[];
   status?: string;
   errorMessage?: string;
   toolOutputStream?: ToolOutputStreamData;
+  uxAck?: AckEvent;
+  uxEstimate?: EstimateEvent;
+  uxPrepStage?: PrepStageEvent;
+  uxDegradation?: DegradationEvent;
+  uxThinking?: ThinkingEvent;
+  uxError?: ErrorEvent;
 }
 
 export function parseStreamMessage(rawData: string): StreamMessage | null {
@@ -99,6 +111,65 @@ export function processStreamData(
   
   if (jsonData.type === 'ping' && !jsonData.content) {
     return { type: 'ping' };
+  }
+  
+  if (jsonData.type === 'ack') {
+    return {
+      type: 'ux_ack',
+      uxAck: {
+        message: jsonData.message as string,
+        agent_run_id: jsonData.agent_run_id as string,
+        timestamp: jsonData.timestamp as string,
+      },
+    };
+  }
+  
+  if (jsonData.type === 'estimate') {
+    return {
+      type: 'ux_estimate',
+      uxEstimate: {
+        estimated_seconds: jsonData.estimated_seconds as number,
+        confidence: jsonData.confidence as 'low' | 'medium' | 'high',
+        message: jsonData.message as string,
+        breakdown: jsonData.breakdown as { prep: number; llm: number; tools: number } | undefined,
+        timestamp: jsonData.timestamp as string,
+      },
+    };
+  }
+  
+  if (jsonData.type === 'prep_stage') {
+    return {
+      type: 'ux_prep_stage',
+      uxPrepStage: {
+        stage: jsonData.stage as 'initializing' | 'preparing' | 'loading' | 'ready',
+        detail: jsonData.detail as string | undefined,
+        progress: jsonData.progress as number | undefined,
+        timestamp: jsonData.timestamp as string,
+      },
+    };
+  }
+  
+  if (jsonData.type === 'thinking') {
+    return {
+      type: 'ux_thinking',
+      uxThinking: {
+        message: jsonData.message as string,
+        timestamp: jsonData.timestamp as string,
+      },
+    };
+  }
+  
+  if (jsonData.type === 'error' && jsonData.error_code) {
+    return {
+      type: 'ux_error',
+      uxError: {
+        error: jsonData.error as string,
+        error_code: jsonData.error_code as string,
+        recoverable: jsonData.recoverable as boolean,
+        actions: (jsonData.actions as ErrorEvent['actions']) || [],
+        timestamp: jsonData.timestamp as string,
+      },
+    };
   }
   
   const message = jsonData as unknown as StreamMessage;

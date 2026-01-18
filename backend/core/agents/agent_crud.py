@@ -533,10 +533,7 @@ async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id
         from .agent_loader import get_agent_loader
         loader = await get_agent_loader()
         
-        # Load agent with full configuration
         agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
-        
-        # Convert to Pydantic model
         return agent_data.to_pydantic_model()
         
     except HTTPException:
