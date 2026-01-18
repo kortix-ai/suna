@@ -1,9 +1,14 @@
-import React, { useEffect, useRef, useState, useMemo } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 import { useSmoothToolField } from '@/hooks/messages';
 import { ToolCard } from './ToolCard';
+import { constructHtmlPreviewUrl } from '@/lib/utils/url';
+import type { Project } from '@/lib/api/threads';
+import { useQueryClient } from '@tanstack/react-query';
+import { threadKeys } from '@/hooks/threads/keys';
+import { backendApi } from '@/lib/api-client';
 
 /**
  * Optimistically extract a string field from partial/streaming JSON.
@@ -83,9 +88,235 @@ const MEDIA_GENERATION_TOOLS = new Set([
     'image-edit-or-generate',
     'image_edit_or_generate',
     'Generating Image',
-    'Editing Image', 
+    'Editing Image',
     'Generate Media',
 ]);
+
+// Slide creation tools that show slide shimmer preview
+const SLIDE_CREATION_TOOLS = new Set([
+    'create-slide',
+    'create_slide',
+    'Creating Slide',
+]);
+
+/**
+ * Slide preview component for streaming - loads actual slide when available
+ */
+const SlideStreamPreview: React.FC<{
+    toolCall?: any;
+    project?: Project;
+    onClick?: () => void;
+}> = ({ toolCall, project, onClick }) => {
+    const [slideUrl, setSlideUrl] = useState<string | null>(null);
+    const [iframeLoaded, setIframeLoaded] = useState(false);
+    const [isLoadingMetadata, setIsLoadingMetadata] = useState(true);
+    const [retryCount, setRetryCount] = useState(0);
+    const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const isEnsuringSandboxRef = useRef(false);
+    const queryClient = useQueryClient();
+
+    // Extract presentation info from tool call arguments (handle both string and object)
+    const parsedArgs = useMemo(() => {
+        const args = toolCall?.arguments;
+        if (!args) return {};
+        if (typeof args === 'object') return args;
+        // Try to parse string arguments
+        try {
+            return JSON.parse(args);
+        } catch {
+            // Try to extract from partial JSON
+            const presentationMatch = args.match(/"presentation_name"\s*:\s*"([^"]+)"/);
+            const slideMatch = args.match(/"slide_number"\s*:\s*(\d+)/);
+            return {
+                presentation_name: presentationMatch?.[1],
+                slide_number: slideMatch ? parseInt(slideMatch[1]) : undefined
+            };
+        }
+    }, [toolCall?.arguments]);
+
+    const presentationName = parsedArgs.presentation_name;
+    const slideNumber = parsedArgs.slide_number || 1;
+
+    // Ensure sandbox is active when we have sandbox ID but no URL
+    const ensureSandboxActive = useCallback(async () => {
+        if (!project?.id || !project?.sandbox?.id || isEnsuringSandboxRef.current) {
+            return;
+        }
+
+        isEnsuringSandboxRef.current = true;
+
+        try {
+            const response = await backendApi.post(
+                `/project/${project.id}/sandbox/ensure-active`,
+                {},
+                { showErrors: false }
+            );
+
+            if (response.error) {
+                console.warn('[SlideStreamPreview] Failed to ensure sandbox is active:', response.error);
+            } else {
+                // Invalidate project query to get fresh sandbox_url
+                queryClient.invalidateQueries({
+                    queryKey: threadKeys.project(project.id)
+                });
+            }
+        } catch (err) {
+            console.error('[SlideStreamPreview] Error ensuring sandbox is active:', err);
+        } finally {
+            isEnsuringSandboxRef.current = false;
+        }
+    }, [project?.id, project?.sandbox?.id, queryClient]);
+
+    // Trigger sandbox activation if we have sandbox ID but no URL
+    useEffect(() => {
+        if (project?.sandbox?.id && !project?.sandbox?.sandbox_url && presentationName) {
+            ensureSandboxActive();
+        }
+    }, [project?.sandbox?.id, project?.sandbox?.sandbox_url, presentationName, ensureSandboxActive]);
+
+    // Poll for project data update when sandbox_url is missing
+    useEffect(() => {
+        if (!project?.id || project?.sandbox?.sandbox_url || !presentationName) return;
+
+        // Poll every 2 seconds to check if sandbox_url is now available
+        const pollInterval = setInterval(() => {
+            queryClient.invalidateQueries({
+                queryKey: threadKeys.project(project.id)
+            });
+        }, 2000);
+
+        // Stop polling after 30 seconds
+        const stopPollingTimeout = setTimeout(() => {
+            clearInterval(pollInterval);
+        }, 30000);
+
+        return () => {
+            clearInterval(pollInterval);
+            clearTimeout(stopPollingTimeout);
+        };
+    }, [project?.id, project?.sandbox?.sandbox_url, presentationName, queryClient]);
+
+    // Fetch metadata and load slide URL
+    useEffect(() => {
+        if (!project?.sandbox?.sandbox_url || !presentationName) {
+            return; // Don't set loading to false - wait for data
+        }
+
+        // Reset state when starting a new fetch
+        setIsLoadingMetadata(true);
+        setSlideUrl(null);
+        setIframeLoaded(false);
+        setRetryCount(0);
+
+        const fetchMetadata = async (retry: number = 0) => {
+            try {
+                const sanitizedName = presentationName.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
+                const metadataUrl = constructHtmlPreviewUrl(
+                    project.sandbox.sandbox_url,
+                    `presentations/${sanitizedName}/metadata.json`
+                );
+
+                const response = await fetch(`${metadataUrl}?t=${Date.now()}`, {
+                    cache: 'no-cache',
+                    headers: { 'Cache-Control': 'no-cache' },
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const slideData = data.slides?.[slideNumber];
+                    if (slideData?.file_path) {
+                        const url = constructHtmlPreviewUrl(project.sandbox.sandbox_url, slideData.file_path);
+                        setSlideUrl(url);
+                        setIsLoadingMetadata(false);
+                        return;
+                    }
+                }
+
+                // Retry if not found yet (slide might still be generating)
+                if (retry < 20) {
+                    const delay = Math.min(1000 * Math.pow(1.3, retry), 3000);
+                    setRetryCount(retry + 1);
+                    retryTimeoutRef.current = setTimeout(() => fetchMetadata(retry + 1), delay);
+                } else {
+                    setIsLoadingMetadata(false);
+                }
+            } catch (e) {
+                // Retry on error
+                if (retry < 20) {
+                    const delay = Math.min(1000 * Math.pow(1.3, retry), 3000);
+                    setRetryCount(retry + 1);
+                    retryTimeoutRef.current = setTimeout(() => fetchMetadata(retry + 1), delay);
+                } else {
+                    setIsLoadingMetadata(false);
+                }
+            }
+        };
+
+        fetchMetadata(0);
+
+        return () => {
+            if (retryTimeoutRef.current) {
+                clearTimeout(retryTimeoutRef.current);
+            }
+        };
+    }, [project?.sandbox?.sandbox_url, presentationName, slideNumber]);
+
+    const showShimmer = isLoadingMetadata || !slideUrl || !iframeLoaded;
+    const width = 480;
+    const height = 270;
+    const scale = width / 1920;
+
+    return (
+        <button
+            onClick={onClick}
+            className="relative rounded-lg overflow-hidden bg-muted border border-border hover:opacity-90 transition-opacity cursor-pointer block mt-2"
+            style={{ width: `${width}px`, height: `${height}px`, minWidth: `${width}px`, maxWidth: `${width}px` }}
+        >
+            {showShimmer && (
+                <>
+                    <div className="absolute inset-0 bg-muted" />
+                    <div
+                        className="absolute inset-0"
+                        style={{
+                            background: 'linear-gradient(90deg, transparent 0%, rgba(128, 128, 128, 0.15) 50%, transparent 100%)',
+                            backgroundSize: '200% 100%',
+                            animation: 'slideShimmerStream 1.5s infinite',
+                        }}
+                    />
+                    <style>{`
+                        @keyframes slideShimmerStream {
+                            0% { background-position: 200% 0; }
+                            100% { background-position: -200% 0; }
+                        }
+                    `}</style>
+                </>
+            )}
+            {slideUrl && (
+                <div style={{ width: `${width}px`, height: `${height}px`, position: 'relative', overflow: 'hidden' }}>
+                    <iframe
+                        src={slideUrl}
+                        title={`Slide ${slideNumber}`}
+                        className="border-0 pointer-events-none"
+                        sandbox="allow-same-origin allow-scripts"
+                        onLoad={() => setIframeLoaded(true)}
+                        style={{
+                            width: '1920px',
+                            height: '1080px',
+                            border: 'none',
+                            display: 'block',
+                            transform: `scale(${scale})`,
+                            transformOrigin: '0 0',
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            opacity: iframeLoaded ? 1 : 0,
+                        }}
+                    />
+                </div>
+            )}
+        </button>
+    );
+};
 
 // Define tool categories for different streaming behaviors
 const STREAMABLE_TOOLS = {
@@ -167,6 +398,7 @@ interface ShowToolStreamProps {
     showExpanded?: boolean;
     startTime?: number;
     toolCall?: any;
+    project?: Project;
 }
 
 export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
@@ -175,7 +407,8 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
     onToolClick,
     showExpanded = false,
     startTime,
-    toolCall
+    toolCall,
+    project
 }) => {
     const containerRef = useRef<HTMLDivElement>(null);
     const [shouldShowContent, setShouldShowContent] = useState(false);
@@ -520,23 +753,26 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
 
     // Check if this is a media generation tool - show shimmer card
     const isMediaGenTool = MEDIA_GENERATION_TOOLS.has(rawToolName || '') || MEDIA_GENERATION_TOOLS.has(toolName || '');
-    
+
+    // Check if this is a slide creation tool - show slide shimmer preview
+    const isSlideTool = SLIDE_CREATION_TOOLS.has(rawToolName || '') || SLIDE_CREATION_TOOLS.has(toolName || '');
+
     // Stable color ref for shimmer - placed before conditional return to satisfy Rules of Hooks
     const shimmerColorRef = useRef(
-        ['from-zinc-300/60 to-zinc-400/60', 'from-zinc-350/60 to-zinc-450/60', 
+        ['from-zinc-300/60 to-zinc-400/60', 'from-zinc-350/60 to-zinc-450/60',
          'from-neutral-300/60 to-neutral-400/60', 'from-stone-300/60 to-stone-400/60',
          'from-gray-300/60 to-gray-400/60', 'from-slate-300/60 to-slate-400/60']
         [Math.floor(Math.random() * 6)]
     );
     const [showShimmerColor, setShowShimmerColor] = useState(false);
-    
+
     // Fade in shimmer color after delay
     useEffect(() => {
-        if (isMediaGenTool) {
+        if (isMediaGenTool || isSlideTool) {
             const timer = setTimeout(() => setShowShimmerColor(true), 800);
             return () => clearTimeout(timer);
         }
-    }, [isMediaGenTool]);
+    }, [isMediaGenTool, isSlideTool]);
 
     if (!toolName) {
         return null;
@@ -582,6 +818,34 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                         }
                     `}</style>
                 </div>
+            </div>
+        );
+    }
+
+    // Handle slide creation tools - show tool card + preview below
+    if (isSlideTool) {
+        const IconComponent = getToolIcon(rawToolName || '');
+
+        return (
+            <div>
+                {/* Tool card at top */}
+                <ToolCard
+                    toolName={rawToolName || ''}
+                    displayName={toolName}
+                    toolCall={effectiveToolCall}
+                    toolCallId={effectiveToolCall?.tool_call_id}
+                    paramDisplay={paramDisplay}
+                    isStreaming={!isCompleted}
+                    fallbackIcon={IconComponent}
+                    onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
+                />
+
+                {/* Slide preview below */}
+                <SlideStreamPreview
+                    toolCall={effectiveToolCall}
+                    project={project}
+                    onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
+                />
             </div>
         );
     }

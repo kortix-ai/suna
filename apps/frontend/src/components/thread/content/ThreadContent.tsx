@@ -447,6 +447,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
             }
             onToolClick={handleToolClick}
             showExpanded={false}
+            project={project}
             startTime={Date.now()}
           />
         ) : null}
@@ -541,6 +542,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
             onToolClick={handleToolClick}
             showExpanded={false}
             startTime={Date.now()}
+            project={project}
           />
         ) : null}
       </div>
@@ -672,6 +674,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
                   onToolClick={handleToolClick}
                   showExpanded={false}
                   toolCall={tc}
+                  project={project}
                 />
               );
             })

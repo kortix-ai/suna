@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
   const type = searchParams.get('type') // signup, recovery, etc.
   const next = searchParams.get('returnUrl') || searchParams.get('redirect') || '/dashboard'
   const termsAccepted = searchParams.get('terms_accepted') === 'true'
-  
+  const email = searchParams.get('email') || '' // Email passed from magic link redirect URL
+
   // Use request origin for redirects (most reliable for local dev)
   // This ensures localhost:3000 redirects stay on localhost, not staging
   const requestOrigin = request.nextUrl.origin
@@ -32,9 +33,9 @@ export async function GET(request: NextRequest) {
   // Handle errors FIRST - before any Supabase operations that might affect session
   if (error) {
     console.error('❌ Auth callback error:', error, errorCode, errorDescription)
-    
+
     // Check if the error is due to expired/invalid link
-    const isExpiredOrInvalid = 
+    const isExpiredOrInvalid =
       errorCode === 'otp_expired' ||
       errorCode === 'expired_token' ||
       errorCode === 'token_expired' ||
@@ -42,19 +43,18 @@ export async function GET(request: NextRequest) {
       error?.toLowerCase().includes('invalid') ||
       errorDescription?.toLowerCase().includes('expired') ||
       errorDescription?.toLowerCase().includes('invalid')
-    
+
     if (isExpiredOrInvalid) {
       // Redirect to auth page with expired state to show resend form
-      const email = searchParams.get('email') || ''
       const expiredUrl = new URL(`${baseUrl}/auth`)
       expiredUrl.searchParams.set('expired', 'true')
       if (email) expiredUrl.searchParams.set('email', email)
       if (next) expiredUrl.searchParams.set('returnUrl', next)
-      
+
       console.log('🔄 Redirecting to auth page with expired state')
       return NextResponse.redirect(expiredUrl)
     }
-    
+
     // For other errors, redirect to auth page with error
     return NextResponse.redirect(`${baseUrl}/auth?error=${encodeURIComponent(error)}`)
   }
@@ -92,12 +92,11 @@ export async function GET(request: NextRequest) {
         
         if (isExpired) {
           // Redirect to auth page with expired state to show resend form
-          const email = searchParams.get('email') || ''
           const expiredUrl = new URL(`${baseUrl}/auth`)
           expiredUrl.searchParams.set('expired', 'true')
           if (email) expiredUrl.searchParams.set('email', email)
           if (next) expiredUrl.searchParams.set('returnUrl', next)
-          
+
           console.log('🔄 Redirecting to auth page with expired state')
           return NextResponse.redirect(expiredUrl)
         }
@@ -180,12 +179,12 @@ export async function GET(request: NextRequest) {
       redirectUrl.searchParams.set('auth_event', authEvent)
       redirectUrl.searchParams.set('auth_method', authMethod)
       const response = NextResponse.redirect(redirectUrl)
-      
+
       // Clear referral cookie if it was processed
       if (shouldClearReferralCookie) {
         response.cookies.set('pending-referral-code', '', { maxAge: 0, path: '/' })
       }
-      
+
       return response
     } catch (error) {
       console.error('❌ Unexpected error in auth callback:', error)
