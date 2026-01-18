@@ -1237,8 +1237,10 @@ async def get_conversion_funnel(
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
 
-        start_of_range = start_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        end_of_range = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+        # Use UTC for all queries (matches profitability endpoint)
+        UTC = ZoneInfo('UTC')
+        start_of_range = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC).isoformat()
+        end_of_range = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC).isoformat()
 
         # Define async functions for parallel execution
         async def get_visitors():
@@ -1268,10 +1270,8 @@ async def get_conversion_funnel(
             Get unique paying customers from actual charges/transactions (not subscription creation).
             Includes both Stripe (web) and RevenueCat (app).
             """
-            # Convert Berlin dates to UTC timestamps for Stripe
-            UTC = ZoneInfo('UTC')
-            range_start_utc = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=BERLIN_TZ).astimezone(UTC)
-            range_end_utc = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=BERLIN_TZ).astimezone(UTC)
+            range_start_utc = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC)
+            range_end_utc = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, tzinfo=UTC)
             start_ts = int(range_start_utc.timestamp())
             end_ts = int(range_end_utc.timestamp())
 
@@ -1288,18 +1288,9 @@ async def get_conversion_funnel(
             stripe_emails = stripe_data.get('user_emails', {})
             all_emails.extend([email for email in stripe_emails.values() if email])
 
-            # RevenueCat: get emails from billing_customers for app_user_ids
-            rc_user_ids = list(rc_data.get('user_revenue', {}).keys())
-            if rc_user_ids:
-                # Batch fetch emails for RevenueCat users
-                for i in range(0, len(rc_user_ids), 100):
-                    batch_ids = rc_user_ids[i:i+100]
-                    emails_result = await client.schema('basejump').from_('billing_customers').select(
-                        'account_id, email'
-                    ).in_('account_id', batch_ids).execute()
-                    for e in (emails_result.data or []):
-                        if e.get('email'):
-                            all_emails.append(e['email'])
+            # RevenueCat: emails already fetched via RPC
+            rc_emails = rc_data.get('user_emails', [])
+            all_emails.extend([email for email in rc_emails if email])
 
             # Deduplicate and sort
             unique_emails = sorted(set(all_emails))
@@ -3024,71 +3015,38 @@ async def _fetch_stripe_revenue(start_ts: int, end_ts: int) -> Dict[str, Any]:
 
 async def _fetch_revenuecat_revenue(client, range_start: datetime, range_end: datetime) -> Dict[str, Any]:
     """
-    Fetch RevenueCat revenue from webhook_events table.
-    Returns revenue by tier with user mapping.
+    Fetch RevenueCat revenue from webhook_events using RPC.
+    Returns revenue by tier with user emails.
     """
     results: Dict[str, Any] = {
         'total_revenue': 0.0,
         'payment_count': 0,
         'by_tier': {},  # tier -> {'revenue': float, 'count': int, 'users': set}
-        'user_revenue': {},  # app_user_id -> revenue
-        'user_tiers': {},  # app_user_id -> tier
+        'user_emails': [],  # List of paying user emails
     }
 
     try:
-        # Fetch RevenueCat webhook events for INITIAL_PURCHASE and RENEWAL
-        # These events contain the price field
-        events_result = await client.from_('webhook_events').select(
-            'event_id, event_type, payload, created_at'
-        ).in_('event_type', ['INITIAL_PURCHASE', 'RENEWAL']).gte(
-            'created_at', range_start.isoformat()
-        ).lte(
-            'created_at', range_end.isoformat()
-        ).eq('status', 'completed').execute()
+        # Use RPC for efficient aggregation with email lookup
+        rpc_result = await client.rpc('get_revenuecat_revenue_by_tier', {
+            'start_date': range_start.isoformat(),
+            'end_date': range_end.isoformat()
+        }).execute()
 
-        for event in (events_result.data or []):
-            payload = event.get('payload', {})
-            if not payload:
-                continue
+        for row in (rpc_result.data or []):
+            tier = row.get('tier', 'unknown')
+            revenue = float(row.get('total_revenue', 0))
+            count = row.get('payment_count', 0)
+            users = row.get('unique_users', 0)
+            emails = row.get('user_emails') or []
 
-            event_data = payload.get('event', {})
-            app_user_id = event_data.get('app_user_id')
-            product_id = event_data.get('product_id', '')
-            price = event_data.get('price', 0)
-
-            # Skip anonymous users
-            if not app_user_id or app_user_id.startswith('$RCAnonymousID:'):
-                continue
-
-            if price <= 0:
-                continue
-
-            # Infer tier from product_id
-            # Known patterns: kortix_plus_monthly, plus:plus-monthly, kortix_pro_monthly, etc.
-            tier = 'unknown'
-            product_lower = product_id.lower()
-            is_yearly = 'yearly' in product_lower or 'annual' in product_lower
-
-            if 'plus' in product_lower:
-                tier = 'tier_2_20_yearly' if is_yearly else 'tier_2_20'
-            elif 'pro' in product_lower:
-                tier = 'tier_6_50_yearly' if is_yearly else 'tier_6_50'
-            elif 'ultra' in product_lower:
-                tier = 'tier_25_200_yearly' if is_yearly else 'tier_25_200'
-
-            results['total_revenue'] += price
-            results['payment_count'] += 1
-
-            # Track by tier
-            if tier not in results['by_tier']:
-                results['by_tier'][tier] = {'revenue': 0.0, 'count': 0, 'users': set()}
-            results['by_tier'][tier]['revenue'] += price
-            results['by_tier'][tier]['count'] += 1
-            results['by_tier'][tier]['users'].add(app_user_id)
-
-            # Track by user
-            results['user_revenue'][app_user_id] = results['user_revenue'].get(app_user_id, 0) + price
-            results['user_tiers'][app_user_id] = tier
+            results['total_revenue'] += revenue
+            results['payment_count'] += count
+            results['by_tier'][tier] = {
+                'revenue': revenue,
+                'count': count,
+                'users': set(range(users)),  # Placeholder set with correct size for len()
+            }
+            results['user_emails'].extend(emails)
 
     except Exception as e:
         logger.error(f"Error fetching RevenueCat revenue: {e}", exc_info=True)
@@ -3142,51 +3100,33 @@ async def get_profitability(
         logger.info(f"Stripe revenue: ${stripe_revenue['total_revenue']:.2f} ({stripe_revenue['payment_count']} payments)")
         logger.info(f"RevenueCat revenue: ${revenuecat_revenue['total_revenue']:.2f} ({revenuecat_revenue['payment_count']} payments)")
 
-        # 2. Get account tier mappings for cost attribution
-        accounts_result = await client.from_('credit_accounts').select(
-            'account_id, tier, provider'
-        ).execute()
+        # 2. Get usage costs by tier using RPC (efficient single query instead of fetching 278k+ accounts)
+        usage_costs_result = await client.rpc('get_usage_costs_by_tier', {
+            'start_date': range_start_utc.isoformat(),
+            'end_date': range_end_utc.isoformat()
+        }).execute()
 
-        # Build account_id -> (tier, provider) mapping
-        account_tiers: Dict[str, tuple] = {}
+        usage_costs_by_tier: Dict[str, Dict] = {}
+        for row in (usage_costs_result.data or []):
+            tier = row.get('tier', 'unknown')
+            provider = row.get('provider', 'stripe')
+            user_count = row.get('user_count', 0)
+            total_cost = float(row.get('total_cost', 0))
 
-        for acc in (accounts_result.data or []):
-            account_id = acc.get('account_id')
-            tier = acc.get('tier', 'unknown')
-            provider = acc.get('provider', 'stripe')
-            account_tiers[account_id] = (tier, provider)
+            if tier not in usage_costs_by_tier:
+                usage_costs_by_tier[tier] = {
+                    'total_cost': 0.0,
+                    'user_count': 0,
+                    'provider': provider,
+                }
+            usage_costs_by_tier[tier]['total_cost'] += total_cost
+            usage_costs_by_tier[tier]['user_count'] += user_count
 
-        # 3. Get usage costs from credit_ledger for the date range
-        usage_records = []
-        batch_size = 1000
-        offset = 0
+        logger.info(f"Usage costs fetched for {len(usage_costs_by_tier)} tiers via RPC")
 
-        while True:
-            usage_result = await client.from_('credit_ledger').select(
-                'account_id, amount'
-            ).eq('type', 'usage').gte(
-                'created_at', range_start_utc.isoformat()
-            ).lte(
-                'created_at', range_end_utc.isoformat()
-            ).range(offset, offset + batch_size - 1).execute()
-
-            batch = usage_result.data or []
-            usage_records.extend(batch)
-
-            if len(batch) < batch_size:
-                break
-            offset += batch_size
-
-        # Aggregate costs by account_id
-        account_costs: Dict[str, float] = {}
-        for record in usage_records:
-            account_id = record.get('account_id')
-            amount = float(record.get('amount', 0))
-            account_costs[account_id] = account_costs.get(account_id, 0) + abs(amount)
-
-        # 4. Build tier metrics combining revenue and costs
+        # 3. Build tier metrics combining revenue and costs
         # Combine Stripe and RevenueCat tier data
-        all_tiers = set(stripe_revenue['by_tier'].keys()) | set(revenuecat_revenue['by_tier'].keys())
+        all_tiers = set(stripe_revenue['by_tier'].keys()) | set(revenuecat_revenue['by_tier'].keys()) | set(usage_costs_by_tier.keys())
 
         tier_metrics: Dict[str, Dict] = {}
         for tier in all_tiers:
@@ -3197,35 +3137,11 @@ async def get_profitability(
                 'revenuecat_revenue': revenuecat_revenue['by_tier'].get(tier, {}).get('revenue', 0),
                 'revenuecat_count': revenuecat_revenue['by_tier'].get(tier, {}).get('count', 0),
                 'revenuecat_users': revenuecat_revenue['by_tier'].get(tier, {}).get('users', set()),
-                'total_cost': 0.0,
+                'total_cost': usage_costs_by_tier.get(tier, {}).get('total_cost', 0.0),
+                'cost_only_users': usage_costs_by_tier.get(tier, {}).get('user_count', 0),
             }
 
-        # Assign costs to tiers based on account's current tier
-        # Include free tier and other cost-only tiers (no revenue but have usage)
-        free_tier_users: set = set()
-        for account_id, cost in account_costs.items():
-            if account_id in account_tiers:
-                tier, provider = account_tiers[account_id]
-                if tier not in tier_metrics:
-                    # Create entry for cost-only tiers (like free tier)
-                    tier_metrics[tier] = {
-                        'stripe_revenue': 0,
-                        'stripe_count': 0,
-                        'stripe_users': set(),
-                        'revenuecat_revenue': 0,
-                        'revenuecat_count': 0,
-                        'revenuecat_users': set(),
-                        'total_cost': 0.0,
-                        'cost_only_users': set(),  # Track users for cost-only tiers
-                    }
-                tier_metrics[tier]['total_cost'] += cost
-                # Track users for free/cost-only tiers
-                if tier in ('free', 'none'):
-                    if 'cost_only_users' not in tier_metrics[tier]:
-                        tier_metrics[tier]['cost_only_users'] = set()
-                    tier_metrics[tier]['cost_only_users'].add(account_id)
-
-        logger.info(f"Costs assigned to {len(tier_metrics)} tiers including free/cost-only tiers")
+        logger.info(f"Tier metrics built for {len(tier_metrics)} tiers")
 
         # 5. Build profitability response
         by_tier: List[TierProfitability] = []
@@ -3314,8 +3230,7 @@ async def get_profitability(
 
             # Handle cost-only tiers (free tier, etc.) - no revenue but have costs
             if tier_revenue == 0 and actual_cost > 0:
-                cost_only_users = metrics.get('cost_only_users', set())
-                num_users = len(cost_only_users) if cost_only_users else 1
+                num_users = metrics.get('cost_only_users', 0) or 1
                 by_tier.append(TierProfitability(
                     tier=tier,
                     display_name=display_name,
@@ -3361,7 +3276,7 @@ async def get_profitability(
 
         # User counts
         unique_paying_users = len(all_paying_users)
-        unique_active_users = len(account_costs)  # Users who had usage (from credit_ledger)
+        unique_active_users = sum(t.get('user_count', 0) for t in usage_costs_by_tier.values())  # Users who had usage
 
         # Industry standard metrics
         avg_revenue_per_paid_user = total_revenue / unique_paying_users if unique_paying_users > 0 else 0.0
