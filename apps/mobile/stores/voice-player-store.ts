@@ -91,6 +91,16 @@ export const useVoicePlayerStore = create<VoicePlayerStore>((set, get) => ({
     set({ state: 'loading', text, error: null, audioUrls: [], currentIndex: 0 });
 
     try {
+      // Setup audio mode early for iOS - must be done before any audio operations
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+        staysActiveInBackground: false,
+        interruptionModeIOS: 1, // DoNotMix - don't let other audio interrupt
+        shouldDuckAndroid: true,
+        playThroughEarpieceAndroid: false,
+      });
+
       // Call voice generation API
       const headers = await getAuthHeaders();
 
@@ -144,13 +154,6 @@ export const useVoicePlayerStore = create<VoicePlayerStore>((set, get) => ({
       }
 
       set({ audioUrls });
-
-      // Setup audio mode for playback
-      await Audio.setAudioModeAsync({
-        allowsRecordingIOS: false,
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-      });
 
       // Start playing first chunk
       await get()._playIndex(0);
