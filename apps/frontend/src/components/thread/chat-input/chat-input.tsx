@@ -1363,7 +1363,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       </div>
     ), [leftControls, rightControls]);
 
-    const isSnackVisible = showToolPreview || !!showSnackbar || (isVoiceActive && threadId) || (isFreeTier && subscriptionData && !isLocalMode());
+    const isSnackVisible = showToolPreview || !!showSnackbar || (isVoiceActive && !!threadId) || (isFreeTier && subscriptionData && !isLocalMode());
 
     // Message Queue - get from store
     const allQueuedMessages = useMessageQueueStore((state) => state.queuedMessages);
