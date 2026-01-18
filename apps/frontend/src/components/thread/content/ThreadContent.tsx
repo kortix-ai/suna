@@ -355,11 +355,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         // Check if currently streaming
         const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
 
+        // Show actions on last assistant message of this group (not just last group overall)
+        const isLastInGroup = message.message_id === lastAssistantMessageId;
+
         elements.push(
           <div key={msgKey} className={assistantMessageCount > 0 ? "mt-3" : ""}>
             <div className="break-words overflow-hidden">{renderedContent}</div>
-            {/* Message actions - only show on last message of group, not streaming */}
-            {isLatestMessage && !isCurrentlyStreaming && aggregatedTextContent && (
+            {/* Message actions - show at end of each assistant response block */}
+            {isLastInGroup && !isCurrentlyStreaming && aggregatedTextContent && (
               <MessageActions text={aggregatedTextContent} />
             )}
           </div>,
