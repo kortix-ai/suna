@@ -430,12 +430,22 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     });
 
     // Also check for assistant with actual text content (for the active streaming case)
+    // Check both m.content AND metadata.text_content since renderAssistantMessage uses metadata.text_content
     const persistedAssistantWithContent = group.messages.find(m => {
       if (m.type !== "assistant") return false;
       if (m.message_id === "streamingTextContent" || m.message_id === "playbackStreamingText") return false;
+
+      // Check content field
       const content = safeJsonParse<ParsedContent>(m.content, { content: '' });
-      const textContent = content.content || m.content || '';
-      return typeof textContent === 'string' && textContent.trim().length > 0;
+      const textFromContent = content.content || (typeof m.content === 'string' ? m.content : '');
+
+      // Check metadata.text_content (this is what renderAssistantMessage uses)
+      const meta = safeJsonParse<ParsedMetadata>(m.metadata, {});
+      const textFromMetadata = typeof meta.text_content === 'string' ? meta.text_content : '';
+
+      const hasContent = (textFromContent && textFromContent.trim().length > 0) ||
+                         (textFromMetadata && textFromMetadata.trim().length > 0);
+      return hasContent;
     });
 
     // If agent is idle and we have persisted messages with actual text content,
@@ -483,8 +493,12 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     // If still streaming but we have persisted assistant with content, check lengths
     if (persistedAssistantWithContent) {
       const content = safeJsonParse<ParsedContent>(persistedAssistantWithContent.content, { content: '' });
-      const persistedText = content.content || persistedAssistantWithContent.content || '';
       const meta = safeJsonParse<ParsedMetadata>(persistedAssistantWithContent.metadata, {});
+
+      // Check both content.content and metadata.text_content for persisted text
+      const textFromContent = content.content || (typeof persistedAssistantWithContent.content === 'string' ? persistedAssistantWithContent.content : '');
+      const textFromMetadata = typeof meta.text_content === 'string' ? meta.text_content : '';
+      const persistedText = textFromMetadata || textFromContent || '';
 
       const isComplete = meta.stream_status === "complete";
       const persistedIsLongerOrEqual = String(persistedText).trim().length >= displayStreamingText.trim().length;
