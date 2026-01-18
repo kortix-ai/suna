@@ -10,6 +10,7 @@ Replicate Pricing (approximate):
 - 851-labs/background-remover: ~$0.01 per image
 - recraft-ai/recraft-crisp-upscale: ~$0.01 per 4x upscale
 - recraft-ai/recraft-vectorize: ~$0.01 per SVG conversion
+- resemble-ai/chatterbox-turbo: ~$0.025 per 1000 input characters (voice)
 
 OpenRouter Pricing (Gemini):
 - google/gemini-2.5-flash-image: ~$0.04 per image
@@ -94,6 +95,15 @@ REPLICATE_PRICING: Dict[str, Dict] = {
         "cost_usd": Decimal("0.01"),
         "description": "SVG Vectorization"
     },
+
+    # Voice Generation (TTS)
+    # $0.025 per 1000 input characters
+    "resemble-ai/chatterbox-turbo": {
+        "type": "per_characters",
+        "cost_usd_per_1k_chars": Decimal("0.025"),
+        "max_chars_per_request": 500,
+        "description": "Chatterbox Voice Generation"
+    },
 }
 
 # OpenRouter model pricing (USD per image) - FALLBACK only
@@ -115,6 +125,7 @@ OPENROUTER_PRICING: Dict[str, Dict] = {
 # Default fallback costs
 DEFAULT_IMAGE_COST_USD = Decimal("0.05")
 DEFAULT_VIDEO_COST_PER_SECOND_USD = Decimal("0.10")
+DEFAULT_VOICE_COST_PER_1K_CHARS_USD = Decimal("0.025")
 
 
 def select_image_quality(tier_name: str) -> str:
@@ -272,6 +283,51 @@ def calculate_replicate_video_cost(
         return DEFAULT_VIDEO_COST_PER_SECOND_USD * Decimal(duration_seconds) * TOKEN_PRICE_MULTIPLIER
 
 
+def calculate_replicate_voice_cost(model: str, char_count: int) -> Decimal:
+    """
+    Calculate cost for Replicate voice/TTS generation.
+
+    Pricing: $0.025 per 1000 input characters with 1.2x markup.
+    Final cost is rounded up to the nearest cent.
+
+    Args:
+        model: Replicate model identifier (e.g., "resemble-ai/chatterbox-turbo")
+        char_count: Number of input characters
+
+    Returns:
+        Total cost in USD with markup applied, rounded up to cents
+    """
+    import math
+
+    try:
+        pricing = REPLICATE_PRICING.get(model)
+
+        if pricing and pricing.get("type") == "per_characters":
+            cost_per_1k = pricing.get("cost_usd_per_1k_chars", DEFAULT_VOICE_COST_PER_1K_CHARS_USD)
+        else:
+            logger.warning(f"[MEDIA_BILLING] No voice pricing found for model '{model}', using default")
+            cost_per_1k = DEFAULT_VOICE_COST_PER_1K_CHARS_USD
+
+        # Calculate base cost: (chars / 1000) * cost_per_1k
+        base_cost = (Decimal(char_count) / Decimal(1000)) * cost_per_1k
+
+        # Apply markup
+        total_cost = base_cost * TOKEN_PRICE_MULTIPLIER
+
+        # Round up to nearest cent (0.01)
+        total_cost_cents = math.ceil(float(total_cost) * 100) / 100
+        total_cost = Decimal(str(total_cost_cents))
+
+        logger.debug(f"[MEDIA_BILLING] Replicate voice cost: model={model}, chars={char_count}, base=${base_cost:.4f}, total=${total_cost:.4f}")
+        return total_cost
+
+    except Exception as e:
+        logger.error(f"[MEDIA_BILLING] Error calculating Replicate voice cost: {e}")
+        import math
+        base = (Decimal(char_count) / Decimal(1000)) * DEFAULT_VOICE_COST_PER_1K_CHARS_USD * TOKEN_PRICE_MULTIPLIER
+        return Decimal(str(math.ceil(float(base) * 100) / 100))
+
+
 def calculate_openrouter_image_cost(model: str, count: int = 1) -> Decimal:
     """
     Calculate cost for OpenRouter image operations (Gemini, etc.).
@@ -304,30 +360,34 @@ def calculate_openrouter_image_cost(model: str, count: int = 1) -> Decimal:
 def calculate_media_cost(
     provider: Literal["replicate", "openrouter"],
     model: str,
-    media_type: Literal["image", "video"] = "image",
+    media_type: Literal["image", "video", "voice"] = "image",
     count: int = 1,
     duration_seconds: Optional[int] = None,
     with_audio: bool = False,
-    variant: Optional[str] = None
+    variant: Optional[str] = None,
+    char_count: Optional[int] = None
 ) -> Decimal:
     """
     Unified function to calculate media generation cost.
-    
+
     Args:
         provider: "replicate" or "openrouter"
         model: Model identifier
-        media_type: "image" or "video"
+        media_type: "image", "video", or "voice"
         count: Number of items (for images)
         duration_seconds: Duration in seconds (for videos)
         with_audio: Whether audio is enabled (for videos, affects pricing)
         variant: Quality variant for image models (e.g., 'low', 'medium', 'high')
-        
+        char_count: Number of characters (for voice)
+
     Returns:
         Total cost in USD with markup applied
     """
     if provider == "replicate":
         if media_type == "video":
             return calculate_replicate_video_cost(model, duration_seconds or 5, with_audio)
+        elif media_type == "voice":
+            return calculate_replicate_voice_cost(model, char_count or 0)
         else:
             return calculate_replicate_image_cost(model, count, variant=variant)
     elif provider == "openrouter":

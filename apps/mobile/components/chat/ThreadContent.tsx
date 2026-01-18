@@ -48,6 +48,7 @@ import { AgentLoader } from './AgentLoader';
 import { StreamingToolCard } from './StreamingToolCard';
 import { CompactToolCard, CompactStreamingToolCard } from './CompactToolCard';
 import { MediaGenerationInline } from './MediaGenerationInline';
+import { MessageActions } from './MessageActions';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
@@ -1288,14 +1289,34 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     // Parse metadata to check for tool calls and text content
                     const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
                     const toolCalls = metadata.tool_calls || [];
-                    const textContent = metadata.text_content || '';
+                    let textContent = metadata.text_content || '';
+
+                    // Also extract text from ask/complete tool calls for MessageActions
+                    toolCalls.forEach((tc: any) => {
+                      const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                      if (toolName === 'ask' || toolName === 'complete') {
+                        const args = typeof tc.arguments === 'string'
+                          ? safeJsonParse(tc.arguments, {})
+                          : (tc.arguments || {});
+                        if (args.text) {
+                          textContent = textContent ? `${textContent}\n\n${args.text}` : args.text;
+                        }
+                      }
+                    });
 
                     // Skip if no content (no text and no tool calls)
                     if (!textContent && toolCalls.length === 0) {
                       // Fallback: try parsing content for legacy messages
                       const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                       if (!parsedContent.content) return null;
+                      // Use legacy content as textContent for MessageActions
+                      if (typeof parsedContent.content === 'string') {
+                        textContent = preprocessTextOnlyTools(parsedContent.content);
+                      }
                     }
+
+                    // Check if we're currently streaming (don't show actions while streaming)
+                    const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
 
                     const linkedTools = toolResultsMap.get(message.message_id || null);
 
@@ -1358,6 +1379,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               );
                             })}
                           </View>
+                        )}
+
+                        {/* Message actions (copy/speak) - only show when not streaming */}
+                        {!isCurrentlyStreaming && textContent && (
+                          <MessageActions text={textContent} />
                         )}
                       </View>
                     );

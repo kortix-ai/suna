@@ -25,6 +25,7 @@ import { parseToolMessage } from '@agentpress/shared';
 import { ThreadHeader } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useVoicePlayerStore } from '@/stores/voice-player-store';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
@@ -363,6 +364,10 @@ export function ThreadPage({
   // This persists after the tool completes so we can show "Success" state
   const [activeToolData, setActiveToolData] = React.useState<ToolSnackData | null>(null);
   const lastToolCallIdRef = React.useRef<string | null>(null);
+
+  // Check if voice player is active (for scroll button positioning)
+  const voiceState = useVoicePlayerStore((s) => s.state);
+  const isVoiceActive = voiceState !== 'idle';
 
   // Track if user dismissed the snack (so we don't show it again for the same tool)
   const [dismissedToolCallId, setDismissedToolCallId] = React.useState<string | null>(null);
@@ -906,8 +911,8 @@ export function ThreadPage({
             {
               position: 'absolute',
               right: 10,
-              // When snack is visible, keep position higher; when no snack, move down 40px
-              bottom: baseBottomPadding - 0 + (activeToolData ? 0 : -40),
+              // When snack is visible (tool or voice), keep position higher; when no snack, move down 40px
+              bottom: baseBottomPadding - 0 + (activeToolData || isVoiceActive ? 0 : -40),
               zIndex: 150,
             },
             scrollButtonAnimatedStyle,
