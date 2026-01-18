@@ -332,11 +332,14 @@ async def generate_voice(
     if not has_credits:
         raise HTTPException(status_code=402, detail=msg)
 
-    # Add paralinguistic tags if requested
+    # Add paralinguistic tags if requested (skip for short texts < 120 chars - not worth the wait)
     llm_cost = 0.0
-    if request.paralinguistic:
+    MIN_PARALINGUISTIC_LENGTH = 120
+    if request.paralinguistic and len(text) >= MIN_PARALINGUISTIC_LENGTH:
         text, llm_cost = await add_paralinguistic_tags(text, account_id)
         logger.info(f"[VOICE] After paralinguistic: {len(text)} chars")
+    elif request.paralinguistic:
+        logger.info(f"[VOICE] Skipping paralinguistic - text too short ({len(text)} < {MIN_PARALINGUISTIC_LENGTH} chars)")
 
     char_count = len(text)
 
@@ -423,16 +426,27 @@ async def generate_voice_stream(
     """
     import json
 
-    text = request.text.strip()
-    if not text:
+    raw_text = request.text.strip()
+    if not raw_text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    char_count = len(text)
+    # Preprocess text (remove markdown, emojis, etc.)
+    text = preprocess_text(raw_text)
 
     # Check credits before generating
     has_credits, msg, balance = await media_billing.check_credits(account_id)
     if not has_credits:
         raise HTTPException(status_code=402, detail=msg)
+
+    # Add paralinguistic tags if requested (skip for short texts < 120 chars - not worth the wait)
+    llm_cost = 0.0
+    MIN_PARALINGUISTIC_LENGTH = 120
+    if request.paralinguistic and len(text) >= MIN_PARALINGUISTIC_LENGTH:
+        text, llm_cost = await add_paralinguistic_tags(text, account_id)
+    elif request.paralinguistic:
+        logger.info(f"[VOICE_STREAM] Skipping paralinguistic - text too short ({len(text)} < {MIN_PARALINGUISTIC_LENGTH} chars)")
+
+    char_count = len(text)
 
     # Split text into chunks
     chunks = split_text_naturally(text)
@@ -469,15 +483,18 @@ async def generate_voice_stream(
                 char_count=char_count
             )
 
+            voice_cost = billing_result.get('cost', 0)
+            total_cost = voice_cost + llm_cost
+
             # Final message with summary
             yield json.dumps({
                 "done": True,
                 "char_count": char_count,
                 "chunk_count": chunk_count,
-                "cost": billing_result.get('cost', 0)
+                "cost": total_cost
             }) + "\n"
 
-            logger.info(f"[VOICE_STREAM] Completed: {char_count} chars, {chunk_count} chunks")
+            logger.info(f"[VOICE_STREAM] Completed: {char_count} chars, {chunk_count} chunks, cost=${total_cost:.4f}")
 
         except Exception as e:
             logger.error(f"[VOICE_STREAM] Failed: {e}")
