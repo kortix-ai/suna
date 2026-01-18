@@ -266,8 +266,6 @@ async def add_paralinguistic_tags(text: str, account_id: str) -> tuple[str, floa
     Returns tuple of (processed_text, llm_cost).
     """
     try:
-        logger.debug(f"[VOICE] Adding paralinguistic tags, input length: {len(text)}")
-
         response = await litellm.acompletion(
             model=PARALINGUISTIC_MODEL,
             messages=[
@@ -295,11 +293,10 @@ async def add_paralinguistic_tags(text: str, account_id: str) -> tuple[str, floa
                 type='usage'
             )
 
-        logger.info(f"[VOICE] Paralinguistic tags added: {len(text)} -> {len(processed_text)} chars, cost=${float(llm_cost):.4f}")
         return processed_text, float(llm_cost)
 
     except Exception as e:
-        logger.warning(f"[VOICE] Paralinguistic processing failed, using original text: {e}")
+        logger.error(f"[VOICE] Paralinguistic processing failed: {e}")
         return text, 0.0
 
 
@@ -324,9 +321,6 @@ async def generate_voice(
     # Preprocess text (remove markdown, emojis, etc.)
     text = preprocess_text(raw_text)
 
-    logger.info(f"[VOICE] Raw text length: {len(raw_text)}, Cleaned length: {len(text)}")
-    logger.debug(f"[VOICE] Text preview: {text[:200]}...")
-
     # Check credits before generating
     has_credits, msg, balance = await media_billing.check_credits(account_id)
     if not has_credits:
@@ -337,20 +331,10 @@ async def generate_voice(
     MIN_PARALINGUISTIC_LENGTH = 120
     if request.paralinguistic and len(text) >= MIN_PARALINGUISTIC_LENGTH:
         text, llm_cost = await add_paralinguistic_tags(text, account_id)
-        logger.info(f"[VOICE] After paralinguistic: {len(text)} chars")
-    elif request.paralinguistic:
-        logger.info(f"[VOICE] Skipping paralinguistic - text too short ({len(text)} < {MIN_PARALINGUISTIC_LENGTH} chars)")
 
     char_count = len(text)
-
-    # Split text into chunks
     chunks = split_text_naturally(text)
     chunk_count = len(chunks)
-
-    logger.info(f"[VOICE] Generating {chunk_count} chunk(s) for {char_count} chars, account={account_id}")
-    logger.info(f"[VOICE] Reference audio: {request.reference_audio or 'None (using default voice)'}")
-    for i, chunk in enumerate(chunks):
-        logger.debug(f"[VOICE] Chunk {i+1}/{chunk_count} ({len(chunk)} chars): {chunk[:80]}...")
 
     try:
         # Rate-limited chunk generation to avoid Replicate's burst limit (5 requests)
@@ -361,11 +345,8 @@ async def generate_voice(
         semaphore = asyncio.Semaphore(MAX_CONCURRENT)
 
         async def generate_chunk_with_index(idx: int, chunk_text: str) -> tuple:
-            # Small staggered delay to avoid burst
             await asyncio.sleep(idx * DELAY_BETWEEN_STARTS)
-
             async with semaphore:
-                logger.debug(f"[VOICE] Generating chunk {idx+1}/{chunk_count}: {len(chunk_text)} chars")
                 url = await generate_voice_chunk(
                     text=chunk_text,
                     voice=request.voice,
@@ -394,9 +375,7 @@ async def generate_voice(
 
         voice_cost = billing_result.get('cost', 0)
         total_cost = voice_cost + llm_cost
-        logger.info(f"[VOICE] Generated successfully: {char_count} chars, {chunk_count} chunks, voice=${voice_cost:.4f}, llm=${llm_cost:.4f}, total=${total_cost:.4f}")
 
-        # Return all URLs - mobile plays them sequentially
         return VoiceGenerationResponse(
             audio_urls=audio_urls,
             char_count=char_count,
@@ -443,12 +422,8 @@ async def generate_voice_stream(
     MIN_PARALINGUISTIC_LENGTH = 120
     if request.paralinguistic and len(text) >= MIN_PARALINGUISTIC_LENGTH:
         text, llm_cost = await add_paralinguistic_tags(text, account_id)
-    elif request.paralinguistic:
-        logger.info(f"[VOICE_STREAM] Skipping paralinguistic - text too short ({len(text)} < {MIN_PARALINGUISTIC_LENGTH} chars)")
 
     char_count = len(text)
-
-    # Split text into chunks
     chunks = split_text_naturally(text)
     chunk_count = len(chunks)
 
@@ -456,11 +431,8 @@ async def generate_voice_stream(
         """Generator that yields chunk URLs as NDJSON."""
         try:
             for i, chunk in enumerate(chunks):
-                # Small delay between requests to avoid rate limits
                 if i > 0:
                     await asyncio.sleep(0.3)
-
-                logger.debug(f"[VOICE_STREAM] Generating chunk {i+1}/{chunk_count}")
                 url = await generate_voice_chunk(
                     text=chunk,
                     voice=request.voice,
@@ -486,15 +458,12 @@ async def generate_voice_stream(
             voice_cost = billing_result.get('cost', 0)
             total_cost = voice_cost + llm_cost
 
-            # Final message with summary
             yield json.dumps({
                 "done": True,
                 "char_count": char_count,
                 "chunk_count": chunk_count,
                 "cost": total_cost
             }) + "\n"
-
-            logger.info(f"[VOICE_STREAM] Completed: {char_count} chars, {chunk_count} chunks, cost=${total_cost:.4f}")
 
         except Exception as e:
             logger.error(f"[VOICE_STREAM] Failed: {e}")
