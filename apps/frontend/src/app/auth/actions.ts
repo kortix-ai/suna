@@ -17,10 +17,12 @@ export async function signIn(prevState: any, formData: FormData) {
   }
 
   const supabase = await createClient();
+  const normalizedEmail = email.trim().toLowerCase();
 
   // Use magic link (passwordless) authentication
   // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
   // For web, use standard origin (https://kortix.com/auth/callback)
+  // Include email in redirect URL so it's available if the link expires
   let emailRedirectTo: string;
   if (isDesktopApp && origin.startsWith('kortix://')) {
     // Match mobile implementation - simple protocol URL with optional terms_accepted
@@ -30,11 +32,11 @@ export async function signIn(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
     options: {
       emailRedirectTo,
       shouldCreateUser: true, // Auto-create account if doesn't exist
@@ -46,8 +48,8 @@ export async function signIn(prevState: any, formData: FormData) {
   }
 
   // Return success message - user needs to check email
-  return { 
-    success: true, 
+  return {
+    success: true,
     message: 'Check your email for a magic link to sign in',
     email: email.trim().toLowerCase(),
   };
@@ -70,10 +72,12 @@ export async function signUp(prevState: any, formData: FormData) {
   }
 
   const supabase = await createClient();
+  const normalizedEmail = email.trim().toLowerCase();
 
   // Use magic link (passwordless) authentication - auto-creates account
   // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
   // For web, use standard origin (https://kortix.com/auth/callback)
+  // Include email in redirect URL so it's available if the link expires
   let emailRedirectTo: string;
   if (isDesktopApp && origin.startsWith('kortix://')) {
     // Match mobile implementation - simple protocol URL with optional terms_accepted
@@ -83,11 +87,11 @@ export async function signUp(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
     options: {
       emailRedirectTo,
       shouldCreateUser: true,
@@ -102,11 +106,11 @@ export async function signUp(prevState: any, formData: FormData) {
   }
 
   // Return success message - user needs to check email
-    return {
-    success: true, 
+  return {
+    success: true,
     message: 'Check your email for a magic link to complete sign up',
     email: email.trim().toLowerCase(),
-    };
+  };
 }
 
 export async function forgotPassword(prevState: any, formData: FormData) {
@@ -173,10 +177,12 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
   }
 
   const supabase = await createClient();
+  const normalizedEmail = email.trim().toLowerCase();
 
   // Use magic link (passwordless) authentication
   // For desktop app, use custom protocol (kortix://auth/callback) - same as mobile
   // For web, use standard origin (https://kortix.com/auth/callback)
+  // Include email in redirect URL so it's available if the link expires
   let emailRedirectTo: string;
   if (isDesktopApp && origin.startsWith('kortix://')) {
     // Match mobile implementation - simple protocol URL with optional terms_accepted
@@ -186,11 +192,11 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
     }
     emailRedirectTo = `kortix://auth/callback${params.toString() ? `?${params.toString()}` : ''}`;
   } else {
-    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}${acceptedTerms ? '&terms_accepted=true' : ''}`;
+    emailRedirectTo = `${origin}/auth/callback?returnUrl=${encodeURIComponent(returnUrl || '/dashboard')}&email=${encodeURIComponent(normalizedEmail)}${acceptedTerms ? '&terms_accepted=true' : ''}`;
   }
 
   const { error } = await supabase.auth.signInWithOtp({
-    email: email.trim().toLowerCase(),
+    email: normalizedEmail,
     options: {
       emailRedirectTo,
       shouldCreateUser: true, // Auto-create account if doesn't exist
@@ -202,8 +208,8 @@ export async function resendMagicLink(prevState: any, formData: FormData) {
   }
 
   // Return success message - user needs to check email
-  return { 
-    success: true, 
+  return {
+    success: true,
     message: 'Check your email for a magic link to sign in',
     email: email.trim().toLowerCase(),
   };
@@ -295,4 +301,42 @@ export async function signOut() {
   }
 
   return redirect('/');
+}
+
+export async function verifyOtp(prevState: any, formData: FormData) {
+  const email = formData.get('email') as string;
+  const token = formData.get('token') as string;
+  const returnUrl = formData.get('returnUrl') as string | undefined;
+
+  if (!email || !email.includes('@')) {
+    return { message: 'Please enter a valid email address' };
+  }
+
+  if (!token || token.length !== 6) {
+    return { message: 'Please enter the 6-digit code from your email' };
+  }
+
+  const supabase = await createClient();
+
+  const { data, error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: token.trim(),
+    type: 'magiclink',
+  });
+
+  if (error) {
+    return { message: error.message || 'Invalid or expired code' };
+  }
+
+  // Determine if new user (for analytics)
+  const isNewUser = data.user && (Date.now() - new Date(data.user.created_at).getTime()) < 60000;
+  const authEvent = isNewUser ? 'signup' : 'login';
+
+  // Return success - let the client handle the redirect
+  return {
+    success: true,
+    authEvent,
+    authMethod: 'email_otp',
+    redirectTo: returnUrl || '/dashboard',
+  };
 }
