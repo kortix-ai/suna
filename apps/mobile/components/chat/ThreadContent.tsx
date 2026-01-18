@@ -1276,6 +1276,31 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             const assistantMessages = group.messages.filter((m) => m.type === 'assistant');
             const toolResultsMap = toolResultsMaps.get(group.key) || new Map();
 
+            // Aggregate all text content from assistant messages for MessageActions (shown only at end)
+            const aggregatedTextContent = (() => {
+              const textParts: string[] = [];
+              assistantMessages.forEach((msg) => {
+                const meta = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+                if (meta.text_content) textParts.push(meta.text_content);
+                // Also extract text from ask/complete tool calls
+                const tcs = meta.tool_calls || [];
+                tcs.forEach((tc: any) => {
+                  const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                  if (toolName === 'ask' || toolName === 'complete') {
+                    const args = typeof tc.arguments === 'string'
+                      ? safeJsonParse(tc.arguments, {})
+                      : (tc.arguments || {});
+                    if (args.text) textParts.push(args.text);
+                  }
+                });
+              });
+              return textParts.join('\n\n');
+            })();
+
+            // Check if we're currently streaming (don't show actions while streaming)
+            const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
+            const isLastGroup = groupIndex === groupedMessages.length - 1;
+
             return (
               <View key={group.key} className="mb-6">
                 <View className="mb-3 flex-row items-center">
@@ -1291,37 +1316,16 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     const toolCalls = metadata.tool_calls || [];
                     let textContent = metadata.text_content || '';
 
-                    // Also extract text from ask/complete tool calls for MessageActions
-                    toolCalls.forEach((tc: any) => {
-                      const toolName = tc.function_name?.replace(/_/g, '-') || '';
-                      if (toolName === 'ask' || toolName === 'complete') {
-                        const args = typeof tc.arguments === 'string'
-                          ? safeJsonParse(tc.arguments, {})
-                          : (tc.arguments || {});
-                        if (args.text) {
-                          textContent = textContent ? `${textContent}\n\n${args.text}` : args.text;
-                        }
-                      }
-                    });
-
                     // Skip if no content (no text and no tool calls)
                     if (!textContent && toolCalls.length === 0) {
                       // Fallback: try parsing content for legacy messages
                       const parsedContent = safeJsonParse<ParsedContent>(message.content, {});
                       if (!parsedContent.content) return null;
-                      // Use legacy content as textContent for MessageActions
-                      if (typeof parsedContent.content === 'string') {
-                        textContent = preprocessTextOnlyTools(parsedContent.content);
-                      }
                     }
-
-                    // Check if we're currently streaming (don't show actions while streaming)
-                    const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
 
                     const linkedTools = toolResultsMap.get(message.message_id || null);
 
                     // Check if this is the latest message (last assistant message in the last group)
-                    const isLastGroup = groupIndex === groupedMessages.length - 1;
                     const isLastAssistantMessage = msgIndex === assistantMessages.length - 1;
                     const isLatestMessage = isLastGroup && isLastAssistantMessage;
 
@@ -1381,9 +1385,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           </View>
                         )}
 
-                        {/* Message actions (copy/speak) - only show when not streaming */}
-                        {!isCurrentlyStreaming && textContent && (
-                          <MessageActions text={textContent} />
+                        {/* Message actions (copy/speak) - only show on last message of response */}
+                        {isLatestMessage && !isCurrentlyStreaming && aggregatedTextContent && (
+                          <MessageActions text={aggregatedTextContent} />
                         )}
                       </View>
                     );

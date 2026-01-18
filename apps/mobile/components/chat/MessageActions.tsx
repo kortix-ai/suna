@@ -67,7 +67,6 @@ function ActionButton({
         as={isActive && activeIcon ? activeIcon : icon}
         size={16}
         color={isActive ? activeColor : iconColor}
-        fill={isActive ? activeColor : 'transparent'}
       />
     </AnimatedPressable>
   );
@@ -173,7 +172,7 @@ export function MessageActions({ text }: MessageActionsProps) {
         onPress={handleCopy}
         icon={copied ? Check : Copy}
         isActive={copied}
-        activeColor="#22C55E"
+        activeColor={primaryColor}
         iconColor={iconColor}
       />
 

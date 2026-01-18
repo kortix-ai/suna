@@ -109,10 +109,7 @@ export const useVoicePlayerStore = create<VoicePlayerStore>((set, get) => ({
       const requestBody = {
         text: cleanedText,
         reference_audio: 'https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/public-files/marko.mp3',
-        paralinguistic: true,  // Add natural speech sounds via LLM
       };
-      log.log('[VoicePlayer] Request body text length:', requestBody.text.length);
-      log.log('[VoicePlayer] Paralinguistic enabled:', requestBody.paralinguistic);
 
       const response = await fetch(`${API_URL}/voice/generate`, {
         method: 'POST',

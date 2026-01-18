@@ -99,7 +99,6 @@ export const useVoicePlayerStore = create<VoicePlayerState>((set, get) => ({
       const requestBody = {
         text: cleanedText,
         reference_audio: 'https://heprlhlltebrxydgtsjs.supabase.co/storage/v1/object/public/image-uploads/public-files/marko.mp3',
-        paralinguistic: true,
       };
 
       // Get auth token
