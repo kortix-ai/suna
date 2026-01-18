@@ -19,6 +19,7 @@ export interface ChatSnackProps {
     subscriptionData?: any;
     onOpenUpgrade?: () => void;
     isVisible?: boolean;
+    threadId?: string | null;  // Only show voice player when in a thread
 }
 
 const SNACK_LAYOUT_ID = 'chat-snack-float';
@@ -33,6 +34,7 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
     subscriptionData,
     onOpenUpgrade,
     isVisible = false,
+    threadId,
 }) => {
     const [currentView, setCurrentView] = React.useState(0);
     const [userDismissedUpgrade, setUserDismissedUpgrade] = React.useState(false);
@@ -60,8 +62,8 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
 
     const notifications: string[] = [];
 
-    // Voice takes priority when active
-    if (isVoiceActive) {
+    // Voice takes priority when active (only show in thread context)
+    if (isVoiceActive && threadId) {
         notifications.push('voice');
     }
 
@@ -89,7 +91,7 @@ export const ChatSnack: React.FC<ChatSnackProps> = ({
         }
     }, [totalNotifications, currentView]);
 
-    const shouldShowSnack = isVisible || isVoiceActive ||
+    const shouldShowSnack = isVisible || (isVoiceActive && threadId) ||
         (isFreeTier && subscriptionData && !isLocalMode() && !userDismissedUpgrade && onOpenUpgrade && totalNotifications > 0);
 
     React.useEffect(() => {

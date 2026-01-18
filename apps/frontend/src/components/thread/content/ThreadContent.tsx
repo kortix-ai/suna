@@ -300,6 +300,32 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       ? assistantMessages[assistantMessages.length - 1].message_id
       : null;
 
+  // Aggregate all text content from assistant messages for MessageActions
+  const aggregatedTextContent = useMemo(() => {
+    const textParts: string[] = [];
+    assistantMessages.forEach((message) => {
+      const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+      if (typeof metadata.text_content === 'string' && metadata.text_content) {
+        textParts.push(metadata.text_content);
+      }
+      // Also extract text from ask/complete tool calls
+      const toolCalls = metadata.tool_calls || [];
+      toolCalls.forEach((tc: any) => {
+        const toolName = tc.function_name?.replace(/_/g, '-') || '';
+        if (toolName === 'ask' || toolName === 'complete') {
+          let args = tc.arguments || {};
+          if (typeof args === 'string') {
+            try { args = JSON.parse(args); } catch { args = {}; }
+          }
+          if (args.text) {
+            textParts.push(args.text);
+          }
+        }
+      });
+    });
+    return textParts.join('\n\n');
+  }, [assistantMessages]);
+
   const renderedMessages = useMemo(() => {
     const elements: React.ReactNode[] = [];
     let assistantMessageCount = 0;
@@ -326,34 +352,15 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
         if (!renderedContent) return;
 
-        // Extract text content for MessageActions (including ask/complete tool text)
-        const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-        let textContent = typeof metadata.text_content === 'string' ? metadata.text_content : '';
-
-        // Also extract text from ask/complete tool calls
-        const toolCalls = metadata.tool_calls || [];
-        toolCalls.forEach((tc: any) => {
-          const toolName = tc.function_name?.replace(/_/g, '-') || '';
-          if (toolName === 'ask' || toolName === 'complete') {
-            let args = tc.arguments || {};
-            if (typeof args === 'string') {
-              try { args = JSON.parse(args); } catch { args = {}; }
-            }
-            if (args.text) {
-              textContent = textContent ? `${textContent}\n\n${args.text}` : args.text;
-            }
-          }
-        });
-
         // Check if currently streaming
         const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
 
         elements.push(
           <div key={msgKey} className={assistantMessageCount > 0 ? "mt-3" : ""}>
             <div className="break-words overflow-hidden">{renderedContent}</div>
-            {/* Message actions - only show when not streaming */}
-            {!isCurrentlyStreaming && textContent && (
-              <MessageActions text={textContent} />
+            {/* Message actions - only show on last message of group, not streaming */}
+            {isLatestMessage && !isCurrentlyStreaming && aggregatedTextContent && (
+              <MessageActions text={aggregatedTextContent} />
             )}
           </div>,
         );
@@ -375,6 +382,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     threadId,
     onPromptFill,
     streamHookStatus,
+    aggregatedTextContent,
   ]);
 
   const streamingContent = useMemo(() => {

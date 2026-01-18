@@ -321,6 +321,11 @@ async def generate_voice(
     # Preprocess text (remove markdown, emojis, etc.)
     text = preprocess_text(raw_text)
 
+    # Block overly large texts
+    MAX_TEXT_LENGTH = 3000
+    if len(text) > MAX_TEXT_LENGTH:
+        raise HTTPException(status_code=413, detail="Text too large")
+
     # Check credits before generating
     has_credits, msg, balance = await media_billing.check_credits(account_id)
     if not has_credits:
@@ -411,6 +416,11 @@ async def generate_voice_stream(
 
     # Preprocess text (remove markdown, emojis, etc.)
     text = preprocess_text(raw_text)
+
+    # Block overly large texts
+    MAX_TEXT_LENGTH = 3000
+    if len(text) > MAX_TEXT_LENGTH:
+        raise HTTPException(status_code=413, detail="Text too large")
 
     # Check credits before generating
     has_credits, msg, balance = await media_billing.check_credits(account_id)
