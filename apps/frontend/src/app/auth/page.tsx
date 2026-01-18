@@ -7,7 +7,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { useMediaQuery } from '@/hooks/utils';
 import { useState, useEffect, Suspense, lazy } from 'react';
-import { signUp, resendMagicLink } from './actions';
+import { signUp, verifyOtp, resendMagicLink } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { MailCheck, Clock, ExternalLink } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -20,6 +20,7 @@ import { ReferralCodeDialog } from '@/components/referrals/referral-code-dialog'
 import { isElectron, getAuthOrigin } from '@/lib/utils/is-electron';
 import { ExampleShowcase } from '@/components/auth/example-showcase';
 import { trackSendAuthLink } from '@/lib/analytics/gtm';
+import { backendApi } from '@/lib/api-client';
 
 // Lazy load heavy components
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
@@ -49,11 +50,11 @@ function LoginContent() {
   const { wasLastMethod: wasEmailLastMethod, markAsUsed: markEmailAsUsed } = useAuthMethodTracking('email');
 
   useEffect(() => {
-    // Don't auto-redirect if showing expired link state
-    if (!isLoading && user && !isExpired) {
-      router.push(returnUrl || '/dashboard');
+    // Redirect to dashboard if user is logged in
+    if (!isLoading && user) {
+      router.replace(returnUrl || '/dashboard');
     }
-  }, [user, isLoading, router, returnUrl, isExpired]);
+  }, [user, isLoading, router, returnUrl]);
 
   const isSuccessMessage =
     message &&
@@ -70,6 +71,10 @@ function LoginContent() {
   const [linkExpired, setLinkExpired] = useState(isExpired);
   const [expiredEmailState, setExpiredEmailState] = useState(expiredEmail);
   const [resendEmail, setResendEmail] = useState('');
+  const [showOtpInput, setShowOtpInput] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [codeSent, setCodeSent] = useState(false);
+  const [useOtpFallback, setUseOtpFallback] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -183,7 +188,8 @@ function LoginContent() {
     };
   };
 
-  const handleResendMagicLink = async (prevState: any, formData: FormData) => {
+  // Send OTP-only email (no magic link button) via backend
+  const handleSendOtpEmail = async (prevState: any, formData: FormData) => {
     trackSendAuthLink();
     markEmailAsUsed();
 
@@ -195,37 +201,113 @@ function LoginContent() {
 
     setRegistrationEmail(email);
 
-    const finalReturnUrl = returnUrl || '/dashboard';
-    formData.append('email', email);
-    formData.append('returnUrl', finalReturnUrl);
-    // Use custom protocol for Electron, standard origin for web
-    formData.append('origin', isElectron() ? getAuthOrigin() : window.location.origin);
-    // If email is already known from expired link, assume terms were already accepted
-    formData.append('acceptedTerms', 'true');
-    // Flag for Electron to use custom callback handling
-    if (isElectron()) {
-      formData.append('isDesktopApp', 'true');
+    try {
+      // Call backend API to send OTP-only email
+      const response = await backendApi.post('/auth/send-otp', { email });
+
+      if (response.success) {
+        setExpiredEmailState(email);
+        setCodeSent(true);
+        setShowOtpInput(true);
+        setOtpCode('');
+        return { success: true };
+      } else {
+        const errorMessage = response.error?.message || 'Failed to send verification code';
+        toast.error('Failed to send code', {
+          description: errorMessage,
+          duration: 5000,
+        });
+        return {};
+      }
+    } catch (error: any) {
+      toast.error('Failed to send code', {
+        description: error.message || 'An error occurred',
+        duration: 5000,
+      });
+      return {};
+    }
+  };
+
+  // Don't block render while checking auth - let content show immediately
+  // The useEffect will redirect if user is already authenticated
+
+  // Handle OTP verification
+  const handleVerifyOtp = async (prevState: any, formData: FormData) => {
+    const email = expiredEmailState || formData.get('email') as string;
+    if (!email) {
+      toast.error(t('pleaseEnterValidEmail'));
+      return {};
     }
 
-    const result = await resendMagicLink(prevState, formData);
+    formData.set('email', email);
+    formData.set('token', otpCode);
+    formData.set('returnUrl', returnUrl || '/dashboard');
 
-    // Magic link always returns success with message (no immediate redirect)
-    if (result && typeof result === 'object' && 'success' in result && result.success) {
-      if ('email' in result && result.email) {
-        setRegistrationEmail(result.email as string);
-        setLinkExpired(false);
-        setRegistrationSuccess(true);
-        // Clean up URL params
-        const params = new URLSearchParams(window.location.search);
-        params.delete('expired');
-        params.delete('email');
-        window.history.pushState({ path: window.location.pathname }, '', window.location.pathname + (params.toString() ? '?' + params.toString() : ''));
+    const result = await verifyOtp(prevState, formData);
+
+    if (result && typeof result === 'object') {
+      if ('message' in result) {
+        toast.error('Verification failed', {
+          description: result.message as string,
+          duration: 5000,
+        });
+        return {};
+      }
+
+      if ('success' in result && result.success) {
+        // Full page reload to ensure AuthProvider re-initializes with new session cookies
+        // router.replace() is client-side and won't refresh the AuthProvider state
+        const redirectTo = (result as any).redirectTo || '/dashboard';
+        const authEvent = (result as any).authEvent || 'login';
+        const authMethod = (result as any).authMethod || 'email_otp';
+        window.location.href = `${redirectTo}?auth_event=${authEvent}&auth_method=${authMethod}`;
         return result;
       }
     }
 
+    return result;
+  };
+
+  // Don't show expired view if user is logged in or still loading
+  if (isLoading || user) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <KortixLoader size="medium" />
+      </div>
+    );
+  }
+
+  // Handle resend magic link
+  const handleResendMagicLink = async (prevState: any, formData: FormData) => {
+    trackSendAuthLink();
+    markEmailAsUsed();
+
+    const email = expiredEmailState || formData.get('email') as string;
+    if (!email) {
+      toast.error(t('pleaseEnterValidEmail'));
+      return {};
+    }
+
+    formData.set('email', email);
+    formData.set('returnUrl', returnUrl || '/dashboard');
+    formData.set('origin', isElectron() ? getAuthOrigin() : window.location.origin);
+    formData.set('acceptedTerms', 'true');
+    if (isElectron()) {
+      formData.set('isDesktopApp', 'true');
+    }
+
+    const result = await resendMagicLink(prevState, formData);
+
+    if (result && typeof result === 'object' && 'success' in result && result.success) {
+      setRegistrationEmail(email);
+      setExpiredEmailState(email);
+      setLinkExpired(false);
+      setRegistrationSuccess(true);
+      return result;
+    }
+
     if (result && typeof result === 'object' && 'message' in result) {
-      toast.error(t('signUpFailed'), {
+      toast.error('Failed to send magic link', {
         description: result.message as string,
         duration: 5000,
       });
@@ -235,66 +317,148 @@ function LoginContent() {
     return result;
   };
 
-  // Don't block render while checking auth - let content show immediately
-  // The useEffect will redirect if user is already authenticated
-
-  // Expired link view - always show resend form (Supabase clears session on expired links anyway)
+  // Expired link view
   if (linkExpired) {
+    const emailForProvider = expiredEmailState || resendEmail;
+    const provider = emailForProvider ? getEmailProviderInfo(emailForProvider) : null;
+
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-4">
         <div className="w-full max-w-md mx-auto">
           <div className="text-center">
-            <div className="bg-orange-50 dark:bg-orange-950/20 rounded-full p-4 mb-6 inline-flex">
-              <Clock className="h-12 w-12 text-orange-500 dark:text-orange-400" />
-            </div>
+            {!codeSent ? (
+              // Step 1: Link expired, offer to resend or use OTP
+              <>
+                <div className="bg-orange-50 dark:bg-orange-950/20 rounded-full p-4 mb-6 inline-flex">
+                  <Clock className="h-12 w-12 text-orange-500 dark:text-orange-400" />
+                </div>
 
-            <h1 className="text-3xl font-semibold text-foreground mb-4">
-              {t('magicLinkExpired')}
-            </h1>
+                <h1 className="text-3xl font-semibold text-foreground mb-4">
+                  {t('magicLinkExpired')}
+                </h1>
 
-            <p className="text-muted-foreground mb-6">
-              {t('magicLinkExpiredDescription')}
-            </p>
+                <p className="text-muted-foreground mb-6">
+                  {t('magicLinkExpiredDescription')}
+                </p>
 
-            {expiredEmailState && (
-              <p className="text-lg font-medium mb-6 text-foreground">
-                {expiredEmailState}
-              </p>
-            )}
+                {expiredEmailState && (
+                  <p className="text-lg font-medium mb-6 text-foreground">
+                    {expiredEmailState}
+                  </p>
+                )}
 
-            <div className="bg-orange-50 dark:bg-orange-950/20 border border-orange-100 dark:border-orange-900/50 rounded-lg p-4 mb-8">
-              <p className="text-sm text-orange-800 dark:text-orange-400">
-                {t('magicLinkDescription')}
-              </p>
-            </div>
+                {!useOtpFallback ? (
+                  // Primary: Resend magic link
+                  <form className="space-y-4">
+                    {!expiredEmailState && (
+                      <Input
+                        id="email"
+                        name="email"
+                        type="email"
+                        placeholder={t('emailAddress')}
+                        required
+                        onChange={(e) => setResendEmail(e.target.value)}
+                      />
+                    )}
 
-            <form className="space-y-4">
-              {!expiredEmailState && (
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  placeholder={t('emailAddress')}
-                  required
-                  onChange={(e) => setResendEmail(e.target.value)}
-                />
-              )}
+                    <SubmitButton
+                      formAction={handleResendMagicLink}
+                      className="w-full h-10"
+                      pendingText="Sending..."
+                      disabled={!expiredEmailState && !resendEmail}
+                    >
+                      Resend magic link
+                    </SubmitButton>
 
-              <SubmitButton
-                formAction={handleResendMagicLink}
-                className="w-full h-10"
-                pendingText={t('resending')}
-                disabled={!expiredEmailState && !resendEmail}
-              >
-                {t('resendMagicLink')}
-              </SubmitButton>
+                    <button
+                      type="button"
+                      onClick={() => setUseOtpFallback(true)}
+                      className="text-sm text-muted-foreground hover:text-foreground hover:underline transition-colors w-full text-center"
+                    >
+                      Having trouble? Use verification code instead
+                    </button>
+                  </form>
+                ) : (
+                  // Fallback: Send OTP code
+                  <form className="space-y-4">
+                    {!expiredEmailState && (
+                      <Input
+                        id="email"
+                        name="email"
+                        type="email"
+                        placeholder={t('emailAddress')}
+                        required
+                        onChange={(e) => setResendEmail(e.target.value)}
+                      />
+                    )}
 
-              {/* Show "Open X" button when email is known */}
-              {(() => {
-                const email = expiredEmailState || resendEmail;
-                const provider = email ? getEmailProviderInfo(email) : null;
-                if (provider) {
-                  return (
+                    <SubmitButton
+                      formAction={handleSendOtpEmail}
+                      className="w-full h-10"
+                      pendingText="Sending..."
+                      disabled={!expiredEmailState && !resendEmail}
+                    >
+                      Send verification code
+                    </SubmitButton>
+
+                    <p className="text-xs text-muted-foreground text-center">
+                      We'll send a 6-digit code instead of a clickable link.
+                    </p>
+
+                    <button
+                      type="button"
+                      onClick={() => setUseOtpFallback(false)}
+                      className="text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-center"
+                    >
+                      ← Back to magic link
+                    </button>
+                  </form>
+                )}
+              </>
+            ) : (
+              // Step 2: Code sent, show OTP input
+              <>
+                <div className="bg-green-50 dark:bg-green-950/20 rounded-full p-4 mb-6 inline-flex">
+                  <MailCheck className="h-12 w-12 text-green-500 dark:text-green-400" />
+                </div>
+
+                <h1 className="text-3xl font-semibold text-foreground mb-4">
+                  Check your email
+                </h1>
+
+                <p className="text-muted-foreground mb-2">
+                  We sent a 6-digit code to
+                </p>
+
+                <p className="text-lg font-medium mb-6 text-foreground">
+                  {expiredEmailState || resendEmail}
+                </p>
+
+                <form className="space-y-4">
+                  <Input
+                    id="otp"
+                    name="otp"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    maxLength={6}
+                    placeholder="000000"
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    className="text-center text-2xl tracking-[0.5em] font-mono h-14"
+                    autoFocus
+                  />
+
+                  <SubmitButton
+                    formAction={handleVerifyOtp}
+                    className="w-full h-10"
+                    pendingText="Verifying..."
+                    disabled={otpCode.length !== 6}
+                  >
+                    Verify code
+                  </SubmitButton>
+
+                  {provider && (
                     <Button asChild variant="outline" size="lg" className="w-full">
                       <a
                         href={provider.url}
@@ -305,11 +469,21 @@ function LoginContent() {
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     </Button>
-                  );
-                }
-                return null;
-              })()}
-            </form>
+                  )}
+                </form>
+
+                <button
+                  onClick={() => {
+                    setCodeSent(false);
+                    setShowOtpInput(false);
+                    setOtpCode('');
+                  }}
+                  className="mt-6 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Didn't receive it? Send again
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

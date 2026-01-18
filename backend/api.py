@@ -49,6 +49,7 @@ from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
 from core.services.orphan_cleanup import cleanup_orphaned_agent_runs
+from auth import api as auth_api
 
 
 if sys.platform == "win32":
@@ -363,6 +364,9 @@ api_router.include_router(staged_files_router, prefix="/files")
 
 from core.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)
+
+# Auth OTP endpoint for expired magic links
+api_router.include_router(auth_api.router)
 
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
