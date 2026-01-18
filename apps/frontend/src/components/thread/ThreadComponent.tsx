@@ -1629,10 +1629,20 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const displayMessages = useMemo(() => {
     const hasRealUserMessage = messages.some(m => m.type === 'user' && m.message_id !== 'optimistic-user');
     if (showOptimisticUI || (optimisticPrompt && !hasRealUserMessage)) {
-      const streamedNonUserMessages = messages.filter(m => 
-        m.type !== 'user' || m.message_id !== 'optimistic-user'
-      );
-      
+      // When showing optimistic UI, filter out user messages that match the optimistic prompt content
+      // This prevents duplicate user bubbles when both temp and optimistic messages exist
+      const optimisticContent = optimisticPrompt?.trim();
+      const streamedNonUserMessages = messages.filter(m => {
+        // Keep all non-user messages
+        if (m.type !== 'user') return true;
+        // Filter out the optimistic-user placeholder
+        if (m.message_id === 'optimistic-user') return false;
+        // Filter out user messages with same content as optimistic prompt (temp or server-confirmed)
+        if (optimisticContent && String(m.content || '').trim() === optimisticContent) return false;
+        // Keep other user messages (from previous messages in conversation)
+        return true;
+      });
+
       return [...optimisticMessages, ...streamedNonUserMessages];
     }
     return messages;
