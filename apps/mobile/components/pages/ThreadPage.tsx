@@ -25,6 +25,7 @@ import { parseToolMessage } from '@agentpress/shared';
 import { ThreadHeader } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useVoicePlayerStore } from '@/stores/voice-player-store';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { useThread } from '@/lib/chat';
 import { Text } from '@/components/ui/text';
@@ -364,6 +365,10 @@ export function ThreadPage({
   const [activeToolData, setActiveToolData] = React.useState<ToolSnackData | null>(null);
   const lastToolCallIdRef = React.useRef<string | null>(null);
 
+  // Check if voice player is active (for scroll button positioning)
+  const voiceState = useVoicePlayerStore((s) => s.state);
+  const isVoiceActive = voiceState !== 'idle';
+
   // Track if user dismissed the snack (so we don't show it again for the same tool)
   const [dismissedToolCallId, setDismissedToolCallId] = React.useState<string | null>(null);
 
@@ -452,12 +457,17 @@ export function ThreadPage({
   }, [messages, activeToolData, dismissedToolCallId]);
 
   // Clear activeToolData and dismissed state when thread changes
+  // Get voice player close function
+  const voiceClose = useVoicePlayerStore((s) => s.close);
+
   React.useEffect(() => {
     log.log('[ToolSnack] Thread changed, clearing activeToolData and dismissed state');
     setActiveToolData(null);
     setDismissedToolCallId(null);
     lastToolCallIdRef.current = null;
-  }, [chat.activeThread?.id]);
+    // Close voice player when switching threads
+    voiceClose();
+  }, [chat.activeThread?.id, voiceClose]);
 
   const windowHeight = Dimensions.get('window').height;
   const baseBottomPadding = CHAT_INPUT_SECTION_HEIGHT.THREAD_PAGE + insets.bottom;
@@ -906,8 +916,8 @@ export function ThreadPage({
             {
               position: 'absolute',
               right: 10,
-              // When snack is visible, keep position higher; when no snack, move down 40px
-              bottom: baseBottomPadding - 0 + (activeToolData ? 0 : -40),
+              // When snack is visible (tool or voice), keep position higher; when no snack, move down 40px
+              bottom: baseBottomPadding - 0 + (activeToolData || isVoiceActive ? 0 : -40),
               zIndex: 150,
             },
             scrollButtonAnimatedStyle,
@@ -990,6 +1000,7 @@ export function ThreadPage({
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}
         isTranscribing={isTranscribing}
+        isNewThread={chat.isNewThreadOptimistic}
         activeToolData={activeToolData}
         agentName={agentManager.selectedAgent?.name}
         onToolSnackPress={() => {
