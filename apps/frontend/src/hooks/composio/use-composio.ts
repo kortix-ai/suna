@@ -12,7 +12,14 @@ import {
 } from './utils';
 import { composioKeys } from './keys';
 import { toast } from '@/lib/toast';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+
+const POPULAR_TOOLKIT_SLUGS = [
+  'gmail', 'googledrive', 'googlecalendar', 'googlesheets', 'googledocs',
+  'slack', 'notion', 'github', 'linear', 'asana', 'trello', 'jira',
+  'discord', 'twitter', 'linkedin', 'hubspot', 'salesforce', 'zendesk',
+  'dropbox', 'airtable', 'figma', 'stripe', 'shopify', 'mailchimp'
+];
 
 export const useComposioCategories = () => {
   return useQuery({
@@ -65,6 +72,58 @@ export const useComposioToolkitIcon = (toolkitSlug: string, options?: { enabled?
     staleTime: 60 * 60 * 1000,
     retry: 2,
   });
+};
+
+export const usePrefetchComposioIcons = () => {
+  const queryClient = useQueryClient();
+  const prefetchedRef = useRef(false);
+
+  const prefetchIcons = useCallback(async (slugs?: string[]) => {
+    const slugsToFetch = slugs || POPULAR_TOOLKIT_SLUGS;
+    
+    // Filter out already cached slugs
+    const uncachedSlugs = slugsToFetch.filter(slug => {
+      const cached = queryClient.getQueryData(['composio', 'toolkit-icon', slug]);
+      return !cached;
+    });
+
+    if (uncachedSlugs.length === 0) return;
+
+    try {
+      const result = await composioApi.getToolkitIconsBatch(uncachedSlugs);
+      
+      if (result.success && result.icons) {
+        // Populate React Query cache for each icon
+        Object.entries(result.icons).forEach(([slug, iconUrl]) => {
+          queryClient.setQueryData(
+            ['composio', 'toolkit-icon', slug],
+            { success: true, icon_url: iconUrl }
+          );
+        });
+        
+        // Also set empty results for slugs that had no icon
+        uncachedSlugs.forEach(slug => {
+          if (!result.icons[slug]) {
+            queryClient.setQueryData(
+              ['composio', 'toolkit-icon', slug],
+              { success: false, icon_url: undefined }
+            );
+          }
+        });
+      }
+    } catch (error) {
+      console.debug('Failed to prefetch Composio icons:', error);
+    }
+  }, [queryClient]);
+
+  // Auto-prefetch popular icons on first call
+  const prefetchPopularIcons = useCallback(() => {
+    if (prefetchedRef.current) return;
+    prefetchedRef.current = true;
+    prefetchIcons();
+  }, [prefetchIcons]);
+
+  return { prefetchIcons, prefetchPopularIcons };
 };
 
 export const useComposioToolkitDetails = (toolkitSlug: string, options?: { enabled?: boolean }) => {

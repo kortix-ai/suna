@@ -7,6 +7,12 @@ import type {
   ToolCallAccumulatorState,
   ToolOutputStreamData,
   ConnectionState,
+  AckEvent,
+  EstimateEvent,
+  PrepStageEvent,
+  DegradationEvent,
+  ThinkingEvent,
+  ErrorEvent,
 } from './types';
 import type { UnifiedMessage } from '@/components/thread/types';
 import { STREAM_CONFIG, TERMINAL_STATUSES } from './constants';
@@ -26,6 +32,10 @@ import {
   reconstructToolCalls,
 } from './tool-accumulator';
 import { StreamConnection } from './stream-connection';
+import { 
+  getStreamPreconnectService, 
+  consumePreconnectInfo,
+} from './stream-preconnect';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -38,6 +48,12 @@ export interface AgentStreamCallbacks {
   onAssistantChunk?: (chunk: { content: string }) => void;
   onToolCallChunk?: (message: UnifiedMessage) => void;
   onToolOutputStream?: (data: ToolOutputStreamData) => void;
+  onAck?: (event: AckEvent) => void;
+  onEstimate?: (event: EstimateEvent) => void;
+  onPrepStage?: (event: PrepStageEvent) => void;
+  onDegradation?: (event: DegradationEvent) => void;
+  onThinking?: (event: ThinkingEvent) => void;
+  onUXError?: (event: ErrorEvent) => void;
 }
 
 export interface UseAgentStreamOptions {
@@ -358,6 +374,42 @@ export function useAgentStream(
         }
         break;
       
+      case 'ux_ack':
+        if (processed.uxAck) {
+          callbacksRef.current.onAck?.(processed.uxAck);
+        }
+        break;
+      
+      case 'ux_estimate':
+        if (processed.uxEstimate) {
+          callbacksRef.current.onEstimate?.(processed.uxEstimate);
+        }
+        break;
+      
+      case 'ux_prep_stage':
+        if (processed.uxPrepStage) {
+          callbacksRef.current.onPrepStage?.(processed.uxPrepStage);
+        }
+        break;
+      
+      case 'ux_degradation':
+        if (processed.uxDegradation) {
+          callbacksRef.current.onDegradation?.(processed.uxDegradation);
+        }
+        break;
+      
+      case 'ux_thinking':
+        if (processed.uxThinking) {
+          callbacksRef.current.onThinking?.(processed.uxThinking);
+        }
+        break;
+      
+      case 'ux_error':
+        if (processed.uxError) {
+          callbacksRef.current.onUXError?.(processed.uxError);
+        }
+        break;
+      
       case 'ping':
       case 'ignore':
         break;
@@ -500,6 +552,59 @@ export function useAgentStream(
     setStatus('connecting');
     callbacksRef.current.onStatusChange?.('connecting');
     callbacksRef.current.onAssistantStart?.();
+    
+    const preconnectService = getStreamPreconnectService();
+    const adopted = preconnectService.adopt(runId);
+    
+    if (adopted) {
+      console.log(`[useAgentStream] Adopting pre-connected stream for ${runId}`);
+      connectionRef.current = adopted.stream.connection;
+      if (adopted.bufferedMessages.length > 0) {
+        console.log(`[useAgentStream] Processing ${adopted.bufferedMessages.length} buffered messages`);
+        setStatus('streaming');
+        callbacksRef.current.onStatusChange?.('streaming');
+        
+        const BATCH_SIZE = 5;
+        let index = 0;
+        
+        const processNextBatch = () => {
+          if (!isMountedRef.current || currentRunIdRef.current !== runId) return;
+          
+          const end = Math.min(index + BATCH_SIZE, adopted.bufferedMessages.length);
+          for (let i = index; i < end; i++) {
+            stableMessageHandler(adopted.bufferedMessages[i]);
+          }
+          index = end;
+          
+          if (index < adopted.bufferedMessages.length) {
+            requestAnimationFrame(processNextBatch);
+          }
+        };
+        
+        requestAnimationFrame(processNextBatch);
+      }
+      
+      // Add listener for new messages
+      const removeListener = preconnectService.addListener(runId, stableMessageHandler);
+      
+      // Store cleanup function
+      const originalDestroy = connectionRef.current.destroy.bind(connectionRef.current);
+      connectionRef.current.destroy = () => {
+        removeListener();
+        originalDestroy();
+      };
+      
+      // Update status based on connection state
+      if (connectionRef.current.isConnected()) {
+        setStatus('running');
+        callbacksRef.current.onStatusChange?.('running');
+      }
+      
+      return;
+    }
+    
+    // No pre-connected stream, create a new connection
+    console.log(`[useAgentStream] Creating new stream connection for ${runId}`);
     
     const connection = new StreamConnection({
       apiUrl: API_URL,

@@ -479,6 +479,86 @@ async def create_project_and_thread(
     return serialize_row(dict(result)) if result else None
 
 
+async def create_thread_with_message_and_run(
+    project_id: str,
+    thread_id: str,
+    account_id: str,
+    project_name: str,
+    thread_name: str,
+    agent_run_id: str,
+    message_content: Optional[str],
+    agent_id: Optional[str] = None,
+    agent_version_id: Optional[str] = None,
+    run_metadata: Optional[Dict[str, Any]] = None,
+    memory_enabled: Optional[bool] = None
+) -> Dict[str, Any]:
+    from datetime import datetime, timezone
+    from core.services.db import execute_one
+    import uuid
+    
+    now = datetime.now(timezone.utc)
+    has_message = bool(message_content and message_content.strip())
+    message_id = str(uuid.uuid4()) if has_message else None
+    
+    sql = """
+    WITH new_project AS (
+        INSERT INTO projects (project_id, account_id, name, created_at)
+        VALUES (:project_id, :account_id, :project_name, :created_at)
+        ON CONFLICT (project_id) DO UPDATE SET updated_at = EXCLUDED.created_at
+        RETURNING project_id
+    ),
+    new_thread AS (
+        INSERT INTO threads (thread_id, project_id, account_id, name, status, memory_enabled, created_at, updated_at)
+        SELECT :thread_id, project_id, :account_id, :thread_name, 'ready', :memory_enabled, :created_at, :updated_at
+        FROM new_project
+        RETURNING thread_id
+    ),
+    new_message AS (
+        INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, created_at)
+        SELECT CAST(:message_id AS uuid), thread_id, 'user', true, :message_content, :created_at
+        FROM new_thread
+        WHERE :has_message = true
+        RETURNING message_id
+    ),
+    new_run AS (
+        INSERT INTO agent_runs (id, thread_id, status, started_at, agent_id, agent_version_id, metadata)
+        SELECT :agent_run_id, thread_id, 'running', :created_at, :agent_id, :agent_version_id, :run_metadata
+        FROM new_thread
+        RETURNING id
+    )
+    SELECT 
+        (SELECT project_id FROM new_project) as project_id,
+        (SELECT thread_id FROM new_thread) as thread_id,
+        (SELECT message_id FROM new_message) as message_id,
+        (SELECT id FROM new_run) as agent_run_id
+    """
+    
+    result = await execute_one(sql, {
+        "project_id": project_id,
+        "thread_id": thread_id,
+        "account_id": account_id,
+        "project_name": project_name,
+        "thread_name": thread_name,
+        "memory_enabled": memory_enabled,
+        "message_id": message_id,
+        "message_content": {"role": "user", "content": message_content} if has_message else None,
+        "has_message": has_message,
+        "agent_run_id": agent_run_id,
+        "agent_id": agent_id,
+        "agent_version_id": agent_version_id,
+        "run_metadata": run_metadata or {},
+        "created_at": now,
+        "updated_at": now
+    }, commit=True)
+    
+    return {
+        "project_id": result["project_id"] if result else project_id,
+        "thread_id": result["thread_id"] if result else thread_id,
+        "message_id": result["message_id"] if result else message_id,
+        "agent_run_id": result["agent_run_id"] if result else agent_run_id
+    }
+
+
 async def update_thread_status(
     thread_id: str,
     status: str,
@@ -654,7 +734,9 @@ async def get_llm_messages(
         sql = """
         SELECT message_id, type, content
         FROM messages
-        WHERE thread_id = :thread_id AND is_llm_message = true
+        WHERE thread_id = :thread_id 
+          AND is_llm_message = true
+          AND type != 'image_context'
         ORDER BY created_at ASC
         LIMIT :limit
         """
@@ -665,10 +747,12 @@ async def get_llm_messages(
         FROM messages
         WHERE thread_id = :thread_id 
           AND is_llm_message = true
-          AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
+          AND is_omitted = false
+          AND type != 'image_context'
         ORDER BY created_at ASC
+        LIMIT :limit
         """
-        rows = await execute(sql, {"thread_id": thread_id})
+        rows = await execute(sql, {"thread_id": thread_id, "limit": limit or 10000})
     
     return [dict(row) for row in rows] if rows else []
 
@@ -683,15 +767,30 @@ async def get_llm_messages_paginated(
     FROM messages
     WHERE thread_id = :thread_id 
       AND is_llm_message = true
-      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
+      AND is_omitted = false
+      AND type != 'image_context'
     ORDER BY created_at ASC
-    LIMIT :limit OFFSET :offset
+    LIMIT :limit 
+    OFFSET :offset
     """
     rows = await execute(sql, {
         "thread_id": thread_id,
         "limit": batch_size,
         "offset": offset
     })
+    return [dict(row) for row in rows] if rows else []
+
+
+async def get_image_context_messages(thread_id: str) -> List[Dict[str, Any]]:
+    sql = """
+    SELECT message_id, content, metadata, created_at
+    FROM messages
+    WHERE thread_id = :thread_id 
+      AND type = 'image_context'
+      AND is_omitted = false
+    ORDER BY created_at ASC
+    """
+    rows = await execute(sql, {"thread_id": thread_id})
     return [dict(row) for row in rows] if rows else []
 
 
@@ -916,12 +1015,13 @@ async def save_compressed_message(
     
     sql = """
     UPDATE messages
-    SET metadata = :metadata, updated_at = :updated_at
+    SET metadata = :metadata, is_omitted = :is_omitted, updated_at = :updated_at
     WHERE message_id = :message_id
     """
     await execute_mutate(sql, {
         "message_id": message_id,
         "metadata": metadata,
+        "is_omitted": is_omission,
         "updated_at": datetime.now(timezone.utc)
     })
     return True
@@ -1036,11 +1136,12 @@ async def mark_tool_results_as_omitted(thread_id: str, tool_call_ids: List[str])
     UPDATE messages
     SET 
         metadata = COALESCE(metadata, '{{}}'::jsonb) || '{{"omitted": true}}'::jsonb,
+        is_omitted = true,
         updated_at = NOW()
     WHERE thread_id = :thread_id
       AND is_llm_message = true
       AND content->>'tool_call_id' IN ({placeholders})
-      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
+      AND is_omitted = false
     RETURNING message_id
     """
     
@@ -1081,7 +1182,7 @@ async def remove_tool_calls_from_assistants(thread_id: str, tool_call_ids: List[
     WHERE thread_id = :thread_id
     AND type = 'assistant'
     AND is_llm_message = true
-    AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
+    AND is_omitted = false
     ORDER BY created_at ASC
     """
     messages = await execute(sql, {'thread_id': thread_id})
@@ -1123,7 +1224,7 @@ async def remove_tool_calls_from_assistants(thread_id: str, tool_call_ids: List[
             await execute_mutate(
                 """
                 UPDATE messages
-                SET metadata = :metadata, updated_at = NOW()
+                SET metadata = :metadata, is_omitted = true, updated_at = NOW()
                 WHERE message_id = :message_id
                 """,
                 {'message_id': msg['message_id'], 'metadata': metadata}
@@ -1223,12 +1324,14 @@ async def insert_message(
     is_llm_message: bool = False,
     metadata: Optional[Dict[str, Any]] = None,
     agent_id: Optional[str] = None,
-    agent_version_id: Optional[str] = None
+    agent_version_id: Optional[str] = None,
+    message_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
     from datetime import datetime, timezone
     import uuid
     
-    message_id = str(uuid.uuid4())
+    if message_id is None:
+        message_id = str(uuid.uuid4())
     now = datetime.now(timezone.utc)
     
     sql = """

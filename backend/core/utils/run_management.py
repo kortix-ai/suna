@@ -4,7 +4,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 from core.services import redis
 from core.utils.logger import logger
-from core.agents.runner.agent_runner import update_agent_run_status
+from core.agents.runner import update_agent_run_status
 
 
 async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional[str] = None, stop_source: str = "api_request"):

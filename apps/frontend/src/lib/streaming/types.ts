@@ -21,7 +21,7 @@ export type AgentStatus =
   | 'error';
 
 export interface StreamMessage {
-  type: 'assistant' | 'tool' | 'status' | 'user' | 'system' | 'ping' | 'tool_output_stream' | 'llm_response_start' | 'llm_response_end' | 'browser_state' | 'image_context';
+  type: 'assistant' | 'tool' | 'status' | 'user' | 'system' | 'ping' | 'tool_output_stream' | 'llm_response_start' | 'llm_response_end' | 'browser_state' | 'image_context' | 'ack' | 'estimate' | 'prep_stage' | 'degradation' | 'thinking' | 'error';
   message_id?: string;
   thread_id?: string;
   content?: string;
@@ -144,6 +144,57 @@ export interface BillingErrorContext {
   errorMessage: string;
   balance?: string | null;
   isCreditsExhausted: boolean;
+}
+
+export interface AckEvent {
+  message: string;
+  agent_run_id: string;
+  timestamp: string;
+}
+
+export interface EstimateEvent {
+  estimated_seconds: number;
+  confidence: 'low' | 'medium' | 'high';
+  message: string;
+  breakdown?: {
+    prep: number;
+    llm: number;
+    tools: number;
+  };
+  timestamp: string;
+}
+
+export interface PrepStageEvent {
+  stage: 'initializing' | 'preparing' | 'loading' | 'ready';
+  detail?: string;
+  progress?: number;
+  timestamp: string;
+}
+
+export interface DegradationEvent {
+  component: string;
+  message: string;
+  severity: 'info' | 'warning' | 'error';
+  user_impact?: string;
+  timestamp: string;
+}
+
+export interface ThinkingEvent {
+  message: string;
+  timestamp: string;
+}
+
+export interface ErrorEvent {
+  error: string;
+  error_code: string;
+  recoverable: boolean;
+  actions: Array<{
+    type: 'retry' | 'link' | 'switch_model' | 'new_thread' | 'simplify';
+    label: string;
+    url?: string;
+    delay_seconds?: number;
+  }>;
+  timestamp: string;
 }
 
 export type StreamEventType = 

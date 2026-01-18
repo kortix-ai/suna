@@ -42,6 +42,7 @@ from core.admin.notification_admin_api import router as notification_admin_route
 from core.admin.analytics_admin_api import router as analytics_admin_router
 from core.admin.stress_test_admin_api import router as stress_test_admin_router
 from core.admin.system_status_admin_api import router as system_status_admin_router
+from core.admin.sandbox_pool_admin_api import router as sandbox_pool_admin_router
 from core.endpoints.system_status_api import router as system_status_router
 from core.services import transcription as transcription_api
 import sys
@@ -84,6 +85,13 @@ async def lifespan(app: FastAPI):
         
         from core.services.db import init_db
         await init_db()
+
+        try:
+            from core.services.db import execute_one
+            await execute_one("SELECT 1", {})
+            logger.debug("Database connection pool warmed up")
+        except Exception as e:
+            logger.warning(f"Failed to warm up database connection pool: {e}")
         
         # Pre-load tool classes and schemas to avoid first-request delay
         from core.utils.tool_discovery import warm_up_tools_cache
@@ -95,26 +103,29 @@ async def lifespan(app: FastAPI):
         
         sandbox_api.initialize(db)
         
-        # Initialize Redis connection
         from core.services import redis
         try:
             await redis.initialize_async()
             logger.debug("Redis connection initialized successfully")
+            try:
+                tier_keys = await redis.scan_keys("tier_info:*")
+                sub_keys = await redis.scan_keys("subscription_tier:*")
+                all_keys = tier_keys + sub_keys
+                if all_keys:
+                    for key in all_keys:
+                        await redis.delete(key)
+                    logger.info(f"[STARTUP] Cleared {len(all_keys)} tier caches to pick up config changes")
+            except Exception as e:
+                logger.warning(f"[STARTUP] Failed to clear tier caches: {e}")
+                
         except Exception as e:
             logger.error(f"Failed to initialize Redis connection: {e}")
-            # Continue without Redis - the application will handle Redis failures gracefully
-        
-        # ===== Cleanup orphaned agent runs from previous instance =====
-        # On startup, ALL runs with status='running' are orphans from the previous instance
-        # Also cleans up orphaned Redis streams without matching DB records
+
         try:
             client = await db.client
             await cleanup_orphaned_agent_runs(client)
         except Exception as e:
             logger.error(f"Failed to cleanup orphaned agent runs on startup: {e}")
-        
-        # Start background tasks
-        # asyncio.create_task(core_api.restore_running_agent_runs())
         
         triggers_api.initialize(db)
         credentials_api.initialize(db)
@@ -133,6 +144,17 @@ async def lifespan(app: FastAPI):
         # Start memory watchdog for observability
         _memory_watchdog_task = asyncio.create_task(_memory_watchdog())
         
+        # Start sandbox pool service (maintains pre-warmed sandboxes)
+        from core.sandbox.pool_background import start_pool_service
+        asyncio.create_task(start_pool_service())
+        
+        # Initialize stateless pipeline (if enabled)
+        from core.agents.runner.executor import USE_STATELESS_PIPELINE
+        if USE_STATELESS_PIPELINE:
+            from core.agents.pipeline.stateless import lifecycle
+            await lifecycle.initialize()
+            logger.info("[STARTUP] Stateless pipeline initialized")
+        
         yield
 
         # Shutdown sequence: Set flag first so health checks fail
@@ -145,7 +167,7 @@ async def lifespan(app: FastAPI):
         
         # ===== CRITICAL: Stop all running agent runs on this instance =====
         from core.agents.api import _cancellation_events
-        from core.agents.runner.agent_runner import update_agent_run_status
+        from core.agents.runner import update_agent_run_status
         
         active_run_ids = list(_cancellation_events.keys())
         if active_run_ids:
@@ -185,6 +207,13 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("No active agent runs to stop on shutdown")
         
+        # Shutdown stateless pipeline (if enabled)
+        from core.agents.runner.executor import USE_STATELESS_PIPELINE
+        if USE_STATELESS_PIPELINE:
+            from core.agents.pipeline.stateless import lifecycle
+            await lifecycle.shutdown()
+            logger.info("[SHUTDOWN] Stateless pipeline shutdown complete")
+        
         logger.debug("Cleaning up resources")
         
         # Stop CloudWatch worker metrics task
@@ -202,6 +231,10 @@ async def lifespan(app: FastAPI):
                 await _memory_watchdog_task
             except asyncio.CancelledError:
                 pass
+        
+        # Stop sandbox pool service
+        from core.sandbox.pool_background import stop_pool_service
+        await stop_pool_service()
         
         try:
             logger.debug("Closing Redis connection")
@@ -317,6 +350,7 @@ api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
 api_router.include_router(stress_test_admin_router)
 api_router.include_router(system_status_admin_router)
+api_router.include_router(sandbox_pool_admin_router)
 api_router.include_router(system_status_router)
 
 from core.mcp_module import api as mcp_api
@@ -365,6 +399,8 @@ api_router.include_router(staged_files_router, prefix="/files")
 from core.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)
 
+from core.admin.stateless_admin_api import router as stateless_admin_router
+api_router.include_router(stateless_admin_router)
 # Auth OTP endpoint for expired magic links
 api_router.include_router(auth_api.router)
 

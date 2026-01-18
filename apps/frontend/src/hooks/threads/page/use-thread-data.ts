@@ -6,6 +6,7 @@ import { useMessagesQuery } from '@/hooks/messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
+import { getStreamPreconnectService } from '@/lib/streaming/stream-preconnect';
 
 interface UseThreadDataReturn {
   messages: UnifiedMessage[];
@@ -27,7 +28,6 @@ interface UseThreadDataReturn {
 }
 
 interface UseThreadDataOptions {
-  /** Enable polling for agent detection (new threads waiting for optimistic start) */
   waitingForAgent?: boolean;
 }
 
@@ -50,12 +50,9 @@ export function useThreadData(
   const hasInitiallyScrolled = useRef<boolean>(false);
   const lastDetectedRunIdRef = useRef<string | null>(null);
   
-  // Retry counter for exponential backoff when waiting for agent
   const retryCountRef = useRef(0);
 
   const threadQuery = useThreadQuery(threadId);
-  
-  // Messages: NO polling - stream will provide real-time updates
   const messagesQuery = useMessagesQuery(threadId, {
     refetchInterval: false,
     staleTime: 5000,
@@ -70,13 +67,10 @@ export function useThreadData(
     staleTime: 10000,
   });
   
-  // Agent runs: Smart polling only when waiting for agent, stops once found
   const shouldPollAgentRuns = waitingForAgent && !foundRunningAgentRef.current && !agentRunId;
   
   const agentRunsQuery = useAgentRunsQuery(threadId, { 
     enabled: !isShared,
-    // Only poll when actively waiting for an agent to start
-    // Use 2s interval - fast enough for good UX, not too aggressive
     refetchInterval: shouldPollAgentRuns ? 2000 : false,
     staleTime: 1000,
   });
@@ -85,7 +79,6 @@ export function useThreadData(
   const sandboxId = project?.sandbox?.id || (typeof project?.sandbox === 'string' ? project.sandbox : null);
   const projectName = project?.name || '';
 
-  // Reset refs when thread changes
   useEffect(() => {
     messagesLoadedRef.current = false;
     foundRunningAgentRef.current = false;
@@ -98,50 +91,84 @@ export function useThreadData(
     setAgentStatus('idle');
   }, [threadId]);
 
-  // Check for pre-stored agent_run_id from optimistic start (eliminates polling)
+  const hasInitializedFromPreconnect = useRef(false);
+  
   useEffect(() => {
-    if (!waitingForAgent || isShared || foundRunningAgentRef.current || agentRunId) {
+    if (hasInitializedFromPreconnect.current || isShared || agentRunId) {
       return;
     }
 
-    try {
-      const storedAgentRunId = sessionStorage.getItem('optimistic_agent_run_id');
-      const storedAgentRunThread = sessionStorage.getItem('optimistic_agent_run_thread');
-      
-      if (storedAgentRunId && storedAgentRunThread === threadId) {
-        console.log('[useThreadData] Using pre-stored agent_run_id:', storedAgentRunId);
-        foundRunningAgentRef.current = true;
-        lastDetectedRunIdRef.current = storedAgentRunId;
-        setAgentRunId(storedAgentRunId);
-        setAgentStatus('running');
+    const checkForAgentRunId = () => {
+      try {
+        const storedAgentRunId = sessionStorage.getItem('optimistic_agent_run_id');
+        const storedAgentRunThread = sessionStorage.getItem('optimistic_agent_run_thread');
         
-        // Clean up sessionStorage
-        sessionStorage.removeItem('optimistic_agent_run_id');
-        sessionStorage.removeItem('optimistic_agent_run_thread');
-        return;
+        if (storedAgentRunId && storedAgentRunThread === threadId) {
+          console.log('[useThreadData] Using pre-stored agent_run_id:', storedAgentRunId);
+          foundRunningAgentRef.current = true;
+          lastDetectedRunIdRef.current = storedAgentRunId;
+          hasInitializedFromPreconnect.current = true;
+          
+          setAgentRunId(storedAgentRunId);
+          setAgentStatus('running');
+          
+          sessionStorage.removeItem('optimistic_agent_run_id');
+          sessionStorage.removeItem('optimistic_agent_run_thread');
+          return true;
+        }
+      } catch (e) {
       }
-    } catch (e) {
-      // sessionStorage not available
-    }
-  }, [waitingForAgent, isShared, agentRunId, threadId]);
 
-  // Manual retry with exponential backoff for agent detection (fallback if sessionStorage doesn't have it yet)
-  // This is more efficient than constant polling
-  useEffect(() => {
-    if (!waitingForAgent || isShared || foundRunningAgentRef.current || agentRunId) {
+      try {
+        const preconnectService = getStreamPreconnectService();
+        const preconnectAgentRunId = preconnectService.getAgentRunIdForThread(threadId);
+        
+        if (preconnectAgentRunId) {
+          console.log('[useThreadData] Found agent_run_id from StreamPreconnect:', preconnectAgentRunId);
+          foundRunningAgentRef.current = true;
+          lastDetectedRunIdRef.current = preconnectAgentRunId;
+          hasInitializedFromPreconnect.current = true;
+          
+          setAgentRunId(preconnectAgentRunId);
+          setAgentStatus('running');
+          return true;
+        }
+      } catch (e) {
+      }
+
+      return false;
+    };
+
+    if (checkForAgentRunId()) {
       return;
     }
 
-    // Quick initial retries, then slow down
+    let pollCount = 0;
+    const maxPolls = 40;
+    
+    const pollInterval = setInterval(() => {
+      pollCount++;
+      if (checkForAgentRunId() || pollCount >= maxPolls) {
+        clearInterval(pollInterval);
+      }
+    }, 50);
+
+    return () => clearInterval(pollInterval);
+  }, [isShared, threadId, agentRunId]);
+
+  useEffect(() => {
+    if (!waitingForAgent || isShared || foundRunningAgentRef.current || agentRunId || hasInitializedFromPreconnect.current) {
+      return;
+    }
+
     const getRetryDelay = (count: number): number => {
-      if (count < 3) return 500;   // First 3: every 500ms
-      if (count < 6) return 1000;  // Next 3: every 1s
-      if (count < 10) return 2000; // Next 4: every 2s
-      return 3000;                 // After that: every 3s
+      if (count < 3) return 500;
+      if (count < 6) return 1000;
+      if (count < 10) return 2000;
+      return 3000;
     };
 
     const retryTimeout = setTimeout(() => {
-      // Double-check sessionStorage before polling
       try {
         const storedAgentRunId = sessionStorage.getItem('optimistic_agent_run_id');
         const storedAgentRunThread = sessionStorage.getItem('optimistic_agent_run_thread');
@@ -157,7 +184,6 @@ export function useThreadData(
           return;
         }
       } catch (e) {
-        // sessionStorage not available
       }
       
       if (!foundRunningAgentRef.current && !agentRunId) {
@@ -172,11 +198,8 @@ export function useThreadData(
     return () => clearTimeout(retryTimeout);
   }, [waitingForAgent, isShared, agentRunId, agentRunsQuery, agentRunsQuery.dataUpdatedAt, threadId]);
 
-  // Detect running agent from query data
   useEffect(() => {
     if (isShared || !agentRunsQuery.data) return;
-    
-    // Debug logging for agent runs
     if (process.env.NODE_ENV !== 'production' && waitingForAgent && agentRunsQuery.data.length > 0) {
       console.log('[useThreadData] Agent runs data:', agentRunsQuery.data.map(r => ({ id: r.id, status: r.status })));
     }
@@ -190,19 +213,17 @@ export function useThreadData(
         console.log('[useThreadData] Detected running agent:', latestRunning.id);
         lastDetectedRunIdRef.current = latestRunning.id;
         foundRunningAgentRef.current = true;
-        retryCountRef.current = 0; // Reset retry counter
+        retryCountRef.current = 0;
         setAgentRunId(latestRunning.id);
         setAgentStatus('running');
       }
     } else if (foundRunningAgentRef.current && !waitingForAgent) {
-      // Only reset if not actively waiting for agent
       setAgentStatus('idle');
       setAgentRunId(null);
       lastDetectedRunIdRef.current = null;
     }
   }, [agentRunsQuery.data, isShared, waitingForAgent]);
 
-  // Main data initialization effect
   useEffect(() => {
     let isMounted = true;
 
@@ -213,14 +234,12 @@ export function useThreadData(
         if (!threadId) throw new Error('Thread ID is required');
 
         if (threadQuery.isError) {
-          // For new threads, the thread might not exist yet - that's okay
           const errorMessage = String(threadQuery.error);
           const isThreadNotFound = errorMessage.includes('Thread not found') || errorMessage.includes('404');
 
           if (!isThreadNotFound) {
             throw new Error('Failed to load thread data: ' + threadQuery.error);
           }
-          // Thread not found is expected for new threads - continue without error
         }
         if (!isMounted) return;
 
@@ -261,11 +280,6 @@ export function useThreadData(
             hasInitiallyScrolled.current = true;
           }
         }
-
-        // "Initial load" should mean we can render the thread UI (messages + thread metadata).
-        // Agent runs are *nice to have* (they can be slow/404 transiently when infra changes),
-        // but they should never block the UI from becoming interactive (e.g. opening Kortix Computer).
-        // For new threads (404), we should complete loading to show empty state
         const isThreadNotFound = threadQuery.isError &&
           (String(threadQuery.error).includes('Thread not found') || String(threadQuery.error).includes('404'));
         const requiredDataLoaded = Boolean((threadQuery.data || isThreadNotFound) && messagesQuery.data !== undefined);
@@ -310,7 +324,6 @@ export function useThreadData(
     messages
   ]);
 
-  // Force message reload when new data arrives (but not via polling)
   useEffect(() => {
     if (messagesQuery.data && messagesQuery.status === 'success' && !isLoading) {
       const shouldReload = messages.length === 0 || messagesQuery.data.length > messages.length + 50;

@@ -34,6 +34,7 @@ export function renderAttachments(
   fileViewerHandler?: (filePath?: string, filePathList?: string[]) => void,
   sandboxId?: string,
   project?: Project,
+  localPreviewUrls?: Record<string, string>,
 ) {
   if (!attachments || attachments.length === 0) return null;
   const validAttachments = attachments.filter(
@@ -47,6 +48,7 @@ export function renderAttachments(
       showPreviews={true}
       sandboxId={sandboxId}
       project={project}
+      localPreviewUrls={localPreviewUrls}
     />
   );
 }
@@ -90,12 +92,14 @@ const UserMessageRow = memo(function UserMessageRow({
   handleOpenFileViewer,
   sandboxId,
   project,
+  localPreviewUrls = {},
 }: {
   message: UnifiedMessage;
   groupKey: string;
   handleOpenFileViewer: (filePath?: string, filePathList?: string[]) => void;
   sandboxId?: string;
   project?: Project;
+  localPreviewUrls?: Record<string, string>;
 }) {
   const messageContent = useMemo(() => {
     try {
@@ -142,6 +146,7 @@ const UserMessageRow = memo(function UserMessageRow({
             handleOpenFileViewer,
             sandboxId,
             project,
+            localPreviewUrls,
           )}
         </div>
       </div>
@@ -345,20 +350,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
-    // Render streaming content immediately - no animation delay
-    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
-    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
-    
-    // If agent is not running and not streaming, immediately hide
-    if (!isAgentRunning && !isStreaming) {
-      return null;
-    }
-    
-    const shouldRender = isLastGroup && !readOnly && displayStreamingText && isStreaming;
+    const hasTextToShow = displayStreamingText && displayStreamingText.length > 0;
+    const shouldRender = isLastGroup && !readOnly && hasTextToShow;
     
     if (!shouldRender) {
       return null;
     }
+
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
@@ -710,6 +709,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
     if (streamingTextContent || streamingToolCall) return false;
+    // Don't show loader if we have reasoning content streaming
+    if (streamingReasoningContent && streamingReasoningContent.trim().length > 0) return false;
     // Don't show loader if we have ask/complete text
     if (askCompleteText) return false;
     if (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
@@ -734,6 +735,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     readOnly,
     agentStatus,
     streamingTextContent,
+    streamingReasoningContent,
     streamingToolCall,
     streamHookStatus,
     group.messages,
@@ -816,6 +818,7 @@ export interface ThreadContentProps {
   scrollContainerRef?: React.RefObject<HTMLDivElement>;
   threadId?: string;
   onPromptFill?: (message: string) => void;
+  localPreviewUrls?: Record<string, string>;
 }
 
 export const ThreadContent: React.FC<ThreadContentProps> = memo(
@@ -843,6 +846,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     scrollContainerRef,
     threadId,
     onPromptFill,
+    localPreviewUrls = {}
   }) {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);
@@ -1171,6 +1175,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
               handleOpenFileViewer={handleOpenFileViewer}
               sandboxId={sandboxId}
               project={project}
+              localPreviewUrls={localPreviewUrls}
             />
           </div>
         );

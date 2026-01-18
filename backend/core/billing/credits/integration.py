@@ -10,7 +10,7 @@ from ..shared.cache_utils import invalidate_account_state_cache
 
 class BillingIntegration:
     @staticmethod
-    async def check_and_reserve_credits(account_id: str, estimated_tokens: int = 10000) -> Tuple[bool, str, Optional[str]]:
+    async def check_and_reserve_credits(account_id: str, estimated_tokens: int = 10000, wait_for_cache_ms: int = 0) -> Tuple[bool, str, Optional[str]]:
         if config.ENV_MODE == EnvMode.LOCAL:
             return True, "Local mode", None
         
@@ -43,7 +43,25 @@ class BillingIntegration:
         
         import time
         balance_start = time.time()
-        balance_info = await credit_manager.get_balance(account_id, use_cache=True)
+        
+        if wait_for_cache_ms > 0:
+            from core.utils.cache import Cache
+            cache_key = f"credit_balance:{account_id}"
+            poll_interval = 50  # ms
+            max_polls = wait_for_cache_ms // poll_interval
+            
+            for _ in range(max_polls):
+                cached = await Cache.get(cache_key)
+                if cached is not None:
+                    logger.debug(f"⚡ [BILLING] Cache hit after waiting (waited {(time.time() - balance_start)*1000:.0f}ms)")
+                    balance_info = cached
+                    break
+                await asyncio.sleep(poll_interval / 1000)
+            else:
+                balance_info = await credit_manager.get_balance(account_id, use_cache=True)
+        else:
+            balance_info = await credit_manager.get_balance(account_id, use_cache=True)
+        
         balance_elapsed = (time.time() - balance_start) * 1000
         logger.debug(f"⏱️ [BILLING] Balance query (use_cache=True): {balance_elapsed:.1f}ms")
         

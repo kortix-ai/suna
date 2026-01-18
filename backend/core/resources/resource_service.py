@@ -319,9 +319,69 @@ class ResourceService:
         except Exception as e:
             logger.error(f"Lazy migration failed for project {project_id}: {str(e)}", exc_info=True)
             return None
+    
+    async def get_pooled_sandboxes(self, limit: int = 100) -> list[Dict[str, Any]]:
+        result = await self.client.table('resources').select('*').eq(
+            'type', ResourceType.SANDBOX.value
+        ).eq(
+            'status', ResourceStatus.POOLED.value
+        ).order('pooled_at', desc=False).limit(limit).execute()
+        
+        return result.data or []
+    
+    async def get_pooled_sandbox_count(self) -> int:
+        result = await self.client.table('resources').select(
+            'id', count='exact'
+        ).eq(
+            'type', ResourceType.SANDBOX.value
+        ).eq(
+            'status', ResourceStatus.POOLED.value
+        ).execute()
+        
+        return result.count if result.count is not None else 0
+    
+    async def claim_pooled_sandbox(
+        self,
+        account_id: str,
+        project_id: str
+    ) -> Optional[Dict[str, Any]]:
+        from datetime import datetime, timezone
+        
+        result = await self.client.table('resources').select('*').eq(
+            'type', ResourceType.SANDBOX.value
+        ).eq(
+            'status', ResourceStatus.POOLED.value
+        ).order('pooled_at', desc=False).limit(1).execute()
+        
+        if not result.data or len(result.data) == 0:
+            return None
+        
+        resource = result.data[0]
+        resource_id = resource['id']
+        now = datetime.now(timezone.utc).isoformat()
+        
+        update_result = await self.client.table('resources').update({
+            'account_id': account_id,
+            'status': ResourceStatus.ACTIVE.value,
+            'updated_at': now,
+            'pooled_at': None,
+        }).eq('id', resource_id).eq(
+            'status', ResourceStatus.POOLED.value  # Optimistic lock
+        ).execute()
+        
+        if not update_result.data or len(update_result.data) == 0:
+            logger.debug(f"Sandbox {resource_id} was claimed by another request, retrying...")
+            return await self.claim_pooled_sandbox(account_id, project_id)
+        
+        claimed_resource = update_result.data[0]
+        
+        if not await self.link_resource_to_project(project_id, resource_id):
+            logger.error(f"Failed to link claimed sandbox {resource_id} to project {project_id}")
+        
+        logger.info(f"Claimed pooled sandbox {claimed_resource['external_id']} for project {project_id}")
+        return claimed_resource
 
 
 def get_resource_service(client) -> ResourceService:
-    """Factory function to create a ResourceService instance."""
     return ResourceService(client)
 

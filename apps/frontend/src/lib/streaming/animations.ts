@@ -2,7 +2,9 @@
 
 import { useRef, useSyncExternalStore, useEffect, useLayoutEffect } from 'react';
 
-const CHARS_PER_SECOND = 300;
+const SMOOTH_STREAMING_ENABLED = false;
+
+const CHARS_PER_SECOND = 600;
 const MS_PER_CHAR = 1000 / CHARS_PER_SECOND;
 
 class SmoothStreamStore {
@@ -12,6 +14,7 @@ class SmoothStreamStore {
   private animationId: number | null = null;
   private listeners = new Set<() => void>();
   private enabled = true;
+  private isFinishingAnimation = false;
 
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -25,13 +28,12 @@ class SmoothStreamStore {
   }
 
   private tick = () => {
-    if (!this.enabled) return;
-    
     const now = performance.now();
     const targetLen = this.targetText.length;
     
     if (this.revealedLen >= targetLen) {
       this.animationId = null;
+      this.isFinishingAnimation = false;
       return;
     }
 
@@ -52,6 +54,7 @@ class SmoothStreamStore {
       this.animationId = requestAnimationFrame(this.tick);
     } else {
       this.animationId = null;
+      this.isFinishingAnimation = false;
     }
   };
 
@@ -71,13 +74,48 @@ class SmoothStreamStore {
   update(newText: string, isEnabled: boolean) {
     const wasEnabled = this.enabled;
     this.enabled = isEnabled;
+    if (newText === this.targetText) {
+      if (isEnabled && this.revealedLen < this.targetText.length) {
+        this.startAnimation();
+      }
+      return;
+    }
+    
+    if (!newText && this.targetText && this.revealedLen < this.targetText.length) {
+      this.isFinishingAnimation = true;
+      this.startAnimation();
+      return;
+    }
+    if (!newText && this.isFinishingAnimation && this.targetText) {
+      if (this.revealedLen < this.targetText.length) {
+        this.startAnimation();
+      }
+      return;
+    }
 
     if (!newText) {
       this.stopAnimation();
       this.targetText = '';
       this.revealedLen = 0;
       this.lastUpdateTime = 0;
+      this.isFinishingAnimation = false;
       this.notify();
+      return;
+    }
+    if (!isEnabled && wasEnabled) {
+      this.isFinishingAnimation = true;
+      this.targetText = newText;
+      if (this.revealedLen < newText.length) {
+        this.startAnimation();
+      }
+      return;
+    }
+
+    if (!isEnabled && this.isFinishingAnimation) {
+      this.targetText = newText;
+      if (this.revealedLen < newText.length) {
+        this.startAnimation();
+      }
       return;
     }
 
@@ -89,12 +127,19 @@ class SmoothStreamStore {
       return;
     }
 
-    const isContinuation = this.targetText.length > 0 && newText.startsWith(this.targetText);
+    // Check if new text is a continuation (starts with current target)
+    // OR if current target starts with new text (text was trimmed/partial - don't reset)
+    const isContinuation = this.targetText.length > 0 && (
+      newText.startsWith(this.targetText) || 
+      this.targetText.startsWith(newText)
+    );
     
+    // Only reset if it's genuinely new/different content
     if (!isContinuation) {
       this.stopAnimation();
       this.revealedLen = 0;
       this.lastUpdateTime = 0;
+      this.isFinishingAnimation = false;
     }
     
     this.targetText = newText;
@@ -119,6 +164,10 @@ export function useSmoothStream(
   enabled: boolean = true,
   _speed?: number
 ): string {
+  if (!SMOOTH_STREAMING_ENABLED) {
+    return text;
+  }
+
   const storeRef = useRef<SmoothStreamStore | null>(null);
   
   if (!storeRef.current) {

@@ -307,6 +307,31 @@ async def create_agent_run(
     return serialize_row(dict(result)) if result else None
 
 
+async def create_agent_run_with_id(
+    agent_run_id: str,
+    thread_id: str,
+    agent_id: Optional[str] = None,
+    agent_version_id: Optional[str] = None,
+    metadata: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    sql = """
+    INSERT INTO agent_runs (id, thread_id, status, started_at, agent_id, agent_version_id, metadata)
+    VALUES (:id, :thread_id, 'running', :started_at, :agent_id, :agent_version_id, :metadata)
+    RETURNING id, thread_id, status, started_at, agent_id, agent_version_id, metadata
+    """
+    
+    result = await execute_one(sql, {
+        "id": agent_run_id,
+        "thread_id": thread_id,
+        "started_at": datetime.now(timezone.utc),
+        "agent_id": agent_id,
+        "agent_version_id": agent_version_id,
+        "metadata": metadata or {}
+    }, commit=True)
+    
+    return serialize_row(dict(result)) if result else None
+
+
 async def update_agent_run_status(
     agent_run_id: str,
     status: str,

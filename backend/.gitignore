@@ -29,6 +29,7 @@ share/python-wheels/
 MANIFEST
 node_modules/
 debug_streams/
+debug_logs/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template

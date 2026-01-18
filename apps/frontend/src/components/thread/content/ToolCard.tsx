@@ -85,7 +85,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({
       <button
         onClick={onClick}
         className={cn(
-          'inline-flex items-center gap-1.5 mt-4 cursor-pointer',
+          'inline-flex items-center gap-1.5 mt-2 cursor-pointer',
           'text-xs text-muted-foreground hover:opacity-80 transition-opacity duration-200',
           'max-w-full'
         )}

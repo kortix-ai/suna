@@ -339,6 +339,20 @@ export const composioApi = {
     };
   },
 
+  async getToolkitIconsBatch(toolkitSlugs: string[]): Promise<{ success: boolean; icons: Record<string, string> }> {
+    const response = await backendApi.post<{ success: boolean; icons: Record<string, string> }>(
+      '/composio/toolkits/icons/batch',
+      { toolkit_slugs: toolkitSlugs },
+      {
+        errorContext: { operation: 'get toolkit icons batch', resource: 'Composio toolkit icons' },
+      }
+    );
+    return {
+      success: response.data.success,
+      icons: response.data.icons || {}
+    };
+  },
+
   async getToolkitDetails(toolkitSlug: string): Promise<DetailedComposioToolkitResponse> {
     const result = await backendApi.get<DetailedComposioToolkitResponse>(
       `/composio/toolkits/${toolkitSlug}/details`,
