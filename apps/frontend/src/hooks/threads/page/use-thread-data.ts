@@ -254,19 +254,30 @@ export function useThreadData(
             return aTime - bTime;
           });
 
-          // Deduplicate by message_id and by content for user messages
+          // Deduplicate by message_id and handle temp vs server message race
           const dedupedMessages: UnifiedMessage[] = [];
           const seenIds = new Set<string>();
-          const seenUserContents = new Set<string>();
+
+          // First pass: collect content from server-confirmed user messages (non-temp IDs)
+          // This allows us to filter out temp messages that have been confirmed by server
+          const serverUserContents = new Set<string>();
+          mergedMessages.forEach((msg) => {
+            if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
+              const contentKey = String(msg.content || '').trim();
+              if (contentKey) serverUserContents.add(contentKey);
+            }
+          });
+
+          // Second pass: build deduped list
           mergedMessages.forEach((msg) => {
             const msgId = msg.message_id;
-            // Skip if we've seen this ID
+            // Skip if we've already seen this message ID
             if (msgId && seenIds.has(msgId)) return;
-            // For user messages, also check content to handle temp vs server race
-            if (msg.type === 'user') {
+            // For temp user messages, skip if server already confirmed a message with same content
+            // This handles the race where both temp and server versions appear
+            if (msg.type === 'user' && msgId?.startsWith('temp-')) {
               const contentKey = String(msg.content || '').trim();
-              if (contentKey && seenUserContents.has(contentKey)) return;
-              if (contentKey) seenUserContents.add(contentKey);
+              if (contentKey && serverUserContents.has(contentKey)) return;
             }
             dedupedMessages.push(msg);
             if (msgId) seenIds.add(msgId);
@@ -407,37 +418,38 @@ export function useThreadData(
         });
 
         // Final deduplication pass - ensure no duplicate message_ids
-        // Also deduplicate user messages by content (handles temp vs server race condition)
+        // Also deduplicate temp user messages that have been confirmed by server
         const finalDeduped: UnifiedMessage[] = [];
         const seenIds = new Set<string>();
-        const seenUserContents = new Set<string>();
-        let finalDupsRemoved = 0;
-        let contentDupsRemoved = 0;
+
+        // First pass: collect content from server-confirmed user messages (non-temp IDs)
+        // This allows us to filter out temp messages that have been confirmed by server
+        const serverUserContents = new Set<string>();
+        merged.forEach((msg) => {
+          if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
+            const contentKey = String(msg.content || '').trim();
+            if (contentKey) serverUserContents.add(contentKey);
+          }
+        });
+
+        // Second pass: build deduped list
         merged.forEach((msg) => {
           const msgId = msg.message_id;
 
           // Check for duplicate by message_id
           if (msgId && seenIds.has(msgId)) {
-            finalDupsRemoved++;
             return;
           }
 
-          // For user messages with temp IDs, skip if we already have a server message with same content
-          // This handles the race condition where temp message and server message both appear
-          // BUT: Don't skip legitimate duplicate messages (user sent same text twice intentionally)
+          // For temp user messages, skip if server already confirmed a message with same content
+          // This handles the race where both temp and server versions appear
+          // Legitimate duplicate messages (user sent same text twice) are preserved
+          // because they would both have server-confirmed IDs
           if (msg.type === 'user' && msgId?.startsWith('temp-')) {
             const contentKey = String(msg.content || '').trim();
-            // Only skip if we already have a non-temp message with this content
-            if (contentKey && seenUserContents.has(contentKey)) {
-              contentDupsRemoved++;
+            if (contentKey && serverUserContents.has(contentKey)) {
               return;
             }
-          }
-
-          // Track content for non-temp user messages (server-confirmed messages)
-          if (msg.type === 'user' && msgId && !msgId.startsWith('temp-')) {
-            const contentKey = String(msg.content || '').trim();
-            if (contentKey) seenUserContents.add(contentKey);
           }
 
           finalDeduped.push(msg);

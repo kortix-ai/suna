@@ -1109,36 +1109,37 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       const groups: MessageGroup[] = [];
       let currentGroup: MessageGroup | null = null;
       let assistantGroupCounter = 0;
-      // Track processed message IDs and user content to prevent duplicate bubbles
+      // Track processed message IDs to prevent duplicate bubbles
       const processedMessageIds = new Set<string>();
-      const processedUserContents = new Set<string>();
-      const skippedDuplicates: string[] = [];
 
+      // First pass: collect content from server-confirmed user messages (non-temp IDs)
+      // This allows us to filter out temp messages that have been confirmed by server
+      const serverUserContents = new Set<string>();
+      displayMessages.forEach((msg) => {
+        if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
+          const contentKey = String(msg.content || '').trim();
+          if (contentKey) serverUserContents.add(contentKey);
+        }
+      });
+
+      // Second pass: build message groups
       displayMessages.forEach((message, index) => {
         const messageType = message.type;
         const key = message.message_id || `msg-${index}`;
 
         // Skip duplicate messages (same message_id already processed)
         if (message.message_id && processedMessageIds.has(message.message_id)) {
-          skippedDuplicates.push(message.message_id.slice(-8));
           return;
         }
 
-        // For user messages with temp IDs, skip if we already have a server message with same content
-        // This handles the race condition where temp message and server message both appear
-        // BUT: Don't skip legitimate duplicate messages (user sent same text twice intentionally)
+        // For temp user messages, skip if server already confirmed a message with same content
+        // This handles the race where both temp and server versions appear
+        // Legitimate duplicate messages (user sent same text twice) are preserved
         if (messageType === 'user' && message.message_id?.startsWith('temp-')) {
           const contentKey = String(message.content || '').trim();
-          if (contentKey && processedUserContents.has(contentKey)) {
-            skippedDuplicates.push(`temp-dup:${contentKey.slice(0, 10)}`);
+          if (contentKey && serverUserContents.has(contentKey)) {
             return;
           }
-        }
-
-        // Track content for non-temp user messages (server-confirmed messages)
-        if (messageType === 'user' && message.message_id && !message.message_id.startsWith('temp-')) {
-          const contentKey = String(message.content || '').trim();
-          if (contentKey) processedUserContents.add(contentKey);
         }
 
         if (message.message_id) {
