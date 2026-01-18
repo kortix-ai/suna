@@ -3,8 +3,9 @@ name: Build, push and deploy
 on:
   push:
     branches:
-      - main
-      - PRODUCTION
+      - main        # → DEV
+      - staging     # → STAGING
+      - PRODUCTION  # → PRODUCTION
   repository_dispatch:
     types: [production-updated]
 
@@ -33,10 +34,13 @@ jobs:
           
           if [[ "${{ github.event_name }}" == "repository_dispatch" ]] || [[ "$BRANCH_NAME" == "PRODUCTION" ]]; then
             echo "branch=prod" >> $GITHUB_OUTPUT
-            echo "environment=prod" >> $GITHUB_OUTPUT
-          elif [[ "$BRANCH_NAME" == "main" ]]; then
-            echo "branch=latest" >> $GITHUB_OUTPUT
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH_NAME" == "staging" ]]; then
+            echo "branch=staging" >> $GITHUB_OUTPUT
             echo "environment=staging" >> $GITHUB_OUTPUT
+          elif [[ "$BRANCH_NAME" == "main" ]]; then
+            echo "branch=dev" >> $GITHUB_OUTPUT
+            echo "environment=dev" >> $GITHUB_OUTPUT
           fi
 
       - name: Set up Docker Buildx
@@ -59,6 +63,60 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/suna-backend:${{ steps.get_tag_name.outputs.branch }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-dev:
+    needs: build-and-push
+    if: needs.build-and-push.outputs.environment == 'dev'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate dev secrets
+        run: |
+          if [ -z "${{ secrets.AWS_DEV_HOST }}" ]; then
+            echo "❌ Error: AWS_DEV_HOST secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_DEV_USERNAME }}" ]; then
+            echo "❌ Error: AWS_DEV_USERNAME secret is not set"
+            exit 1
+          fi
+          if [ -z "${{ secrets.AWS_DEV_KEY }}" ]; then
+            echo "❌ Error: AWS_DEV_KEY secret is not set"
+            exit 1
+          fi
+          echo "✅ All dev secrets are configured"
+
+      - name: Deploy to DEV
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.AWS_DEV_HOST }}
+          username: ${{ secrets.AWS_DEV_USERNAME }}
+          key: ${{ secrets.AWS_DEV_KEY }}
+          port: 22
+          timeout: 300s
+          script: |
+            cd /home/ubuntu/suna/backend
+            git fetch origin main
+            git reset --hard origin/main
+            
+            echo "=== Pre-deployment disk usage ==="
+            df -h / | tail -1
+            
+            # Clean up old images
+            echo "=== Cleaning up old images ==="
+            docker image prune -af --filter "until=24h" || true
+            
+            # Pull pre-built image from registry and deploy
+            echo "=== Pulling and deploying services ==="
+            docker compose pull
+            docker compose up -d --remove-orphans
+            
+            # Post cleanup
+            echo "=== Post-deployment cleanup ==="
+            docker image prune -af --filter "until=1h" || true
+            
+            echo "=== Deployment complete ==="
+            docker compose ps
+            df -h / | tail -1
 
   deploy-staging:
     needs: build-and-push
@@ -91,8 +149,8 @@ jobs:
           timeout: 300s
           script: |
             cd /home/ubuntu/suna/backend
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch origin staging
+            git reset --hard origin/staging
             
             echo "=== Pre-deployment disk usage ==="
             df -h / | tail -1
@@ -117,7 +175,7 @@ jobs:
   # Deploy to Lightsail (existing production instance)
   deploy-production-lightsail:
     needs: build-and-push
-    if: needs.build-and-push.outputs.environment == 'prod'
+    if: needs.build-and-push.outputs.environment == 'production'
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
@@ -178,7 +236,7 @@ jobs:
   # Deploy to ECS (new scalable production cluster)
   deploy-production-ecs:
     needs: build-and-push
-    if: needs.build-and-push.outputs.environment == 'prod'
+    if: needs.build-and-push.outputs.environment == 'production'
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
