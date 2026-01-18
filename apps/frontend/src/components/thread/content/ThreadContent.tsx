@@ -28,6 +28,7 @@ import { useSmoothStream } from "@/lib/streaming/animations";
 import { isHiddenTool } from "@agentpress/shared/tools";
 import { ReasoningSection } from "./ReasoningSection";
 import { StreamingText } from "./StreamingText";
+import { MessageActions } from "./MessageActions";
 
 export function renderAttachments(
   attachments: string[],
@@ -325,9 +326,35 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
         if (!renderedContent) return;
 
+        // Extract text content for MessageActions (including ask/complete tool text)
+        const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+        let textContent = typeof metadata.text_content === 'string' ? metadata.text_content : '';
+
+        // Also extract text from ask/complete tool calls
+        const toolCalls = metadata.tool_calls || [];
+        toolCalls.forEach((tc: any) => {
+          const toolName = tc.function_name?.replace(/_/g, '-') || '';
+          if (toolName === 'ask' || toolName === 'complete') {
+            let args = tc.arguments || {};
+            if (typeof args === 'string') {
+              try { args = JSON.parse(args); } catch { args = {}; }
+            }
+            if (args.text) {
+              textContent = textContent ? `${textContent}\n\n${args.text}` : args.text;
+            }
+          }
+        });
+
+        // Check if currently streaming
+        const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
+
         elements.push(
           <div key={msgKey} className={assistantMessageCount > 0 ? "mt-3" : ""}>
             <div className="break-words overflow-hidden">{renderedContent}</div>
+            {/* Message actions - only show when not streaming */}
+            {!isCurrentlyStreaming && textContent && (
+              <MessageActions text={textContent} />
+            )}
           </div>,
         );
         assistantMessageCount++;
@@ -347,6 +374,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     t,
     threadId,
     onPromptFill,
+    streamHookStatus,
   ]);
 
   const streamingContent = useMemo(() => {

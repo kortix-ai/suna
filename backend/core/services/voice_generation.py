@@ -350,21 +350,31 @@ async def generate_voice(
         logger.debug(f"[VOICE] Chunk {i+1}/{chunk_count} ({len(chunk)} chars): {chunk[:80]}...")
 
     try:
-        # Generate audio for all chunks in parallel for speed
-        async def generate_chunk_with_index(idx: int, chunk_text: str) -> tuple:
-            logger.debug(f"[VOICE] Generating chunk {idx+1}/{chunk_count}: {len(chunk_text)} chars")
-            url = await generate_voice_chunk(
-                text=chunk_text,
-                voice=request.voice,
-                reference_audio=request.reference_audio,
-                temperature=request.temperature,
-                top_p=request.top_p,
-                top_k=request.top_k,
-                repetition_penalty=request.repetition_penalty
-            )
-            return (idx, url)
+        # Rate-limited chunk generation to avoid Replicate's burst limit (5 requests)
+        # Use semaphore to limit concurrent requests and add small delays
+        MAX_CONCURRENT = 3  # Stay under burst limit of 5
+        DELAY_BETWEEN_STARTS = 0.3  # 300ms between starting each request
 
-        # Run all chunk generations in parallel
+        semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+
+        async def generate_chunk_with_index(idx: int, chunk_text: str) -> tuple:
+            # Small staggered delay to avoid burst
+            await asyncio.sleep(idx * DELAY_BETWEEN_STARTS)
+
+            async with semaphore:
+                logger.debug(f"[VOICE] Generating chunk {idx+1}/{chunk_count}: {len(chunk_text)} chars")
+                url = await generate_voice_chunk(
+                    text=chunk_text,
+                    voice=request.voice,
+                    reference_audio=request.reference_audio,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    top_k=request.top_k,
+                    repetition_penalty=request.repetition_penalty
+                )
+                return (idx, url)
+
+        # Run chunk generations with rate limiting
         results = await asyncio.gather(*[
             generate_chunk_with_index(i, chunk) for i, chunk in enumerate(chunks)
         ])
@@ -432,6 +442,10 @@ async def generate_voice_stream(
         """Generator that yields chunk URLs as NDJSON."""
         try:
             for i, chunk in enumerate(chunks):
+                # Small delay between requests to avoid rate limits
+                if i > 0:
+                    await asyncio.sleep(0.3)
+
                 logger.debug(f"[VOICE_STREAM] Generating chunk {i+1}/{chunk_count}")
                 url = await generate_voice_chunk(
                     text=chunk,

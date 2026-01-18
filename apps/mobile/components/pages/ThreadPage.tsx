@@ -457,12 +457,17 @@ export function ThreadPage({
   }, [messages, activeToolData, dismissedToolCallId]);
 
   // Clear activeToolData and dismissed state when thread changes
+  // Get voice player close function
+  const voiceClose = useVoicePlayerStore((s) => s.close);
+
   React.useEffect(() => {
     log.log('[ToolSnack] Thread changed, clearing activeToolData and dismissed state');
     setActiveToolData(null);
     setDismissedToolCallId(null);
     lastToolCallIdRef.current = null;
-  }, [chat.activeThread?.id]);
+    // Close voice player when switching threads
+    voiceClose();
+  }, [chat.activeThread?.id, voiceClose]);
 
   const windowHeight = Dimensions.get('window').height;
   const baseBottomPadding = CHAT_INPUT_SECTION_HEIGHT.THREAD_PAGE + insets.bottom;
