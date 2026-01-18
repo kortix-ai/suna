@@ -1000,6 +1000,7 @@ export function ThreadPage({
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}
         isTranscribing={isTranscribing}
+        isNewThread={chat.isNewThreadOptimistic}
         activeToolData={activeToolData}
         agentName={agentManager.selectedAgent?.name}
         onToolSnackPress={() => {

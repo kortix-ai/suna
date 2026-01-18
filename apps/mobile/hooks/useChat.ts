@@ -732,11 +732,14 @@ export function useChat(): UseChatReturn {
     setIsNewThreadOptimistic(false);
     
     setMessages([]);
-    
+
     // Reset Kortix Computer state when switching threads
     useKortixComputerStore.getState().reset();
     log.log('[useChat] Reset Kortix Computer state');
-    
+
+    // Dismiss keyboard before navigation to avoid stale keyboard metrics
+    Keyboard.dismiss();
+
     setActiveThreadId(threadId);
     setModeViewState('thread');
     
@@ -887,6 +890,10 @@ export function useChat(): UseChatReturn {
         };
         setMessages([optimisticUserMessage]);
         setIsNewThreadOptimistic(true);
+
+        // CRITICAL: Dismiss keyboard BEFORE navigation to avoid stale keyboard metrics
+        // on ThreadPage's KeyboardStickyView (fixes chat input jumping to middle on real devices)
+        Keyboard.dismiss();
 
         // CRITICAL: Set activeThreadId IMMEDIATELY so UI navigates to ThreadPage
         // This makes hasActiveThread = true, triggering instant navigation
@@ -1646,6 +1653,7 @@ export function useChat(): UseChatReturn {
   // Show the thread list for current mode
   const showModeThreadList = useCallback(() => {
     log.log('[useChat] 📋 Going back to thread list for mode:', selectedQuickAction);
+    Keyboard.dismiss();
     setModeViewState('thread-list');
     
     // Clear the saved state for current mode when user explicitly goes back
