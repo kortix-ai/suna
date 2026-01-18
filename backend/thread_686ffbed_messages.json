@@ -1,0 +1,336 @@
+{
+  "thread_id": "686ffbed-617c-444f-bef6-938eafdedcf6",
+  "message_count": 12,
+  "messages": [
+    {
+      "message_id": "a829f46b-f0c8-41e1-9bb5-8cabed52b29d",
+      "type": "user",
+      "is_llm_message": true,
+      "content": {
+        "role": "user",
+        "content": "Seaech marko kraemer on web, dont do batch query"
+      },
+      "metadata": null,
+      "created_at": "2026-01-18 05:31:21.226542+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "715c4058-222d-418c-a375-6fa2ef581497",
+      "type": "status",
+      "is_llm_message": false,
+      "content": {
+        "status_type": "thread_run_start"
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51"
+      },
+      "created_at": "2026-01-18 05:31:24.112369+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "6839d46e-88aa-46ad-a03f-54f6baf3521f",
+      "type": "llm_response_start",
+      "is_llm_message": false,
+      "content": {
+        "model": "kortix/basic",
+        "timestamp": "2026-01-18T05:31:24.112186+00:00",
+        "llm_response_id": "0786ca75-3d69-4b4a-80c1-1fd41dd85d92",
+        "auto_continue_count": 0
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51",
+        "llm_response_id": "0786ca75-3d69-4b4a-80c1-1fd41dd85d92"
+      },
+      "created_at": "2026-01-18 05:31:24.115423+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "a9d9e580-1012-46ac-a86d-09dd5c1ac1cd",
+      "type": "assistant",
+      "is_llm_message": true,
+      "content": {
+        "role": "assistant",
+        "content": "\n",
+        "tool_calls": [
+          {
+            "id": "call_function_vr3a2rujq4ht_1",
+            "type": "function",
+            "function": {
+              "name": "web_search",
+              "arguments": "{\"query\": \"Marko Kraemer\"}"
+            }
+          }
+        ]
+      },
+      "metadata": {
+        "tool_calls": [
+          {
+            "source": "native",
+            "arguments": {
+              "query": "Marko Kraemer"
+            },
+            "tool_call_id": "call_function_vr3a2rujq4ht_1",
+            "function_name": "web_search"
+          }
+        ],
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51"
+      },
+      "created_at": "2026-01-18 05:31:25.200540+00:00",
+      "agent_id": "2bb5208c-83d7-426e-a98b-948a5e07191f"
+    },
+    {
+      "message_id": "84c6f6e2-9ffb-40aa-a9ba-60c22fbae4e8",
+      "type": "status",
+      "is_llm_message": false,
+      "content": {
+        "tool_index": 0,
+        "status_type": "tool_started",
+        "tool_call_id": "call_function_vr3a2rujq4ht_1",
+        "function_name": "web_search"
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51"
+      },
+      "created_at": "2026-01-18 05:31:25.398422+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "b714ff3d-7907-43f5-99df-e46b1285b4bd",
+      "type": "tool",
+      "is_llm_message": true,
+      "content": {
+        "name": "web_search",
+        "role": "tool",
+        "content": "{\"query\": \"Marko Kraemer\", \"response_time\": 4.87, \"follow_up_questions\": null, \"answer\": \"Marko O. Kraemer is a German‑born AI entrepreneur who founded his first business, BluePage, at age 12 and later launched GastroPage at 14, before establishing the software studio Plutus and the venture Golixxo in his teens; after graduating with an Abitur from Europäische Schule Rhein/Main in 2023 he moved to the United States on an O‑1 visa and now serves as Founder and CEO of Kortix, an open‑source AI company based in San Francisco that builds AI agents and tools such as the SoftGen web‑app builder (which grew to $50 K monthly recurring revenue and was sold for over $1 million) and the Suna platform (described as “WordPress for AI agents,” attracting 50 000 users, 14 000 GitHub stars and enterprise interest), and has raised $4 million to expand its AI‑worker ecosystem.\", \"images\": [{\"url\": \"https://i.ytimg.com/vi/v_dqiVzzWtg/maxresdefault.jpg\", \"width\": 1280, \"height\": 720, \"description\": \"The image depicts a radio station setting. Two individuals are present, one standing in front of a desk with a computer monitor and a microphone, and the other standing in front of a desk with a computer monitor and a microphone. The desk is adorned with various objects, including a green plant and a red ball. The background features a window with a sign that reads \\\"Radio Frankfurt\\\", and the text \\\"ANDRE BRAUN\\\" and \\\"DIE DIGITALISIERUNG EUROPAS\\\" are visible.\"}, {\"url\": \"https://profile-images.xing.com/images/61ac23ab92639cef5593fd83f1d62b3c-2/marko-kraemer.1024x1024.jpg\", \"width\": 1024, \"height\": 1024, \"description\": \"The image shows a young man standing in front of a cityscape. He is wearing a blue collared shirt and glasses, and his face is lit up with a smile. The cityscape behind him is a blend of modern skyscrapers and older buildings, creating a dynamic skyline. The image does not contain any discernible text.\"}, {\"url\": \"https://linktr.ee/og/image/markokraemer.jpg\", \"width\": 0, \"height\": 0, \"description\": \"\"}, {\"url\": \"https://i.ytimg.com/vi/11xG_wZlH9A/maxresdefault.jpg\", \"width\": 1280, \"height\": 720, \"description\": \"The image shows two young men standing in front of a metallic wall. The man on the left is wearing a black shirt and glasses, and is adjusting his collar. The man on the right is wearing a gray suit and blue shirt, and is smiling at the camera. The metallic wall behind them has a sign that reads \\\"Plutus GmbH\\\" and \\\"Marko Kraemer & Andre Braun Gründer der Plutus GmbH\\\".\"}, {\"url\": \"https://cdn-thumbnails.huggingface.co/social-thumbnails/markokraemer.png\", \"width\": 1200, \"height\": 648, \"description\": \"The image features a logo for a company named \\\"markokraemer\\\". The logo is set against a white background and includes a blue circle with a green gradient at the center, which is the company name. Below the logo, there is a smaller text that reads \\\"huggingface.co/markokraemer\\\".\"}], \"results\": [{\"url\": \"https://rocketreach.co/marko-kraemer-email_303767668\", \"title\": \"Marko Kraemer Email - Founder and CEO @ Kortix - RocketReach\", \"content\": \"2013 - 2023\\n\\n### Marko Kraemer Summary\\n\\nMarko Kraemer, based in San Francisco, CA, US, is currently a Founder and CEO at Kortix. Marko Kraemer brings experience from previous roles at SoftGen.AI, Freelance, Plutus and Golixxo. Marko Kraemer holds a 2013 - 2023 Abitur in Europäisch @ Europäische Schule Rhein/Main. Marko Kraemer has 1 emails on RocketReach.\\n\\n## Marko Kraemer Emails\\n\\nFound 1 emails\\n\\n @kortix.ai\\n\\n5 free lookup(s).\\n\\nRedirecting you to the search page.\\n\\nIf you're not automatically redirected, please click here\\n\\n### Looking for a different Marko Kraemer?\\n\\nFind contact details for 700 million professionals.\\n\\n### Search\\n\\n## Others Named Marko Kraemer\\n\\n ### Marko Kraemer\\n\\n  #### Founder and CEO at Kortix\\n\\n  San Francisco, CA, US\\n\\n  1 \\n  + kortix.ai\\n\\nView Similar Profiles [...] 1 \\n  + kortix.ai\\n\\nView Similar Profiles\\n\\n## Top Kortix Employees\\n\\n ### Marko Kraemer\\n\\n  #### Founder and CEO at Kortix\\n\\n  San Francisco, CA, US\\n\\n  1 \\n  + kortix.ai\\n ### Domenico Gagliardi\\n\\n  #### Founding Member and COO at Kortix\\n\\n  San Francisco, CA, US\\n\\n  2 \\n  + gmail.com\\n  + kortix.ai\\n ### Pablo Pérez\\n\\n  #### AI Engineer at Kortix\\n\\n  Lucena, AL, ES\\n\\n  2 \\n  + kortix.ai\\n  + mercatus.org\\n\\nView Similar Profiles\\n\\nHow It Works\\n\\nGet a Free Account\\n\\nSign up for a free account. No credit card required. Up to 5 free lookups.\\n\\nSearch the #1 Contact Database\\n\\nGet contact details of over 700M profiles across 60M companies – all with industry-leading accuracy. Sales and Recruiter users, try out our Email Finder Extension.\\n\\nUse our AI-Powered Email Finder [...] # Marko Kraemer Email\\n\\n### Founder and CEO @ Kortix\\n\\n5 free lookup(s).\\n\\n### Marko Kraemer Location\\n\\nSan Francisco, CA, US\\n\\n### Marko Kraemer Work\\n\\n 2024 - now  Founder and CEO @ Kortix\\n 2024 - 2025 Founder @ SoftGen.AI\\n 2022 - 2024 Freelance @ Brandwagon\\n\\n 2019 - 2022 Co-Founder @ Plutus GmbH\\n 2021 - 2022 Co-Founder @ Golixxo GmbH\\n 2014 - 2019 Freelance @ Brandwagon\\n\\n### Marko Kraemer Education\\n\\n Europäische Schule Rhein/Main\\n\\n  Abitur (Europäisch)\\n\\n  2013 - 2023\\n\\n### Marko Kraemer Summary\", \"score\": 0.8482825, \"raw_content\": null}, {\"url\": \"https://medium.com/@yumaueno/%EF%B8%8F-marko-the-20-year-old-german-developer-who-grew-an-ai-tool-to-50-000-month-in-revenue-and-5a0d8054e77d\", \"title\": \"Marko: The 20-Year-Old German Developer Who Grew an AI Tool to ...\", \"content\": \"Sitemap\\n\\nOpen in app\\n\\nSign in\\n\\nWrite\\n\\nSearch\\n\\nSign in\\n\\nMember-only story\\n\\n# 💰️ Marko: The 20-Year-Old German Developer Who Grew an AI Tool to $50,000/Month in Revenue and Sold It for Over $1 Million\\n\\nYuma Ueno\\n\\n12 min read\\n\\n·\\n\\nOct 21, 2025\\n\\n--\\n\\nHello! I’m Yuma Ueno().\\n\\nI’m struggling to build many products (Ex: AI-Powered Japanese FlashCards).\\n\\nI’ve researched the amazing indie hackers / entrepreneurs and summarized what they’ve done.\\n\\nI would like to introduce the great entrepreneur “Marko Kraemer”!\\n\\nA genius developer born in Germany who, at just 20 years old, sold an AI product for over $1 million. His level of action and drive from a young age is so extreme it’s mind-blowing. Let’s take a look at his story! [...] ## 👦 Hooked on Minecraft Since Childhood, He Started a Business Using His Programming Skills\\n\\nHis talent as an engineer and entrepreneur was visible from a very young age. In elementary school, he was completely hooked on Minecraft, playing it every single day. In the process, he picked up knowledge of graphic design and programming. He used this knowledge to build websites for Minecraft.\\n\\nFollowing that path, at the age of 13, he founded a small agency called Blue Page. He started building and selling landing pages to local businesses. He…\\n\\n## Written by Yuma Ueno\\n\\n3.7K followers\\n\\n·10 following\\n\\n## No responses yet\\n\\nHelp\\n\\nStatus\\n\\nAbout\\n\\nText to speech\", \"score\": 0.7906115, \"raw_content\": null}, {\"url\": \"https://www.linkedin.com/posts/ellisdotcom_were-at-the-beginning-of-the-largest-workforce-activity-7349483541774159873-19lr\", \"title\": \"Marko Kraemer: AI visionary and entrepreneur at 20 - LinkedIn\", \"content\": \"“We’re at the beginning of the largest workforce transition in human history, where 80% of knowledge work shifts from humans to AI.” Marko O. Kraemer's entrepreneurial journey began unusually early. At just 12, he founded BluePage, building marketing landing pages for small businesses in Frankfurt, Germany. By 14, he had launched GastroPage, a restaurant digitization platform featuring QR-code menus, years ahead of the pandemic that would make such tools ubiquitous. Operating legally as a minor in Germany’s tightly regulated business environment required special court permission, an extraordinary exception granted to Marko. While still in high school, he went on to launch Plutus, a software development studio. “I essentially missed the last two years of school,” he recalls. “During COVID, [...] With a newly approved O-1 visa, Marko now splits his time between San Francisco and Europe as he scales Kortix’s broader vision: helping organizations transition from human to AI-driven knowledge work through both self-serve tools and enterprise-grade implementations. “We’re building for a future where AI agents can perform 70 to 80 percent of knowledge work,” he says. “This isn’t just automation. It’s a foundational shift unlike anything the labor market has seen before.” At just 20 years old, Marko's journey from teenage entrepreneur to AI visionary stands as a testament to his belief that innovation has no age limit, and that the future belongs to those who build it. [...] the last two years of school,” he recalls. “During COVID, a friend managed my Microsoft Teams login so I could focus on building the company. I only showed up for the exams.” After graduating in 2023, Marko founded Kortix with an ambitious mission to build the foundational infrastructure for the AI revolution. The first product, SoftGen, an AI-powered web app builder, scaled from zero to $50K in monthly recurring revenue within four months and was acquired by a private equity firm. His current focus is Kortix Suna, an open-source platform he describes as “WordPress for AI agents.” In just weeks after launch, Suna amassed 50,000 users, earned 14,000 GitHub stars, and sparked serious enterprise interest with over 200 enterprise bookings. With a newly approved O-1 visa, Marko now splits his\", \"score\": 0.7598145, \"raw_content\": null}, {\"url\": \"https://peerlist.io/markokraemer\", \"title\": \"Resume of Marko Kraemer - Peerlist\", \"content\": \"ScrollLaunchpadJobsSearchBlog\\n\\nScrollLaunchpadArticlesJobsSearchBlogAdvertise\\n\\nBlog • Tools • Store • Help  \\nSupport • Legal\\n\\n© 2026 Peerlist, Inc.\\n\\nMarko Kraemer\\n\\n11 followers\\n\\n## Artificially Intelligent\\n\\n11 followers\\n\\nJoined 06 Feb 2025\\n\\n RESUME\\n POSTS\\n\\nExperience\\n\\n11 years, 10 months\\n\\nSoftGen.AI\\n\\nChief Executive Officer\\n\\nMay 2024 - Present (1 yr, 8 m)\\n\\nKortix AI\\n\\nChief Executive Officer\\n\\nApr 2024 - Present (1 yr, 9 m)\\n\\nFreelance\\n\\nDigital Product Developer\\n\\nOct 2022 - Feb 2024 (1 yr, 4 m) • frankfurt am main, hessen, deutschland\\n\\nGolixxo\\n\\nCo-Founder\\n\\nSep 2021 - Apr 2022 (7 m) • frankfurt am main, hessen, deutschland\\n\\nPlutus\\n\\nCo-Founder\\n\\nOct 2019 - Nov 2022 (3 yr, 1 m) • frankfurt am main und umgebung, deutschland\\n\\nEducation\\n\\nEuropäische Schule Rhein/Main\\n\\nAbitur,  Europäisch [...] Europäische Schule Rhein/Main\\n\\nAbitur,  Europäisch\\n\\n2011 - 2023\\n\\nVolunteering\\n\\nDigitalisierungsförderung\\n\\nCoronaHilfe.Digital\\n\\nFeb 2020 - Jul 2020\\n\\nDigitalisierungs Chance COVID-19\\nKostenfreie & kostengünstige Digitalisierung für kleine und mittelständische Unternehmen.\\n„Unser Ziel ist es Unternehmen, während der COVID-19 Kriese, bei der Digitalisierung zu unterstützen und in Express Geschwindigkeit, innerhalb von 48 Stunden, mit digitalen Produkten wie Webseiten, Social Media Strategien oder Werbevideos zu versorgen.“\\n\\nGo Dark\\n\\nResume of Marko Kraemer • Peerlist\", \"score\": 0.7055624, \"raw_content\": null}, {\"url\": \"https://www.linkedin.com/in/markokraemer\", \"title\": \"Marko O. Kraemer - CEO @ Kortix - LinkedIn\", \"content\": \"# Marko O. Kraemer\\nEnabling the migration from Human to AI.\\nSan Francisco, California, United States, US  \\n500 connections, 3898 followers\\n\\n## About\\nArtificially intelligent\\n\\n## Experience\\nN/A\\n\\n## Education\\n### Europäische Schule Rhein/Main  \\nN/A  \\n2013 - 2023-06  \\nNone\\n\\n## Publications\\nN/A\\n\\n## Honors & Awards\\nN/A\\n\\n## Certifications\\nN/A\\n\\n## Volunteering\\n- Digitalisierungsförderung\\nCoronaHilfe.Digital\\nN/A\\nCoronaHelp Digital – Digitalization Opportunity COVID-19 Free and cost-effective digitalization for small and medium-sized businesses. \\\"Our goal is to support companies in their digitalization during the COVID-19 crisis and to provide them with digital products such as websites, social media strategies, or promotional videos at express speed, within 48 hours.\\\" [...] - 2025 was more than I could have imagined… Here’s to 2026!  \\nLiked by Marko O. Kraemer  \\nView Post  \\nActivity Image\\n\\n- Quick look at some of the content we've been making since moving to China. 👀 🇨🇳 Over the past three months we've started documenting all things…  \\nLiked by Marko O. Kraemer  \\nView Post  \\nActivity Image\\n\\n- 2025 has been an awesome year for Lovable. Here's what's top of mind for me right now: AGI (Artificial General Intelligence) will be a software…  \\nLiked by Marko O. Kraemer  \\nView Post  \\nActivity Image\\n\\n- My 2025 in bullet points (best year ever): • Jan 2025: I quit my full-time job and left Rome • Feb 2025: We scaled Softgen to 500k ARR (in 3 months)…  \\nLiked by Marko O. Kraemer  \\nView Post  \\nActivity Image [...] - Switched from Cloudflare DNS to Hetzner DNS and look at that drop 📉 P95 went from 954ms → 172ms Deutsche Telekom throttles services that don't pay…  \\nLiked by Marko O. Kraemer  \\nView Post  \\nActivity Image\\n\\n- Narrative violation: AI coding will result in the most rigorously tested, type-checked, and provably correct code in the world. First, the testing…  \\nLiked by Marko O. Kraemer  \\nView Post  \\nActivity Image\\n\\n- The $2B Manus acquisition is validation of the future where every agent has a full virtual machine at their disposal. Filesystem. Browser. Terminal…  \\nLiked by Marko O. Kraemer  \\nView Post  \\nActivity Image\", \"score\": 0.6426349, \"raw_content\": null}], \"request_id\": \"e0614799-d054-40fc-89b2-479794a9ea22\", \"elapsed_time\": 4.15}",
+        "tool_call_id": "call_function_vr3a2rujq4ht_1"
+      },
+      "metadata": {
+        "result": {
+          "error": null,
+          "output": {
+            "query": "Marko Kraemer",
+            "answer": "Marko O. Kraemer is a German‑born AI entrepreneur who founded his first business, BluePage, at age 12 and later launched GastroPage at 14, before establishing the software studio Plutus and the venture Golixxo in his teens; after graduating with an Abitur from Europäische Schule Rhein/Main in 2023 he moved to the United States on an O‑1 visa and now serves as Founder and CEO of Kortix, an open‑source AI company based in San Francisco that builds AI agents and tools such as the SoftGen web‑app builder (which grew to $50 K monthly recurring revenue and was sold for over $1 million) and the Suna platform (described as “WordPress for AI agents,” attracting 50 000 users, 14 000 GitHub stars and enterprise interest), and has raised $4 million to expand its AI‑worker ecosystem.",
+            "images": [
+              {
+                "url": "https://i.ytimg.com/vi/v_dqiVzzWtg/maxresdefault.jpg",
+                "width": 1280,
+                "height": 720,
+                "description": "The image depicts a radio station setting. Two individuals are present, one standing in front of a desk with a computer monitor and a microphone, and the other standing in front of a desk with a computer monitor and a microphone. The desk is adorned with various objects, including a green plant and a red ball. The background features a window with a sign that reads \"Radio Frankfurt\", and the text \"ANDRE BRAUN\" and \"DIE DIGITALISIERUNG EUROPAS\" are visible."
+              },
+              {
+                "url": "https://profile-images.xing.com/images/61ac23ab92639cef5593fd83f1d62b3c-2/marko-kraemer.1024x1024.jpg",
+                "width": 1024,
+                "height": 1024,
+                "description": "The image shows a young man standing in front of a cityscape. He is wearing a blue collared shirt and glasses, and his face is lit up with a smile. The cityscape behind him is a blend of modern skyscrapers and older buildings, creating a dynamic skyline. The image does not contain any discernible text."
+              },
+              {
+                "url": "https://linktr.ee/og/image/markokraemer.jpg",
+                "width": 0,
+                "height": 0,
+                "description": ""
+              },
+              {
+                "url": "https://i.ytimg.com/vi/11xG_wZlH9A/maxresdefault.jpg",
+                "width": 1280,
+                "height": 720,
+                "description": "The image shows two young men standing in front of a metallic wall. The man on the left is wearing a black shirt and glasses, and is adjusting his collar. The man on the right is wearing a gray suit and blue shirt, and is smiling at the camera. The metallic wall behind them has a sign that reads \"Plutus GmbH\" and \"Marko Kraemer & Andre Braun Gründer der Plutus GmbH\"."
+              },
+              {
+                "url": "https://cdn-thumbnails.huggingface.co/social-thumbnails/markokraemer.png",
+                "width": 1200,
+                "height": 648,
+                "description": "The image features a logo for a company named \"markokraemer\". The logo is set against a white background and includes a blue circle with a green gradient at the center, which is the company name. Below the logo, there is a smaller text that reads \"huggingface.co/markokraemer\"."
+              }
+            ],
+            "results": [
+              {
+                "url": "https://rocketreach.co/marko-kraemer-email_303767668",
+                "score": 0.8482825,
+                "title": "Marko Kraemer Email - Founder and CEO @ Kortix - RocketReach",
+                "content": "2013 - 2023\n\n### Marko Kraemer Summary\n\nMarko Kraemer, based in San Francisco, CA, US, is currently a Founder and CEO at Kortix. Marko Kraemer brings experience from previous roles at SoftGen.AI, Freelance, Plutus and Golixxo. Marko Kraemer holds a 2013 - 2023 Abitur in Europäisch @ Europäische Schule Rhein/Main. Marko Kraemer has 1 emails on RocketReach.\n\n## Marko Kraemer Emails\n\nFound 1 emails\n\n @kortix.ai\n\n5 free lookup(s).\n\nRedirecting you to the search page.\n\nIf you're not automatically redirected, please click here\n\n### Looking for a different Marko Kraemer?\n\nFind contact details for 700 million professionals.\n\n### Search\n\n## Others Named Marko Kraemer\n\n ### Marko Kraemer\n\n  #### Founder and CEO at Kortix\n\n  San Francisco, CA, US\n\n  1 \n  + kortix.ai\n\nView Similar Profiles [...] 1 \n  + kortix.ai\n\nView Similar Profiles\n\n## Top Kortix Employees\n\n ### Marko Kraemer\n\n  #### Founder and CEO at Kortix\n\n  San Francisco, CA, US\n\n  1 \n  + kortix.ai\n ### Domenico Gagliardi\n\n  #### Founding Member and COO at Kortix\n\n  San Francisco, CA, US\n\n  2 \n  + gmail.com\n  + kortix.ai\n ### Pablo Pérez\n\n  #### AI Engineer at Kortix\n\n  Lucena, AL, ES\n\n  2 \n  + kortix.ai\n  + mercatus.org\n\nView Similar Profiles\n\nHow It Works\n\nGet a Free Account\n\nSign up for a free account. No credit card required. Up to 5 free lookups.\n\nSearch the #1 Contact Database\n\nGet contact details of over 700M profiles across 60M companies – all with industry-leading accuracy. Sales and Recruiter users, try out our Email Finder Extension.\n\nUse our AI-Powered Email Finder [...] # Marko Kraemer Email\n\n### Founder and CEO @ Kortix\n\n5 free lookup(s).\n\n### Marko Kraemer Location\n\nSan Francisco, CA, US\n\n### Marko Kraemer Work\n\n 2024 - now  Founder and CEO @ Kortix\n 2024 - 2025 Founder @ SoftGen.AI\n 2022 - 2024 Freelance @ Brandwagon\n\n 2019 - 2022 Co-Founder @ Plutus GmbH\n 2021 - 2022 Co-Founder @ Golixxo GmbH\n 2014 - 2019 Freelance @ Brandwagon\n\n### Marko Kraemer Education\n\n Europäische Schule Rhein/Main\n\n  Abitur (Europäisch)\n\n  2013 - 2023\n\n### Marko Kraemer Summary",
+                "raw_content": null
+              },
+              {
+                "url": "https://medium.com/@yumaueno/%EF%B8%8F-marko-the-20-year-old-german-developer-who-grew-an-ai-tool-to-50-000-month-in-revenue-and-5a0d8054e77d",
+                "score": 0.7906115,
+                "title": "Marko: The 20-Year-Old German Developer Who Grew an AI Tool to ...",
+                "content": "Sitemap\n\nOpen in app\n\nSign in\n\nWrite\n\nSearch\n\nSign in\n\nMember-only story\n\n# 💰️ Marko: The 20-Year-Old German Developer Who Grew an AI Tool to $50,000/Month in Revenue and Sold It for Over $1 Million\n\nYuma Ueno\n\n12 min read\n\n·\n\nOct 21, 2025\n\n--\n\nHello! I’m Yuma Ueno().\n\nI’m struggling to build many products (Ex: AI-Powered Japanese FlashCards).\n\nI’ve researched the amazing indie hackers / entrepreneurs and summarized what they’ve done.\n\nI would like to introduce the great entrepreneur “Marko Kraemer”!\n\nA genius developer born in Germany who, at just 20 years old, sold an AI product for over $1 million. His level of action and drive from a young age is so extreme it’s mind-blowing. Let’s take a look at his story! [...] ## 👦 Hooked on Minecraft Since Childhood, He Started a Business Using His Programming Skills\n\nHis talent as an engineer and entrepreneur was visible from a very young age. In elementary school, he was completely hooked on Minecraft, playing it every single day. In the process, he picked up knowledge of graphic design and programming. He used this knowledge to build websites for Minecraft.\n\nFollowing that path, at the age of 13, he founded a small agency called Blue Page. He started building and selling landing pages to local businesses. He…\n\n## Written by Yuma Ueno\n\n3.7K followers\n\n·10 following\n\n## No responses yet\n\nHelp\n\nStatus\n\nAbout\n\nText to speech",
+                "raw_content": null
+              },
+              {
+                "url": "https://www.linkedin.com/posts/ellisdotcom_were-at-the-beginning-of-the-largest-workforce-activity-7349483541774159873-19lr",
+                "score": 0.7598145,
+                "title": "Marko Kraemer: AI visionary and entrepreneur at 20 - LinkedIn",
+                "content": "“We’re at the beginning of the largest workforce transition in human history, where 80% of knowledge work shifts from humans to AI.” Marko O. Kraemer's entrepreneurial journey began unusually early. At just 12, he founded BluePage, building marketing landing pages for small businesses in Frankfurt, Germany. By 14, he had launched GastroPage, a restaurant digitization platform featuring QR-code menus, years ahead of the pandemic that would make such tools ubiquitous. Operating legally as a minor in Germany’s tightly regulated business environment required special court permission, an extraordinary exception granted to Marko. While still in high school, he went on to launch Plutus, a software development studio. “I essentially missed the last two years of school,” he recalls. “During COVID, [...] With a newly approved O-1 visa, Marko now splits his time between San Francisco and Europe as he scales Kortix’s broader vision: helping organizations transition from human to AI-driven knowledge work through both self-serve tools and enterprise-grade implementations. “We’re building for a future where AI agents can perform 70 to 80 percent of knowledge work,” he says. “This isn’t just automation. It’s a foundational shift unlike anything the labor market has seen before.” At just 20 years old, Marko's journey from teenage entrepreneur to AI visionary stands as a testament to his belief that innovation has no age limit, and that the future belongs to those who build it. [...] the last two years of school,” he recalls. “During COVID, a friend managed my Microsoft Teams login so I could focus on building the company. I only showed up for the exams.” After graduating in 2023, Marko founded Kortix with an ambitious mission to build the foundational infrastructure for the AI revolution. The first product, SoftGen, an AI-powered web app builder, scaled from zero to $50K in monthly recurring revenue within four months and was acquired by a private equity firm. His current focus is Kortix Suna, an open-source platform he describes as “WordPress for AI agents.” In just weeks after launch, Suna amassed 50,000 users, earned 14,000 GitHub stars, and sparked serious enterprise interest with over 200 enterprise bookings. With a newly approved O-1 visa, Marko now splits his",
+                "raw_content": null
+              },
+              {
+                "url": "https://peerlist.io/markokraemer",
+                "score": 0.7055624,
+                "title": "Resume of Marko Kraemer - Peerlist",
+                "content": "ScrollLaunchpadJobsSearchBlog\n\nScrollLaunchpadArticlesJobsSearchBlogAdvertise\n\nBlog • Tools • Store • Help  \nSupport • Legal\n\n© 2026 Peerlist, Inc.\n\nMarko Kraemer\n\n11 followers\n\n## Artificially Intelligent\n\n11 followers\n\nJoined 06 Feb 2025\n\n RESUME\n POSTS\n\nExperience\n\n11 years, 10 months\n\nSoftGen.AI\n\nChief Executive Officer\n\nMay 2024 - Present (1 yr, 8 m)\n\nKortix AI\n\nChief Executive Officer\n\nApr 2024 - Present (1 yr, 9 m)\n\nFreelance\n\nDigital Product Developer\n\nOct 2022 - Feb 2024 (1 yr, 4 m) • frankfurt am main, hessen, deutschland\n\nGolixxo\n\nCo-Founder\n\nSep 2021 - Apr 2022 (7 m) • frankfurt am main, hessen, deutschland\n\nPlutus\n\nCo-Founder\n\nOct 2019 - Nov 2022 (3 yr, 1 m) • frankfurt am main und umgebung, deutschland\n\nEducation\n\nEuropäische Schule Rhein/Main\n\nAbitur,  Europäisch [...] Europäische Schule Rhein/Main\n\nAbitur,  Europäisch\n\n2011 - 2023\n\nVolunteering\n\nDigitalisierungsförderung\n\nCoronaHilfe.Digital\n\nFeb 2020 - Jul 2020\n\nDigitalisierungs Chance COVID-19\nKostenfreie & kostengünstige Digitalisierung für kleine und mittelständische Unternehmen.\n„Unser Ziel ist es Unternehmen, während der COVID-19 Kriese, bei der Digitalisierung zu unterstützen und in Express Geschwindigkeit, innerhalb von 48 Stunden, mit digitalen Produkten wie Webseiten, Social Media Strategien oder Werbevideos zu versorgen.“\n\nGo Dark\n\nResume of Marko Kraemer • Peerlist",
+                "raw_content": null
+              },
+              {
+                "url": "https://www.linkedin.com/in/markokraemer",
+                "score": 0.6426349,
+                "title": "Marko O. Kraemer - CEO @ Kortix - LinkedIn",
+                "content": "# Marko O. Kraemer\nEnabling the migration from Human to AI.\nSan Francisco, California, United States, US  \n500 connections, 3898 followers\n\n## About\nArtificially intelligent\n\n## Experience\nN/A\n\n## Education\n### Europäische Schule Rhein/Main  \nN/A  \n2013 - 2023-06  \nNone\n\n## Publications\nN/A\n\n## Honors & Awards\nN/A\n\n## Certifications\nN/A\n\n## Volunteering\n- Digitalisierungsförderung\nCoronaHilfe.Digital\nN/A\nCoronaHelp Digital – Digitalization Opportunity COVID-19 Free and cost-effective digitalization for small and medium-sized businesses. \"Our goal is to support companies in their digitalization during the COVID-19 crisis and to provide them with digital products such as websites, social media strategies, or promotional videos at express speed, within 48 hours.\" [...] - 2025 was more than I could have imagined… Here’s to 2026!  \nLiked by Marko O. Kraemer  \nView Post  \nActivity Image\n\n- Quick look at some of the content we've been making since moving to China. 👀 🇨🇳 Over the past three months we've started documenting all things…  \nLiked by Marko O. Kraemer  \nView Post  \nActivity Image\n\n- 2025 has been an awesome year for Lovable. Here's what's top of mind for me right now: AGI (Artificial General Intelligence) will be a software…  \nLiked by Marko O. Kraemer  \nView Post  \nActivity Image\n\n- My 2025 in bullet points (best year ever): • Jan 2025: I quit my full-time job and left Rome • Feb 2025: We scaled Softgen to 500k ARR (in 3 months)…  \nLiked by Marko O. Kraemer  \nView Post  \nActivity Image [...] - Switched from Cloudflare DNS to Hetzner DNS and look at that drop 📉 P95 went from 954ms → 172ms Deutsche Telekom throttles services that don't pay…  \nLiked by Marko O. Kraemer  \nView Post  \nActivity Image\n\n- Narrative violation: AI coding will result in the most rigorously tested, type-checked, and provably correct code in the world. First, the testing…  \nLiked by Marko O. Kraemer  \nView Post  \nActivity Image\n\n- The $2B Manus acquisition is validation of the future where every agent has a full virtual machine at their disposal. Filesystem. Browser. Terminal…  \nLiked by Marko O. Kraemer  \nView Post  \nActivity Image",
+                "raw_content": null
+              }
+            ],
+            "request_id": "e0614799-d054-40fc-89b2-479794a9ea22",
+            "elapsed_time": 4.15,
+            "response_time": 4.87,
+            "follow_up_questions": null
+          },
+          "success": true
+        },
+        "tool_call_id": "call_function_vr3a2rujq4ht_1",
+        "function_name": "web_search",
+        "return_format": "native",
+        "assistant_message_id": "a9d9e580-1012-46ac-a86d-09dd5c1ac1cd"
+      },
+      "created_at": "2026-01-18 05:31:29.745412+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "823e6bfc-02bc-441f-a0c1-8597c1fa12fa",
+      "type": "status",
+      "is_llm_message": false,
+      "content": {
+        "tool_index": 0,
+        "status_type": "tool_completed",
+        "tool_call_id": "call_function_vr3a2rujq4ht_1",
+        "function_name": "web_search"
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51",
+        "linked_tool_result_message_id": "b714ff3d-7907-43f5-99df-e46b1285b4bd"
+      },
+      "created_at": "2026-01-18 05:31:30.043820+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "33c69c5f-b5f2-42d1-a9a4-42b6dbb7fe23",
+      "type": "status",
+      "is_llm_message": false,
+      "content": {
+        "status_type": "finish",
+        "finish_reason": "tool_calls",
+        "tools_executed": true
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51"
+      },
+      "created_at": "2026-01-18 05:31:30.453526+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "f72bb99d-739e-4252-9eb5-0542ebfae2d8",
+      "type": "llm_response_end",
+      "is_llm_message": false,
+      "content": {
+        "id": "gen-1768714282-Yr8J0bl6tjeUA4jtwk5o",
+        "model": "minimax/minimax-m2.1",
+        "usage": {
+          "total_tokens": 22623,
+          "prompt_tokens": 22510,
+          "completion_tokens": 113,
+          "prompt_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": 0,
+            "image_tokens": null,
+            "video_tokens": 0,
+            "cached_tokens": 22497
+          },
+          "completion_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "image_tokens": 0,
+            "reasoning_tokens": 86,
+            "accepted_prediction_tokens": null,
+            "rejected_prediction_tokens": null
+          }
+        },
+        "object": "chat.completion.chunk",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "\n",
+              "tool_calls": [
+                {
+                  "id": "call_function_vr3a2rujq4ht_1",
+                  "type": "function",
+                  "function": {
+                    "name": "web_search",
+                    "arguments": "{\"query\": \"Marko Kraemer\"}"
+                  }
+                }
+              ]
+            },
+            "finish_reason": "tool_calls"
+          }
+        ],
+        "created": 1768714284,
+        "streaming": true,
+        "response_ms": 6131,
+        "llm_response_id": "0786ca75-3d69-4b4a-80c1-1fd41dd85d92",
+        "system_fingerprint": null,
+        "provider_specific_fields": null
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51",
+        "llm_response_id": "0786ca75-3d69-4b4a-80c1-1fd41dd85d92"
+      },
+      "created_at": "2026-01-18 05:31:30.647912+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "cbf47550-7935-4dc2-8cfd-6f9b20d1c249",
+      "type": "llm_response_start",
+      "is_llm_message": false,
+      "content": {
+        "model": "kortix/basic",
+        "timestamp": "2026-01-18T05:31:40.234880+00:00",
+        "llm_response_id": "588b4689-5887-4dc8-b995-538c827a2a85",
+        "auto_continue_count": 1
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51",
+        "llm_response_id": "588b4689-5887-4dc8-b995-538c827a2a85"
+      },
+      "created_at": "2026-01-18 05:31:40.237676+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "2d804fdd-1d63-4262-835f-2dd175c2aa9c",
+      "type": "status",
+      "is_llm_message": false,
+      "content": {
+        "status_type": "finish",
+        "finish_reason": "cancelled"
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51"
+      },
+      "created_at": "2026-01-18 05:31:45.713968+00:00",
+      "agent_id": null
+    },
+    {
+      "message_id": "e3f0571f-4ff5-4874-89ba-6661d6ea3866",
+      "type": "status",
+      "is_llm_message": false,
+      "content": {
+        "status_type": "thread_run_end"
+      },
+      "metadata": {
+        "thread_run_id": "49cf7ada-ed35-47fe-b086-8a1f762ebb51"
+      },
+      "created_at": "2026-01-18 05:31:46.258488+00:00",
+      "agent_id": null
+    }
+  ]
+}

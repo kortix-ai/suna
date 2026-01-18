@@ -6,6 +6,8 @@ from core.utils.logger import logger
 
 
 class WorkerLifecycle:
+    SHUTDOWN_TIMEOUT_SECONDS = 25
+    
     def __init__(self):
         self._shutdown_event: Optional[asyncio.Event] = None
         self._startup_hooks: List[Callable[[], Awaitable[None]]] = []
@@ -98,36 +100,45 @@ class WorkerLifecycle:
         result = {"status": "shutting_down", "steps": []}
 
         try:
-            from core.agents.pipeline.stateless.flusher import write_buffer
-            from core.agents.pipeline.stateless.ownership import ownership
-            from core.agents.pipeline.stateless.recovery import recovery
-
-            await recovery.stop()
-            result["steps"].append("recovery")
-
-            shutdown_result = await ownership.graceful_shutdown()
-            result["ownership"] = shutdown_result
-            result["steps"].append("ownership")
-
-            await write_buffer.stop()
-            result["steps"].append("flusher")
-
-            for hook in self._shutdown_hooks:
-                try:
-                    await hook()
-                except Exception as e:
-                    logger.error(f"[Lifecycle] Shutdown hook failed: {e}")
-            result["steps"].append("hooks")
-
-            result["status"] = "shutdown_complete"
-            logger.info(f"[Lifecycle] Shutdown: {result}")
-
+            await asyncio.wait_for(
+                self._do_shutdown(result),
+                timeout=self.SHUTDOWN_TIMEOUT_SECONDS
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"[Lifecycle] Shutdown timed out after {self.SHUTDOWN_TIMEOUT_SECONDS}s")
+            result["status"] = "shutdown_timeout"
+            result["error"] = f"Timed out after {self.SHUTDOWN_TIMEOUT_SECONDS}s"
         except Exception as e:
             logger.error(f"[Lifecycle] Shutdown failed: {e}")
             result["status"] = "shutdown_failed"
             result["error"] = str(e)
 
         return result
+
+    async def _do_shutdown(self, result: Dict[str, Any]) -> None:
+        from core.agents.pipeline.stateless.flusher import write_buffer
+        from core.agents.pipeline.stateless.ownership import ownership
+        from core.agents.pipeline.stateless.recovery import recovery
+
+        await recovery.stop()
+        result["steps"].append("recovery")
+
+        shutdown_result = await ownership.graceful_shutdown()
+        result["ownership"] = shutdown_result
+        result["steps"].append("ownership")
+
+        await write_buffer.stop()
+        result["steps"].append("flusher")
+
+        for hook in self._shutdown_hooks:
+            try:
+                await hook()
+            except Exception as e:
+                logger.error(f"[Lifecycle] Shutdown hook failed: {e}")
+        result["steps"].append("hooks")
+
+        result["status"] = "shutdown_complete"
+        logger.info(f"[Lifecycle] Shutdown: {result}")
 
     async def wait_for_shutdown(self) -> None:
         if self._shutdown_event:

@@ -2,7 +2,7 @@ import asyncio
 import json
 import time
 import uuid
-from collections import deque
+from collections import deque, OrderedDict
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict, Any, List, Optional, Deque, ClassVar, TYPE_CHECKING
@@ -29,7 +29,6 @@ class PendingWrite:
     created_at: float = field(default_factory=time.time)
 
 class RunState:
-    # Use centralized config for all limits
     MAX_MESSAGES: ClassVar[int] = stateless_config.MAX_MESSAGES
     MAX_TOOL_RESULTS: ClassVar[int] = stateless_config.MAX_TOOL_RESULTS
     MAX_PENDING_WRITES: ClassVar[int] = stateless_config.MAX_PENDING_WRITES
@@ -61,7 +60,7 @@ class RunState:
         self.tool_schemas: Optional[List[Dict[str, Any]]] = None
 
         self._messages: Deque[Dict[str, Any]] = deque(maxlen=self.MAX_MESSAGES)
-        self._tool_results: Dict[str, ToolResult] = {}
+        self._tool_results: OrderedDict[str, ToolResult] = OrderedDict()
         self._pending_tool_calls: List[Dict[str, Any]] = []
         self._accumulated_content: str = ""
 
@@ -77,8 +76,6 @@ class RunState:
 
         self._pending_writes: List[PendingWrite] = []
         self._flush_lock: asyncio.Lock = asyncio.Lock()
-        
-        # Track background flush tasks to prevent leaks
         self._flush_tasks: set = set()
 
         self._cancelled: bool = False
@@ -205,7 +202,6 @@ class RunState:
         self._termination_reason = reason
 
     def append_content(self, content: str) -> None:
-        # Prevent unbounded content accumulation (DoS protection)
         if len(self._accumulated_content) + len(content) > self.MAX_CONTENT_LENGTH:
             logger.warning(f"[RunState] Content length limit reached ({self.MAX_CONTENT_LENGTH}), truncating")
             remaining = self.MAX_CONTENT_LENGTH - len(self._accumulated_content)
@@ -218,18 +214,24 @@ class RunState:
     def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
         self._message_counter += 1
         message_id = str(uuid.uuid4())
-        msg["message_id"] = message_id
+        
+        # Add message_id to in-memory message for tracking
+        msg_with_id = msg.copy()
+        msg_with_id["message_id"] = message_id
 
-        self._messages.append(msg)
+        self._messages.append(msg_with_id)
         self._last_activity = time.time()
 
+        # For DB persistence, content should NOT include message_id
+        # (message_id is stored at the top level, not inside content)
+        # This matches the legacy format
         self._pending_writes.append(PendingWrite(
             write_type="message",
             data={
                 "message_id": message_id,
                 "thread_id": self.thread_id,
                 "type": msg.get("role", "assistant"),
-                "content": msg,
+                "content": msg,  # Original msg without message_id
                 "metadata": metadata or {},
                 "is_llm_message": True,
                 "agent_id": self.agent_id,
@@ -244,7 +246,7 @@ class RunState:
         msg = {"role": "assistant", "content": self._accumulated_content or None}
         if tool_calls:
             msg["tool_calls"] = tool_calls
-        
+
         metadata = {}
         if thread_run_id:
             metadata["thread_run_id"] = thread_run_id
@@ -256,7 +258,7 @@ class RunState:
                     args_parsed = json.loads(args_str) if isinstance(args_str, str) else args_str
                 except (json.JSONDecodeError, TypeError):
                     args_parsed = args_str
-                
+
                 unified_tc = {
                     "tool_call_id": tc.get("id"),
                     "function_name": tc.get("function", {}).get("name"),
@@ -265,7 +267,7 @@ class RunState:
                 }
                 unified_tool_calls.append(unified_tc)
             metadata["tool_calls"] = unified_tool_calls
-        
+
         message_id = self.add_message(msg, metadata if metadata else None)
         self._accumulated_content = ""
         return message_id
@@ -282,27 +284,126 @@ class RunState:
         self._pending_tool_calls.clear()
         return tools
 
+    def add_status_message(self, content: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
+        """Add a status message (thread_run_start, tool_started, tool_completed, finish, etc.)"""
+        self._message_counter += 1
+        message_id = str(uuid.uuid4())
+        
+        self._last_activity = time.time()
+
+        self._pending_writes.append(PendingWrite(
+            write_type="message",
+            data={
+                "message_id": message_id,
+                "thread_id": self.thread_id,
+                "type": "status",
+                "content": content,
+                "metadata": metadata or {},
+                "is_llm_message": False,
+                "agent_id": None,
+                "agent_version_id": None,
+            }
+        ))
+
+        self._check_flush_threshold()
+        return message_id
+
+    def add_llm_response_start(self, llm_response_id: str, auto_continue_count: int, model: str, thread_run_id: str) -> str:
+        """Add an llm_response_start message"""
+        self._message_counter += 1
+        message_id = str(uuid.uuid4())
+        
+        content = {
+            "llm_response_id": llm_response_id,
+            "auto_continue_count": auto_continue_count,
+            "model": model,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000000+00:00", time.gmtime())
+        }
+        
+        metadata = {
+            "thread_run_id": thread_run_id,
+            "llm_response_id": llm_response_id
+        }
+        
+        self._last_activity = time.time()
+
+        self._pending_writes.append(PendingWrite(
+            write_type="message",
+            data={
+                "message_id": message_id,
+                "thread_id": self.thread_id,
+                "type": "llm_response_start",
+                "content": content,
+                "metadata": metadata,
+                "is_llm_message": False,
+                "agent_id": None,
+                "agent_version_id": None,
+            }
+        ))
+
+        self._check_flush_threshold()
+        return message_id
+
+    def add_llm_response_end(self, llm_response_id: str, thread_run_id: str, response_data: Optional[Dict[str, Any]] = None) -> str:
+        """Add an llm_response_end message"""
+        self._message_counter += 1
+        message_id = str(uuid.uuid4())
+        
+        content = response_data or {}
+        content["llm_response_id"] = llm_response_id
+        
+        metadata = {
+            "thread_run_id": thread_run_id,
+            "llm_response_id": llm_response_id
+        }
+        
+        self._last_activity = time.time()
+
+        self._pending_writes.append(PendingWrite(
+            write_type="message",
+            data={
+                "message_id": message_id,
+                "thread_id": self.thread_id,
+                "type": "llm_response_end",
+                "content": content,
+                "metadata": metadata,
+                "is_llm_message": False,
+                "agent_id": None,
+                "agent_version_id": None,
+            }
+        ))
+
+        self._check_flush_threshold()
+        return message_id
+
     def record_tool_result(self, result: ToolResult, assistant_message_id: Optional[str] = None) -> None:
-        if len(self._tool_results) >= self.MAX_TOOL_RESULTS:
-            oldest = next(iter(self._tool_results))
-            del self._tool_results[oldest]
+        while len(self._tool_results) >= self.MAX_TOOL_RESULTS:
+            self._tool_results.popitem(last=False)
 
         self._tool_results[result.tool_call_id] = result
         self._last_activity = time.time()
 
+        output_for_metadata = result.output
         if isinstance(result.output, str):
             content_value = result.output
+            try:
+                parsed = json.loads(result.output)
+                if isinstance(parsed, (dict, list)):
+                    output_for_metadata = parsed
+            except (json.JSONDecodeError, TypeError):
+                pass
         elif result.output is None:
             content_value = ""
+            output_for_metadata = None
         else:
             try:
                 content_value = json.dumps(result.output)
             except (TypeError, ValueError):
                 content_value = str(result.output)
-        
+
         structured_result = {
             "success": result.success,
-            "output": content_value,
+            "output": output_for_metadata,
             "error": result.error
         }
 
@@ -357,11 +458,14 @@ class RunState:
             task = asyncio.create_task(self.flush())
             self._flush_tasks.add(task)
             task.add_done_callback(lambda t: self._flush_tasks.discard(t))
-            
+
             from core.agents.pipeline.stateless.metrics import metrics
             metrics.flush_tasks_active.set(len(self._flush_tasks))
 
     async def flush(self) -> int:
+        from core.agents.pipeline.stateless.persistence.wal import wal, WriteType
+        from core.agents.pipeline.stateless.persistence.batch import batch_writer
+
         async with self._flush_lock:
             if not self._pending_writes:
                 return 0
@@ -369,72 +473,56 @@ class RunState:
             writes = self._pending_writes.copy()
             self._pending_writes.clear()
 
+            start_time = time.time()
+
             try:
-                return await self._persist(writes)
+                for w in writes:
+                    write_type = WriteType.MESSAGE if w.write_type == "message" else WriteType.CREDIT
+                    await wal.append(self.run_id, write_type, w.data)
+
+                result = await batch_writer.flush_run(self.run_id, self.account_id)
+
+                from core.agents.pipeline.stateless.metrics import metrics
+                metrics.record_writes_flushed(result.success_count, result.duration_ms / 1000)
+
+                if result.dlq_count > 0:
+                    metrics.writes_dropped.inc(result.dlq_count)
+
+                return result.success_count
+
             except Exception as e:
-                if len(self._pending_writes) + len(writes) <= self.MAX_PENDING_WRITES:
-                    self._pending_writes = writes + self._pending_writes
-                else:
-                    logger.error(f"[RunState] Flush failed AND pending writes at max - DROPPING {len(writes)} writes: {e}")
                 logger.error(f"[RunState] Flush failed: {e}")
+                for w in writes:
+                    write_type = WriteType.MESSAGE if w.write_type == "message" else WriteType.CREDIT
+                    try:
+                        await wal.append(self.run_id, write_type, w.data)
+                    except Exception as wal_error:
+                        logger.error(f"[RunState] WAL append failed: {wal_error}")
                 return 0
-    
+
     async def cleanup(self) -> None:
+        from core.agents.pipeline.stateless.persistence.wal import wal
+
         if self._flush_tasks:
             for task in list(self._flush_tasks):
                 if not task.done():
                     task.cancel()
             self._flush_tasks.clear()
-        
-        # Final flush attempt
+
         try:
             await self.flush()
         except Exception as e:
             logger.warning(f"[RunState] Final flush in cleanup failed: {e}")
-        
-        # Clear collections to free memory
+
+        try:
+            await wal.cleanup_run(self.run_id)
+        except Exception as e:
+            logger.warning(f"[RunState] WAL cleanup failed: {e}")
+
         self._messages.clear()
         self._tool_results.clear()
         self._pending_tool_calls.clear()
         self._pending_writes.clear()
-
-    async def _persist(self, writes: List[PendingWrite]) -> int:
-        from core.threads import repo as threads_repo
-        from core.billing.credits.manager import credit_manager
-
-        count = 0
-
-        for w in writes:
-            if w.write_type == "message":
-                try:
-                    await threads_repo.insert_message(
-                        thread_id=w.data["thread_id"],
-                        message_type=w.data["type"],
-                        content=w.data["content"],
-                        is_llm_message=w.data.get("is_llm_message", True),
-                        metadata=w.data.get("metadata"),
-                        agent_id=w.data.get("agent_id"),
-                        agent_version_id=w.data.get("agent_version_id"),
-                        message_id=w.data.get("message_id"),
-                    )
-                    count += 1
-                except Exception as e:
-                    logger.error(f"[RunState] Message persist failed: {e}")
-
-        credit_total = sum(Decimal(str(w.data["amount"])) for w in writes if w.write_type == "credit")
-        if credit_total > 0:
-            try:
-                await credit_manager.deduct_credits(
-                    account_id=self.account_id,
-                    amount=credit_total,
-                    description=f"Agent run {self.run_id}",
-                    thread_id=self.thread_id,
-                )
-                count += 1
-            except Exception as e:
-                logger.error(f"[RunState] Credit persist failed: {e}")
-
-        return count
 
     def to_dict(self) -> Dict[str, Any]:
         return {

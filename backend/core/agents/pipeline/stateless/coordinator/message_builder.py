@@ -1,8 +1,32 @@
 import json
 import uuid
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, timezone
 
+from core.utils.logger import logger
+
+def _transform_mcp_tool_call(func_name: str, args: Any) -> Tuple[str, Any]:
+    if func_name != 'execute_mcp_tool':
+        return func_name, args
+    
+    parsed_args = args
+    if isinstance(args, str):
+        try:
+            parsed_args = json.loads(args)
+        except json.JSONDecodeError:
+            return func_name, args
+    
+    if not isinstance(parsed_args, dict):
+        return func_name, args
+    
+    tool_name = parsed_args.get('tool_name')
+    real_args = parsed_args.get('args', {})
+    
+    if tool_name:
+        logger.debug(f"🎭 [MCP TRANSFORM] execute_mcp_tool -> {tool_name}")
+        return tool_name, real_args
+    
+    return func_name, args
 
 class MessageBuilder:
     def __init__(self, increment_sequence, get_thread_id, get_thread_run_id, get_agent_id=None):
@@ -75,20 +99,34 @@ class MessageBuilder:
         stream_start: str
     ) -> Dict[str, Any]:
         unified_tool_calls = []
+        transformed_tool_calls = []
+        
         if tool_calls:
             for tc in tool_calls:
+                func_name = tc.get("function", {}).get("name", "")
                 args_str = tc.get("function", {}).get("arguments", "{}")
                 try:
                     args_parsed = json.loads(args_str) if isinstance(args_str, str) else args_str
                 except:
                     args_parsed = args_str
                 
+                display_name, display_args = _transform_mcp_tool_call(func_name, args_parsed)
+                
                 unified_tool_calls.append({
                     "source": "native",
-                    "arguments": args_parsed,
+                    "arguments": display_args,
                     "tool_call_id": tc.get("id"),
-                    "function_name": tc.get("function", {}).get("name")
+                    "function_name": display_name,
+                    "_original_function_name": func_name if func_name != display_name else None
                 })
+                
+                transformed_tc = tc.copy()
+                if func_name != display_name:
+                    transformed_tc["function"] = {
+                        "name": display_name,
+                        "arguments": json.dumps(display_args) if not isinstance(display_args, str) else display_args
+                    }
+                transformed_tool_calls.append(transformed_tc)
         
         metadata = {
             "text_content": content or "",
@@ -99,8 +137,8 @@ class MessageBuilder:
             metadata["tool_calls"] = unified_tool_calls
         
         inner_content = {"role": "assistant", "content": content or ""}
-        if tool_calls:
-            inner_content["tool_calls"] = tool_calls
+        if transformed_tool_calls:
+            inner_content["tool_calls"] = transformed_tool_calls
 
         agent_id = self._get_agent_id() if self._get_agent_id else None
         seq = self._increment_sequence()
@@ -144,10 +182,24 @@ class MessageBuilder:
                 args_delta = args[prev_length:]
                 sent_lengths[idx] = current_length
                 
+                display_name = name
+                display_args_delta = args_delta
+                
+                if name == 'execute_mcp_tool' and args:
+                    try:
+                        full_args = json.loads(args)
+                        if isinstance(full_args, dict) and full_args.get('tool_name'):
+                            display_name = full_args['tool_name']
+                            real_args = full_args.get('args', {})
+                            if real_args:
+                                display_args_delta = json.dumps(real_args)[prev_length:] if prev_length > 0 else json.dumps(real_args)
+                    except json.JSONDecodeError:
+                        pass
+                
                 tool_calls_list.append({
                     "tool_call_id": tc.get("id", f"streaming_tool_{idx}"),
-                    "function_name": name,
-                    "arguments_delta": args_delta,
+                    "function_name": display_name,
+                    "arguments_delta": display_args_delta,
                     "is_delta": True,
                     "source": "native"
                 })
@@ -172,7 +224,11 @@ class MessageBuilder:
             "updated_at": stream_start
         }
 
-    def build_tool_started(self, tc_id: str, name: str, index: int, stream_start: str) -> Dict[str, Any]:
+    def build_tool_started(self, tc_id: str, name: str, index: int, stream_start: str, args: Any = None) -> Dict[str, Any]:
+        display_name = name
+        if name == 'execute_mcp_tool' and args:
+            display_name, _ = _transform_mcp_tool_call(name, args)
+        
         return {
             "message_id": str(uuid.uuid4()),
             "thread_id": self._get_thread_id(),
@@ -182,7 +238,7 @@ class MessageBuilder:
                 "tool_index": index,
                 "status_type": "tool_started",
                 "tool_call_id": tc_id,
-                "function_name": name
+                "function_name": display_name
             }),
             "metadata": json.dumps({"thread_run_id": self._get_thread_run_id()}),
             "created_at": stream_start,

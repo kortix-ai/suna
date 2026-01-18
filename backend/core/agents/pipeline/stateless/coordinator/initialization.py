@@ -1,4 +1,5 @@
 from core.agents.pipeline.context import PipelineContext
+from core.utils.logger import logger
 
 
 class ManagerInitializer:
@@ -39,6 +40,19 @@ class ManagerInitializer:
             ctx.agent_config
         )
         tool_manager.register_core_tools()
+
+        if ctx.agent_config and (ctx.agent_config.get("custom_mcps") or ctx.agent_config.get("configured_mcps")):
+            try:
+                from core.agents.runner.mcp_manager import MCPManager
+                mcp_manager = MCPManager(thread_manager, ctx.account_id)
+                await mcp_manager.initialize_jit_loader(ctx.agent_config, cache_only=True)
+                
+                tool_count = 0
+                if hasattr(thread_manager, 'mcp_loader') and thread_manager.mcp_loader:
+                    tool_count = len(thread_manager.mcp_loader.tool_map) if hasattr(thread_manager.mcp_loader, 'tool_map') else 0
+                logger.info(f"⚡ [STATELESS MCP] Initialized MCP loader with {tool_count} tools")
+            except Exception as e:
+                logger.warning(f"⚠️ [STATELESS MCP] MCP init failed (non-fatal): {e}")
 
         return thread_manager, tool_registry
 

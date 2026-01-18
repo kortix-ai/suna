@@ -6,10 +6,9 @@ from datetime import datetime, timezone
 
 from core.utils.logger import logger
 from core.agents.pipeline.stateless.state import ToolResult
-
+from .message_builder import _transform_mcp_tool_call
 
 TERMINATING_TOOLS = {"ask", "complete"}
-
 
 class ToolExecutor:
     def __init__(self, state, tool_registry, message_builder):
@@ -24,6 +23,7 @@ class ToolExecutor:
     ) -> AsyncGenerator[Dict[str, Any], None]:
         pending = self._state.take_pending_tools()
         available_functions = self._tool_registry.get_available_functions()
+        thread_run_id = self._message_builder._get_thread_run_id()
         
         logger.debug(f"[ToolExecutor] Executing {len(pending)} tools, assistant_message_id={assistant_message_id}")
 
@@ -33,10 +33,23 @@ class ToolExecutor:
             name = func.get("name", "unknown")
             args = func.get("arguments", "{}")
             
+            display_name, _ = _transform_mcp_tool_call(name, args)
+            
             logger.debug(f"[ToolExecutor] Tool {tool_index}: {name} (id={tc_id})")
 
             is_terminating = name in TERMINATING_TOOLS
-            yield self._message_builder.build_tool_started(tc_id, name, tool_index, stream_start)
+            
+            # Persist and yield tool_started status
+            self._state.add_status_message(
+                {
+                    "tool_index": tool_index,
+                    "status_type": "tool_started",
+                    "tool_call_id": tc_id,
+                    "function_name": display_name
+                },
+                {"thread_run_id": thread_run_id}
+            )
+            yield self._message_builder.build_tool_started(tc_id, display_name, tool_index, stream_start, args)
 
             start = time.time()
             output, success, error = await self._execute_single_tool(name, args, available_functions)
@@ -57,14 +70,27 @@ class ToolExecutor:
             )
 
             tool_result_msg = self._message_builder.build_tool_result(
-                tc_id, name, output, success, error, tool_index, stream_start, assistant_message_id
+                tc_id, display_name, output, success, error, tool_index, stream_start, assistant_message_id
             )
             tool_result_message_id = tool_result_msg.get("message_id")
             logger.debug(f"[ToolExecutor] Yielding tool result: {tc_id}, message_id={tool_result_message_id}")
             yield tool_result_msg
 
+            # Persist and yield tool_completed status
+            status_type = "tool_completed" if success else "tool_failed"
+            status_content = {
+                "tool_index": tool_index,
+                "status_type": status_type,
+                "tool_call_id": tc_id,
+                "function_name": display_name
+            }
+            status_metadata = {"thread_run_id": thread_run_id}
+            if tool_result_message_id:
+                status_metadata["linked_tool_result_message_id"] = tool_result_message_id
+            
+            self._state.add_status_message(status_content, status_metadata)
             yield self._message_builder.build_tool_completed(
-                tc_id, name, success, tool_index, stream_start, tool_result_message_id, is_terminating
+                tc_id, display_name, success, tool_index, stream_start, tool_result_message_id, is_terminating
             )
 
             if success and output:

@@ -201,6 +201,11 @@ class StatelessCoordinator(BaseCoordinator):
         if not self._state._terminated:
             self._state.complete()
 
+        self._state.add_status_message(
+            {"status_type": "thread_run_end"},
+            {"thread_run_id": self._thread_run_id}
+        )
+
         try:
             await self._state.flush()
             logger.debug("[Coordinator] Pre-status flush completed")

@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Dict, Any, List, Optional, Callable, Awaitable
 from dataclasses import dataclass
 
@@ -20,14 +21,32 @@ class RunRecovery:
     MAX_DURATION = stateless_config.STUCK_RUN_THRESHOLD_SECONDS
     STALE_THRESHOLD = stateless_config.ORPHAN_THRESHOLD_SECONDS
 
-    def __init__(self):
+    def __init__(self, shard_id: Optional[int] = None, total_shards: Optional[int] = None):
         self._task: Optional[asyncio.Task] = None
         self._running: bool = False
         self._callbacks: List[Callable[[str], Awaitable[None]]] = []
+        self._shard_id = shard_id
+        self._total_shards = total_shards
+        self._init_sharding()
+
+    def _init_sharding(self) -> None:
+        if self._shard_id is None:
+            shard_env = os.getenv("RECOVERY_SHARD_ID")
+            if shard_env:
+                self._shard_id = int(shard_env)
+
+        if self._total_shards is None:
+            total_env = os.getenv("RECOVERY_TOTAL_SHARDS")
+            if total_env:
+                self._total_shards = int(total_env)
 
     @property
     def is_running(self) -> bool:
         return self._running
+
+    @property
+    def is_sharded(self) -> bool:
+        return self._shard_id is not None and self._total_shards is not None
 
     def on_recovery(self, callback: Callable[[str], Awaitable[None]]) -> None:
         self._callbacks.append(callback)
@@ -37,7 +56,8 @@ class RunRecovery:
             return
         self._running = True
         self._task = asyncio.create_task(self._loop())
-        logger.info("[Recovery] Sweep started")
+        shard_info = f" (shard {self._shard_id}/{self._total_shards})" if self.is_sharded else ""
+        logger.info(f"[Recovery] Sweep started{shard_info}")
 
     async def stop(self) -> None:
         self._running = False
@@ -65,7 +85,11 @@ class RunRecovery:
         result = {"orphaned": 0, "recovered": 0, "stuck": 0, "completed": 0, "errors": []}
 
         try:
-            orphans = await ownership.find_orphans()
+            if self.is_sharded:
+                orphans = await ownership.find_orphans_sharded(self._shard_id, self._total_shards)
+            else:
+                orphans = await ownership.find_orphans()
+
             result["orphaned"] = len(orphans)
 
             for run_id in orphans:
@@ -104,6 +128,10 @@ class RunRecovery:
             active = await redis.smembers("runs:active")
             for run_id in active:
                 run_id = run_id.decode() if isinstance(run_id, bytes) else run_id
+
+                if self.is_sharded and hash(run_id) % self._total_shards != self._shard_id:
+                    continue
+
                 start = await redis.get(f"run:{run_id}:start")
                 if start:
                     start = start.decode() if isinstance(start, bytes) else start
@@ -121,6 +149,9 @@ class RunRecovery:
                 except Exception as e:
                     logger.warning(f"[Recovery] Callback failed: {e}")
 
+            from core.agents.pipeline.stateless.metrics import metrics
+            metrics.record_run_recovered()
+
             return RecoveryResult(run_id, True, "recover", "Recovered")
         except Exception as e:
             return RecoveryResult(run_id, False, "recover", "Failed", str(e))
@@ -130,10 +161,22 @@ class RunRecovery:
             from core.agents.pipeline.stateless.ownership import ownership
             from core.agents.pipeline.stateless.flusher import write_buffer
             from core.services import redis
+            from core.agents.runner.services import update_agent_run_status
+            from core.agents import repo as agents_repo
 
             await write_buffer.flush_one(run_id)
             await redis.set(f"run:{run_id}:status", "completed", ex=3600)
             await ownership.release(run_id, "completed")
+
+            agent_run = await agents_repo.get_agent_run_with_thread(run_id)
+            if agent_run:
+                account_id = agent_run.get("thread_account_id")
+                await update_agent_run_status(
+                    agent_run_id=run_id,
+                    status="completed",
+                    account_id=account_id
+                )
+                logger.info(f"[Recovery] Updated database status for {run_id} to completed")
 
             return RecoveryResult(run_id, True, "force_complete", f"Completed: {reason}")
         except Exception as e:
@@ -144,6 +187,8 @@ class RunRecovery:
             from core.agents.pipeline.stateless.ownership import ownership
             from core.agents.pipeline.stateless.flusher import write_buffer
             from core.services import redis
+            from core.agents.runner.services import update_agent_run_status
+            from core.agents import repo as agents_repo
             import json
 
             await write_buffer.flush_one(run_id)
@@ -155,6 +200,17 @@ class RunRecovery:
             await redis.set(f"run:{run_id}:error", error, ex=3600)
             await ownership.release(run_id, "failed")
 
+            agent_run = await agents_repo.get_agent_run_with_thread(run_id)
+            if agent_run:
+                account_id = agent_run.get("thread_account_id")
+                await update_agent_run_status(
+                    agent_run_id=run_id,
+                    status="failed",
+                    error=error,
+                    account_id=account_id
+                )
+                logger.info(f"[Recovery] Updated database status for {run_id} to failed")
+
             return RecoveryResult(run_id, True, "force_fail", f"Failed: {error}")
         except Exception as e:
             return RecoveryResult(run_id, False, "force_fail", "Failed", str(e))
@@ -163,14 +219,53 @@ class RunRecovery:
         try:
             from core.agents.pipeline.stateless.ownership import ownership
             from core.services import redis
+            from core.agents import repo as agents_repo
+            from core.agents.runner.services import update_agent_run_status
+            from core.agents.api import start_agent_run
+            import asyncio
+
+            agent_run = await agents_repo.get_agent_run_with_thread(run_id)
+            if not agent_run:
+                return RecoveryResult(run_id, False, "force_resume", "Agent run not found")
+
+            thread_id = agent_run.get("thread_id")
+            account_id = agent_run.get("thread_account_id")
+            agent_id = agent_run.get("agent_id")
+
+            if not thread_id or not account_id:
+                return RecoveryResult(run_id, False, "force_resume", "Missing thread or account info")
 
             await redis.delete(f"run:{run_id}:owner")
-            await redis.set(f"run:{run_id}:status", "resumable", ex=3600)
+            await redis.srem("runs:active", run_id)
+            await ownership.release(run_id, "resumed")
 
-            if await ownership.claim(run_id):
-                return await self.recover(run_id)
+            await update_agent_run_status(
+                agent_run_id=run_id,
+                status="stopped",
+                error="Stopped for resume",
+                account_id=account_id
+            )
 
-            return RecoveryResult(run_id, True, "force_resume", "Marked resumable")
+            try:
+                result = await start_agent_run(
+                    account_id=account_id,
+                    prompt="Continue from where you left off.",
+                    agent_id=agent_id,
+                    thread_id=thread_id,
+                    skip_limits_check=True
+                )
+                new_run_id = result.get("agent_run_id")
+                logger.info(f"[Recovery] Started new run {new_run_id} to resume {run_id}")
+                return RecoveryResult(
+                    run_id, 
+                    True, 
+                    "force_resume", 
+                    f"Resumed with new run {new_run_id}"
+                )
+            except Exception as e:
+                logger.error(f"[Recovery] Failed to start new run for resume: {e}")
+                return RecoveryResult(run_id, False, "force_resume", f"Failed to start new run: {e}")
+
         except Exception as e:
             return RecoveryResult(run_id, False, "force_resume", "Failed", str(e))
 
@@ -182,9 +277,17 @@ class RunRecovery:
         result = []
         try:
             active = await redis.smembers("runs:active")
-            for run_id in active:
-                run_id = run_id.decode() if isinstance(run_id, bytes) else run_id
-                info = await ownership.get_info(run_id)
+            run_ids = [
+                r.decode() if isinstance(r, bytes) else r
+                for r in active
+            ]
+
+            if self.is_sharded:
+                run_ids = [r for r in run_ids if hash(r) % self._total_shards == self._shard_id]
+
+            infos = await ownership.get_info_batch(run_ids)
+
+            for run_id, info in infos.items():
                 if not info:
                     continue
 
@@ -211,7 +314,11 @@ class RunRecovery:
         result = {"found": 0, "recovered": 0, "failed": 0}
 
         try:
-            orphans = await ownership.find_orphans()
+            if self.is_sharded:
+                orphans = await ownership.find_orphans_sharded(self._shard_id, self._total_shards)
+            else:
+                orphans = await ownership.find_orphans()
+
             result["found"] = len(orphans)
 
             for run_id in orphans:
@@ -232,7 +339,13 @@ class RunRecovery:
         return result
 
     def get_metrics(self) -> Dict[str, Any]:
-        return {"running": self._running, "callbacks": len(self._callbacks)}
+        return {
+            "running": self._running,
+            "callbacks": len(self._callbacks),
+            "sharded": self.is_sharded,
+            "shard_id": self._shard_id,
+            "total_shards": self._total_shards,
+        }
 
 
 recovery = RunRecovery()

@@ -19,8 +19,20 @@ class ResponseProcessor:
         stream_start = datetime.now(timezone.utc).isoformat()
         llm_response_id = str(uuid.uuid4())
         auto_continue_count = self._state.step - 1
+        thread_run_id = self._message_builder._get_thread_run_id()
 
+        # Persist and yield thread_run_start (only on first step)
+        if auto_continue_count == 0:
+            self._state.add_status_message(
+                {"status_type": "thread_run_start"},
+                {"thread_run_id": thread_run_id}
+            )
         yield self._message_builder.build_thread_run_start(stream_start)
+        
+        # Persist and yield llm_response_start
+        self._state.add_llm_response_start(
+            llm_response_id, auto_continue_count, self._state.model_name, thread_run_id
+        )
         yield self._message_builder.build_llm_response_start(
             llm_response_id, auto_continue_count, self._state.model_name, stream_start
         )
@@ -70,7 +82,7 @@ class ResponseProcessor:
 
             if finish_reason:
                 async for msg in self._handle_finish_reason(
-                    finish_reason, tool_calls, tool_call_buffer, stream_start
+                    finish_reason, tool_calls, tool_call_buffer, stream_start, llm_response_id
                 ):
                     yield msg
                 
@@ -121,21 +133,25 @@ class ResponseProcessor:
         finish_reason: str, 
         tool_calls: list, 
         tool_call_buffer: Dict, 
-        stream_start: str
+        stream_start: str,
+        llm_response_id: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
         if finish_reason == "tool_calls":
-            async for msg in self._handle_tool_calls_finish(tool_calls, tool_call_buffer, stream_start):
+            async for msg in self._handle_tool_calls_finish(tool_calls, tool_call_buffer, stream_start, llm_response_id):
                 yield msg
         elif finish_reason in ("stop", "end_turn"):
-            async for msg in self._handle_stop_finish(tool_calls, stream_start):
+            async for msg in self._handle_stop_finish(tool_calls, stream_start, llm_response_id):
                 yield msg
 
     async def _handle_tool_calls_finish(
         self, 
         tool_calls: list, 
         tool_call_buffer: Dict, 
-        stream_start: str
+        stream_start: str,
+        llm_response_id: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        thread_run_id = self._message_builder._get_thread_run_id()
+        
         for idx in sorted(tool_call_buffer.keys()):
             tc = tool_call_buffer[idx]
             tool_calls.append(tc)
@@ -144,7 +160,7 @@ class ResponseProcessor:
         accumulated_content = self._state._accumulated_content or ""
         assistant_message_id = self._state.finalize_assistant_message(
             tool_calls, 
-            self._message_builder._get_thread_run_id()
+            thread_run_id
         )
         
         async for r in self._tool_executor.execute_tools(stream_start, assistant_message_id):
@@ -160,18 +176,29 @@ class ResponseProcessor:
         )
         yield complete_msg
 
+        # Persist and yield finish status
+        self._state.add_status_message(
+            {"status_type": "finish", "finish_reason": "tool_calls", "tools_executed": True},
+            {"thread_run_id": thread_run_id}
+        )
         yield self._message_builder.build_finish_message("tool_calls", tools_executed=True)
+        
+        # Persist and yield llm_response_end
+        self._state.add_llm_response_end(llm_response_id, thread_run_id)
         yield self._message_builder.build_llm_response_end()
 
     async def _handle_stop_finish(
         self, 
         tool_calls: list, 
-        stream_start: str
+        stream_start: str,
+        llm_response_id: str
     ) -> AsyncGenerator[Dict[str, Any], None]:
+        thread_run_id = self._message_builder._get_thread_run_id()
+        
         accumulated_content = self._state._accumulated_content or ""
         assistant_message_id = self._state.finalize_assistant_message(
             tool_calls if tool_calls else None, 
-            self._message_builder._get_thread_run_id()
+            thread_run_id
         )
         complete_msg = self._message_builder.build_assistant_complete(
             assistant_message_id, accumulated_content, tool_calls if tool_calls else None, stream_start
@@ -181,5 +208,14 @@ class ResponseProcessor:
             f"message_id={complete_msg.get('message_id')}, content_len={len(accumulated_content)}"
         )
         yield complete_msg
+        
+        # Persist and yield finish status
+        self._state.add_status_message(
+            {"status_type": "finish", "finish_reason": "stop"},
+            {"thread_run_id": thread_run_id}
+        )
         yield self._message_builder.build_finish_message("stop")
+        
+        # Persist and yield llm_response_end
+        self._state.add_llm_response_end(llm_response_id, thread_run_id)
         yield self._message_builder.build_llm_response_end()

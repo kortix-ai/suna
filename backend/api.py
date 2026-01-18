@@ -398,7 +398,7 @@ api_router.include_router(staged_files_router, prefix="/files")
 from core.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)
 
-from core.agents.pipeline.stateless.api import router as stateless_admin_router
+from core.admin.stateless_admin_api import router as stateless_admin_router
 api_router.include_router(stateless_admin_router)
 
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
