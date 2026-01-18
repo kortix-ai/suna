@@ -53,7 +53,7 @@ export function HeroSection() {
   
   return (
     <section id="hero" className="w-full relative overflow-hidden">
-      <div className="relative flex flex-col items-center w-full px-4 sm:px-6 pb-8 sm:pb-10">
+      <div className="relative flex flex-col items-center w-full px-6 pb-8 sm:pb-10">
         <AnimatedBg
           variant="hero"
           sizeMultiplier={isMobile ? 0.7 : 1}
@@ -88,12 +88,12 @@ export function HeroSection() {
           } : undefined}
         />
 
-        <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center min-h-[60vh] sm:min-h-0">
-          <div className="flex flex-col items-center justify-center gap-4 sm:gap-5 pt-12 sm:pt-20 max-w-4xl mx-auto pb-4 sm:pb-5">
+        <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 pb-24 sm:pb-32 mx-auto h-full w-full sm:max-w-6xl flex flex-col items-center justify-center min-h-[calc(100vh-120px)]">
+          <div className="flex flex-col items-center justify-center gap-4 sm:gap-5 pt-12 sm:pt-20 sm:max-w-4xl mx-auto pb-4 sm:pb-5">
             {/* Greeting is rendered inside AgentStartInput */}
           </div>
 
-          <div className="flex flex-col items-center w-full max-w-3xl mx-auto gap-2 flex-wrap justify-center px-4 sm:px-0 mt-1">
+          <div className="flex flex-col items-center w-full sm:max-w-3xl mx-auto gap-2 flex-wrap justify-center mt-1">
             <div className="w-full relative">
               <div className="relative z-10 w-full flex flex-col items-center space-y-4">
                 <AgentStartInput
@@ -102,13 +102,13 @@ export function HeroSection() {
                   onAuthRequired={handleAuthRequired}
                   redirectOnError="/"
                   showGreeting={true}
-                  greetingClassName="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center px-4 sm:px-2"
+                  greetingClassName="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center sm:px-2"
                   autoFocus={false}
                   showLoginStatus={true}
                   showAlertBanners={false}
                   showModesPanel={true}
                   isMobile={isMobile}
-                  modesPanelWrapperClassName="w-full max-w-3xl mx-auto mt-4 px-4 sm:px-0 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both"
+                  modesPanelWrapperClassName="w-full sm:max-w-3xl mx-auto mt-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both"
                 />
               </div>
             </div>
