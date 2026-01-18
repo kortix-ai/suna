@@ -1138,6 +1138,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       let assistantGroupCounter = 0;
       // Track processed message IDs to prevent duplicate bubbles
       const processedMessageIds = new Set<string>();
+      // Track user message content+timestamp to detect duplicates from same turn
+      const recentUserMessages = new Map<string, number>(); // content -> timestamp
 
       // First pass: collect content from server-confirmed user messages (non-temp IDs)
       // This allows us to filter out temp messages that have been confirmed by server
@@ -1166,6 +1168,26 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           const contentKey = String(message.content || '').trim();
           if (contentKey && serverUserContents.has(contentKey)) {
             return;
+          }
+        }
+
+        // For non-temp user messages, skip if we already processed a user message with same content
+        // within a short time window (likely a duplicate from race condition)
+        if (messageType === 'user' && message.message_id && !message.message_id.startsWith('temp-')) {
+          const contentKey = String(message.content || '').trim();
+          const msgTime = message.created_at ? new Date(message.created_at).getTime() : 0;
+          const existingTime = recentUserMessages.get(contentKey);
+
+          if (existingTime !== undefined) {
+            // If another user message with same content exists within 30 seconds, skip this one
+            const timeDiff = Math.abs(msgTime - existingTime);
+            if (timeDiff < 30000) {
+              return;
+            }
+          }
+          // Track this message for deduplication
+          if (contentKey) {
+            recentUserMessages.set(contentKey, msgTime);
           }
         }
 

@@ -935,6 +935,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           );
         } else {
           if (message.type === 'user') {
+            // First try to find a temp message with same content to replace
             const optimisticIndex = prev.findIndex(
               (m) =>
                 m.type === 'user' &&
@@ -944,6 +945,28 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
             if (optimisticIndex !== -1) {
               return prev.map((m, index) =>
                 index === optimisticIndex ? message : m,
+              );
+            }
+
+            // Also check if a RECENT user message with same content already exists
+            // This prevents duplicates when server sends same message multiple times
+            // Only check messages from the last 30 seconds to allow intentional duplicate messages
+            const contentKey = String(message.content || '').trim();
+            const now = Date.now();
+            const recentThreshold = 30000; // 30 seconds
+            const recentDuplicateIndex = contentKey ? prev.findIndex(
+              (m) => {
+                if (m.type !== 'user') return false;
+                if (String(m.content || '').trim() !== contentKey) return false;
+                // Check if this message was created recently
+                const createdAt = m.created_at ? new Date(m.created_at).getTime() : 0;
+                return (now - createdAt) < recentThreshold;
+              },
+            ) : -1;
+            if (recentDuplicateIndex !== -1) {
+              // A recent user message with this content exists - update it instead of adding
+              return prev.map((m, index) =>
+                index === recentDuplicateIndex ? message : m,
               );
             }
           }
