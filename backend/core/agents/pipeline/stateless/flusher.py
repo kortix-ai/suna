@@ -2,13 +2,14 @@ import asyncio
 from typing import Dict, Any, Optional, List, TYPE_CHECKING
 
 from core.utils.logger import logger
+from core.agents.pipeline.stateless.config import config as stateless_config
 
 if TYPE_CHECKING:
     from core.agents.pipeline.stateless.state import RunState
 
 
 class WriteBuffer:
-    FLUSH_INTERVAL = 5.0
+    FLUSH_INTERVAL = stateless_config.FLUSH_INTERVAL_SECONDS
 
     def __init__(self):
         self._runs: Dict[str, 'RunState'] = {}

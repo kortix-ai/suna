@@ -5,12 +5,13 @@ import uuid
 from typing import Dict, Any, List, Optional
 
 from core.utils.logger import logger
+from core.agents.pipeline.stateless.config import config as stateless_config
 
 class RunOwnership:
-    HEARTBEAT_INTERVAL = 10
-    HEARTBEAT_TTL = 30
-    CLAIM_TTL = 3600
-    ORPHAN_THRESHOLD = 60
+    HEARTBEAT_INTERVAL = stateless_config.HEARTBEAT_INTERVAL_SECONDS
+    HEARTBEAT_TTL = stateless_config.HEARTBEAT_TTL_SECONDS
+    CLAIM_TTL = stateless_config.CLAIM_TTL_SECONDS
+    ORPHAN_THRESHOLD = stateless_config.ORPHAN_THRESHOLD_SECONDS
 
     def __init__(self, worker_id: Optional[str] = None):
         self.worker_id = worker_id or os.getenv("WORKER_ID", str(uuid.uuid4())[:8])

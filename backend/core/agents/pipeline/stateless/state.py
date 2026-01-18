@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 import uuid
 from collections import deque
@@ -7,10 +8,10 @@ from decimal import Decimal
 from typing import Dict, Any, List, Optional, Deque, ClassVar, TYPE_CHECKING
 
 from core.utils.logger import logger
+from core.agents.pipeline.stateless.config import config as stateless_config
 
 if TYPE_CHECKING:
     from core.agents.pipeline.context import PipelineContext
-
 
 @dataclass
 class ToolResult:
@@ -21,20 +22,20 @@ class ToolResult:
     error: Optional[str] = None
     execution_time_ms: float = 0
 
-
 @dataclass
 class PendingWrite:
     write_type: str
     data: Dict[str, Any]
     created_at: float = field(default_factory=time.time)
 
-
 class RunState:
-    MAX_MESSAGES: ClassVar[int] = 50
-    MAX_TOOL_RESULTS: ClassVar[int] = 20
-    MAX_PENDING_WRITES: ClassVar[int] = 100
-    MAX_DURATION_SECONDS: ClassVar[int] = 3600
-    MAX_STEPS: ClassVar[int] = 100
+    # Use centralized config for all limits
+    MAX_MESSAGES: ClassVar[int] = stateless_config.MAX_MESSAGES
+    MAX_TOOL_RESULTS: ClassVar[int] = stateless_config.MAX_TOOL_RESULTS
+    MAX_PENDING_WRITES: ClassVar[int] = stateless_config.MAX_PENDING_WRITES
+    MAX_DURATION_SECONDS: ClassVar[int] = stateless_config.MAX_DURATION_SECONDS
+    MAX_STEPS: ClassVar[int] = stateless_config.MAX_STEPS
+    MAX_CONTENT_LENGTH: ClassVar[int] = stateless_config.MAX_CONTENT_LENGTH
 
     def __init__(
         self,
@@ -76,6 +77,9 @@ class RunState:
 
         self._pending_writes: List[PendingWrite] = []
         self._flush_lock: asyncio.Lock = asyncio.Lock()
+        
+        # Track background flush tasks to prevent leaks
+        self._flush_tasks: set = set()
 
         self._cancelled: bool = False
         self._terminated: bool = False
@@ -201,7 +205,14 @@ class RunState:
         self._termination_reason = reason
 
     def append_content(self, content: str) -> None:
-        self._accumulated_content += content
+        # Prevent unbounded content accumulation (DoS protection)
+        if len(self._accumulated_content) + len(content) > self.MAX_CONTENT_LENGTH:
+            logger.warning(f"[RunState] Content length limit reached ({self.MAX_CONTENT_LENGTH}), truncating")
+            remaining = self.MAX_CONTENT_LENGTH - len(self._accumulated_content)
+            if remaining > 0:
+                self._accumulated_content += content[:remaining]
+        else:
+            self._accumulated_content += content
         self._last_activity = time.time()
 
     def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
@@ -240,10 +251,16 @@ class RunState:
         if tool_calls:
             unified_tool_calls = []
             for tc in tool_calls:
+                args_str = tc.get("function", {}).get("arguments", "{}")
+                try:
+                    args_parsed = json.loads(args_str) if isinstance(args_str, str) else args_str
+                except (json.JSONDecodeError, TypeError):
+                    args_parsed = args_str
+                
                 unified_tc = {
                     "tool_call_id": tc.get("id"),
                     "function_name": tc.get("function", {}).get("name"),
-                    "arguments": tc.get("function", {}).get("arguments", "{}"),
+                    "arguments": args_parsed,
                     "source": "native"
                 }
                 unified_tool_calls.append(unified_tc)
@@ -279,7 +296,6 @@ class RunState:
             content_value = ""
         else:
             try:
-                import json
                 content_value = json.dumps(result.output)
             except (TypeError, ValueError):
                 content_value = str(result.output)
@@ -338,7 +354,12 @@ class RunState:
 
     def _check_flush_threshold(self) -> None:
         if len(self._pending_writes) >= self.MAX_PENDING_WRITES:
-            asyncio.create_task(self.flush())
+            task = asyncio.create_task(self.flush())
+            self._flush_tasks.add(task)
+            task.add_done_callback(lambda t: self._flush_tasks.discard(t))
+            
+            from core.agents.pipeline.stateless.metrics import metrics
+            metrics.flush_tasks_active.set(len(self._flush_tasks))
 
     async def flush(self) -> int:
         async with self._flush_lock:
@@ -351,9 +372,31 @@ class RunState:
             try:
                 return await self._persist(writes)
             except Exception as e:
-                self._pending_writes = writes + self._pending_writes
+                if len(self._pending_writes) + len(writes) <= self.MAX_PENDING_WRITES:
+                    self._pending_writes = writes + self._pending_writes
+                else:
+                    logger.error(f"[RunState] Flush failed AND pending writes at max - DROPPING {len(writes)} writes: {e}")
                 logger.error(f"[RunState] Flush failed: {e}")
                 return 0
+    
+    async def cleanup(self) -> None:
+        if self._flush_tasks:
+            for task in list(self._flush_tasks):
+                if not task.done():
+                    task.cancel()
+            self._flush_tasks.clear()
+        
+        # Final flush attempt
+        try:
+            await self.flush()
+        except Exception as e:
+            logger.warning(f"[RunState] Final flush in cleanup failed: {e}")
+        
+        # Clear collections to free memory
+        self._messages.clear()
+        self._tool_results.clear()
+        self._pending_tool_calls.clear()
+        self._pending_writes.clear()
 
     async def _persist(self, writes: List[PendingWrite]) -> int:
         from core.threads import repo as threads_repo

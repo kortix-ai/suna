@@ -36,7 +36,8 @@ async def execute_agent_run(
     agent_config: dict,
     account_id: str,
     cancellation_event: asyncio.Event,
-    is_new_thread: bool = False
+    is_new_thread: bool = False,
+    user_message: Optional[str] = None
 ) -> None:
     if USE_STATELESS_PIPELINE:
         await execute_agent_run_stateless(
@@ -47,7 +48,8 @@ async def execute_agent_run(
             agent_config=agent_config,
             account_id=account_id,
             cancellation_event=cancellation_event,
-            is_new_thread=is_new_thread
+            is_new_thread=is_new_thread,
+            user_message=user_message
         )
     elif USE_FAST_PIPELINE:
         await execute_agent_run_fast(
@@ -58,7 +60,8 @@ async def execute_agent_run(
             agent_config=agent_config,
             account_id=account_id,
             cancellation_event=cancellation_event,
-            is_new_thread=is_new_thread
+            is_new_thread=is_new_thread,
+            user_message=user_message
         )
     else:
         await execute_agent_run_legacy(
@@ -81,7 +84,8 @@ async def execute_agent_run_stateless(
     agent_config: dict,
     account_id: str,
     cancellation_event: asyncio.Event,
-    is_new_thread: bool = False
+    is_new_thread: bool = False,
+    user_message: Optional[str] = None
 ) -> None:
     execution_start = time.time()
 
@@ -149,7 +153,8 @@ async def execute_agent_run_stateless(
             agent_config=agent_config,
             is_new_thread=is_new_thread,
             cancellation_event=cancellation_event,
-            stream_key=stream_key
+            stream_key=stream_key,
+            user_message=user_message
         )
 
         coordinator = StatelessCoordinator()
@@ -287,7 +292,8 @@ async def execute_agent_run_fast(
     agent_config: dict,
     account_id: str,
     cancellation_event: asyncio.Event,
-    is_new_thread: bool = False
+    is_new_thread: bool = False,
+    user_message: Optional[str] = None
 ) -> None:
     execution_start = time.time()
     
@@ -354,7 +360,8 @@ async def execute_agent_run_fast(
             agent_config=agent_config,
             is_new_thread=is_new_thread,
             cancellation_event=cancellation_event,
-            stream_key=stream_key
+            stream_key=stream_key,
+            user_message=user_message
         )
         
         coordinator = PipelineCoordinator()
@@ -495,7 +502,8 @@ async def execute_agent_run_legacy(
     agent_config: dict,
     account_id: str,
     cancellation_event: asyncio.Event,
-    is_new_thread: bool = False
+    is_new_thread: bool = False,
+    user_message: Optional[str] = None
 ) -> None:
     execution_start = time.time()
 

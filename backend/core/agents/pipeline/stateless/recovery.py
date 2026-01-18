@@ -3,6 +3,7 @@ from typing import Dict, Any, List, Optional, Callable, Awaitable
 from dataclasses import dataclass
 
 from core.utils.logger import logger
+from core.agents.pipeline.stateless.config import config as stateless_config
 
 
 @dataclass
@@ -15,9 +16,9 @@ class RecoveryResult:
 
 
 class RunRecovery:
-    SWEEP_INTERVAL = 30
-    MAX_DURATION = 7200
-    STALE_THRESHOLD = 60
+    SWEEP_INTERVAL = stateless_config.RECOVERY_SWEEP_INTERVAL_SECONDS
+    MAX_DURATION = stateless_config.STUCK_RUN_THRESHOLD_SECONDS
+    STALE_THRESHOLD = stateless_config.ORPHAN_THRESHOLD_SECONDS
 
     def __init__(self):
         self._task: Optional[asyncio.Task] = None

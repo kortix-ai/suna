@@ -236,6 +236,14 @@ class ThreadManager:
         yield error_dict
     
     async def cleanup(self):
+        if hasattr(self, 'response_processor') and self.response_processor:
+            if hasattr(self.response_processor, 'cleanup'):
+                try:
+                    await self.response_processor.cleanup()
+                except Exception as e:
+                    logger.warning(f"[ThreadManager] ResponseProcessor cleanup error: {e}")
+            self.response_processor = None
+        
         if hasattr(self, 'tool_registry') and self.tool_registry:
             seen_instances = set()
             for tool_info in self.tool_registry.tools.values():
@@ -248,10 +256,17 @@ class ThreadManager:
                             if hasattr(result, '__await__'):
                                 await result
                         except Exception as e:
-                            logger.debug(f"Tool cleanup error (non-fatal): {e}")
+                            logger.debug(f"[ThreadManager] Tool cleanup error (non-fatal): {e}")
             
             self.tool_registry.tools.clear()
             self.tool_registry = None
         
-        if hasattr(self, 'response_processor'):
-            self.response_processor = None
+        # 3. Clear other references
+        self.message_fetcher = None
+        self.execution_orchestrator = None
+        self._memory_context = None
+        
+        # 4. Langfuse trace cleanup (doesn't hold connections, just metadata)
+        # Keep trace for final metrics but don't hold reference
+        if hasattr(self, 'trace'):
+            self.trace = None

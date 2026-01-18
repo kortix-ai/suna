@@ -65,16 +65,25 @@ class Metrics:
     def __init__(self):
         self._lock = threading.Lock()
 
+        # Runtime gauges
         self.active_runs = Gauge("suna_active_runs")
         self.owned_runs = Gauge("suna_owned_runs")
         self.pending_writes = Gauge("suna_pending_writes")
+        
+        # Resource usage gauges (leak detection)
+        self.flush_tasks_active = Gauge("suna_flush_tasks_active")
+        self.thread_locks_count = Gauge("suna_thread_locks_count")
+        self.memory_messages_count = Gauge("suna_memory_messages_count")
 
+        # Counters
         self.runs_started = Counter("suna_runs_started")
         self.runs_completed = Counter("suna_runs_completed")
         self.runs_failed = Counter("suna_runs_failed")
         self.runs_recovered = Counter("suna_runs_recovered")
         self.writes_flushed = Counter("suna_writes_flushed")
+        self.writes_dropped = Counter("suna_writes_dropped")  # Track write drops
 
+        # Histograms
         self.run_duration = Histogram("suna_run_duration_seconds", [1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600])
         self.flush_latency = Histogram("suna_flush_latency_seconds", [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
         self.step_latency = Histogram("suna_step_latency_seconds", [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
@@ -111,14 +120,25 @@ class Metrics:
 
     def to_dict(self) -> Dict[str, Any]:
         return {
+            # Runtime metrics
             "active_runs": self.active_runs.get(),
             "owned_runs": self.owned_runs.get(),
             "pending_writes": self.pending_writes.get(),
+            
+            # Resource usage (leak detection)
+            "flush_tasks_active": self.flush_tasks_active.get(),
+            "thread_locks_count": self.thread_locks_count.get(),
+            "memory_messages_count": self.memory_messages_count.get(),
+            
+            # Counters
             "runs_started": self.runs_started.get(),
             "runs_completed": self.runs_completed.get(),
             "runs_failed": self.runs_failed.get(),
             "runs_recovered": self.runs_recovered.get(),
             "writes_flushed": self.writes_flushed.get(),
+            "writes_dropped": self.writes_dropped.get(),
+            
+            # Latencies
             "run_duration_avg": self.run_duration.avg(),
             "run_duration_p99": self.run_duration.percentile(99),
             "flush_latency_avg": self.flush_latency.avg(),
@@ -146,16 +166,29 @@ class Metrics:
         return "\n".join(lines)
 
     def check_health(self) -> Dict[str, Any]:
+        from core.agents.pipeline.stateless.config import config
+        
         alerts = []
 
-        if self.pending_writes.get() > 80:
+        # Existing checks
+        if self.pending_writes.get() > config.PENDING_WRITES_WARNING_THRESHOLD:
             alerts.append({"level": "warning", "metric": "pending_writes", "value": self.pending_writes.get()})
 
-        if self.flush_latency.percentile(99) > 10.0:
+        if self.flush_latency.percentile(99) > config.FLUSH_LATENCY_WARNING_THRESHOLD_SECONDS:
             alerts.append({"level": "warning", "metric": "flush_latency_p99", "value": self.flush_latency.percentile(99)})
 
-        if self.active_runs.get() > 500:
+        if self.active_runs.get() > config.ACTIVE_RUNS_WARNING_THRESHOLD:
             alerts.append({"level": "warning", "metric": "active_runs", "value": self.active_runs.get()})
+        
+        # Resource leak detection
+        if self.flush_tasks_active.get() > config.MAX_FLUSH_TASKS:
+            alerts.append({"level": "critical", "metric": "flush_tasks_leak", "value": self.flush_tasks_active.get()})
+        
+        if self.thread_locks_count.get() > config.MAX_THREAD_LOCKS * 0.9:
+            alerts.append({"level": "warning", "metric": "thread_locks_high", "value": self.thread_locks_count.get()})
+        
+        if self.writes_dropped.get() > 0:
+            alerts.append({"level": "critical", "metric": "writes_dropped", "value": self.writes_dropped.get()})
 
         return {
             "healthy": len([a for a in alerts if a.get("level") == "critical"]) == 0,
