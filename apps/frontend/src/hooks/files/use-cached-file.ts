@@ -278,15 +278,17 @@ export function useCachedFile<T = string>(
       setIsLoading(false);
       setError(null);
     }
-    
-    // Clean up the local blob URL when component unmounts
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sandboxId, filePath, options.contentType]);
+
+  // Separate cleanup effect for blob URL
+  useEffect(() => {
     return () => {
       if (localBlobUrl) {
         URL.revokeObjectURL(localBlobUrl);
-        setLocalBlobUrl(null);
       }
     };
-  }, [sandboxId, filePath, options.contentType]);
+  }, [localBlobUrl]);
 
   // Expose the cache manipulation functions
   return {

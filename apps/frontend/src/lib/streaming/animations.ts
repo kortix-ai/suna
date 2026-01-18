@@ -164,10 +164,6 @@ export function useSmoothStream(
   enabled: boolean = true,
   _speed?: number
 ): string {
-  if (!SMOOTH_STREAMING_ENABLED) {
-    return text;
-  }
-
   const storeRef = useRef<SmoothStreamStore | null>(null);
   
   if (!storeRef.current) {
@@ -179,7 +175,7 @@ export function useSmoothStream(
   
   useLayoutEffect(() => {
     store.update(text, enabled);
-  }, [text, enabled]);
+  }, [store, text, enabled]);
   
   useSyncExternalStore(
     store.subscribe,
@@ -192,6 +188,10 @@ export function useSmoothStream(
       storeRef.current?.destroy();
     };
   }, []);
+
+  if (!SMOOTH_STREAMING_ENABLED) {
+    return text;
+  }
 
   return store.getText();
 }
