@@ -2,9 +2,7 @@ import uuid
 import json
 from typing import Dict, Any, Optional, AsyncGenerator
 from datetime import datetime, timezone
-
 from core.utils.logger import logger
-
 
 class ResponseProcessor:
     def __init__(self, state, message_builder, tool_executor):
@@ -211,6 +209,5 @@ class ResponseProcessor:
         )
         yield self._message_builder.build_finish_message("stop")
         
-        # Persist and yield llm_response_end
         self._state.add_llm_response_end(llm_response_id, thread_run_id)
         yield self._message_builder.build_llm_response_end()

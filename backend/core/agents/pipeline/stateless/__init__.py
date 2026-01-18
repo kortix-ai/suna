@@ -37,6 +37,8 @@ from core.agents.pipeline.stateless.resilience import (
     LoadLevel,
 )
 
+from core.agents.pipeline.stateless.compression import ContextCompressor, CompressionResult
+
 __all__ = [
     "RunState",
     "ToolResult",
@@ -77,4 +79,6 @@ __all__ = [
     "SlidingWindow",
     "BackpressureController",
     "LoadLevel",
+    "ContextCompressor",
+    "CompressionResult",
 ]
