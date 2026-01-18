@@ -1385,8 +1385,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                           </View>
                         )}
 
-                        {/* Message actions (copy/speak) - only show on last message of response */}
-                        {isLatestMessage && !isCurrentlyStreaming && aggregatedTextContent && (
+                        {/* Message actions (copy/speak) - show at end of each assistant response block */}
+                        {isLastAssistantMessage && !isCurrentlyStreaming && aggregatedTextContent && (
                           <MessageActions text={aggregatedTextContent} />
                         )}
                       </View>
