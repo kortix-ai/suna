@@ -76,7 +76,6 @@ class ToolExecutor:
             logger.debug(f"[ToolExecutor] Yielding tool result: {tc_id}, message_id={tool_result_message_id}")
             yield tool_result_msg
 
-            # Persist and yield tool_completed status
             status_type = "tool_completed" if success else "tool_failed"
             status_content = {
                 "tool_index": tool_index,

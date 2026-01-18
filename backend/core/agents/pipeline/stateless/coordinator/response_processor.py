@@ -21,7 +21,6 @@ class ResponseProcessor:
         auto_continue_count = self._state.step - 1
         thread_run_id = self._message_builder._get_thread_run_id()
 
-        # Persist and yield thread_run_start (only on first step)
         if auto_continue_count == 0:
             self._state.add_status_message(
                 {"status_type": "thread_run_start"},
@@ -29,7 +28,6 @@ class ResponseProcessor:
             )
         yield self._message_builder.build_thread_run_start(stream_start)
         
-        # Persist and yield llm_response_start
         self._state.add_llm_response_start(
             llm_response_id, auto_continue_count, self._state.model_name, thread_run_id
         )
@@ -176,14 +174,12 @@ class ResponseProcessor:
         )
         yield complete_msg
 
-        # Persist and yield finish status
         self._state.add_status_message(
             {"status_type": "finish", "finish_reason": "tool_calls", "tools_executed": True},
             {"thread_run_id": thread_run_id}
         )
         yield self._message_builder.build_finish_message("tool_calls", tools_executed=True)
         
-        # Persist and yield llm_response_end
         self._state.add_llm_response_end(llm_response_id, thread_run_id)
         yield self._message_builder.build_llm_response_end()
 
@@ -209,13 +205,11 @@ class ResponseProcessor:
         )
         yield complete_msg
         
-        # Persist and yield finish status
         self._state.add_status_message(
             {"status_type": "finish", "finish_reason": "stop"},
             {"thread_run_id": thread_run_id}
         )
         yield self._message_builder.build_finish_message("stop")
         
-        # Persist and yield llm_response_end
         self._state.add_llm_response_end(llm_response_id, thread_run_id)
         yield self._message_builder.build_llm_response_end()

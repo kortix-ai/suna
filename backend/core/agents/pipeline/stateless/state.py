@@ -215,23 +215,19 @@ class RunState:
         self._message_counter += 1
         message_id = str(uuid.uuid4())
         
-        # Add message_id to in-memory message for tracking
         msg_with_id = msg.copy()
         msg_with_id["message_id"] = message_id
 
         self._messages.append(msg_with_id)
         self._last_activity = time.time()
 
-        # For DB persistence, content should NOT include message_id
-        # (message_id is stored at the top level, not inside content)
-        # This matches the legacy format
         self._pending_writes.append(PendingWrite(
             write_type="message",
             data={
                 "message_id": message_id,
                 "thread_id": self.thread_id,
                 "type": msg.get("role", "assistant"),
-                "content": msg,  # Original msg without message_id
+                "content": msg,
                 "metadata": metadata or {},
                 "is_llm_message": True,
                 "agent_id": self.agent_id,
@@ -285,7 +281,6 @@ class RunState:
         return tools
 
     def add_status_message(self, content: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
-        """Add a status message (thread_run_start, tool_started, tool_completed, finish, etc.)"""
         self._message_counter += 1
         message_id = str(uuid.uuid4())
         
@@ -309,7 +304,6 @@ class RunState:
         return message_id
 
     def add_llm_response_start(self, llm_response_id: str, auto_continue_count: int, model: str, thread_run_id: str) -> str:
-        """Add an llm_response_start message"""
         self._message_counter += 1
         message_id = str(uuid.uuid4())
         
@@ -345,7 +339,6 @@ class RunState:
         return message_id
 
     def add_llm_response_end(self, llm_response_id: str, thread_run_id: str, response_data: Optional[Dict[str, Any]] = None) -> str:
-        """Add an llm_response_end message"""
         self._message_counter += 1
         message_id = str(uuid.uuid4())
         
