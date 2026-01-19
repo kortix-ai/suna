@@ -2840,11 +2840,11 @@ async def _fetch_stripe_revenue_for_day(day_start_ts: int, day_end_ts: int) -> D
         try:
             # Fetch charges for this day - single API call with limit
             # Most days won't have more than 100 charges
-            # expand customer to get email without extra API calls
+            # expand customer to get email, invoice.subscription to get tier metadata
             charges = await stripe.Charge.list_async(
                 created={'gte': day_start_ts, 'lt': day_end_ts},
                 limit=100,
-                expand=['data.customer'],
+                expand=['data.customer', 'data.invoice.subscription'],
             )
 
             # Process all charges from the response
@@ -2856,9 +2856,34 @@ async def _fetch_stripe_revenue_for_day(day_start_ts: int, day_end_ts: int) -> D
                     created={'gte': day_start_ts, 'lt': day_end_ts},
                     limit=100,
                     starting_after=all_charges[-1].id,
-                    expand=['data.customer'],
+                    expand=['data.customer', 'data.invoice.subscription'],
                 )
                 all_charges.extend(charges.data)
+
+            # Helper to get tier from subscription via price_id
+            def _get_tier_from_subscription(subscription) -> tuple[str, bool]:
+                """Returns (tier_name, is_yearly) from subscription price_id."""
+                from core.billing.shared.config import get_tier_by_price_id, get_price_type
+                if not subscription:
+                    return ('unknown', False)
+                try:
+                    # Use dict-style access for Stripe objects (subscription['items'] not subscription.items)
+                    items = subscription['items'] if 'items' in subscription else None
+                    if items:
+                        items_data = items.get('data', []) if hasattr(items, 'get') else items['data']
+                        for item in items_data:
+                            price = item.get('price') if hasattr(item, 'get') else item['price']
+                            if price:
+                                price_id = price.get('id') if hasattr(price, 'get') else price['id']
+                                if price_id:
+                                    tier_obj = get_tier_by_price_id(price_id)
+                                    if tier_obj:
+                                        price_type = get_price_type(price_id)
+                                        is_yearly = price_type in ('yearly', 'yearly_commitment')
+                                        return (tier_obj.name, is_yearly)
+                except Exception as e:
+                    logger.debug(f"Error getting tier from subscription: {e}")
+                return ('unknown', False)
 
             for charge in all_charges:
                 if not charge.paid or charge.refunded or charge.amount <= 0:
@@ -2879,12 +2904,54 @@ async def _fetch_stripe_revenue_for_day(day_start_ts: int, day_end_ts: int) -> D
                         customer_id = customer
 
                 tier = 'unknown'
+                is_yearly = False
                 metadata = getattr(charge, 'metadata', None) or {}
 
                 if metadata.get('type') == 'credit_purchase':
                     tier = 'credit_purchase'
                 else:
                     tier = metadata.get('tier', 'unknown')
+
+                    # Try to get tier from subscription via invoice (if expanded)
+                    if tier == 'unknown':
+                        invoice = getattr(charge, 'invoice', None)
+                        if invoice and hasattr(invoice, 'subscription'):
+                            subscription = invoice.subscription
+                            tier, is_yearly = _get_tier_from_subscription(subscription)
+
+                    # If still unknown, try via checkout session lookup
+                    if tier == 'unknown':
+                        payment_intent_id = getattr(charge, 'payment_intent', None)
+                        if payment_intent_id:
+                            try:
+                                sessions = await stripe.checkout.Session.list_async(
+                                    payment_intent=payment_intent_id, limit=1
+                                )
+                                if sessions.data:
+                                    session = sessions.data[0]
+                                    sub_id = getattr(session, 'subscription', None)
+                                    if sub_id:
+                                        subscription = await stripe.Subscription.retrieve_async(sub_id)
+                                        tier, is_yearly = _get_tier_from_subscription(subscription)
+                            except Exception as e:
+                                logger.debug(f"Error looking up checkout session: {e}")
+
+                    # If still unknown and we have an invoice ID, fetch it directly
+                    if tier == 'unknown':
+                        invoice = getattr(charge, 'invoice', None)
+                        if invoice and isinstance(invoice, str):
+                            try:
+                                invoice_obj = await stripe.Invoice.retrieve_async(invoice, expand=['subscription'])
+                                if invoice_obj.subscription:
+                                    tier, is_yearly = _get_tier_from_subscription(invoice_obj.subscription)
+                            except Exception as e:
+                                logger.debug(f"Error fetching invoice: {e}")
+
+                    # Append _yearly if determined
+                    if tier != 'unknown' and is_yearly and not tier.endswith('_yearly'):
+                        tier = tier + '_yearly'
+
+                    # Fallback to amount inference
                     if tier == 'unknown':
                         tier = _infer_tier_from_amount(charge.amount)
 
