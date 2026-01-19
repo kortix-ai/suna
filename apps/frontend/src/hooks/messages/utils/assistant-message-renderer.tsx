@@ -524,21 +524,44 @@ function renderRegularToolCall(
 export function renderAssistantMessage(props: AssistantMessageRendererProps): React.ReactNode {
   const { message, threadId, toolResults = [] } = props;
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
-  
+
   const toolCalls = metadata.tool_calls || [];
   // Ensure textContent is a string to prevent React error #301
   const rawTextContent = metadata.text_content;
   const textContent = typeof rawTextContent === 'string' ? rawTextContent : (rawTextContent ? String(rawTextContent) : '');
-  
+
   const contentParts: React.ReactNode[] = [];
-  
-  // Render text content first (if any)
-  if (textContent.trim()) {
+
+  // Check if ask/complete tool has the same text as text_content - if so, skip text_content
+  // to avoid rendering the same content twice
+  const askOrCompleteTool = toolCalls.find((tc: any) => {
+    const name = (tc.function_name || '').replace(/_/g, '-');
+    return name === 'ask' || name === 'complete';
+  });
+
+  let askCompleteText = '';
+  if (askOrCompleteTool?.arguments) {
+    const args = askOrCompleteTool.arguments;
+    if (typeof args === 'string') {
+      try {
+        askCompleteText = JSON.parse(args)?.text || '';
+      } catch {
+        askCompleteText = '';
+      }
+    } else if (typeof args === 'object' && args !== null) {
+      askCompleteText = args.text || '';
+    }
+  }
+
+  // Only render text_content if it's different from ask/complete text
+  const shouldRenderTextContent = textContent.trim() && textContent.trim() !== askCompleteText.trim();
+
+  if (shouldRenderTextContent) {
     contentParts.push(
       <div key="text-content" className="my-1.5">
-        <ComposioUrlDetector 
-          content={textContent} 
-          className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words" 
+        <ComposioUrlDetector
+          content={textContent}
+          className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words"
         />
       </div>
     );
