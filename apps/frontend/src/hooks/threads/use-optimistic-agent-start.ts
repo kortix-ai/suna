@@ -16,12 +16,20 @@ import {
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { normalizeFilenameToNFC } from '@agentpress/shared';
+import { 
+  getStreamPreconnectService, 
+  storePreconnectInfo 
+} from '@/lib/streaming/stream-preconnect';
 
 export interface OptimisticAgentStartOptions {
   message: string;
   fileIds?: string[];
   modelName?: string;
   agentId?: string;
+  /** Mode starter to pass as query param (e.g., 'presentation') */
+  modeStarter?: string;
+  /** Mode for backend context (slides, sheets, docs, canvas, video, research) */
+  mode?: string;
 }
 
 export interface OptimisticAgentStartResult {
@@ -136,7 +144,7 @@ export function useOptimisticAgentStart(
   const startAgent = useCallback(async (
     options: OptimisticAgentStartOptions
   ): Promise<OptimisticAgentStartResult | null> => {
-    const { message, fileIds = [], modelName, agentId } = options;
+    const { message, fileIds = [], modelName, agentId, modeStarter, mode } = options;
     
     const trimmedMessage = message.trim();
     if (!trimmedMessage && fileIds.length === 0) {
@@ -150,10 +158,20 @@ export function useOptimisticAgentStart(
     const projectId = crypto.randomUUID();
 
     try {
-      // Store optimistic data for the thread component to pick up
-      // Backend will build file references from staged files
       sessionStorage.setItem('optimistic_prompt', message);
       sessionStorage.setItem('optimistic_thread', threadId);
+      
+      const pendingIntent = {
+        threadId,
+        projectId,
+        prompt: message,
+        fileIds: fileIds.length > 0 ? fileIds : undefined,
+        modelName,
+        agentId: agentId || undefined,
+        mode,
+        createdAt: Date.now(),
+      };
+      localStorage.setItem('pending_thread_intent', JSON.stringify(pendingIntent));
 
       if (process.env.NODE_ENV !== 'production') {
         console.log('[OptimisticAgentStart] Starting new thread:', {
@@ -167,10 +185,13 @@ export function useOptimisticAgentStart(
         });
       }
 
-      // Navigate immediately for optimistic UX
-      router.push(`/projects/${projectId}/thread/${threadId}?new=true`);
+      const queryParams = new URLSearchParams();
+      queryParams.set('new', 'true');
+      if (modeStarter) {
+        queryParams.set('modeStarter', modeStarter);
+      }
+      router.push(`/projects/${projectId}/thread/${threadId}?${queryParams.toString()}`);
 
-      // Start agent in background - only pass file_ids, backend handles everything
       optimisticAgentStart({
         thread_id: threadId,
         project_id: projectId,
@@ -178,11 +199,36 @@ export function useOptimisticAgentStart(
         file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: modelName,
         agent_id: agentId || undefined,
-      }).then((response) => {
+        mode: mode,
+      }).then(async (response) => {
         console.log('[OptimisticAgentStart] API succeeded, response:', response);
+        
+        // Clear pending intent - thread was successfully created
+        localStorage.removeItem('pending_thread_intent');
         
         // Store agent_run_id so thread page can use it immediately (no polling needed)
         if (response.agent_run_id) {
+          // Pre-connect to stream immediately - this saves ~1-2s of connection overhead
+          // The ThreadComponent will adopt this connection when it mounts
+          try {
+            const preconnectService = getStreamPreconnectService();
+            const getAuthToken = async () => {
+              const { createClient } = await import('@/lib/supabase/client');
+              const supabase = createClient();
+              const { data: { session } } = await supabase.auth.getSession();
+              return session?.access_token || null;
+            };
+            
+            storePreconnectInfo(response.agent_run_id, threadId);
+            await preconnectService.preconnect(response.agent_run_id, threadId, getAuthToken);
+            console.log('[OptimisticAgentStart] Stream pre-connected for', response.agent_run_id);
+          } catch (preconnectError) {
+            // Non-fatal - ThreadComponent will create its own connection
+            console.warn('[OptimisticAgentStart] Stream pre-connect failed:', preconnectError);
+          }
+
+          // Set session storage AFTER preconnect is established to avoid race condition
+          // where ThreadComponent tries to adopt before stream is ready
           sessionStorage.setItem('optimistic_agent_run_id', response.agent_run_id);
           sessionStorage.setItem('optimistic_agent_run_thread', threadId);
         }
@@ -200,6 +246,20 @@ export function useOptimisticAgentStart(
       }).catch((error) => {
         console.error('[OptimisticAgentStart] Background agent start failed:', error);
         setIsStarting(false);
+        
+        // Clear pending intent on billing/limit errors (user action required)
+        // Keep it for network errors so retry can happen
+        const isBillingOrLimitError = 
+          error instanceof BillingError || 
+          error?.status === 402 ||
+          error instanceof AgentRunLimitError ||
+          error instanceof ProjectLimitError ||
+          error instanceof ThreadLimitError ||
+          error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED';
+        
+        if (isBillingOrLimitError) {
+          localStorage.removeItem('pending_thread_intent');
+        }
         
         if (error instanceof BillingError || error?.status === 402) {
           handleBillingError(error as BillingError);
@@ -247,6 +307,7 @@ export function useOptimisticAgentStart(
       sessionStorage.removeItem('optimistic_prompt');
       sessionStorage.removeItem('optimistic_thread');
       sessionStorage.removeItem('optimistic_files');
+      sessionStorage.removeItem('optimistic_file_previews');
       
       if (error instanceof BillingError) {
         handleBillingError(error);

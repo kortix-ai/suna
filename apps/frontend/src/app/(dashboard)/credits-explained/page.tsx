@@ -110,20 +110,20 @@ export default function CreditsPage() {
           </div>
 
           <p className="text-muted-foreground leading-relaxed">
-            Credits fall into two categories: expiring and non-expiring. When you run a task, credits are deducted in this priority order: expiring credits first (daily, then monthly), followed by non-expiring credits.
+            Credits fall into two categories: expiring and non-expiring. When you run a task, credits are deducted in this priority order: expiring credits first (daily/weekly, then monthly), followed by non-expiring credits.
           </p>
 
           {/* Credit Types Visual Grid */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Daily Credits */}
+            {/* Daily / Weekly Credits */}
             <Card className="border-blue-500/20 bg-gradient-to-br from-blue-500/5 to-transparent">
               <CardContent className="pt-5">
                 <div className="flex items-center gap-2 mb-3">
                   <RotateCcw className="h-5 w-5 text-blue-500" />
-                  <h3 className="font-semibold text-foreground">Daily</h3>
+                  <h3 className="font-semibold text-foreground">Daily / Weekly</h3>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Refresh every 24 hours. Use it or lose it—these credits reset daily and don't roll over.
+                  Free tier: 300 credits weekly. Paid tiers: 200 credits daily. Use it or lose it—these credits reset and don't roll over.
                 </p>
               </CardContent>
             </Card>
@@ -157,12 +157,12 @@ export default function CreditsPage() {
 
           <div className="space-y-4">
             <div>
-              <h3 className="font-semibold text-foreground mb-3">Expiring credits (Daily + Monthly)</h3>
+              <h3 className="font-semibold text-foreground mb-3">Expiring credits (Daily/Weekly + Monthly)</h3>
               <div className="space-y-3 text-muted-foreground">
                 <div className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-blue-500 mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Daily credits:</span> Refresh every 24 hours based on your plan. Check your billing page to see when your next refresh happens. Unused daily credits don't roll over.
+                    <span className="font-medium text-foreground">Daily/Weekly credits:</span> Free tier gets 300 credits weekly. Paid tiers get 200 credits daily. Check your billing page to see when your next refresh happens. Unused credits don't roll over.
                   </div>
                 </div>
                 <div className="flex items-start gap-3">
@@ -209,7 +209,7 @@ export default function CreditsPage() {
           <Alert className="border-blue-500/20 bg-blue-500/5">
             <Info className="h-4 w-4" />
             <AlertDescription>
-              <strong>Credit usage priority:</strong> When running tasks, we always use your expiring credits first (daily → monthly) before touching your extra credits. This ensures you get the most value from all your credits.
+              <strong>Credit usage priority:</strong> When running tasks, we always use your expiring credits first (daily/weekly → monthly) before touching your extra credits. This ensures you get the most value from all your credits.
             </AlertDescription>
           </Alert>
         </div>

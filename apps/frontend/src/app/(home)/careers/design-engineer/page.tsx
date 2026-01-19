@@ -7,11 +7,11 @@ import { Button } from '@/components/ui/button';
 import Link from 'next/link';
 
 const responsibilities = [
-  "Build and maintain the frontend of our platform",
-  "Own features from design through implementation",
-  "Create animations and interactions that improve the user experience",
-  "Work with the team to design interfaces for features",
-  "Keep the UI consistent and polished across the product"
+  "Own features end-to-end: design, build, ship, iterate",
+  "Shape the UX/UI across the entire product",
+  "Build new features and experiences from scratch",
+  "Create polished interfaces with animations and interactions",
+  "Work closely with the team to define what we build next"
 ];
 
 const qualifications = [
@@ -54,20 +54,20 @@ export default function DesignEngineerPage() {
           >
             <div className="flex items-center gap-3 flex-wrap">
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted border border-border">
-                <span className="text-xs font-medium text-foreground">Engineering + Design</span>
+                <span className="text-xs font-medium text-foreground">Product + Design</span>
               </div>
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted border border-border">
                 <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground">Remote (Global)</span>
+                <span className="text-xs font-medium text-muted-foreground">Hybrid / Remote</span>
               </div>
             </div>
             
             <h1 className="text-3xl md:text-4xl lg:text-5xl font-medium tracking-tight">
-              Design Engineer
+              Product / Design Engineer
             </h1>
             
             <p className="text-lg md:text-xl text-muted-foreground leading-relaxed">
-              Frontend engineer who cares about design. You'll own how the product looks and feels, building interfaces that are fast, polished, and easy to use.
+              Own UX/UI and build new features end-to-end. Design it, build it, ship it, iterate on it.
             </p>
           </motion.div>
         </div>
@@ -88,13 +88,13 @@ export default function DesignEngineerPage() {
             </h2>
             <div className="prose prose-neutral dark:prose-invert max-w-none">
               <p className="text-muted-foreground leading-relaxed">
-                We need a frontend engineer who also has a good eye for design. You don't need to be a designer, but you should care about visual quality and user experience.
+                We need someone who can own features fully—from figuring out what to build, to designing it, to shipping it, to making it better.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                You'll work on the interfaces people use to interact with our AI agents. This includes everything from the main chat experience to settings, dashboards, and new features as we build them.
+                You'll shape how people interact with our AI agents. The chat experience, dashboards, new features—you'll have real influence over what we build and how it works.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                We're a small team, so you'll have a lot of say in how things look and work. You'll ship often and iterate based on feedback.
+                Small team, big impact. Move fast, ship often, iterate based on what you learn.
               </p>
             </div>
           </motion.div>
@@ -214,7 +214,7 @@ export default function DesignEngineerPage() {
                 </p>
               </div>
               <Button asChild size="lg">
-                <a href="mailto:careers@kortix.ai?subject=Design Engineer Application">
+                <a href="mailto:marko@kortix.com?subject=Design Engineer Application">
                   Apply now
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </a>

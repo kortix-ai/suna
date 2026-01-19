@@ -16,7 +16,7 @@ class TierHandler:
                 from core.cache.runtime_cache import get_cached_tier_info
                 redis_cached = await get_cached_tier_info(account_id)
                 if redis_cached:
-                    logger.debug(f"⚡ [TIER] Redis cache hit for {account_id} ({(time.time() - t_start) * 1000:.1f}ms)")
+                    logger.info(f"[TIER] Cache hit for {account_id[:8]}... tier={redis_cached.get('name')} thread_limit={redis_cached.get('thread_limit')} project_limit={redis_cached.get('project_limit')}")
                     return redis_cached
             except Exception:
                 pass
@@ -55,6 +55,8 @@ class TierHandler:
             'agent_limit': tier_obj.custom_workers_limit,
             'is_trial': trial_status == 'active'
         }
+        
+        logger.info(f"[TIER] Fresh fetch for {account_id[:8]}... tier={tier_name} thread_limit={tier_obj.thread_limit} project_limit={tier_obj.project_limit}")
         
         try:
             from core.cache.runtime_cache import set_cached_tier_info

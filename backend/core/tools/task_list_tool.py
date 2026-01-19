@@ -20,7 +20,7 @@ class Task(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     content: str
     status: TaskStatus = TaskStatus.PENDING
-    section_id: str  # Reference to section ID instead of section name
+    section_id: str
 
 @tool_metadata(
     display_name="Task Management",
@@ -29,172 +29,248 @@ class Task(BaseModel):
     color="bg-amber-100 dark:bg-amber-800/50",
     is_core=True,
     usage_guide="""
-### TASK MANAGEMENT SYSTEM - FOR LARGE, COMPLEX WORK ONLY
+# AUTONOMOUS TASK EXECUTION MODE
 
-**WHEN TO CREATE TASK LISTS (ONLY FOR SIGNIFICANT TASKS):**
-- **ONLY create for LARGE, COMPLEX tasks:**
-  * Extensive multi-item research (10+ items, countries, companies, topics, products, etc.)
-  * Large-scale data gathering and analysis projects
-  * Complex content creation projects (presentations, reports, multi-file projects)
-  * Multi-phase processes requiring significant planning
-  * Projects with 5+ distinct steps that need tracking
-  * Comparative analysis across many items (10+)
-  * Tasks that will take substantial time and require progress tracking
-- **DO NOT create task lists for:**
-  * Simple questions or single-step tasks
-  * Small research requests (1-3 items)
-  * Quick content edits or small file changes
-  * Tasks that can be completed in one response
-  * Simple operations that don't require planning
-  * Trivial requests answerable immediately
+The Task List is your ABSOLUTE SOURCE OF TRUTH for complex work. When operating in Autonomous Task Execution mode, the task list governs ALL your actions.
 
-**CRITICAL: GRANULAR TASK BREAKDOWN - GO DEEP**
+## WHEN TO ENTER AUTONOMOUS MODE
 
-### 1. INDIVIDUAL ITEM RESEARCH TASKS
-When researching multiple items, create SEPARATE tasks for EACH item:
-- ❌ WRONG: "Research market strategies of 5 companies" (one task)
-- ✅ CORRECT: 5 individual tasks:
-  * "Research Company A: market strategy, recent initiatives, target markets, competitive positioning"
-  * "Research Company B: market strategy, recent initiatives, target markets, competitive positioning"
-  * ... (one comprehensive task per company/item)
+**USE TASK LIST FOR:**
+- Multi-step projects (3+ distinct steps)
+- Research involving multiple items (companies, countries, topics, products)
+- Content creation (presentations, reports, multi-file projects)
+- Data gathering and analysis
+- Software development projects
+- Any work requiring sustained execution over multiple turns
 
-**Why?** Each item needs deep, thorough research with multiple queries and sources.
+**SKIP TASK LIST FOR:**
+- Simple questions answerable in one response
+- Quick factual lookups
+- Conversational exchanges
+- Single-step operations
 
-### 2. RESEARCH DEPTH REQUIREMENTS
-Each research task must be COMPREHENSIVE:
-- Multiple search queries per item (use batch mode with multiple queries)
-- Search for: current status, planned projects, funding sources, official announcements
-- Cross-reference multiple authoritative sources
-- Verify information from government/official sources
-- Document all findings with sources
-- Don't stop at first result - dig deeper
+## THE TASK LIST CONTRACT
 
-### 3. TASK CREATION STRUCTURE
-Create sections in logical phases:
-- **Section 1: Individual Research** - One task per item (country/company/topic)
-- **Section 2: Data Verification** - Cross-check findings, verify sources
-- **Section 3: Synthesis** - Compile findings into structured format
-- **Section 4: Output Creation** - Create deliverables (tables, reports, presentations)
+When a task list exists, you are bound by these rules:
 
-### 4. EXAMPLE: Multi-Item Research
-Request: "Compare the features and pricing of 8 competing products"
-✅ CORRECT TASK BREAKDOWN:
+### 1. SEQUENTIAL EXECUTION - NO EXCEPTIONS
+- Execute tasks in EXACT order they appear
+- NEVER skip tasks or work out of order
+- NEVER start task N+1 before completing task N
+- The sequence is sacred - it represents your plan of attack
+
+### 2. IMMEDIATE STATUS UPDATES
+- Mark tasks `completed` THE MOMENT you finish them
+- Don't batch updates at the end - update as you go
+- This creates a real-time progress trail
+- Use `view_tasks` after every 2-3 completions to verify state
+
+### 3. UNINTERRUPTED EXECUTION
+- Once started, execute ALL tasks to completion
+- NEVER ask "should I continue?" between tasks
+- NEVER pause for confirmation mid-execution
+- The user approved by initiating - no further permission needed
+- Only stop if genuinely blocked by missing information
+
+### 4. LIVING DOCUMENT MANAGEMENT
+- ADD tasks when you discover additional work needed
+- REMOVE tasks that become unnecessary
+- UPDATE task content if scope changes
+- The task list evolves with your understanding
+
+## TASK BREAKDOWN PRINCIPLES
+
+### Granularity - One Unit of Work Per Task
+Each task should represent ONE distinct operation:
+- ❌ BAD: "Research 5 companies and create comparison"
+- ✅ GOOD: 5 tasks (one per company) + 1 synthesis task
+
+### Specificity - Clear Completion Criteria
+Each task should have obvious "done" state:
+- ❌ BAD: "Look into market trends"
+- ✅ GOOD: "Research Company A: strategy, funding, market position, recent news"
+
+### Depth - Comprehensive Research Per Task
+Each research task requires:
+- Multiple search queries (use batch mode)
+- Cross-reference 2-3+ sources
+- Verify from authoritative sources
+- Document findings with citations
+
+## TASK LIST STRUCTURE
+
+Organize into logical phases:
+
 ```
-Section: "Individual Product Research"
-- Task 1: "Research Product A: features, specifications, pricing, target market, reviews"
-- Task 2: "Research Product B: features, specifications, pricing, target market, reviews"
-- ... (one task per product/item, 8 total)
+Section: "Research Phase"
+- Task: "Research Item A: [specific aspects]"
+- Task: "Research Item B: [specific aspects]"
+...
 
-Section: "Data Verification & Cross-Reference"
-- Task: "Verify all findings from multiple authoritative sources, cross-reference official product pages"
+Section: "Analysis Phase"  
+- Task: "Cross-reference findings, verify accuracy"
+- Task: "Identify patterns and insights"
 
-Section: "Compile Results"
-- Task: "Create comprehensive comparison table with all findings: product, features, pricing, market, sources - deliver as CSV and Markdown formats"
-
-Section: "Visualization"
-- Task: "Create interactive dashboard page that dynamically loads from CSV/JSON data file"
-
-Section: "Source Documentation"
-- Task: "Document all sources used for verification and citation"
+Section: "Output Phase"
+- Task: "Create deliverable (report/presentation/dashboard)"
+- Task: "Document sources and methodology"
 ```
 
-### 5. TASK CREATION RULES:
-1. **GRANULARITY:** Break down into smallest meaningful units - one task per research item
-2. **SPECIFICITY:** Each task should be specific, actionable, with clear completion criteria
-3. **EXECUTION ORDER:** Tasks must be created in exact execution order
-4. **COMPREHENSIVE:** Each research task should cover all aspects (status, plans, funding, sources)
-5. **DEPTH:** Tasks should require multiple queries and sources, not single searches
+## EXECUTION WORKFLOW
 
-**CRITICAL EXECUTION ORDER RULES:**
-1. **SEQUENTIAL EXECUTION:** Execute tasks in exact order they appear
-2. **ONE TASK AT A TIME:** Never execute multiple tasks simultaneously
-3. **COMPLETE BEFORE MOVING:** Finish current task completely (all research done) before starting next
-4. **NO SKIPPING:** Do not skip tasks or jump ahead
-5. **BATCH OPERATIONS WITHIN TASKS:** Use batch mode for searches WITHIN a single task with multiple queries (e.g., country status, country plans, country funding)
+### Phase 1: Planning
+1. Analyze the request - identify all discrete work items
+2. Create comprehensive task list with granular tasks
+3. Organize into logical sections/phases
+4. Initialize any needed JIT tools
 
-**ACTIVE TASK LIST MANAGEMENT - CRUD OPERATIONS THROUGHOUT EXECUTION:**
-🚨 CRITICAL: The task list is a LIVING document - actively manage it with continuous CRUD operations during execution.
+### Phase 2: Execution Loop
+```
+WHILE pending tasks exist:
+    1. view_tasks → identify next pending task
+    2. Execute task thoroughly (multiple queries, sources)
+    3. update_tasks → mark completed IMMEDIATELY
+    4. IF discovered new work → create_tasks to add
+    5. IF task unnecessary → delete_tasks to remove
+```
 
-**CREATE (Adding Tasks):**
-- Add new tasks when you discover additional work needed during execution
-- Use create_tasks to add tasks to existing sections
-- Example: After researching, you discover you need to verify a specific claim → add verification task immediately
+### Phase 3: Completion
+1. view_tasks → verify ALL tasks completed
+2. Compile final deliverables
+3. Call `complete` with all attachments
 
-**READ (Viewing Tasks):**
-- Use view_tasks regularly (after every 2-3 task completions) to:
-  - Check current progress
-  - Identify the next task to execute
-  - Review completed work
-  - Ensure you're on track
-- Check progress before starting each new task
+## RESEARCH QUALITY STANDARDS
 
-**UPDATE (Modifying Tasks):**
-- **Mark complete IMMEDIATELY** after finishing each task - don't wait
-- Update task content if requirements change or you refine the scope
-- Batch multiple completions when efficient (e.g., completing 3 tasks at once)
-- Example workflow:
-  1. Finish research on Item A → use update_tasks with task_ids for item_a_task and status "completed"
-  2. Check progress → use view_tasks
-  3. Start Item B research
-  4. Finish Item B → use update_tasks with task_ids for item_b_task and status "completed"
-  5. Continue pattern...
+For each research item:
+- **Breadth**: Search for current state, future plans, funding, official sources
+- **Depth**: Don't accept first result - dig deeper
+- **Verification**: Cross-reference 2-3+ authoritative sources
+- **Documentation**: Record sources for citation
 
-**DELETE (Removing Tasks):**
-- Remove tasks that become unnecessary or redundant
-- Delete tasks if requirements change and they're no longer needed
-- Use delete_tasks with task_ids when appropriate
-- Example: If a task becomes redundant after discovering information, remove it immediately
+Use batch search mode for efficiency:
+```
+web_search(queries=[
+    "Company X market strategy 2024",
+    "Company X recent funding",
+    "Company X competitive positioning",
+    "Company X official announcements"
+])
+```
 
-**TASK MANAGEMENT RHYTHM:**
-- **After completing each task:** Mark it complete immediately via update_tasks
-- **Every 2-3 tasks:** Use view_tasks to check progress and identify next task
-- **When discovering new work:** Add new tasks immediately via create_tasks
-- **When requirements change:** Update or remove affected tasks via update_tasks or delete_tasks
-- **Before final output:** Verify all tasks are complete via view_tasks
+## AUTO-EXTRACTION PATTERN
 
-**MULTI-STEP TASK EXECUTION - NO INTERRUPTIONS:**
-- Once a multi-step task starts, it MUST run all steps to completion
-- NEVER ask "should I proceed?" or "do you want me to continue?" during execution
-- The user approved by starting the task - no permission needed between steps
-- Only pause if there's an actual blocking error
-- BUT: Continue actively managing the task list (marking complete, checking progress) throughout
+After each web_search:
+1. Identify high-quality sources in results
+2. Use `scrape_webpage` to extract full content from promising URLs
+3. For academic sources, use `get_paper_details`
+4. Read extracted content thoroughly - never rely on snippets alone
 
-**TASK UPDATE EFFICIENCY:**
-- ALWAYS batch task status updates in a single call when possible
-- Complete current task(s) immediately after finishing
-- Example: use update_tasks with task_ids for task1 and task2 and status "completed" when you've finished both
+## EXAMPLE: Multi-Company Research
 
-**COMPLETION SIGNAL:**
-- Once ALL tasks are marked complete (verify via view_tasks), MUST call either complete or ask tool immediately
-- NO additional commands after completion
-- Failure to signal completion is a critical error
+**Request:** "Compare market strategies of 5 tech companies"
 
-**RESEARCH QUALITY STANDARDS:**
-- Each research task should use 3-5+ search queries (batch mode for efficiency)
-- Verify findings from multiple sources (government, official announcements, reputable news)
-- Document all sources for citation
-- Cross-reference information to ensure accuracy
-- Don't accept surface-level information - dig deeper for comprehensive understanding
+**Task List:**
+```
+Section: "Individual Company Research"
+- Research Apple: market strategy, recent initiatives, target segments, competitive moves
+- Research Google: market strategy, recent initiatives, target segments, competitive moves  
+- Research Microsoft: market strategy, recent initiatives, target segments, competitive moves
+- Research Amazon: market strategy, recent initiatives, target segments, competitive moves
+- Research Meta: market strategy, recent initiatives, target segments, competitive moves
 
-**VISUALIZATION & DASHBOARDS:**
-- After compiling data into CSV/JSON, automatically create interactive dashboard page
-- Dashboard page must dynamically load data from CSV/JSON file (never hardcode data)
-- CSV/JSON is the single source of truth - page references it, doesn't duplicate it
-- Use JavaScript fetch API to load data dynamically
-- Create clean, modern, responsive dashboards
-- Both data file and dashboard page should be delivered together
+Section: "Verification & Analysis"
+- Cross-reference findings across sources, verify accuracy
+- Identify common patterns and unique differentiators
+
+Section: "Deliverables"
+- Create comparison table (CSV + formatted report)
+- Create executive summary with key insights
+```
+
+**Execution:**
+1. Create task list ✓
+2. Research Apple (4+ queries, 3+ sources) → mark complete
+3. Research Google (4+ queries, 3+ sources) → mark complete
+4. ... continue for each company
+5. Cross-reference and verify → mark complete
+6. Create deliverables → mark complete
+7. Call `complete` with all files attached
+
+## CONTEXT MANAGEMENT FOR LONG SESSIONS
+
+You operate as a long-running agent. Over extended sessions:
+
+### Maintain State Awareness
+- Regularly `view_tasks` to anchor yourself
+- The task list IS your memory of what's been done
+- Reference completed tasks to avoid redundant work
+
+### Handle Context Limits
+- Task list persists even if conversation context shifts
+- Always check task list state at session start
+- Completed tasks represent verified progress
+
+### Progress Tracking
+- Task completion creates audit trail
+- Users can see progress in real-time
+- Status updates communicate without interrupting
+
+## MULTI-STEP TASK EXECUTION RULES
+
+Once a multi-phase task begins:
+
+1. **NO INTERRUPTIONS** - Execute all steps to completion
+2. **NO PERMISSION SEEKING** - User approved by starting
+3. **NO SCOPE CREEP** - Stick to the plan
+4. **CONTINUOUS UPDATES** - Mark progress as you go
+5. **QUALITY OVER SPEED** - Thorough research per task
+
+## VISUALIZATION & OUTPUT STANDARDS
+
+When creating data outputs:
+- Export data as CSV/JSON (single source of truth)
+- Create interactive dashboards that LOAD from data files
+- Never hardcode data in visualization code
+- Both data file and dashboard are deliverables
+
+## TOOL INITIALIZATION PATTERN
+
+Before execution, initialize needed tools:
+1. Assess which JIT tools are needed
+2. Call `initialize_tools` for each
+3. Then begin task execution
+4. Never pause mid-execution to initialize
+
+## SUMMARY: AUTONOMOUS MODE CHECKLIST
+
+Before starting:
+- [ ] Is this complex enough for a task list? (3+ steps, multiple items)
+- [ ] Have I created granular, specific tasks?
+- [ ] Are tasks in correct execution order?
+- [ ] Have I initialized all needed tools?
+
+During execution:
+- [ ] Am I executing tasks in order?
+- [ ] Am I marking complete IMMEDIATELY after each?
+- [ ] Am I using `view_tasks` regularly?
+- [ ] Am I researching deeply (multiple queries, sources)?
+
+After completion:
+- [ ] Are ALL tasks marked complete?
+- [ ] Have I attached all deliverables?
+- [ ] Did I include follow_up_prompts?
 """,
     weight=5,
     visible=True
 )
 
 class TaskListTool(SandboxToolsBase):
-    """Task management system for organizing and tracking tasks. It contains the action plan for the agent to follow.
+    """Task management system - the source of truth for Autonomous Task Execution mode.
     
-    Features:
-    - Create, update, and delete tasks organized by sections
-    - Support for batch operations across multiple sections
-    - Track completion status and progress
+    The task list governs all complex work:
+    - Sequential execution of tasks in order
+    - Immediate status updates as work progresses
+    - Living document that evolves with the work
     """
     
     def __init__(self, project_id: str, thread_manager, thread_id: str):
@@ -221,12 +297,10 @@ class TaskListTool(SandboxToolsBase):
                 
                 # Handle migration from old format
                 if not sections and 'sections' in content:
-                    # Create sections from old nested format
                     for old_section in content['sections']:
                         section = Section(title=old_section['title'])
                         sections.append(section)
                         
-                        # Update tasks to reference section ID
                         for old_task in old_section.get('tasks', []):
                             task = Task(
                                 content=old_task['content'],
@@ -239,7 +313,6 @@ class TaskListTool(SandboxToolsBase):
                 
                 return sections, tasks
             
-            # Return empty lists - no default section
             return [], []
             
         except Exception as e:
@@ -256,18 +329,15 @@ class TaskListTool(SandboxToolsBase):
                 'tasks': [task.model_dump() for task in tasks]
             }
             
-            # Find existing message
             result = await client.table('messages').select('message_id')\
                 .eq('thread_id', self.thread_id)\
                 .eq('type', self.task_list_message_type)\
                 .order('created_at', desc=True).limit(1).execute()
             
             if result.data:
-                # Update existing
                 await client.table('messages').update({'content': content})\
                     .eq('message_id', result.data[0]['message_id']).execute()
             else:
-                # Create new
                 await client.table('messages').insert({
                     'thread_id': self.thread_id,
                     'type': self.task_list_message_type,
@@ -282,7 +352,6 @@ class TaskListTool(SandboxToolsBase):
     
     def _format_response(self, sections: List[Section], tasks: List[Task]) -> Dict[str, Any]:
         """Format data for response"""
-        # Group display tasks by section
         section_map = {s.id: s for s in sections}
         grouped_tasks = {}
         
@@ -295,7 +364,6 @@ class TaskListTool(SandboxToolsBase):
         formatted_sections = []
         for section in sections:
             section_tasks = grouped_tasks.get(section.id, [])
-            # Only include sections that have tasks to display (unless showing all sections)
             if section_tasks:
                 formatted_sections.append({
                     "id": section.id,
@@ -303,19 +371,24 @@ class TaskListTool(SandboxToolsBase):
                     "tasks": section_tasks
                 })
         
-        response = {
+        # Calculate progress
+        completed = sum(1 for t in tasks if t.status == TaskStatus.COMPLETED)
+        pending = sum(1 for t in tasks if t.status == TaskStatus.PENDING)
+        
+        return {
             "sections": formatted_sections,
-            "total_tasks": len(tasks),  # Always use original task count
+            "total_tasks": len(tasks),
+            "completed_tasks": completed,
+            "pending_tasks": pending,
+            "progress_percent": round((completed / len(tasks) * 100) if tasks else 0, 1),
             "total_sections": len(sections)
         }
-        
-        return response
 
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "view_tasks",
-            "description": "View all tasks and sections. Use this REGULARLY throughout execution to see current tasks, check progress, or review completed work. IMPORTANT: Use this tool every 2-3 task completions to check progress and identify the next task to execute in the sequential workflow. Always execute tasks in the exact order they appear, completing one task fully (with comprehensive research using multiple queries and sources) before moving to the next. Use this to determine which task is currently pending and should be tackled next. For research tasks, ensure each task receives thorough, in-depth research before marking complete. Before final output, use this to verify all tasks are marked complete. **🚨 PARAMETER NAMES**: This function takes no parameters.",
+            "description": "View current task list state. Use REGULARLY during execution to: 1) Identify next pending task, 2) Verify progress, 3) Anchor yourself in long sessions. The task list is your source of truth - check it often.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -325,14 +398,11 @@ class TaskListTool(SandboxToolsBase):
         }
     })
     async def view_tasks(self) -> ToolResult:
-        """View all tasks and sections"""
+        """View all tasks and sections with progress summary"""
         try:
             sections, tasks = await self._load_data()
-            
             response_data = self._format_response(sections, tasks)
-            
             return ToolResult(success=True, output=json.dumps(response_data, indent=2))
-            
         except Exception as e:
             logger.error(f"Error viewing tasks: {e}")
             return ToolResult(success=False, output=f"❌ Error viewing tasks: {str(e)}")
@@ -341,24 +411,21 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_tasks",
-            "description": "Create tasks organized by sections. Supports both single section and multi-section batch creation. Creates sections automatically if they don't exist. USE ONLY FOR LARGE, COMPLEX TASKS: Only create task lists for substantial projects (10+ items, multi-phase work, large-scale research, complex multi-file projects). For research tasks involving many items, create SEPARATE individual tasks for EACH item to ensure deep, thorough research. Each research task should be comprehensive, requiring multiple queries and sources. Break down complex operations into granular, sequential tasks. Create tasks in the exact order they will be executed. Each task should represent a single, specific operation that can be completed independently. IMPORTANT: You can also use this tool DURING execution to add new tasks when you discover additional work is needed. You MUST specify either 'sections' array OR both 'task_contents' and ('section_title' OR 'section_id'). CRITICAL: The 'sections' parameter MUST be passed as an array of objects, NOT as a JSON string. Pass the actual array structure, not a stringified version. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `sections` (optional, batch mode), `section_title` (optional, single section), `section_id` (optional, single section), `task_contents` (optional, single section).",
+            "description": "Create task list for Autonomous Task Execution mode. Creates sections and tasks that become your execution plan. Each task = one unit of work. Tasks execute in order. Use BEFORE starting complex work, or DURING execution to add discovered work.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "sections": {
                         "type": "array",
-                        "description": "**OPTIONAL** - List of sections with their tasks for batch creation. CRITICAL: This MUST be an array of objects (not a JSON string). Each element should be an object with title as a string and tasks as an array of strings.",
+                        "description": "Sections with their tasks. Each section groups related tasks (e.g., 'Research Phase', 'Analysis Phase').",
                         "items": {
                             "type": "object",
                             "properties": {
-                                "title": {
-                                    "type": "string",
-                                    "description": "Section title (creates if doesn't exist)"
-                                },
+                                "title": {"type": "string", "description": "Section title"},
                                 "tasks": {
                                     "type": "array",
-                                    "description": "Task contents for this section. Must be an array of strings, not a JSON string.",
                                     "items": {"type": "string"},
+                                    "description": "Task descriptions for this section",
                                     "minItems": 1
                                 }
                             },
@@ -367,16 +434,16 @@ class TaskListTool(SandboxToolsBase):
                     },
                     "section_title": {
                         "type": "string",
-                        "description": "**OPTIONAL** - Single section title (creates if doesn't exist). Use this OR sections array OR section_id."
+                        "description": "Single section title (alternative to sections array)"
                     },
                     "section_id": {
                         "type": "string",
-                        "description": "**OPTIONAL** - Existing section ID. Use this OR sections array OR section_title."
+                        "description": "Add tasks to existing section by ID"
                     },
                     "task_contents": {
                         "type": "array",
-                        "description": "**OPTIONAL** - Task contents for single section creation (use with section_title or section_id). CRITICAL: This MUST be an array of strings, not a JSON string.",
-                        "items": {"type": "string"}
+                        "items": {"type": "string"},
+                        "description": "Task descriptions (use with section_title or section_id)"
                     }
                 },
                 "required": [],
@@ -387,72 +454,48 @@ class TaskListTool(SandboxToolsBase):
     async def create_tasks(self, sections: Optional[List[Dict[str, Any]]] = None,
                           section_title: Optional[str] = None, section_id: Optional[str] = None,
                           task_contents: Optional[List[str]] = None) -> ToolResult:
-        """Create tasks - supports both batch multi-section and single section creation"""
+        """Create tasks - supports batch multi-section and single section creation"""
         try:
-            # Parse sections if it's a JSON string (can happen when LLM passes it as string)
-            if sections is not None:
-                logger.debug(f"🔍 Received sections parameter: type={type(sections).__name__}")
-                logger.debug(f"🔍 Sections repr: {repr(sections)[:500]}")
-                logger.debug(f"🔍 Sections str: {str(sections)[:500]}")
-                
-                if isinstance(sections, str):
-                    logger.debug(f"🔍 Sections is a string, attempting to parse...")
-                    logger.debug(f"🔍 First 50 chars: {repr(sections[:50])}")
+            # Parse JSON strings if needed
+            if sections is not None and isinstance(sections, str):
                     try:
                         sections = json.loads(sections)
-                        logger.debug(f"✅ Parsed sections from JSON string: {len(sections) if isinstance(sections, list) else 'not a list'} items")
                     except json.JSONDecodeError as e:
-                        # Try to repair malformed JSON from LLM
                         from core.utils.json_helpers import repair_json
                         repaired, was_repaired = repair_json(sections)
                         if was_repaired:
                             try:
                                 sections = json.loads(repaired)
-                                logger.info(f"🔧 Repaired sections JSON successfully: {len(sections) if isinstance(sections, list) else 'not a list'} items")
                             except json.JSONDecodeError as e2:
-                                logger.error(f"❌ Failed to parse sections JSON even after repair: {e2}")
-                                logger.error(f"❌ Raw value (first 500 chars): {repr(sections[:500])}")
-                                return ToolResult(success=False, output=f"❌ Invalid JSON in sections parameter: {str(e)}. Repair also failed: {str(e2)}")
+                                return ToolResult(success=False, output=f"❌ Invalid JSON in sections: {str(e)}")
                         else:
-                            logger.error(f"❌ Failed to parse sections JSON: {e}")
-                            logger.error(f"❌ Raw value (first 500 chars): {repr(sections[:500])}")
-                            return ToolResult(success=False, output=f"❌ Invalid JSON in sections parameter: {str(e)}")
+                            return ToolResult(success=False, output=f"❌ Invalid JSON in sections: {str(e)}")
                 
-                # Validate that sections is a list after parsing
-                if not isinstance(sections, list):
-                    return ToolResult(success=False, output=f"❌ Sections must be a list/array, got {type(sections).__name__}")
+            if sections is not None and not isinstance(sections, list):
+                return ToolResult(success=False, output=f"❌ Sections must be an array, got {type(sections).__name__}")
                 
-                # Validate structure of each section
+            if sections:
                 for idx, section_data in enumerate(sections):
                     if not isinstance(section_data, dict):
-                        return ToolResult(success=False, output=f"❌ Section at index {idx} must be an object/dict, got {type(section_data).__name__}")
-                    if "title" not in section_data:
-                        return ToolResult(success=False, output=f"❌ Section at index {idx} is missing required 'title' field")
-                    if "tasks" not in section_data:
-                        return ToolResult(success=False, output=f"❌ Section at index {idx} is missing required 'tasks' field")
+                        return ToolResult(success=False, output=f"❌ Section {idx} must be an object")
+                    if "title" not in section_data or "tasks" not in section_data:
+                        return ToolResult(success=False, output=f"❌ Section {idx} missing 'title' or 'tasks'")
                     if not isinstance(section_data["tasks"], list):
-                        return ToolResult(success=False, output=f"❌ Section '{section_data.get('title', 'unknown')}' tasks must be a list/array")
+                        return ToolResult(success=False, output=f"❌ Section '{section_data.get('title')}' tasks must be an array")
             
-            # Parse task_contents if it's a JSON string
             if task_contents is not None and isinstance(task_contents, str):
                 try:
                     task_contents = json.loads(task_contents)
                 except json.JSONDecodeError as e:
-                    # Try to repair malformed JSON
                     from core.utils.json_helpers import repair_json
                     repaired, was_repaired = repair_json(task_contents)
                     if was_repaired:
                         try:
                             task_contents = json.loads(repaired)
-                            logger.info(f"🔧 Repaired task_contents JSON successfully")
-                        except json.JSONDecodeError as e2:
-                            return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents parameter: {str(e)}. Repair also failed.")
+                        except:
+                            return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents")
                     else:
-                        return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents parameter: {str(e)}")
-                
-                # Validate that task_contents is a list after parsing
-                if not isinstance(task_contents, list):
-                    return ToolResult(success=False, output=f"❌ Task_contents must be a list/array, got {type(task_contents).__name__}")
+                        return ToolResult(success=False, output=f"❌ Invalid JSON in task_contents")
             
             existing_sections, existing_tasks = await self._load_data()
             section_map = {s.id: s for s in existing_sections}
@@ -462,12 +505,10 @@ class TaskListTool(SandboxToolsBase):
             created_sections = 0
             
             if sections:
-                # Batch creation across multiple sections
                 for section_data in sections:
                     section_title_input = section_data["title"]
                     task_list = section_data["tasks"]
                     
-                    # Find or create section
                     title_lower = section_title_input.lower()
                     if title_lower in title_map:
                         target_section = title_map[title_lower]
@@ -477,30 +518,25 @@ class TaskListTool(SandboxToolsBase):
                         title_map[title_lower] = target_section
                         created_sections += 1
                     
-                    # Create tasks in this section
                     for task_content in task_list:
                         new_task = Task(content=task_content, section_id=target_section.id)
                         existing_tasks.append(new_task)
                         created_tasks += 1
                         
             else:
-                # Single section creation - require explicit section specification
                 if not task_contents:
-                    return ToolResult(success=False, output="❌ Must provide either 'sections' array or 'task_contents' with section info")
+                    return ToolResult(success=False, output="❌ Provide 'sections' array OR 'task_contents' with section info")
                 
                 if not section_id and not section_title:
-                    return ToolResult(success=False, output="❌ Must specify either 'section_id' or 'section_title' when using 'task_contents'")
+                    return ToolResult(success=False, output="❌ Specify 'section_id' or 'section_title' with 'task_contents'")
                 
                 target_section = None
                 
                 if section_id:
-                    # Use existing section ID
                     if section_id not in section_map:
                         return ToolResult(success=False, output=f"❌ Section ID '{section_id}' not found")
                     target_section = section_map[section_id]
-                    
                 elif section_title:
-                    # Find or create section by title
                     title_lower = section_title.lower()
                     if title_lower in title_map:
                         target_section = title_map[title_lower]
@@ -509,14 +545,12 @@ class TaskListTool(SandboxToolsBase):
                         existing_sections.append(target_section)
                         created_sections += 1
                 
-                # Create tasks
                 for content in task_contents:
                     new_task = Task(content=content, section_id=target_section.id)
                     existing_tasks.append(new_task)
                     created_tasks += 1
             
             await self._save_data(existing_sections, existing_tasks)
-            
             response_data = self._format_response(existing_sections, existing_tasks)
             
             return ToolResult(success=True, output=json.dumps(response_data, indent=2))
@@ -529,7 +563,7 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "update_tasks",
-            "description": "Update one or more tasks. CRITICAL: Mark tasks as 'completed' IMMEDIATELY after finishing each task - don't wait. This is essential for active task list management. EFFICIENT BATCHING: When you've completed multiple tasks, batch them into a single update call. Always execute tasks in the exact sequence they appear, but batch your updates when possible. You can also update task content if requirements change. Use this tool actively throughout execution to keep the task list current and accurate. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task_ids` (REQUIRED), `content` (optional), `status` (optional), `section_id` (optional).",
+            "description": "Update task status or content. CRITICAL: Mark tasks 'completed' IMMEDIATELY after finishing each - don't wait. Batch multiple completions when efficient. This maintains accurate progress state.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -538,20 +572,20 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "**REQUIRED** - Task ID (string) or array of task IDs to update. EFFICIENT APPROACH: Batch multiple completed tasks into a single call. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
+                        "description": "**REQUIRED** - Task ID(s) to update. Batch multiple IDs for efficiency."
                     },
                     "content": {
                         "type": "string",
-                        "description": "**OPTIONAL** - New content for the task(s)."
+                        "description": "New content for the task(s)"
                     },
                     "status": {
                         "type": "string",
                         "enum": ["pending", "completed", "cancelled"],
-                        "description": "**OPTIONAL** - New status for the task(s). Set to 'completed' for finished tasks. Batch multiple completed tasks when possible."
+                        "description": "New status. Use 'completed' when task is done."
                     },
                     "section_id": {
                         "type": "string",
-                        "description": "**OPTIONAL** - Section ID to move task(s) to."
+                        "description": "Move task(s) to different section"
                     }
                 },
                 "required": ["task_ids"],
@@ -563,57 +597,42 @@ class TaskListTool(SandboxToolsBase):
                           status: Optional[str] = None, section_id: Optional[str] = None) -> ToolResult:
         """Update one or more tasks"""
         try:
-            # Parse task_ids if it's a JSON string (can happen when LLM passes it as string)
+            # Parse task_ids
             if task_ids is not None:
                 if isinstance(task_ids, str):
-                    # Try to parse as JSON array first
                     try:
                         parsed = json.loads(task_ids)
-                        if isinstance(parsed, list):
-                            target_task_ids = parsed
-                        else:
-                            # If not a list after parsing, treat as single ID
-                            target_task_ids = [task_ids]
+                        target_task_ids = parsed if isinstance(parsed, list) else [task_ids]
                     except (json.JSONDecodeError, ValueError):
-                        # Not JSON, treat as single task ID string
                         target_task_ids = [task_ids]
                 elif isinstance(task_ids, list):
                     target_task_ids = task_ids
                 else:
-                    # If it's neither string nor list, wrap it
                     target_task_ids = [task_ids]
             else:
-                return ToolResult(success=False, output="❌ Task IDs are required")
+                return ToolResult(success=False, output="❌ Task IDs required")
             
             sections, tasks = await self._load_data()
             section_map = {s.id: s for s in sections}
             task_map = {t.id: t for t in tasks}
             
-            # Validate all task IDs exist
             missing_tasks = [tid for tid in target_task_ids if tid not in task_map]
             if missing_tasks:
                 return ToolResult(success=False, output=f"❌ Task IDs not found: {missing_tasks}")
             
-            # Validate section ID if provided
             if section_id and section_id not in section_map:
                 return ToolResult(success=False, output=f"❌ Section ID '{section_id}' not found")
             
-            # Apply updates
-            updated_count = 0
             for tid in target_task_ids:
                 task = task_map[tid]
-                
                 if content is not None:
                     task.content = content
                 if status is not None:
                     task.status = TaskStatus(status)
                 if section_id is not None:
                     task.section_id = section_id
-                
-                updated_count += 1
             
             await self._save_data(sections, tasks)
-            
             response_data = self._format_response(sections, tasks)
             
             return ToolResult(success=True, output=json.dumps(response_data, indent=2))
@@ -626,7 +645,7 @@ class TaskListTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "delete_tasks",
-            "description": "Delete one or more tasks and/or sections. Can delete tasks by their IDs or sections by their IDs (which will also delete all tasks in those sections). IMPORTANT: Use this tool DURING execution when tasks become unnecessary, redundant, or if requirements change. Active task list management includes removing tasks that are no longer needed. This helps keep the task list clean and focused on actual work remaining. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `task_ids` (optional), `section_ids` (optional), `confirm` (optional, required when deleting sections).",
+            "description": "Remove tasks or sections that are no longer needed. Use during execution when tasks become unnecessary or redundant. Keeps task list clean and focused.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -635,18 +654,18 @@ class TaskListTool(SandboxToolsBase):
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "**OPTIONAL** - Task ID (string) or array of task IDs to delete. CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
+                        "description": "Task ID(s) to delete"
                     },
                     "section_ids": {
                         "oneOf": [
                             {"type": "string"},
                             {"type": "array", "items": {"type": "string"}, "minItems": 1}
                         ],
-                        "description": "**OPTIONAL** - Section ID (string) or array of section IDs to delete (will also delete all tasks in these sections). CRITICAL: If passing an array, it MUST be an actual array of strings (not a JSON string)."
+                        "description": "Section ID(s) to delete (deletes all tasks in section)"
                     },
                     "confirm": {
                         "type": "boolean",
-                        "description": "**OPTIONAL** - Must be true to confirm deletion of sections. Required when deleting sections."
+                        "description": "Must be true to delete sections"
                     }
                 },
                 "required": [],
@@ -655,32 +674,26 @@ class TaskListTool(SandboxToolsBase):
         }
     })
     async def delete_tasks(self, task_ids=None, section_ids=None, confirm: bool = False) -> ToolResult:
-        """Delete one or more tasks and/or sections"""
+        """Delete tasks and/or sections"""
         try:
-            # Validate that at least one of task_ids or section_ids is provided
             if not task_ids and not section_ids:
-                return ToolResult(success=False, output="❌ Must provide either task_ids or section_ids")
+                return ToolResult(success=False, output="❌ Provide task_ids or section_ids")
             
-            # Validate confirm parameter for section deletion
             if section_ids and not confirm:
-                return ToolResult(success=False, output="❌ Must set confirm=true to delete sections")
+                return ToolResult(success=False, output="❌ Set confirm=true to delete sections")
             
             sections, tasks = await self._load_data()
             section_map = {s.id: s for s in sections}
             task_map = {t.id: t for t in tasks}
             
-            # Process task deletions
-            deleted_tasks = 0
             remaining_tasks = tasks.copy()
+            remaining_sections = sections.copy()
+            
             if task_ids:
-                # Parse task_ids if it's a JSON string (can happen when LLM passes it as string)
                 if isinstance(task_ids, str):
                     try:
                         parsed = json.loads(task_ids)
-                        if isinstance(parsed, list):
-                            target_task_ids = parsed
-                        else:
-                            target_task_ids = [task_ids]
+                        target_task_ids = parsed if isinstance(parsed, list) else [task_ids]
                     except (json.JSONDecodeError, ValueError):
                         target_task_ids = [task_ids]
                 elif isinstance(task_ids, list):
@@ -688,28 +701,18 @@ class TaskListTool(SandboxToolsBase):
                 else:
                     target_task_ids = [task_ids]
                 
-                # Validate all task IDs exist
-                missing_tasks = [tid for tid in target_task_ids if tid not in task_map]
-                if missing_tasks:
-                    return ToolResult(success=False, output=f"❌ Task IDs not found: {missing_tasks}")
+                missing = [tid for tid in target_task_ids if tid not in task_map]
+                if missing:
+                    return ToolResult(success=False, output=f"❌ Task IDs not found: {missing}")
                 
-                # Remove tasks
                 task_id_set = set(target_task_ids)
-                remaining_tasks = [task for task in tasks if task.id not in task_id_set]
-                deleted_tasks = len(tasks) - len(remaining_tasks)
+                remaining_tasks = [t for t in tasks if t.id not in task_id_set]
             
-            # Process section deletions
-            deleted_sections = 0
-            remaining_sections = sections.copy()
             if section_ids:
-                # Parse section_ids if it's a JSON string (can happen when LLM passes it as string)
                 if isinstance(section_ids, str):
                     try:
                         parsed = json.loads(section_ids)
-                        if isinstance(parsed, list):
-                            target_section_ids = parsed
-                        else:
-                            target_section_ids = [section_ids]
+                        target_section_ids = parsed if isinstance(parsed, list) else [section_ids]
                     except (json.JSONDecodeError, ValueError):
                         target_section_ids = [section_ids]
                 elif isinstance(section_ids, list):
@@ -717,38 +720,34 @@ class TaskListTool(SandboxToolsBase):
                 else:
                     target_section_ids = [section_ids]
                 
-                # Validate all section IDs exist
-                missing_sections = [sid for sid in target_section_ids if sid not in section_map]
-                if missing_sections:
-                    return ToolResult(success=False, output=f"❌ Section IDs not found: {missing_sections}")
+                missing = [sid for sid in target_section_ids if sid not in section_map]
+                if missing:
+                    return ToolResult(success=False, output=f"❌ Section IDs not found: {missing}")
                 
-                # Remove sections and their tasks
                 section_id_set = set(target_section_ids)
                 remaining_sections = [s for s in sections if s.id not in section_id_set]
                 remaining_tasks = [t for t in remaining_tasks if t.section_id not in section_id_set]
-                deleted_sections = len(sections) - len(remaining_sections)
             
             await self._save_data(remaining_sections, remaining_tasks)
-            
             response_data = self._format_response(remaining_sections, remaining_tasks)
             
             return ToolResult(success=True, output=json.dumps(response_data, indent=2))
             
         except Exception as e:
-            logger.error(f"Error deleting tasks/sections: {e}")
-            return ToolResult(success=False, output=f"❌ Error deleting tasks/sections: {str(e)}")
+            logger.error(f"Error deleting: {e}")
+            return ToolResult(success=False, output=f"❌ Error deleting: {str(e)}")
 
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "clear_all",
-            "description": "Clear all tasks and sections (creates completely empty state). **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `confirm` (REQUIRED).",
+            "description": "Reset task list to empty state. Use when starting fresh or abandoning current plan.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "confirm": {
                         "type": "boolean",
-                        "description": "**REQUIRED** - Must be true to confirm clearing everything."
+                        "description": "**REQUIRED** - Must be true to confirm"
                     }
                 },
                 "required": ["confirm"],
@@ -757,21 +756,21 @@ class TaskListTool(SandboxToolsBase):
         }
     })
     async def clear_all(self, confirm: bool) -> ToolResult:
-        """Clear everything and start fresh"""
+        """Clear all tasks and sections"""
         try:
             if not confirm:
-                return ToolResult(success=False, output="❌ Must set confirm=true to clear all data")
+                return ToolResult(success=False, output="❌ Set confirm=true to clear")
             
-            # Create completely empty state - no default section
-            sections = []
-            tasks = []
-            
-            await self._save_data(sections, tasks)
-            
-            response_data = self._format_response(sections, tasks)
-            
-            return ToolResult(success=True, output=json.dumps(response_data, indent=2))
+            await self._save_data([], [])
+            return ToolResult(success=True, output=json.dumps({
+                "sections": [],
+                "total_tasks": 0,
+                "completed_tasks": 0,
+                "pending_tasks": 0,
+                "progress_percent": 0,
+                "total_sections": 0
+            }, indent=2))
             
         except Exception as e:
-            logger.error(f"Error clearing all data: {e}")
-            return ToolResult(success=False, output=f"❌ Error clearing all data: {str(e)}")
+            logger.error(f"Error clearing: {e}")
+            return ToolResult(success=False, output=f"❌ Error clearing: {str(e)}")

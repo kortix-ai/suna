@@ -42,6 +42,7 @@ from core.admin.notification_admin_api import router as notification_admin_route
 from core.admin.analytics_admin_api import router as analytics_admin_router
 from core.admin.stress_test_admin_api import router as stress_test_admin_router
 from core.admin.system_status_admin_api import router as system_status_admin_router
+from core.admin.sandbox_pool_admin_api import router as sandbox_pool_admin_router
 from core.endpoints.system_status_api import router as system_status_router
 from core.services import transcription as transcription_api
 import sys
@@ -49,6 +50,7 @@ from core.triggers import api as triggers_api
 from core.services import api_keys_api
 from core.notifications import api as notifications_api
 from core.services.orphan_cleanup import cleanup_orphaned_agent_runs
+from auth import api as auth_api
 
 
 if sys.platform == "win32":
@@ -64,9 +66,10 @@ instance_id = INSTANCE_ID  # Keep backward compatibility
 ip_tracker = OrderedDict()
 MAX_CONCURRENT_IPS = 25
 
-# Background task handle for CloudWatch metrics
+# Background task handles
 _worker_metrics_task = None
 _memory_watchdog_task = None
+_stream_cleanup_task = None
 
 # Graceful shutdown flag for health checks
 # When True, health check will return unhealthy to stop receiving traffic
@@ -74,7 +77,7 @@ _is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _worker_metrics_task, _memory_watchdog_task, _is_shutting_down
+    global _worker_metrics_task, _memory_watchdog_task, _stream_cleanup_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
@@ -82,6 +85,13 @@ async def lifespan(app: FastAPI):
         
         from core.services.db import init_db
         await init_db()
+
+        try:
+            from core.services.db import execute_one
+            await execute_one("SELECT 1", {})
+            logger.debug("Database connection pool warmed up")
+        except Exception as e:
+            logger.warning(f"Failed to warm up database connection pool: {e}")
         
         # Pre-load tool classes and schemas to avoid first-request delay
         from core.utils.tool_discovery import warm_up_tools_cache
@@ -93,26 +103,29 @@ async def lifespan(app: FastAPI):
         
         sandbox_api.initialize(db)
         
-        # Initialize Redis connection
         from core.services import redis
         try:
             await redis.initialize_async()
             logger.debug("Redis connection initialized successfully")
+            try:
+                tier_keys = await redis.scan_keys("tier_info:*")
+                sub_keys = await redis.scan_keys("subscription_tier:*")
+                all_keys = tier_keys + sub_keys
+                if all_keys:
+                    for key in all_keys:
+                        await redis.delete(key)
+                    logger.info(f"[STARTUP] Cleared {len(all_keys)} tier caches to pick up config changes")
+            except Exception as e:
+                logger.warning(f"[STARTUP] Failed to clear tier caches: {e}")
+                
         except Exception as e:
             logger.error(f"Failed to initialize Redis connection: {e}")
-            # Continue without Redis - the application will handle Redis failures gracefully
-        
-        # ===== Cleanup orphaned agent runs from previous instance =====
-        # On startup, ALL runs with status='running' are orphans from the previous instance
-        # Also cleans up orphaned Redis streams without matching DB records
+
         try:
             client = await db.client
             await cleanup_orphaned_agent_runs(client)
         except Exception as e:
             logger.error(f"Failed to cleanup orphaned agent runs on startup: {e}")
-        
-        # Start background tasks
-        # asyncio.create_task(core_api.restore_running_agent_runs())
         
         triggers_api.initialize(db)
         credentials_api.initialize(db)
@@ -124,8 +137,23 @@ async def lifespan(app: FastAPI):
             from core.services import worker_metrics
             _worker_metrics_task = asyncio.create_task(worker_metrics.start_cloudwatch_publisher())
         
+        # Start Redis stream cleanup task (catches orphaned streams with no TTL)
+        from core.services import worker_metrics
+        _stream_cleanup_task = asyncio.create_task(worker_metrics.start_stream_cleanup_task())
+        
         # Start memory watchdog for observability
         _memory_watchdog_task = asyncio.create_task(_memory_watchdog())
+        
+        # Start sandbox pool service (maintains pre-warmed sandboxes)
+        from core.sandbox.pool_background import start_pool_service
+        asyncio.create_task(start_pool_service())
+        
+        # Initialize stateless pipeline (if enabled)
+        from core.agents.runner.executor import USE_STATELESS_PIPELINE
+        if USE_STATELESS_PIPELINE:
+            from core.agents.pipeline.stateless import lifecycle
+            await lifecycle.initialize()
+            logger.info("[STARTUP] Stateless pipeline initialized")
         
         yield
 
@@ -139,7 +167,7 @@ async def lifespan(app: FastAPI):
         
         # ===== CRITICAL: Stop all running agent runs on this instance =====
         from core.agents.api import _cancellation_events
-        from core.agents.runner.agent_runner import update_agent_run_status
+        from core.agents.runner import update_agent_run_status
         
         active_run_ids = list(_cancellation_events.keys())
         if active_run_ids:
@@ -179,6 +207,13 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("No active agent runs to stop on shutdown")
         
+        # Shutdown stateless pipeline (if enabled)
+        from core.agents.runner.executor import USE_STATELESS_PIPELINE
+        if USE_STATELESS_PIPELINE:
+            from core.agents.pipeline.stateless import lifecycle
+            await lifecycle.shutdown()
+            logger.info("[SHUTDOWN] Stateless pipeline shutdown complete")
+        
         logger.debug("Cleaning up resources")
         
         # Stop CloudWatch worker metrics task
@@ -196,6 +231,10 @@ async def lifespan(app: FastAPI):
                 await _memory_watchdog_task
             except asyncio.CancelledError:
                 pass
+        
+        # Stop sandbox pool service
+        from core.sandbox.pool_background import stop_pool_service
+        await stop_pool_service()
         
         try:
             logger.debug("Closing Redis connection")
@@ -311,6 +350,7 @@ api_router.include_router(notification_admin_router)
 api_router.include_router(analytics_admin_router)
 api_router.include_router(stress_test_admin_router)
 api_router.include_router(system_status_admin_router)
+api_router.include_router(sandbox_pool_admin_router)
 api_router.include_router(system_status_router)
 
 from core.mcp_module import api as mcp_api
@@ -324,6 +364,9 @@ api_router.include_router(template_api.router, prefix="/templates")
 api_router.include_router(presentations_api.router, prefix="/presentation-templates")
 
 api_router.include_router(transcription_api.router)
+
+from core.services import voice_generation as voice_api
+api_router.include_router(voice_api.router)
 
 from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
@@ -358,6 +401,11 @@ api_router.include_router(staged_files_router, prefix="/files")
 
 from core.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)
+
+from core.admin.stateless_admin_api import router as stateless_admin_router
+api_router.include_router(stateless_admin_router)
+# Auth OTP endpoint for expired magic links
+api_router.include_router(auth_api.router)
 
 @api_router.get("/health", summary="Health Check", operation_id="health_check", tags=["system"])
 async def health_check():
@@ -473,15 +521,16 @@ app.include_router(api_router, prefix="/v1")
 
 
 async def _memory_watchdog():
-    """Monitor worker memory usage and log warnings when thresholds are exceeded.
+    """Monitor worker memory and detect stale agent runs.
     
     Dynamically calculates per-worker memory limit based on total RAM and worker count.
-    Thresholds: Critical (>87%), Warning (>80%), Info (>67%)
+    Also tracks _cancellation_events and lifecycle_tracker for cleanup failure detection.
     """
+    import time as time_module
+    
     # Calculate per-worker memory limit dynamically
     workers = int(os.getenv("WORKERS", "16"))
     total_ram_mb = psutil.virtual_memory().total / 1024 / 1024
-    # Reserve 20% for OS/system, divide rest among workers
     per_worker_limit_mb = (total_ram_mb * 0.8) / workers
     
     critical_threshold_mb = per_worker_limit_mb * 0.87
@@ -501,20 +550,58 @@ async def _memory_watchdog():
                 mem_mb = mem_info.rss / 1024 / 1024
                 mem_percent = (mem_mb / per_worker_limit_mb) * 100
                 
+                # === NEW: Cleanup state tracking ===
+                from core.agents.api import _cancellation_events
+                try:
+                    from core.utils.lifecycle_tracker import get_active_runs
+                    active_runs = get_active_runs()
+                    stale_runs = [
+                        rid for rid, start in active_runs.items() 
+                        if (time_module.time() - start) > 3600  # > 1 hour
+                    ]
+                except ImportError:
+                    active_runs = {}
+                    stale_runs = []
+                
+                cancellation_count = len(_cancellation_events)
+                active_count = len(active_runs)
+                stale_count = len(stale_runs)
+                
+                # Always log cleanup state if there are issues
+                if stale_count > 0 or cancellation_count > 10:
+                    logger.warning(
+                        f"[WATCHDOG] mem={mem_mb:.0f}MB "
+                        f"cancellation_events={cancellation_count} "
+                        f"active_runs={active_count} "
+                        f"stale_runs={stale_count} "
+                        f"instance={instance_id}"
+                    )
+                    if stale_runs:
+                        logger.warning(f"[WATCHDOG] stale_run_ids={stale_runs[:5]}")
+                # === END NEW ===
+                
+                # Existing memory threshold logging
                 if mem_mb > critical_threshold_mb:
                     logger.error(
-                        f"🚨 CRITICAL: Worker memory {mem_mb:.0f}MB ({mem_percent:.1f}% of {per_worker_limit_mb:.0f}MB limit) "
-                        f"(instance: {instance_id})"
+                        f"🚨 CRITICAL: Worker memory {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"cancellation_events={cancellation_count} "
+                        f"active_runs={active_count} "
+                        f"instance={instance_id}"
                     )
                     import gc
                     gc.collect()
                 elif mem_mb > warning_threshold_mb:
                     logger.warning(
                         f"⚠️ Worker memory high: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
-                        f"(instance: {instance_id})"
+                        f"cancellation_events={cancellation_count} "
+                        f"instance={instance_id}"
                     )
                 elif mem_mb > info_threshold_mb:
-                    logger.info(f"Worker memory: {mem_mb:.0f}MB ({mem_percent:.1f}%) (instance: {instance_id})")
+                    logger.info(
+                        f"Worker memory: {mem_mb:.0f}MB ({mem_percent:.1f}%) "
+                        f"cancellation_events={cancellation_count} "
+                        f"instance={instance_id}"
+                    )
                 
             except Exception as e:
                 logger.debug(f"Memory watchdog error: {e}")

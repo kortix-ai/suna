@@ -333,40 +333,31 @@ class ContextManager:
     
     def is_tool_result_message(self, msg: Dict[str, Any]) -> bool:
         """Check if a message is a tool result message.
-        
+
         Detects tool results from:
-        1. Native tool calls: role="tool" 
+        1. Native tool calls: role="tool"
         2. Native tool calls: has tool_call_id field
-        3. XML tool calls: role="user" with JSON content containing tool result structure
+        3. XML tool calls: role="user" ONLY if explicitly marked in metadata
         """
         if not isinstance(msg, dict):
             return False
-        
+
         # Native tool calls have role="tool"
         if msg.get('role') == 'tool':
             return True
-        
-        # Native tool calls have tool_call_id
+
+        # Native tool calls have tool_call_id at top level
         if 'tool_call_id' in msg:
             return True
-        
-        # XML tool calls have role="user" - check if content looks like a tool result
+
+        # CONSERVATIVE CHECK: For role="user", only consider it a tool result if:
+        # 1. It has explicit tool_call_id in metadata (indicating it's a saved tool result)
+        # This prevents false positives that break message validation
         if msg.get('role') == 'user':
-            content = msg.get('content')
-            if isinstance(content, str):
-                # Check if content is JSON (tool results are often JSON)
-                try:
-                    parsed = json.loads(content)
-                    # Tool results typically have success/output/error structure or specific tool fields
-                    if isinstance(parsed, dict):
-                        # Check for common tool result indicators
-                        if 'success' in parsed or 'output' in parsed or 'error' in parsed:
-                            return True
-                        if 'interactive_elements' in parsed:
-                            return True
-                except (json.JSONDecodeError, TypeError):
-                    pass
-        
+            metadata = msg.get('metadata', {})
+            if isinstance(metadata, dict) and 'tool_call_id' in metadata:
+                return True
+
         return False
     
     def get_tool_call_ids_from_message(self, msg: Dict[str, Any]) -> List[str]:
@@ -391,20 +382,25 @@ class ContextManager:
     
     def get_tool_call_id_from_result(self, msg: Dict[str, Any]) -> Optional[str]:
         """Extract the tool_call_id from a tool result message.
-        
+
         Returns the tool_call_id, or None if not a tool result message.
         """
         if not isinstance(msg, dict):
             return None
-        
-        # Native tool results have tool_call_id directly
+
+        # Native tool results have tool_call_id directly at top level
         if 'tool_call_id' in msg:
             return msg.get('tool_call_id')
-        
+
         # role="tool" messages should have tool_call_id
         if msg.get('role') == 'tool':
             return msg.get('tool_call_id')
-        
+
+        # Check metadata for tool_call_id (XML tool results or saved tool results)
+        metadata = msg.get('metadata', {})
+        if isinstance(metadata, dict) and 'tool_call_id' in metadata:
+            return metadata.get('tool_call_id')
+
         return None
     
     def group_messages_by_tool_calls(self, messages: List[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
@@ -562,6 +558,56 @@ class ContextManager:
         
         return is_valid, orphaned_tool_result_ids, unanswered_tool_call_ids
     
+    def needs_tool_ordering_repair(self, messages: List[Dict[str, Any]]) -> bool:
+        """Fast O(n) check if messages have tool ordering issues. Exits early in common case.
+        
+        This is a lightweight pre-check that detects if user messages interrupt the
+        tool_use -> tool_result flow. Only returns True if a problem is detected, allowing
+        callers to skip expensive full validation in the common case.
+        
+        Args:
+            messages: List of messages to check
+            
+        Returns:
+            True if tool ordering issues detected (needs repair), False otherwise
+        """
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                continue
+            
+            # Check if this is an assistant with tool_calls
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            if not tool_call_ids:
+                continue
+            
+            # Check if immediately following messages are the expected tool results
+            expected_count = len(tool_call_ids)
+            found_tool_call_ids = set()
+            
+            for j in range(i + 1, min(i + 1 + expected_count + 1, len(messages))):
+                next_msg = messages[j] if j < len(messages) else None
+                if not next_msg:
+                    # Missing tool results - needs repair
+                    return True
+                
+                # If we hit a user message (not tool result) before all results, needs repair
+                if next_msg.get('role') == 'user' and not self.is_tool_result_message(next_msg):
+                    return True
+                
+                # Check if it's a tool result for one of our tool_calls
+                tc_id = self.get_tool_call_id_from_result(next_msg)
+                if tc_id and tc_id in tool_call_ids:
+                    found_tool_call_ids.add(tc_id)
+                elif not self.is_tool_result_message(next_msg):
+                    # Non-tool-result message interrupting the flow
+                    return True
+            
+            # If we didn't find all expected tool results, needs repair
+            if len(found_tool_call_ids) < expected_count:
+                return True
+        
+        return False  # No issues found
+    
     def remove_orphaned_tool_results(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Remove orphaned tool results that have no matching assistant message.
         
@@ -672,31 +718,204 @@ class ContextManager:
     
     def repair_tool_call_pairing(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Repair both directions of tool call pairing issues.
-        
+
         This handles:
         1. Orphaned tool results (tool results without matching assistant) - removed
         2. Unanswered tool calls (assistant tool_calls without matching results) - removed/fixed
-        
+
         Args:
             messages: List of messages
-            
+
         Returns:
             Messages with all tool call pairing issues fixed
         """
         # Fix orphaned tool results first
         result = self.remove_orphaned_tool_results(messages)
-        
+
         # Then fix unanswered tool calls
         result = self.remove_unanswered_tool_calls(result)
-        
+
         # Validate the result
         is_valid, orphaned, unanswered = self.validate_tool_call_pairing(result)
-        
+
         if not is_valid:
             logger.error(f"🚨 CRITICAL: Could not fully repair message structure. Orphaned: {len(orphaned)}, Unanswered: {len(unanswered)}")
         else:
             logger.info(f"✅ Message structure successfully repaired")
-        
+
+        return result
+
+    def validate_tool_call_ordering(self, messages: List[Dict[str, Any]]) -> tuple[bool, List[str], List[str]]:
+        """Validate that tool results immediately follow their assistant tool_calls.
+
+        Some LLM providers (like Minimax) require tool results to appear right after
+        the assistant message that made the tool_call, not separated by other messages.
+
+        Args:
+            messages: List of messages to validate
+
+        Returns:
+            Tuple of (is_valid, out_of_order_tool_call_ids, out_of_order_tool_result_ids)
+        """
+        out_of_order_tool_call_ids: List[str] = []
+        out_of_order_tool_result_ids: List[str] = []
+
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                continue
+
+            # Get tool_calls from this message
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            if not tool_call_ids:
+                continue
+
+            # Check that the next N messages are tool results for these tool_calls
+            expected_count = len(tool_call_ids)
+            found_tool_call_ids = set()
+
+            for j in range(i + 1, min(i + 1 + expected_count, len(messages))):
+                next_msg = messages[j]
+                if not isinstance(next_msg, dict):
+                    break
+
+                tc_id = self.get_tool_call_id_from_result(next_msg)
+                if tc_id and tc_id in tool_call_ids:
+                    found_tool_call_ids.add(tc_id)
+                else:
+                    break  # Non-matching message found
+
+            # Any tool_calls not found in the immediate next messages are out-of-order
+            missing = set(tool_call_ids) - found_tool_call_ids
+            if missing:
+                out_of_order_tool_call_ids.extend(missing)
+
+        # Now find the tool results for these out-of-order tool_calls
+        out_of_order_set = set(out_of_order_tool_call_ids)
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            tc_id = self.get_tool_call_id_from_result(msg)
+            if tc_id and tc_id in out_of_order_set:
+                out_of_order_tool_result_ids.append(tc_id)
+
+        is_valid = len(out_of_order_tool_call_ids) == 0
+
+        if not is_valid:
+            logger.error(f"🚨 ORDERING VALIDATION FAILED: {len(out_of_order_tool_call_ids)} tool_calls have delayed results: {out_of_order_tool_call_ids}")
+
+        return is_valid, out_of_order_tool_call_ids, out_of_order_tool_result_ids
+
+    def remove_out_of_order_tool_pairs(self, messages: List[Dict[str, Any]], out_of_order_ids: List[str]) -> List[Dict[str, Any]]:
+        """Remove assistant tool_calls and their delayed tool results that are out of order.
+
+        Args:
+            messages: List of messages
+            out_of_order_ids: List of tool_call_ids that are out of order
+
+        Returns:
+            Messages with out-of-order tool pairs removed/fixed
+        """
+        if not out_of_order_ids:
+            return messages
+
+        out_of_order_set = set(out_of_order_ids)
+        result = []
+        removed_count = 0
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                result.append(msg)
+                continue
+
+            # Remove tool results for out-of-order tool_calls
+            tc_id = self.get_tool_call_id_from_result(msg)
+            if tc_id and tc_id in out_of_order_set:
+                logger.warning(f"🗑️ Removing out-of-order tool result: tool_call_id={tc_id}")
+                removed_count += 1
+                continue
+
+            # Remove tool_calls from assistant messages that are out of order
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            if tool_call_ids:
+                remaining_ids = [tc_id for tc_id in tool_call_ids if tc_id not in out_of_order_set]
+                removed_ids = [tc_id for tc_id in tool_call_ids if tc_id in out_of_order_set]
+
+                if removed_ids:
+                    logger.warning(f"🗑️ Removing out-of-order tool_calls: {removed_ids}")
+                    removed_count += len(removed_ids)
+
+                    if not remaining_ids:
+                        # All tool_calls were removed, check if message has content
+                        content = msg.get('content')
+                        if content and content != []:
+                            # Keep the message but remove tool_calls
+                            new_msg = {k: v for k, v in msg.items() if k != 'tool_calls'}
+                            result.append(new_msg)
+                        else:
+                            # No content, skip the entire message
+                            continue
+                    else:
+                        # Keep only the remaining tool_calls
+                        new_msg = msg.copy()
+                        new_tool_calls = [tc for tc in msg.get('tool_calls', []) if tc.get('id') not in out_of_order_set]
+                        new_msg['tool_calls'] = new_tool_calls
+                        result.append(new_msg)
+                    continue
+
+            result.append(msg)
+
+        if removed_count > 0:
+            logger.info(f"🔧 Removed {removed_count} out-of-order tool call/result pairs")
+
+        return result
+
+    def strip_all_tool_content_as_fallback(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """EMERGENCY FALLBACK: Strip all tool-related content if repair completely fails.
+
+        This is a last-resort method that removes:
+        1. All tool result messages (role="tool")
+        2. All tool_calls from assistant messages
+        3. Any message with tool_call_id
+
+        This ensures the LLM can at least continue with a clean message history,
+        even if it means losing tool call context.
+
+        Args:
+            messages: List of messages
+
+        Returns:
+            Messages with all tool content stripped
+        """
+        logger.warning("🚨 EMERGENCY FALLBACK: Stripping all tool content from messages")
+
+        result = []
+        stripped_count = 0
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                result.append(msg)
+                continue
+
+            # Skip tool result messages entirely
+            if msg.get('role') == 'tool' or 'tool_call_id' in msg:
+                stripped_count += 1
+                continue
+
+            # For assistant messages, remove tool_calls
+            if msg.get('role') == 'assistant' and msg.get('tool_calls'):
+                clean_msg = msg.copy()
+                del clean_msg['tool_calls']
+                # Keep the message if it has content
+                if clean_msg.get('content'):
+                    result.append(clean_msg)
+                else:
+                    stripped_count += 1
+                continue
+
+            # Keep all other messages
+            result.append(msg)
+
+        logger.warning(f"🚨 EMERGENCY FALLBACK: Stripped {stripped_count} tool-related messages")
         return result
     
     def remove_old_tool_outputs(

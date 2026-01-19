@@ -1,4 +1,78 @@
 
+**0. Launching with Docker (Manual)**
+
+You can manually launch all Suna services using Docker Compose from the project root:
+
+```bash
+# From project root directory
+cd /path/to/suna
+```
+
+**0.1 Start all services**
+
+```bash
+# Start all services (Redis, Backend, Frontend, Worker)
+docker compose up -d
+
+# Or start specific services
+docker compose up -d redis backend frontend
+```
+
+**0.2 Start services individually**
+
+```bash
+# Start Redis only
+docker compose up -d redis
+
+# Start Backend (depends on Redis)
+docker compose up -d backend
+
+# Start Frontend (depends on Backend)
+docker compose up -d frontend
+
+# Start Worker (optional, for background tasks)
+docker compose up -d worker
+```
+
+**0.3 View logs**
+
+```bash
+# View all logs
+docker compose logs -f
+
+# View specific service logs
+docker compose logs -f backend
+docker compose logs -f frontend
+docker compose logs -f redis
+```
+
+**0.4 Stop services**
+
+```bash
+# Stop all services
+docker compose down
+
+# Stop and remove volumes           
+docker compose down -v
+```
+
+**0.5 Check status**
+
+```bash
+# Check running containers
+docker compose ps
+
+# Check all containers (including stopped)
+docker compose ps -a
+```
+
+**Access points:**
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:8000
+- Redis: localhost:6379
+
+---
+
 **1. Launching the backend**
 
 ```bash
@@ -15,22 +89,11 @@ docker compose up redis
 redis-server
 ```
 
-**1.2 Running the Worker**
-
-**NOTE: Worker process removed** - Agent runs now execute directly in the API process as async background tasks. Memory/categorization tasks also run directly.
-
-No separate worker process needed - just run the API:
-```bash
-uv run python api.py
-```
-📡 Consumer loop started
-```
-
 
 **1.3 Running the API**
 
 ```bash
-uv run api.py
+cd backend && uv run api.py
 ```
 
 ---

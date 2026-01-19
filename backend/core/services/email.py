@@ -304,4 +304,87 @@ Claim your invite: {referral_url}
 ---
 © Kortix AI Corp. All rights reserved."""
 
+    def send_otp_email(self, user_email: str, otp_code: str) -> bool:
+        """Send an OTP-only email (no magic link button) for users with expired links."""
+        if not self.client:
+            logger.error("Cannot send email: MAILTRAP_API_TOKEN not configured")
+            return False
+
+        subject = "Your Kortix verification code"
+        html_content = self._get_otp_email_template(otp_code)
+        text_content = self._get_otp_email_text(otp_code)
+
+        try:
+            mail = mt.Mail(
+                sender=mt.Address(email=self.sender_email, name=self.sender_name),
+                to=[mt.Address(email=user_email, name=user_email.split('@')[0].title())],
+                subject=subject,
+                text=text_content,
+                html=html_content,
+                category="otp"
+            )
+
+            response = self.client.send(mail)
+            logger.info(f"OTP email sent to {user_email}. Response: {response}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Error sending OTP email to {user_email}: {str(e)}")
+            return False
+
+    def _get_otp_email_template(self, otp_code: str) -> str:
+        return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your verification code</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #fafafa; color: #1a1a1a;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 520px; margin: 0 auto; padding: 40px 20px;">
+    <tr>
+      <td>
+        <div style="text-align: center; margin-bottom: 40px;">
+          <img src="https://kortix.com/Logomark.svg" alt="Kortix" style="height: 24px; width: auto; display: inline-block;" />
+        </div>
+        <div style="background-color: #ffffff; border-radius: 16px; padding: 40px 32px; text-align: center;">
+          <h1 style="font-size: 24px; font-weight: 500; color: #000; margin: 0 0 16px 0; letter-spacing: -0.02em;">
+            Your verification code
+          </h1>
+          <p style="font-size: 15px; line-height: 22px; color: #666; margin: 0 0 32px 0;">
+            Enter this code to sign in to your account:
+          </p>
+          <div style="background-color: #f5f5f5; border-radius: 12px; padding: 24px; margin-bottom: 32px;">
+            <p style="font-size: 36px; font-weight: 600; letter-spacing: 8px; color: #000; margin: 0; font-family: 'Courier New', monospace;">
+              {otp_code}
+            </p>
+          </div>
+          <p style="font-size: 13px; line-height: 18px; color: #999; margin: 0;">
+            This code expires in 1 hour. If you didn't request this, you can safely ignore this email.
+          </p>
+        </div>
+        <div style="text-align: center; margin-top: 32px;">
+          <p style="font-size: 12px; color: #999; margin: 0;">
+            &copy; Kortix AI Corp. All rights reserved.
+          </p>
+        </div>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+
+    def _get_otp_email_text(self, otp_code: str) -> str:
+        return f"""Your Kortix verification code
+
+Enter this code to sign in to your account:
+
+{otp_code}
+
+This code expires in 1 hour. If you didn't request this, you can safely ignore this email.
+
+---
+© Kortix AI Corp. All rights reserved."""
+
+
 email_service = EmailService() 

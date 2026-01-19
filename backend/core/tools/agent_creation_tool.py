@@ -894,9 +894,17 @@ class AgentCreationTool(Tool):
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
             
+            actual_agent_id = agent_id
+            if agent_id == "default":
+                from core.agents import repo as agents_repo
+                actual_agent_id = await agents_repo.get_default_agent_id(account_id)
+                if not actual_agent_id:
+                    return self.fail_response("No default agent found for this account")
+                logger.debug(f"Resolved 'default' agent_id to: {actual_agent_id}")
+            
             client = await self.db.client
             
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
+            agent_result = await client.table('agents').select('*').eq('agent_id', actual_agent_id).eq('account_id', account_id).execute()
             if not agent_result.data:
                 return self.fail_response("Worker not found or access denied")
             
@@ -942,7 +950,7 @@ class AgentCreationTool(Tool):
             
             new_mcp_config = {
                 'name': profile.toolkit_name,
-                'type': 'composio',
+                'customType': 'composio',
                 'config': {
                     'profile_id': profile.profile_id,
                     'toolkit_slug': profile.toolkit_slug,
@@ -963,7 +971,7 @@ class AgentCreationTool(Tool):
             version_service = await get_version_service()
             
             new_version = await version_service.create_version(
-                agent_id=agent_id,
+                agent_id=actual_agent_id,
                 user_id=account_id,
                 system_prompt=current_config.get('system_prompt', ''),
                 model=current_config.get('model'),
@@ -976,7 +984,7 @@ class AgentCreationTool(Tool):
             await client.table('agents').update({
                 'current_version_id': new_version.version_id,
                 'version_count': agent_data['version_count'] + 1
-            }).eq('agent_id', agent_id).execute()
+            }).eq('agent_id', actual_agent_id).execute()
             
             try:
                 from core.tools.mcp_tool_wrapper import MCPToolWrapper

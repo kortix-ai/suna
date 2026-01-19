@@ -37,11 +37,17 @@ def needs_migration(message: Dict[str, Any]) -> bool:
         
         # Needs migration if:
         # 1. Missing tool_calls in metadata AND has XML tool calls in content
-        # 2. Missing text_content in metadata AND has content
+        # 2. Missing text_content in metadata AND has extractable text (not just tool calls)
         if has_xml_tool_calls and not has_tool_calls:
             return True
-        if content_str and not has_text_content:
-            return True
+        
+        # Only need migration for text_content if there's actual text to extract
+        # (not just XML tool calls that would strip to empty)
+        if not has_text_content and content_str:
+            # Check if there's extractable text after stripping tool calls
+            stripped = strip_xml_tool_calls(content_str) if has_xml_tool_calls else content_str
+            if stripped.strip():
+                return True
             
         # Also check for native tool calls
         native_tool_calls = content.get('tool_calls') if isinstance(content, dict) else None

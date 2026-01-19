@@ -1848,9 +1848,9 @@ async def websocket_pty_terminal(
             await websocket.close()
             return
         
-        from core.utils.auth_utils import _decode_jwt_with_verification
+        from core.utils.auth_utils import _decode_jwt_with_verification_async
         try:
-            decoded = _decode_jwt_with_verification(access_token)
+            decoded = await _decode_jwt_with_verification_async(access_token)
             user_id = decoded.get("sub")
             if not user_id:
                 raise ValueError("No user ID in token")
@@ -2008,4 +2008,131 @@ async def smart_rename_files(
         raise
     except Exception as e:
         logger.error(f"Error in smart rename for sandbox {sandbox_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# Sandbox Pool Monitoring Endpoints
+# ============================================================================
+
+@router.get("/sandbox-pool/stats")
+async def get_sandbox_pool_stats(
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """
+    Get sandbox pool statistics (admin only).
+    
+    Returns:
+        - pool_size: Current number of available sandboxes in pool
+        - total_created: Total sandboxes created by pool service
+        - total_claimed: Total sandboxes claimed from pool
+        - total_expired: Total sandboxes cleaned up due to age
+        - avg_claim_time_ms: Average time to claim a sandbox
+        - pool_hit_rate: Percentage of requests served from pool
+        - last_replenish_at: When pool was last replenished
+        - last_cleanup_at: When stale sandboxes were last cleaned
+    """
+    try:
+        # Check if user is admin
+        client = await db.client
+        
+        # Get user's account role
+        account_user_result = await client.schema('basejump').from_('account_user').select(
+            'account_role'
+        ).eq('user_id', user_id).execute()
+        
+        is_admin = False
+        if account_user_result.data:
+            for row in account_user_result.data:
+                if row.get('account_role') == 'owner':
+                    is_admin = True
+                    break
+        
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        from core.sandbox.pool_service import get_pool_service
+        from core.sandbox.pool_config import get_pool_config
+        from core.sandbox import pool_repo
+        
+        service = get_pool_service()
+        config = get_pool_config()
+        
+        # Get current pool size from database
+        pool_size = await pool_repo.get_pool_size()
+        
+        stats = service.get_stats()
+        stats['pool_size'] = pool_size  # Use fresh count
+        
+        # Add config info
+        stats['config'] = {
+            'enabled': config.enabled,
+            'min_size': config.min_size,
+            'max_size': config.max_size,
+            'replenish_threshold': config.replenish_threshold,
+            'check_interval': config.check_interval,
+            'max_age': config.max_age,
+        }
+        
+        return stats
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting sandbox pool stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sandbox-pool/replenish")
+async def trigger_pool_replenish(
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """
+    Manually trigger pool replenishment (admin only).
+    
+    Useful for testing or when you need to quickly fill the pool.
+    """
+    try:
+        # Check if user is admin
+        client = await db.client
+        
+        account_user_result = await client.schema('basejump').from_('account_user').select(
+            'account_role'
+        ).eq('user_id', user_id).execute()
+        
+        is_admin = False
+        if account_user_result.data:
+            for row in account_user_result.data:
+                if row.get('account_role') == 'owner':
+                    is_admin = True
+                    break
+        
+        if not is_admin:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        
+        from core.sandbox.pool_service import get_pool_service
+        from core.sandbox import pool_repo
+        
+        service = get_pool_service()
+        
+        # Get current size before
+        size_before = await pool_repo.get_pool_size()
+        
+        # Trigger replenishment
+        created = await service.ensure_pool_size()
+        
+        # Get size after
+        size_after = await pool_repo.get_pool_size()
+        
+        return {
+            "success": True,
+            "sandboxes_created": created,
+            "pool_size_before": size_before,
+            "pool_size_after": size_after,
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error triggering pool replenish: {e}")
         raise HTTPException(status_code=500, detail=str(e))

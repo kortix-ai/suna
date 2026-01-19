@@ -23,22 +23,27 @@ class CreditService:
     
     async def check_and_refresh_daily_credits(self, user_id: str) -> Tuple[bool, Decimal]:
         try:
+            logger.info(f"[DAILY REFRESH] Starting for {user_id}")
             client = await self._get_client()
-            
+
             account_result = await client.from_('credit_accounts').select('tier, last_daily_refresh').eq('account_id', user_id).execute()
-            
+
             if not account_result.data or len(account_result.data) == 0:
+                logger.info(f"[DAILY REFRESH] No account found for {user_id}")
                 return False, Decimal('0')
-            
+
             account = account_result.data[0]
             tier_name = account.get('tier', 'free')
-            
+
             tier = get_tier_by_name(tier_name)
             if not tier:
+                logger.info(f"[DAILY REFRESH] No tier found for {tier_name}")
                 return False, Decimal('0')
-            
+
             daily_config = tier.daily_credit_config
+            logger.info(f"[DAILY REFRESH] tier={tier_name}, daily_config={daily_config}")
             if not daily_config or not daily_config.get('enabled'):
+                logger.info(f"[DAILY REFRESH] Daily config not enabled for {tier_name}")
                 return False, Decimal('0')
             
             credit_amount = daily_config.get('amount', Decimal('0'))

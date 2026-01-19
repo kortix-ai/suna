@@ -159,7 +159,13 @@ python setup.py
 ```
 The wizard will guide you through 14 steps with progress saving, so you can resume if interrupted.
 
-### 3️⃣ Start the Platform
+**💡 Automatic Startup:** At the end of setup, you can choose to automatically start Kortix Super Worker. The setup wizard supports both:
+- **Docker mode**: Automatically starts all services via Docker Compose
+- **Manual mode**: Automatically starts services using `start.py` helper script
+
+If you choose automatic startup, your platform will be running immediately after setup completes!
+
+### 3️⃣ Start the Platform (if not started automatically)
 ```bash
 python start.py
 ```

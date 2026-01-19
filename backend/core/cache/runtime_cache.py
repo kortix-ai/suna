@@ -620,22 +620,32 @@ async def invalidate_message_history_cache(thread_id: str) -> None:
         logger.warning(f"Failed to invalidate message history cache: {e}")
 
 
-# ============================================================================
-# SUBSCRIPTION TIER CACHE - Long TTL since tiers only change on upgrade/downgrade
-# We invalidate explicitly when subscription changes, so safe to cache longer
-# ============================================================================
-TIER_INFO_TTL = 3600  # 1 hour - invalidated on subscription change
+async def append_to_cached_message_history(thread_id: str, message: dict) -> bool:
+    cache_key = _get_message_history_key(thread_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            messages = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
+            messages.append(message)
+            await redis_service.set(cache_key, _json_dumps(messages), ex=MESSAGE_HISTORY_TTL)
+            logger.debug(f"✅ Appended message to cached history: {thread_id} ({len(messages)} messages)")
+            return True
+    except Exception as e:
+        logger.warning(f"Failed to append to message history cache: {e}")
+    
+    return False
+
+
+TIER_INFO_TTL = 600
 
 def _get_tier_info_key(account_id: str) -> str:
-    """Generate Redis cache key for subscription tier info."""
     return f"tier_info:{account_id}"
 
 
 async def get_cached_tier_info(account_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Get subscription tier info from Redis cache.
-    Extended TTL since tiers rarely change mid-session.
-    """
     cache_key = _get_tier_info_key(account_id)
     
     try:
@@ -653,7 +663,6 @@ async def get_cached_tier_info(account_id: str) -> Optional[Dict[str, Any]]:
 
 
 async def set_cached_tier_info(account_id: str, tier_info: Dict[str, Any]) -> None:
-    """Cache subscription tier info in Redis."""
     cache_key = _get_tier_info_key(account_id)
     
     try:
@@ -665,11 +674,132 @@ async def set_cached_tier_info(account_id: str, tier_info: Dict[str, Any]) -> No
 
 
 async def invalidate_tier_info_cache(account_id: str) -> None:
-    """Invalidate cached tier info when subscription changes."""
     try:
         from core.services import redis as redis_service
         await redis_service.delete(_get_tier_info_key(account_id))
         logger.debug(f"🗑️ Invalidated tier info cache: {account_id}")
     except Exception as e:
         logger.warning(f"Failed to invalidate tier info cache: {e}")
+    
+    try:
+        from core.agents.pipeline.slot_manager import invalidate_tier_cache
+        await invalidate_tier_cache(account_id)
+    except Exception as e:
+        logger.warning(f"Failed to invalidate slot_manager tier cache: {e}")
 
+
+AGENT_RUN_STREAM_TTL = 3600
+
+def _get_agent_run_stream_key(agent_run_id: str) -> str:
+    return f"agent_run_stream:{agent_run_id}"
+
+
+async def set_agent_run_stream_data(
+    agent_run_id: str,
+    thread_id: str,
+    account_id: str,
+    status: str = "running",
+    metadata: Optional[Dict[str, Any]] = None
+) -> None:
+    cache_key = _get_agent_run_stream_key(agent_run_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        stream_data = {
+            "id": agent_run_id,
+            "thread_id": thread_id,
+            "thread_account_id": account_id,
+            "status": status,
+            "metadata": metadata or {},
+        }
+        await redis_service.set(cache_key, _json_dumps(stream_data), ex=AGENT_RUN_STREAM_TTL)
+        logger.debug(f"✅ Cached agent run stream data: {agent_run_id}")
+    except Exception as e:
+        logger.warning(f"Failed to cache agent run stream data: {e}")
+
+
+async def get_agent_run_stream_data(agent_run_id: str) -> Optional[Dict[str, Any]]:
+    cache_key = _get_agent_run_stream_key(agent_run_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
+            logger.debug(f"⚡ Redis cache hit for agent run stream: {agent_run_id}")
+            return data
+    except Exception as e:
+        logger.warning(f"Failed to get agent run stream data from cache: {e}")
+    
+    return None
+
+
+async def delete_agent_run_stream_data(agent_run_id: str) -> None:
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(_get_agent_run_stream_key(agent_run_id))
+        logger.debug(f"🗑️ Deleted agent run stream cache: {agent_run_id}")
+    except Exception as e:
+        logger.warning(f"Failed to delete agent run stream cache: {e}")
+
+
+PENDING_THREAD_TTL = 60
+
+def _get_pending_thread_key(thread_id: str) -> str:
+    return f"pending_thread:{thread_id}"
+
+
+async def set_pending_thread(
+    thread_id: str, 
+    project_id: str, 
+    account_id: str,
+    agent_run_id: str,
+    prompt: str
+) -> None:
+    cache_key = _get_pending_thread_key(thread_id)
+    
+    try:
+        from core.services import redis as redis_service
+        from datetime import datetime, timezone
+        
+        pending_data = {
+            "thread_id": thread_id,
+            "project_id": project_id,
+            "account_id": account_id,
+            "agent_run_id": agent_run_id,
+            "name": prompt[:50] + "..." if len(prompt) > 50 else prompt,
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        await redis_service.set(cache_key, _json_dumps(pending_data), ex=PENDING_THREAD_TTL)
+        logger.debug(f"✅ Cached pending thread: {thread_id}")
+    except Exception as e:
+        logger.warning(f"Failed to cache pending thread: {e}")
+
+
+async def get_pending_thread(thread_id: str) -> Optional[Dict[str, Any]]:
+    cache_key = _get_pending_thread_key(thread_id)
+    
+    try:
+        from core.services import redis as redis_service
+        
+        cached = await redis_service.get(cache_key)
+        if cached:
+            data = _json_loads(cached) if isinstance(cached, (str, bytes)) else cached
+            logger.debug(f"⚡ Redis cache hit for pending thread: {thread_id}")
+            return data
+    except Exception as e:
+        logger.warning(f"Failed to get pending thread from cache: {e}")
+    
+    return None
+
+
+async def delete_pending_thread(thread_id: str) -> None:
+    try:
+        from core.services import redis as redis_service
+        await redis_service.delete(_get_pending_thread_key(thread_id))
+        logger.debug(f"🗑️ Deleted pending thread cache: {thread_id}")
+    except Exception as e:
+        logger.warning(f"Failed to delete pending thread cache: {e}")

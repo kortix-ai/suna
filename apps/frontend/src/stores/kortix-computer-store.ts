@@ -28,6 +28,11 @@ function normalizeWorkspacePath(path: string): string {
 }
 
 interface KortixComputerState {
+  // === SANDBOX CONTEXT ===
+  // Track which sandbox the current file state belongs to
+  // This is the KEY to preventing stale state across thread switches
+  currentSandboxId: string | null;
+  
   // Main view state
   activeView: ViewType;
   
@@ -49,12 +54,17 @@ interface KortixComputerState {
   // Tool navigation state (for external tool click triggers)
   pendingToolNavIndex: number | null;
   
-  // Unsaved file content persistence
+  // Unsaved file content persistence (keyed by sandboxId:filePath)
   unsavedFileContent: Record<string, string>;
   // Unsaved state tracking (has user made edits?)
   unsavedFileState: Record<string, boolean>;
   
-  // Actions
+  // === ACTIONS ===
+  
+  // Set the current sandbox context - MUST be called when thread/sandbox changes
+  // This will clear file state if sandbox changed
+  setSandboxContext: (sandboxId: string | null) => void;
+  
   setActiveView: (view: ViewType) => void;
   
   // File browser actions
@@ -94,19 +104,28 @@ interface KortixComputerState {
   setUnsavedState: (filePath: string, hasUnsaved: boolean) => void;
   getUnsavedState: (filePath: string) => boolean;
   
-  // Reset state
+  // Reset all state (full reset)
   reset: () => void;
+  
+  // Clear only file-related state (keeps panel state)
+  clearFileState: () => void;
 }
 
-const initialState = {
-  activeView: 'tools' as ViewType,
+// Initial state for file-related fields only
+const initialFileState = {
   filesSubView: 'browser' as FilesSubView,
   currentPath: '/workspace',
-  selectedFilePath: null,
-  filePathList: undefined,
+  selectedFilePath: null as string | null,
+  filePathList: undefined as string[] | undefined,
   currentFileIndex: -1,
   selectedVersion: null as string | null,
   selectedVersionDate: null as string | null,
+};
+
+const initialState = {
+  currentSandboxId: null as string | null,
+  activeView: 'tools' as ViewType,
+  ...initialFileState,
   shouldOpenPanel: false,
   isSidePanelOpen: false,
   pendingToolNavIndex: null as number | null,
@@ -118,6 +137,30 @@ export const useKortixComputerStore = create<KortixComputerState>()(
   devtools(
     (set, get) => ({
       ...initialState,
+      
+      // === SANDBOX CONTEXT MANAGEMENT ===
+      // This is the primary mechanism for handling thread/sandbox switches
+      setSandboxContext: (sandboxId: string | null) => {
+        const currentSandboxId = get().currentSandboxId;
+        
+        // If sandbox changed, clear all file-related state
+        if (currentSandboxId !== sandboxId) {
+          console.log('[KortixComputerStore] Sandbox context changed:', currentSandboxId, '->', sandboxId);
+          set({
+            currentSandboxId: sandboxId,
+            // Reset all file state when sandbox changes
+            ...initialFileState,
+            activeView: 'tools', // Also reset to tools view
+          });
+        }
+      },
+      
+      clearFileState: () => {
+        console.log('[KortixComputerStore] Clearing file state');
+        set({
+          ...initialFileState,
+        });
+      },
       
       setActiveView: (view: ViewType) => {
         // If browser tab is hidden and trying to set browser view, default to tools
@@ -284,25 +327,37 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       setUnsavedContent: (filePath: string, content: string) => {
+        const { currentSandboxId } = get();
+        if (!currentSandboxId) return;
+        
         const normalizedPath = normalizeWorkspacePath(filePath);
+        const key = `${currentSandboxId}:${normalizedPath}`;
         set((state) => ({
           unsavedFileContent: {
             ...state.unsavedFileContent,
-            [normalizedPath]: content,
+            [key]: content,
           },
         }));
       },
       
       getUnsavedContent: (filePath: string) => {
+        const { currentSandboxId, unsavedFileContent } = get();
+        if (!currentSandboxId) return undefined;
+        
         const normalizedPath = normalizeWorkspacePath(filePath);
-        return get().unsavedFileContent[normalizedPath];
+        const key = `${currentSandboxId}:${normalizedPath}`;
+        return unsavedFileContent[key];
       },
       
       clearUnsavedContent: (filePath: string) => {
+        const { currentSandboxId } = get();
+        if (!currentSandboxId) return;
+        
         const normalizedPath = normalizeWorkspacePath(filePath);
+        const key = `${currentSandboxId}:${normalizedPath}`;
         set((state) => {
-          const { [normalizedPath]: _, ...restContent } = state.unsavedFileContent;
-          const { [normalizedPath]: __, ...restState } = state.unsavedFileState;
+          const { [key]: _, ...restContent } = state.unsavedFileContent;
+          const { [key]: __, ...restState } = state.unsavedFileState;
           return { 
             unsavedFileContent: restContent,
             unsavedFileState: restState,
@@ -311,21 +366,30 @@ export const useKortixComputerStore = create<KortixComputerState>()(
       },
       
       setUnsavedState: (filePath: string, hasUnsaved: boolean) => {
+        const { currentSandboxId } = get();
+        if (!currentSandboxId) return;
+        
         const normalizedPath = normalizeWorkspacePath(filePath);
+        const key = `${currentSandboxId}:${normalizedPath}`;
         set((state) => ({
           unsavedFileState: {
             ...state.unsavedFileState,
-            [normalizedPath]: hasUnsaved,
+            [key]: hasUnsaved,
           },
         }));
       },
       
       getUnsavedState: (filePath: string) => {
+        const { currentSandboxId, unsavedFileState } = get();
+        if (!currentSandboxId) return false;
+        
         const normalizedPath = normalizeWorkspacePath(filePath);
-        return get().unsavedFileState[normalizedPath] ?? false;
+        const key = `${currentSandboxId}:${normalizedPath}`;
+        return unsavedFileState[key] ?? false;
       },
       
       reset: () => {
+        console.log('[KortixComputerStore] Full reset');
         set(initialState);
       },
     }),
@@ -335,7 +399,16 @@ export const useKortixComputerStore = create<KortixComputerState>()(
   )
 );
 
-// Selector hooks for common use cases
+// === SELECTOR HOOKS ===
+
+// Sandbox context
+export const useKortixComputerSandboxId = () =>
+  useKortixComputerStore((state) => state.currentSandboxId);
+
+export const useSetSandboxContext = () =>
+  useKortixComputerStore((state) => state.setSandboxContext);
+
+// Main view state
 export const useKortixComputerActiveView = () => 
   useKortixComputerStore((state) => state.activeView);
 
@@ -377,6 +450,8 @@ export const useKortixComputerActions = () =>
     navigateToToolCall: state.navigateToToolCall,
     clearPendingToolNav: state.clearPendingToolNav,
     clearShouldOpenPanel: state.clearShouldOpenPanel,
+    setSandboxContext: state.setSandboxContext,
+    clearFileState: state.clearFileState,
     reset: state.reset,
   }));
 
@@ -393,4 +468,3 @@ export const useIsSidePanelOpen = () =>
 
 export const useSetIsSidePanelOpen = () =>
   useKortixComputerStore((state) => state.setIsSidePanelOpen);
-

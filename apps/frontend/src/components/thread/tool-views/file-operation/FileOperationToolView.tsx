@@ -71,10 +71,11 @@ import { StreamingLoader } from '../shared/StreamingLoader';
 import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { toast } from '@/lib/toast';
-import { PresentationSlidePreview } from '../presentation-tools/PresentationSlidePreview';
+import { PresentationSlideCard } from '../presentation-tools/PresentationSlideCard';
+import { PresentationSlideSkeleton } from '../presentation-tools/PresentationSlideSkeleton';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useSmoothToolField } from '@/hooks/messages';
+import { useSmoothStream } from '@/lib/streaming';
 
 const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[]; fileName?: string }> = ({ lineDiff, fileName }) => (
   <div className="font-mono text-[13px] leading-relaxed">
@@ -275,15 +276,97 @@ export function FileOperationToolView({
   
   const streamingSource = isStreaming ? throttledStreamingSource : rawStreamingSource;
 
-  // Apply smooth text streaming for file_contents (create/rewrite operations)
-  const smoothFields = useSmoothToolField(
-    rawStreamingSource && typeof rawStreamingSource === 'object' ? rawStreamingSource : {},
-    { interval: 50 }
-  );
-  const smoothFileContents = (smoothFields as any).file_contents || (rawStreamingSource && typeof rawStreamingSource === 'object' ? (rawStreamingSource as Record<string, any>).file_contents : '') || '';
-  const smoothCodeEdit = (smoothFields as any).code_edit || (rawStreamingSource && typeof rawStreamingSource === 'object' ? (rawStreamingSource as Record<string, any>).code_edit : '') || '';
+  const rawFileContents = useMemo(() => {
+    if (!rawStreamingSource) return '';
+    if (typeof rawStreamingSource === 'object') {
+      return (rawStreamingSource as Record<string, any>).file_contents || '';
+    }
+    try {
+      const parsed = JSON.parse(rawStreamingSource);
+      return parsed.file_contents || '';
+    } catch {
+      const pattern = /"file_contents"\s*:\s*"/;
+      const match = rawStreamingSource.match(pattern);
+      if (match && match.index !== undefined) {
+        const startIndex = match.index + match[0].length;
+        let value = '';
+        let i = startIndex;
+        let escaped = false;
+        while (i < rawStreamingSource.length) {
+          const char = rawStreamingSource[i];
+          if (escaped) {
+            switch (char) {
+              case 'n': value += '\n'; break;
+              case 't': value += '\t'; break;
+              case 'r': value += '\r'; break;
+              case '"': value += '"'; break;
+              case '\\': value += '\\'; break;
+              default: value += char;
+            }
+            escaped = false;
+          } else if (char === '\\') {
+            escaped = true;
+          } else if (char === '"') {
+            return value;
+          } else {
+            value += char;
+          }
+          i++;
+        }
+        return value;
+      }
+      return '';
+    }
+  }, [rawStreamingSource]);
+
+  const rawCodeEdit = useMemo(() => {
+    if (!rawStreamingSource) return '';
+    if (typeof rawStreamingSource === 'object') {
+      return (rawStreamingSource as Record<string, any>).code_edit || '';
+    }
+    try {
+      const parsed = JSON.parse(rawStreamingSource);
+      return parsed.code_edit || '';
+    } catch {
+      const pattern = /"code_edit"\s*:\s*"/;
+      const match = rawStreamingSource.match(pattern);
+      if (match && match.index !== undefined) {
+        const startIndex = match.index + match[0].length;
+        let value = '';
+        let i = startIndex;
+        let escaped = false;
+        while (i < rawStreamingSource.length) {
+          const char = rawStreamingSource[i];
+          if (escaped) {
+            switch (char) {
+              case 'n': value += '\n'; break;
+              case 't': value += '\t'; break;
+              case 'r': value += '\r'; break;
+              case '"': value += '"'; break;
+              case '\\': value += '\\'; break;
+              default: value += char;
+            }
+            escaped = false;
+          } else if (char === '\\') {
+            escaped = true;
+          } else if (char === '"') {
+            return value;
+          } else {
+            value += char;
+          }
+          i++;
+        }
+        return value;
+      }
+      return '';
+    }
+  }, [rawStreamingSource]);
+
   const isFileContentsAnimating = isStreaming && (operation === 'create' || operation === 'rewrite') && !toolResult;
   const isCodeEditAnimating = isStreaming && operation === 'edit' && !toolResult;
+  
+  const smoothFileContents = useSmoothStream(rawFileContents, isFileContentsAnimating);
+  const smoothCodeEdit = useSmoothStream(rawCodeEdit, isCodeEditAnimating);
 
   const extractedContent = useMemo(() => {
     let filePath: string | null = args.file_path || args.target_file || args.path || null;
@@ -303,9 +386,8 @@ export function FileOperationToolView({
     }
 
     if (isStreaming && streamingSource) {
-      // Use smooth streaming content when available
       if (operation === 'create' || operation === 'rewrite') {
-        if (smoothFileContents) {
+        if (rawFileContents) {
           fileContent = smoothFileContents;
         } else {
           try {
@@ -346,7 +428,7 @@ export function FileOperationToolView({
           }
         }
       } else if (operation === 'edit') {
-        if (smoothCodeEdit) {
+        if (rawCodeEdit) {
           fileContent = smoothCodeEdit;
         } else {
           try {
@@ -580,9 +662,11 @@ export function FileOperationToolView({
     }
 
     return { filePath, fileContent, oldStr, newStr };
-  }, [args, output, isStreaming, streamingSource, operation, isStrReplace, smoothFileContents, smoothCodeEdit]);
+  }, [args, output, isStreaming, streamingSource, operation, isStrReplace, rawFileContents, rawCodeEdit, smoothFileContents, smoothCodeEdit]);
 
   const { filePath, fileContent, oldStr, newStr } = extractedContent;
+  
+  const hasRawContent = !!(rawFileContents || rawCodeEdit);
 
   // Generate diff data for str-replace and edit operations
   const lineDiff = React.useMemo(() => {
@@ -743,90 +827,58 @@ export function FileOperationToolView({
   // Don't fallback to GenericToolView
 
   const renderFilePreview = () => {
-    // Handle presentation slide files specially
-    if (isPresentationSlide && presentationName) {
-      // During streaming, show a nice preview with the HTML content being written
+    // Handle presentation slide files - use same style as PresentationViewer
+    if (isPresentationSlide && presentationName && slideNumber) {
+      // During streaming, show skeleton with streaming content
       if (isStreaming) {
         return (
-          <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-zinc-900">
-            <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
-              <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
-            </div>
-            <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-              Updating Presentation
-            </h3>
-            <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center mb-4">
-              {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
-            </p>
-            <div className="flex items-center gap-2 text-sm text-zinc-600 dark:text-zinc-400">
-              <KortixLoader customSize={16} />
-              <span>Writing slide content...</span>
-            </div>
+          <div className="w-full h-full p-4 bg-white dark:bg-zinc-900">
+            <PresentationSlideSkeleton
+              slideNumber={slideNumber}
+              isGenerating={true}
+              slideTitle={undefined}
+              streamingContent={fileContent || undefined}
+            />
           </div>
         );
       }
 
-      // After streaming completes, show the presentation preview if sandbox URL is available
+      // After streaming completes, show the slide card (click opens fullscreen)
       if (project?.sandbox?.sandbox_url) {
+        const slideData = {
+          number: slideNumber,
+          title: '',
+          filename: `slide_${slideNumber}.html`,
+          file_path: `presentations/${presentationName}/slide_${slideNumber}.html`,
+          preview_url: '',
+          created_at: new Date().toISOString(),
+        };
+
         return (
-          <div className="w-full h-full flex flex-col bg-white dark:bg-zinc-900">
-            <div className="flex-1 p-4">
-              <PresentationSlidePreview
-                key={`${presentationName}-${slideNumber}`}
-                presentationName={presentationName}
-                project={project}
-                initialSlide={slideNumber || undefined}
-                onFullScreenClick={(slideNum) => {
-                  console.log('[FileOperationToolView] Opening presentation fullscreen:', {
-                    presentationName,
-                    sandboxUrl: project.sandbox.sandbox_url,
-                    slideNumber: slideNum || slideNumber || 1
-                  });
-                  openPresentation(
-                    presentationName,
-                    project.sandbox.sandbox_url,
-                    slideNum || slideNumber || 1
-                  );
-                }}
-                className="w-full"
-              />
-            </div>
-            <div className="px-4 pb-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  openPresentation(
-                    presentationName,
-                    project.sandbox.sandbox_url,
-                    slideNumber || 1
-                  );
-                }}
-                className="w-full gap-2"
-              >
-                <Presentation className="h-4 w-4" />
-                Open Presentation Viewer
-              </Button>
-            </div>
+          <div className="w-full h-full p-4 bg-white dark:bg-zinc-900">
+            <PresentationSlideCard
+              slide={slideData}
+              project={project}
+              onFullScreenClick={(slideNum) => {
+                openPresentation(
+                  presentationName,
+                  project.sandbox.sandbox_url,
+                  slideNum
+                );
+              }}
+              refreshTimestamp={Date.now()}
+            />
           </div>
         );
       }
       
-      // Sandbox URL not available yet - show waiting state
+      // Sandbox URL not available yet - show skeleton without generating state
       return (
-        <div className="w-full h-full flex flex-col items-center justify-center p-8 bg-white dark:bg-zinc-900">
-          <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
-            <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
-          </div>
-          <h3 className="text-lg font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
-            Presentation Updated
-          </h3>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400 text-center">
-            {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
-          </p>
-          <p className="text-xs text-zinc-400 dark:text-zinc-500 mt-2">
-            Waiting for sandbox to be ready...
-          </p>
+        <div className="w-full h-full p-4 bg-white dark:bg-zinc-900">
+          <PresentationSlideSkeleton
+            slideNumber={slideNumber}
+            isGenerating={false}
+          />
         </div>
       );
     }
@@ -1099,7 +1151,7 @@ export function FileOperationToolView({
                   subtitle="Please wait while the file is being processed"
                   showProgress={false}
                 />
-              ) : !fileContent && isStreaming ? (
+              ) : !fileContent && !hasRawContent && isStreaming ? (
                 <StreamingLoader />
               ) : operation === 'delete' ? (
                 <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-white dark:bg-zinc-900">

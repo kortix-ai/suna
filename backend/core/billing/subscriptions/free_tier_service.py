@@ -1,8 +1,9 @@
 from typing import Dict, Optional
 from datetime import datetime
 import asyncio
+import uuid
 import stripe # type: ignore
-from core.utils.config import config
+from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.utils.distributed_lock import DistributedLock
 from core.billing import repo as billing_repo
@@ -13,7 +14,10 @@ from dateutil.relativedelta import relativedelta # type: ignore
 class FreeTierService:
     def __init__(self):
         self.stripe = stripe
-        stripe.api_key = config.STRIPE_SECRET_KEY
+        # Only set Stripe API key in non-local environments
+        if config.ENV_MODE != EnvMode.LOCAL:
+            stripe.api_key = config.STRIPE_SECRET_KEY
+        self.is_local_mode = config.ENV_MODE == EnvMode.LOCAL
         
     async def auto_subscribe_to_free_tier(self, account_id: str, email: Optional[str] = None) -> Dict:
         lock_key = f"free_tier_setup:{account_id}"
@@ -46,7 +50,60 @@ class FreeTierService:
                     return {'success': False, 'message': 'Already subscribed'}
             
             stripe_customer_id = billing_customer.get('id') if billing_customer else None
-            
+
+            # In LOCAL mode, skip all Stripe API calls
+            if self.is_local_mode:
+                logger.info(f"[FREE TIER] LOCAL mode - skipping Stripe API calls for {account_id}")
+
+                # Generate mock IDs for local development
+                mock_customer_id = f"cus_local_{account_id[:8]}"
+                mock_subscription_id = f"sub_local_{uuid.uuid4().hex[:16]}"
+
+                # Create billing customer record without Stripe
+                if not stripe_customer_id:
+                    await billing_repo.create_billing_customer(mock_customer_id, account_id, email or f"{account_id}@local.dev")
+                    stripe_customer_id = mock_customer_id
+
+                # Create credit account with mock subscription
+                await billing_repo.upsert_credit_account(account_id, {
+                    'tier': 'free',
+                    'stripe_subscription_id': mock_subscription_id,
+                    'last_grant_date': datetime.now().isoformat(),
+                    'balance': 0,
+                    'expiring_credits': 0,
+                    'non_expiring_credits': 0
+                })
+
+                # Grant initial credits
+                from core.services.credits import credit_service
+                refreshed, amount = await credit_service.check_and_refresh_daily_credits(account_id)
+                if refreshed:
+                    logger.info(f"[FREE TIER] ✅ LOCAL mode: Triggered initial daily refresh: ${amount} credits granted to {account_id}")
+
+                current_balance_result = await billing_repo.get_credit_account_balance(account_id)
+                current_balance = float(current_balance_result.get('balance', 0)) if current_balance_result else 0
+
+                if current_balance < FREE_TIER_INITIAL_CREDITS:
+                    from ..credits.manager import credit_manager
+                    from decimal import Decimal
+
+                    logger.info(f"[FREE TIER] LOCAL mode: Granting {FREE_TIER_INITIAL_CREDITS} initial credits to {account_id}")
+                    await credit_manager.add_credits(
+                        account_id=account_id,
+                        amount=Decimal(str(FREE_TIER_INITIAL_CREDITS)),
+                        is_expiring=True,
+                        description="Free tier initial credits (local mode)",
+                        expires_at=datetime.now() + relativedelta(months=1)
+                    )
+
+                logger.info(f"[FREE TIER] ✅ LOCAL mode: Created mock subscription {mock_subscription_id} for {account_id}")
+                return {
+                    'success': True,
+                    'subscription_id': mock_subscription_id,
+                    'customer_id': stripe_customer_id
+                }
+
+            # Production/Staging mode - use real Stripe API
             if stripe_customer_id:
                 try:
                     await self.stripe.Customer.retrieve_async(stripe_customer_id)
@@ -58,10 +115,10 @@ class FreeTierService:
                         stripe_customer_id = None
                     else:
                         raise
-            
+
             if not email:
                 account_details = await billing_repo.get_account_details(account_id)
-                
+
                 if account_details:
                     user_id = account_details.get('primary_owner_user_id')
                     if user_id:
@@ -74,14 +131,14 @@ class FreeTierService:
                             email = user_result.user.email if user_result and user_result.user else None
                         except:
                             pass
-                        
+
                         if not email:
                             email = await billing_repo.get_user_email(user_id)
-            
+
             if not email:
                 logger.error(f"[FREE TIER] Could not get email for account {account_id}")
                 return {'success': False, 'error': 'Email not found'}
-            
+
             if not stripe_customer_id:
                 logger.info(f"[FREE TIER] Creating Stripe customer for {account_id}")
                 customer = await self.stripe.Customer.create_async(
@@ -92,9 +149,9 @@ class FreeTierService:
                     }
                 )
                 stripe_customer_id = customer.id
-                
+
                 await billing_repo.create_billing_customer(stripe_customer_id, account_id, email)
-            
+
             logger.info(f"[FREE TIER] Creating $0/month subscription for {account_id}")
             subscription = await self.stripe.Subscription.create_async(
                 customer=stripe_customer_id,
@@ -106,7 +163,7 @@ class FreeTierService:
                     'tier': 'free'
                 }
             )
-            
+
             await billing_repo.upsert_credit_account(account_id, {
                 'tier': 'free',
                 'stripe_subscription_id': subscription.id,

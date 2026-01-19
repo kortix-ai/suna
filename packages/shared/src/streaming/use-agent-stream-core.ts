@@ -48,8 +48,12 @@ export interface UseAgentStreamCoreResult {
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;
+  retryCount: number;
   startStreaming: (runId: string) => Promise<void>;
   stopStreaming: () => Promise<void>;
+  resumeStream: () => Promise<void>; // Call when app comes back to foreground
+  clearError: () => void; // Clear error state when switching threads
+  setError: (error: string) => void; // Set error state (e.g., when retry fails)
 }
 
 export interface ContentThrottleConfig {
@@ -99,7 +103,20 @@ export function useAgentStreamCore(
   // Heartbeat detection refs
   const lastMessageTimeRef = useRef<number>(0);
   const heartbeatIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const HEARTBEAT_TIMEOUT_MS = 30000;
+  // 10 minutes - tools can take a VERY long time, this is just to detect dead connections
+  // Not for detecting "no response" - that's the connection timeout's job
+  const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
+  
+  // Reconnection refs for graceful handling of bad network
+  const retryCountRef = useRef<number>(0);
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isReconnectingRef = useRef<boolean>(false);
+  const [retryCount, setRetryCount] = useState<number>(0);
+  const MAX_RETRIES = 5;
+  const BASE_RETRY_DELAY_MS = 1000;
+  
+  // Refs for breaking circular dependencies
+  const attemptReconnectRef = useRef<((runId: string) => Promise<boolean>) | null>(null);
   
   // Callbacks ref for stable access
   const callbacksRef = useRef(callbacks);
@@ -132,6 +149,9 @@ export function useAgentStreamCore(
       }
       if (heartbeatIntervalRef.current) {
         (globalThis as any).clearInterval(heartbeatIntervalRef.current);
+      }
+      if (retryTimeoutRef.current) {
+        (globalThis as any).clearTimeout(retryTimeoutRef.current);
       }
     };
   }, []);
@@ -322,6 +342,7 @@ export function useAgentStreamCore(
         
         if (isBillingError) {
           handleBillingError(errorMessage);
+          finalizeStream('error', currentRunIdRef.current);
           return;
         }
         
@@ -330,6 +351,8 @@ export function useAgentStreamCore(
         if (config.showToast) {
           config.showToast(errorMessage, 'error');
         }
+        // CRITICAL: Finalize stream on error so UI doesn't stay stuck in loading
+        finalizeStream('error', currentRunIdRef.current);
         return;
       }
       
@@ -698,6 +721,298 @@ export function useAgentStreamCore(
     }, 500);
   }, [status, finalizeStream, config, handleBillingError, getAgentStatus]);
 
+  // Internal function that sets up the EventSource and handlers
+  const setupEventSource = useCallback(async (runId: string, isReconnect: boolean = false): Promise<boolean> => {
+    if (!isMountedRef.current) return false;
+    
+    // Create EventSource
+    const token = await config.getAuthToken();
+    const streamUrl = `${config.apiUrl}/agent-run/${runId}/stream${token ? `?token=${token}` : ''}`;
+    const eventSource = config.createEventSource(streamUrl);
+
+    // Connection timeout - if onopen doesn't fire within 15 seconds, treat as error
+    const CONNECTION_TIMEOUT_MS = 15000;
+    let connectionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+    let connectionOpened = false;
+
+    const cleanup = () => {
+      // Clear connection timeout
+      if (connectionTimeoutId) {
+        (globalThis as any).clearTimeout(connectionTimeoutId);
+        connectionTimeoutId = null;
+      }
+      try {
+        if (eventSource && typeof eventSource.close === 'function') {
+          eventSource.close();
+        }
+        if (eventSource && typeof eventSource.removeAllEventListeners === 'function') {
+          eventSource.removeAllEventListeners();
+        }
+      } catch (err) {
+        console.warn('[useAgentStreamCore] Error closing event source:', err);
+      }
+    };
+
+    streamCleanupRef.current = cleanup;
+
+    return new Promise((resolve) => {
+      let resolved = false;
+
+      // Set up connection timeout
+      connectionTimeoutId = (globalThis as any).setTimeout(async () => {
+        if (connectionOpened || resolved) return;
+        
+        console.warn(`[useAgentStreamCore] Connection timeout after ${CONNECTION_TIMEOUT_MS}ms for ${runId}`);
+        cleanup();
+        
+        // Attempt reconnect on timeout
+        if (attemptReconnectRef.current) {
+          const reconnected = await attemptReconnectRef.current(runId);
+          if (!reconnected) {
+            setError('Connection timeout - please check your internet');
+            callbacksRef.current.onError?.('Connection timeout - please check your internet');
+            finalizeStream('error', runId);
+          }
+          if (!resolved) { resolved = true; resolve(reconnected); }
+        } else {
+          setError('Connection timeout - please check your internet');
+          callbacksRef.current.onError?.('Connection timeout - please check your internet');
+          finalizeStream('error', runId);
+          if (!resolved) { resolved = true; resolve(false); }
+        }
+      }, CONNECTION_TIMEOUT_MS);
+      
+      // Handle messages
+      const messageHandler = (event: any) => {
+        if (currentRunIdRef.current === runId && threadIdRef.current === threadId) {
+          handleStreamMessage(event.data || event);
+        }
+      };
+
+      // Handle errors with reconnection support
+      const errorHandler = async (event: any) => {
+        if (currentRunIdRef.current !== runId) return;
+        
+        // Check agent status on error
+        try {
+          const agentStatus = await getAgentStatus(runId, config);
+          if (agentStatus.status !== 'running') {
+            // Agent finished - no need to reconnect
+            updateStatus(mapAgentStatus(agentStatus.status));
+            cleanup();
+            callbacksRef.current.onClose?.(mapAgentStatus(agentStatus.status));
+            if (!resolved) { resolved = true; resolve(false); }
+            return;
+          }
+          
+          // Agent is still running but connection failed - attempt reconnect
+          console.log('[useAgentStreamCore] Connection error while agent running, attempting reconnect...');
+          cleanup();
+          if (attemptReconnectRef.current) {
+            const reconnected = await attemptReconnectRef.current(runId);
+            if (!reconnected) {
+              // Max retries exceeded
+              handleStreamError(event);
+              finalizeStream('error', runId);
+            }
+            if (!resolved) { resolved = true; resolve(reconnected); }
+          } else {
+            handleStreamError(event);
+            finalizeStream('error', runId);
+            if (!resolved) { resolved = true; resolve(false); }
+          }
+          return;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const isExpected = 
+            errMsg.includes('not found') ||
+            errMsg.includes('404') ||
+            errMsg.includes('does not exist') ||
+            errMsg.includes('is not running');
+          
+          if (isExpected) {
+            updateStatus('completed');
+            cleanup();
+            callbacksRef.current.onClose?.('completed');
+            if (!resolved) { resolved = true; resolve(false); }
+            return;
+          }
+          
+          // Network error checking status - attempt reconnect anyway
+          console.log('[useAgentStreamCore] Status check failed, attempting reconnect...');
+          cleanup();
+          if (attemptReconnectRef.current) {
+            const reconnected = await attemptReconnectRef.current(runId);
+            if (!reconnected) {
+              handleStreamError(event);
+              finalizeStream('error', runId);
+            }
+            if (!resolved) { resolved = true; resolve(reconnected); }
+          } else {
+            handleStreamError(event);
+            finalizeStream('error', runId);
+            if (!resolved) { resolved = true; resolve(false); }
+          }
+        }
+      };
+
+      // Handle close
+      const closeHandler = () => {
+        if (currentRunIdRef.current === runId) {
+          handleStreamClose();
+        }
+      };
+
+      // Handle open - connection succeeded
+      const openHandler = () => {
+        if (currentRunIdRef.current === runId) {
+          // Mark connection as opened and clear timeout
+          connectionOpened = true;
+          if (connectionTimeoutId) {
+            (globalThis as any).clearTimeout(connectionTimeoutId);
+            connectionTimeoutId = null;
+          }
+          
+          // Reset retry state on successful connection
+          retryCountRef.current = 0;
+          setRetryCount(0);
+          isReconnectingRef.current = false;
+          
+          updateStatus('streaming');
+          lastMessageTimeRef.current = Date.now();
+          
+          if (heartbeatIntervalRef.current) {
+            (globalThis as any).clearInterval(heartbeatIntervalRef.current);
+          }
+          heartbeatIntervalRef.current = (globalThis as any).setInterval(() => {
+            if (!isMountedRef.current || currentRunIdRef.current !== runId) {
+              if (heartbeatIntervalRef.current) {
+                (globalThis as any).clearInterval(heartbeatIntervalRef.current);
+                heartbeatIntervalRef.current = null;
+              }
+              return;
+            }
+            
+            const timeSinceLastMessage = Date.now() - lastMessageTimeRef.current;
+            if (timeSinceLastMessage > HEARTBEAT_TIMEOUT_MS) {
+              console.warn(`[useAgentStreamCore] No message received for ${timeSinceLastMessage}ms, checking agent status`);
+              getAgentStatus(runId, config)
+                .then((statusResult: { status: string; error?: string }) => {
+                  if (!isMountedRef.current || currentRunIdRef.current !== runId) return;
+                  if (statusResult.status !== 'running') {
+                    // Agent finished - finalize stream
+                    finalizeStream(mapAgentStatus(statusResult.status), runId);
+                  } else {
+                    // Agent is still running and we can reach the server - stream is fine!
+                    // Tool is just taking time to execute. Reset the timer and keep waiting.
+                    console.log('[useAgentStreamCore] Agent still running (tool executing), resetting heartbeat timer');
+                    lastMessageTimeRef.current = Date.now();
+                  }
+                })
+                .catch((err) => {
+                  // NETWORK ERROR - can't reach server, THIS is when we reconnect
+                  console.warn('[useAgentStreamCore] Heartbeat status check failed (network error), attempting reconnect...', err);
+                  if (!isMountedRef.current || currentRunIdRef.current !== runId) return;
+                  cleanup();
+                  if (attemptReconnectRef.current) {
+                    attemptReconnectRef.current(runId);
+                  }
+                });
+            }
+          }, 10000);
+          
+          if (!resolved) { resolved = true; resolve(true); }
+        }
+      };
+
+      // Attach handlers
+      if (eventSource.addEventListener) {
+        eventSource.addEventListener('message', messageHandler);
+        eventSource.addEventListener('error', errorHandler);
+        eventSource.addEventListener('close', closeHandler);
+        eventSource.addEventListener('open', openHandler);
+      } else {
+        eventSource.onmessage = messageHandler;
+        eventSource.onerror = errorHandler;
+        eventSource.onclose = closeHandler;
+        eventSource.onopen = openHandler;
+      }
+    });
+  }, [config, threadId, handleStreamMessage, handleStreamError, handleStreamClose, updateStatus, getAgentStatus, finalizeStream]);
+
+  // Attempt reconnection with exponential backoff
+  const attemptReconnect = useCallback(async (runId: string): Promise<boolean> => {
+    if (!isMountedRef.current) return false;
+    if (retryCountRef.current >= MAX_RETRIES) {
+      console.warn(`[useAgentStreamCore] Max retries (${MAX_RETRIES}) exceeded for ${runId}`);
+      isReconnectingRef.current = false;
+      return false;
+    }
+
+    retryCountRef.current += 1;
+    setRetryCount(retryCountRef.current);
+    isReconnectingRef.current = true;
+    
+    // Calculate exponential backoff delay
+    const delay = BASE_RETRY_DELAY_MS * Math.pow(2, retryCountRef.current - 1);
+    console.log(`[useAgentStreamCore] Reconnecting (attempt ${retryCountRef.current}/${MAX_RETRIES}) in ${delay}ms...`);
+    
+    setStatus('reconnecting');
+    callbacksRef.current.onStatusChange?.('reconnecting');
+
+    return new Promise((resolve) => {
+      retryTimeoutRef.current = (globalThis as any).setTimeout(async () => {
+        if (!isMountedRef.current || currentRunIdRef.current !== runId) {
+          isReconnectingRef.current = false;
+          resolve(false);
+          return;
+        }
+
+        // Verify agent is still running before reconnecting
+        try {
+          const agentStatus = await getAgentStatus(runId, config);
+          if (agentStatus.status !== 'running') {
+            console.log(`[useAgentStreamCore] Agent no longer running (${agentStatus.status}), stopping reconnect`);
+            isReconnectingRef.current = false;
+            finalizeStream(mapAgentStatus(agentStatus.status), runId);
+            resolve(false);
+            return;
+          }
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          const isExpected = 
+            errMsg.includes('not found') ||
+            errMsg.includes('404') ||
+            errMsg.includes('does not exist') ||
+            errMsg.includes('is not running');
+          
+          if (isExpected) {
+            isReconnectingRef.current = false;
+            finalizeStream('completed', runId);
+            resolve(false);
+            return;
+          }
+          // Status check failed due to network - continue with reconnect attempt
+        }
+
+        // Use setupEventSource for reconnection
+        try {
+          const success = await setupEventSource(runId, true);
+          resolve(success);
+        } catch (err) {
+          console.error('[useAgentStreamCore] Error during reconnect:', err);
+          // Recursive retry
+          attemptReconnect(runId).then(resolve);
+        }
+      }, delay);
+    });
+  }, [config, getAgentStatus, finalizeStream, setupEventSource]);
+
+  // Update ref for setupEventSource to use
+  useEffect(() => {
+    attemptReconnectRef.current = attemptReconnect;
+  }, [attemptReconnect]);
+
   const startStreaming = useCallback(async (runId: string) => {
     if (!isMountedRef.current) return;
 
@@ -715,7 +1030,16 @@ export function useAgentStreamCore(
       (globalThis as any).clearTimeout(throttleTimeoutRef.current);
       throttleTimeoutRef.current = null;
     }
+    if (retryTimeoutRef.current) {
+      (globalThis as any).clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
     pendingContentRef.current = [];
+    
+    // Reset retry state on fresh start
+    retryCountRef.current = 0;
+    setRetryCount(0);
+    isReconnectingRef.current = false;
     
     // Clear reasoning content when starting a new stream
     setReasoningContent('');
@@ -734,130 +1058,9 @@ export function useAgentStreamCore(
       config.clearToolTracking();
     }
 
-    // Create EventSource using shared logic
-    const token = await config.getAuthToken();
-    const streamUrl = `${config.apiUrl}/agent-run/${runId}/stream${token ? `?token=${token}` : ''}`;
-    const eventSource = config.createEventSource(streamUrl);
-
-    const cleanup = () => {
-      try {
-        if (eventSource && typeof eventSource.close === 'function') {
-          eventSource.close();
-        }
-        if (eventSource && typeof eventSource.removeAllEventListeners === 'function') {
-          eventSource.removeAllEventListeners();
-        }
-      } catch (err) {
-        console.warn('[useAgentStreamCore] Error closing event source:', err);
-      }
-    };
-
-    streamCleanupRef.current = cleanup;
-
-    // Handle messages
-    const messageHandler = (event: any) => {
-      if (currentRunIdRef.current === runId && threadIdRef.current === threadId) {
-        handleStreamMessage(event.data || event);
-      }
-    };
-
-    if (eventSource.addEventListener) {
-      eventSource.addEventListener('message', messageHandler);
-    } else if (eventSource.onmessage) {
-      eventSource.onmessage = messageHandler;
-    }
-
-    // Handle errors
-    const errorHandler = async (event: any) => {
-      if (currentRunIdRef.current !== runId) return;
-      
-      // Check agent status on error
-      try {
-        const agentStatus = await getAgentStatus(runId, config);
-        if (agentStatus.status !== 'running') {
-          updateStatus(mapAgentStatus(agentStatus.status));
-          cleanup();
-          callbacksRef.current.onClose?.(mapAgentStatus(agentStatus.status));
-          return;
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        const isExpected = 
-          errMsg.includes('not found') ||
-          errMsg.includes('404') ||
-          errMsg.includes('does not exist') ||
-          errMsg.includes('is not running');
-        
-        if (isExpected) {
-          updateStatus('completed');
-          cleanup();
-          callbacksRef.current.onClose?.('completed');
-          return;
-        }
-      }
-      
-      handleStreamError(event);
-    };
-
-    if (eventSource.addEventListener) {
-      eventSource.addEventListener('error', errorHandler);
-    } else if (eventSource.onerror) {
-      eventSource.onerror = errorHandler;
-    }
-
-    // Handle close
-    const closeHandler = () => {
-      if (currentRunIdRef.current === runId) {
-        handleStreamClose();
-      }
-    };
-
-    if (eventSource.addEventListener) {
-      eventSource.addEventListener('close', closeHandler);
-    } else if (eventSource.onclose) {
-      eventSource.onclose = closeHandler;
-    }
-
-    // Handle open
-    const openHandler = () => {
-      if (currentRunIdRef.current === runId) {
-        updateStatus('streaming');
-        lastMessageTimeRef.current = Date.now();
-        
-        if (heartbeatIntervalRef.current) {
-          (globalThis as any).clearInterval(heartbeatIntervalRef.current);
-        }
-        heartbeatIntervalRef.current = (globalThis as any).setInterval(() => {
-          if (!isMountedRef.current || currentRunIdRef.current !== runId) {
-            if (heartbeatIntervalRef.current) {
-              (globalThis as any).clearInterval(heartbeatIntervalRef.current);
-              heartbeatIntervalRef.current = null;
-            }
-            return;
-          }
-          
-          const timeSinceLastMessage = Date.now() - lastMessageTimeRef.current;
-          if (timeSinceLastMessage > HEARTBEAT_TIMEOUT_MS) {
-            console.warn(`[useAgentStreamCore] No message received for ${timeSinceLastMessage}ms, checking agent status`);
-            getAgentStatus(runId, config)
-              .then((statusResult: { status: string; error?: string }) => {
-                if (!isMountedRef.current || currentRunIdRef.current !== runId) return;
-                if (statusResult.status !== 'running') {
-                  finalizeStream(mapAgentStatus(statusResult.status), runId);
-                }
-              })
-              .catch(() => {});
-          }
-        }, 10000);
-      }
-    };
-
-    if (eventSource.addEventListener) {
-      eventSource.addEventListener('open', openHandler);
-    } else if (eventSource.onopen) {
-      eventSource.onopen = openHandler;
-    }
-  }, [config, callbacks, threadId, handleStreamMessage, handleStreamError, handleStreamClose, updateStatus, getAgentStatus, finalizeStream]);
+    // Setup EventSource with all handlers
+    await setupEventSource(runId, false);
+  }, [config, updateStatus, setupEventSource]);
 
   const stopStreaming = useCallback(async () => {
     if (streamCleanupRef.current) {
@@ -897,6 +1100,96 @@ export function useAgentStreamCore(
     finalizeStream('stopped', agentRunId);
   }, [config, agentRunId, finalizeStream]);
 
+  // Resume stream when app comes back to foreground
+  // This is called when app returns from background - the EventSource might be dead/stale
+  const resumeStream = useCallback(async () => {
+    const runId = currentRunIdRef.current;
+    if (!runId) {
+      console.log('[useAgentStreamCore] No active run to resume');
+      return;
+    }
+
+    // If already reconnecting, don't stack calls
+    if (isReconnectingRef.current) {
+      console.log('[useAgentStreamCore] Already reconnecting, skipping resume');
+      return;
+    }
+
+    console.log('[useAgentStreamCore] Resuming stream for run:', runId);
+
+    // ALWAYS check agent status on resume - even if we think we're streaming,
+    // the EventSource might be dead after app was backgrounded
+    try {
+      const agentStatus = await getAgentStatus(runId, config);
+      if (agentStatus.status !== 'running') {
+        console.log(`[useAgentStreamCore] Agent no longer running (${agentStatus.status}), finalizing`);
+        finalizeStream(mapAgentStatus(agentStatus.status), runId);
+        return;
+      }
+
+      // Agent still running - need to check if we're actually receiving messages
+      // If status is 'streaming' and we recently got a message, we're probably fine
+      const timeSinceLastMessage = Date.now() - lastMessageTimeRef.current;
+      if (status === 'streaming' && timeSinceLastMessage < 5000) {
+        console.log('[useAgentStreamCore] Stream appears healthy, skipping reconnect');
+        return;
+      }
+
+      // Agent is running but stream might be stale - reconnect
+      console.log('[useAgentStreamCore] Agent still running, reconnecting stream...');
+      
+      // Clean up any stale stream
+      if (streamCleanupRef.current) {
+        streamCleanupRef.current();
+      }
+      
+      // Reset retry state for fresh reconnect
+      retryCountRef.current = 0;
+      setRetryCount(0);
+      isReconnectingRef.current = false;
+      
+      updateStatus('connecting');
+      await setupEventSource(runId, false);
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      const isExpected = 
+        errMsg.includes('not found') ||
+        errMsg.includes('404') ||
+        errMsg.includes('does not exist') ||
+        errMsg.includes('is not running');
+      
+      if (isExpected) {
+        console.log('[useAgentStreamCore] Agent completed while app was backgrounded');
+        finalizeStream('completed', runId);
+      } else {
+        console.warn('[useAgentStreamCore] Error checking agent status on resume:', err);
+        // Network error - try to reconnect
+        if (streamCleanupRef.current) {
+          streamCleanupRef.current();
+        }
+        updateStatus('reconnecting');
+        if (attemptReconnectRef.current) {
+          attemptReconnectRef.current(runId);
+        }
+      }
+    }
+  }, [config, status, getAgentStatus, finalizeStream, updateStatus, setupEventSource]);
+
+  // Clear error state - useful when switching threads
+  const clearError = useCallback(() => {
+    setError(null);
+    updateStatus('idle');
+    retryCountRef.current = 0;
+    setRetryCount(0);
+    isReconnectingRef.current = false;
+  }, [updateStatus]);
+
+  // Set error state - useful when retry fails
+  const setStreamError = useCallback((errorMessage: string) => {
+    setError(errorMessage);
+    updateStatus('error');
+  }, [updateStatus]);
+
   return {
     status,
     textContent: orderedTextContent,
@@ -904,7 +1197,11 @@ export function useAgentStreamCore(
     toolCall,
     error,
     agentRunId,
+    retryCount,
     startStreaming,
     stopStreaming,
+    resumeStream,
+    clearError,
+    setError: setStreamError,
   };
 }

@@ -24,15 +24,18 @@ import {
   extractTextFromStreamingAskComplete,
 } from "@/hooks/messages/utils";
 import { AppIcon } from "../tool-views/shared/AppIcon";
-import { useSmoothText } from "@/hooks/messages";
+import { useSmoothStream } from "@/lib/streaming/animations";
 import { isHiddenTool } from "@agentpress/shared/tools";
 import { ReasoningSection } from "./ReasoningSection";
+import { StreamingText } from "./StreamingText";
+import { MessageActions } from "./MessageActions";
 
 export function renderAttachments(
   attachments: string[],
   fileViewerHandler?: (filePath?: string, filePathList?: string[]) => void,
   sandboxId?: string,
   project?: Project,
+  localPreviewUrls?: Record<string, string>,
 ) {
   if (!attachments || attachments.length === 0) return null;
   const validAttachments = attachments.filter(
@@ -46,6 +49,7 @@ export function renderAttachments(
       showPreviews={true}
       sandboxId={sandboxId}
       project={project}
+      localPreviewUrls={localPreviewUrls}
     />
   );
 }
@@ -89,12 +93,14 @@ const UserMessageRow = memo(function UserMessageRow({
   handleOpenFileViewer,
   sandboxId,
   project,
+  localPreviewUrls = {},
 }: {
   message: UnifiedMessage;
   groupKey: string;
   handleOpenFileViewer: (filePath?: string, filePathList?: string[]) => void;
   sandboxId?: string;
   project?: Project;
+  localPreviewUrls?: Record<string, string>;
 }) {
   const messageContent = useMemo(() => {
     try {
@@ -141,6 +147,7 @@ const UserMessageRow = memo(function UserMessageRow({
             handleOpenFileViewer,
             sandboxId,
             project,
+            localPreviewUrls,
           )}
         </div>
       </div>
@@ -197,20 +204,20 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   threadId?: string;
   onPromptFill?: (message: string) => void;
 }) {
-  // STREAMING OPTIMIZATION: Content now displays immediately as it arrives from the stream
-  // Removed useSmoothText typewriter animation that was causing 120 chars/sec artificial delay
-  const displayStreamingText = streamingTextContent || "";
+  const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+  
+  const displayStreamingText = useSmoothStream(
+    streamingTextContent || "",
+    isActivelyStreaming,
+    300
+  );
 
-  // Extract ask/complete text from streaming tool call
-  // Handles both raw streaming format AND accumulated format from useToolCallAccumulator
   const askCompleteText = useMemo(() => {
     if (!streamingToolCall) return "";
     
     const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const parsedContent = safeJsonParse<any>(streamingToolCall.content, {});
     
-    // Try accumulated format first (from useToolCallAccumulator)
-    // Structure: metadata.function_name, content.arguments (accumulated)
     if (parsedMetadata.function_name) {
       const toolName = parsedMetadata.function_name.replace(/_/g, "-").toLowerCase();
       if (toolName === "ask" || toolName === "complete") {
@@ -293,6 +300,32 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       ? assistantMessages[assistantMessages.length - 1].message_id
       : null;
 
+  // Aggregate all text content from assistant messages for MessageActions
+  const aggregatedTextContent = useMemo(() => {
+    const textParts: string[] = [];
+    assistantMessages.forEach((message) => {
+      const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
+      if (typeof metadata.text_content === 'string' && metadata.text_content) {
+        textParts.push(metadata.text_content);
+      }
+      // Also extract text from ask/complete tool calls
+      const toolCalls = metadata.tool_calls || [];
+      toolCalls.forEach((tc: any) => {
+        const toolName = tc.function_name?.replace(/_/g, '-') || '';
+        if (toolName === 'ask' || toolName === 'complete') {
+          let args = tc.arguments || {};
+          if (typeof args === 'string') {
+            try { args = JSON.parse(args); } catch { args = {}; }
+          }
+          if (args.text) {
+            textParts.push(args.text);
+          }
+        }
+      });
+    });
+    return textParts.join('\n\n');
+  }, [assistantMessages]);
+
   const renderedMessages = useMemo(() => {
     const elements: React.ReactNode[] = [];
     let assistantMessageCount = 0;
@@ -319,6 +352,12 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
         if (!renderedContent) return;
 
+        // Check if currently streaming
+        const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
+
+        // Show actions on last assistant message of this group (not just last group overall)
+        const isLastInGroup = message.message_id === lastAssistantMessageId;
+
         elements.push(
           <div key={msgKey} className={assistantMessageCount > 0 ? "mt-3" : ""}>
             <div className="break-words overflow-hidden">{renderedContent}</div>
@@ -341,23 +380,19 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     t,
     threadId,
     onPromptFill,
+    streamHookStatus,
+    aggregatedTextContent,
   ]);
 
   const streamingContent = useMemo(() => {
-    // Render streaming content immediately - no animation delay
-    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
-    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
-    
-    // If agent is not running and not streaming, immediately hide
-    if (!isAgentRunning && !isStreaming) {
-      return null;
-    }
-    
-    const shouldRender = isLastGroup && !readOnly && displayStreamingText && isStreaming;
+    const hasTextToShow = displayStreamingText && displayStreamingText.length > 0;
+    const shouldRender = isLastGroup && !readOnly && hasTextToShow;
     
     if (!shouldRender) {
       return null;
     }
+
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
 
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
@@ -418,7 +453,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     return (
       <div className="mt-1.5">
         {textBeforeTag && (
-          <ComposioUrlDetector
+          <StreamingText
             content={textBeforeTag}
             isStreaming={isCurrentlyStreaming}
           />
@@ -431,7 +466,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               detectedTag as "ask" | "complete",
             );
             return (
-              <ComposioUrlDetector
+              <StreamingText
                 content={extractedText}
                 isStreaming={isCurrentlyStreaming}
               />
@@ -447,6 +482,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
             }
             onToolClick={handleToolClick}
             showExpanded={false}
+            project={project}
             startTime={Date.now()}
           />
         ) : null}
@@ -521,7 +557,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     return (
       <div className="mt-1.5">
         {textBeforeTag && (
-          <ComposioUrlDetector content={textBeforeTag} isStreaming={true} />
+          <StreamingText content={textBeforeTag} isStreaming={true} />
         )}
         {detectedTag && isAskOrComplete ? (
           (() => {
@@ -531,7 +567,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               detectedTag as "ask" | "complete",
             );
             return (
-              <ComposioUrlDetector content={extractedText} isStreaming={true} />
+              <StreamingText content={extractedText} isStreaming={true} />
             );
           })()
         ) : detectedTag ? (
@@ -541,6 +577,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
             onToolClick={handleToolClick}
             showExpanded={false}
             startTime={Date.now()}
+            project={project}
           />
         ) : null}
       </div>
@@ -605,7 +642,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       // Display text immediately
       if (askCompleteText) {
         return (
-          <ComposioUrlDetector
+          <StreamingText
             content={askCompleteText}
             isStreaming={isCurrentlyStreaming}
           />
@@ -672,6 +709,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
                   onToolClick={handleToolClick}
                   showExpanded={false}
                   toolCall={tc}
+                  project={project}
                 />
               );
             })
@@ -706,6 +744,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
     if (streamingTextContent || streamingToolCall) return false;
+    // Don't show loader if we have reasoning content streaming
+    if (streamingReasoningContent && streamingReasoningContent.trim().length > 0) return false;
     // Don't show loader if we have ask/complete text
     if (askCompleteText) return false;
     if (streamHookStatus !== "streaming" && streamHookStatus !== "connecting")
@@ -730,6 +770,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     readOnly,
     agentStatus,
     streamingTextContent,
+    streamingReasoningContent,
     streamingToolCall,
     streamHookStatus,
     group.messages,
@@ -777,6 +818,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
                 <AgentLoader />
               </div>
             )}
+            {/* Message actions - show once at the end of the entire assistant block, only when done streaming */}
+            {!isLastGroup && aggregatedTextContent && (
+              <MessageActions text={aggregatedTextContent} />
+            )}
+            {isLastGroup && aggregatedTextContent && streamHookStatus !== 'streaming' && streamHookStatus !== 'connecting' && (
+              <MessageActions text={aggregatedTextContent} />
+            )}
           </div>
         </div>
       </div>
@@ -812,6 +860,7 @@ export interface ThreadContentProps {
   scrollContainerRef?: React.RefObject<HTMLDivElement>;
   threadId?: string;
   onPromptFill?: (message: string) => void;
+  localPreviewUrls?: Record<string, string>;
 }
 
 export const ThreadContent: React.FC<ThreadContentProps> = memo(
@@ -839,6 +888,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     scrollContainerRef,
     threadId,
     onPromptFill,
+    localPreviewUrls = {}
   }) {
     const messagesContainerRef = useRef<HTMLDivElement>(null);
     const latestMessageRef = useRef<HTMLDivElement>(null);
@@ -1142,13 +1192,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     ) {
       return (
         <div className="flex-1 min-h-[60vh] flex items-center justify-center">
-          {emptyStateComponent || (
-            <div className="text-center text-muted-foreground">
-              {readOnly
-                ? "No messages to display."
-                : "Send a message to start."}
-            </div>
-          )}
+          {emptyStateComponent || null}
         </div>
       );
     }
@@ -1173,6 +1217,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
               handleOpenFileViewer={handleOpenFileViewer}
               sandboxId={sandboxId}
               project={project}
+              localPreviewUrls={localPreviewUrls}
             />
           </div>
         );

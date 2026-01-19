@@ -1,77 +1,104 @@
 from typing import Dict, List, Optional, Tuple, Any
-from .models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig
+from .models import Model, ModelProvider, ModelCapability, ModelPricing, ModelConfig, ReasoningSettings
+from .providers import provider_registry
+from .providers.anthropic import BedrockProvider
 from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 
-# Use Bedrock for STAGING and PRODUCTION, LOCAL uses native APIs (Anthropic API, etc.)
-SHOULD_USE_BEDROCK = config.ENV_MODE in (EnvMode.STAGING, EnvMode.PRODUCTION)
 
-AWS_BEDROCK_REGION = "us-west-2"
-AWS_BEDROCK_ACCOUNT_ID = "935064898258"
+class BedrockConfig:
+    REGION = "us-west-2"
+    ACCOUNT_ID = "935064898258"
+    
+    PROFILE_IDS = {
+        "haiku_4_5": "heol2zyy5v48",
+        "sonnet_4_5": "few7z4l830xh",
+        "kimi_k2": "hfgufmm5fgcq",
+        "minimax_m2": "zix3khptbyoe",
+    }
+    
+    @classmethod
+    def build_arn(cls, profile_id: str) -> str:
+        return f"bedrock/converse/arn:aws:bedrock:{cls.REGION}:{cls.ACCOUNT_ID}:application-inference-profile/{profile_id}"
+    
+    @classmethod
+    def get_haiku_arn(cls) -> str:
+        return cls.build_arn(cls.PROFILE_IDS["haiku_4_5"])
+    
+    @classmethod
+    def get_sonnet_arn(cls) -> str:
+        return cls.build_arn(cls.PROFILE_IDS["sonnet_4_5"])
 
-# Bedrock inference profile IDs
-KIMI_K2_PROFILE_ID = "hfgufmm5fgcq"
-SONNET_4_5_PROFILE_ID = "few7z4l830xh"
-HAIKU_4_5_PROFILE_ID = "heol2zyy5v48"
-MINIMAX_M2_PROFILE_ID = "zix3khptbyoe"
 
-def build_bedrock_profile_arn(profile_id: str) -> str:
-    """Build Bedrock inference profile ARN."""
-    return f"bedrock/converse/arn:aws:bedrock:{AWS_BEDROCK_REGION}:{AWS_BEDROCK_ACCOUNT_ID}:application-inference-profile/{profile_id}"
+class PricingPresets:
+    HAIKU_4_5 = ModelPricing(
+        input_cost_per_million_tokens=1.00,
+        output_cost_per_million_tokens=5.00,
+        cached_read_cost_per_million_tokens=0.10,
+        cache_write_5m_cost_per_million_tokens=1.25,
+        cache_write_1h_cost_per_million_tokens=2.00,
+    )
+    
+    MINIMAX_M2 = ModelPricing(
+        input_cost_per_million_tokens=0.30,
+        output_cost_per_million_tokens=1.20,
+        cached_read_cost_per_million_tokens=0.03,
+        cache_write_5m_cost_per_million_tokens=0.375,
+    )
+    
+    GROK_4_1_FAST = ModelPricing(
+        input_cost_per_million_tokens=0.20,
+        output_cost_per_million_tokens=0.50,
+        cached_read_cost_per_million_tokens=0.05,
+    )
+    
+    GPT_4O_MINI = ModelPricing(
+        input_cost_per_million_tokens=0.15,
+        output_cost_per_million_tokens=0.60,
+        cached_read_cost_per_million_tokens=0.075,
+    )
 
-# Pre-built ARNs for convenience
-HAIKU_BEDROCK_ARN = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID)
-SONNET_BEDROCK_ARN = build_bedrock_profile_arn(SONNET_4_5_PROFILE_ID)
 
-# Default model IDs
 FREE_MODEL_ID = "kortix/basic"
 PREMIUM_MODEL_ID = "kortix/power"
-
-# Haiku 4.5 pricing (used for billing resolution)
-HAIKU_PRICING = ModelPricing(
-    input_cost_per_million_tokens=1.00,
-    output_cost_per_million_tokens=5.00,
-    cached_read_cost_per_million_tokens=0.10,
-    cache_write_5m_cost_per_million_tokens=1.25,
-    cache_write_1h_cost_per_million_tokens=2.00,
-)
+IMAGE_MODEL_ID = "kortix/haiku"
 
 
-class ModelRegistry:
-    def __init__(self):
-        self._models: Dict[str, Model] = {}
-        self._aliases: Dict[str, str] = {}
-        # Mapping of LiteLLM model IDs to pricing (for models not in registry)
-        self._litellm_id_to_pricing: Dict[str, ModelPricing] = {}
-        self._initialize_models()
+def _create_anthropic_model_config() -> ModelConfig:
+    return ModelConfig()
+
+
+def _create_minimax_model_config() -> ModelConfig:
+    return ModelConfig(
+        reasoning=ReasoningSettings(enabled=True, split_output=True),
+        extra_body={"app": "Kortix.com"},
+    )
+
+
+def _should_use_bedrock() -> bool:
+    return config.ENV_MODE in (EnvMode.STAGING, EnvMode.PRODUCTION) and config.MAIN_LLM == "bedrock"
+
+
+def _get_main_llm() -> str:
+    return getattr(config, 'MAIN_LLM', 'bedrock')
+
+class ModelFactory:
     
-    def _initialize_models(self):
-        # Register Haiku Bedrock ARN pricing for billing resolution
-        self._litellm_id_to_pricing[HAIKU_BEDROCK_ARN] = HAIKU_PRICING
+    @staticmethod
+    def create_anthropic_haiku(use_bedrock: bool = False) -> Model:
+        if use_bedrock:
+            litellm_id = BedrockConfig.get_haiku_arn()
+            provider = ModelProvider.BEDROCK
+        else:
+            litellm_id = "anthropic/claude-haiku-4-5-20251001"
+            provider = ModelProvider.ANTHROPIC
         
-        # MiniMax M2.1 pricing (LiteLLM may return model ID without openrouter/ prefix)
-        minimax_m2_pricing = ModelPricing(
-            input_cost_per_million_tokens=0.30,
-            output_cost_per_million_tokens=1.20,
-            cached_read_cost_per_million_tokens=0.03,
-            cache_write_5m_cost_per_million_tokens=0.375,
-        )
-        self._litellm_id_to_pricing["minimax/minimax-m2.1"] = minimax_m2_pricing
-        self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = minimax_m2_pricing
-        
-        # Kortix Basic - using Anthropic Claude Haiku 4.5 Bedrock
-        basic_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
-        
-        self.register(Model(
-            id="kortix/basic",
-            name="Kortix Basic",
-            litellm_model_id=basic_litellm_id,
-            # MiniMax vision fallback (only enable when using MiniMax as primary model):
-            # vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            # vision_context_window=200_000,
-            # vision_pricing=HAIKU_PRICING,
-            provider=ModelProvider.ANTHROPIC,
-            aliases=["kortix-basic", "Kortix Basic"],
+        return Model(
+            id="kortix/haiku",
+            name="Claude Haiku 4.5",
+            litellm_model_id=litellm_id,
+            provider=provider,
+            aliases=[litellm_id],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -79,102 +106,158 @@ class ModelRegistry:
                 ModelCapability.VISION,
                 ModelCapability.PROMPT_CACHING,
             ],
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=5.00,
-                cached_read_cost_per_million_tokens=0.10,
-                cache_write_5m_cost_per_million_tokens=1.25,
-                cache_write_1h_cost_per_million_tokens=2.00
-            ),
+            pricing=PricingPresets.HAIKU_4_5,
             tier_availability=["free", "paid"],
-            priority=102,
-            recommended=True,
+            priority=50,
+            recommended=False,
             enabled=True,
-            config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
-                },
-            )
-        ))
+            config=_create_anthropic_model_config(),
+        )
+    
+    @staticmethod
+    def create_minimax_m2(use_openrouter: bool = True) -> Model:
+        if use_openrouter:
+            litellm_id = "openrouter/minimax/minimax-m2.1"
+            provider = ModelProvider.OPENROUTER
+        else:
+            litellm_id = "minimax/MiniMax-M2.1"
+            provider = ModelProvider.MINIMAX
         
-        # Kortix Power - using Anthropic Claude Haiku 4.5
-        # MiniMax M2.1: power_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input tokens $1.20/M output tokens
-        power_litellm_id = build_bedrock_profile_arn(HAIKU_4_5_PROFILE_ID) if SHOULD_USE_BEDROCK else "anthropic/claude-haiku-4-5-20251001"
-        
-        self.register(Model(
-            id="kortix/power",
-            name="Kortix Advanced Mode",
-            litellm_model_id=power_litellm_id,
-            # MiniMax vision fallback (only enable when using MiniMax as primary model):
-            # vision_litellm_model_id=HAIKU_BEDROCK_ARN,
-            # vision_context_window=200_000,
-            # vision_pricing=HAIKU_PRICING,
-            # MiniMax: provider=ModelProvider.OPENROUTER,
-            provider=ModelProvider.ANTHROPIC,
-            aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+        return Model(
+            id="kortix/minimax",
+            name="MiniMax M2.1",
+            litellm_model_id=litellm_id,
+            provider=provider,
+            aliases=["minimax-m2", "minimax-m2.1"],
             context_window=200_000,
-            # MiniMax capabilities (includes THINKING):
-            # capabilities=[
-            #     ModelCapability.CHAT,
-            #     ModelCapability.FUNCTION_CALLING,
-            #     ModelCapability.VISION,
-            #     ModelCapability.THINKING,
-            #     ModelCapability.PROMPT_CACHING,
-            # ],
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
-                ModelCapability.VISION,
                 ModelCapability.THINKING,
                 ModelCapability.PROMPT_CACHING,
             ],
-            # MiniMax pricing:
-            # pricing=ModelPricing(
-            #     input_cost_per_million_tokens=0.30,
-            #     output_cost_per_million_tokens=1.20,
-            #     cached_read_cost_per_million_tokens=0.03,
-            #     cache_write_5m_cost_per_million_tokens=0.375,
-            # ),
-            pricing=ModelPricing(
-                input_cost_per_million_tokens=1.00,
-                output_cost_per_million_tokens=5.00,
-                cached_read_cost_per_million_tokens=0.10,
-                cache_write_5m_cost_per_million_tokens=1.25,
-                cache_write_1h_cost_per_million_tokens=2.00
-            ),
-            tier_availability=["paid"],
-            priority=101,
-            recommended=True,
+            pricing=PricingPresets.MINIMAX_M2,
+            tier_availability=["free", "paid"],
+            priority=100,
+            recommended=False,
             enabled=True,
-            # MiniMax: config=ModelConfig()
-            config=ModelConfig(
-                extra_headers={
-                    "anthropic-beta": "context-1m-2025-08-07,fine-grained-tool-streaming-2025-05-14,token-efficient-tools-2025-02-19" 
-                },
+            config=_create_minimax_model_config(),
+        )
+    
+    @staticmethod
+    def create_basic_model(main_llm: str) -> Model:
+        if main_llm == "bedrock":
+            return Model(
+                id="kortix/basic",
+                name="Kortix Basic",
+                litellm_model_id=BedrockConfig.get_haiku_arn(),
+                provider=ModelProvider.BEDROCK,
+                aliases=["kortix-basic", "Kortix Basic"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.HAIKU_4_5,
+                tier_availability=["free", "paid"],
+                priority=102,
+                recommended=True,
+                enabled=True,
+                config=_create_anthropic_model_config(),
             )
-        ))
-        
-        # Kortix Test - uses MiniMax M2.1 via direct API (only in LOCAL and STAGING, not PRODUCTION)
-        if config.ENV_MODE != EnvMode.PRODUCTION:
-            # MiniMax direct API - requires MINIMAX_API_KEY env var
-            # Docs: https://docs.litellm.ai/docs/providers/minimax
-            # test_litellm_id = "minimax/MiniMax-M2.1"  # 204,800 context $0.30/M input $1.20/M output
-            test_litellm_id = "openrouter/minimax/minimax-m2.1"  # 204,800 context $0.30/M input $1.20/M output 
-            # test_litellm_id = "minimax/MiniMax-M2.1-lightning"  # Faster ~100 tps, $2.40/M output
-            # test_litellm_id = "minimax/MiniMax-M2"  # Agentic capabilities
-            # test_litellm_id = build_bedrock_profile_arn(MINIMAX_M2_PROFILE_ID)
-            # test_litellm_id ="openrouter/minimax/minimax-m2" #  205K context $0.255/M input $1.02/M output
-            # test_litellm_id ="openrouter/z-ai/glm-4.6v" #  204,800 context $0.30/M input $1.20/M output
-            # test_litellm_id = "openrouter/google/gemini-3-flash-preview"
-            # test_litellm_id = "openrouter/x-ai/grok-4.1-fast"
-            # test_litellm_id ="groq/moonshotai/kimi-k2-instruct" 
-
-            self.register(Model(
-                id="kortix/test",
-                name="Kortix Test",
-                litellm_model_id=test_litellm_id,
-                provider=ModelProvider.MINIMAX,
-                aliases=["kortix-test", "Kortix Test"],
+        elif main_llm == "anthropic":
+            return Model(
+                id="kortix/basic",
+                name="Kortix Basic",
+                litellm_model_id="anthropic/claude-haiku-4-5-20251001",
+                provider=ModelProvider.ANTHROPIC,
+                aliases=["kortix-basic", "Kortix Basic"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.HAIKU_4_5,
+                tier_availability=["free", "paid"],
+                priority=102,
+                recommended=True,
+                enabled=True,
+                config=_create_anthropic_model_config(),
+            )
+        elif main_llm == "grok":
+            return Model(
+                id="kortix/basic",
+                name="Kortix Basic",
+                litellm_model_id="openrouter/x-ai/grok-4.1-fast",
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-basic", "Kortix Basic"],
+                context_window=2_000_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.GROK_4_1_FAST,
+                tier_availability=["free", "paid"],
+                priority=102,
+                recommended=True,
+                enabled=True,
+            )
+        elif main_llm == "openai":
+            return Model(
+                id="kortix/basic",
+                name="Kortix Basic",
+                litellm_model_id="openrouter/openai/gpt-4o-mini",
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-basic", "Kortix Basic"],
+                context_window=128_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                ],
+                pricing=PricingPresets.GPT_4O_MINI,
+                tier_availability=["free", "paid"],
+                priority=102,
+                recommended=True,
+                enabled=True,
+            )
+        else:  # minimax
+            return Model(
+                id="kortix/basic",
+                name="Kortix Basic",
+                litellm_model_id="openrouter/minimax/minimax-m2.1",
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-basic", "Kortix Basic"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.THINKING,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.MINIMAX_M2,
+                tier_availability=["free", "paid"],
+                priority=102,
+                recommended=True,
+                enabled=True,
+                config=_create_minimax_model_config(),
+            )
+    
+    @staticmethod
+    def create_power_model(main_llm: str) -> Model:
+        if main_llm == "bedrock":
+            return Model(
+                id="kortix/power",
+                name="Kortix Advanced Mode",
+                litellm_model_id=BedrockConfig.get_haiku_arn(),
+                provider=ModelProvider.BEDROCK,
+                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
                 context_window=200_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -183,18 +266,222 @@ class ModelRegistry:
                     ModelCapability.THINKING,
                     ModelCapability.PROMPT_CACHING,
                 ],
-                pricing=ModelPricing(
-                    input_cost_per_million_tokens=0.30,
-                    output_cost_per_million_tokens=1.20,
-                    cached_read_cost_per_million_tokens=0.03,
-                    cache_write_5m_cost_per_million_tokens=0.375,
-                ),
-                tier_availability=["free", "paid"],
-                priority=100,
-                recommended=False,
+                pricing=PricingPresets.HAIKU_4_5,
+                tier_availability=["paid"],
+                priority=101,
+                recommended=True,
                 enabled=True,
-                config=ModelConfig()
-            ))
+                config=_create_anthropic_model_config(),
+            )
+        elif main_llm == "anthropic":
+            return Model(
+                id="kortix/power",
+                name="Kortix Advanced Mode",
+                litellm_model_id="anthropic/claude-haiku-4-5-20251001",
+                provider=ModelProvider.ANTHROPIC,
+                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                    ModelCapability.THINKING,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.HAIKU_4_5,
+                tier_availability=["paid"],
+                priority=101,
+                recommended=True,
+                enabled=True,
+                config=_create_anthropic_model_config(),
+            )
+        elif main_llm == "grok":
+            return Model(
+                id="kortix/power",
+                name="Kortix Advanced Mode",
+                litellm_model_id="openrouter/x-ai/grok-4.1-fast",
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                context_window=2_000_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                    ModelCapability.THINKING,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.GROK_4_1_FAST,
+                tier_availability=["paid"],
+                priority=101,
+                recommended=True,
+                enabled=True,
+            )
+        elif main_llm == "openai":
+            return Model(
+                id="kortix/power",
+                name="Kortix Advanced Mode",
+                litellm_model_id="openrouter/openai/gpt-4o-mini",
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                context_window=128_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                ],
+                pricing=PricingPresets.GPT_4O_MINI,
+                tier_availability=["paid"],
+                priority=101,
+                recommended=True,
+                enabled=True,
+            )
+        else:  # minimax
+            return Model(
+                id="kortix/power",
+                name="Kortix Advanced Mode",
+                litellm_model_id="openrouter/minimax/minimax-m2.1",
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.THINKING,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.MINIMAX_M2,
+                tier_availability=["paid"],
+                priority=101,
+                recommended=True,
+                enabled=True,
+                config=_create_minimax_model_config(),
+            )
+    
+    @staticmethod
+    def create_test_model() -> Model:
+        return Model(
+            id="kortix/test",
+            name="Kortix Test",
+            litellm_model_id="openrouter/minimax/minimax-m2.1",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["kortix-test", "Kortix Test"],
+            context_window=200_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.THINKING,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.MINIMAX_M2,
+            tier_availability=["free", "paid"],
+            priority=100,
+            recommended=False,
+            enabled=True,
+            config=_create_minimax_model_config(),
+        )
+    
+    @staticmethod
+    def create_grok_4_1_fast() -> Model:
+        return Model(
+            id="kortix/grok-4-1-fast",
+            name="Grok 4.1 Fast",
+            litellm_model_id="openrouter/x-ai/grok-4.1-fast",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["grok-4.1-fast", "grok-4-1-fast", "x-ai/grok-4.1-fast"],
+            context_window=2_000_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.GROK_4_1_FAST,
+            tier_availability=["paid"],
+            priority=90,
+            recommended=False,
+            enabled=True,
+        )
+    
+    @staticmethod
+    def create_gpt4o_mini() -> Model:
+        return Model(
+            id="kortix/gpt4o-mini",
+            name="GPT-4o Mini",
+            litellm_model_id="openrouter/openai/gpt-4o-mini",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["gpt-4o-mini", "gpt4o-mini", "openai/gpt-4o-mini"],
+            context_window=128_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+            ],
+            pricing=PricingPresets.GPT_4O_MINI,
+            tier_availability=["free", "paid"],
+            priority=95,
+            recommended=True,
+            enabled=True,
+        )
+
+    @staticmethod
+    def create_gpt5_mini() -> Model:
+        return Model(
+            id="kortix/gpt-5-mini",
+            name="GPT-5 Mini",
+            litellm_model_id="openrouter/openai/gpt-4o-mini",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["gpt-4o-mini", "gpt4o-mini", "openai/gpt-4o-mini"],
+            context_window=128_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+            ],
+            pricing=PricingPresets.GPT_4O_MINI,
+            tier_availability=["free", "paid"],
+            priority=95,
+            recommended=True,
+            enabled=True,
+        )
+
+
+class ModelRegistry:
+    
+    def __init__(self):
+        self._models: Dict[str, Model] = {}
+        self._aliases: Dict[str, str] = {}
+        self._litellm_id_to_pricing: Dict[str, ModelPricing] = {}
+        self._initialize_providers()
+        self._initialize_models()
+    
+    def _initialize_providers(self):
+        bedrock_provider = BedrockProvider(
+            region=BedrockConfig.REGION,
+            account_id=BedrockConfig.ACCOUNT_ID,
+        )
+        provider_registry.register("bedrock", bedrock_provider)
+    
+    def _initialize_models(self):
+        self._register_pricing_mappings()
+        
+        main_llm = _get_main_llm()
+        use_bedrock = _should_use_bedrock()
+        
+        self.register(ModelFactory.create_basic_model(main_llm))
+        self.register(ModelFactory.create_power_model(main_llm))
+        self.register(ModelFactory.create_anthropic_haiku(use_bedrock))
+        self.register(ModelFactory.create_grok_4_1_fast())
+        self.register(ModelFactory.create_gpt4o_mini())
+        
+        if config.ENV_MODE != EnvMode.PRODUCTION:
+            self.register(ModelFactory.create_test_model())
+    
+    def _register_pricing_mappings(self):
+        self._litellm_id_to_pricing[BedrockConfig.get_haiku_arn()] = PricingPresets.HAIKU_4_5
+        self._litellm_id_to_pricing["minimax/minimax-m2.1"] = PricingPresets.MINIMAX_M2
+        self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = PricingPresets.MINIMAX_M2
+        self._litellm_id_to_pricing["openrouter/x-ai/grok-4.1-fast"] = PricingPresets.GROK_4_1_FAST
+        self._litellm_id_to_pricing["openrouter/openai/gpt-4o-mini"] = PricingPresets.GPT_4O_MINI
     
     def register(self, model: Model) -> None:
         self._models[model.id] = model
@@ -204,7 +491,7 @@ class ModelRegistry:
     def get(self, model_id: str) -> Optional[Model]:
         if not model_id:
             return None
-            
+        
         if model_id in self._models:
             return self._models[model_id]
         
@@ -215,7 +502,6 @@ class ModelRegistry:
         return None
     
     def get_model(self, model_id: str) -> Optional[Model]:
-        """Alias for get() for backwards compatibility."""
         return self.get(model_id)
     
     def get_all(self, enabled_only: bool = True) -> List[Model]:
@@ -237,57 +523,29 @@ class ModelRegistry:
         return [m for m in models if capability in m.capabilities]
     
     def resolve_model_id(self, model_id: str) -> Optional[str]:
-        """Resolve a model ID to its registry ID.
-        
-        Handles:
-        - Registry model IDs (kortix/basic) → returns as-is
-        - Model aliases → resolves to registry ID
-        - LiteLLM model IDs (Bedrock ARNs) → reverse lookup to registry ID
-        """
-        # First try direct registry lookup
         resolved = self.get(model_id)
         if resolved:
             return resolved.id
         
-        # Try reverse lookup from LiteLLM model ID
         reverse_resolved = self.resolve_from_litellm_id(model_id)
         if reverse_resolved != model_id:
             return reverse_resolved
-            
+        
         return model_id
     
-    def get_litellm_model_id(self, model_id: str, has_images: bool = False) -> str:
-        """Get the LiteLLM model ID for a given registry model ID or alias.
-        
-        Args:
-            model_id: Registry model ID or alias
-            has_images: Whether the context has images (uses vision model if available)
-        """
+    def get_litellm_model_id(self, model_id: str) -> str:
         model = self.get(model_id)
         if model:
-            return model.get_litellm_model_id_for_context(has_images)
+            return model.litellm_model_id
         return model_id
     
-    def needs_vision_model_check(self, model_id: str) -> bool:
-        """Check if a model has a separate vision model configured.
-        
-        Use this to avoid expensive thread_has_images() lookups for models
-        that don't need to switch to a different model for vision tasks.
-        
-        Args:
-            model_id: Registry model ID or alias
-            
-        Returns:
-            True if the model has vision_litellm_model_id set (e.g., MiniMax models),
-            False otherwise (model handles images natively or no vision fallback configured)
-        """
+    def supports_vision(self, model_id: str) -> bool:
         model = self.get(model_id)
         if model:
-            return model.vision_litellm_model_id is not None
+            return model.supports_vision
         return False
     
     def get_litellm_params(self, model_id: str, **override_params) -> Dict[str, Any]:
-        """Get complete LiteLLM parameters for a model from the registry."""
         model = self.get(model_id)
         if not model:
             return {
@@ -296,86 +554,56 @@ class ModelRegistry:
                 **override_params
             }
         
-        # Get config from model, then override the model ID with the actual LiteLLM model ID
         params = model.get_litellm_params(**override_params)
         params["model"] = self.get_litellm_model_id(model_id)
         
         return params
     
-    
     def _normalize_model_id(self, model_id: str) -> str:
-        """Normalize model ID for consistent matching.
-        
-        LiteLLM/OpenRouter may return model IDs without provider prefix (e.g., 'minimax/minimax-m2.1')
-        but we store them with prefix (e.g., 'openrouter/minimax/minimax-m2.1').
-        """
         if not model_id:
             return model_id
         
-        # Common provider prefixes that LiteLLM might strip
         provider_prefixes = ['openrouter/', 'anthropic/', 'bedrock/', 'openai/', 'minimax/']
         
-        # If ID already has a known prefix, return as-is
         for prefix in provider_prefixes:
             if model_id.startswith(prefix):
                 return model_id
         
-        # Try adding openrouter/ prefix (most common case for external models)
-        openrouter_variant = f"openrouter/{model_id}"
-        return openrouter_variant
+        return f"openrouter/{model_id}"
     
     def resolve_from_litellm_id(self, litellm_model_id: str) -> str:
-        """Reverse lookup: resolve a LiteLLM model ID back to registry model ID.
-        
-        Used by cost calculator to find pricing. Returns input if not found.
-        Handles model ID variations (with/without provider prefix).
-        """
-        # Direct lookup in registered models
         for model in self._models.values():
             if model.litellm_model_id == litellm_model_id:
                 return model.id
         
-        # Try normalized version (handles openrouter/ prefix)
         normalized_id = self._normalize_model_id(litellm_model_id)
         if normalized_id != litellm_model_id:
             for model in self._models.values():
                 if model.litellm_model_id == normalized_id:
                     return model.id
         
-        # Check if this is already a registry ID
         if self.get(litellm_model_id):
             return litellm_model_id
         
         return litellm_model_id
     
     def get_pricing_for_litellm_id(self, litellm_model_id: str) -> Optional[ModelPricing]:
-        """Get pricing for a LiteLLM model ID (handles both registry models and raw IDs).
-        
-        This is the primary method for billing to resolve pricing, as it handles:
-        1. Registry model IDs (kortix/basic)
-        2. LiteLLM model IDs that map to registry models (with/without provider prefix)
-        3. Fallback model IDs (like Haiku Bedrock ARN) that have explicit pricing
-        """
-        # First, check if it's a registry model or maps to one
         resolved_id = self.resolve_from_litellm_id(litellm_model_id)
         model = self.get(resolved_id)
         if model and model.pricing:
             return model.pricing
         
-        # Check explicit litellm ID to pricing mapping (for fallback models)
         if litellm_model_id in self._litellm_id_to_pricing:
             return self._litellm_id_to_pricing[litellm_model_id]
         
-        # Try with normalized ID in pricing mapping
         normalized_id = self._normalize_model_id(litellm_model_id)
         if normalized_id in self._litellm_id_to_pricing:
             return self._litellm_id_to_pricing[normalized_id]
         
-        # Handle Bedrock ARN patterns
         if "application-inference-profile" in litellm_model_id:
             profile_id = litellm_model_id.split("/")[-1] if "/" in litellm_model_id else None
-            if profile_id == HAIKU_4_5_PROFILE_ID:
-                return HAIKU_PRICING
+            if profile_id == BedrockConfig.PROFILE_IDS["haiku_4_5"]:
+                return PricingPresets.HAIKU_4_5
         
         return None
     
@@ -397,31 +625,20 @@ class ModelRegistry:
             return True
         return False
     
-    def get_context_window(self, model_id: str, default: int = 31_000, has_images: bool = False) -> int:
-        """Get context window for a model.
-        
-        Args:
-            model_id: Registry model ID or alias
-            default: Default context window if model not found
-            has_images: Whether context has images (uses vision context window if available)
-        """
+    def get_context_window(self, model_id: str, default: int = 31_000) -> int:
         model = self.get(model_id)
         if model:
-            return model.get_context_window_for_context(has_images)
+            return model.context_window
         return default
     
     def get_pricing(self, model_id: str) -> Optional[ModelPricing]:
-        """Get pricing for a model by registry ID or LiteLLM ID."""
-        # Direct registry lookup
         model = self.get(model_id)
         if model and model.pricing:
             return model.pricing
         
-        # Try as LiteLLM ID
         return self.get_pricing_for_litellm_id(model_id)
     
     def validate_model(self, model_id: str) -> Tuple[bool, str]:
-        """Validate that a model exists and is enabled."""
         model = self.get(model_id)
         
         if not model:
@@ -439,7 +656,6 @@ class ModelRegistry:
         min_context_window: Optional[int] = None,
         prefer_cheaper: bool = False
     ) -> Optional[Model]:
-        """Select the best model for given criteria."""
         models = self.get_by_tier(tier, enabled_only=True)
         
         if required_capabilities:
@@ -470,7 +686,6 @@ class ModelRegistry:
         return models[0] if models else None
     
     def get_default_model(self, tier: str = "free") -> Optional[Model]:
-        """Get the default model for a tier."""
         models = self.get_by_tier(tier, enabled_only=True)
         
         recommended = [m for m in models if m.recommended]
@@ -485,12 +700,10 @@ class ModelRegistry:
         return None
     
     async def get_default_model_for_user(self, client, user_id: str) -> str:
-        """Get the default model ID for a user based on their subscription tier."""
         try:
-            from core.utils.config import config, EnvMode
             if config.ENV_MODE == EnvMode.LOCAL:
                 return PREMIUM_MODEL_ID
-                
+            
             from core.billing.subscriptions import subscription_service
             
             subscription_info = await subscription_service.get_subscription(user_id)
@@ -498,22 +711,12 @@ class ModelRegistry:
             
             is_paid_tier = False
             if subscription:
-                price_id = None
-                if subscription.get('items') and subscription['items'].get('data') and len(subscription['items']['data']) > 0:
-                    price_id = subscription['items']['data'][0]['price']['id']
-                else:
-                    price_id = subscription.get('price_id')
-                
-                # Check if this is a paid tier by looking at the tier info
                 tier_info = subscription_info.get('tier', {})
-                if tier_info and tier_info.get('name') != 'free' and tier_info.get('name') != 'none':
+                if tier_info and tier_info.get('name') not in ('free', 'none'):
                     is_paid_tier = True
             
-            if is_paid_tier:
-                return PREMIUM_MODEL_ID
-            else:
-                return FREE_MODEL_ID
-                
+            return PREMIUM_MODEL_ID if is_paid_tier else FREE_MODEL_ID
+            
         except Exception as e:
             logger.warning(f"Failed to determine user tier for {user_id}: {e}")
             return FREE_MODEL_ID
@@ -524,21 +727,14 @@ class ModelRegistry:
         token_count: int,
         is_input: bool = True
     ) -> Tuple[bool, int]:
-        """Check if token count is within model limits."""
         model = self.get(model_id)
         if not model:
             return False, 0
         
-        if is_input:
-            max_allowed = model.context_window
-        else:
-            # Use context_window as max output if not specified
-            max_allowed = model.context_window
-        
+        max_allowed = model.context_window
         return token_count <= max_allowed, max_allowed
     
     def format_model_info(self, model_id: str) -> Dict[str, Any]:
-        """Format model info for API responses."""
         model = self.get(model_id)
         if not model:
             return {"error": f"Model '{model_id}' not found"}
@@ -560,14 +756,13 @@ class ModelRegistry:
         tier: Optional[str] = None,
         include_disabled: bool = False
     ) -> List[Dict[str, Any]]:
-        """List available models, optionally filtered by tier."""
         if tier:
             models = self.get_by_tier(tier, enabled_only=not include_disabled)
         else:
             models = self.get_all(enabled_only=not include_disabled)
         
         if not models:
-            logger.warning(f"No models found for tier '{tier}' - this might indicate a configuration issue")
+            logger.warning(f"No models found for tier '{tier}'")
         
         models = sorted(
             models,
@@ -578,3 +773,9 @@ class ModelRegistry:
 
 
 registry = ModelRegistry()
+
+
+HAIKU_BEDROCK_ARN = BedrockConfig.get_haiku_arn()
+SONNET_BEDROCK_ARN = BedrockConfig.get_sonnet_arn()
+HAIKU_PRICING = PricingPresets.HAIKU_4_5
+HAIKU_4_5_PROFILE_ID = BedrockConfig.PROFILE_IDS["haiku_4_5"]

@@ -33,6 +33,7 @@ import { Brain, Zap, Database, ArrowDown, ArrowUp, Wrench, Clock, Send } from 'l
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ContextUsageIndicator } from '../ContextUsageIndicator';
 
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -43,6 +44,7 @@ import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { UnifiedConfigMenu } from './unified-config-menu';
+import { useVoicePlayerStore } from '@/stores/voice-player-store';
 
 import posthog from 'posthog-js';
 import { trackCtaUpgrade } from '@/lib/analytics/gtm';
@@ -639,10 +641,14 @@ export type SubscriptionStatus = 'no_subscription' | 'active';
 export interface ChatInputHandles {
   getPendingFiles: () => File[];
   getUploadedFileIds: () => string[];
+  getUploadedFiles: () => UploadedFile[];
   clearPendingFiles: () => void;
   clearUploadedFiles: () => void;
   setValue: (value: string) => void;
   getValue: () => string;
+  focus: () => void;
+  selectRange: (start: number, end: number) => void;
+  addFiles: (files: File[]) => void;
 }
 
 export interface ChatInputProps {
@@ -786,6 +792,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const ENABLE_SUNA_AGENT_MODES = false;
     const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
 
+    // Voice player state for snack visibility
+    const voiceState = useVoicePlayerStore((s) => s.state);
+    const isVoiceActive = voiceState !== 'idle';
+
     const {
       selectedModel,
       setSelectedModel: handleModelChange,
@@ -923,6 +933,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       getUploadedFileIds: () => uploadedFiles
         .filter((f) => f.fileId && f.status === 'ready')
         .map((f) => f.fileId!),
+      getUploadedFiles: () => uploadedFiles,
       clearPendingFiles: () => setPendingFiles([]),
       clearUploadedFiles: () => setUploadedFiles([]),
       setValue: (newValue: string) => {
@@ -935,7 +946,32 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         setHasContent(newValue.trim().length > 0);
       },
       getValue: () => valueRef.current,
-    }), [pendingFiles, uploadedFiles]);
+      focus: () => {
+        const textarea = textareaRef.current as any;
+        if (textarea?.focus) {
+          textarea.focus();
+        }
+      },
+      selectRange: (start: number, end: number) => {
+        // The textareaRef points to the IsolatedTextarea which exposes the textarea element via useImperativeHandle
+        const textarea = textareaRef.current as HTMLTextAreaElement | null;
+        if (textarea && textarea.setSelectionRange) {
+          textarea.focus();
+          textarea.setSelectionRange(start, end);
+        }
+      },
+      addFiles: (files: File[]) => {
+        handleFiles(
+          files,
+          sandboxId,
+          projectId,
+          setPendingFiles,
+          setUploadedFiles,
+          setIsUploading,
+          messages,
+        );
+      },
+    }), [pendingFiles, uploadedFiles, sandboxId, projectId, messages]);
 
     useEffect(() => {
       if (agents.length > 0 && !onAgentSelect) {
@@ -1293,6 +1329,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
     const rightControls = useMemo(() => (
       <div className='flex items-center gap-2 flex-shrink-0'>
+        
+        {threadId && selectedAgentId && (
+          <ContextUsageIndicator 
+            threadId={threadId}
+            modelName={selectedAgentId}
+          />
+        )}
+
         {!hideAgentSelection && (
           <UnifiedConfigMenu
             isLoggedIn={isLoggedIn}
@@ -1319,7 +1363,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           pendingFilesCount={pendingFilesCount}
         />
       </div>
-    ), [isLoggedIn, loading, disabled, handleTranscription, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount, hideAgentSelection, selectedAgentId, onAgentSelect]);
+    ), [isLoggedIn, loading, disabled, handleTranscription, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount, hideAgentSelection, selectedAgentId, onAgentSelect, threadId]);
 
     const renderControls = useMemo(() => (
       <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-1.5">
@@ -1328,7 +1372,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       </div>
     ), [leftControls, rightControls]);
 
-    const isSnackVisible = showToolPreview || !!showSnackbar || (isFreeTier && subscriptionData && !isLocalMode());
+    const isSnackVisible = showToolPreview || !!showSnackbar || (isVoiceActive && !!threadId) || (isFreeTier && subscriptionData && !isLocalMode());
 
     // Message Queue - get from store
     const allQueuedMessages = useMessageQueueStore((state) => state.queuedMessages);
@@ -1423,6 +1467,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               setPlanSelectionModalOpen(true);
             }}
             isVisible={isSnackVisible}
+            threadId={threadId}
           />
 
           {/* Scroll to bottom button */}

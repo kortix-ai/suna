@@ -533,9 +533,120 @@ function CsvPreview({ content }: { content: string }) {
 }
 
 /**
+ * Generates HTML with embedded pdf.js for rendering PDFs on Android
+ * Android WebView doesn't support native PDF rendering, so we use pdf.js
+ */
+function generatePdfJsHtml(base64Data: string, isDark: boolean): string {
+  const bgColor = isDark ? '#121215' : '#ffffff';
+  const textColor = isDark ? '#f8f8f8' : '#121215';
+  
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { 
+      width: 100%; 
+      height: 100%; 
+      background: ${bgColor};
+      overflow-x: hidden;
+    }
+    #container {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 8px;
+      gap: 8px;
+    }
+    canvas {
+      max-width: 100%;
+      height: auto;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      background: white;
+    }
+    #loading, #error {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: ${textColor};
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+    }
+    #error { color: #ef4444; display: none; }
+    .page-num {
+      color: ${isDark ? 'rgba(248,248,248,0.5)' : 'rgba(18,18,21,0.5)'};
+      font-size: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      margin-top: 4px;
+      margin-bottom: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading PDF...</div>
+  <div id="error">Failed to load PDF</div>
+  <div id="container"></div>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    
+    async function renderPDF() {
+      try {
+        const base64 = '${base64Data}';
+        const binaryData = atob(base64);
+        const bytes = new Uint8Array(binaryData.length);
+        for (let i = 0; i < binaryData.length; i++) {
+          bytes[i] = binaryData.charCodeAt(i);
+        }
+        
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        document.getElementById('loading').style.display = 'none';
+        
+        const container = document.getElementById('container');
+        const containerWidth = window.innerWidth - 16;
+        
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+          const page = await pdf.getPage(pageNum);
+          const viewport = page.getViewport({ scale: 1 });
+          const scale = Math.min(containerWidth / viewport.width, 2.5);
+          const scaledViewport = page.getViewport({ scale });
+          
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.width = scaledViewport.width;
+          canvas.height = scaledViewport.height;
+          
+          await page.render({ canvasContext: context, viewport: scaledViewport }).promise;
+          container.appendChild(canvas);
+          
+          const pageLabel = document.createElement('div');
+          pageLabel.className = 'page-num';
+          pageLabel.textContent = 'Page ' + pageNum + ' of ' + pdf.numPages;
+          container.appendChild(pageLabel);
+        }
+      } catch (err) {
+        console.error('PDF render error:', err);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+      }
+    }
+    
+    renderPDF();
+  </script>
+</body>
+</html>`;
+}
+
+/**
  * PDF Preview Component using WebView
- * Writes PDF to a temp file and loads it in WebView
- * iOS WebView natively supports PDF rendering from file:// URLs
+ * - iOS: Uses native WebView PDF support with file:// URLs
+ * - Android: Uses pdf.js for rendering since Android WebView lacks native PDF support
  */
 function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string }) {
   const { colorScheme } = useColorScheme();
@@ -543,12 +654,15 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
   const [isLoading, setIsLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const [pdfFileUri, setPdfFileUri] = useState<string | null>(null);
+  const [pdfHtml, setPdfHtml] = useState<string | null>(null);
+  
+  const isAndroid = Platform.OS === 'android';
 
-  // Write the PDF data URL to a temp file for WebView to load
+  // Process the PDF data based on platform
   useEffect(() => {
     if (!blobUrl) return;
 
-    const writePdfToFile = async () => {
+    const processPdf = async () => {
       try {
         setIsLoading(true);
         setHasError(false);
@@ -563,31 +677,37 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
         }
 
         const base64Data = base64Match[1];
-        const tempFilePath = `${FileSystem.cacheDirectory}temp_${Date.now()}_${fileName}`;
 
-        // Write base64 data to file
-        await FileSystem.writeAsStringAsync(tempFilePath, base64Data, {
-          encoding: FileSystem.EncodingType.Base64,
-        });
-
-        setPdfFileUri(tempFilePath);
-        setIsLoading(false);
+        if (isAndroid) {
+          // Android: Generate HTML with pdf.js
+          const html = generatePdfJsHtml(base64Data, isDark);
+          setPdfHtml(html);
+          setIsLoading(false);
+        } else {
+          // iOS: Write to temp file for native WebView rendering
+          const tempFilePath = `${FileSystem.cacheDirectory}temp_${Date.now()}_${fileName}`;
+          await FileSystem.writeAsStringAsync(tempFilePath, base64Data, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          setPdfFileUri(tempFilePath);
+          setIsLoading(false);
+        }
       } catch (error) {
-        log.error('Failed to write PDF to file:', error);
+        log.error('Failed to process PDF:', error);
         setHasError(true);
         setIsLoading(false);
       }
     };
 
-    writePdfToFile();
+    processPdf();
 
-    // Cleanup temp file on unmount
+    // Cleanup temp file on unmount (iOS only)
     return () => {
       if (pdfFileUri) {
         FileSystem.deleteAsync(pdfFileUri, { idempotent: true }).catch(() => {});
       }
     };
-  }, [blobUrl, fileName]);
+  }, [blobUrl, fileName, isAndroid, isDark]);
 
   if (!blobUrl) {
     return (
@@ -611,7 +731,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
     );
   }
 
-  if (hasError || !pdfFileUri) {
+  if (hasError || (!pdfFileUri && !pdfHtml)) {
     return (
       <View className="flex-1 items-center justify-center p-8">
         <Icon
@@ -630,10 +750,41 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
     );
   }
 
+  // Android: Use pdf.js HTML
+  if (isAndroid && pdfHtml) {
+    return (
+      <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+        <WebView
+          source={{ html: pdfHtml }}
+          style={{ flex: 1, backgroundColor: 'transparent' }}
+          originWhitelist={['*']}
+          javaScriptEnabled={true}
+          domStorageEnabled={true}
+          mixedContentMode="compatibility"
+          allowFileAccess={true}
+          startInLoadingState={true}
+          renderLoading={() => (
+            <View className="absolute inset-0 items-center justify-center" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
+              <KortixLoader size="large" />
+              <Text className="text-sm text-muted-foreground mt-4">
+                Rendering PDF...
+              </Text>
+            </View>
+          )}
+          onError={(e) => {
+            log.error('WebView PDF error (Android):', e.nativeEvent);
+            setHasError(true);
+          }}
+        />
+      </View>
+    );
+  }
+
+  // iOS: Use native file:// URL rendering
   return (
     <View className="flex-1" style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}>
       <WebView
-        source={{ uri: pdfFileUri }}
+        source={{ uri: pdfFileUri! }}
         style={{ flex: 1, backgroundColor: 'transparent' }}
         originWhitelist={['*']}
         javaScriptEnabled={true}
@@ -651,7 +802,7 @@ function PdfPreview({ blobUrl, fileName }: { blobUrl?: string; fileName: string 
           </View>
         )}
         onError={(e) => {
-          log.error('WebView PDF error:', e.nativeEvent);
+          log.error('WebView PDF error (iOS):', e.nativeEvent);
           setHasError(true);
         }}
         onHttpError={(e) => {

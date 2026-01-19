@@ -14,6 +14,7 @@ from core.billing.credits.media_calculator import (
     calculate_media_cost,
     calculate_replicate_image_cost,
     calculate_replicate_video_cost,
+    calculate_replicate_voice_cost,
     calculate_openrouter_image_cost,
     get_model_pricing_info,
     select_image_quality,
@@ -75,7 +76,7 @@ class MediaBillingIntegration:
         account_id: str,
         provider: Literal["replicate", "openrouter"],
         model: str,
-        media_type: Literal["image", "video"] = "image",
+        media_type: Literal["image", "video", "voice"] = "image",
         count: int = 1,
         duration_seconds: Optional[int] = None,
         with_audio: bool = False,
@@ -83,22 +84,24 @@ class MediaBillingIntegration:
         thread_id: Optional[str] = None,
         message_id: Optional[str] = None,
         variant: Optional[str] = None,
+        char_count: Optional[int] = None,
     ) -> Dict:
         """
         Deduct credits for media generation.
-        
+
         Args:
             account_id: User's account ID
             provider: "replicate" or "openrouter"
             model: Model identifier
-            media_type: "image" or "video"
+            media_type: "image", "video", or "voice"
             count: Number of items (for images)
             duration_seconds: Duration in seconds (for videos)
             description: Custom description for the transaction
             thread_id: Optional thread ID for tracking
             message_id: Optional message ID for tracking
             variant: Quality variant for image models ('low', 'medium', 'high')
-            
+            char_count: Number of characters (for voice)
+
         Returns:
             Dict with success status and details
         """
@@ -112,7 +115,7 @@ class MediaBillingIntegration:
                 'skipped': True,
                 'reason': 'development_mode'
             }
-        
+
         try:
             # Calculate cost
             cost = calculate_media_cost(
@@ -122,19 +125,22 @@ class MediaBillingIntegration:
                 count=count,
                 duration_seconds=duration_seconds,
                 with_audio=with_audio,
-                variant=variant
+                variant=variant,
+                char_count=char_count
             )
-            
+
             if cost <= 0:
                 logger.warning(f"[MEDIA_BILLING] Zero cost calculated for {model}")
                 return {'success': True, 'cost': 0, 'new_balance': 0}
-            
+
             # Build description
             if not description:
                 pricing_info = get_model_pricing_info(provider, model)
                 model_desc = pricing_info.get('description', model)
                 if media_type == "video" and duration_seconds:
                     description = f"{model_desc} ({duration_seconds}s video)"
+                elif media_type == "voice" and char_count:
+                    description = f"{model_desc} ({char_count} chars)"
                 else:
                     description = f"{model_desc} ({count} image{'s' if count > 1 else ''})"
             
@@ -233,20 +239,40 @@ class MediaBillingIntegration:
             description=description,
             thread_id=thread_id,
         )
-    
+
+    @staticmethod
+    async def deduct_replicate_voice(
+        account_id: str,
+        model: str,
+        char_count: int,
+        description: Optional[str] = None,
+        thread_id: Optional[str] = None,
+    ) -> Dict:
+        """Convenience method for Replicate voice/TTS billing."""
+        return await MediaBillingIntegration.deduct_media_credits(
+            account_id=account_id,
+            provider="replicate",
+            model=model,
+            media_type="voice",
+            char_count=char_count,
+            description=description,
+            thread_id=thread_id,
+        )
+
     @staticmethod
     def estimate_cost(
         provider: Literal["replicate", "openrouter"],
         model: str,
-        media_type: Literal["image", "video"] = "image",
+        media_type: Literal["image", "video", "voice"] = "image",
         count: int = 1,
         duration_seconds: Optional[int] = None,
         with_audio: bool = False,
-        variant: Optional[str] = None
+        variant: Optional[str] = None,
+        char_count: Optional[int] = None
     ) -> Decimal:
         """
         Estimate cost without deducting (for UI display).
-        
+
         Returns cost in USD with markup.
         """
         return calculate_media_cost(
@@ -256,7 +282,8 @@ class MediaBillingIntegration:
             count=count,
             duration_seconds=duration_seconds,
             with_audio=with_audio,
-            variant=variant
+            variant=variant,
+            char_count=char_count
         )
     
     @staticmethod

@@ -236,6 +236,9 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             new_mcp_config = {
                 'name': profile.toolkit_name,
                 'type': 'composio',
+                'customType': 'composio',
+                'toolkit_slug': profile.toolkit_slug,
+                'mcp_qualified_name': profile.mcp_qualified_name,
                 'config': {
                     'profile_id': profile_id,
                     'toolkit_slug': profile.toolkit_slug,
@@ -388,4 +391,4 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             })
             
         except Exception as e:
-            return self.fail_response("Error deleting credential profile") 
+            return self.fail_response("Error deleting credential profile")

@@ -17,9 +17,6 @@ CREDITS_PER_DOLLAR = 100
 
 FREE_TIER_INITIAL_CREDITS = Decimal('0.00')
 
-# "Unlimited" plan limits
-# We keep these as large integers (instead of None/inf) to avoid touching downstream
-# DB queries, JSON serialization, and comparison logic across the codebase.
 UNLIMITED_THREAD_LIMIT = 100_000
 UNLIMITED_PROJECT_LIMIT = UNLIMITED_THREAD_LIMIT * 2
 
@@ -68,8 +65,8 @@ TIERS: Dict[str, Tier] = {
         display_name='Basic',
         can_purchase_credits=False,
         models=['haiku'],
-        project_limit=20,  # 2x thread_limit (safety buffer for orphan projects)
-        thread_limit=10,
+        project_limit=2,  # 2x thread_limit (safety buffer for orphan projects)
+        thread_limit=1,
         concurrent_runs=1,
         custom_workers_limit=0,
         scheduled_triggers_limit=0,
@@ -81,8 +78,8 @@ TIERS: Dict[str, Tier] = {
         },
         daily_credit_config={
             'enabled': True,
-            'amount': Decimal('1.00'),
-            'refresh_interval_hours': 24
+            'amount': Decimal('3.00'),
+            'refresh_interval_hours': 168
         },
         monthly_refill_enabled=False
     ),

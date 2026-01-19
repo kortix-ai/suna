@@ -138,31 +138,32 @@ export function useShareThread(
 
   return useMutation({
     mutationFn: async (threadId) => {
-      const headers = await getAuthHeaders();
-      
-      // Make thread public
-      const updateRes = await fetch(`${API_URL}/threads/${threadId}`, {
-        method: 'PATCH',
-        headers,
-        body: JSON.stringify({ is_public: true }),
-      });
-      
-      if (!updateRes.ok) throw new Error(`Failed to share thread: ${updateRes.status}`);
-      
-      // Generate share URL using frontend URL
+      // Generate share URL immediately - it's deterministic
       const shareUrl = `${FRONTEND_SHARE_URL}/share/${threadId}`;
-      
-      // Open native share menu
+
+      // Open native share menu right away for instant UX
       // Use message instead of url to prevent iOS duplication issue
       await Share.share({
         message: shareUrl,
       });
-      
+
+      // Make thread public in background (fire-and-forget)
+      getAuthHeaders().then((headers) => {
+        fetch(`${API_URL}/threads/${threadId}`, {
+          method: 'PATCH',
+          headers,
+          body: JSON.stringify({ is_public: true }),
+        }).then((res) => {
+          if (res.ok) {
+            queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
+            queryClient.invalidateQueries({ queryKey: chatKeys.thread(threadId) });
+          }
+        }).catch((err) => {
+          log.error('Failed to make thread public:', err);
+        });
+      });
+
       return { shareUrl };
-    },
-    onSuccess: (_, threadId) => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
-      queryClient.invalidateQueries({ queryKey: chatKeys.thread(threadId) });
     },
     ...options,
   });
@@ -494,18 +495,20 @@ export function useActiveAgentRuns(
         const data = await res.json();
         return data.active_runs || [];
       } catch (error) {
+        // IMPORTANT: Re-throw network errors so fetchQuery catches them for retry logic
+        // This allows retryLastMessage to detect network failures
         log.error('Error fetching active runs:', error);
-        return [];
+        throw error;
       }
     },
+    // Don't retry on error for this query - let the UI handle retry
+    retry: false,
     staleTime: 10 * 1000, // Cache for 10 seconds
     refetchInterval: (query) => {
       // Smart polling: only poll every 15 seconds if there are active runs
       const hasActiveRuns = query.state.data && query.state.data.length > 0;
       return hasActiveRuns ? 15000 : false;
     },
-    retry: 1,
-    retryDelay: 5000,
     ...options,
   });
 }

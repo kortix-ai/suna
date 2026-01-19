@@ -59,7 +59,7 @@ export default function AIEngineerPage() {
               </div>
               <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-muted border border-border">
                 <MapPin className="w-3.5 h-3.5 text-muted-foreground" />
-                <span className="text-xs font-medium text-muted-foreground">Remote (Global)</span>
+                <span className="text-xs font-medium text-muted-foreground">Nomadic / Global</span>
               </div>
             </div>
             
@@ -89,13 +89,13 @@ export default function AIEngineerPage() {
             </h2>
             <div className="prose prose-neutral dark:prose-invert max-w-none">
               <p className="text-muted-foreground leading-relaxed">
-                We're building AI agents that can take on real work, not just answer questions. The goal is to create something people can rely on to complete tasks from start to finish.
+                We're building the ultimate AI worker. Not just something that answers questions, but an AI agent that can handle real tasks from start to finish like a human would.
               </p>
               <p className="text-muted-foreground leading-relaxed">
                 In this role, you'll spend most of your time improving our agents. That includes writing better prompts, building evaluation systems, debugging failures, and trying new approaches when current ones hit limits.
               </p>
               <p className="text-muted-foreground leading-relaxed">
-                We're a small, remote team. You'll have significant ownership over your work and direct impact on the product.
+                Small team, big impact. You'll have significant ownership over your work and direct impact on the product.
               </p>
             </div>
           </motion.div>
@@ -215,7 +215,7 @@ export default function AIEngineerPage() {
                 </p>
               </div>
               <Button asChild size="lg">
-                <a href="mailto:careers@kortix.ai?subject=AI Engineer Application">
+                <a href="mailto:marko@kortix.com?subject=AI Engineer Application">
                   Apply now
                   <ArrowRight className="w-4 h-4 ml-2" />
                 </a>

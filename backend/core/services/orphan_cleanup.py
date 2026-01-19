@@ -19,7 +19,7 @@ from datetime import datetime, timezone, timedelta
 
 from core.utils.logger import logger
 from core.services import redis
-from core.agents.runner.agent_runner import update_agent_run_status
+from core.agents.runner import update_agent_run_status
 from core.utils.instance import get_instance_id
 
 

@@ -26,6 +26,11 @@ DEFAULT_CORE_TOOLS = [
     'sb_image_edit_tool',   # Image generation
     'sb_upload_file_tool',  # File uploads
     'sb_expose_tool',       # Port exposure
+    'agent_config_tool',
+    'agent_creation_tool',
+    'mcp_search_tool',
+    'credential_profile_tool',
+    'trigger_tool',
 ]
 
 
@@ -158,9 +163,83 @@ class ToolManager:
                     self.thread_manager.add_tool(tool_class, function_names=enabled_methods, **kwargs)
                 except (ImportError, AttributeError) as e:
                     logger.warning(f"Failed to load core tool {tool_name}: {e}")
+        
+        self._register_agent_builder_tools()
+    
+    def _register_agent_builder_tools(self):
+        from core.tools.tool_registry import get_tool_info, get_tool_class
+        
+        # Tools that need agent_id
+        agent_id_tools = [
+            'agent_config_tool',
+            'mcp_search_tool',
+            'credential_profile_tool',
+            'trigger_tool',
+        ]
+        
+        # Tools that need account_id
+        account_id_tools = [
+            'agent_creation_tool',
+        ]
+        
+        agent_id = self.agent_config.get('agent_id') if self.agent_config else None
+        account_id = self.agent_config.get('account_id') if self.agent_config else None
+        db_connection = getattr(self.thread_manager, 'db', None)
+        
+        logger.info(f"🔧 Registering agent builder tools (agent_id={agent_id}, account_id={account_id}, has_db={db_connection is not None})")
+        
+        for tool_name in agent_id_tools:
+            if not self._is_tool_enabled(tool_name):
+                logger.debug(f"Skipping disabled agent builder tool: {tool_name}")
+                continue
+            
+            tool_info = get_tool_info(tool_name)
+            if tool_info:
+                _, module_path, class_name = tool_info
+                try:
+                    tool_class = get_tool_class(module_path, class_name)
+                    enabled_methods = self._get_enabled_methods_for_tool(tool_name)
+                    
+                    self.thread_manager.add_tool(
+                        tool_class,
+                        function_names=enabled_methods,
+                        thread_manager=self.thread_manager,
+                        db_connection=db_connection,
+                        agent_id=agent_id
+                    )
+                    logger.info(f"✅ Registered agent builder tool: {tool_name}")
+                except (ImportError, AttributeError) as e:
+                    logger.warning(f"Failed to load agent builder tool {tool_name}: {e}")
+                except Exception as e:
+                    logger.warning(f"Failed to register agent builder tool {tool_name}: {e}")
+        
+        # Register tools that need account_id
+        for tool_name in account_id_tools:
+            if not self._is_tool_enabled(tool_name):
+                logger.debug(f"Skipping disabled agent builder tool: {tool_name}")
+                continue
+            
+            tool_info = get_tool_info(tool_name)
+            if tool_info:
+                _, module_path, class_name = tool_info
+                try:
+                    tool_class = get_tool_class(module_path, class_name)
+                    enabled_methods = self._get_enabled_methods_for_tool(tool_name)
+                    
+                    self.thread_manager.add_tool(
+                        tool_class,
+                        function_names=enabled_methods,
+                        thread_manager=self.thread_manager,
+                        db_connection=db_connection,
+                        account_id=account_id
+                    )
+                    logger.info(f"✅ Registered agent builder tool: {tool_name}")
+                except (ImportError, AttributeError) as e:
+                    logger.warning(f"Failed to load agent builder tool {tool_name}: {e}")
+                except Exception as e:
+                    logger.warning(f"Failed to register agent builder tool {tool_name}: {e}")
     
     def _get_migrated_tools_config(self) -> dict:
-        """Get migrated tool configuration from agent config."""
         if not self.agent_config or 'agentpress_tools' not in self.agent_config:
             return {}
         

@@ -11,54 +11,154 @@ from core.utils.logger import logger
     weight=310,
     visible=True,
     usage_guide="""
-### CRITICAL: MANDATORY TOOL USAGE FOR ALL USER COMMUNICATION
+# MESSAGE TOOL - USER COMMUNICATION
 
-**ALL communication with users MUST use 'ask' or 'complete' tools. Raw text responses will NOT be displayed properly.**
+This tool is your PRIMARY interface for all user communication. Every response MUST use either `ask` or `complete`.
 
-**🚨🚨🚨 DUPLICATE CONTENT PREVENTION - HIGHEST PRIORITY RULE 🚨🚨🚨**
-- **NEVER output raw text AND use ask/complete tool with the same content** - this causes users to see the SAME message TWICE
-- **CHOOSE ONE: Either use the tool OR output raw text - NEVER BOTH with same content**
-- **PREFERRED: ONLY use the 'ask' or 'complete' tool** - put ALL your message content inside the tool's 'text' parameter
-- **DO NOT write explanations, summaries, or content before calling the tool** if that content will also be in the tool
-- **If you're going to use 'ask' or 'complete', put EVERYTHING in the tool** - no redundant text outside the tool call
+## 🚨 CRITICAL: COMMUNICATION PROTOCOL
 
-**WHEN TO USE 'ask' TOOL:**
-- **MANDATORY** for asking clarifying questions
-- **MANDATORY** for requesting user input or confirmation
-- **MANDATORY** for sharing information that requires user response
-- **MANDATORY** for presenting options or choices
-- **MANDATORY** for waiting for user feedback or decisions
-- **MANDATORY** for conversational interaction
-- **MANDATORY** for sharing files, visualizations, or deliverables (attach them)
-- **🚨 CRITICAL:** When sharing any results, outputs, or deliverables, you MUST attach them - never just describe them
+ALL responses to users MUST use these tools - never send raw text:
+- Use `ask` for questions, sharing info, or anything needing user response
+- Use `complete` ONLY when all tasks are 100% done
+- Raw text responses will NOT display to users - always use these tools
 
-**WHEN TO USE 'complete' TOOL:**
-- **MANDATORY** when ALL tasks are finished and no user response needed
-- **MANDATORY** when signaling final completion of work
-- **MANDATORY** when providing final results without requiring user input
-- **🚨 CRITICAL:** You MUST attach ALL deliverables, outputs, files, and results before calling complete - this is NOT optional
+**DUPLICATE CONTENT PREVENTION - ABSOLUTE RULE:**
+- NEVER output raw text AND use ask/complete with the SAME content
+- Put ALL content INSIDE the tool's text parameter ONLY
+- DO NOT write the same message before/after the tool call
 
-**FORBIDDEN:**
-- ❌ NEVER send raw text responses without tool calls - information will be LOST
-- ❌ NEVER send questions as plain text - ALWAYS use 'ask' tool
-- ❌ NEVER signal completion without 'complete' tool
-- ❌ NEVER output the same content twice (once as raw text, once in tool) - DUPLICATION IS FORBIDDEN
+## QUICK CHAT MODE - WHEN TO USE `ask`
 
-**ATTACHMENT PROTOCOL:**
-- **🚨 MANDATORY: ALL RESULTS MUST BE ATTACHED** when using 'ask' or 'complete' tools
-- **CRITICAL: ALL VISUALIZATIONS MUST BE ATTACHED** when using 'ask' tool
-- **CRITICAL: ALL DELIVERABLES MUST BE ATTACHED** when using 'complete' tool
-- This includes: HTML files, PDFs, markdown, images, charts, reports, dashboards, CSV files, JSON files, presentations, spreadsheets, code files, or ANY work product
-- If you created it, generated it, or produced it during the task, you MUST attach it
-- If user should SEE it, you must ATTACH it
-- Verify ALL outputs and deliverables are attached before calling ask or complete
-- **NEVER complete a task without attaching the results** - this breaks the user experience
+The `ask` tool is your workhorse for QUICK CHAT MODE - fast, conversational responses to simple requests.
 
-**CONSEQUENCES:**
-- Raw text responses are NOT displayed properly to users
-- Valuable information will be LOST if not sent via tools
-- User experience will be BROKEN without proper tool usage
-- DUPLICATE CONTENT wastes user attention and looks unprofessional
+### Perfect for Quick Chat:
+- Simple questions ("What is X?", "How do I Y?")
+- Quick factual lookups
+- Conversational exchanges
+- Single-step requests
+- Sharing intermediate results
+- Clarifying ambiguous requests
+
+### Quick Chat Behavior:
+1. Assess the request - can it be answered directly?
+2. If yes, respond conversationally via `ask`
+3. Include follow_up_answers with actionable suggestions
+4. Attach any relevant files or outputs
+
+### Examples of Quick Chat:
+- "What's a REST API?" → Direct explanation via ask
+- "How do I center a div?" → Code snippet via ask
+- "Summarize this article" → Quick summary via ask
+- "What's 2+2?" → Direct answer via ask
+
+## COMMUNICATION STYLE - NON-TECHNICAL USER FOCUS
+
+**The user is NON-TECHNICAL. Keep language friendly and hide complexity.**
+
+### Core Rules:
+1. **Talk about OUTCOMES, not IMPLEMENTATION**
+2. **Use natural, conversational language**
+3. **Hide technical details** - No tool names, libraries, commands, APIs
+4. **Make it feel effortless**
+
+### Good vs Bad Communication:
+
+✅ **GOOD - Focus on outcomes:**
+- "I'll create that spreadsheet for you!"
+- "Here's your budget with automatic calculations"
+- "I've researched the companies you mentioned"
+- "Your presentation is ready with 10 slides"
+
+❌ **BAD - Technical jargon:**
+- "I'll use openpyxl to create an Excel file"
+- "I'm executing a Python script via execute_command"
+- "I'll call the web_search_tool API"
+- "I'm running browser_navigate_to to scrape the page"
+
+## ATTACHMENT PROTOCOL - MANDATORY
+
+**ALL results, deliverables, and outputs MUST be attached.**
+
+When sharing:
+- HTML files, PDFs, markdown
+- Images, charts, dashboards
+- CSV, JSON, code files
+- Presentations, spreadsheets
+- ANY work product
+
+→ You MUST attach them via the `attachments` parameter.
+
+**NEVER describe results without attaching the actual files.**
+
+## FOLLOW-UP ANSWERS - ALWAYS REQUIRED
+
+Every `ask` call MUST include `follow_up_answers` with 2-4 actionable options.
+
+**For clarification questions:**
+- Specific options the user can click
+- Keep them concise (1-2 lines max)
+
+**For informational responses:**
+- Suggest what they can do NEXT with the information
+- Examples: "Create a presentation about this", "Build a webpage", "Track this in a spreadsheet"
+
+## DUPLICATE CONTENT PREVENTION - CRITICAL
+
+🚨 **NEVER output raw text AND use the tool with the same content.**
+
+- Put ALL your message INSIDE the tool's `text` parameter
+- DO NOT write explanations before/after the tool call
+- Users see both, causing annoying duplication
+
+**WRONG:**
+```
+Here's what I found about React...
+[calls ask with "Here's what I found about React..."]
+```
+
+**CORRECT:**
+```
+[calls ask with "Here's what I found about React..."]
+```
+
+## WHEN TO USE `complete`
+
+Use `complete` ONLY when:
+1. ALL work is finished (no pending tasks)
+2. All deliverables have been created
+3. No further user input is needed
+
+**Always include:**
+- Summary of what was accomplished
+- All deliverables attached
+- 3-4 follow_up_prompts for next steps
+
+## USER-UPLOADED FILES - HANDLING GUIDE
+
+When users upload files (in `uploads/` directory):
+
+### IMAGE FILES (jpg, jpeg, png, gif, webp, svg):
+→ Use `load_image` to view and analyze
+
+### ALL OTHER FILES (PDF, Word, Excel, CSV, JSON, code):
+→ Use `search_file` FIRST - it's smarter and prevents context flooding
+
+**Examples:**
+- PDF: `search_file("uploads/report.pdf", "key findings")`
+- Excel: `search_file("uploads/data.xlsx", "sales figures")`
+- Word: `search_file("uploads/contract.docx", "payment terms")`
+
+**Only use `read_file` for tiny config files (<2KB) when you need exact full content.**
+
+## SUMMARY
+
+| Scenario | Tool | Notes |
+|----------|------|-------|
+| Simple question | `ask` | Quick, conversational |
+| Share results | `ask` + attachments | MUST attach files |
+| Need clarification | `ask` + follow_up_answers | Clickable options |
+| Work complete | `complete` + attachments | All deliverables attached |
+| Complex work | Use TASK LIST first | Then communicate via ask/complete |
 """
 )
 class MessageTool(Tool):
@@ -69,25 +169,25 @@ class MessageTool(Tool):
         "type": "function",
         "function": {
             "name": "ask",
-            "description": "Ask user a question and wait for response. Use for: 1) Requesting clarification on ambiguous requirements (ONLY when truly blocked), 2) Seeking confirmation before proceeding with high-impact changes, 3) Gathering additional information needed to complete a task, 4) Offering options and requesting user preference, 5) Validating assumptions when critical to task success, 6) When encountering unclear or ambiguous results during task execution, 7) When tool results don't match expectations, 8) For natural conversation and follow-up questions, 9) When research reveals multiple entities with the same name, 10) When user requirements are unclear or could be interpreted differently. IMPORTANT: Use this tool when user input is essential to proceed. 🚨 CRITICAL: For clarification questions, ALWAYS provide follow_up_answers with 2-4 clickable options - users should click, not type. Keep questions CONCISE (1-2 sentences max) and scannable. Use natural, conversational language. 🚨 MANDATORY: When sharing results, deliverables, files, visualizations, or any work product, you MUST attach them via the attachments parameter - never share information about results without attaching the actual files. Include relevant attachments when the question relates to specific files or resources. CRITICAL: When you discover ambiguity (like multiple people with the same name), immediately stop and ask for clarification with clickable options rather than making assumptions. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `text` (REQUIRED), `attachments` (REQUIRED when sharing results/deliverables), `follow_up_answers` (optional).",
+            "description": "Communicate with the user. Use for: questions, sharing information, presenting results, requesting input. This is your PRIMARY communication tool. ALWAYS include follow_up_answers with actionable suggestions. ALWAYS attach files when sharing results. CRITICAL: Put ALL content in the text parameter - never duplicate as raw text.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "**REQUIRED** - Question text to present to user. Should be specific and clearly indicate what information you need. Use natural, conversational language. Include: 1) Clear question or request, 2) Context about why the input is needed, 3) Available options if applicable, 4) Impact of different choices, 5) Any relevant constraints or considerations."
+                        "description": "**REQUIRED** - Your message to the user. Be conversational and focus on outcomes, not technical details."
                     },
                     "attachments": {
                         "anyOf": [
                             {"type": "string"},
                             {"items": {"type": "string"}, "type": "array"}
                         ],
-                        "description": "**REQUIRED when sharing results/deliverables** - List of files or URLs to attach. 🚨 MANDATORY: If you created, generated, or produced any files, reports, dashboards, visualizations, or work products, you MUST attach them here. Include when: 1) Sharing results, deliverables, or outputs (MANDATORY), 2) Question relates to specific files or configurations, 3) User needs to review content before answering, 4) Options or choices are documented in files, 5) Supporting evidence or context is needed. Always use relative paths to /workspace directory. NEVER share information about results without attaching the actual files."
+                        "description": "**REQUIRED when sharing results** - Files or URLs to attach. MANDATORY for any deliverables, outputs, or work products. Use relative paths to /workspace."
                     },
                     "follow_up_answers": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "**OPTIONAL** - 🚨 MANDATORY for clarification questions - users should click answers, not type them. Array of suggested follow-up answer strings (2-4 options). MUST be an array of strings, not a JSON string. Keep answers CONCISE (1-2 lines max) and SPECIFIC. Example: ['Yes, create React component with TypeScript', 'Skip tests for now and deploy', 'Use existing API endpoint instead']. Maximum 4 suggestions."
+                        "description": "**MANDATORY** - 2-4 actionable suggestions the user can click. For questions: specific options. For information: suggest what they can do next (create presentation, build webpage, etc.)."
                     }
                 },
                 "required": ["text"],
@@ -108,25 +208,25 @@ class MessageTool(Tool):
         "type": "function",
         "function": {
             "name": "complete",
-            "description": "A special tool to indicate you have completed all tasks and are about to enter complete state. Use ONLY when: 1) All tasks in todo.md are marked complete [x], 2) The user's original request has been fully addressed, 3) There are no pending actions or follow-ups required, 4) You've delivered all final outputs and results to the user. IMPORTANT: This is the ONLY way to properly terminate execution. Never use this tool unless ALL tasks are complete and verified. 🚨 MANDATORY: You MUST attach ALL deliverables, outputs, files, visualizations, reports, dashboards, or any work product you created via the attachments parameter - this is NOT optional. If you created files during the task, they MUST be attached. Always ensure you've provided all necessary outputs and references before using this tool. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `text` (optional), `attachments` (REQUIRED when results/deliverables exist), `follow_up_prompts` (optional).",
+            "description": "Signal that ALL work is complete. Use ONLY when: 1) All tasks are done, 2) All deliverables created, 3) No further input needed. MANDATORY: Attach ALL outputs and include follow_up_prompts for next steps.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "**OPTIONAL** - Completion message or summary to present to user. Should provide clear indication of what was accomplished. Include: 1) Summary of completed tasks, 2) Key deliverables or outputs, 3) Any important notes or next steps, 4) Impact or benefits achieved."
+                        "description": "**OPTIONAL** - Summary of what was accomplished."
                     },
                     "attachments": {
                         "anyOf": [
                             {"type": "string"},
                             {"items": {"type": "string"}, "type": "array"}
                         ],
-                        "description": "**REQUIRED when results/deliverables exist** - List of files or URLs to attach to the completion message. 🚨 MANDATORY: If you created, generated, or produced ANY files, reports, dashboards, visualizations, spreadsheets, presentations, code files, or work products during the task, you MUST attach them here. This includes: 1) All deliverables and outputs (MANDATORY), 2) Completion relates to specific files or configurations, 3) User needs to review final outputs, 4) Deliverables are documented in files, 5) Supporting evidence or context is needed. Always use relative paths to /workspace directory. **For presentations**: When attaching presentation files, only attach the first slide (e.g., `presentations/[name]/slide_01.html`) to keep the UI tidy - the presentation card will automatically show the full presentation. **VERIFICATION**: Before calling complete, verify you've attached all created files and outputs."
+                        "description": "**REQUIRED when deliverables exist** - ALL files, outputs, and work products created. For presentations: attach first slide only (e.g., presentations/[name]/slide_01.html)."
                     },
                     "follow_up_prompts": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "**OPTIONAL** - List of suggested follow-up prompts the user can click to continue working. Make prompts SPECIFIC to what was just completed - reference actual file names, components, features, or deliverables created. Maximum 4 suggestions, each should clearly describe a specific actionable task."
+                        "description": "**MANDATORY** - 3-4 actionable suggestions for what the user can do next with the completed work."
                     }
                 },
                 "required": [],
@@ -147,13 +247,13 @@ class MessageTool(Tool):
         "type": "function",
         "function": {
             "name": "wait",
-            "description": "Pause execution for a specified number of seconds. Use this tool to add deliberate pauses in long-running processes to prevent rushing and maintain a steady, thoughtful pace. This helps prevent errors and ensures quality execution. **🚨 PARAMETER NAMES**: Use EXACTLY this parameter name: `seconds` (REQUIRED).",
+            "description": "Pause execution for a specified duration. Use for deliberate pacing in long-running processes.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "seconds": {
                         "type": "integer",
-                        "description": "**REQUIRED** - Number of seconds to wait (1-300 seconds). Use 1-3 seconds for brief pauses, 5-10 seconds for processing waits, 60+ seconds for longer operations.",
+                        "description": "**REQUIRED** - Seconds to wait (1-300).",
                         "minimum": 1,
                         "maximum": 300
                     }
@@ -191,11 +291,5 @@ if __name__ == "__main__":
             attachments="summary.pdf"
         )
         print("Question result:", ask_result)
-
-        inform_result = await message_tool.inform(
-            text="Completed analysis of data. Processing results now.",
-            attachments="analysis.pdf"
-        )
-        print("Inform result:", inform_result)
 
     asyncio.run(test_message_tool())

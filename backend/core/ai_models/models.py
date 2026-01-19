@@ -1,6 +1,9 @@
 from dataclasses import dataclass, field
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any, Union, TYPE_CHECKING
 from enum import Enum
+
+if TYPE_CHECKING:
+    from .providers.base import ProviderConfig
 
 class ModelProvider(Enum):
     OPENAI = "openai"
@@ -12,7 +15,6 @@ class ModelProvider(Enum):
     MOONSHOTAI = "moonshotai"
     MINIMAX = "minimax"
 
-
 class ModelCapability(Enum):
     CHAT = "chat"
     FUNCTION_CALLING = "function_calling"
@@ -20,14 +22,13 @@ class ModelCapability(Enum):
     THINKING = "thinking"
     PROMPT_CACHING = "prompt_caching"
 
-
 @dataclass
 class ModelPricing:
     input_cost_per_million_tokens: float
     output_cost_per_million_tokens: float
-    cached_read_cost_per_million_tokens: Optional[float] = None  # Cache hits & refreshes
-    cache_write_5m_cost_per_million_tokens: Optional[float] = None  # 5-minute cache writes
-    cache_write_1h_cost_per_million_tokens: Optional[float] = None  # 1-hour cache writes
+    cached_read_cost_per_million_tokens: Optional[float] = None
+    cache_write_5m_cost_per_million_tokens: Optional[float] = None
+    cache_write_1h_cost_per_million_tokens: Optional[float] = None
     
     @property
     def input_cost_per_token(self) -> float:
@@ -40,62 +41,47 @@ class ModelPricing:
     @property
     def cached_read_cost_per_token(self) -> float:
         if self.cached_read_cost_per_million_tokens is None:
-            return self.input_cost_per_token  # Fallback to regular input price if not specified
+            return self.input_cost_per_token
         return self.cached_read_cost_per_million_tokens / 1_000_000
     
     @property
     def cache_write_5m_cost_per_token(self) -> float:
         if self.cache_write_5m_cost_per_million_tokens is None:
-            return self.input_cost_per_token  # Fallback to regular input price if not specified
+            return self.input_cost_per_token
         return self.cache_write_5m_cost_per_million_tokens / 1_000_000
     
     @property
     def cache_write_1h_cost_per_token(self) -> float:
         if self.cache_write_1h_cost_per_million_tokens is None:
-            return self.input_cost_per_token  # Fallback to regular input price if not specified
+            return self.input_cost_per_token
         return self.cache_write_1h_cost_per_million_tokens / 1_000_000
 
+@dataclass
+class ReasoningSettings:
+    enabled: bool = False
+    split_output: bool = False
 
 @dataclass
 class ModelConfig:
-    """Essential model configuration - provider settings and API configuration only."""
-    
-    # === Provider & API Configuration ===
     api_base: Optional[str] = None
     api_version: Optional[str] = None
-    base_url: Optional[str] = None  # Alternative to api_base
-    deployment_id: Optional[str] = None  # Azure
+    base_url: Optional[str] = None
+    deployment_id: Optional[str] = None
     timeout: Optional[Union[float, int]] = None
     num_retries: Optional[int] = None
-    
-    # === Headers (Provider-Specific) ===
     headers: Optional[Dict[str, str]] = None
     extra_headers: Optional[Dict[str, str]] = None
-    
-    # === Bedrock-Specific Configuration ===
-    performanceConfig: Optional[Dict[str, str]] = None  # e.g., {"latency": "optimized"}
+    performance_config: Optional[Dict[str, str]] = None
+    reasoning: Optional[ReasoningSettings] = None
+    extra_body: Optional[Dict[str, Any]] = None
 
 
 @dataclass
 class Model:
-    # Registry ID - internal identifier (e.g., "kortix/basic")
     id: str
-    
-    # Display name - shown to users (e.g., "Kortix Basic")
     name: str
-    
     provider: ModelProvider
-    
-    # LiteLLM model ID - what gets passed to LiteLLM (e.g., Bedrock ARN or Anthropic API ID)
-    # If None, defaults to id
     litellm_model_id: Optional[str] = None
-    
-    # Vision-specific LiteLLM model ID - used when thread has images
-    # If None, uses litellm_model_id for both text and vision
-    vision_litellm_model_id: Optional[str] = None
-    vision_context_window: Optional[int] = None  # Defaults to context_window if None
-    vision_pricing: Optional[ModelPricing] = None  # Defaults to pricing if None
-    
     aliases: List[str] = field(default_factory=list)
     context_window: int = 128_000
     capabilities: List[ModelCapability] = field(default_factory=list)
@@ -104,43 +90,14 @@ class Model:
     tier_availability: List[str] = field(default_factory=lambda: ["paid"])
     priority: int = 0
     recommended: bool = False
-    
-    # Centralized model configuration
     config: Optional[ModelConfig] = None
     
     def __post_init__(self):
-        # Default litellm_model_id to id if not provided
         if self.litellm_model_id is None:
             self.litellm_model_id = self.id
         
-        # Ensure CHAT capability is always present
         if ModelCapability.CHAT not in self.capabilities:
             self.capabilities.insert(0, ModelCapability.CHAT)
-    
-    def get_litellm_model_id_for_context(self, has_images: bool = False) -> str:
-        """Get the appropriate LiteLLM model ID based on context.
-        
-        Args:
-            has_images: Whether the thread/context has images
-            
-        Returns:
-            vision_litellm_model_id if has_images and it's set, otherwise litellm_model_id
-        """
-        if has_images and self.vision_litellm_model_id:
-            return self.vision_litellm_model_id
-        return self.litellm_model_id
-    
-    def get_context_window_for_context(self, has_images: bool = False) -> int:
-        """Get the appropriate context window based on context."""
-        if has_images and self.vision_context_window:
-            return self.vision_context_window
-        return self.context_window
-    
-    def get_pricing_for_context(self, has_images: bool = False) -> Optional[ModelPricing]:
-        """Get the appropriate pricing based on context."""
-        if has_images and self.vision_pricing:
-            return self.vision_pricing
-        return self.pricing
     
     @property
     def supports_thinking(self) -> bool:
@@ -155,57 +112,90 @@ class Model:
         return ModelCapability.VISION in self.capabilities
     
     @property
+    def supports_caching(self) -> bool:
+        return ModelCapability.PROMPT_CACHING in self.capabilities
+    
+    @property
     def is_free_tier(self) -> bool:
         return "free" in self.tier_availability
     
+    def get_provider_config(self) -> Optional['ProviderConfig']:
+        from .providers import get_provider_for_model
+        return get_provider_for_model(self.litellm_model_id or self.id)
+    
     def get_litellm_params(self, **override_params) -> Dict[str, Any]:
-        """Get complete LiteLLM parameters for this model, including all configuration."""
-        # Start with intelligent defaults
-        # Note: Keep num_retries low for streaming - retries are expensive for LLM calls
-        # and can cause massive delays if the provider is slow/unresponsive
         params = {
             "model": self.litellm_model_id,
-            "num_retries": 1,  # Reduced from 5 to prevent 5x delay on failures
-            "timeout": 120,   # 2 minute timeout to fail fast instead of hanging
+            "num_retries": 1,
+            "timeout": 120,
         }
         
-        # Apply model-specific configuration if available
         if self.config:
-            # Provider & API configuration parameters
-            api_params = [
-                'api_base', 'api_version', 'base_url', 'deployment_id', 
-                'timeout', 'num_retries'
-            ]
-            
-            # Apply configured parameters
-            for param_name in api_params:
-                param_value = getattr(self.config, param_name, None)
-                if param_value is not None:
-                    params[param_name] = param_value
-            
-            if self.config.headers:
-                params["headers"] = self.config.headers.copy()
-            if self.config.extra_headers:
-                params["extra_headers"] = self.config.extra_headers.copy()
-            if self.config.performanceConfig:
-                params["performanceConfig"] = self.config.performanceConfig.copy()
+            self._apply_model_config(params)
         
-        # Apply any runtime overrides
-        for key, value in override_params.items():
-            if value is not None:
-                # Handle headers and extra_headers merging separately
-                if key == "headers" and "headers" in params:
-                    if isinstance(params["headers"], dict) and isinstance(value, dict):
-                        params["headers"].update(value)
-                    else:
-                        params[key] = value
-                elif key == "extra_headers" and "extra_headers" in params:
-                    if isinstance(params["extra_headers"], dict) and isinstance(value, dict):
-                        params["extra_headers"].update(value)
-                    else:
-                        params[key] = value
-                else:
-                    params[key] = value
+        provider = self.get_provider_config()
+        if provider:
+            self._apply_provider_config(params, provider)
+        
+        self._apply_overrides(params, override_params)
         
         return params
-
+    
+    def _apply_model_config(self, params: Dict[str, Any]):
+        api_params = ['api_base', 'api_version', 'base_url', 'deployment_id', 'timeout', 'num_retries']
+        
+        for param_name in api_params:
+            param_value = getattr(self.config, param_name, None)
+            if param_value is not None:
+                params[param_name] = param_value
+        
+        if self.config.headers:
+            params["headers"] = self.config.headers.copy()
+        
+        if self.config.extra_headers:
+            params["extra_headers"] = self.config.extra_headers.copy()
+        
+        if self.config.performance_config:
+            params["performanceConfig"] = self.config.performance_config.copy()
+        
+        if self.config.reasoning and self.config.reasoning.enabled:
+            params["reasoning"] = {"enabled": True}
+            if self.config.reasoning.split_output:
+                params["reasoning_split"] = True
+        
+        if self.config.extra_body:
+            params["extra_body"] = self.config.extra_body.copy()
+    
+    def _apply_provider_config(self, params: Dict[str, Any], provider: 'ProviderConfig'):
+        extra_params = provider.get_extra_params(self.litellm_model_id or self.id)
+        for key, value in extra_params.items():
+            if key == "extra_body" and "extra_body" in params:
+                params["extra_body"].update(value)
+            elif key not in params:
+                params[key] = value
+        
+        provider_headers = provider.get_headers(self.litellm_model_id or self.id)
+        if provider_headers:
+            if "headers" not in params:
+                params["headers"] = {}
+            params["headers"].update(provider_headers)
+        
+        provider_extra_headers = provider.get_extra_headers(self.litellm_model_id or self.id)
+        if provider_extra_headers:
+            if "extra_headers" not in params:
+                params["extra_headers"] = {}
+            params["extra_headers"].update(provider_extra_headers)
+    
+    def _apply_overrides(self, params: Dict[str, Any], override_params: Dict[str, Any]):
+        for key, value in override_params.items():
+            if value is None:
+                continue
+            
+            if key == "headers" and "headers" in params and isinstance(params["headers"], dict) and isinstance(value, dict):
+                params["headers"].update(value)
+            elif key == "extra_headers" and "extra_headers" in params and isinstance(params["extra_headers"], dict) and isinstance(value, dict):
+                params["extra_headers"].update(value)
+            elif key == "extra_body" and "extra_body" in params and isinstance(params["extra_body"], dict) and isinstance(value, dict):
+                params["extra_body"].update(value)
+            else:
+                params[key] = value

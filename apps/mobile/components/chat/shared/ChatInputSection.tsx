@@ -33,6 +33,9 @@ export interface ChatInputSectionProps {
 
   style?: ViewStyle;
 
+  // Whether this is a new/optimistic thread (disables keyboard tracking briefly)
+  isNewThread?: boolean;
+
   // Audio recording
   onAudioRecord: () => Promise<void>;
   onCancelRecording: () => void;
@@ -175,12 +178,30 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   agentName,
   onToolSnackPress,
   onToolSnackDismiss,
+  isNewThread = false,
 }, ref) => {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const chatInputRef = React.useRef<ChatInputRef>(null);
-  
+
+  // For new threads, briefly disable keyboard tracking to ensure correct initial position
+  // This prevents stale keyboard metrics from HomePage affecting the initial layout
+  const [keyboardTrackingEnabled, setKeyboardTrackingEnabled] = React.useState(() => !isNewThread);
+
+  React.useEffect(() => {
+    if (isNewThread) {
+      // Disable immediately, re-enable after keyboard fully closes
+      setKeyboardTrackingEnabled(false);
+      const timer = setTimeout(() => {
+        setKeyboardTrackingEnabled(true);
+      }, 350); // iOS keyboard animation is ~250ms, add buffer
+      return () => clearTimeout(timer);
+    } else {
+      setKeyboardTrackingEnabled(true);
+    }
+  }, [isNewThread]);
+
   // Get keyboard animation progress for smooth padding transitions
   // progress goes from 0 (closed) to 1 (open)
   const { progress } = useReanimatedKeyboardAnimation();
@@ -238,8 +259,13 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   // Get background color based on theme
   const backgroundColor = colorScheme === 'dark' ? DARK_BACKGROUND : LIGHT_BACKGROUND;
 
+  // Use key to force remount when enabled changes - this resets stale animation values
+  const stickyViewKey = keyboardTrackingEnabled ? 'kb-enabled' : 'kb-disabled';
+
   return (
     <KeyboardStickyView
+      key={stickyViewKey}
+      enabled={keyboardTrackingEnabled}
       style={[
         // Base positioning - absolute at bottom of screen
         {

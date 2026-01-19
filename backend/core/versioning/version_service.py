@@ -1,5 +1,6 @@
 import json
 import asyncio
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
@@ -43,7 +44,7 @@ class AgentVersion:
             'version_number': self.version_number,
             'version_name': self.version_name,
             'system_prompt': self.system_prompt,
-            'model': self.model,  # Add model to dict output
+            'model': self.model,
             'configured_mcps': self.configured_mcps,
             'custom_mcps': self.custom_mcps,
             'agentpress_tools': self.agentpress_tools,
@@ -181,103 +182,124 @@ class VersionService:
         from core.agents import repo as agents_repo
         from core.versioning import repo as versioning_repo
         
-        # Get current agent info
         agent_info = await agents_repo.get_agent_by_id(agent_id)
         if not agent_info:
             raise Exception("Agent not found")
-        
+
         previous_version_id = agent_info.get('current_version_id')
         
-        # Get next version number
-        version_number = await versioning_repo.get_next_version_number(agent_id)
+        auto_generate_version_name = version_name is None
         
-        if not version_name:
-            version_name = f"v{version_number}"
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                version_number = await versioning_repo.get_next_version_number(agent_id)
                 
-        triggers = await versioning_repo.get_agent_triggers(agent_id)
-        for trigger in triggers:
-            if 'config' in trigger and isinstance(trigger['config'], str):
+                if auto_generate_version_name:
+                    version_name = f"v{version_number}"
+                        
+                triggers = await versioning_repo.get_agent_triggers(agent_id)
+                for trigger in triggers:
+                    if 'config' in trigger and isinstance(trigger['config'], str):
+                        try:
+                            import json
+                            trigger['config'] = json.loads(trigger['config'])
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse trigger config for {trigger.get('trigger_id')}")
+                            trigger['config'] = {}
+                
+                normalized_custom_mcps = self._normalize_custom_mcps(custom_mcps)
+                
+                version = AgentVersion(
+                    version_id=str(uuid4()),
+                    agent_id=agent_id,
+                    version_number=version_number,
+                    version_name=version_name,
+                    system_prompt=system_prompt,
+                    model=model,
+                    configured_mcps=configured_mcps,
+                    custom_mcps=normalized_custom_mcps,
+                    agentpress_tools=agentpress_tools,
+                    is_active=True,
+                    created_at=datetime.now(timezone.utc),
+                    updated_at=datetime.now(timezone.utc),
+                    created_by=user_id,
+                    change_description=change_description,
+                    previous_version_id=previous_version_id
+                )
+                
+                data = {
+                    'version_id': version.version_id,
+                    'agent_id': version.agent_id,
+                    'version_number': version.version_number,
+                    'version_name': version.version_name,
+                    'is_active': version.is_active,
+                    'created_at': version.created_at.isoformat(),
+                    'updated_at': version.updated_at.isoformat(),
+                    'created_by': version.created_by,
+                    'change_description': version.change_description,
+                    'previous_version_id': version.previous_version_id,
+                    'config': {
+                        'system_prompt': version.system_prompt,
+                        'model': version.model,
+                        'tools': {
+                            'agentpress': version.agentpress_tools,
+                            'mcp': version.configured_mcps,
+                            'custom_mcp': normalized_custom_mcps
+                        },
+                        'triggers': triggers
+                    }
+                }
+                
+                from core.versioning import repo as versioning_repo
+                
+                await versioning_repo.create_agent_version_with_config(
+                    version_id=version.version_id,
+                    agent_id=version.agent_id,
+                    version_number=version.version_number,
+                    version_name=version.version_name,
+                    system_prompt=version.system_prompt,
+                    model=version.model,
+                    configured_mcps=version.configured_mcps,
+                    custom_mcps=normalized_custom_mcps,
+                    agentpress_tools=version.agentpress_tools,
+                    triggers=triggers,
+                    created_by=version.created_by,
+                    change_description=version.change_description,
+                    previous_version_id=version.previous_version_id
+                )
+                
+                version_count = await self._count_versions(agent_id)
+                await self._update_agent_current_version(agent_id, version.version_id, version_count)
+                
                 try:
-                    import json
-                    trigger['config'] = json.loads(trigger['config'])
-                except json.JSONDecodeError:
-                    logger.warning(f"Failed to parse trigger config for {trigger.get('trigger_id')}")
-                    trigger['config'] = {}
-        
-        normalized_custom_mcps = self._normalize_custom_mcps(custom_mcps)
-        
-        version = AgentVersion(
-            version_id=str(uuid4()),
-            agent_id=agent_id,
-            version_number=version_number,
-            version_name=version_name,
-            system_prompt=system_prompt,
-            model=model,
-            configured_mcps=configured_mcps,
-            custom_mcps=normalized_custom_mcps,
-            agentpress_tools=agentpress_tools,
-            is_active=True,
-            created_at=datetime.now(timezone.utc),
-            updated_at=datetime.now(timezone.utc),
-            created_by=user_id,
-            change_description=change_description,
-            previous_version_id=previous_version_id
-        )
-        
-        data = {
-            'version_id': version.version_id,
-            'agent_id': version.agent_id,
-            'version_number': version.version_number,
-            'version_name': version.version_name,
-            'is_active': version.is_active,
-            'created_at': version.created_at.isoformat(),
-            'updated_at': version.updated_at.isoformat(),
-            'created_by': version.created_by,
-            'change_description': version.change_description,
-            'previous_version_id': version.previous_version_id,
-            'config': {
-                'system_prompt': version.system_prompt,
-                'model': version.model,
-                'tools': {
-                    'agentpress': version.agentpress_tools,
-                    'mcp': version.configured_mcps,
-                    'custom_mcp': normalized_custom_mcps
-                },
-                'triggers': triggers
-            }
-        }
-        
-        from core.versioning import repo as versioning_repo
-        
-        await versioning_repo.create_agent_version_with_config(
-            version_id=version.version_id,
-            agent_id=version.agent_id,
-            version_number=version.version_number,
-            version_name=version.version_name,
-            system_prompt=version.system_prompt,
-            model=version.model,
-            configured_mcps=version.configured_mcps,
-            custom_mcps=normalized_custom_mcps,
-            agentpress_tools=version.agentpress_tools,
-            triggers=triggers,
-            created_by=version.created_by,
-            change_description=version.change_description,
-            previous_version_id=version.previous_version_id
-        )
-        
-        version_count = await self._count_versions(agent_id)
-        await self._update_agent_current_version(agent_id, version.version_id, version_count)
-        
-        # Invalidate agent config cache (MCPs may have changed)
-        try:
-            from core.cache.runtime_cache import invalidate_agent_config_cache
-            await invalidate_agent_config_cache(agent_id)
-            logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version create")
-        except Exception as e:
-            logger.warning(f"Failed to invalidate cache for agent {agent_id}: {e}")
-        
-        logger.debug(f"Created version {version.version_name} for agent {agent_id}")
-        return version
+                    from core.cache.runtime_cache import invalidate_agent_config_cache
+                    await invalidate_agent_config_cache(agent_id)
+                    logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after version create")
+                except Exception as e:
+                    logger.warning(f"Failed to invalidate cache for agent {agent_id}: {e}")
+                
+                logger.debug(f"Created version {version.version_name} for agent {agent_id}")
+                return version
+                
+            except Exception as e:
+                error_msg = str(e)
+                # Handle both version_number and version_name unique constraint violations
+                is_version_conflict = (
+                    "duplicate key value violates unique constraint" in error_msg and 
+                    ("agent_versions_agent_id_version_number_key" in error_msg or 
+                     "agent_versions_agent_id_version_name_key" in error_msg)
+                )
+                if is_version_conflict:
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(0.1 * (attempt + 1))
+                        logger.warning(f"Version conflict for agent {agent_id}, attempt {attempt + 1}/{max_retries}, retrying...")
+                        continue
+                    else:
+                        logger.error(f"Failed to create version after {max_retries} attempts due to version conflicts")
+                        raise VersionConflictError("Unable to create version due to concurrent modifications. Please try again.")
+                else:
+                    raise e
     
     async def get_version(self, agent_id: str, version_id: str, user_id: str) -> AgentVersion:
         is_owner, is_public = await self._verify_and_authorize_agent_access(agent_id, user_id)

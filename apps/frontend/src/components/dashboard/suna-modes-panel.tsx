@@ -115,6 +115,7 @@ interface Mode {
       name: string;
       image?: string;
       description?: string;
+      icon?: string;
     }>;
   };
   chartTypes?: {
@@ -123,6 +124,7 @@ interface Mode {
       id: string;
       name: string;
       description?: string;
+      icon?: string;
     }>;
   };
 }

@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 from typing import Optional, AsyncIterator, Set, Dict, Any, List
 from contextlib import asynccontextmanager
+from urllib.parse import urlparse, urlunparse, quote, unquote
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
@@ -123,7 +124,7 @@ def serialize_row(row: Dict[str, Any]) -> Dict[str, Any]:
             result[k] = v
     return result
 
-
+    
 def serialize_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return [serialize_row(row) for row in rows]
 
@@ -133,9 +134,43 @@ def _get_dsn() -> str:
     url = os.getenv("DATABASE_URL") or os.getenv("DATABASE_POOLER_URL")
     
     if url:
+        # Normalize the URL to ensure password is URL-encoded
+        # This handles special characters like @, :, / in passwords
+        # Also handles double-encoded passwords (decodes until no % sequences remain, then re-encodes once)
+        try:
+            parsed = urlparse(url)
+            if parsed.password:
+                # Decode password until no more URL-encoded sequences remain (handles double/triple encoding)
+                decoded_password = parsed.password
+                while '%' in decoded_password:
+                    try:
+                        new_decoded = unquote(decoded_password)
+                        if new_decoded == decoded_password:
+                            break  # No more decoding possible
+                        decoded_password = new_decoded
+                    except Exception:
+                        break  # Stop if decoding fails
+                
+                # URL-encode password once (handles special characters like @, :, /)
+                encoded_password = quote(decoded_password, safe='')
+                netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
+                if parsed.port:
+                    netloc += f":{parsed.port}"
+                url = urlunparse((
+                    parsed.scheme,
+                    netloc,
+                    parsed.path,
+                    parsed.params,
+                    parsed.query,
+                    parsed.fragment
+                ))
+        except Exception:
+            # If parsing fails, continue with original URL
+            pass
+        
         if "@" in url:
             masked = url.split("@")[0][:40] + "...@" + url.split("@")[-1]
-            # logger.info(f"🔌 Database URL: {masked}")
+            logger.info(f"🔌 Database URL: {masked}")     
         
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
@@ -154,7 +189,9 @@ def _get_dsn() -> str:
     if not password:
         raise RuntimeError("DATABASE_URL, DATABASE_POOLER_URL, or POSTGRES_PASSWORD required")
     
-    return f"postgresql+psycopg://postgres.{project_ref}:{password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+    # URL-encode password when constructing URL from components
+    encoded_password = quote(password, safe='')
+    return f"postgresql+psycopg://postgres.{project_ref}:{encoded_password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
 
 
 def _get_read_replica_dsn() -> Optional[str]:
@@ -166,6 +203,40 @@ def _get_read_replica_dsn() -> Optional[str]:
     
     if not url:
         return None
+    
+    # Normalize the URL to ensure password is URL-encoded
+    # This handles special characters like @, :, / in passwords
+    # Also handles double-encoded passwords (decodes until no % sequences remain, then re-encodes once)
+    try:
+        parsed = urlparse(url)
+        if parsed.password:
+            # Decode password until no more URL-encoded sequences remain (handles double/triple encoding)
+            decoded_password = parsed.password
+            while '%' in decoded_password:
+                try:
+                    new_decoded = unquote(decoded_password)
+                    if new_decoded == decoded_password:
+                        break  # No more decoding possible
+                    decoded_password = new_decoded
+                except Exception:
+                    break  # Stop if decoding fails
+            
+            # URL-encode password once (handles special characters like @, :, /)
+            encoded_password = quote(decoded_password, safe='')
+            netloc = f"{parsed.username}:{encoded_password}@{parsed.hostname}"
+            if parsed.port:
+                netloc += f":{parsed.port}"
+            url = urlunparse((
+                parsed.scheme,
+                netloc,
+                parsed.path,
+                parsed.params,
+                parsed.query,
+                parsed.fragment
+            ))
+    except Exception:
+        # If parsing fails, continue with original URL
+        pass
     
     if "@" in url:
         masked = url.split("@")[0][:40] + "...@" + url.split("@")[-1]
@@ -336,14 +407,12 @@ async def init_db() -> None:
         
         _read_session_factory = async_sessionmaker(_read_engine, class_=AsyncSession, expire_on_commit=False, autoflush=False)
         
-        # Validate read replica connection
         try:
             async with _read_engine.connect() as conn:
                 await conn.execute(text("SELECT 1"))
             logger.info(f"✅ Database initialized | Primary: {pool_info} | Read Replica: {read_pool_info} ✓ | timeout={STATEMENT_TIMEOUT}ms")
         except Exception as e:
             logger.warning(f"⚠️ Read replica connection test failed: {e}. Will fallback to primary for reads.")
-            # Keep _has_read_replica = True so we can retry later, but log the warning
             logger.info(f"✅ Database initialized | Primary: {pool_info} | Read Replica: CONFIGURED BUT UNREACHABLE | timeout={STATEMENT_TIMEOUT}ms")
     else:
         _has_read_replica = False
@@ -366,13 +435,23 @@ async def close_db() -> None:
 
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
-    """Get a database session (primary database - for writes)."""
+    import time as _time
+    t_start = _time.time()
+    
     if _session_factory is None:
         await init_db()
     
+    t_after_init = _time.time()
+    
     for attempt in range(MAX_RETRIES):
         try:
+            t_before_session = _time.time()
             async with _session_factory() as session:
+                t_got_session = _time.time()
+                init_ms = (t_after_init - t_start) * 1000
+                session_ms = (t_got_session - t_before_session) * 1000
+                if init_ms > 50 or session_ms > 50:
+                    logger.warning(f"⏱️ [DB] get_session: init={init_ms:.0f}ms, session_acquire={session_ms:.0f}ms")
                 try:
                     yield session
                     return
@@ -481,17 +560,47 @@ def _prep_params(params: Optional[dict]) -> dict:
 
 
 async def execute(sql: str, params: Optional[dict] = None) -> List[dict]:
-    """Execute query on primary database (use for writes or when consistency needed)."""
+    import time as _time
+    t0 = _time.time()
     async with get_session() as session:
+        t1 = _time.time()
+        try:
+            conn = await session.connection()
+            raw_conn = await conn.get_raw_connection()
+            logger.debug(f"⏱️ [DB] Raw connection acquired, backend_pid={raw_conn.driver_connection.info.backend_pid}")
+        except Exception as e:
+            logger.debug(f"⏱️ [DB] Could not get raw connection info: {e}")
+        t1b = _time.time()
         result = await session.execute(text(sql), _prep_params(params))
-        return [dict(row._mapping) for row in result.fetchall()]
+        t2 = _time.time()
+        rows = [dict(row._mapping) for row in result.fetchall()]
+        t3 = _time.time()
+        conn_ms = (t1 - t0) * 1000
+        conn_raw_ms = (t1b - t1) * 1000
+        query_ms = (t2 - t1b) * 1000
+        fetch_ms = (t3 - t2) * 1000
+        if conn_ms > 100 or query_ms > 100:
+            sql_preview = sql.strip().replace('\n', ' ')[:200]
+            logger.warning(f"⏱️ [DB] execute: conn={conn_ms:.0f}ms, raw_conn={conn_raw_ms:.0f}ms, query={query_ms:.0f}ms, fetch={fetch_ms:.0f}ms, rows={len(rows)} | SQL: {sql_preview}")
+        return rows
 
 
 async def execute_read(sql: str, params: Optional[dict] = None) -> List[dict]:
-    """Execute read-only query on read replica (if configured) or primary."""
+    import time as _time
+    t0 = _time.time()
     async with get_read_session() as session:
+        t1 = _time.time()
         result = await session.execute(text(sql), _prep_params(params))
-        return [dict(row._mapping) for row in result.fetchall()]
+        t2 = _time.time()
+        rows = [dict(row._mapping) for row in result.fetchall()]
+        t3 = _time.time()
+        conn_ms = (t1 - t0) * 1000
+        query_ms = (t2 - t1) * 1000
+        fetch_ms = (t3 - t2) * 1000
+        if conn_ms > 100 or query_ms > 100:
+            sql_preview = sql.strip().replace('\n', ' ')[:200]
+            logger.warning(f"⏱️ [DB] execute_read: conn={conn_ms:.0f}ms, query={query_ms:.0f}ms, fetch={fetch_ms:.0f}ms, rows={len(rows)} | SQL: {sql_preview}")
+        return rows
 
 
 async def execute_one(sql: str, params: Optional[dict] = None, commit: bool = False) -> Optional[dict]:
