@@ -747,7 +747,7 @@ async def get_llm_messages(
         FROM messages
         WHERE thread_id = :thread_id 
           AND is_llm_message = true
-          AND is_omitted = false
+          AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
           AND type != 'image_context'
         ORDER BY created_at ASC
         LIMIT :limit
@@ -767,7 +767,7 @@ async def get_llm_messages_paginated(
     FROM messages
     WHERE thread_id = :thread_id 
       AND is_llm_message = true
-      AND is_omitted = false
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
       AND type != 'image_context'
     ORDER BY created_at ASC
     LIMIT :limit 
@@ -787,7 +787,7 @@ async def get_image_context_messages(thread_id: str) -> List[Dict[str, Any]]:
     FROM messages
     WHERE thread_id = :thread_id 
       AND type = 'image_context'
-      AND is_omitted = false
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     ORDER BY created_at ASC
     """
     rows = await execute(sql, {"thread_id": thread_id})
@@ -1015,13 +1015,12 @@ async def save_compressed_message(
     
     sql = """
     UPDATE messages
-    SET metadata = :metadata, is_omitted = :is_omitted, updated_at = :updated_at
+    SET metadata = :metadata, updated_at = :updated_at
     WHERE message_id = :message_id
     """
     await execute_mutate(sql, {
         "message_id": message_id,
         "metadata": metadata,
-        "is_omitted": is_omission,
         "updated_at": datetime.now(timezone.utc)
     })
     return True
@@ -1136,12 +1135,11 @@ async def mark_tool_results_as_omitted(thread_id: str, tool_call_ids: List[str])
     UPDATE messages
     SET 
         metadata = COALESCE(metadata, '{{}}'::jsonb) || '{{"omitted": true}}'::jsonb,
-        is_omitted = true,
         updated_at = NOW()
     WHERE thread_id = :thread_id
       AND is_llm_message = true
       AND content->>'tool_call_id' IN ({placeholders})
-      AND is_omitted = false
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     RETURNING message_id
     """
     
@@ -1182,7 +1180,7 @@ async def remove_tool_calls_from_assistants(thread_id: str, tool_call_ids: List[
     WHERE thread_id = :thread_id
     AND type = 'assistant'
     AND is_llm_message = true
-    AND is_omitted = false
+    AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     ORDER BY created_at ASC
     """
     messages = await execute(sql, {'thread_id': thread_id})
@@ -1224,7 +1222,7 @@ async def remove_tool_calls_from_assistants(thread_id: str, tool_call_ids: List[
             await execute_mutate(
                 """
                 UPDATE messages
-                SET metadata = :metadata, is_omitted = true, updated_at = NOW()
+                SET metadata = :metadata, updated_at = NOW()
                 WHERE message_id = :message_id
                 """,
                 {'message_id': msg['message_id'], 'metadata': metadata}
