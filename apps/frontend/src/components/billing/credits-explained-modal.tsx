@@ -21,7 +21,7 @@ interface CreditsExplainedModalProps {
 export function CreditsExplainedModal({ open, onOpenChange }: CreditsExplainedModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-2xl font-medium">What are Credits?</DialogTitle>
         </DialogHeader>

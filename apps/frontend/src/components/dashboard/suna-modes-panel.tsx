@@ -1900,7 +1900,7 @@ export function SunaModesPanel({
           setModalMode(null);
         }
       }}>
-        <DialogContent className="max-w-2xl h-[70vh] flex flex-col p-0 gap-0 overflow-hidden">
+        <DialogContent className="sm:max-w-2xl h-[70vh] flex flex-col p-0 gap-0 overflow-hidden">
           <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
             <DialogTitle className="flex items-center gap-2">
               {modalModeData?.icon}
@@ -2240,7 +2240,7 @@ export function SunaModesPanel({
 
       {/* PDF Preview Modal */}
       <Dialog open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-0">
             <DialogTitle>
               Template Preview: {selectedTemplate?.name}
