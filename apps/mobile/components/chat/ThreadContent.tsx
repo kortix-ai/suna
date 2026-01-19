@@ -1360,8 +1360,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                     key={`media-gen-${toolMsg.message_id || toolIdx}`}
                                     toolCall={{
                                       function_name: toolName,
-                                      arguments: parsed?.call?.arguments || {},
-                                      tool_call_id: parsed?.call?.tool_call_id,
+                                      arguments: parsed?.arguments || {},
+                                      tool_call_id: parsed?.toolCallId,
                                     }}
                                     toolResult={parsed?.result ? {
                                       output: parsed.result.output,
@@ -1383,11 +1383,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               );
                             })}
                           </View>
-                        )}
-
-                        {/* Message actions (copy/speak) - show at end of each assistant response block */}
-                        {isLastAssistantMessage && !isCurrentlyStreaming && aggregatedTextContent && (
-                          <MessageActions text={aggregatedTextContent} />
                         )}
                       </View>
                     );
@@ -1619,6 +1614,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
                       </View>
                     )}
+
+                  {/* Message actions - show once at the end of the entire assistant block, only when done streaming */}
+                  {!isLastGroup && aggregatedTextContent && (
+                    <MessageActions text={aggregatedTextContent} />
+                  )}
+                  {isLastGroup && aggregatedTextContent && streamHookStatus !== 'streaming' && streamHookStatus !== 'connecting' && (
+                    <MessageActions text={aggregatedTextContent} />
+                  )}
                 </View>
               </View>
             );
@@ -1775,7 +1778,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 const askOrCompleteTool = findAskOrCompleteTool(toolCalls);
 
                 if (askOrCompleteTool) {
-                  const args = askOrCompleteTool.arguments || {};
+                  // Parse arguments if it's a string
+                  const args = typeof askOrCompleteTool.arguments === 'string'
+                    ? (() => { try { return JSON.parse(askOrCompleteTool.arguments); } catch { return {}; } })()
+                    : (askOrCompleteTool.arguments || {});
                   const question = args.question || args.result || '';
                   if (!question) return null;
 

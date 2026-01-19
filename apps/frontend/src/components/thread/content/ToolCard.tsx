@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AppIcon } from '../tool-views/shared/AppIcon';
 import { cn } from '@/lib/utils';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
+import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { Download, X } from 'lucide-react';
 import { PresentationSlidePreview } from '../tool-views/presentation-tools/PresentationSlidePreview';
 import { PresentationSlideSkeleton } from '../tool-views/presentation-tools/PresentationSlideSkeleton';
@@ -233,6 +234,9 @@ export const ToolCard: React.FC<ToolCardProps> = ({
           className="max-w-4xl p-0 overflow-hidden bg-black/95 border-none"
           hideCloseButton
         >
+          <VisuallyHidden>
+            <DialogTitle>Image Viewer</DialogTitle>
+          </VisuallyHidden>
           {selectedImage && (
             <div className="relative flex flex-col items-center">
               <div className="absolute top-4 right-4 flex items-center gap-2 z-10">

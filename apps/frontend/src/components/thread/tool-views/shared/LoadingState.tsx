@@ -77,7 +77,7 @@ export function LoadingState({
         {showProgress && (
           <div className="space-y-3">
             <Progress value={Math.min(progress, 100)} className="w-full h-1" />
-            <div className="flex justify-between items-center text-xs text-zinc-500 dark:text-zinc-400">
+            <div className="flex justify-center items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
               <span>{progressText || 'Processing...'}</span>
               <span className="font-mono">{Math.round(Math.min(progress, 100))}%</span>
             </div>

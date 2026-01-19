@@ -80,8 +80,8 @@ export function MessageActions({ text, className }: MessageActionsProps) {
         </TooltipContent>
       </Tooltip>
 
-      {/* Speaker button */}
-      <Tooltip>
+      {/* Speaker button - COMMENTED OUT */}
+      {/* <Tooltip>
         <TooltipTrigger asChild>
           <Button
             variant="ghost"
@@ -100,7 +100,7 @@ export function MessageActions({ text, className }: MessageActionsProps) {
         <TooltipContent side="bottom">
           <p>{isVoiceLoading ? 'Generating...' : 'Listen'}</p>
         </TooltipContent>
-      </Tooltip>
+      </Tooltip> */}
 
       {/* Thumbs up - with animation */}
       <AnimatePresence mode="popLayout">

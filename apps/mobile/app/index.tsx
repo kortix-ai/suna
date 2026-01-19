@@ -14,7 +14,7 @@ try {
   if (Notifications && Notifications.setNotificationHandler) {
     Notifications.setNotificationHandler({
       handleNotification: async () => ({
-        shouldPlaySound: true,
+        shouldPlaySound: false, // Commented out: was true
         shouldSetBadge: true,
         shouldShowBanner: true,
         shouldShowList: true,

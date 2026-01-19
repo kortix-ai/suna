@@ -137,7 +137,7 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
       <button
         onClick={() => onViewChange('tools')}
         className={cn(
-          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors",
+          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors cursor-pointer",
           isAction ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400 dark:text-zinc-500"
         )}
         style={{ width: config.btnWidth, height: config.height - config.padding * 2, fontSize: config.fontSize }}
@@ -150,7 +150,7 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
       <button
         onClick={() => onViewChange('files')}
         className={cn(
-          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors",
+          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors cursor-pointer",
           isFiles ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400 dark:text-zinc-500"
         )}
         style={{ width: config.btnWidth, height: config.height - config.padding * 2, fontSize: config.fontSize }}

@@ -361,10 +361,6 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
         elements.push(
           <div key={msgKey} className={assistantMessageCount > 0 ? "mt-3" : ""}>
             <div className="break-words overflow-hidden">{renderedContent}</div>
-            {/* Message actions - show at end of each assistant response block */}
-            {isLastInGroup && !isCurrentlyStreaming && aggregatedTextContent && (
-              <MessageActions text={aggregatedTextContent} />
-            )}
           </div>,
         );
         assistantMessageCount++;
@@ -821,6 +817,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
               <div className="mt-1.5">
                 <AgentLoader />
               </div>
+            )}
+            {/* Message actions - show once at the end of the entire assistant block, only when done streaming */}
+            {!isLastGroup && aggregatedTextContent && (
+              <MessageActions text={aggregatedTextContent} />
+            )}
+            {isLastGroup && aggregatedTextContent && streamHookStatus !== 'streaming' && streamHookStatus !== 'connecting' && (
+              <MessageActions text={aggregatedTextContent} />
             )}
           </div>
         </div>
