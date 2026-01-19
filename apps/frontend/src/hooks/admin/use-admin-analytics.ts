@@ -747,7 +747,9 @@ export interface TaskPerformance {
   running_runs: number;
   pending_runs: number;  // Not started yet
   success_rate: number;  // completed / (completed + failed + stopped)
-  avg_duration_seconds: number | null;
+  avg_duration_seconds: number | null;  // Excludes stuck tasks (> 1hr)
+  avg_duration_with_stuck_seconds: number | null;  // Includes all tasks
+  stuck_task_count: number;  // Tasks with duration > 1hr (likely stuck)
   runs_by_status: Record<string, number>;
 }
 

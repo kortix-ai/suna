@@ -64,6 +64,7 @@ export default function AdminAnalyticsPage() {
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [tierViewMode, setTierViewMode] = useState<'revenue' | 'cost' | 'profit'>('revenue');
+  const [includeStuckTasks, setIncludeStuckTasks] = useState(false);
 
   const handleCategoryFilter = (category: string | null) => {
     setCategoryFilter(category);
@@ -392,15 +393,33 @@ export default function AdminAnalyticsPage() {
                         </div>
 
                         {/* Avg Duration */}
-                        <div className="text-center p-4 rounded-lg bg-muted/30 flex flex-col justify-center">
+                        <div className="text-center p-4 rounded-lg bg-muted/30 flex flex-col justify-center relative">
                           <p className="text-2xl font-bold">
-                            {taskPerformance?.avg_duration_seconds
-                              ? taskPerformance.avg_duration_seconds < 60
-                                ? `${taskPerformance.avg_duration_seconds.toFixed(0)}s`
-                                : `${(taskPerformance.avg_duration_seconds / 60).toFixed(1)}m`
-                              : '—'}
+                            {(() => {
+                              const duration = includeStuckTasks
+                                ? taskPerformance?.avg_duration_with_stuck_seconds
+                                : taskPerformance?.avg_duration_seconds;
+                              if (!duration) return '—';
+                              return duration < 60
+                                ? `${duration.toFixed(0)}s`
+                                : `${(duration / 60).toFixed(1)}m`;
+                            })()}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">Avg Task Duration</p>
+                          {(taskPerformance?.stuck_task_count ?? 0) > 0 && (
+                            <button
+                              onClick={() => setIncludeStuckTasks(!includeStuckTasks)}
+                              className={cn(
+                                "text-[9px] mt-1 px-1.5 py-0.5 rounded cursor-pointer transition-colors",
+                                includeStuckTasks
+                                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                              )}
+                              title={includeStuckTasks ? "Click to exclude stuck tasks" : "Click to include stuck tasks"}
+                            >
+                              {taskPerformance.stuck_task_count} stuck {includeStuckTasks ? '(included)' : '(excluded)'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
