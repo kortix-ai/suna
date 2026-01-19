@@ -207,16 +207,19 @@ class PipelineCoordinator:
             task_names = list(tasks.keys())
             for i, (name, task_result) in enumerate(zip(task_names, results)):
                 if isinstance(task_result, Exception):
-                    logger.error(f"Prep task {name} failed: {task_result}")
-                    result.errors.append(f"{name}: {str(task_result)[:100]}")
-                    if name == 'mcp':
-                        await stream_degradation(
-                            ctx.stream_key,
-                            "mcp",
-                            "Integration connection failed",
-                            "warning",
-                            "Some integrations may not be available"
-                        )
+                    if name == 'fast_check':
+                        logger.warning(f"fast_check failed (non-fatal): {task_result}")
+                    else:
+                        logger.error(f"Prep task {name} failed: {task_result}")
+                        result.errors.append(f"{name}: {str(task_result)[:100]}")
+                        if name == 'mcp':
+                            await stream_degradation(
+                                ctx.stream_key,
+                                "mcp",
+                                "Integration connection failed",
+                                "warning",
+                                "Some integrations may not be available"
+                            )
                 else:
                     setattr(result, name, task_result)
             
