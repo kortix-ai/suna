@@ -1362,10 +1362,7 @@ class ContextManager:
         
         # Save compressed messages to database (fire and forget for performance)
         if compressed_to_save:
-            try:
-                await self.save_compressed_messages(compressed_to_save)
-            except Exception as e:
-                logger.warning(f"Failed to save compressed messages: {e}")
+            asyncio.create_task(self.save_compressed_messages(compressed_to_save))
         
         return await self.middle_out_messages(result)
     

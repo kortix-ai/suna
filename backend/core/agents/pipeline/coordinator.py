@@ -379,22 +379,42 @@ class PipelineCoordinator:
         messages_with_context = messages
         if memory_context and messages:
             messages_with_context = [memory_context] + messages
-        
+
         from core.agentpress.prompt_caching import add_cache_control
-        cached_system = add_cache_control(system_prompt)
-        prepared_messages = [cached_system] + messages_with_context
-        
-        # Use effective model (may have been switched for image support)
+        from core.agents.pipeline.stateless.compression import ContextCompressor
+
         effective_model = self._effective_model_name or ctx.model_name
-        
-        import litellm
-        actual_tokens = await asyncio.to_thread(
-            litellm.token_counter,
-            model=effective_model,
-            messages=prepared_messages
-        )
-        
-        logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (fast path)")
+
+        if prep.fast_check and prep.fast_check.need_compression:
+            logger.info(f"🗜️ Fast check triggered compression ({prep.fast_check.estimated_total_tokens} tokens)")
+            compressed_messages = await ContextCompressor._apply_compression(
+                messages=messages_with_context,
+                model_name=effective_model,
+                system_prompt=system_prompt,
+                actual_tokens=prep.fast_check.estimated_total_tokens,
+                thread_id=ctx.thread_id
+            )
+            cached_system = add_cache_control(system_prompt)
+            prepared_messages = [cached_system] + compressed_messages
+
+            import litellm
+            actual_tokens = await asyncio.to_thread(
+                litellm.token_counter,
+                model=effective_model,
+                messages=prepared_messages
+            )
+            logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (compressed)")
+        else:
+            cached_system = add_cache_control(system_prompt)
+            prepared_messages = [cached_system] + messages_with_context
+
+            import litellm
+            actual_tokens = await asyncio.to_thread(
+                litellm.token_counter,
+                model=effective_model,
+                messages=prepared_messages
+            )
+            logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (fast path)")
         
         llm_executor = LLMExecutor()
         llm_response = await llm_executor.execute(
