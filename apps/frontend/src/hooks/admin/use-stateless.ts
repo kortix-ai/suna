@@ -231,16 +231,90 @@ export const useStatelessBackpressure = () => {
   });
 };
 
+export interface RateLimiterStats {
+  type: string;
+  tokens?: number;
+  capacity?: number;
+  rate?: number;
+  requests_in_window?: number;
+  max_requests?: number;
+  window_seconds?: number;
+  current_rate?: number;
+  min_rate?: number;
+  max_rate?: number;
+  success_count?: number;
+  failure_count?: number;
+}
+
 export const useStatelessRateLimiters = () => {
-  return useQuery<Record<string, unknown>>({
+  return useQuery<Record<string, RateLimiterStats>>({
     queryKey: QUERY_KEYS.rateLimiters,
     queryFn: async () => {
-      const response = await backendApi.get('/admin/stateless/rate-limiters');
+      const response = await backendApi.get<Record<string, RateLimiterStats>>('/admin/stateless/rate-limiters');
+      if (response.error) throw response.error;
+      return response.data!;
+    },
+    staleTime: 5 * 1000,
+    refetchInterval: 10 * 1000,
+  });
+};
+
+export interface RunInfo {
+  run_id: string;
+  owner: string | null;
+  status: string | null;
+  heartbeat: number | null;
+  heartbeat_age: number | null;
+  start: number | null;
+  duration: number | null;
+  pending_writes: number;
+  wal_entries: number;
+}
+
+export const useStatelessRunLookup = (runId: string | null) => {
+  return useQuery<RunInfo>({
+    queryKey: ['admin-stateless-run', runId],
+    queryFn: async () => {
+      if (!runId) throw new Error('No run ID');
+      const response = await backendApi.get<RunInfo>(`/admin/stateless/run/${runId}`);
+      if (response.error) throw response.error;
+      return response.data!;
+    },
+    enabled: !!runId && runId.length >= 8,
+    staleTime: 5 * 1000,
+    retry: false,
+  });
+};
+
+export interface MetricsSnapshot {
+  timestamp: number;
+  active_runs: number;
+  pending_writes: number;
+  runs_started: number;
+  runs_completed: number;
+  runs_failed: number;
+  flush_latency_avg: number;
+  flush_latency_p99: number;
+  writes_dropped: number;
+  dlq_entries: number;
+}
+
+export interface MetricsHistory {
+  current: MetricsSnapshot;
+  history: MetricsSnapshot[];
+  minutes: number;
+}
+
+export const useStatelessMetricsHistory = (minutes: number = 30) => {
+  return useQuery<MetricsHistory>({
+    queryKey: ['admin-stateless-metrics-history', minutes],
+    queryFn: async () => {
+      const response = await backendApi.get<MetricsHistory>(`/admin/stateless/metrics/history?minutes=${minutes}`);
       if (response.error) throw response.error;
       return response.data!;
     },
     staleTime: 10 * 1000,
-    refetchInterval: 30 * 1000,
+    refetchInterval: 15 * 1000, // Poll every 15s to build history
   });
 };
 
