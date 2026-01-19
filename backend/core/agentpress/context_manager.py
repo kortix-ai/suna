@@ -558,6 +558,56 @@ class ContextManager:
         
         return is_valid, orphaned_tool_result_ids, unanswered_tool_call_ids
     
+    def needs_tool_ordering_repair(self, messages: List[Dict[str, Any]]) -> bool:
+        """Fast O(n) check if messages have tool ordering issues. Exits early in common case.
+        
+        This is a lightweight pre-check that detects if user messages interrupt the
+        tool_use -> tool_result flow. Only returns True if a problem is detected, allowing
+        callers to skip expensive full validation in the common case.
+        
+        Args:
+            messages: List of messages to check
+            
+        Returns:
+            True if tool ordering issues detected (needs repair), False otherwise
+        """
+        for i, msg in enumerate(messages):
+            if not isinstance(msg, dict):
+                continue
+            
+            # Check if this is an assistant with tool_calls
+            tool_call_ids = self.get_tool_call_ids_from_message(msg)
+            if not tool_call_ids:
+                continue
+            
+            # Check if immediately following messages are the expected tool results
+            expected_count = len(tool_call_ids)
+            found_tool_call_ids = set()
+            
+            for j in range(i + 1, min(i + 1 + expected_count + 1, len(messages))):
+                next_msg = messages[j] if j < len(messages) else None
+                if not next_msg:
+                    # Missing tool results - needs repair
+                    return True
+                
+                # If we hit a user message (not tool result) before all results, needs repair
+                if next_msg.get('role') == 'user' and not self.is_tool_result_message(next_msg):
+                    return True
+                
+                # Check if it's a tool result for one of our tool_calls
+                tc_id = self.get_tool_call_id_from_result(next_msg)
+                if tc_id and tc_id in tool_call_ids:
+                    found_tool_call_ids.add(tc_id)
+                elif not self.is_tool_result_message(next_msg):
+                    # Non-tool-result message interrupting the flow
+                    return True
+            
+            # If we didn't find all expected tool results, needs repair
+            if len(found_tool_call_ids) < expected_count:
+                return True
+        
+        return False  # No issues found
+    
     def remove_orphaned_tool_results(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Remove orphaned tool results that have no matching assistant message.
         
