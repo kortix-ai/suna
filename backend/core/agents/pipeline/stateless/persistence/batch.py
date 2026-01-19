@@ -9,14 +9,12 @@ from core.agents.pipeline.stateless.persistence.wal import wal, WALEntry, WriteT
 from core.agents.pipeline.stateless.persistence.dlq import dlq
 from core.agents.pipeline.stateless.persistence.retry import ExponentialBackoff, with_retry
 
-
 @dataclass
 class BatchResult:
     success_count: int
     failed_count: int
     dlq_count: int
     duration_ms: float
-
 
 class BatchWriter:
     MAX_RETRIES = 3
@@ -109,16 +107,42 @@ class BatchWriter:
             tasks = [bounded_persist(entry) for entry in batch]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            for result in results:
+            batch_messages_to_cache = []
+
+            for i, result in enumerate(results):
+                entry = batch[i]
                 if isinstance(result, Exception):
-                    logger.error(f"[BatchWriter] Persist task error: {result}")
+                    logger.error(f"[BatchWriter] Flush error: {result}")
+                    failed.append((entry.entry_id, str(result)))
                     continue
+                
                 if isinstance(result, tuple) and len(result) == 3:
                     entry_id, success, error = result
                     if success:
                         succeeded.append(entry_id)
+                        
+                        if entry.data.get("is_llm_message", True):
+                            batch_messages_to_cache.append(entry.data)
                     else:
                         failed.append((entry_id, error or "Unknown error"))
+                else:
+                    logger.error(f"[BatchWriter] Unexpected result format: {result}")
+                    failed.append((entry.entry_id, "Unexpected result"))
+
+            if batch_messages_to_cache:
+                try:
+                    from core.cache.runtime_cache import append_to_cached_message_history
+                    for data in batch_messages_to_cache:
+                        message_payload = data["content"].copy() if isinstance(data["content"], dict) else {"content": data["content"]}
+                        if "message_id" not in message_payload and "message_id" in data:
+                            message_payload["message_id"] = data["message_id"]
+                        
+                        if "role" not in message_payload and "type" in data:
+                            message_payload["role"] = data["type"]
+
+                        await append_to_cached_message_history(data["thread_id"], message_payload)
+                except Exception as e:
+                    logger.warning(f"Failed to update message cache during flush: {e}")
 
         return succeeded, failed
 
@@ -135,6 +159,7 @@ class BatchWriter:
                 agent_id=data.get("agent_id"),
                 agent_version_id=data.get("agent_version_id"),
                 message_id=data.get("message_id"),
+                created_at=entry.created_at,
             )
             return True
 
