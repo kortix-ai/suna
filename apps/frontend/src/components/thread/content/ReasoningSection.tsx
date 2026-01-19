@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { ChevronDown } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 import { Streamdown } from "streamdown";
-import { useSmoothText } from "@/hooks/messages";
 
 interface ReasoningSectionProps {
   content: string;
@@ -31,9 +30,8 @@ export function ReasoningSection({
   isExpanded: controlledExpanded,
   onExpandedChange,
 }: ReasoningSectionProps) {
-  // Support both controlled and uncontrolled modes
-  const [internalExpanded, setInternalExpanded] = useState(isStreaming);
-  const [hasAutoExpanded, setHasAutoExpanded] = useState(false);
+  // Support both controlled and uncontrolled modes - start collapsed by default
+  const [internalExpanded, setInternalExpanded] = useState(false);
 
   // Use controlled mode if external state is provided
   const isControlled = controlledExpanded !== undefined;
@@ -49,27 +47,38 @@ export function ReasoningSection({
   // Determine if shimmer should be active (reasoning is being generated and not complete)
   const shouldShimmer = (isReasoningActive || isStreaming) && !isReasoningComplete;
 
-  // Auto-expand when streaming starts (only once per stream)
-  useEffect(() => {
-    if (isStreaming && !hasAutoExpanded) {
-      setIsExpanded(true);
-      setHasAutoExpanded(true);
-    }
-    // Reset the flag when streaming stops so next stream can auto-expand
-    if (!isStreaming) {
-      setHasAutoExpanded(false);
-    }
-  }, [isStreaming, hasAutoExpanded]);
-
   const hasContent = content && content.trim().length > 0;
 
-  // Apply smooth text animation for reasoning content
-  const smoothReasoningContent = useSmoothText(content, { speed: 50 });
-  const displayContent = smoothReasoningContent;
+  // Use ref to preserve already-rendered content and avoid re-animation on toggle
+  // This ensures that when user collapses/expands, they see the same content without re-animation
+  const committedContentRef = useRef<string>("");
+  const lastContentLengthRef = useRef<number>(0);
+
+  // Update committed content when new content arrives
+  // Only update if content is longer (new content streamed in)
+  useEffect(() => {
+    if (content && content.length > lastContentLengthRef.current) {
+      committedContentRef.current = content;
+      lastContentLengthRef.current = content.length;
+    }
+    // Reset refs when content is cleared (new stream starting)
+    if (!content || content.length === 0) {
+      committedContentRef.current = "";
+      lastContentLengthRef.current = 0;
+    }
+  }, [content]);
+
+  // Use committed content for display - this ensures toggle doesn't cause re-animation
+  const displayContent = committedContentRef.current || content;
   const isCurrentlyStreaming = isStreaming;
 
   return (
-    <div className={cn("w-full", className)}>
+    <motion.div
+      className={cn("w-full", className)}
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+    >
       {/* Header row: Full Kortix logo + Toggle button */}
       <div className="flex items-center gap-3">
         {/* Full Kortix logo (logomark with text) - pulses when reasoning is active */}
@@ -225,6 +234,6 @@ export function ReasoningSection({
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }

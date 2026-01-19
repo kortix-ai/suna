@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, memo, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useTranslations } from "next-intl";
 import {
@@ -958,8 +959,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     // For last group: prefer streaming content, fall back to persisted
     if (isLastGroup && !readOnly) {
-      // Show streaming reasoning if active OR has content (including cached during transition)
-      if (isReasoningActive || hasStreamingReasoningContent) {
+      // Only show reasoning section when we actually have streaming reasoning content
+      if (hasStreamingReasoningContent) {
         // SIMPLE FIX: If agent is idle and we have persisted reasoning, ALWAYS use persisted.
         // This fixes duplication issues where streaming content may be accumulated/duplicated.
         // The persisted content from the server is the source of truth once agent is done.
@@ -1180,7 +1181,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       let assistantGroupCounter = 0;
       // Track processed message IDs to prevent duplicate bubbles
       const processedMessageIds = new Set<string>();
-      // Track user message content+timestamp to detect duplicates from same turn
+      // Track user message content to detect duplicates from same turn (regardless of temp/server status)
+      const processedUserContents = new Set<string>();
+      // Track user message content+timestamp to detect near-duplicates
       const recentUserMessages = new Map<string, number>(); // content -> timestamp
 
       // First pass: collect content from server-confirmed user messages (non-temp IDs)
@@ -1203,32 +1206,36 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           return;
         }
 
-        // For temp user messages, skip if server already confirmed a message with same content
-        // This handles the race where both temp and server versions appear
-        // Legitimate duplicate messages (user sent same text twice) are preserved
-        if (messageType === 'user' && message.message_id?.startsWith('temp-')) {
+        // For user messages, perform content-based deduplication
+        if (messageType === 'user') {
           const contentKey = String(message.content || '').trim();
-          if (contentKey && serverUserContents.has(contentKey)) {
-            return;
-          }
-        }
 
-        // For non-temp user messages, skip if we already processed a user message with same content
-        // within a short time window (likely a duplicate from race condition)
-        if (messageType === 'user' && message.message_id && !message.message_id.startsWith('temp-')) {
-          const contentKey = String(message.content || '').trim();
-          const msgTime = message.created_at ? new Date(message.created_at).getTime() : 0;
-          const existingTime = recentUserMessages.get(contentKey);
-
-          if (existingTime !== undefined) {
-            // If another user message with same content exists within 30 seconds, skip this one
-            const timeDiff = Math.abs(msgTime - existingTime);
-            if (timeDiff < 30000) {
+          // For temp user messages, skip if server already confirmed a message with same content
+          // This handles the race where both temp and server versions appear
+          if (message.message_id?.startsWith('temp-')) {
+            if (contentKey && serverUserContents.has(contentKey)) {
               return;
             }
           }
-          // Track this message for deduplication
+
+          // For all user messages: skip if we already processed a message with exact same content
+          // in this render pass (prevents duplicates from race conditions)
+          if (contentKey && processedUserContents.has(contentKey)) {
+            // Check if within time window (30 seconds) to allow intentional duplicate messages later
+            const msgTime = message.created_at ? new Date(message.created_at).getTime() : 0;
+            const existingTime = recentUserMessages.get(contentKey);
+            if (existingTime !== undefined) {
+              const timeDiff = Math.abs(msgTime - existingTime);
+              if (timeDiff < 30000) {
+                return;
+              }
+            }
+          }
+
+          // Track this message content and time
           if (contentKey) {
+            processedUserContents.add(contentKey);
+            const msgTime = message.created_at ? new Date(message.created_at).getTime() : 0;
             recentUserMessages.set(contentKey, msgTime);
           }
         }
@@ -1561,32 +1568,41 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           {showNewGroupLoader && (
             <div ref={latestMessageRef} className="w-full rounded mt-6">
               <div className="flex flex-col gap-2">
-                {/* Show ReasoningSection if there's reasoning content, otherwise show AgentLoader for non-reasoning models */}
-                {streamingReasoningContent && streamingReasoningContent.trim().length > 0 ? (
-                  <ReasoningSection
-                    content={streamingReasoningContent}
-                    isStreaming={true}
-                    isReasoningActive={true}
-                    isReasoningComplete={false}
-                    isPersistedContent={false}
-                    isExpanded={newGroupReasoningExpanded}
-                    onExpandedChange={setNewGroupReasoningExpanded}
-                  />
-                ) : (
-                  <>
-                    <div className="flex items-center">
-                      <img
-                        src="/kortix-logomark-white.svg"
-                        alt="Kortix"
-                        className="dark:invert-0 invert flex-shrink-0"
-                        style={{ height: '12px', width: 'auto' }}
-                      />
-                    </div>
-                    <div className="mt-1.5">
-                      <AgentLoader />
-                    </div>
-                  </>
-                )}
+                {/* Smooth transition between loader and reasoning section */}
+                <AnimatePresence mode="wait" initial={false}>
+                  {streamingReasoningContent && streamingReasoningContent.trim().length > 0 ? (
+                    <ReasoningSection
+                      key="reasoning-section"
+                      content={streamingReasoningContent}
+                      isStreaming={true}
+                      isReasoningActive={true}
+                      isReasoningComplete={false}
+                      isPersistedContent={false}
+                      isExpanded={newGroupReasoningExpanded}
+                      onExpandedChange={setNewGroupReasoningExpanded}
+                    />
+                  ) : (
+                    <motion.div
+                      key="loader-section"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                    >
+                      <div className="flex items-center">
+                        <img
+                          src="/kortix-logomark-white.svg"
+                          alt="Kortix"
+                          className="dark:invert-0 invert flex-shrink-0"
+                          style={{ height: '12px', width: 'auto' }}
+                        />
+                      </div>
+                      <div className="mt-1.5">
+                        <AgentLoader />
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           )}
