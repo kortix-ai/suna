@@ -422,6 +422,26 @@ class PipelineCoordinator:
             logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (fast path)")
         
         llm_executor = LLMExecutor()
+
+        from core.agentpress.context_manager import ContextManager
+        context_manager = ContextManager(db=self._thread_manager.db)
+
+        is_valid, orphaned_ids, unanswered_ids = context_manager.validate_tool_call_pairing(prepared_messages)
+        if not is_valid:
+            logger.warning(f"⚠️ PRE-SEND VALIDATION: Found pairing issues - orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)}")
+            prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
+
+            is_valid_after, orphaned_after, unanswered_after = context_manager.validate_tool_call_pairing(prepared_messages)
+            if not is_valid_after:
+                logger.error(f"🚨 CRITICAL: Could not repair message structure. Applying emergency fallback.")
+                prepared_messages = context_manager.strip_all_tool_content_as_fallback(prepared_messages)
+
+        is_ordered, out_of_order_ids, _ = context_manager.validate_tool_call_ordering(prepared_messages)
+        if not is_ordered:
+            logger.warning(f"⚠️ PRE-SEND ORDERING: Found {len(out_of_order_ids)} out-of-order tool call/result pairs")
+            prepared_messages = context_manager.remove_out_of_order_tool_pairs(prepared_messages, out_of_order_ids)
+            prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
+
         llm_response = await llm_executor.execute(
             prepared_messages=prepared_messages,
             llm_model=effective_model,
