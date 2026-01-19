@@ -639,6 +639,28 @@ export default function AdminAnalyticsPage() {
                             </div>
                           </div>
 
+                          {/* Per User Metrics */}
+                          <div className="relative flex items-center justify-between p-3 pt-4 rounded-lg border mt-2">
+                            <span className="absolute top-1 left-2 text-[9px] text-muted-foreground">Per Paying User ({profitability.unique_paying_users})</span>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Revenue/User</p>
+                              <p className="text-sm font-semibold">${profitability.avg_revenue_per_paid_user.toFixed(2)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-muted-foreground">Cost/User</p>
+                              <p className="text-sm font-semibold">${profitability.avg_cost_per_active_user.toFixed(2)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-muted-foreground">Profit/User</p>
+                              <p className={cn(
+                                "text-sm font-semibold",
+                                (profitability.avg_revenue_per_paid_user - profitability.avg_cost_per_active_user) >= 0 ? "text-emerald-600" : "text-red-500"
+                              )}>
+                                ${(profitability.avg_revenue_per_paid_user - profitability.avg_cost_per_active_user).toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+
                           {/* Platform Split */}
                           <div className="grid grid-cols-2 gap-3">
                             <div className="p-3 rounded-lg border">
@@ -694,7 +716,9 @@ export default function AdminAnalyticsPage() {
                               tierViewMode === 'cost' ? t.total_actual_cost > 0 :
                               t.total_revenue > 0 || t.total_actual_cost > 0
                             );
-                            const totalUsers = filteredTiers.reduce((sum, t) => sum + t.unique_users, 0);
+                            // Use usage_users for cost view, unique_users for revenue/profit
+                            const getUserCount = (t: typeof filteredTiers[0]) => tierViewMode === 'cost' ? (t.usage_users ?? t.unique_users) : t.unique_users;
+                            const totalUsers = filteredTiers.reduce((sum, t) => sum + getUserCount(t), 0);
                             const totalValue = tierViewMode === 'revenue'
                               ? filteredTiers.reduce((sum, t) => sum + t.total_revenue, 0)
                               : tierViewMode === 'cost'
@@ -710,7 +734,8 @@ export default function AdminAnalyticsPage() {
                                 </div>
                                 {/* Rows */}
                                 {filteredTiers.map((tier, idx) => {
-                                  const userPercent = totalUsers > 0 ? ((tier.unique_users / totalUsers) * 100).toFixed(0) : '0';
+                                  const userCount = getUserCount(tier);
+                                  const userPercent = totalUsers > 0 ? ((userCount / totalUsers) * 100).toFixed(0) : '0';
                                   const value = tierViewMode === 'revenue' ? tier.total_revenue : tierViewMode === 'cost' ? tier.total_actual_cost : tier.gross_profit;
                                   const valuePercent = totalValue > 0 ? ((value / totalValue) * 100).toFixed(0) : '0';
                                   return (
@@ -725,7 +750,7 @@ export default function AdminAnalyticsPage() {
                                         </span>
                                       </div>
                                       <div className="text-right">
-                                        {tier.unique_users}
+                                        {userCount}
                                         <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
                                       </div>
                                       <div className={cn("text-right", tierViewMode === 'profit' && (value >= 0 ? 'text-green-600' : 'text-red-600'))}>
