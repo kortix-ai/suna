@@ -1798,8 +1798,15 @@ class ResponseProcessor:
                                 }
                             )
                             llm_response_end_saved = True
+                            if llm_end_content and llm_end_content.get('usage'):
+                                from core.agentpress.thread_manager.services.state.thread_state import ThreadState
+                                asyncio.create_task(ThreadState.set_last_usage(
+                                    thread_id,
+                                    llm_end_content['usage'],
+                                    llm_end_content.get('model')
+                                ))
                             # Yield to stream for real-time context usage updates
-                            if llm_end_msg_obj: 
+                            if llm_end_msg_obj:
                                 formatted = format_for_yield(llm_end_msg_obj)
                                 self._log_frontend_message(formatted, frontend_debug_file)
                                 yield formatted
@@ -1861,8 +1868,15 @@ class ResponseProcessor:
                                 }
                             )
                             llm_response_end_saved = True
+                            if llm_end_content and llm_end_content.get('usage'):
+                                from core.agentpress.thread_manager.services.state.thread_state import ThreadState
+                                asyncio.create_task(ThreadState.set_last_usage(
+                                    thread_id,
+                                    llm_end_content['usage'],
+                                    llm_end_content.get('model')
+                                ))
                             # Yield to stream for real-time context usage updates
-                            if llm_end_msg_obj: 
+                            if llm_end_msg_obj:
                                 formatted = format_for_yield(llm_end_msg_obj)
                                 self._log_frontend_message(formatted, frontend_debug_file)
                                 yield formatted
@@ -1984,10 +1998,17 @@ class ResponseProcessor:
                         }
                     )
                     llm_response_end_saved = True
+                    if llm_end_content and llm_end_content.get('usage'):
+                        from core.agentpress.thread_manager.services.state.thread_state import ThreadState
+                        asyncio.create_task(ThreadState.set_last_usage(
+                            thread_id,
+                            llm_end_content['usage'],
+                            llm_end_content.get('model')
+                        ))
                     # Don't yield in finally block - stream may be closed (GeneratorExit)
                     # Frontend already stopped consuming, no point in yielding
                     logger.debug(f"✅ BILLING SUCCESS: Saved llm_response_end in finally for call #{auto_continue_count + 1} ({'estimated' if is_estimated else 'exact'} usage)")
-                    
+
                 except Exception as billing_e:
                     logger.error(f"❌ CRITICAL BILLING FAILURE: Could not save llm_response_end: {str(billing_e)}", exc_info=True)
                     self.trace.event(

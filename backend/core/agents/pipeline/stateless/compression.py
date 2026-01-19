@@ -115,10 +115,8 @@ class ContextCompressor:
         thread_id: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         from core.agentpress.context_manager import ContextManager
-        from core.services.db import Database
-        
-        db = Database()
-        context_manager = ContextManager(db=db)
+
+        context_manager = ContextManager()
         
         try:
             compressed = await context_manager.compress_messages(

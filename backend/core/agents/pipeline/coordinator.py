@@ -66,18 +66,23 @@ class PipelineCoordinator:
                 
                 if auto_state.count > 0:
                     lightweight_start = time.time()
-                    prep_result = await self._lightweight_prep(ctx, prep_result)
+                    prep_result = await self._lightweight_prep(ctx, prep_result, tool_result_tokens=auto_state.tool_result_tokens)
                     logger.debug(f"⚡ [PIPELINE] Lightweight prep #{auto_state.count + 1}: {(time.time() - lightweight_start) * 1000:.1f}ms")
                     if not prep_result.can_proceed:
                         yield prep_result.get_error_response()
                         break
-                
+
+                auto_state.tool_result_tokens = 0
+
                 llm_start = time.time()
                 chunk_count = 0
+                effective_model = self._effective_model_name or ctx.model_name
                 async for chunk in self._execute_llm_call(ctx, prep_result, auto_state):
                     chunk_count += 1
                     yield chunk
-                    
+
+                    await self._track_tool_result_tokens(chunk, auto_state, effective_model)
+
                     should_continue, should_terminate = self._check_auto_continue(chunk, auto_state, max_auto_continues)
                     if should_terminate:
                         auto_state.active = False
@@ -163,7 +168,18 @@ class PipelineCoordinator:
                 prep_tasks.prep_mcp(ctx.agent_config, ctx.account_id, self._thread_manager)
             )
             await task_registry.register(ctx.agent_run_id, tasks['mcp'], 'mcp', critical=False)
-            
+
+            tasks['fast_check'] = asyncio.create_task(
+                prep_tasks.prep_fast_check(
+                    thread_id=ctx.thread_id,
+                    model_name=ctx.model_name,
+                    user_message=ctx.user_message,
+                    is_auto_continue=False,
+                    tool_result_tokens=0
+                )
+            )
+            await task_registry.register(ctx.agent_run_id, tasks['fast_check'], 'fast_check', critical=False)
+
             asyncio.create_task(prep_tasks.prep_llm_connection(ctx.model_name))
             asyncio.create_task(prep_tasks.prep_project_metadata(ctx.project_id))
             
@@ -191,16 +207,19 @@ class PipelineCoordinator:
             task_names = list(tasks.keys())
             for i, (name, task_result) in enumerate(zip(task_names, results)):
                 if isinstance(task_result, Exception):
-                    logger.error(f"Prep task {name} failed: {task_result}")
-                    result.errors.append(f"{name}: {str(task_result)[:100]}")
-                    if name == 'mcp':
-                        await stream_degradation(
-                            ctx.stream_key,
-                            "mcp",
-                            "Integration connection failed",
-                            "warning",
-                            "Some integrations may not be available"
-                        )
+                    if name == 'fast_check':
+                        logger.warning(f"fast_check failed (non-fatal): {task_result}")
+                    else:
+                        logger.error(f"Prep task {name} failed: {task_result}")
+                        result.errors.append(f"{name}: {str(task_result)[:100]}")
+                        if name == 'mcp':
+                            await stream_degradation(
+                                ctx.stream_key,
+                                "mcp",
+                                "Integration connection failed",
+                                "warning",
+                                "Some integrations may not be available"
+                            )
                 else:
                     setattr(result, name, task_result)
             
@@ -217,43 +236,59 @@ class PipelineCoordinator:
     async def _lightweight_prep(
         self,
         ctx: PipelineContext,
-        prev_result: PrepResult
+        prev_result: PrepResult,
+        tool_result_tokens: int = 0
     ) -> PrepResult:
         start = time.time()
         result = PrepResult()
-        
+
         try:
             billing_task = asyncio.create_task(
                 prep_tasks.prep_billing(ctx.account_id, wait_for_cache_ms=0)
             )
-            
+
             messages_task = asyncio.create_task(
                 prep_tasks.prep_messages(ctx.thread_id)
             )
-            
-            billing_result, messages_result = await asyncio.gather(
-                billing_task, messages_task, return_exceptions=True
+
+            fast_check_task = asyncio.create_task(
+                prep_tasks.prep_fast_check(
+                    thread_id=ctx.thread_id,
+                    model_name=ctx.model_name,
+                    user_message=None,
+                    is_auto_continue=True,
+                    tool_result_tokens=tool_result_tokens
+                )
             )
-            
+
+            billing_result, messages_result, fast_check_result = await asyncio.gather(
+                billing_task, messages_task, fast_check_task, return_exceptions=True
+            )
+
             if isinstance(billing_result, Exception):
                 result.errors.append(f"billing: {str(billing_result)[:100]}")
             else:
                 result.billing = billing_result
-            
+
             if isinstance(messages_result, Exception):
                 result.errors.append(f"messages: {str(messages_result)[:100]}")
             else:
                 result.messages = messages_result
-            
+
+            if isinstance(fast_check_result, Exception):
+                logger.warning(f"fast_check failed (non-fatal): {fast_check_result}")
+            else:
+                result.fast_check = fast_check_result
+
             result.prompt = prev_result.prompt
             result.tools = prev_result.tools
             result.mcp = prev_result.mcp
-            
+
             result.total_prep_time_ms = (time.time() - start) * 1000
             logger.debug(f"⚡ [PIPELINE] Lightweight prep: {result.total_prep_time_ms:.1f}ms")
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Lightweight prep failed: {e}")
             result.errors.append(str(e)[:200])
@@ -352,24 +387,64 @@ class PipelineCoordinator:
         messages_with_context = messages
         if memory_context and messages:
             messages_with_context = [memory_context] + messages
-        
+
         from core.agentpress.prompt_caching import add_cache_control
-        cached_system = add_cache_control(system_prompt)
-        prepared_messages = [cached_system] + messages_with_context
-        
-        # Use effective model (may have been switched for image support)
+        from core.agents.pipeline.stateless.compression import ContextCompressor
+
         effective_model = self._effective_model_name or ctx.model_name
-        
-        import litellm
-        actual_tokens = await asyncio.to_thread(
-            litellm.token_counter,
-            model=effective_model,
-            messages=prepared_messages
-        )
-        
-        logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (fast path)")
+
+        if prep.fast_check and prep.fast_check.need_compression:
+            logger.info(f"🗜️ Fast check triggered compression ({prep.fast_check.estimated_total_tokens} tokens)")
+            compressed_messages = await ContextCompressor._apply_compression(
+                messages=messages_with_context,
+                model_name=effective_model,
+                system_prompt=system_prompt,
+                actual_tokens=prep.fast_check.estimated_total_tokens,
+                thread_id=ctx.thread_id
+            )
+            cached_system = add_cache_control(system_prompt)
+            prepared_messages = [cached_system] + compressed_messages
+
+            import litellm
+            actual_tokens = await asyncio.to_thread(
+                litellm.token_counter,
+                model=effective_model,
+                messages=prepared_messages
+            )
+            logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (compressed)")
+        else:
+            cached_system = add_cache_control(system_prompt)
+            prepared_messages = [cached_system] + messages_with_context
+
+            import litellm
+            actual_tokens = await asyncio.to_thread(
+                litellm.token_counter,
+                model=effective_model,
+                messages=prepared_messages
+            )
+            logger.info(f"📤 PRE-SEND: {len(prepared_messages)} messages, {actual_tokens} tokens (fast path)")
         
         llm_executor = LLMExecutor()
+
+        from core.agentpress.context_manager import ContextManager
+        context_manager = ContextManager(db=self._thread_manager.db)
+
+        is_valid, orphaned_ids, unanswered_ids = context_manager.validate_tool_call_pairing(prepared_messages)
+        if not is_valid:
+            logger.warning(f"⚠️ PRE-SEND VALIDATION: Found pairing issues - orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)}")
+            prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
+
+            is_valid_after, orphaned_after, unanswered_after = context_manager.validate_tool_call_pairing(prepared_messages)
+            if not is_valid_after:
+                logger.error(f"🚨 CRITICAL: Could not repair message structure. Applying emergency fallback.")
+                prepared_messages = context_manager.strip_all_tool_content_as_fallback(prepared_messages)
+
+        is_ordered, out_of_order_ids, _ = context_manager.validate_tool_call_ordering(prepared_messages)
+        if not is_ordered:
+            logger.warning(f"⚠️ PRE-SEND ORDERING: Found {len(out_of_order_ids)} out-of-order tool call/result pairs")
+            prepared_messages = context_manager.remove_out_of_order_tool_pairs(prepared_messages, out_of_order_ids)
+            prepared_messages = context_manager.repair_tool_call_pairing(prepared_messages)
+
         llm_response = await llm_executor.execute(
             prepared_messages=prepared_messages,
             llm_model=effective_model,
@@ -414,7 +489,7 @@ class PipelineCoordinator:
         """
         if auto_state.count >= max_continues:
             return False, False
-        
+
         if chunk.get('type') == 'status':
             metadata = chunk.get('metadata', {})
             if isinstance(metadata, str):
@@ -448,7 +523,34 @@ class PipelineCoordinator:
                 return False, False
         
         return False, False
-    
+
+    async def _track_tool_result_tokens(
+        self,
+        chunk: Dict[str, Any],
+        auto_state: AutoContinueState,
+        model_name: str
+    ) -> None:
+        """Track token count from tool result chunks."""
+        if chunk.get('type') != 'tool':
+            return
+
+        try:
+            content = chunk.get('content', {})
+            if isinstance(content, str):
+                content = json.loads(content)
+            content_str = content.get('content', '') if isinstance(content, dict) else str(content)
+            if content_str:
+                from litellm.utils import token_counter
+                tool_tokens = await asyncio.to_thread(
+                    token_counter,
+                    model=model_name,
+                    messages=[{"role": "tool", "content": content_str}]
+                )
+                auto_state.tool_result_tokens += tool_tokens
+                logger.debug(f"🔧 Tracked {tool_tokens} tool result tokens (total: {auto_state.tool_result_tokens})")
+        except Exception as e:
+            logger.debug(f"Failed to count tool result tokens: {e}")
+
     def _log_prep_timing(self, result: PrepResult) -> None:
         parts = []
 
@@ -462,7 +564,14 @@ class PipelineCoordinator:
             parts.append(f"tools={result.tools.count}({result.tools.fetch_time_ms:.0f}ms)")
         if result.mcp:
             parts.append(f"mcp={result.mcp.tool_count}({result.mcp.init_time_ms:.0f}ms)")
-        
+        if result.fast_check:
+            fc = result.fast_check
+            if fc.from_cache:
+                status = "COMPRESS" if fc.need_compression else "OK"
+                parts.append(f"fast_check={fc.estimated_total_tokens}tok/{fc.threshold}thr={status}({fc.check_time_ms:.0f}ms)")
+            else:
+                parts.append(f"fast_check=no_cache({fc.check_time_ms:.0f}ms)")
+
         logger.info(f"📊 [PREP] {result.total_prep_time_ms:.0f}ms total | {' | '.join(parts)}")
     
     async def _cleanup(self, ctx: PipelineContext) -> None:

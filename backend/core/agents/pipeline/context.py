@@ -65,6 +65,18 @@ class MCPResult:
     init_time_ms: float = 0
 
 @dataclass
+class FastCheckResult:
+    """Result of fast token check from Redis cache."""
+    estimated_total_tokens: Optional[int] = None
+    last_total_tokens: int = 0
+    new_msg_tokens: int = 0
+    threshold: int = 0
+    need_compression: bool = False
+    skip_compression: bool = False
+    from_cache: bool = False
+    check_time_ms: float = 0
+
+@dataclass
 class PrepResult:
     billing: Optional[BillingResult] = None
     limits: Optional[LimitsResult] = None
@@ -72,6 +84,7 @@ class PrepResult:
     prompt: Optional[PromptResult] = None
     tools: Optional[ToolsResult] = None
     mcp: Optional[MCPResult] = None
+    fast_check: Optional[FastCheckResult] = None
     errors: List[str] = field(default_factory=list)
     total_prep_time_ms: float = 0
     
