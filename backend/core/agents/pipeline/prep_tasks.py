@@ -13,6 +13,7 @@ from core.agents.pipeline.context import (
     PromptResult,
     ToolsResult,
     MCPResult,
+    FastCheckResult,
 )
 
 async def prep_billing(account_id: str, wait_for_cache_ms: int = 3000) -> BillingResult:
@@ -248,3 +249,99 @@ async def prep_project_metadata(project_id: str) -> bool:
     except Exception as e:
         logger.warning(f"Project metadata cache failed: {e}")
         return False
+
+
+def calculate_compression_threshold(context_window: int) -> int:
+    """Calculate the token threshold for triggering compression."""
+    if context_window >= 1_000_000:
+        return context_window - 300_000
+    elif context_window >= 400_000:
+        return context_window - 64_000
+    elif context_window >= 200_000:
+        return context_window - 32_000
+    elif context_window >= 100_000:
+        return context_window - 16_000
+    else:
+        return int(context_window * 0.84)
+
+
+async def prep_fast_check(
+    thread_id: str,
+    model_name: str,
+    user_message: Optional[str] = None,
+    is_auto_continue: bool = False,
+    tool_result_tokens: int = 0
+) -> FastCheckResult:
+    """Fast check using Redis-cached usage data to determine if compression is needed.
+
+    This avoids expensive DB queries by using cached token counts from the last LLM response.
+
+    Args:
+        thread_id: The thread ID
+        model_name: The model name for context window lookup
+        user_message: Optional new user message to estimate tokens for
+        is_auto_continue: Whether this is an auto-continue iteration
+        tool_result_tokens: Token count from tool results (for auto-continue)
+
+    Returns:
+        FastCheckResult with compression decision
+    """
+    start = time.time()
+
+    try:
+        from core.agentpress.thread_manager.services.state.thread_state import ThreadState
+        from core.ai_models import model_manager
+
+        cached_usage = await ThreadState.get_last_usage(thread_id)
+
+        if not cached_usage:
+            elapsed_ms = (time.time() - start) * 1000
+            logger.debug(f"⚡ Fast check skipped - no cached usage ({elapsed_ms:.1f}ms)")
+            return FastCheckResult(
+                estimated_total_tokens=None,
+                from_cache=False,
+                check_time_ms=elapsed_ms
+            )
+
+        last_total_tokens = cached_usage.get('total_tokens', 0)
+
+        new_msg_tokens = 0
+        if is_auto_continue:
+            new_msg_tokens = tool_result_tokens
+        elif user_message:
+            new_msg_tokens = len(user_message) // 4 + 50
+
+        estimated_total = last_total_tokens + new_msg_tokens
+
+        context_window = model_manager.get_context_window(model_name)
+        threshold = calculate_compression_threshold(context_window)
+
+        need_compression = estimated_total >= threshold
+        skip_compression = estimated_total < threshold
+
+        elapsed_ms = (time.time() - start) * 1000
+
+        if need_compression:
+            logger.info(f"⚡ Fast check: {last_total_tokens} + {new_msg_tokens} = {estimated_total} tokens >= {threshold} threshold - NEED COMPRESSION ({elapsed_ms:.1f}ms)")
+        else:
+            logger.debug(f"⚡ Fast check: {last_total_tokens} + {new_msg_tokens} = {estimated_total} tokens < {threshold} threshold - skip compression ({elapsed_ms:.1f}ms)")
+
+        return FastCheckResult(
+            estimated_total_tokens=estimated_total,
+            last_total_tokens=last_total_tokens,
+            new_msg_tokens=new_msg_tokens,
+            threshold=threshold,
+            need_compression=need_compression,
+            skip_compression=skip_compression,
+            from_cache=True,
+            check_time_ms=elapsed_ms
+        )
+
+    except Exception as e:
+        elapsed_ms = (time.time() - start) * 1000
+        logger.warning(f"⚡ Fast check failed: {e} ({elapsed_ms:.1f}ms)")
+        return FastCheckResult(
+            estimated_total_tokens=None,
+            from_cache=False,
+            check_time_ms=elapsed_ms
+        )

@@ -66,7 +66,7 @@ class PipelineCoordinator:
                 
                 if auto_state.count > 0:
                     lightweight_start = time.time()
-                    prep_result = await self._lightweight_prep(ctx, prep_result)
+                    prep_result = await self._lightweight_prep(ctx, prep_result, tool_result_tokens=auto_state.tool_result_tokens)
                     logger.debug(f"⚡ [PIPELINE] Lightweight prep #{auto_state.count + 1}: {(time.time() - lightweight_start) * 1000:.1f}ms")
                     if not prep_result.can_proceed:
                         yield prep_result.get_error_response()
@@ -163,7 +163,18 @@ class PipelineCoordinator:
                 prep_tasks.prep_mcp(ctx.agent_config, ctx.account_id, self._thread_manager)
             )
             await task_registry.register(ctx.agent_run_id, tasks['mcp'], 'mcp', critical=False)
-            
+
+            tasks['fast_check'] = asyncio.create_task(
+                prep_tasks.prep_fast_check(
+                    thread_id=ctx.thread_id,
+                    model_name=ctx.model_name,
+                    user_message=ctx.user_message,
+                    is_auto_continue=False,
+                    tool_result_tokens=0
+                )
+            )
+            await task_registry.register(ctx.agent_run_id, tasks['fast_check'], 'fast_check', critical=False)
+
             asyncio.create_task(prep_tasks.prep_llm_connection(ctx.model_name))
             asyncio.create_task(prep_tasks.prep_project_metadata(ctx.project_id))
             
@@ -217,43 +228,59 @@ class PipelineCoordinator:
     async def _lightweight_prep(
         self,
         ctx: PipelineContext,
-        prev_result: PrepResult
+        prev_result: PrepResult,
+        tool_result_tokens: int = 0
     ) -> PrepResult:
         start = time.time()
         result = PrepResult()
-        
+
         try:
             billing_task = asyncio.create_task(
                 prep_tasks.prep_billing(ctx.account_id, wait_for_cache_ms=0)
             )
-            
+
             messages_task = asyncio.create_task(
                 prep_tasks.prep_messages(ctx.thread_id)
             )
-            
-            billing_result, messages_result = await asyncio.gather(
-                billing_task, messages_task, return_exceptions=True
+
+            fast_check_task = asyncio.create_task(
+                prep_tasks.prep_fast_check(
+                    thread_id=ctx.thread_id,
+                    model_name=ctx.model_name,
+                    user_message=None,
+                    is_auto_continue=True,
+                    tool_result_tokens=tool_result_tokens
+                )
             )
-            
+
+            billing_result, messages_result, fast_check_result = await asyncio.gather(
+                billing_task, messages_task, fast_check_task, return_exceptions=True
+            )
+
             if isinstance(billing_result, Exception):
                 result.errors.append(f"billing: {str(billing_result)[:100]}")
             else:
                 result.billing = billing_result
-            
+
             if isinstance(messages_result, Exception):
                 result.errors.append(f"messages: {str(messages_result)[:100]}")
             else:
                 result.messages = messages_result
-            
+
+            if isinstance(fast_check_result, Exception):
+                logger.warning(f"fast_check failed (non-fatal): {fast_check_result}")
+            else:
+                result.fast_check = fast_check_result
+
             result.prompt = prev_result.prompt
             result.tools = prev_result.tools
             result.mcp = prev_result.mcp
-            
+
             result.total_prep_time_ms = (time.time() - start) * 1000
             logger.debug(f"⚡ [PIPELINE] Lightweight prep: {result.total_prep_time_ms:.1f}ms")
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Lightweight prep failed: {e}")
             result.errors.append(str(e)[:200])
@@ -462,7 +489,14 @@ class PipelineCoordinator:
             parts.append(f"tools={result.tools.count}({result.tools.fetch_time_ms:.0f}ms)")
         if result.mcp:
             parts.append(f"mcp={result.mcp.tool_count}({result.mcp.init_time_ms:.0f}ms)")
-        
+        if result.fast_check:
+            fc = result.fast_check
+            if fc.from_cache:
+                status = "COMPRESS" if fc.need_compression else "OK"
+                parts.append(f"fast_check={fc.estimated_total_tokens}tok/{fc.threshold}thr={status}({fc.check_time_ms:.0f}ms)")
+            else:
+                parts.append(f"fast_check=no_cache({fc.check_time_ms:.0f}ms)")
+
         logger.info(f"📊 [PREP] {result.total_prep_time_ms:.0f}ms total | {' | '.join(parts)}")
     
     async def _cleanup(self, ctx: PipelineContext) -> None:
