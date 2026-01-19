@@ -2313,6 +2313,7 @@ class TierProfitability(BaseModel):
     provider: str  # 'stripe' or 'revenuecat'
     payment_count: int  # Number of payments in the period
     unique_users: int  # Unique paying users
+    usage_users: int  # Users with LLM usage (from credit_ledger)
     total_revenue: float  # Actual revenue from payments
     total_cost: float  # Sum of LLM usage costs (what we charge users)
     total_actual_cost: float  # Actual LLM costs (before markup)
@@ -2554,10 +2555,12 @@ async def get_engagement_summary(
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
 
-        range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        range_end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-        week_start = end_date.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=6)
-        month_start = end_date.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=29)
+        # Use UTC for all queries to align with profitability/usage metrics
+        UTC = ZoneInfo('UTC')
+        range_start = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC)
+        range_end = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC)
+        week_start = datetime(end_date.year, end_date.month, end_date.day, 0, 0, 0, tzinfo=UTC) - timedelta(days=6)
+        month_start = datetime(end_date.year, end_date.month, end_date.day, 0, 0, 0, tzinfo=UTC) - timedelta(days=29)
 
         # Use RPC for efficient COUNT(DISTINCT) queries
         # Pass the range start/end for DAU calculation
@@ -2619,8 +2622,10 @@ async def get_task_performance(
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
 
-        range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        range_end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        # Use UTC for all queries to align with profitability/usage metrics
+        UTC = ZoneInfo('UTC')
+        range_start = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC)
+        range_end = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC)
 
         # Use RPC for aggregation - don't fetch rows in Python
         result = await client.rpc('get_task_performance', {
@@ -3258,6 +3263,9 @@ async def get_profitability(
             # Determine primary provider for this tier entry
             provider = 'stripe' if stripe_rev >= rc_rev else 'revenuecat'
 
+            # Get usage users count from RPC data
+            usage_users_count = metrics.get('cost_only_users', 0)
+
             # Add separate entries for each provider if both have data
             if stripe_rev > 0:
                 by_tier.append(TierProfitability(
@@ -3266,6 +3274,7 @@ async def get_profitability(
                     provider='stripe',
                     payment_count=stripe_count,
                     unique_users=len(stripe_users),
+                    usage_users=usage_users_count,
                     total_revenue=round(stripe_rev, 2),
                     total_cost=round(cost_with_markup * (stripe_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
                     total_actual_cost=round(actual_cost * (stripe_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
@@ -3284,6 +3293,7 @@ async def get_profitability(
                     provider='revenuecat',
                     payment_count=rc_count,
                     unique_users=len(rc_users),
+                    usage_users=usage_users_count,
                     total_revenue=round(rc_rev, 2),
                     total_cost=round(cost_with_markup * (rc_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
                     total_actual_cost=round(actual_cost * (rc_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
@@ -3304,6 +3314,7 @@ async def get_profitability(
                     provider='stripe',  # Default to stripe for free tier
                     payment_count=0,
                     unique_users=num_users,
+                    usage_users=num_users,
                     total_revenue=0,
                     total_cost=round(cost_with_markup, 2),
                     total_actual_cost=round(actual_cost, 2),
@@ -3345,9 +3356,9 @@ async def get_profitability(
         unique_paying_users = len(all_paying_users)
         unique_active_users = sum(t.get('user_count', 0) for t in usage_costs_by_tier.values())  # Users who had usage
 
-        # Industry standard metrics
+        # Per-paying-user metrics (consistent denominator for Revenue/Cost/Profit per user)
         avg_revenue_per_paid_user = total_revenue / unique_paying_users if unique_paying_users > 0 else 0.0
-        avg_cost_per_active_user = total_actual_cost / unique_active_users if unique_active_users > 0 else 0.0
+        avg_cost_per_active_user = total_actual_cost / unique_paying_users if unique_paying_users > 0 else 0.0
 
         # Collect emails from Stripe customers
         stripe_user_emails = stripe_revenue.get('user_emails', {})
