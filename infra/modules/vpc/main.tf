@@ -150,6 +150,10 @@ resource "aws_security_group" "alb" {
     var.tags,
     { Name = "${var.vpc_name}-alb-sg" }
   )
+
+  lifecycle {
+    ignore_changes = [name]
+  }
 }
 
 # Security Group - ECS Tasks

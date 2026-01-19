@@ -167,6 +167,14 @@ resource "aws_ecs_task_definition" "api" {
     image     = var.container_image
     essential = true
 
+    entryPoint = ["sh", "-lc"]
+
+    command = var.secrets_arn != null ? [
+      var.use_aws_redis ? "eval \"$(python - <<'PY'\nimport os, json, shlex\nj = os.environ.get('SUNA_ENV_JSON')\nskip = {'REDIS_HOST','REDIS_PORT','REDIS_PASSWORD','REDIS_USERNAME','REDIS_SSL','PORT'}\nif j:\n    try:\n        d = json.loads(j)\n        for k, v in d.items():\n            if k in skip:\n                continue\n            val = str(v)\n            print(f\"export {k}={shlex.quote(val)}\")\n    except Exception:\n        pass\nPY\n)\"; uv run gunicorn api:app --workers ${WORKERS:-8} --bind 0.0.0.0:8000 --worker-class uvicorn.workers.UvicornWorker --timeout ${TIMEOUT:-75} --graceful-timeout 600 --keep-alive 75 --max-requests 5000 --max-requests-jitter 2500 --forwarded-allow-ips '*' --worker-connections 2000 --worker-tmp-dir /dev/shm --log-level info --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance" : "eval \"$(python - <<'PY'\nimport os, json, shlex\nj = os.environ.get('SUNA_ENV_JSON')\nskip = {'PORT'}\nif j:\n    try:\n        d = json.loads(j)\n        for k, v in d.items():\n            if k in skip:\n                continue\n            val = str(v)\n            print(f\"export {k}={shlex.quote(val)}\")\n    except Exception:\n        pass\nPY\n)\"; uv run gunicorn api:app --workers ${WORKERS:-8} --bind 0.0.0.0:8000 --worker-class uvicorn.workers.UvicornWorker --timeout ${TIMEOUT:-75} --graceful-timeout 600 --keep-alive 75 --max-requests 5000 --max-requests-jitter 2500 --forwarded-allow-ips '*' --worker-connections 2000 --worker-tmp-dir /dev/shm --log-level info --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance"
+    ] : [
+      "uv run gunicorn api:app --workers ${WORKERS:-8} --bind 0.0.0.0:8000 --worker-class uvicorn.workers.UvicornWorker --timeout ${TIMEOUT:-75} --graceful-timeout 600 --keep-alive 75 --max-requests 5000 --max-requests-jitter 2500 --forwarded-allow-ips '*' --worker-connections 2000 --worker-tmp-dir /dev/shm --log-level info --access-logfile - --error-logfile - --capture-output --enable-stdio-inheritance"
+    ]
+
     portMappings = [{
       containerPort = 8000
       hostPort      = 8000
