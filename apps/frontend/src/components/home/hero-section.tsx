@@ -88,31 +88,23 @@ export function HeroSection() {
           } : undefined}
         />
 
-        <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 pb-24 sm:pb-32 mx-auto h-full w-full sm:max-w-6xl flex flex-col items-center justify-center min-h-[calc(100vh-120px)]">
-          <div className="flex flex-col items-center justify-center gap-4 sm:gap-5 pt-12 sm:pt-20 sm:max-w-4xl mx-auto pb-4 sm:pb-5">
-            {/* Greeting is rendered inside AgentStartInput */}
-          </div>
-
-          <div className="flex flex-col items-center w-full sm:max-w-3xl mx-auto gap-2 flex-wrap justify-center mt-1">
-            <div className="w-full relative">
-              <div className="relative z-10 w-full flex flex-col items-center space-y-4">
-                <AgentStartInput
-                  variant="hero"
-                  requireAuth={true}
-                  onAuthRequired={handleAuthRequired}
-                  redirectOnError="/"
-                  showGreeting={true}
-                  greetingClassName="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center sm:px-2"
-                  autoFocus={false}
-                  showLoginStatus={true}
-                  showAlertBanners={false}
-                  showModesPanel={true}
-                  isMobile={isMobile}
-                  modesPanelWrapperClassName="w-full sm:max-w-3xl mx-auto mt-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both"
-                />
-              </div>
-            </div>
-          </div>
+        <div className="relative z-10 w-full sm:max-w-3xl mx-auto min-h-[100dvh] flex flex-col items-center justify-center">
+          {/* Main content - perfectly centered */}
+          <AgentStartInput
+            variant="hero"
+            requireAuth={true}
+            onAuthRequired={handleAuthRequired}
+            redirectOnError="/"
+            showGreeting={true}
+            greetingClassName="text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90 text-center mb-4"
+            autoFocus={false}
+            showLoginStatus={true}
+            showAlertBanners={false}
+            showModesPanel={true}
+            isMobile={isMobile}
+            inputWrapperClassName="w-full flex flex-col items-center animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both"
+            modesPanelWrapperClassName="w-full mt-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both"
+          />
         </div>
       </div>
 

@@ -127,11 +127,13 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     clearAgentLimitData,
   } = useOptimisticAgentStart(redirectOnError);
   
-  // Fetch agents
+  // Fetch agents - only when user is authenticated
   const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({
     limit: agentLimit,
     sort_by: 'name',
     sort_order: 'asc'
+  }, {
+    enabled: !!user, // Only fetch agents when authenticated
   });
   
   const agents = Array.isArray(agentsResponse?.agents) ? agentsResponse.agents : [];
@@ -141,9 +143,12 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     : null;
   
   // Determine if Suna agent is selected (for modes panel)
-  const isSunaAgent = isLoadingAgents 
-    ? true // Show Kortix modes while loading
-    : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
+  // For unauthenticated users, always show as Suna agent (for landing page modes panel)
+  const isSunaAgent = !user 
+    ? true // Unauthenticated users always see Suna modes
+    : isLoadingAgents 
+      ? true // Show Kortix modes while loading
+      : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
   
   // Initialize agent selection when agents are loaded
   useEffect(() => {

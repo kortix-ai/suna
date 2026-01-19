@@ -47,8 +47,17 @@ export const useSunaModesStore = create<SunaModesState>()(
     }),
     {
       name: 'suna-modes-storage',
+      // Version 2: Don't persist selectedMode - it should always start as null (no mode pre-selected)
+      version: 2,
+      migrate: (persistedState: any, version: number) => {
+        if (version < 2) {
+          // Remove selectedMode from old persisted state
+          const { selectedMode, ...rest } = persistedState;
+          return rest;
+        }
+        return persistedState;
+      },
       partialize: (state) => ({
-        selectedMode: state.selectedMode,
         selectedCharts: state.selectedCharts,
         selectedOutputFormat: state.selectedOutputFormat,
         selectedTemplate: state.selectedTemplate,
