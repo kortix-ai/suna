@@ -400,7 +400,7 @@ async def get_running_thread_ids(account_id: str) -> List[str]:
     WHERE t.account_id = :account_id AND ar.status = 'running'
     """
     rows = await execute(sql, {"account_id": account_id})
-    return [row["thread_id"] for row in rows] if rows else []
+    return [str(row["thread_id"]) for row in rows] if rows else []
 
 async def get_default_agent_id(account_id: str) -> Optional[str]:
     sql = """
@@ -410,13 +410,13 @@ async def get_default_agent_id(account_id: str) -> Optional[str]:
     LIMIT 1
     """
     result = await execute_one(sql, {"account_id": account_id})
-    return result["agent_id"] if result else None
+    return str(result["agent_id"]) if result else None
 
 
 async def get_any_agent_id(account_id: str) -> Optional[str]:
     sql = "SELECT agent_id FROM agents WHERE account_id = :account_id LIMIT 1"
     result = await execute_one(sql, {"account_id": account_id})
-    return result["agent_id"] if result else None
+    return str(result["agent_id"]) if result else None
 
 
 async def get_shared_suna_agent(admin_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
