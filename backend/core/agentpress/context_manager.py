@@ -1349,7 +1349,7 @@ class ContextManager:
             if message_id and message_id in original_content_map:
                 original_content = original_content_map[message_id]
                 current_content = msg.get('content')
-                
+
                 # If content changed, it was compressed
                 if current_content != original_content:
                     # Save the FULL message structure (matching DB content format)
@@ -1359,17 +1359,8 @@ class ContextManager:
                         'message_id': message_id,
                         'compressed_content': json.dumps(msg_to_save)
                     })
-        
-        # Save compressed messages to database (fire and forget for performance)
-        if compressed_to_save:
-            async def save_with_error_handling():
-                try:
-                    await self.save_compressed_messages(compressed_to_save)
-                except Exception as e:
-                    logger.warning(f"Failed to save compressed messages: {e}")
-            asyncio.create_task(save_with_error_handling())
-        
-        return await self.middle_out_messages(result)
+
+        return await self.middle_out_messages(result, compressed_to_save=compressed_to_save)
     
     async def compress_messages_by_omitting_messages(
             self, 
@@ -1529,20 +1520,41 @@ class ContextManager:
             
         return final_messages
     
-    async def middle_out_messages(self, messages: List[Dict[str, Any]], max_messages: int = 320) -> List[Dict[str, Any]]:
+    async def middle_out_messages(
+        self,
+        messages: List[Dict[str, Any]],
+        max_messages: int = 320,
+        compressed_to_save: Optional[List[Dict[str, Any]]] = None
+    ) -> List[Dict[str, Any]]:
         """Remove message GROUPS from the middle of the list, keeping approximately max_messages total.
-        
+
         CRITICAL: This method operates on atomic message groups to preserve
         the assistant+tool_calls / tool_result pairing required by Bedrock.
-        
+
         Args:
             messages: List of messages
             max_messages: Approximate maximum messages to keep (actual may vary due to group sizes)
-            
+            compressed_to_save: Optional compressed messages to save (will be merged with omitted)
+
         Returns:
             Messages with middle groups removed, preserving tool call pairing
         """
+
+        def _fire_save(to_save: List[Dict[str, Any]], tool_call_ids: Optional[List[str]] = None):
+            if not to_save:
+                return
+            async def _do_save():
+                try:
+                    await self.save_compressed_messages(to_save)
+                    if tool_call_ids and self.thread_id:
+                        from core.threads import repo as threads_repo
+                        await threads_repo.mark_tool_results_as_omitted(self.thread_id, tool_call_ids)
+                except Exception as e:
+                    logger.warning(f"Failed to save messages: {e}")
+            asyncio.create_task(_do_save())
+
         if len(messages) <= max_messages:
+            _fire_save(compressed_to_save)
             return messages
         
         # Group messages into atomic units
@@ -1551,17 +1563,19 @@ class ContextManager:
         # If already few enough groups, return as-is
         total_messages = sum(len(g) for g in message_groups)
         if total_messages <= max_messages:
+            _fire_save(compressed_to_save)
             return messages
-        
+
         # Estimate how many groups we need to keep
         # Use average group size to estimate
         avg_group_size = total_messages / len(message_groups) if message_groups else 1
         target_groups = int(max_messages / avg_group_size)
-        
+
         # Ensure we keep at least 4 groups (2 from start, 2 from end)
         target_groups = max(4, target_groups)
-        
+
         if len(message_groups) <= target_groups:
+            _fire_save(compressed_to_save)
             return messages
         
         # Keep half from the beginning and half from the end (by groups)
@@ -1579,55 +1593,42 @@ class ContextManager:
         removed_groups = message_groups[keep_start_groups:-keep_end_groups] if keep_end_groups > 0 else message_groups[keep_start_groups:]
         
         removed_count = len(message_groups) - len(kept_groups)
+        omitted_to_save: List[Dict[str, Any]] = []
+        omitted_ids: set = set()
+        omitted_tool_call_ids: List[str] = []
+
         if removed_count > 0:
             logger.info(f"📦 Middle-out: removed {removed_count} groups from middle ({len(message_groups)} -> {len(kept_groups)} groups)")
             
-            # Save removed messages with placeholder content
-            omitted_to_save: List[Dict[str, Any]] = []
             for group in removed_groups:
                 for msg in group:
                     message_id = msg.get('message_id')
                     if message_id:
+                        omitted_ids.add(message_id)
                         placeholder_msg = {
                             'role': msg.get('role', 'user'),
                             'content': f"[Message omitted for context management. message_id: \"{message_id}\". Use expand-message tool to view full content.]"
                         }
                         if msg.get('tool_call_id'):
                             placeholder_msg['tool_call_id'] = msg['tool_call_id']
-                        # Preserve tool_calls for assistant messages (critical for pairing validation)
                         if msg.get('tool_calls'):
                             placeholder_msg['tool_calls'] = msg['tool_calls']
-                        
+                            for tc in msg['tool_calls']:
+                                if tc.get('id'):
+                                    omitted_tool_call_ids.append(tc['id'])
+
                         omitted_to_save.append({
                             'message_id': message_id,
                             'compressed_content': json.dumps(placeholder_msg),
-                            'is_omission': True  # Mark as omission so it can override compression
+                            'is_omission': True
                         })
-            
-            if omitted_to_save:
-                try:
-                    await self.save_compressed_messages(omitted_to_save)
-                    
-                    # Also mark any tool results belonging to omitted assistant messages
-                    omitted_tool_call_ids = []
-                    for group in removed_groups:
-                        for msg in group:
-                            if msg.get('tool_calls'):
-                                for tc in msg['tool_calls']:
-                                    tc_id = tc.get('id')
-                                    if tc_id:
-                                        omitted_tool_call_ids.append(tc_id)
-                    
-                    if omitted_tool_call_ids and self.thread_id:
-                        from core.threads import repo as threads_repo
-                        marked_count = await threads_repo.mark_tool_results_as_omitted(
-                            self.thread_id, 
-                            omitted_tool_call_ids
-                        )
-                        if marked_count > 0:
-                            logger.info(f"📝 Also marked {marked_count} orphaned tool results as omitted")
-                except Exception as e:
-                    logger.warning(f"Failed to save middle-out omitted messages: {e}")
+
+        final_to_save: List[Dict[str, Any]] = []
+        if compressed_to_save:
+            final_to_save = [m for m in compressed_to_save if m['message_id'] not in omitted_ids]
+        final_to_save.extend(omitted_to_save)
+
+        _fire_save(final_to_save, omitted_tool_call_ids if omitted_tool_call_ids else None)
         
         # Flatten groups back to messages
         result = self.flatten_message_groups(kept_groups)
