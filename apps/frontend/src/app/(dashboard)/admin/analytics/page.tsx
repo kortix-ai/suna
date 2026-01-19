@@ -63,7 +63,8 @@ export default function AdminAnalyticsPage() {
   const [tierFilter, setTierFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   const [activeTab, setActiveTab] = useState<string>('overview');
-  const [tierViewMode, setTierViewMode] = useState<'revenue' | 'cost'>('revenue');
+  const [tierViewMode, setTierViewMode] = useState<'revenue' | 'cost' | 'profit'>('revenue');
+  const [includeStuckTasks, setIncludeStuckTasks] = useState(false);
 
   const handleCategoryFilter = (category: string | null) => {
     setCategoryFilter(category);
@@ -392,15 +393,33 @@ export default function AdminAnalyticsPage() {
                         </div>
 
                         {/* Avg Duration */}
-                        <div className="text-center p-4 rounded-lg bg-muted/30 flex flex-col justify-center">
+                        <div className="text-center p-4 rounded-lg bg-muted/30 flex flex-col justify-center relative">
                           <p className="text-2xl font-bold">
-                            {taskPerformance?.avg_duration_seconds
-                              ? taskPerformance.avg_duration_seconds < 60
-                                ? `${taskPerformance.avg_duration_seconds.toFixed(0)}s`
-                                : `${(taskPerformance.avg_duration_seconds / 60).toFixed(1)}m`
-                              : '—'}
+                            {(() => {
+                              const duration = includeStuckTasks
+                                ? taskPerformance?.avg_duration_with_stuck_seconds
+                                : taskPerformance?.avg_duration_seconds;
+                              if (!duration) return '—';
+                              return duration < 60
+                                ? `${duration.toFixed(0)}s`
+                                : `${(duration / 60).toFixed(1)}m`;
+                            })()}
                           </p>
                           <p className="text-xs text-muted-foreground mt-1">Avg Task Duration</p>
+                          {(taskPerformance?.stuck_task_count ?? 0) > 0 && (
+                            <button
+                              onClick={() => setIncludeStuckTasks(!includeStuckTasks)}
+                              className={cn(
+                                "text-[9px] mt-1 px-1.5 py-0.5 rounded cursor-pointer transition-colors",
+                                includeStuckTasks
+                                  ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+                                  : "bg-muted text-muted-foreground hover:bg-muted/80"
+                              )}
+                              title={includeStuckTasks ? "Click to exclude stuck tasks" : "Click to include stuck tasks"}
+                            >
+                              {taskPerformance.stuck_task_count} stuck {includeStuckTasks ? '(included)' : '(excluded)'}
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -639,6 +658,28 @@ export default function AdminAnalyticsPage() {
                             </div>
                           </div>
 
+                          {/* Per User Metrics */}
+                          <div className="relative flex items-center justify-between p-3 pt-4 rounded-lg border mt-2">
+                            <span className="absolute top-1 left-2 text-[9px] text-muted-foreground">Per Paying User ({profitability.unique_paying_users})</span>
+                            <div>
+                              <p className="text-[10px] text-muted-foreground">Revenue/User</p>
+                              <p className="text-sm font-semibold">${profitability.avg_revenue_per_paid_user.toFixed(2)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-muted-foreground">Cost/User</p>
+                              <p className="text-sm font-semibold">${profitability.avg_cost_per_active_user.toFixed(2)}</p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-[10px] text-muted-foreground">Profit/User</p>
+                              <p className={cn(
+                                "text-sm font-semibold",
+                                (profitability.avg_revenue_per_paid_user - profitability.avg_cost_per_active_user) >= 0 ? "text-emerald-600" : "text-red-500"
+                              )}>
+                                ${(profitability.avg_revenue_per_paid_user - profitability.avg_cost_per_active_user).toFixed(2)}
+                              </p>
+                            </div>
+                          </div>
+
                           {/* Platform Split */}
                           <div className="grid grid-cols-2 gap-3">
                             <div className="p-3 rounded-lg border">
@@ -677,28 +718,44 @@ export default function AdminAnalyticsPage() {
                               >
                                 Usage
                               </button>
+                              <button
+                                onClick={() => setTierViewMode('profit')}
+                                className={cn(
+                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  tierViewMode === 'profit' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                                )}
+                              >
+                                Profit
+                              </button>
                             </div>
                           </div>
                           {profitability.by_tier && profitability.by_tier.length > 0 ? (() => {
                             const filteredTiers = profitability.by_tier.filter(t =>
-                              tierViewMode === 'revenue' ? t.total_revenue > 0 : t.total_actual_cost > 0
+                              tierViewMode === 'revenue' ? t.total_revenue > 0 :
+                              tierViewMode === 'cost' ? t.total_actual_cost > 0 :
+                              t.total_revenue > 0 || t.total_actual_cost > 0
                             );
-                            const totalUsers = filteredTiers.reduce((sum, t) => sum + t.unique_users, 0);
+                            // Use usage_users for cost view, unique_users for revenue/profit
+                            const getUserCount = (t: typeof filteredTiers[0]) => tierViewMode === 'cost' ? (t.usage_users ?? t.unique_users) : t.unique_users;
+                            const totalUsers = filteredTiers.reduce((sum, t) => sum + getUserCount(t), 0);
                             const totalValue = tierViewMode === 'revenue'
                               ? filteredTiers.reduce((sum, t) => sum + t.total_revenue, 0)
-                              : filteredTiers.reduce((sum, t) => sum + t.total_actual_cost, 0);
+                              : tierViewMode === 'cost'
+                              ? filteredTiers.reduce((sum, t) => sum + t.total_actual_cost, 0)
+                              : filteredTiers.reduce((sum, t) => sum + t.gross_profit, 0);
                             return filteredTiers.length > 0 ? (
                               <div className="space-y-1.5">
                                 {/* Header */}
                                 <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
                                   <div>Tier</div>
                                   <div className="text-right">Users</div>
-                                  <div className="text-right">{tierViewMode === 'revenue' ? 'Revenue' : 'Cost'}</div>
+                                  <div className="text-right">{tierViewMode === 'revenue' ? 'Revenue' : tierViewMode === 'cost' ? 'Cost' : 'Profit'}</div>
                                 </div>
                                 {/* Rows */}
                                 {filteredTiers.map((tier, idx) => {
-                                  const userPercent = totalUsers > 0 ? ((tier.unique_users / totalUsers) * 100).toFixed(0) : '0';
-                                  const value = tierViewMode === 'revenue' ? tier.total_revenue : tier.total_actual_cost;
+                                  const userCount = getUserCount(tier);
+                                  const userPercent = totalUsers > 0 ? ((userCount / totalUsers) * 100).toFixed(0) : '0';
+                                  const value = tierViewMode === 'revenue' ? tier.total_revenue : tierViewMode === 'cost' ? tier.total_actual_cost : tier.gross_profit;
                                   const valuePercent = totalValue > 0 ? ((value / totalValue) * 100).toFixed(0) : '0';
                                   return (
                                     <div
@@ -708,15 +765,15 @@ export default function AdminAnalyticsPage() {
                                       <div className="font-medium truncate flex items-center gap-1">
                                         {tier.display_name}
                                         <span className="text-[10px] text-muted-foreground">
-                                          ({tier.provider === 'stripe' ? 'W' : 'A'})
+                                          ({tier.provider === 'stripe' ? 'Web' : 'App'})
                                         </span>
                                       </div>
                                       <div className="text-right">
-                                        {tier.unique_users}
+                                        {userCount}
                                         <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
                                       </div>
-                                      <div className="text-right">
-                                        ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      <div className={cn("text-right", tierViewMode === 'profit' && (value >= 0 ? 'text-green-600' : 'text-red-600'))}>
+                                        {tierViewMode === 'profit' && value < 0 ? '-' : ''}${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         <span className="text-[10px] text-muted-foreground ml-1">({valuePercent}%)</span>
                                       </div>
                                     </div>
@@ -725,7 +782,7 @@ export default function AdminAnalyticsPage() {
                               </div>
                             ) : (
                               <p className="text-sm text-muted-foreground text-center py-4">
-                                No {tierViewMode === 'revenue' ? 'paying' : 'usage'} data
+                                No {tierViewMode === 'revenue' ? 'paying' : tierViewMode === 'cost' ? 'usage' : 'profit'} data
                               </p>
                             );
                           })() : (

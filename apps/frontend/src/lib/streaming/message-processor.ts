@@ -26,7 +26,24 @@ import {
 } from './tool-accumulator';
 
 export interface ProcessedMessage {
-  type: 'text_chunk' | 'reasoning_chunk' | 'tool_call_chunk' | 'tool_result' | 'message_complete' | 'status' | 'error' | 'billing_error' | 'ping' | 'tool_output_stream' | 'ux_ack' | 'ux_estimate' | 'ux_prep_stage' | 'ux_degradation' | 'ux_thinking' | 'ux_error' | 'ignore';
+  type: 'text_chunk' | 
+        'reasoning_chunk' | 
+        'tool_call_chunk' | 
+        'tool_result' | 
+        'message_complete' | 
+        'status' | 
+        'error' | 
+        'billing_error' | 
+        'ping' | 
+        'tool_output_stream' | 
+        'ux_ack' | 
+        'ux_estimate' | 
+        'ux_prep_stage' | 
+        'ux_degradation' | 
+        'ux_thinking' | 
+        'ux_error' | 
+        'context_usage' | 
+        'ignore';
   content?: string;
   message?: StreamMessage;
   toolCalls?: ReconstructedToolCall[];
@@ -39,6 +56,9 @@ export interface ProcessedMessage {
   uxDegradation?: DegradationEvent;
   uxThinking?: ThinkingEvent;
   uxError?: ErrorEvent;
+  current_tokens?: number;
+  message_count?: number;
+  compressed?: boolean;
 }
 
 export function parseStreamMessage(rawData: string): StreamMessage | null {
@@ -107,6 +127,20 @@ export function processStreamData(
         is_final: jsonData.is_final as boolean,
       },
     };
+  }
+  
+  if (jsonData.type === 'context_usage') {
+    return {
+      type: 'context_usage',
+      current_tokens: jsonData.current_tokens as number,
+      message_count: jsonData.message_count as number,
+      compressed: jsonData.compressed as boolean
+    };
+  }
+  
+  if (jsonData.type === 'summarizing context') {
+    console.log('🗜️ [SUMMARIZING CONTEXT]', jsonData.status, jsonData);
+    return { type: 'ignore' };
   }
   
   if (jsonData.type === 'ping' && !jsonData.content) {

@@ -365,6 +365,9 @@ api_router.include_router(presentations_api.router, prefix="/presentation-templa
 
 api_router.include_router(transcription_api.router)
 
+from core.services import voice_generation as voice_api
+api_router.include_router(voice_api.router)
+
 from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
 

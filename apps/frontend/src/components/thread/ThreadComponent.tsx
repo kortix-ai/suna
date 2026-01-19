@@ -74,6 +74,7 @@ import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file
 import { useClearNavigation } from '@/stores/thread-navigation-store';
 import { useModeViewerInit } from '@/hooks/threads/use-mode-viewer-init';
 import { getStreamPreconnectService } from '@/lib/streaming/stream-preconnect';
+import { useVoicePlayerStore } from '@/stores/voice-player-store';
 
 interface ThreadComponentProps {
   projectId: string;
@@ -1473,10 +1474,15 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [streamHookStatus, agentStatus, setAgentStatus, setAgentRunId]);
 
+  // Close voice player when thread changes
+  const voiceClose = useVoicePlayerStore((s) => s.close);
+
   useEffect(() => {
     lastStreamStartedRef.current = null;
     earlyStreamStartedRef.current = false;
-  }, [threadId]);
+    // Close voice player when switching threads
+    voiceClose();
+  }, [threadId, voiceClose]);
 
   useEffect(() => {
     if (initialLoadCompleted) {

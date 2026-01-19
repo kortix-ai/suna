@@ -679,6 +679,39 @@ class RedisClient:
         )
         return result or 0
     
+    async def lpush(self, key: str, *values, timeout: float = None) -> int:
+        timeout = timeout or DEFAULT_OP_TIMEOUT
+        client = await self.get_client()
+        result = await self._with_timeout(
+            client.lpush(key, *values),
+            timeout_seconds=timeout,
+            operation_name=f"lpush({key})",
+            default=0
+        )
+        return result or 0
+    
+    async def ltrim(self, key: str, start: int, end: int, timeout: float = None) -> bool:
+        timeout = timeout or DEFAULT_OP_TIMEOUT
+        client = await self.get_client()
+        result = await self._with_timeout(
+            client.ltrim(key, start, end),
+            timeout_seconds=timeout,
+            operation_name=f"ltrim({key})",
+            default=False
+        )
+        return result
+    
+    async def lrange(self, key: str, start: int, end: int, timeout: float = None) -> list:
+        timeout = timeout or DEFAULT_OP_TIMEOUT
+        client = await self.get_client()
+        result = await self._with_timeout(
+            client.lrange(key, start, end),
+            timeout_seconds=timeout,
+            operation_name=f"lrange({key})",
+            default=[]
+        )
+        return result or []
+    
     # ========== Stream Operations with Timeout ==========
     
     async def stream_add(self, stream_key: str, fields: Dict[str, str], maxlen: int = None, 
@@ -1035,6 +1068,15 @@ async def zscore(key: str, member: str, timeout: float = None):
 
 async def llen(key: str, timeout: float = None) -> int:
     return await redis.llen(key, timeout=timeout)
+
+async def lpush(key: str, *values, timeout: float = None) -> int:
+    return await redis.lpush(key, *values, timeout=timeout)
+
+async def ltrim(key: str, start: int, end: int, timeout: float = None) -> bool:
+    return await redis.ltrim(key, start, end, timeout=timeout)
+
+async def lrange(key: str, start: int, end: int, timeout: float = None) -> list:
+    return await redis.lrange(key, start, end, timeout=timeout)
 
 async def stream_add(stream_key: str, fields: dict, maxlen: int = None, approximate: bool = True, 
                     timeout: Optional[float] = None, fail_silently: bool = True) -> Optional[str]:

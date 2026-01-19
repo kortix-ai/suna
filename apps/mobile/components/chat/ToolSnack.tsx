@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { View, Pressable, Dimensions } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Maximize2 } from 'lucide-react-native';
+import { Maximize2, Volume2, Play, Pause, X, RotateCcw } from 'lucide-react-native';
 import { getToolIcon } from '@/lib/icons/tool-icons';
 import { getUserFriendlyToolName, parseToolMessage, type ParsedToolData } from '@agentpress/shared';
 import { useColorScheme } from 'nativewind';
@@ -19,6 +19,7 @@ import LottieView from 'lottie-react-native';
 import type { UnifiedMessage } from '@agentpress/shared';
 import * as Haptics from 'expo-haptics';
 import { log } from '@/lib/logger';
+import { useVoicePlayerStore } from '@/stores/voice-player-store';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.3; // 30% of screen width to dismiss
@@ -124,16 +125,29 @@ export const ToolSnack = React.memo(function ToolSnack({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
 
+  // Voice player state
+  const voiceState = useVoicePlayerStore((s) => s.state);
+  const voiceText = useVoicePlayerStore((s) => s.text);
+  const voiceTogglePlayPause = useVoicePlayerStore((s) => s.togglePlayPause);
+  const voiceClose = useVoicePlayerStore((s) => s.close);
+
+  const isVoiceActive = voiceState !== 'idle';
+  const isVoiceLoading = voiceState === 'loading';
+  const isVoicePlaying = voiceState === 'playing';
+  const isVoicePaused = voiceState === 'paused';
+  const isVoiceEnded = voiceState === 'ended';
+  const isVoiceError = voiceState === 'error';
+
   // Animation values
   const translateY = useSharedValue(20);
   const translateX = useSharedValue(0);
   const opacity = useSharedValue(0);
   const scale = useSharedValue(0.95);
 
-  // Snack is visible whenever we have tool data to show (persisted by parent)
-  const isVisible = !!toolData;
+  // Snack is visible when we have tool data OR voice is active
+  const isVisible = !!toolData || isVoiceActive;
 
-  // Debug logging
+  // Tool data (only used when not in voice mode)
   const toolName = toolData?.toolName || 'Tool';
   const displayName = getUserFriendlyToolName(toolName);
   const ToolIcon = getToolIcon(toolName);
@@ -150,7 +164,11 @@ export const ToolSnack = React.memo(function ToolSnack({
   // Dismiss handler
   const handleDismiss = () => {
     triggerHaptic();
-    onDismiss?.();
+    if (isVoiceActive) {
+      voiceClose();
+    } else {
+      onDismiss?.();
+    }
   };
 
   // Pan gesture for swipe to dismiss
@@ -203,8 +221,128 @@ export const ToolSnack = React.memo(function ToolSnack({
   }));
 
   // Don't render if not visible
-  if (!toolData) {
+  if (!toolData && !isVoiceActive) {
     return null;
+  }
+
+  // Voice mode - render voice snack
+  if (isVoiceActive) {
+    const voiceDisplayText = voiceText && voiceText.length > 40 ? voiceText.slice(0, 40) + '...' : voiceText;
+
+    const voiceStatusBgColor = isVoiceLoading
+      ? 'rgba(59, 130, 246, 0.1)'
+      : isVoiceError
+        ? 'rgba(239, 68, 68, 0.1)'
+        : 'rgba(34, 197, 94, 0.1)';
+
+    const voiceStatusDotColor = isVoiceLoading
+      ? '#3B82F6'
+      : isVoiceError
+        ? '#EF4444'
+        : '#22C55E';
+
+    const voiceStatusText = isVoiceLoading
+      ? 'Generating...'
+      : isVoiceError
+        ? 'Failed'
+        : isVoicePlaying
+          ? 'Playing'
+          : isVoiceEnded
+            ? 'Finished'
+            : 'Paused';
+
+    const handleVoicePlayPause = () => {
+      triggerHaptic();
+      voiceTogglePlayPause();
+    };
+
+    return (
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={animatedStyle} className="mx-3 mb-2">
+          <View className="flex-row items-center gap-3 rounded-3xl p-2 border border-border bg-card">
+            {/* Voice Icon */}
+            <View
+              className="w-10 h-10 rounded-2xl items-center justify-center"
+              style={{
+                backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
+              }}
+            >
+              {isVoiceLoading ? (
+                <LottieView
+                  source={require('@/components/animations/loading.json')}
+                  style={{ width: 24, height: 24 }}
+                  autoPlay
+                  loop
+                  speed={1.2}
+                  colorFilters={[
+                    {
+                      keypath: '*',
+                      color: isDark ? '#a1a1aa' : '#71717a',
+                    },
+                  ]}
+                />
+              ) : (
+                <Icon as={Volume2} size={20} className="text-muted-foreground" />
+              )}
+            </View>
+
+            {/* Text Preview */}
+            <View className="flex-1 min-w-0">
+              <Text
+                className="text-sm font-roobert-medium text-foreground"
+                numberOfLines={1}
+              >
+                {voiceDisplayText || 'Voice'}
+              </Text>
+            </View>
+
+            {/* Status Badge */}
+            <View
+              className="flex-row items-center gap-1.5 px-2 py-1 rounded-full"
+              style={{ backgroundColor: voiceStatusBgColor }}
+            >
+              <View
+                className={`w-1.5 h-1.5 rounded-full ${isVoiceLoading ? 'animate-pulse' : ''}`}
+                style={{ backgroundColor: voiceStatusDotColor }}
+              />
+              <Text
+                className="text-xs font-roobert-medium"
+                style={{ color: voiceStatusDotColor }}
+                numberOfLines={1}
+              >
+                {voiceStatusText}
+              </Text>
+            </View>
+
+            {/* Play/Pause/Replay Button */}
+            {(isVoicePlaying || isVoicePaused || isVoiceEnded) && (
+              <Pressable
+                onPress={handleVoicePlayPause}
+                className="w-8 h-8 rounded-full items-center justify-center bg-primary active:opacity-70"
+              >
+                <Icon
+                  as={isVoiceEnded ? RotateCcw : isVoicePlaying ? Pause : Play}
+                  size={14}
+                  className="text-primary-foreground"
+                  style={!isVoicePlaying && !isVoiceEnded ? { marginLeft: 2 } : undefined}
+                />
+              </Pressable>
+            )}
+
+            {/* Close Button */}
+            <Pressable
+              onPress={handleDismiss}
+              className="w-8 h-8 rounded-full items-center justify-center active:opacity-70"
+              style={{
+                backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
+              }}
+            >
+              <Icon as={X} size={16} className="text-muted-foreground" />
+            </Pressable>
+          </View>
+        </Animated.View>
+      </GestureDetector>
+    );
   }
 
   // Status colors

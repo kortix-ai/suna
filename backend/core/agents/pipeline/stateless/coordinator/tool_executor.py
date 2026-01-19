@@ -187,8 +187,7 @@ class ToolExecutor:
                 "updated_at": stream_start,
                 "agent_id": None,
                 "agent_version_id": None,
-                "created_by_user_id": None,
-                "is_omitted": False
+                "created_by_user_id": None
             }
             
             logger.info(f"[DeferredImageContext] Yielding image_context message for persistence")

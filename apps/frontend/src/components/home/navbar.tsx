@@ -44,33 +44,41 @@ const overlayVariants = {
 };
 
 const drawerVariants = {
-  hidden: { opacity: 0, y: 100 },
+  hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    y: 0,
-    rotate: 0,
     transition: {
-      type: 'spring' as const,
-      damping: 15,
-      stiffness: 200,
-      staggerChildren: 0.03,
+      duration: 0.2,
+      staggerChildren: 0.05,
+      delayChildren: 0.1,
     },
   },
   exit: {
     opacity: 0,
-    y: 100,
-    transition: { duration: 0.1 },
+    transition: { duration: 0.15 },
   },
 };
 
 const drawerMenuContainerVariants = {
   hidden: { opacity: 0 },
-  visible: { opacity: 1 },
+  visible: { 
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.06,
+    },
+  },
 };
 
 const drawerMenuVariants = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1 },
+  hidden: { opacity: 0, x: -20 },
+  visible: { 
+    opacity: 1, 
+    x: 0,
+    transition: {
+      duration: 0.3,
+      ease: "easeOut" as const,
+    },
+  },
 };
 
 export function Navbar() {
@@ -133,22 +141,22 @@ export function Navbar() {
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
-    <header className="sticky top-4 z-50 flex justify-center mx-2 md:mx-0">
+    <header className="sticky top-0 z-50 flex justify-center px-6 md:px-0 pt-4 pb-8 bg-gradient-to-b from-background via-background/80 to-transparent md:bg-none md:pb-0">
       <div
         className={cn(
-          'w-full max-w-4xl px-2 sm:px-3 md:px-0 transition-all duration-300 ease-out',
-          hasScrolled ? 'scale-[0.98]' : 'scale-100'
+          'w-full max-w-4xl transition-all duration-300 ease-out',
+          hasScrolled ? 'md:scale-[0.98]' : 'scale-100'
         )}
       >
         <div
           className={cn(
-            'mx-auto rounded-2xl transition-all duration-300 ease-out',
+            'mx-auto rounded-2xl transition-all duration-300 ease-out border border-transparent',
             hasScrolled
-              ? 'px-2 md:px-3 border border-border/60 backdrop-blur-xl bg-background/80 shadow-lg shadow-black/[0.03]'
-              : 'px-3 md:px-6 bg-transparent border border-transparent',
+              ? 'md:px-3 md:border-border/60 md:backdrop-blur-xl md:bg-background/80 md:shadow-lg md:shadow-black/[0.03]'
+              : 'md:px-6 bg-transparent',
           )}
         >
-          <div className="relative flex h-[56px] items-center p-2 md:p-4">
+          <div className="relative flex h-[56px] items-center py-2 md:p-4">
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0">
               <Link href="/" className="flex items-center gap-3">
@@ -239,138 +247,122 @@ export function Navbar() {
         </div>
       </div>
 
-      {/* Mobile Drawer */}
+      {/* Mobile Drawer - Full Screen */}
       <AnimatePresence>
         {isDrawerOpen && (
-          <>
-            <motion.div
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={overlayVariants}
-              transition={{ duration: 0.2 }}
-              onClick={handleOverlayClick}
-            />
+          <motion.div
+            className="fixed inset-0 bg-background z-50 flex flex-col pt-4"
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+            variants={drawerVariants}
+          >
+            {/* Header - matches navbar positioning */}
+            <div className="flex h-[56px] items-center justify-between px-6 py-2">
+              <Link href="/" className="flex items-center gap-3" onClick={() => setIsDrawerOpen(false)}>
+                <KortixLogo size={18} variant='logomark' />
+              </Link>
+              <button
+                onClick={toggleDrawer}
+                className="border border-border rounded-lg p-2 cursor-pointer hover:bg-accent transition-colors"
+                aria-label="Close menu"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
 
-            <motion.div
-              className="fixed inset-x-0 w-[95%] max-w-md mx-auto bottom-3 bg-background border border-border p-4 rounded-xl shadow-lg z-50"
-              initial="hidden"
-              animate="visible"
-              exit="exit"
-              variants={drawerVariants}
+            {/* Navigation Links - Big Typography, Left Aligned */}
+            <motion.nav
+              className="flex-1 px-6 pt-8"
+              variants={drawerMenuContainerVariants}
             >
-              {/* Mobile menu content */}
-              <div className="flex flex-col gap-4">
-                <div className="flex items-center justify-between">
-                  <Link href="/" className="flex items-center gap-3" onClick={() => setIsDrawerOpen(false)}>
-                    <KortixLogo size={20} variant='logomark' />
-                  </Link>
-                  <button
-                    onClick={toggleDrawer}
-                    className="border border-border rounded-lg p-1.5 cursor-pointer hover:bg-accent transition-colors"
-                    aria-label="Close menu"
+              <ul className="flex flex-col gap-1">
+                {filteredNavLinks.map((item) => (
+                  <motion.li
+                    key={item.id}
+                    variants={drawerMenuVariants}
                   >
-                    <X className="size-4" />
-                  </button>
-                </div>
-
-                <motion.ul
-                  className="flex flex-col text-sm mb-4 border border-border rounded-md"
-                  variants={drawerMenuContainerVariants}
-                >
-                  <AnimatePresence>
-                    {filteredNavLinks.map((item) => (
-                      <motion.li
-                        key={item.id}
-                        className="p-2.5 border-b border-border last:border-b-0"
-                        variants={drawerMenuVariants}
-                      >
-                        <a
-                          href={item.href}
-                          onClick={(e) => {
-                            // If it's an external link (not starting with #), let it navigate normally
-                            if (!item.href.startsWith('#')) {
-                              setIsDrawerOpen(false);
-                              return;
-                            }
-
-                            e.preventDefault();
-
-                            // If we're not on the homepage, redirect to homepage with the section
-                            if (pathname !== '/') {
-                              router.push(`/${item.href}`);
-                              setIsDrawerOpen(false);
-                              return;
-                            }
-
-                            const element = document.getElementById(
-                              item.href.substring(1),
-                            );
-                            element?.scrollIntoView({ behavior: 'smooth' });
-                            setIsDrawerOpen(false);
-                          }}
-                          className={`underline-offset-4 hover:text-primary/80 transition-colors ${(item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
-                            ? 'text-primary font-medium'
-                            : 'text-primary/60'
-                            }`}
-                        >
-                          {item.name}
-                        </a>
-                      </motion.li>
-                    ))}
-                    {/* Mobile App Link */}
-                    <motion.li
-                      className="p-2.5"
-                      variants={drawerMenuVariants}
-                    >
-                      <Link
-                        href="/app"
-                        onClick={() => setIsDrawerOpen(false)}
-                        className={`underline-offset-4 hover:text-primary/80 transition-colors ${
-                          pathname === '/app'
-                            ? 'text-primary font-medium'
-                            : 'text-primary/60'
-                        }`}
-                      >
-                        Mobile App
-                      </Link>
-                    </motion.li>
-                  </AnimatePresence>
-                </motion.ul>
-
-                {/* Action buttons */}
-                <div className="flex flex-col gap-3">
-                  {user ? (
-                    <Link
-                      href="/dashboard"
-                      className="w-full h-10 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
-                      onClick={() => setIsDrawerOpen(false)}
-                    >
-                      Dashboard
-                    </Link>
-                  ) : (
-                    <Link
-                      href={ctaLink}
-                      onClick={() => {
-                        trackCtaSignup();
+                    <a
+                      href={item.href}
+                      onClick={(e) => {
+                        if (!item.href.startsWith('#')) {
+                          setIsDrawerOpen(false);
+                          return;
+                        }
+                        e.preventDefault();
+                        if (pathname !== '/') {
+                          router.push(`/${item.href}`);
+                          setIsDrawerOpen(false);
+                          return;
+                        }
+                        const element = document.getElementById(item.href.substring(1));
+                        element?.scrollIntoView({ behavior: 'smooth' });
                         setIsDrawerOpen(false);
                       }}
-                      className="w-full h-10 text-sm font-medium rounded-lg bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
-                      suppressHydrationWarning
+                      className={`block py-3 text-4xl font-medium tracking-tight transition-colors ${
+                        (item.href.startsWith('#') && pathname === '/' && activeSection === item.href.substring(1)) || (item.href === pathname)
+                          ? 'text-foreground'
+                          : 'text-muted-foreground hover:text-foreground'
+                      }`}
                     >
-                      {t('tryFree')}
-                    </Link>
-                  )}
-                  
-                  {/* Theme Toggle */}
-                  <div className="flex justify-end">
-                    <ThemeToggle />
-                  </div>
+                      {item.name}
+                    </a>
+                  </motion.li>
+                ))}
+                {/* Mobile App Link */}
+                <motion.li variants={drawerMenuVariants}>
+                  <Link
+                    href="/app"
+                    onClick={() => setIsDrawerOpen(false)}
+                    className={`block py-3 text-4xl font-medium tracking-tight transition-colors ${
+                      pathname === '/app'
+                        ? 'text-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    Mobile
+                  </Link>
+                </motion.li>
+              </ul>
+            </motion.nav>
+
+            {/* Footer Actions */}
+            <div className="px-6 pb-8 mt-auto">
+              <motion.div 
+                className="flex flex-col gap-4"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.3, duration: 0.3 }}
+              >
+                {user ? (
+                  <Link
+                    href="/dashboard"
+                    className="w-full h-14 text-lg font-medium rounded-xl bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                    onClick={() => setIsDrawerOpen(false)}
+                  >
+                    Dashboard
+                  </Link>
+                ) : (
+                  <Link
+                    href={ctaLink}
+                    onClick={() => {
+                      trackCtaSignup();
+                      setIsDrawerOpen(false);
+                    }}
+                    className="w-full h-14 text-lg font-medium rounded-xl bg-foreground text-background hover:bg-foreground/90 transition-colors inline-flex items-center justify-center"
+                    suppressHydrationWarning
+                  >
+                    {t('tryFree')}
+                  </Link>
+                )}
+                
+                {/* Theme Toggle */}
+                <div className="flex items-center justify-between">
+                  <ThemeToggle />
                 </div>
-              </div>
-            </motion.div>
-          </>
+              </motion.div>
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
     </header>

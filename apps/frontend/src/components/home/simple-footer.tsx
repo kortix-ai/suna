@@ -19,7 +19,13 @@ export function SimpleFooter() {
           {/* Brand column */}
           <div className="col-span-2 md:col-span-1 space-y-4">
             <Link href="/" className="inline-flex items-center gap-2 group">
-              <KortixLogo size={24} />
+              {/* Wordmark on mobile, symbol on desktop */}
+              <span className="md:hidden">
+                <KortixLogo size={18} variant="logomark" />
+              </span>
+              <span className="hidden md:block">
+                <KortixLogo size={24} variant="symbol" />
+              </span>
             </Link>
             {/* Social links */}
             <div className="flex items-center gap-3 pt-2">
@@ -101,10 +107,13 @@ export function SimpleFooter() {
             </div>
 
             {/* Theme and language switchers */}
-            <div className="flex items-center gap-1 pt-2">
-              <ThemeToggle variant="compact" />
-              <span className="text-muted-foreground/30">|</span>
-              <LocaleSwitcher variant="compact" />
+            <div className="flex items-center gap-3 pt-2">
+              <div className="rounded-lg bg-muted/50">
+                <ThemeToggle variant="compact" />
+              </div>
+              <div className="rounded-lg bg-muted/50">
+                <LocaleSwitcher variant="compact" />
+              </div>
             </div>
           </div>
 
