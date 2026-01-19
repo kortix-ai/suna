@@ -249,6 +249,7 @@ async def create_message(
     sql = """
     INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, created_at)
     VALUES (:message_id, :thread_id, :type, :is_llm_message, :content, :created_at)
+    ON CONFLICT (message_id) DO NOTHING
     RETURNING *
     """
     
@@ -261,7 +262,7 @@ async def create_message(
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
-    return dict(result) if result else None
+    return dict(result) if result else {"message_id": message_id, "thread_id": thread_id}
 
 
 async def delete_message(thread_id: str, message_id: str, is_llm_message: bool = True) -> bool:
@@ -629,6 +630,7 @@ async def create_message_full(
     sql = """
     INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, metadata, created_at)
     VALUES (:message_id, :thread_id, :type, :is_llm_message, :content, :metadata, :created_at)
+    ON CONFLICT (message_id) DO NOTHING
     RETURNING *
     """
     
@@ -642,7 +644,8 @@ async def create_message_full(
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
-    return dict(result) if result else None
+    # If ON CONFLICT triggered, result will be None but the message exists
+    return dict(result) if result else {"message_id": message_id, "thread_id": thread_id}
 
 
 async def get_project_for_sandbox(project_id: str) -> Optional[Dict[str, Any]]:
@@ -1348,6 +1351,7 @@ async def insert_message(
         :message_id, :thread_id, :type, :content, :is_llm_message, 
         :metadata, :agent_id, :agent_version_id, :created_at
     )
+    ON CONFLICT (message_id) DO NOTHING
     RETURNING *
     """
     
@@ -1363,7 +1367,7 @@ async def insert_message(
         "created_at": now
     }, commit=True)
     
-    return dict(result) if result else None
+    return dict(result) if result else {"message_id": message_id, "thread_id": thread_id}
 
 
 async def get_latest_message_type(thread_id: str) -> Optional[str]:
