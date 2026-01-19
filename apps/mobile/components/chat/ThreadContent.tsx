@@ -664,6 +664,13 @@ interface ThreadContentProps {
   retryCount?: number;
 }
 
+interface MessageGroup {
+  type: 'user' | 'assistant_group';
+  messages: UnifiedMessage[];
+  key: string;
+}
+
+
 export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
   ({
     messages,

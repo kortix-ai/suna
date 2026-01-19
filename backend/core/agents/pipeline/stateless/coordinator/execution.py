@@ -7,7 +7,7 @@ from core.agentpress.response_processor import ProcessorConfig
 from core.agentpress.thread_manager.services.execution.llm_executor import LLMExecutor
 from core.agentpress.prompt_caching import add_cache_control
 from core.agents.pipeline.ux_streaming import stream_context_usage, stream_summarizing
-from core.agents.pipeline.stateless.context.manager import ContextManager
+from core.agents.pipeline.stateless.context import ContextManager
 from core.agentpress.context_manager import ContextManager as ToolCallValidator
 
 
@@ -125,18 +125,6 @@ class ExecutionEngine:
 
     async def execute_step(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = self._state.get_messages()
-        
-        # Fast pre-check - only do full validation if needed
-        from core.agentpress.context_manager import ContextManager
-        context_manager = ContextManager()
-        if context_manager.needs_tool_ordering_repair(messages):
-            logger.warning("[ExecutionEngine] Tool ordering issue detected, repairing...")
-            messages = context_manager.repair_tool_call_pairing(messages)
-            is_ordered, out_of_order_ids, _ = context_manager.validate_tool_call_ordering(messages)
-            if not is_ordered:
-                messages = context_manager.remove_out_of_order_tool_pairs(messages, out_of_order_ids)
-                messages = context_manager.repair_tool_call_pairing(messages)
-        
         system = self._state.system_prompt or {"role": "system", "content": "You are a helpful assistant."}
 
         layers = ContextManager.extract_layers(messages)
