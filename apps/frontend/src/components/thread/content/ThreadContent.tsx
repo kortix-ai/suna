@@ -1519,15 +1519,32 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           {showNewGroupLoader && (
             <div ref={latestMessageRef} className="w-full rounded mt-6">
               <div className="flex flex-col gap-2">
-                <ReasoningSection
-                  content={streamingReasoningContent}
-                  isStreaming={true}
-                  isReasoningActive={true}
-                  isReasoningComplete={false}
-                  isPersistedContent={false}
-                  isExpanded={newGroupReasoningExpanded}
-                  onExpandedChange={setNewGroupReasoningExpanded}
-                />
+                {/* Show ReasoningSection if there's reasoning content, otherwise show AgentLoader for non-reasoning models */}
+                {streamingReasoningContent && streamingReasoningContent.trim().length > 0 ? (
+                  <ReasoningSection
+                    content={streamingReasoningContent}
+                    isStreaming={true}
+                    isReasoningActive={true}
+                    isReasoningComplete={false}
+                    isPersistedContent={false}
+                    isExpanded={newGroupReasoningExpanded}
+                    onExpandedChange={setNewGroupReasoningExpanded}
+                  />
+                ) : (
+                  <>
+                    <div className="flex items-center">
+                      <img
+                        src="/kortix-logomark-white.svg"
+                        alt="Kortix"
+                        className="dark:invert-0 invert flex-shrink-0"
+                        style={{ height: '12px', width: 'auto' }}
+                      />
+                    </div>
+                    <div className="mt-1.5">
+                      <AgentLoader />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
