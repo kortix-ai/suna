@@ -12,14 +12,13 @@ async def load_agent_config_fast(
     from core.cache.runtime_cache import (
         get_static_suna_config, 
         get_cached_user_mcps,
-        get_cached_agent_config
+        get_cached_agent_config,
+        get_cached_agent_type
     )
     
     t = time.time()
     logger.info(f"⏱️ [AGENT CONFIG FAST] Starting for agent_id={agent_id}")
     user_id = user_id or account_id
-    
-    is_explicit_agent = agent_id is not None
     
     try:
         if not agent_id:
@@ -29,11 +28,12 @@ async def load_agent_config_fast(
                 logger.warning(f"[AGENT CONFIG FAST] No default agent for {account_id}")
                 return await load_agent_config(None, account_id, user_id)
         
-        if not is_explicit_agent:
+        agent_type = await get_cached_agent_type(agent_id)
+        
+        if agent_type == "suna":
             static_config = get_static_suna_config()
             if static_config:
                 cached_mcps = await get_cached_user_mcps(agent_id)
-                
                 agent_config = {
                     'agent_id': agent_id,
                     'system_prompt': static_config['system_prompt'],
@@ -47,16 +47,18 @@ async def load_agent_config_fast(
                     'triggers': cached_mcps.get('triggers', []) if cached_mcps else [],
                     '_mcps_need_loading': cached_mcps is None,
                 }
-                logger.info(f"⏱️ [AGENT CONFIG FAST] Static config: {(time.time() - t) * 1000:.1f}ms (mcps_cached={cached_mcps is not None})")
+                logger.info(f"⏱️ [AGENT CONFIG FAST] Suna (cached type): {(time.time() - t) * 1000:.1f}ms")
                 return agent_config
         
-        # For explicit custom agents or when static config is not available, use cache/DB
-        cached_config = await get_cached_agent_config(agent_id)
-        if cached_config:
-            logger.info(f"⏱️ [AGENT CONFIG FAST] Full cache hit: {(time.time() - t) * 1000:.1f}ms")
-            return cached_config
+        elif agent_type == "custom":
+            # Custom agent: check full config cache
+            cached_config = await get_cached_agent_config(agent_id)
+            if cached_config:
+                logger.info(f"⏱️ [AGENT CONFIG FAST] Custom (cached): {(time.time() - t) * 1000:.1f}ms")
+                return cached_config
         
-        logger.info(f"⏱️ [AGENT CONFIG FAST] Cache miss, falling back to full load")
+        # Cache miss - fall back to full DB load (will also populate cache)
+        logger.info(f"⏱️ [AGENT CONFIG FAST] Cache miss (type={agent_type}), falling back to full load")
         return await load_agent_config(agent_id, account_id, user_id)
         
     except Exception as e:
