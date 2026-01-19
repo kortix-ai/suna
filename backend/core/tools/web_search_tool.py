@@ -454,15 +454,26 @@ class SandboxWebSearchTool(SandboxToolsBase):
         """
         Get image description using Moondream2 vision model.
         Runs in ~2 seconds on Replicate GPU, includes text extraction.
+        Skipped if REPLICATE_API_TOKEN is not configured.
         
         Args:
             image_bytes: Raw image bytes
             content_type: MIME type of the image
             
         Returns:
-            Image description, or empty string if processing fails
+            Image description, or empty string if processing fails or token not configured
         """
         try:
+            # Skip if Replicate token not configured
+            from core.utils.config import get_config
+            replicate_token = get_config().REPLICATE_API_TOKEN
+            if not replicate_token:
+                logging.debug("[WebSearch] Skipping Moondream2: REPLICATE_API_TOKEN not configured")
+                return ""
+            
+            import os
+            os.environ["REPLICATE_API_TOKEN"] = replicate_token
+            
             logging.debug(f"[WebSearch] Running Moondream2 on image ({len(image_bytes)} bytes)")
             
             # Convert to base64 data URL
