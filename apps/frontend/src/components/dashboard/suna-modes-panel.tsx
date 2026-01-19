@@ -61,6 +61,14 @@ import {
   Cloud,
   BarChart2,
   AreaChart,
+  ClipboardList,
+  FileCode2,
+  Handshake,
+  ChartColumnBig,
+  Footprints,
+  Library,
+  ShieldCheck,
+  NotebookPen,
   type LucideIcon,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -222,14 +230,14 @@ const modes: Mode[] = [
     options: {
       title: 'Choose a template',
       items: [
-        { id: 'prd', name: 'PRD', description: 'Product requirements document', icon: 'fileText' },
-        { id: 'technical', name: 'Technical', description: 'Technical documentation', icon: 'fileCode' },
-        { id: 'proposal', name: 'Proposal', description: 'Business proposal', icon: 'lightbulb' },
-        { id: 'report', name: 'Report', description: 'Detailed report format', icon: 'fileBarChart' },
-        { id: 'guide', name: 'Guide', description: 'Step-by-step guide', icon: 'bookOpen' },
-        { id: 'wiki', name: 'Wiki', description: 'Knowledge base article', icon: 'bookMarked' },
-        { id: 'policy', name: 'Policy', description: 'Policy document', icon: 'scale' },
-        { id: 'meeting-notes', name: 'Meeting Notes', description: 'Meeting minutes', icon: 'users' },
+        { id: 'prd', name: 'PRD', description: 'Product requirements document', icon: 'clipboardList' },
+        { id: 'technical', name: 'Technical', description: 'Technical documentation', icon: 'fileCode2' },
+        { id: 'proposal', name: 'Proposal', description: 'Business proposal', icon: 'handshake' },
+        { id: 'report', name: 'Report', description: 'Detailed report format', icon: 'chartColumnBig' },
+        { id: 'guide', name: 'Guide', description: 'Step-by-step guide', icon: 'footprints' },
+        { id: 'wiki', name: 'Wiki', description: 'Knowledge base article', icon: 'library' },
+        { id: 'policy', name: 'Policy', description: 'Policy document', icon: 'shieldCheck' },
+        { id: 'meeting-notes', name: 'Meeting Notes', description: 'Meeting minutes', icon: 'notebookPen' },
       ],
     },
   },
@@ -380,6 +388,14 @@ const getOptionIcon = (iconType: string, className: string = "w-5 h-5") => {
     bookMarked: <BookMarked className={className} />,
     scale: <Scale className={className} />,
     users: <Users className={className} />,
+    clipboardList: <ClipboardList className={className} />,
+    fileCode2: <FileCode2 className={className} />,
+    handshake: <Handshake className={className} />,
+    chartColumnBig: <ChartColumnBig className={className} />,
+    footprints: <Footprints className={className} />,
+    library: <Library className={className} />,
+    shieldCheck: <ShieldCheck className={className} />,
+    notebookPen: <NotebookPen className={className} />,
     // Slides templates
     palette: <Palette className={className} />,
     circle: <Circle className={className} />,
@@ -415,150 +431,6 @@ const getOptionIcon = (iconType: string, className: string = "w-5 h-5") => {
 const getRandomPrompts = (prompts: SamplePrompt[], count: number): SamplePrompt[] => {
   const shuffled = [...prompts].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
-};
-
-// Output format icon component
-const OutputFormatIcon = ({ type, className }: { type: string; className?: string }) => {
-  const baseClasses = cn('w-full h-full', className);
-  
-  switch (type) {
-    case 'spreadsheet':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Table background */}
-          <rect x="10" y="20" width="80" height="60" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="4"/>
-          
-          {/* Header row background */}
-          <rect x="10" y="20" width="80" height="12" fill="currentColor" opacity="0.15" rx="4" />
-          
-          {/* Grid lines - horizontal */}
-          <line x1="10" y1="32" x2="90" y2="32" stroke="currentColor" strokeWidth="2" opacity="0.4"/>
-          <line x1="10" y1="44" x2="90" y2="44" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          <line x1="10" y1="56" x2="90" y2="56" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          <line x1="10" y1="68" x2="90" y2="68" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          
-          {/* Grid lines - vertical */}
-          <line x1="30" y1="20" x2="30" y2="80" stroke="currentColor" strokeWidth="1.5" opacity="0.3"/>
-          <line x1="50" y1="20" x2="50" y2="80" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          <line x1="70" y1="20" x2="70" y2="80" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          
-          {/* Data cells */}
-          <rect x="14" y="24" width="12" height="5" fill="currentColor" opacity="0.7" rx="1"/>
-          <rect x="34" y="36" width="12" height="5" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="54" y="48" width="12" height="5" fill="currentColor" opacity="0.4" rx="1"/>
-          <rect x="74" y="60" width="12" height="5" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="14" y="48" width="12" height="5" fill="currentColor" opacity="0.4" rx="1"/>
-          <rect x="34" y="60" width="12" height="5" fill="currentColor" opacity="0.5" rx="1"/>
-          
-          {/* Formula bar */}
-          <rect x="10" y="10" width="80" height="7" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" rx="2"/>
-          <text x="13" y="15" fontSize="6" opacity="0.4">fx</text>
-          <rect x="22" y="12" width="30" height="3" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'dashboard':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Top left widget - KPI */}
-          <rect x="10" y="15" width="35" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3" rx="4"/>
-          <rect x="10" y="15" width="35" height="8" fill="currentColor" opacity="0.1" rx="4"/>
-          <circle cx="17" cy="19" r="2" fill="currentColor" opacity="0.6"/>
-          <rect x="22" y="17.5" width="18" height="3" fill="currentColor" opacity="0.4" rx="1"/>
-          <text x="15" y="36" fontSize="12" opacity="0.7" fontWeight="600">42K</text>
-          
-          {/* Top right widget - Line chart */}
-          <rect x="52" y="15" width="38" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3" rx="4"/>
-          <path d="M 58,35 L 65,30 L 72,32 L 79,28 L 84,31" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round"/>
-          <circle cx="58" cy="35" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="65" cy="30" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="72" cy="32" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="79" cy="28" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="84" cy="31" r="1.5" fill="currentColor" opacity="0.7"/>
-          
-          {/* Bottom widget - Bar chart */}
-          <rect x="10" y="50" width="80" height="35" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3" rx="4"/>
-          <rect x="18" y="65" width="8" height="15" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="32" y="60" width="8" height="20" fill="currentColor" opacity="0.6" rx="1"/>
-          <rect x="46" y="62" width="8" height="18" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="60" y="55" width="8" height="25" fill="currentColor" opacity="0.7" rx="1"/>
-          <rect x="74" y="58" width="8" height="22" fill="currentColor" opacity="0.6" rx="1"/>
-          <line x1="10" y1="80" x2="90" y2="80" stroke="currentColor" strokeWidth="1" opacity="0.2"/>
-        </svg>
-      );
-    
-    case 'report':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Document */}
-          <rect x="20" y="10" width="60" height="80" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          {/* Page fold effect */}
-          <path d="M 70,10 L 80,20 L 80,10 Z" fill="currentColor" opacity="0.1"/>
-          
-          {/* Title */}
-          <rect x="28" y="20" width="44" height="5" fill="currentColor" opacity="0.8" rx="1"/>
-          
-          {/* Subtitle */}
-          <rect x="28" y="28" width="30" height="3" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          {/* Paragraph lines */}
-          <rect x="28" y="36" width="44" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="28" y="40" width="40" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="28" y="44" width="42" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          {/* Chart section */}
-          <rect x="28" y="52" width="44" height="22" fill="currentColor" opacity="0.05" rx="2"/>
-          <rect x="34" y="64" width="6" height="8" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="42" y="60" width="6" height="12" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="50" y="62" width="6" height="10" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="58" y="58" width="6" height="14" fill="currentColor" opacity="0.8" rx="0.5"/>
-          <line x1="28" y1="72" x2="72" y2="72" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
-          
-          {/* More text */}
-          <rect x="28" y="78" width="38" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="28" y="82" width="44" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'slides':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Main slide */}
-          <rect x="15" y="20" width="70" height="52" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.4" rx="3"/>
-          
-          {/* Title area */}
-          <rect x="22" y="28" width="35" height="5" fill="currentColor" opacity="0.8" rx="1"/>
-          
-          {/* Subtitle */}
-          <rect x="22" y="36" width="25" height="3" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          {/* Content bullets */}
-          <circle cx="24" cy="46" r="1" fill="currentColor" opacity="0.6"/>
-          <rect x="28" y="45" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <circle cx="24" cy="52" r="1" fill="currentColor" opacity="0.6"/>
-          <rect x="28" y="51" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <circle cx="24" cy="58" r="1" fill="currentColor" opacity="0.6"/>
-          <rect x="28" y="57" width="22" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          {/* Image placeholder */}
-          <rect x="58" y="44" width="20" height="20" fill="currentColor" opacity="0.1" rx="2"/>
-          <circle cx="68" cy="54" r="6" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
-          <path d="M 60,60 L 65,55 L 70,58 L 76,52" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/>
-          
-          {/* Slide indicators */}
-          <rect x="20" y="78" width="10" height="6" fill="currentColor" opacity="0.3" rx="1"/>
-          <rect x="35" y="78" width="10" height="6" fill="currentColor" opacity="0.7" rx="1"/>
-          <rect x="50" y="78" width="10" height="6" fill="currentColor" opacity="0.3" rx="1"/>
-          <rect x="65" y="78" width="10" height="6" fill="currentColor" opacity="0.3" rx="1"/>
-        </svg>
-      );
-    
-    default:
-      return <Table className="w-6 h-6" />;
-  }
 };
 
 // Slide template icon component
@@ -818,217 +690,6 @@ const SlideTemplateIcon = ({ type, className }: { type: string; className?: stri
     
     default:
       return <Presentation className="w-6 h-6" />;
-  }
-};
-
-// Docs template icon component
-const DocsTemplateIcon = ({ type, className }: { type: string; className?: string }) => {
-  const baseClasses = cn('w-full h-full', className);
-  
-  switch (type) {
-    case 'prd':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="30" height="5" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="30" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="38" width="15" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="44" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="48" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="25" y="55" width="18" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="28" y="60" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <path d="M 29,61 L 30,62.5 L 31.5,60.5" stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.7"/>
-          <rect x="33" y="61" width="20" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="28" y="65" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <rect x="33" y="66" width="18" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="73" width="15" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="78" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'technical':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="25" height="4" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="29" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="37" width="48" height="15" fill="currentColor" opacity="0.1" rx="2"/>
-          <text x="28" y="44" fontSize="6" opacity="0.5" fontFamily="monospace">{'<code>'}</text>
-          <rect x="30" y="46" width="20" height="1" fill="currentColor" opacity="0.4" rx="0.3"/>
-          <rect x="32" y="49" width="18" height="1" fill="currentColor" opacity="0.4" rx="0.3"/>
-          
-          <rect x="25" y="57" width="15" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="62" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="66" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="70" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="72" cy="25" r="3" fill="currentColor" opacity="0.6"/>
-          <path d="M 70,25 L 71,26 L 74,23" stroke="var(--background)" strokeWidth="1" fill="none"/>
-        </svg>
-      );
-    
-    case 'proposal':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <circle cx="50" cy="28" r="6" fill="currentColor" opacity="0.6"/>
-          <path d="M 50,34 L 50,40" stroke="currentColor" strokeWidth="2" opacity="0.6"/>
-          <path d="M 50,40 L 46,45 M 50,40 L 54,45" stroke="currentColor" strokeWidth="2" opacity="0.6"/>
-          
-          <rect x="30" y="50" width="40" height="3" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="32" y="56" width="36" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          <rect x="25" y="63" width="22" height="15" fill="currentColor" opacity="0.15" rx="2"/>
-          <rect x="29" y="68" width="5" height="6" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="36" y="70" width="5" height="4" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          <rect x="52" y="63" width="22" height="15" fill="currentColor" opacity="0.15" rx="2"/>
-          <circle cx="63" cy="70" r="4" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.6"/>
-          <path d="M 66,73 L 69,76" stroke="currentColor" strokeWidth="1.5" opacity="0.6"/>
-        </svg>
-      );
-    
-    case 'report':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="35" height="4" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="29" width="25" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <line x1="25" y1="37" x2="75" y2="37" stroke="currentColor" strokeWidth="1" opacity="0.2"/>
-          
-          <rect x="25" y="42" width="48" height="18" fill="currentColor" opacity="0.08" rx="2"/>
-          <rect x="30" y="52" width="5" height="6" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="50" width="5" height="8" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="44" y="48" width="5" height="10" fill="currentColor" opacity="0.8" rx="0.5"/>
-          <rect x="51" y="50" width="5" height="8" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="58" y="53" width="5" height="5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <line x1="25" y1="58" x2="73" y2="58" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
-          
-          <rect x="25" y="66" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="70" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="74" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="78" width="43" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'guide':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="28" height="4" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="29" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <circle cx="30" cy="41" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="44" fontSize="6" fill="var(--background)" fontWeight="bold">1</text>
-          <rect x="37" y="38" width="15" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="42" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="30" cy="53" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="56" fontSize="6" fill="var(--background)" fontWeight="bold">2</text>
-          <rect x="37" y="50" width="18" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="54" width="32" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="30" cy="65" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="68" fontSize="6" fill="var(--background)" fontWeight="bold">3</text>
-          <rect x="37" y="62" width="16" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="66" width="28" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="30" cy="77" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="80" fontSize="6" fill="var(--background)" fontWeight="bold">4</text>
-          <rect x="37" y="74" width="20" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'wiki':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <path d="M 30,23 L 35,32 L 40,23 L 45,32 L 50,23" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round"/>
-          
-          <rect x="25" y="38" width="25" height="3" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="44" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="48" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="52" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="25" y="59" width="20" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="65" width="35" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="69" width="38" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="55" y="38" width="18" height="14" fill="currentColor" opacity="0.12" rx="2"/>
-          <circle cx="64" cy="45" r="3" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5"/>
-          <path d="M 57,49 L 60,46 L 64,48 L 71,43" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5"/>
-          
-          <path d="M 30,78 L 35,75 L 40,78" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.4" strokeLinecap="round"/>
-          <path d="M 45,78 L 50,75 L 55,78" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.4" strokeLinecap="round"/>
-        </svg>
-      );
-    
-    case 'policy':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <path d="M 48,20 L 50,25 L 52,20" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/>
-          <circle cx="50" cy="30" r="5" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.6"/>
-          <path d="M 50,35 L 50,38" stroke="currentColor" strokeWidth="1.5" opacity="0.6"/>
-          <circle cx="50" cy="39" r="1" fill="currentColor" opacity="0.6"/>
-          
-          <rect x="30" y="45" width="40" height="3" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="32" y="51" width="36" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          <line x1="28" y1="58" x2="72" y2="58" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
-          
-          <rect x="25" y="62" width="48" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="25" y="66" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="70" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="74" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="78" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="60" y="80" width="15" height="3" fill="currentColor" opacity="0.15" rx="1"/>
-          <text x="62" y="83" fontSize="5" opacity="0.5">Sign</text>
-        </svg>
-      );
-    
-    case 'meeting-notes':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <circle cx="28" cy="23" r="2" fill="currentColor" opacity="0.6"/>
-          <circle cx="35" cy="23" r="2" fill="currentColor" opacity="0.6"/>
-          <circle cx="42" cy="23" r="2" fill="currentColor" opacity="0.6"/>
-          
-          <rect x="25" y="30" width="30" height="3.5" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="58" y="30" width="15" height="3" fill="currentColor" opacity="0.5" rx="1"/>
-          
-          <rect x="25" y="38" width="12" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="43" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <rect x="30" y="44" width="25" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="25" y="48" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <path d="M 26,49 L 27,50.5 L 28.5,48.5" stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.7"/>
-          <rect x="30" y="49" width="28" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="25" y="53" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <rect x="30" y="54" width="22" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="62" width="15" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="67" width="35" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="71" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="75" width="32" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="72" cy="78" r="4" fill="currentColor" opacity="0.6"/>
-          <path d="M 70,78 L 71.5,79.5 L 74,77" stroke="var(--background)" strokeWidth="1" fill="none"/>
-        </svg>
-      );
-    
-    default:
-      return <FileText className="w-6 h-6" />;
   }
 };
 
@@ -1400,8 +1061,13 @@ export function SunaModesPanel({
   return (
     <div className="w-full space-y-4">
       {/* Mode Tabs - Kortix minimal design */}
-      <div className="flex items-center justify-center animate-in fade-in-0 zoom-in-95 duration-300 px-2 sm:px-0">
-        <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="flex items-center justify-center"
+      >
+        <div className="w-full grid grid-cols-3 gap-2 sm:w-auto sm:inline-flex sm:gap-2">
           {modes.map((mode) => {
             const isActive = selectedMode === mode.id;
             return (
@@ -1436,12 +1102,20 @@ export function SunaModesPanel({
             );
           })}
         </div>
-      </div>
+      </motion.div>
 
       {/* Mode-specific Options - Only show when a mode is selected */}
-      {selectedMode && currentMode?.options && (
-        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-75">
-          <p className="text-xs text-muted-foreground/60">
+      <AnimatePresence mode="wait">
+        {selectedMode && currentMode?.options && (
+          <motion.div 
+            key={`options-${selectedMode}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            className="space-y-3"
+          >
+            <p className="text-xs text-muted-foreground/60">
             {currentMode.options.title === 'Choose a style' ? t('chooseStyle') :
              currentMode.options.title === 'Choose a template' ? t('chooseTemplate') :
              currentMode.options.title === 'Choose output format' ? t('chooseOutputFormat') :
@@ -1676,14 +1350,23 @@ export function SunaModesPanel({
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Chart Types Section (for Data mode) - Only show when data is selected */}
-      {selectedMode === 'data' && currentMode?.chartTypes && (
-        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-150">
-          <p className="text-xs text-muted-foreground/60">
-            {t('preferredCharts')}
+      <AnimatePresence mode="wait">
+        {selectedMode === 'data' && currentMode?.chartTypes && (
+          <motion.div 
+            key="chart-types"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1], delay: 0.05 }}
+            className="space-y-3"
+          >
+            <p className="text-xs text-muted-foreground/60">
+              {t('preferredCharts')}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {currentMode.chartTypes.items.map((chart) => {
@@ -1718,13 +1401,21 @@ export function SunaModesPanel({
                 </Card>
               );
             })}
-          </div>
-        </div>
-      )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Sample Prompts - Visual Grid with Thumbnails */}
-      {selectedMode && displayedPrompts && displayedPrompts.length > 0 && (
-        <div className="animate-in fade-in-0 zoom-in-95 duration-300">
+      <AnimatePresence mode="wait">
+        {selectedMode && displayedPrompts && displayedPrompts.length > 0 && (
+          <motion.div
+            key={`prompts-${selectedMode}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          >
           {/* Upgrade Banner for Video Mode - Free Users */}
           {selectedMode === 'video' && isFreeTier && (
             <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-card border border-border">
@@ -1779,13 +1470,22 @@ export function SunaModesPanel({
               showTitle={false}
             />
           </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Mode-specific Options - Only show when a mode is selected */}
-      {selectedMode && currentMode?.options && (
-        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-75">
-          <h3 className="text-sm font-medium text-muted-foreground">
+      <AnimatePresence mode="wait">
+        {selectedMode && currentMode?.options && (
+          <motion.div 
+            key={`options-expanded-${selectedMode}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            className="space-y-3"
+          >
+            <h3 className="text-sm font-medium text-muted-foreground">
             {currentMode.options.title === 'Choose a style' ? t('chooseStyle') :
              currentMode.options.title === 'Choose a template' ? t('chooseTemplate') :
              currentMode.options.title === 'Choose output format' ? t('chooseOutputFormat') :
@@ -1900,10 +1600,9 @@ export function SunaModesPanel({
                     }
                   >
                     <div className="w-full aspect-[3/4] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center p-3">
-                      <DocsTemplateIcon 
-                        type={item.id} 
-                        className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
-                      />
+                      <div className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200">
+                        {getOptionIcon(item.icon, "w-8 h-8")}
+                      </div>
                     </div>
                     <div className="space-y-0.5">
                       <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
@@ -1957,15 +1656,15 @@ export function SunaModesPanel({
                           ? "bg-primary/15" 
                           : "bg-muted/30 group-hover:bg-muted/50"
                       )}>
-                        <OutputFormatIcon 
-                          type={item.id} 
-                          className={cn(
-                            "transition-colors duration-200",
+                        {getOptionIcon(
+                          (item as { icon?: string }).icon || '',
+                          cn(
+                            "w-8 h-8 transition-colors duration-200",
                             isSelected 
                               ? "text-primary" 
                               : "text-foreground/50 group-hover:text-primary/70"
-                          )} 
-                        />
+                          )
+                        )}
                       </div>
                       <div className="space-y-0.5">
                         <p className={cn(
@@ -2077,16 +1776,25 @@ export function SunaModesPanel({
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Chart Types Section (for Data mode) - Only show when data is selected */}
-      {selectedMode === 'data' && currentMode?.chartTypes && (
-        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-150">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            {t('preferredCharts')}
-          </h3>
-          <ScrollArea className="w-full">
+      <AnimatePresence mode="wait">
+        {selectedMode === 'data' && currentMode?.chartTypes && (
+          <motion.div 
+            key="chart-types-expanded"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1], delay: 0.05 }}
+            className="space-y-3"
+          >
+            <h3 className="text-sm font-medium text-muted-foreground">
+              {t('preferredCharts')}
+            </h3>
+            <ScrollArea className="w-full">
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2">
               {currentMode.chartTypes.items.map((chart) => {
                 const isSelected = selectedCharts.includes(chart.id);
@@ -2146,11 +1854,12 @@ export function SunaModesPanel({
                   </motion.div>
                 );
               })}
-            </div>
-            <ScrollBar orientation="horizontal" />
-          </ScrollArea>
-        </div>
-      )}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* PDF Preview Modal */}
       <Dialog open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
