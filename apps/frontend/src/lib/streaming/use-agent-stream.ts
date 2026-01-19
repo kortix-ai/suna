@@ -354,6 +354,16 @@ export function useAgentStream(
         }
         break;
       
+      case 'context_usage':
+        if (processed.current_tokens !== undefined) {
+          import('@/stores/context-usage-store').then(({ useContextUsageStore }) => {
+            useContextUsageStore.getState().setUsage(threadId, {
+              current_tokens: processed.current_tokens!
+            });
+          });
+        }
+        break;
+      
       case 'error':
         if (processed.errorMessage) {
           setError(processed.errorMessage);
