@@ -153,6 +153,12 @@ async def start_pool_service() -> None:
         logger.info("[SANDBOX_POOL] Pool service is disabled via configuration")
         return
     
+    # EMERGENCY: Disable sandbox pool creation entirely due to Daytona rate limiting
+    # The DB has fewer pooled sandboxes tracked than Daytona actually has, causing
+    # the pool to spam creation requests and get rate limited
+    logger.warning("[SANDBOX_POOL] Pool service DISABLED - sandbox creation paused due to Daytona rate limiting")
+    return
+    
     service = get_pool_service()
     
     logger.info(
