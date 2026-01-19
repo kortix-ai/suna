@@ -63,7 +63,7 @@ export default function AdminAnalyticsPage() {
   const [tierFilter, setTierFilter] = useState<string | null>(null);
   const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   const [activeTab, setActiveTab] = useState<string>('overview');
-  const [tierViewMode, setTierViewMode] = useState<'revenue' | 'cost'>('revenue');
+  const [tierViewMode, setTierViewMode] = useState<'revenue' | 'cost' | 'profit'>('revenue');
 
   const handleCategoryFilter = (category: string | null) => {
     setCategoryFilter(category);
@@ -677,28 +677,41 @@ export default function AdminAnalyticsPage() {
                               >
                                 Usage
                               </button>
+                              <button
+                                onClick={() => setTierViewMode('profit')}
+                                className={cn(
+                                  'text-[10px] px-2 py-0.5 rounded-full transition-colors',
+                                  tierViewMode === 'profit' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'
+                                )}
+                              >
+                                Profit
+                              </button>
                             </div>
                           </div>
                           {profitability.by_tier && profitability.by_tier.length > 0 ? (() => {
                             const filteredTiers = profitability.by_tier.filter(t =>
-                              tierViewMode === 'revenue' ? t.total_revenue > 0 : t.total_actual_cost > 0
+                              tierViewMode === 'revenue' ? t.total_revenue > 0 :
+                              tierViewMode === 'cost' ? t.total_actual_cost > 0 :
+                              t.total_revenue > 0 || t.total_actual_cost > 0
                             );
                             const totalUsers = filteredTiers.reduce((sum, t) => sum + t.unique_users, 0);
                             const totalValue = tierViewMode === 'revenue'
                               ? filteredTiers.reduce((sum, t) => sum + t.total_revenue, 0)
-                              : filteredTiers.reduce((sum, t) => sum + t.total_actual_cost, 0);
+                              : tierViewMode === 'cost'
+                              ? filteredTiers.reduce((sum, t) => sum + t.total_actual_cost, 0)
+                              : filteredTiers.reduce((sum, t) => sum + t.gross_profit, 0);
                             return filteredTiers.length > 0 ? (
                               <div className="space-y-1.5">
                                 {/* Header */}
                                 <div className="grid grid-cols-3 gap-2 text-[10px] text-muted-foreground px-2 pb-1">
                                   <div>Tier</div>
                                   <div className="text-right">Users</div>
-                                  <div className="text-right">{tierViewMode === 'revenue' ? 'Revenue' : 'Cost'}</div>
+                                  <div className="text-right">{tierViewMode === 'revenue' ? 'Revenue' : tierViewMode === 'cost' ? 'Cost' : 'Profit'}</div>
                                 </div>
                                 {/* Rows */}
                                 {filteredTiers.map((tier, idx) => {
                                   const userPercent = totalUsers > 0 ? ((tier.unique_users / totalUsers) * 100).toFixed(0) : '0';
-                                  const value = tierViewMode === 'revenue' ? tier.total_revenue : tier.total_actual_cost;
+                                  const value = tierViewMode === 'revenue' ? tier.total_revenue : tierViewMode === 'cost' ? tier.total_actual_cost : tier.gross_profit;
                                   const valuePercent = totalValue > 0 ? ((value / totalValue) * 100).toFixed(0) : '0';
                                   return (
                                     <div
@@ -708,15 +721,15 @@ export default function AdminAnalyticsPage() {
                                       <div className="font-medium truncate flex items-center gap-1">
                                         {tier.display_name}
                                         <span className="text-[10px] text-muted-foreground">
-                                          ({tier.provider === 'stripe' ? 'W' : 'A'})
+                                          ({tier.provider === 'stripe' ? 'Web' : 'App'})
                                         </span>
                                       </div>
                                       <div className="text-right">
                                         {tier.unique_users}
                                         <span className="text-[10px] text-muted-foreground ml-1">({userPercent}%)</span>
                                       </div>
-                                      <div className="text-right">
-                                        ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                      <div className={cn("text-right", tierViewMode === 'profit' && (value >= 0 ? 'text-green-600' : 'text-red-600'))}>
+                                        {tierViewMode === 'profit' && value < 0 ? '-' : ''}${Math.abs(value).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                                         <span className="text-[10px] text-muted-foreground ml-1">({valuePercent}%)</span>
                                       </div>
                                     </div>
@@ -725,7 +738,7 @@ export default function AdminAnalyticsPage() {
                               </div>
                             ) : (
                               <p className="text-sm text-muted-foreground text-center py-4">
-                                No {tierViewMode === 'revenue' ? 'paying' : 'usage'} data
+                                No {tierViewMode === 'revenue' ? 'paying' : tierViewMode === 'cost' ? 'usage' : 'profit'} data
                               </p>
                             );
                           })() : (
