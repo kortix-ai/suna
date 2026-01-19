@@ -855,6 +855,7 @@ export interface TierProfitability {
   provider: 'stripe' | 'revenuecat';
   payment_count: number;
   unique_users: number;
+  usage_users: number;  // Users with LLM usage (from credit_ledger)
   total_revenue: number;
   total_cost: number;
   total_actual_cost: number;
