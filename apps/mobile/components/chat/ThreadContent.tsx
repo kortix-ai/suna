@@ -48,6 +48,7 @@ import { AgentLoader } from './AgentLoader';
 import { StreamingToolCard } from './StreamingToolCard';
 import { CompactToolCard, CompactStreamingToolCard } from './CompactToolCard';
 import { MediaGenerationInline } from './MediaGenerationInline';
+import { MessageActions } from './MessageActions';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
@@ -1275,6 +1276,31 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             const assistantMessages = group.messages.filter((m) => m.type === 'assistant');
             const toolResultsMap = toolResultsMaps.get(group.key) || new Map();
 
+            // Aggregate all text content from assistant messages for MessageActions (shown only at end)
+            const aggregatedTextContent = (() => {
+              const textParts: string[] = [];
+              assistantMessages.forEach((msg) => {
+                const meta = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+                if (meta.text_content) textParts.push(meta.text_content);
+                // Also extract text from ask/complete tool calls
+                const tcs = meta.tool_calls || [];
+                tcs.forEach((tc: any) => {
+                  const toolName = tc.function_name?.replace(/_/g, '-') || '';
+                  if (toolName === 'ask' || toolName === 'complete') {
+                    const args = typeof tc.arguments === 'string'
+                      ? safeJsonParse(tc.arguments, {})
+                      : (tc.arguments || {});
+                    if (args.text) textParts.push(args.text);
+                  }
+                });
+              });
+              return textParts.join('\n\n');
+            })();
+
+            // Check if we're currently streaming (don't show actions while streaming)
+            const isCurrentlyStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
+            const isLastGroup = groupIndex === groupedMessages.length - 1;
+
             return (
               <View key={group.key} className="mb-6">
                 <View className="mb-3 flex-row items-center">
@@ -1288,7 +1314,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     // Parse metadata to check for tool calls and text content
                     const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
                     const toolCalls = metadata.tool_calls || [];
-                    const textContent = metadata.text_content || '';
+                    let textContent = metadata.text_content || '';
 
                     // Skip if no content (no text and no tool calls)
                     if (!textContent && toolCalls.length === 0) {
@@ -1300,7 +1326,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     const linkedTools = toolResultsMap.get(message.message_id || null);
 
                     // Check if this is the latest message (last assistant message in the last group)
-                    const isLastGroup = groupIndex === groupedMessages.length - 1;
                     const isLastAssistantMessage = msgIndex === assistantMessages.length - 1;
                     const isLatestMessage = isLastGroup && isLastAssistantMessage;
 
@@ -1358,6 +1383,11 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                               );
                             })}
                           </View>
+                        )}
+
+                        {/* Message actions (copy/speak) - show at end of each assistant response block */}
+                        {isLastAssistantMessage && !isCurrentlyStreaming && aggregatedTextContent && (
+                          <MessageActions text={aggregatedTextContent} />
                         )}
                       </View>
                     );

@@ -44,6 +44,7 @@ import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { UnifiedConfigMenu } from './unified-config-menu';
+import { useVoicePlayerStore } from '@/stores/voice-player-store';
 
 import posthog from 'posthog-js';
 import { trackCtaUpgrade } from '@/lib/analytics/gtm';
@@ -791,6 +792,10 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const ENABLE_SUNA_AGENT_MODES = false;
     const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
 
+    // Voice player state for snack visibility
+    const voiceState = useVoicePlayerStore((s) => s.state);
+    const isVoiceActive = voiceState !== 'idle';
+
     const {
       selectedModel,
       setSelectedModel: handleModelChange,
@@ -1367,7 +1372,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       </div>
     ), [leftControls, rightControls]);
 
-    const isSnackVisible = showToolPreview || !!showSnackbar || (isFreeTier && subscriptionData && !isLocalMode());
+    const isSnackVisible = showToolPreview || !!showSnackbar || (isVoiceActive && !!threadId) || (isFreeTier && subscriptionData && !isLocalMode());
 
     // Message Queue - get from store
     const allQueuedMessages = useMessageQueueStore((state) => state.queuedMessages);
@@ -1462,6 +1467,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
               setPlanSelectionModalOpen(true);
             }}
             isVisible={isSnackVisible}
+            threadId={threadId}
           />
 
           {/* Scroll to bottom button */}

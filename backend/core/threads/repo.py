@@ -1325,14 +1325,21 @@ async def insert_message(
     metadata: Optional[Dict[str, Any]] = None,
     agent_id: Optional[str] = None,
     agent_version_id: Optional[str] = None,
-    message_id: Optional[str] = None
+    message_id: Optional[str] = None,
+    created_at: Optional[Any] = None
 ) -> Optional[Dict[str, Any]]:
     from datetime import datetime, timezone
     import uuid
     
     if message_id is None:
         message_id = str(uuid.uuid4())
-    now = datetime.now(timezone.utc)
+    
+    if created_at is None:
+        now = datetime.now(timezone.utc)
+    elif isinstance(created_at, (int, float)):
+        now = datetime.fromtimestamp(created_at, tz=timezone.utc)
+    else:
+        now = created_at
     
     sql = """
     INSERT INTO messages (
