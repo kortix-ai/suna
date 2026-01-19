@@ -33,6 +33,7 @@ import { Brain, Zap, Database, ArrowDown, ArrowUp, Wrench, Clock, Send } from 'l
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
+import { ContextUsageIndicator } from '../ContextUsageIndicator';
 
 import { IntegrationsRegistry } from '@/components/agents/integrations-registry';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -1323,6 +1324,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
     const rightControls = useMemo(() => (
       <div className='flex items-center gap-2 flex-shrink-0'>
+        
+        {threadId && selectedAgentId && (
+          <ContextUsageIndicator 
+            threadId={threadId}
+            modelName={selectedAgentId}
+          />
+        )}
+
         {!hideAgentSelection && (
           <UnifiedConfigMenu
             isLoggedIn={isLoggedIn}
@@ -1349,7 +1358,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
           pendingFilesCount={pendingFilesCount}
         />
       </div>
-    ), [isLoggedIn, loading, disabled, handleTranscription, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount, hideAgentSelection, selectedAgentId, onAgentSelect]);
+    ), [isLoggedIn, loading, disabled, handleTranscription, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount, hideAgentSelection, selectedAgentId, onAgentSelect, threadId]);
 
     const renderControls = useMemo(() => (
       <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-1.5">
