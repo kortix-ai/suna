@@ -127,8 +127,7 @@ class ExecutionEngine:
         messages = self._state.get_messages()
         
         # Fast pre-check - only do full validation if needed
-        from core.agentpress.context_manager import ContextManager
-        context_manager = ContextManager()
+        context_manager = ToolCallValidator()
         if context_manager.needs_tool_ordering_repair(messages):
             logger.warning("[ExecutionEngine] Tool ordering issue detected, repairing...")
             messages = context_manager.repair_tool_call_pairing(messages)
