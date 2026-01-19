@@ -2382,7 +2382,9 @@ class TaskPerformance(BaseModel):
     running_runs: int
     pending_runs: int  # Not started yet
     success_rate: float  # percentage: completed / (completed + failed + stopped)
-    avg_duration_seconds: Optional[float] = None
+    avg_duration_seconds: Optional[float] = None  # Excludes stuck tasks (> 1hr)
+    avg_duration_with_stuck_seconds: Optional[float] = None  # Includes all tasks
+    stuck_task_count: int = 0  # Tasks with duration > 1hr (likely stuck)
     runs_by_status: Dict[str, int]
 
 
@@ -2614,6 +2616,9 @@ async def get_task_performance(
 ) -> TaskPerformance:
     """
     Get task/agent run performance metrics for a date range.
+
+    Returns both avg_duration_seconds (excluding stuck tasks >1hr) and
+    avg_duration_with_stuck_seconds (including all) for frontend toggle.
     """
     try:
         db = DBConnection()
@@ -2642,10 +2647,14 @@ async def get_task_performance(
             running_runs = data.get('running_runs', 0) or 0
             pending_runs = data.get('pending_runs', 0) or 0
             avg_duration = data.get('avg_duration_seconds')
+            avg_duration_with_stuck = data.get('avg_duration_with_stuck_seconds')
+            stuck_task_count = data.get('stuck_task_count', 0) or 0
             runs_by_status = data.get('runs_by_status', {}) or {}
         else:
             total_runs = completed_runs = failed_runs = stopped_runs = running_runs = pending_runs = 0
             avg_duration = None
+            avg_duration_with_stuck = None
+            stuck_task_count = 0
             runs_by_status = {}
         
         # Success rate: completed / (completed + failed + stopped)
@@ -2661,6 +2670,8 @@ async def get_task_performance(
             pending_runs=pending_runs,
             success_rate=round(success_rate, 1),
             avg_duration_seconds=round(avg_duration, 1) if avg_duration else None,
+            avg_duration_with_stuck_seconds=round(avg_duration_with_stuck, 1) if avg_duration_with_stuck else None,
+            stuck_task_count=stuck_task_count,
             runs_by_status=runs_by_status,
         )
         
