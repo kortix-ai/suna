@@ -2,6 +2,16 @@ from typing import Optional, List, Dict, Any, Tuple
 from core.services.db import execute, execute_one, serialize_row, serialize_rows
 from core.utils.logger import logger
 
+
+def _sanitize_null_bytes(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace('\u0000', '')
+    elif isinstance(value, dict):
+        return {k: _sanitize_null_bytes(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [_sanitize_null_bytes(item) for item in value]
+    return value
+
 async def list_user_threads(
     account_id: str,
     limit: int = 100,
@@ -258,7 +268,7 @@ async def create_message(
         "thread_id": thread_id,
         "type": message_type,
         "is_llm_message": is_llm_message,
-        "content": content,
+        "content": _sanitize_null_bytes(content),
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
@@ -639,8 +649,8 @@ async def create_message_full(
         "thread_id": thread_id,
         "type": message_type,
         "is_llm_message": is_llm_message,
-        "content": content,
-        "metadata": metadata,
+        "content": _sanitize_null_bytes(content),
+        "metadata": _sanitize_null_bytes(metadata),
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
@@ -1359,9 +1369,9 @@ async def insert_message(
         "message_id": message_id,
         "thread_id": thread_id,
         "type": message_type,
-        "content": content,
+        "content": _sanitize_null_bytes(content),
         "is_llm_message": is_llm_message,
-        "metadata": metadata or {},
+        "metadata": _sanitize_null_bytes(metadata or {}),
         "agent_id": agent_id,
         "agent_version_id": agent_version_id,
         "created_at": now
