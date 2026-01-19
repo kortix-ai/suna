@@ -16,6 +16,7 @@ import { usePrefetchComposioIcons } from '@/hooks/composio/use-composio';
 import { useProjects } from '@/hooks/sidebar/use-sidebar';
 import { useIsMobile } from '@/hooks/utils';
 import { AppProviders } from '@/components/layout/app-providers';
+import { backendApi } from '@/lib/api-client';
 import { AnnouncementDialog } from '../announcements/announcement-dialog';
 import { NovuInboxProvider } from '../notifications/novu-inbox-provider';
 
@@ -121,6 +122,12 @@ export default function DashboardLayoutContent({
   
   // Prefetch popular Composio icons for faster UI
   const { prefetchPopularIcons } = usePrefetchComposioIcons();
+
+  useEffect(() => {
+    if (user) {
+      backendApi.post('/prewarm', undefined, { showErrors: false });
+    }
+  }, [user])
   
   useEffect(() => {
     if (user) {
