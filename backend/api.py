@@ -631,5 +631,5 @@ if __name__ == "__main__":
         port=8000,
         workers=workers,
         loop="asyncio",
-        reload=False if is_dev_env else False
+        reload=reload
     )
