@@ -7,7 +7,7 @@ from core.agentpress.response_processor import ProcessorConfig
 from core.agentpress.thread_manager.services.execution.llm_executor import LLMExecutor
 from core.agentpress.prompt_caching import add_cache_control
 from core.agents.pipeline.ux_streaming import stream_context_usage, stream_summarizing
-from core.agents.pipeline.stateless.context import ContextManager
+from core.agents.pipeline.stateless.context.manager import ContextManager
 from core.agentpress.context_manager import ContextManager as ToolCallValidator
 
 
