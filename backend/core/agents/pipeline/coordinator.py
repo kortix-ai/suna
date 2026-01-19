@@ -71,13 +71,18 @@ class PipelineCoordinator:
                     if not prep_result.can_proceed:
                         yield prep_result.get_error_response()
                         break
-                
+
+                auto_state.tool_result_tokens = 0
+
                 llm_start = time.time()
                 chunk_count = 0
+                effective_model = self._effective_model_name or ctx.model_name
                 async for chunk in self._execute_llm_call(ctx, prep_result, auto_state):
                     chunk_count += 1
                     yield chunk
-                    
+
+                    await self._track_tool_result_tokens(chunk, auto_state, effective_model)
+
                     should_continue, should_terminate = self._check_auto_continue(chunk, auto_state, max_auto_continues)
                     if should_terminate:
                         auto_state.active = False
@@ -461,7 +466,7 @@ class PipelineCoordinator:
         """
         if auto_state.count >= max_continues:
             return False, False
-        
+
         if chunk.get('type') == 'status':
             metadata = chunk.get('metadata', {})
             if isinstance(metadata, str):
@@ -495,7 +500,34 @@ class PipelineCoordinator:
                 return False, False
         
         return False, False
-    
+
+    async def _track_tool_result_tokens(
+        self,
+        chunk: Dict[str, Any],
+        auto_state: AutoContinueState,
+        model_name: str
+    ) -> None:
+        """Track token count from tool result chunks."""
+        if chunk.get('type') != 'tool':
+            return
+
+        try:
+            content = chunk.get('content', {})
+            if isinstance(content, str):
+                content = json.loads(content)
+            content_str = content.get('content', '') if isinstance(content, dict) else str(content)
+            if content_str:
+                from litellm.utils import token_counter
+                tool_tokens = await asyncio.to_thread(
+                    token_counter,
+                    model=model_name,
+                    messages=[{"role": "tool", "content": content_str}]
+                )
+                auto_state.tool_result_tokens += tool_tokens
+                logger.debug(f"🔧 Tracked {tool_tokens} tool result tokens (total: {auto_state.tool_result_tokens})")
+        except Exception as e:
+            logger.debug(f"Failed to count tool result tokens: {e}")
+
     def _log_prep_timing(self, result: PrepResult) -> None:
         parts = []
 

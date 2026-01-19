@@ -308,6 +308,7 @@ async def prep_fast_check(
         new_msg_tokens = 0
         if is_auto_continue:
             new_msg_tokens = tool_result_tokens
+            logger.debug(f"⚡ Fast check (auto-continue): tool_result_tokens={tool_result_tokens}")
         elif user_message:
             new_msg_tokens = len(user_message) // 4 + 50
 
