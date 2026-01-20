@@ -3,9 +3,22 @@
  * React Query hooks with inline fetch calls
  */
 
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
 import { API_URL, getAuthToken } from '@/api/config';
 import type { SandboxFile, FileUploadResponse } from '@/api/types';
+import type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
+
+// Re-export sandbox types for convenience
+export type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
+export {
+  deriveSandboxStatus,
+  isSandboxUsable,
+  isSandboxTransitioning,
+  isSandboxOffline,
+  isSandboxFailed,
+  getSandboxStatusLabel,
+} from '@agentpress/shared/types/sandbox';
 
 // API response types (what the backend actually returns)
 interface ApiFileInfo {
@@ -81,6 +94,11 @@ export const fileKeys = {
   fileHistory: (sandboxId: string, path: string) => [...fileKeys.all, 'sandbox', sandboxId, 'history', path] as const,
   fileAtCommit: (sandboxId: string, path: string, commit: string) => [...fileKeys.all, 'sandbox', sandboxId, 'file', path, commit] as const,
   filesAtCommit: (sandboxId: string, path: string, commit: string) => [...fileKeys.all, 'sandbox', sandboxId, 'tree', path, commit] as const,
+};
+
+export const sandboxKeys = {
+  all: ['sandbox'] as const,
+  status: (projectId: string) => [...sandboxKeys.all, 'status', projectId] as const,
 };
 
 // ============================================================================
@@ -553,7 +571,7 @@ export async function blobToDataURL(blob: Blob, filePath?: string): Promise<stri
     const reader = new FileReader();
     reader.onload = () => {
       let dataUrl = reader.result as string;
-      
+
       // If the blob has application/octet-stream mime type and we have a file path,
       // try to fix the mime type based on the file extension
       if (blob.type === 'application/octet-stream' && filePath) {
@@ -567,10 +585,479 @@ export async function blobToDataURL(blob: Blob, filePath?: string): Promise<stri
           );
         }
       }
-      
+
       resolve(dataUrl);
     };
     reader.onerror = reject;
     reader.readAsDataURL(blob);
   });
+}
+
+// ============================================================================
+// Sandbox Status Hooks
+// ============================================================================
+
+/**
+ * Hook to fetch unified sandbox status by PROJECT ID
+ */
+export function useSandboxStatus(
+  projectId: string | undefined,
+  options?: Omit<UseQueryOptions<SandboxState, Error>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: sandboxKeys.status(projectId || ''),
+    queryFn: async () => {
+      if (!projectId) throw new Error('Project ID required');
+
+      const token = await getAuthToken();
+      const res = await fetch(
+        `${API_URL}/project/${projectId}/sandbox/status`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (!res.ok) throw new Error(`Failed to fetch sandbox status: ${res.status}`);
+      return res.json() as Promise<SandboxState>;
+    },
+    enabled: !!projectId,
+    staleTime: 5 * 1000,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      // Fast polling for transitional states, slower for stable states
+      if (status === 'STARTING' || status === 'UNKNOWN') {
+        return 3000; // 3s for transitional states
+      }
+      if (status === 'OFFLINE') {
+        return 5000; // 5s for offline (waiting for auto-start to take effect)
+      }
+      return 30000; // 30s for LIVE/FAILED (stable states)
+    },
+    ...options,
+  });
+}
+
+/**
+ * Hook to fetch unified sandbox status by SANDBOX ID directly
+ * Use this when you have a sandboxId but no projectId
+ */
+export function useSandboxStatusById(
+  sandboxId: string | undefined,
+  options?: Omit<UseQueryOptions<SandboxState, Error>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: ['sandbox', 'status-by-id', sandboxId || ''],
+    queryFn: async () => {
+      if (!sandboxId) throw new Error('Sandbox ID required');
+
+      const token = await getAuthToken();
+      const url = `${API_URL}/sandboxes/${sandboxId}/status`;
+
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        if (res.status === 404) {
+          throw new Error(`Endpoint not found - make sure backend is updated and restarted`);
+        }
+        if (res.status === 401 || res.status === 403) {
+          throw new Error(`Authentication failed: ${res.status}`);
+        }
+        throw new Error(`Failed to fetch sandbox status: ${res.status} - ${errorText}`);
+      }
+
+      const data = await res.json();
+
+      // Validate that we got a proper status
+      if (!data || !data.status) {
+        throw new Error('Invalid sandbox status response: missing status field');
+      }
+
+      return data as SandboxState;
+    },
+    enabled: !!sandboxId,
+    staleTime: 5 * 1000,
+    retry: 1,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      // Fast polling for transitional states, slower for stable states
+      if (status === 'STARTING' || status === 'UNKNOWN') {
+        return 3000; // 3s for transitional states
+      }
+      if (status === 'OFFLINE') {
+        return 5000; // 5s for offline (waiting for auto-start to take effect)
+      }
+      return 30000; // 30s for LIVE/FAILED (stable states)
+    },
+    ...options,
+  });
+}
+
+/**
+ * Mutation hook to start a sandbox
+ */
+export function useStartSandbox(
+  options?: UseMutationOptions<
+    { status: string; sandbox_id: string; message: string },
+    Error,
+    string
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/project/${projectId}/sandbox/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to start sandbox: ${res.status}`);
+      }
+
+      return res.json();
+    },
+    onSuccess: (_, projectId) => {
+      // Invalidate status query to trigger refetch
+      queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
+    },
+    ...options,
+  });
+}
+
+/**
+ * Mutation hook to stop a sandbox (by project ID)
+ */
+export function useStopSandbox(
+  options?: UseMutationOptions<
+    { status: string; sandbox_id: string; message: string },
+    Error,
+    string
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/project/${projectId}/sandbox/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error(`Failed to stop sandbox: ${res.status}`);
+      return res.json();
+    },
+    onSuccess: (_, projectId) => {
+      // Invalidate status query to trigger refetch
+      queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
+    },
+    ...options,
+  });
+}
+
+/**
+ * Mutation hook to start a sandbox by SANDBOX ID directly
+ * Use this when you have a sandboxId but no projectId
+ */
+export function useStartSandboxById(
+  options?: UseMutationOptions<
+    { status: string; sandbox_id: string; message: string },
+    Error,
+    string
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (sandboxId: string) => {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/sandboxes/${sandboxId}/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) {
+        throw new Error(`Failed to start sandbox: ${res.status}`);
+      }
+
+      return res.json();
+    },
+    onSuccess: (_, sandboxId) => {
+      // Invalidate status-by-id query to trigger refetch
+      queryClient.invalidateQueries({ queryKey: ['sandbox', 'status-by-id', sandboxId] });
+    },
+    ...options,
+  });
+}
+
+// ============================================================================
+// Auto-Start Hook - Combines status checking with automatic restart
+// ============================================================================
+
+// Global map to track auto-start attempts per project
+// This prevents multiple hook instances from triggering simultaneous starts
+const globalAutoStartAttempted = new Map<string, boolean>();
+const globalAutoStartInProgress = new Map<string, boolean>();
+
+/**
+ * Hook that monitors sandbox status and auto-starts if OFFLINE.
+ *
+ * Features:
+ * - Auto-starts sandbox when OFFLINE is detected (with sandbox_id present)
+ * - Doesn't auto-start for UNKNOWN (no sandbox exists yet - need to create via agent)
+ * - Tracks "isAutoStarting" state for UI feedback
+ * - Prevents multiple auto-start attempts (globally across all hook instances)
+ * - Returns effective status (STARTING during auto-start attempt)
+ *
+ * @param projectId - Project ID to monitor
+ * @param options.enabled - Whether to enable the hook (default: true)
+ * @param options.autoStart - Whether to auto-start OFFLINE sandboxes (default: true)
+ */
+export function useSandboxStatusWithAutoStart(
+  projectId: string | undefined,
+  options?: {
+    enabled?: boolean;
+    autoStart?: boolean;
+  }
+) {
+  const autoStartEnabled = options?.autoStart !== false;
+  const [isAutoStarting, setIsAutoStarting] = useState(false);
+  const lastProjectIdRef = useRef<string | undefined>(undefined);
+
+  // Reset auto-start state when project changes
+  useEffect(() => {
+    if (lastProjectIdRef.current !== projectId && projectId) {
+      // Clear global state for the new project
+      globalAutoStartAttempted.delete(projectId);
+      globalAutoStartInProgress.delete(projectId);
+      setIsAutoStarting(false);
+      lastProjectIdRef.current = projectId;
+    }
+  }, [projectId]);
+
+  // Sync local state with global state
+  useEffect(() => {
+    if (projectId) {
+      const inProgress = globalAutoStartInProgress.get(projectId) || false;
+      setIsAutoStarting(inProgress);
+    }
+  }, [projectId]);
+
+  // Get sandbox status
+  const statusQuery = useSandboxStatus(projectId, { enabled: options?.enabled });
+  const sandboxState = statusQuery.data;
+
+  // Start sandbox mutation
+  const startSandbox = useStartSandbox();
+
+  // Use ref to avoid stale closures with mutation
+  const startSandboxRef = useRef(startSandbox);
+  startSandboxRef.current = startSandbox;
+
+  // Auto-start logic
+  const attemptAutoStart = useCallback(async () => {
+    if (!projectId) return;
+
+    const alreadyAttempted = globalAutoStartAttempted.get(projectId);
+    const alreadyInProgress = globalAutoStartInProgress.get(projectId);
+
+    if (!autoStartEnabled) return;
+    if (alreadyAttempted || alreadyInProgress) return;
+    if (!sandboxState) return;
+
+    // Only auto-start if:
+    // 1. Status is OFFLINE (sandbox exists but stopped)
+    // 2. We have a sandbox_id (confirms sandbox exists)
+    // 3. Not already starting
+    const shouldAutoStart =
+      sandboxState.status === 'OFFLINE' &&
+      sandboxState.sandbox_id &&
+      sandboxState.sandbox_id.length > 0 &&
+      !startSandboxRef.current.isPending;
+
+    if (shouldAutoStart) {
+      // CRITICAL: Set global flags SYNCHRONOUSLY before any async work
+      // This prevents multiple hook instances from triggering simultaneous starts
+      globalAutoStartAttempted.set(projectId, true);
+      globalAutoStartInProgress.set(projectId, true);
+      setIsAutoStarting(true);
+
+      try {
+        await startSandboxRef.current.mutateAsync(projectId);
+      } catch (error) {
+        console.error('[useSandboxStatusWithAutoStart] Auto-start failed:', error);
+        // Reset so user can try again
+        globalAutoStartAttempted.set(projectId, false);
+        globalAutoStartInProgress.set(projectId, false);
+        setIsAutoStarting(false);
+      }
+    }
+  }, [projectId, autoStartEnabled, sandboxState]);
+
+  // Trigger auto-start when status becomes OFFLINE
+  useEffect(() => {
+    if (sandboxState?.status === 'OFFLINE') {
+      attemptAutoStart();
+    }
+    // Clear isAutoStarting when status changes away from OFFLINE (sandbox is now running)
+    if (projectId && sandboxState?.status && sandboxState.status !== 'OFFLINE') {
+      globalAutoStartInProgress.set(projectId, false);
+      setIsAutoStarting(false);
+    }
+  }, [sandboxState?.status, attemptAutoStart, projectId]);
+
+  // Compute effective status - show STARTING if we're auto-starting
+  const effectiveStatus: SandboxStatus | undefined =
+    isAutoStarting && sandboxState?.status === 'OFFLINE'
+      ? 'STARTING'
+      : sandboxState?.status;
+
+  return {
+    ...statusQuery,
+    // Override data to include effective status
+    data: sandboxState ? {
+      ...sandboxState,
+      status: effectiveStatus || sandboxState.status,
+    } : null,
+    // Expose original status for debugging
+    originalStatus: sandboxState?.status,
+    // Whether we're in the process of auto-starting
+    isAutoStarting,
+    // Whether auto-start is enabled
+    autoStartEnabled,
+    // Reset auto-start attempt (e.g., for manual retry)
+    resetAutoStart: useCallback(() => {
+      if (projectId) {
+        globalAutoStartAttempted.set(projectId, false);
+        globalAutoStartInProgress.set(projectId, false);
+      }
+      setIsAutoStarting(false);
+    }, [projectId]),
+  };
+}
+
+// Global map to track auto-start attempts per sandbox (by ID)
+// This prevents multiple hook instances from triggering simultaneous starts
+const globalAutoStartAttemptedById = new Map<string, boolean>();
+const globalAutoStartInProgressById = new Map<string, boolean>();
+
+/**
+ * Hook that monitors sandbox status by SANDBOX ID and auto-starts if OFFLINE.
+ * Use this when you have a sandboxId but no projectId.
+ *
+ * @param sandboxId - Sandbox ID to monitor
+ * @param options.enabled - Whether to enable the hook (default: true)
+ * @param options.autoStart - Whether to auto-start OFFLINE sandboxes (default: true)
+ */
+export function useSandboxStatusByIdWithAutoStart(
+  sandboxId: string | undefined,
+  options?: {
+    enabled?: boolean;
+    autoStart?: boolean;
+  }
+) {
+  const autoStartEnabled = options?.autoStart !== false;
+  const [isAutoStarting, setIsAutoStarting] = useState(false);
+  const lastSandboxIdRef = useRef<string | undefined>(undefined);
+
+  // Reset auto-start state when sandbox changes
+  useEffect(() => {
+    if (lastSandboxIdRef.current !== sandboxId && sandboxId) {
+      // Clear global state for the new sandbox
+      globalAutoStartAttemptedById.delete(sandboxId);
+      globalAutoStartInProgressById.delete(sandboxId);
+      setIsAutoStarting(false);
+      lastSandboxIdRef.current = sandboxId;
+    }
+  }, [sandboxId]);
+
+  // Sync local state with global state
+  useEffect(() => {
+    if (sandboxId) {
+      const inProgress = globalAutoStartInProgressById.get(sandboxId) || false;
+      setIsAutoStarting(inProgress);
+    }
+  }, [sandboxId]);
+
+  // Get sandbox status by ID
+  const queryEnabled = options?.enabled !== false && !!sandboxId;
+  const statusQuery = useSandboxStatusById(sandboxId, { enabled: queryEnabled });
+  const sandboxState = statusQuery.data;
+
+  // Start sandbox mutation (by sandbox ID)
+  const startSandbox = useStartSandboxById();
+
+  // Use ref to avoid stale closures with mutation
+  const startSandboxRef = useRef(startSandbox);
+  startSandboxRef.current = startSandbox;
+
+  // Auto-start logic
+  const attemptAutoStart = useCallback(async () => {
+    if (!sandboxId) return;
+
+    const alreadyAttempted = globalAutoStartAttemptedById.get(sandboxId);
+    const alreadyInProgress = globalAutoStartInProgressById.get(sandboxId);
+
+    if (!autoStartEnabled) return;
+    if (alreadyAttempted || alreadyInProgress) return;
+    if (!sandboxState) return;
+
+    // Only auto-start if status is OFFLINE
+    const shouldAutoStart = sandboxState.status === 'OFFLINE' && !startSandboxRef.current.isPending;
+
+    if (shouldAutoStart) {
+      // CRITICAL: Set global flags SYNCHRONOUSLY before any async work
+      globalAutoStartAttemptedById.set(sandboxId, true);
+      globalAutoStartInProgressById.set(sandboxId, true);
+      setIsAutoStarting(true);
+
+      try {
+        await startSandboxRef.current.mutateAsync(sandboxId);
+      } catch (error) {
+        console.error('[useSandboxStatusByIdWithAutoStart] Auto-start failed:', error);
+        globalAutoStartAttemptedById.set(sandboxId, false);
+        globalAutoStartInProgressById.set(sandboxId, false);
+        setIsAutoStarting(false);
+      }
+    }
+  }, [sandboxId, autoStartEnabled, sandboxState]);
+
+  // Trigger auto-start when status becomes OFFLINE
+  useEffect(() => {
+    if (sandboxState?.status === 'OFFLINE') {
+      attemptAutoStart();
+    }
+    // Clear isAutoStarting when status changes away from OFFLINE
+    if (sandboxId && sandboxState?.status && sandboxState.status !== 'OFFLINE') {
+      globalAutoStartInProgressById.set(sandboxId, false);
+      setIsAutoStarting(false);
+    }
+  }, [sandboxState?.status, attemptAutoStart, sandboxId]);
+
+  // Compute effective status - show STARTING if we're auto-starting
+  const effectiveStatus: SandboxStatus | undefined =
+    isAutoStarting && sandboxState?.status === 'OFFLINE'
+      ? 'STARTING'
+      : sandboxState?.status;
+
+  return {
+    ...statusQuery,
+    data: sandboxState ? {
+      ...sandboxState,
+      status: effectiveStatus || sandboxState.status,
+    } : null,
+    originalStatus: sandboxState?.status,
+    isAutoStarting,
+    autoStartEnabled,
+    resetAutoStart: useCallback(() => {
+      if (sandboxId) {
+        globalAutoStartAttemptedById.set(sandboxId, false);
+        globalAutoStartInProgressById.set(sandboxId, false);
+      }
+      setIsAutoStarting(false);
+    }, [sandboxId]),
+  };
 }

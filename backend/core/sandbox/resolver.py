@@ -145,26 +145,33 @@ class SandboxResolver:
         account_id: str,
         db_client
     ) -> Optional[SandboxInfo]:
+        import os
         from core.sandbox.pool_service import claim_sandbox_from_pool
-        
-        try:
-            claimed = await claim_sandbox_from_pool(account_id, project_id)
-            if claimed:
-                sandbox_id, config = claimed
-                sandbox = await get_or_start_sandbox(sandbox_id)
-                await self._update_cache(project_id, sandbox_id, config)
-                logger.info(f"[RESOLVER] Claimed from pool: {sandbox_id} for {project_id}")
-                return SandboxInfo(
-                    sandbox_id=sandbox_id,
-                    sandbox=sandbox,
-                    password=config.get('pass', ''),
-                    sandbox_url=config.get('sandbox_url'),
-                    vnc_preview=config.get('vnc_preview'),
-                    token=config.get('token')
-                )
-        except Exception as e:
-            logger.warning(f"[RESOLVER] Pool claim failed: {e}")
-        
+
+        # Check if pool is enabled (read directly from env to avoid cached config)
+        pool_enabled = os.getenv("SANDBOX_POOL_ENABLED", "true").lower() in ("true", "1", "yes")
+
+        if pool_enabled:
+            try:
+                claimed = await claim_sandbox_from_pool(account_id, project_id)
+                if claimed:
+                    sandbox_id, config = claimed
+                    sandbox = await get_or_start_sandbox(sandbox_id)
+                    await self._update_cache(project_id, sandbox_id, config)
+                    logger.info(f"[RESOLVER] Claimed from pool: {sandbox_id} for {project_id}")
+                    return SandboxInfo(
+                        sandbox_id=sandbox_id,
+                        sandbox=sandbox,
+                        password=config.get('pass', ''),
+                        sandbox_url=config.get('sandbox_url'),
+                        vnc_preview=config.get('vnc_preview'),
+                        token=config.get('token')
+                    )
+            except Exception as e:
+                logger.warning(f"[RESOLVER] Pool claim failed: {e}")
+        else:
+            logger.info(f"[RESOLVER] Pool disabled, creating new sandbox for {project_id}")
+
         return await self._create_new(project_id, account_id, db_client)
     
     async def _create_new(

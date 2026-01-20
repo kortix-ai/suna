@@ -56,6 +56,8 @@ export function KortixComputer({
   sandboxId,
 }: KortixComputerProps) {
   log.log('[KortixComputer] Render - toolMessages:', toolMessages.length, 'currentIndex:', currentIndex);
+  log.log('[KortixComputer] project:', project ? { id: project.id, name: project.name, hasSandbox: !!project.sandbox } : 'undefined');
+  log.log('[KortixComputer] sandboxId prop:', sandboxId);
   
   const insets = useSafeAreaInsets();
 
@@ -229,11 +231,13 @@ export function KortixComputer({
                 <FileViewerView
                   sandboxId={effectiveSandboxId}
                   filePath={selectedFilePath}
+                  projectId={project?.id}
                   project={project}
                 />
               ) : (
                 <FileBrowserView
                   sandboxId={effectiveSandboxId}
+                  projectId={project?.id}
                   project={project}
                 />
               )}
