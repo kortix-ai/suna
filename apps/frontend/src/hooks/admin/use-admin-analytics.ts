@@ -896,10 +896,9 @@ export interface ProfitabilitySummary {
   unique_active_users: number;   // Users who had usage (including free)
   paying_user_emails: string[];  // Emails of paying users (clickable)
 
-  // Active subscription counts (from credit_accounts, paid tiers only)
-  total_active_subscriptions: number;  // Total paid subs (Stripe + RevenueCat)
-  stripe_active_subscriptions: number;  // Stripe paid subscriptions
-  revenuecat_active_subscriptions: number;  // RevenueCat paid subscriptions
+  total_active_subscriptions: number;
+  stripe_active_subscriptions: number;
+  revenuecat_active_subscriptions: number;
 
   // Meta
   period_start: string;
