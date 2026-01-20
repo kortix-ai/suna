@@ -1,19 +1,32 @@
-# Terraform
-**/.terraform/*
-*.tfstate
-*.tfstate.*
-*.tfvars
-.terraform.lock.hcl
-crash.log
-crash.*.log
-override.tf
-override.tf.json
-*_override.tf
-*_override.tf.json
-.terraformrc
-terraform.rc
+# Dependencies
+node_modules/
 
-# Sensitive files
+# Pulumi
+.pulumi/
+
+# Environment files (contain secrets)
+.env
+*.env
+!*.env.example
+suna.env
+
+# SSH keys
 *.pem
 *.key
-secrets/
+
+# Build output
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Lock files (optional - you may want to commit these)
+# bun.lock
+# package-lock.json
