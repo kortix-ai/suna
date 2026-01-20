@@ -53,11 +53,8 @@ export function SiteHeader({
   };
 
   return (
-    <header className={cn(
-      "bg-background sticky top-0 flex shrink-0 gap-2 z-20 w-full pt-4",
-      isMobile && "px-2"
-    )}>
-      <div className="flex flex-1 items-center h-[32px] gap-2 px-3 min-w-0">
+    <header className="bg-background sticky top-0 flex shrink-0 gap-2 z-20 w-full pt-4">
+      <div className="flex flex-1 items-center h-[32px] gap-2 pl-6 min-w-0">
         {variant === 'shared' ? (
           <div className="text-base font-medium text-muted-foreground flex items-center gap-2 min-w-0">
             <span className="truncate">{projectName}</span>
