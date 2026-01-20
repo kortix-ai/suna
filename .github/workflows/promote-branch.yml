@@ -74,6 +74,14 @@ jobs:
           
           echo "✅ Successfully promoted $SOURCE → $TARGET"
 
+      - name: Trigger Docker Build (for staging)
+        if: steps.branches.outputs.target == 'staging'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: staging-updated
+          client-payload: '{"ref": "staging"}'
+
       - name: Trigger Docker Build (for PRODUCTION)
         if: steps.branches.outputs.target == 'PRODUCTION'
         uses: peter-evans/repository-dispatch@v3

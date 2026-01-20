@@ -7,7 +7,7 @@ on:
       - staging     # → STAGING environment (pre-prod)
       - PRODUCTION  # → PRODUCTION environment
   repository_dispatch:
-    types: [production-updated]  # Triggered by promote-branch workflow
+    types: [staging-updated, production-updated]  # Triggered by promote-branch workflow
 
 permissions:
   contents: read
@@ -32,8 +32,8 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          # Use PRODUCTION branch for repository_dispatch events
-          ref: ${{ github.event_name == 'repository_dispatch' && 'PRODUCTION' || github.ref }}
+          # Use correct branch for repository_dispatch events
+          ref: ${{ github.event_name == 'repository_dispatch' && (github.event.action == 'staging-updated' && 'staging' || 'PRODUCTION') || github.ref }}
 
       - name: Set environment variables
         id: set-env
@@ -41,9 +41,15 @@ jobs:
           # Handle repository_dispatch events (triggered by promote-branch workflow)
           if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
             echo "Triggered by repository_dispatch: ${{ github.event.action }}"
-            echo "environment=production" >> $GITHUB_OUTPUT
-            echo "image_tag=prod" >> $GITHUB_OUTPUT
-            echo "ref=PRODUCTION" >> $GITHUB_OUTPUT
+            if [ "${{ github.event.action }}" == "staging-updated" ]; then
+              echo "environment=staging" >> $GITHUB_OUTPUT
+              echo "image_tag=staging" >> $GITHUB_OUTPUT
+              echo "ref=staging" >> $GITHUB_OUTPUT
+            else
+              echo "environment=production" >> $GITHUB_OUTPUT
+              echo "image_tag=prod" >> $GITHUB_OUTPUT
+              echo "ref=PRODUCTION" >> $GITHUB_OUTPUT
+            fi
           else
             BRANCH="${GITHUB_REF#refs/heads/}"
             echo "Branch: $BRANCH"
