@@ -165,13 +165,6 @@ class ExecutionEngine:
                 self._state._messages.append(msg)
             logger.debug(f"✅ [ExecutionEngine] State updated after compression: {len(self._state._messages)} messages")
         
-        cost = self._state.estimate_cost(tokens, 1000)
-        if not self._state.deduct_credits(cost):
-            logger.error(f"[ExecutionEngine] Insufficient credits for LLM call (required: {cost})")
-            self._state._terminate("error: insufficient_credits")
-            yield {"type": "error", "error": "Insufficient credits", "error_code": "INSUFFICIENT_CREDITS"}
-            return
-
         processor_config = ProcessorConfig(
             xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
             native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING,
