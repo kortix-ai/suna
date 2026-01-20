@@ -220,11 +220,13 @@ async def execute_agent_run_stateless(
                     final_status = status if status != 'error' else 'failed'
                     if status in ['failed', 'error']:
                         error_message = response.get('message') or response.get('error')
+                        logger.error(f"[STATELESS] Agent run error: {error_message}")
                     break
 
             if response.get('type') == 'error':
                 final_status = 'failed'
                 error_message = response.get('error')
+                logger.error(f"[STATELESS] Agent run error: {error_message}")
                 break
 
         if final_status == "failed" and not error_message:
@@ -423,11 +425,13 @@ async def execute_agent_run_fast(
                     final_status = status if status != 'error' else 'failed'
                     if status in ['failed', 'error']:
                         error_message = response.get('message') or response.get('error')
+                        logger.error(f"[FAST] Agent run error: {error_message}")
                     break
             
             if response.get('type') == 'error':
                 final_status = 'failed'
                 error_message = response.get('error')
+                logger.error(f"[FAST] Agent run error: {error_message}")
                 break
         
         if final_status == "failed" and not error_message:
