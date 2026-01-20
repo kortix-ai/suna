@@ -5,11 +5,12 @@ import { SubmitButton } from '@/components/ui/submit-button';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { useMediaQuery } from '@/hooks/utils';
 import { useState, useEffect, Suspense, lazy } from 'react';
 import { signUp, verifyOtp, resendMagicLink } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { MailCheck, Clock, ExternalLink } from 'lucide-react';
+import { Mail, MailCheck, Clock, ExternalLink } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useAuth } from '@/components/AuthProvider';
 import { useAuthMethodTracking } from '@/stores/auth-tracking';
@@ -492,66 +493,88 @@ function LoginContent() {
 
   // Registration success view
   if (registrationSuccess) {
+    const provider = registrationEmail ? getEmailProviderInfo(registrationEmail) : null;
+    
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <div className="w-full max-w-md mx-auto">
-          <div className="text-center">
-            <div className="bg-green-50 dark:bg-green-950/20 rounded-full p-4 mb-6 inline-flex">
-              <MailCheck className="h-12 w-12 text-green-500 dark:text-green-400" />
-            </div>
+      <div className="w-full relative overflow-hidden min-h-screen">
+        <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
+          {/* Animated background */}
+          <Suspense fallback={null}>
+            <AnimatedBg variant="hero" />
+          </Suspense>
 
-            <h1 className="text-3xl font-semibold text-foreground mb-4">
+          <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
+            {/* Logo */}
+            <KortixLogo size={32} />
+
+            {/* Title */}
+            <h1 className="text-[43px] font-normal tracking-tight text-foreground leading-none text-center whitespace-nowrap">
               {t('checkYourEmail')}
             </h1>
 
-            <p className="text-muted-foreground mb-2">
-              {t('magicLinkSent') || 'We sent a magic link to'}
+            {/* Description */}
+            <p className="text-[16px] text-foreground/60 text-center leading-relaxed">
+              {t('magicLinkSent') || 'We sent a magic link to'}{' '}
+              <span className="font-medium text-foreground">{registrationEmail || t('emailAddress')}</span>
             </p>
 
-            <p className="text-lg font-medium mb-6">
-              {registrationEmail || t('emailAddress')}
-            </p>
+            {/* Status Card and Footer */}
+            <div className="w-full flex flex-col gap-4">
+              <Card className="w-full h-24 bg-card border border-border">
+                <CardContent className="p-6 flex items-center justify-between h-full">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-muted">
+                      <Mail className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-[14px] font-medium text-foreground">
+                        Click the link in your email to sign in
+                      </span>
+                      <span className="text-[13px] text-foreground/60">
+                        Check your inbox and spam folder
+                      </span>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
 
-            <div className="bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900/50 rounded-lg p-4 mb-8">
-              <p className="text-sm text-green-800 dark:text-green-400">
-                {t('magicLinkDescription') || 'Click the link in your email to sign in. The link will expire in 1 hour.'}
+              {/* Footer text */}
+              <p className="text-[13px] text-foreground/40 text-center">
+                {t('didntReceiveEmail')}{' '}
+                <button
+                  onClick={() => {
+                    setRegistrationSuccess(false);
+                    const params = new URLSearchParams(window.location.search);
+                    params.set('mode', 'signin');
+                    const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
+                    window.history.pushState({ path: newUrl }, '', newUrl);
+                  }}
+                  className="text-primary hover:underline font-medium"
+                >
+                  {t('resend')}
+                </button>
               </p>
             </div>
 
-            {(() => {
-              const provider = registrationEmail ? getEmailProviderInfo(registrationEmail) : null;
-              if (provider) {
-                return (
-                  <Button asChild size="lg" className="w-full">
-                    <a
-                      href={provider.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {t('openProvider', { provider: provider.name })}
-                      <ExternalLink className="h-4 w-4" />
-                    </a>
-                  </Button>
-                );
-              }
-              return null;
-            })()}
-
-            <p className="text-sm text-muted-foreground text-center mt-6">
-              {t('didntReceiveEmail')}{' '}
-              <button
-                onClick={() => {
-                  setRegistrationSuccess(false);
-                  const params = new URLSearchParams(window.location.search);
-                  params.set('mode', 'signin');
-                  const newUrl = window.location.pathname + (params.toString() ? '?' + params.toString() : '');
-                  window.history.pushState({ path: newUrl }, '', newUrl);
-                }}
-                className="text-primary hover:underline font-medium"
+            {/* Action Buttons */}
+            {provider && (
+              <Button
+                asChild
+                size="lg"
+                variant="outline"
+                className="w-full h-12 rounded-lg font-medium"
               >
-                {t('resend')}
-              </button>
-            </p>
+                <a
+                  href={provider.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center justify-center gap-2"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  <span>{t('openProvider', { provider: provider.name })}</span>
+                </a>
+              </Button>
+            )}
           </div>
         </div>
       </div>
