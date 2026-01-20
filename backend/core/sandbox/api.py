@@ -788,8 +788,8 @@ def derive_sandbox_status(daytona_state: str, services_health: Optional[Dict] = 
     if state_lower in ('stopped', 'archived'):
         return UnifiedSandboxStatus.OFFLINE.value
 
-    # If archiving, it's transitioning
-    if state_lower == 'archiving':
+    # If archiving or stopping, it's transitioning - treat as STARTING for faster polling
+    if state_lower in ('archiving', 'stopping'):
         return UnifiedSandboxStatus.STARTING.value
 
     # Daytona says started - check service health
@@ -1044,6 +1044,136 @@ async def start_project_sandbox(
         raise
     except Exception as e:
         logger.error(f"Error starting sandbox for project {project_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/sandboxes/{sandbox_id}/status")
+async def get_sandbox_status_by_id(
+    sandbox_id: str,
+    request: Request = None,
+    user_id: Optional[str] = Depends(get_optional_user_id)
+) -> SandboxStatusResponse:
+    """
+    Get sandbox status directly by sandbox ID.
+
+    This is useful when you have a sandbox_id but not a project_id.
+    Returns the same unified status as /project/{project_id}/sandbox/status.
+    """
+    logger.debug(f"Received sandbox status request for sandbox_id {sandbox_id}, user_id: {user_id}")
+
+    try:
+        # Get Daytona state
+        sandbox = await daytona.get(sandbox_id)
+        daytona_state = sandbox.state.value if hasattr(sandbox.state, 'value') else str(sandbox.state)
+
+        # Try to get sandbox URL for health check
+        # We need to find the config from the resource table
+        client = await db.client
+        from core.resources import ResourceService, ResourceType
+
+        resource_service = ResourceService(client)
+        # Find resource by external_id (sandbox_id) - column is 'type' not 'resource_type'
+        resource_result = await client.table('resources').select('*').eq('external_id', sandbox_id).eq('type', ResourceType.SANDBOX.value).execute()
+
+        config = {}
+        project_id = ""
+        if resource_result.data and len(resource_result.data) > 0:
+            resource = resource_result.data[0]
+            config = resource.get('config', {})
+            # Try to find the project
+            project_result = await client.table('projects').select('project_id').eq('sandbox_resource_id', resource['id']).execute()
+            if project_result.data and len(project_result.data) > 0:
+                project_id = project_result.data[0]['project_id']
+
+        # Only fetch health if Daytona reports started
+        services_health = None
+        health_data = None
+        if daytona_state.lower() == 'started':
+            sandbox_url = config.get('sandbox_url')
+            if sandbox_url:
+                health_data = await fetch_sandbox_health(sandbox_url)
+                if health_data:
+                    services_health = ServiceHealth(
+                        status=health_data.get('status', 'unknown'),
+                        services=health_data.get('services', {}),
+                        critical_services=health_data.get('critical_services', []),
+                        error=health_data.get('error')
+                    )
+
+        # Derive unified status
+        unified_status = derive_sandbox_status(daytona_state, health_data)
+
+        return SandboxStatusResponse(
+            status=unified_status,
+            sandbox_id=sandbox_id,
+            project_id=project_id,
+            daytona_state=daytona_state,
+            services_health=services_health,
+            last_checked=datetime.now(timezone.utc).isoformat(),
+            vnc_preview=config.get('vnc_preview'),
+            sandbox_url=config.get('sandbox_url'),
+            cpu=getattr(sandbox, 'cpu', None),
+            memory=getattr(sandbox, 'memory', None),
+            disk=getattr(sandbox, 'disk', None),
+            target=getattr(sandbox, 'target', None)
+        )
+
+    except Exception as e:
+        logger.error(f"Error fetching sandbox status for sandbox_id {sandbox_id}: {str(e)}")
+        return SandboxStatusResponse(
+            status=UnifiedSandboxStatus.FAILED.value,
+            sandbox_id=sandbox_id,
+            project_id="",
+            daytona_state="error",
+            last_checked=datetime.now(timezone.utc).isoformat(),
+            error=str(e)
+        )
+
+
+@router.post("/sandboxes/{sandbox_id}/start")
+async def start_sandbox_by_id(
+    sandbox_id: str,
+    request: Request = None,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """
+    Start a sandbox directly by sandbox ID.
+
+    This is useful when you have a sandbox_id but not a project_id.
+    Returns immediately with STARTING status - poll /sandboxes/{sandbox_id}/status for updates.
+    """
+    logger.debug(f"Received sandbox start request for sandbox_id {sandbox_id}, user_id: {user_id}")
+
+    try:
+        # Check current state
+        sandbox = await daytona.get(sandbox_id)
+        current_state = sandbox.state.value.lower() if hasattr(sandbox.state, 'value') else str(sandbox.state).lower()
+
+        if current_state == 'started':
+            return {
+                "status": "success",
+                "sandbox_id": sandbox_id,
+                "message": "Sandbox is already running"
+            }
+
+        if current_state in ('stopped', 'archived', 'archiving'):
+            # Start asynchronously (non-blocking)
+            asyncio.create_task(get_or_start_sandbox(sandbox_id))
+
+            return {
+                "status": "starting",
+                "sandbox_id": sandbox_id,
+                "message": "Sandbox start initiated. Poll /sandboxes/{sandbox_id}/status for updates."
+            }
+
+        return {
+            "status": "unknown",
+            "sandbox_id": sandbox_id,
+            "message": f"Sandbox is in state: {current_state}"
+        }
+
+    except Exception as e:
+        logger.error(f"Error starting sandbox {sandbox_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

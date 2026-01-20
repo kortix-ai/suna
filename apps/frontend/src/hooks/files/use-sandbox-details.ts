@@ -58,8 +58,6 @@ export function useSandboxDetails(projectId: string | undefined, options?: { ena
         { showErrors: false }
       );
 
-      console.log('Sandbox Details Response:', response.data);
-
       if (!response.success || !response.data) {
         throw new Error(response.error?.message || 'Failed to fetch sandbox details');
       }
@@ -135,28 +133,19 @@ export function useStartSandbox() {
 
   return useMutation({
     mutationFn: async (projectId: string) => {
-      console.log('[useStartSandbox] Starting sandbox for project:', projectId);
       const response = await backendApi.post<{ status: string; sandbox_id: string; message: string }>(
         `/project/${projectId}/sandbox/start`
       );
 
-      console.log('[useStartSandbox] Response:', response);
-
       if (!response.success) {
-        console.error('[useStartSandbox] Failed:', response.error);
         throw new Error(response.error?.message || 'Failed to start sandbox');
       }
 
-      console.log('[useStartSandbox] Success:', response.data);
       return response.data;
     },
-    onSuccess: (data, projectId) => {
-      console.log('[useStartSandbox] onSuccess, invalidating queries for:', projectId);
+    onSuccess: (_, projectId) => {
       // Invalidate status query to trigger refetch
       queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
-    },
-    onError: (error) => {
-      console.error('[useStartSandbox] onError:', error);
     },
   });
 }
@@ -234,29 +223,9 @@ export function useSandboxStatusWithAutoStart(
 
   // Auto-start logic
   const attemptAutoStart = useCallback(async () => {
-    console.log('[useSandboxStatusWithAutoStart] attemptAutoStart called', {
-      projectId,
-      autoStartEnabled,
-      autoStartAttempted: autoStartAttemptedRef.current,
-      sandboxState: sandboxState ? {
-        status: sandboxState.status,
-        sandbox_id: sandboxState.sandbox_id,
-      } : null,
-      isPending: startSandbox.isPending,
-    });
-
-    if (!projectId || !autoStartEnabled) {
-      console.log('[useSandboxStatusWithAutoStart] Skipping: no projectId or autoStart disabled');
-      return;
-    }
-    if (autoStartAttemptedRef.current) {
-      console.log('[useSandboxStatusWithAutoStart] Skipping: already attempted');
-      return;
-    }
-    if (!sandboxState) {
-      console.log('[useSandboxStatusWithAutoStart] Skipping: no sandbox state yet');
-      return;
-    }
+    if (!projectId || !autoStartEnabled) return;
+    if (autoStartAttemptedRef.current) return;
+    if (!sandboxState) return;
 
     // Only auto-start if:
     // 1. Status is OFFLINE (sandbox exists but stopped)
@@ -268,23 +237,16 @@ export function useSandboxStatusWithAutoStart(
       sandboxState.sandbox_id.length > 0 &&
       !startSandbox.isPending;
 
-    console.log('[useSandboxStatusWithAutoStart] shouldAutoStart:', shouldAutoStart);
-
     if (shouldAutoStart) {
-      console.log('[useSandboxStatusWithAutoStart] Auto-starting offline sandbox:', sandboxState.sandbox_id);
       autoStartAttemptedRef.current = true;
       setIsAutoStarting(true);
 
       try {
         await startSandbox.mutateAsync(projectId);
-        console.log('[useSandboxStatusWithAutoStart] Auto-start request sent successfully');
       } catch (error) {
         console.error('[useSandboxStatusWithAutoStart] Auto-start failed:', error);
         // Reset so user can try again
         autoStartAttemptedRef.current = false;
-      } finally {
-        // Keep isAutoStarting true until status changes from OFFLINE
-        // The status polling will update and clear this
       }
     }
   }, [projectId, autoStartEnabled, sandboxState, startSandbox]);

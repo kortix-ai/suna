@@ -101,8 +101,8 @@ export function deriveSandboxStatus(
     return 'OFFLINE';
   }
 
-  // If archiving, it's transitioning
-  if (normalizedState === 'archiving') {
+  // If archiving or stopping, it's transitioning - treat as STARTING for faster polling
+  if (normalizedState === 'archiving' || normalizedState === 'stopping') {
     return 'STARTING';
   }
 
