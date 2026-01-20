@@ -2354,10 +2354,9 @@ class ProfitabilitySummary(BaseModel):
     unique_active_users: int   # Users who had usage in this period (including free)
     paying_user_emails: List[str] = []  # Emails of paying users (clickable)
 
-    # Active subscription counts (from credit_accounts table, paid tiers only)
-    total_active_subscriptions: int = 0  # Total paid subs (Stripe + RevenueCat)
-    stripe_active_subscriptions: int = 0  # Stripe paid subscriptions
-    revenuecat_active_subscriptions: int = 0  # RevenueCat paid subscriptions
+    total_active_subscriptions: int = 0
+    stripe_active_subscriptions: int = 0
+    revenuecat_active_subscriptions: int = 0
 
     # Meta
     period_start: str
@@ -3102,6 +3101,45 @@ async def _fetch_stripe_revenue(start_ts: int, end_ts: int) -> Dict[str, Any]:
     return results
 
 
+async def _fetch_revenuecat_active_subscriptions() -> int:
+    """
+    Fetch active subscription count from RevenueCat API.
+    Returns the number of active subscriptions.
+    """
+    if not config.REVENUECAT_API_KEY or not config.REVENUECAT_PROJECT_ID:
+        logger.warning("RevenueCat API key or project ID not configured, returning 0")
+        return 0
+
+    url = f"https://api.revenuecat.com/v2/projects/{config.REVENUECAT_PROJECT_ID}/metrics/overview"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {config.REVENUECAT_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Find active_subscriptions metric
+            for metric in data.get('metrics', []):
+                if metric.get('id') == 'active_subscriptions':
+                    count = metric.get('value', 0)
+                    logger.info(f"RevenueCat active subscriptions: {count}")
+                    return int(count)
+
+            logger.warning("active_subscriptions metric not found in RevenueCat response")
+            return 0
+
+    except Exception as e:
+        logger.error(f"Failed to fetch RevenueCat active subscriptions: {e}")
+        return 0
+
+
 async def _fetch_revenuecat_revenue(client, range_start: datetime, range_end: datetime) -> Dict[str, Any]:
     """
     Fetch RevenueCat revenue from webhook_events using RPC.
@@ -3386,11 +3424,12 @@ async def get_profitability(
         # Sort by email for consistency
         paying_user_emails.sort()
 
-        # Get active subscription counts from credit_accounts (paid tiers only)
-        active_subs_result = await client.rpc('get_active_subscription_counts').execute()
+        active_subs_result, revenuecat_active_subs = await asyncio.gather(
+            client.rpc('get_active_subscription_counts').execute(),
+            _fetch_revenuecat_active_subscriptions()
+        )
         active_subs_data = active_subs_result.data[0] if active_subs_result.data else {}
         stripe_active_subs = active_subs_data.get('stripe_paid', 0) or 0
-        revenuecat_active_subs = active_subs_data.get('revenuecat_paid', 0) or 0
         total_active_subs = stripe_active_subs + revenuecat_active_subs
 
         return ProfitabilitySummary(
