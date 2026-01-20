@@ -232,22 +232,26 @@ export function useUnifiedAgentStart(
   options?: UseMutationOptions<
     { thread_id: string; agent_run_id: string; status: string },
     Error,
-    { threadId?: string; prompt?: string; files?: any[]; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
+    { threadId?: string; prompt?: string; files?: any[]; fileIds?: string[]; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
   >
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ threadId, prompt, files, modelName, agentId, threadMetadata }) => {
+    mutationFn: async ({ threadId, prompt, files, fileIds, modelName, agentId, threadMetadata }) => {
       const formData = new FormData();
-      
+
       if (threadId) formData.append('thread_id', threadId);
       if (prompt) formData.append('prompt', prompt);
       if (modelName) formData.append('model_name', modelName);
       if (agentId) formData.append('agent_id', agentId);
       if (threadMetadata) formData.append('thread_metadata', JSON.stringify(threadMetadata));
-      
-      if (files?.length) {
+
+      // Prefer file_ids (staged files) over direct file uploads
+      if (fileIds?.length) {
+        fileIds.forEach((fileId) => formData.append('file_ids', fileId));
+      } else if (files?.length) {
+        // Fallback to direct files (legacy support)
         files.forEach((file) => formData.append('files', file as any));
       }
 
@@ -360,6 +364,7 @@ export function useSendMessage(
         threadId: input.threadId,
         modelName: input.modelName,
         agentId: input.agentId,
+        fileIds: input.fileIds,
       });
 
       log.log('✅ [useSendMessage] Step 2 complete: Agent started', agentRun);

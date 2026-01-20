@@ -132,7 +132,15 @@ function parseFilePath(path: string): FileAttachment {
 }
 
 function normalizeSandboxWorkspacePath(inputPath: string): string {
-  const raw = (inputPath || '').trim();
+  // First decode any URL-encoded characters (e.g., %20 -> space)
+  // This handles cases where filenames come from message text with URL encoding
+  let raw: string;
+  try {
+    raw = decodeURIComponent((inputPath || '').trim());
+  } catch {
+    raw = (inputPath || '').trim();
+  }
+
   if (!raw) return '/workspace/';
   // If it already looks like a workspace path, just ensure leading slash.
   if (raw.startsWith('/workspace/')) return raw;

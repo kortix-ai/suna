@@ -18,6 +18,17 @@ function formatTimestamp(isoString?: string): string {
   }
 }
 
+function parseContent(content: any): any {
+  if (typeof content === 'string') {
+    try {
+      return JSON.parse(content);
+    } catch {
+      return content;
+    }
+  }
+  return content;
+}
+
 export function LoadImageToolView({
     toolCall,
     toolResult,
@@ -33,12 +44,16 @@ export function LoadImageToolView({
     const toolMetadata = getToolMetadata(name, toolCall.arguments);
     const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : true;
 
-    const output = typeof toolResult?.output === 'object' ? toolResult.output : {};
+    const rawOutput = toolResult?.output;
+    const output = typeof rawOutput === 'string'
+      ? parseContent(rawOutput)
+      : (typeof rawOutput === 'object' && rawOutput !== null ? rawOutput : {});
     const args = typeof toolCall.arguments === 'object' ? toolCall.arguments : {};
 
     const imageUrl = output?.image_url;
     const filePath = output?.file_path || args?.file_path;
-    const message = output?.message;
+    // Get message from output or from error field
+    const message = output?.message || toolResult?.error || (typeof rawOutput === 'string' ? rawOutput : null);
 
     if (isStreaming) {
         return (

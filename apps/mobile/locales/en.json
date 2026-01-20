@@ -499,7 +499,8 @@
     "failedToOpenImagePicker": "Couldn't open gallery. Try again.",
     "failedToOpenFilePicker": "Couldn't open file picker. Try again.",
     "fileTooLarge": "File size exceeds the maximum allowed size.",
-    "uploadFailed": "Failed to upload files. Please try again."
+    "uploadFailed": "Failed to upload files. Please try again.",
+    "stillUploading": "Please wait for files to finish uploading"
   },
   "permissions": {
     "cameraTitle": "Camera Permission Required",

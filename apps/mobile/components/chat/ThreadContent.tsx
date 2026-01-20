@@ -1113,11 +1113,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               }),
             ].filter(Boolean);
 
-            // Parse pending attachments from metadata (for optimistic messages)
-            let pendingAttachments: Array<{ uri: string; name: string; type: string; size?: number }> = [];
+            // Parse pending attachments from metadata
+            // These are local URIs for images that were uploaded from the device
+            // We preserve them even after the optimistic message is replaced so we can display the image
+            let pendingAttachments: Array<{ uri: string; name: string; type: string; size?: number; status?: string }> = [];
             try {
-              const metadata = typeof message.metadata === 'string' 
-                ? JSON.parse(message.metadata) 
+              const metadata = typeof message.metadata === 'string'
+                ? JSON.parse(message.metadata)
                 : message.metadata;
               if (metadata?.pendingAttachments) {
                 pendingAttachments = metadata.pendingAttachments;
@@ -1125,6 +1127,17 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             } catch {
               // Ignore parse errors
             }
+
+            // If we have pending attachments (local URIs), filter out server-side attachments
+            // that match the same filenames to avoid duplicate rendering
+            const pendingNames = new Set(pendingAttachments.map(a => a.name.toLowerCase()));
+            const filteredAttachments = pendingAttachments.length > 0
+              ? (attachments as string[]).filter(path => {
+                  // Extract filename from path like "uploads/Screenshot%202026-01-20%20at%2014.47.15.png"
+                  const filename = decodeURIComponent(path.split('/').pop() || '').toLowerCase();
+                  return !pendingNames.has(filename);
+                })
+              : attachments;
 
             const cleanContent = messageContent
               .replace(/\[Uploaded File: .*?\]/g, '')
@@ -1137,45 +1150,60 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 {/* Render pending attachments (local URIs from optimistic messages) */}
                 {pendingAttachments.length > 0 && (
                   <View className="flex-row flex-wrap justify-end gap-2 mb-2">
-                    {pendingAttachments.map((attachment, idx) => (
-                      <View
-                        key={`pending-${idx}`}
-                        className="rounded-2xl overflow-hidden border border-border"
-                        style={{ width: 120, height: 120 }}
-                      >
-                        {attachment.type === 'image' || attachment.type === 'video' ? (
-                          <>
-                            <Image
-                              source={{ uri: attachment.uri }}
-                              style={{ width: '100%', height: '100%' }}
-                              resizeMode="cover"
-                            />
-                            {/* Uploading overlay */}
-                            <View 
-                              className="absolute inset-0 bg-black/40 items-center justify-center"
-                              style={{ borderRadius: 16 }}
-                            >
-                              <View className="bg-white/20 rounded-full p-2">
-                                <KortixLoader size="small" />
-                              </View>
+                    {pendingAttachments.map((attachment, idx) => {
+                      // Only show loading overlay if status is NOT 'ready' (still uploading/staging)
+                      const isStillUploading = attachment.status !== 'ready';
+
+                      return (
+                        <View
+                          key={`pending-${idx}`}
+                          className="rounded-2xl overflow-hidden border border-border"
+                          style={{ width: 120, height: 120 }}
+                        >
+                          {attachment.type === 'image' || attachment.type === 'video' ? (
+                            <>
+                              <Image
+                                source={{ uri: attachment.uri }}
+                                style={{ width: '100%', height: '100%' }}
+                                resizeMode="cover"
+                              />
+                              {/* Uploading overlay - only show when still uploading */}
+                              {isStillUploading && (
+                                <View
+                                  className="absolute inset-0 bg-black/40 items-center justify-center"
+                                  style={{ borderRadius: 16 }}
+                                >
+                                  <View className="bg-white/20 rounded-full p-2">
+                                    <KortixLoader size="small" />
+                                  </View>
+                                </View>
+                              )}
+                            </>
+                          ) : (
+                            <View className="flex-1 items-center justify-center bg-card">
+                              {isStillUploading ? (
+                                <>
+                                  <KortixLoader size="small" />
+                                  <Text className="text-xs text-muted-foreground text-center px-2 mt-2" numberOfLines={2}>
+                                    {attachment.name}
+                                  </Text>
+                                </>
+                              ) : (
+                                <Text className="text-xs text-muted-foreground text-center px-2" numberOfLines={2}>
+                                  {attachment.name}
+                                </Text>
+                              )}
                             </View>
-                          </>
-                        ) : (
-                          <View className="flex-1 items-center justify-center bg-card">
-                            <KortixLoader size="small" />
-                            <Text className="text-xs text-muted-foreground text-center px-2 mt-2" numberOfLines={2}>
-                              {attachment.name}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    ))}
+                          )}
+                        </View>
+                      );
+                    })}
                   </View>
                 )}
 
-                {/* Render server-side attachments */}
+                {/* Render server-side attachments (filtered to exclude duplicates of pending attachments) */}
                 {renderStandaloneAttachments(
-                  attachments as string[],
+                  filteredAttachments as string[],
                   sandboxId,
                   sandboxUrl,
                   onFilePress,

@@ -20,9 +20,8 @@ import {
   chatKeys,
 } from '@/lib/chat';
 import {
-  useUploadMultipleFiles,
+  useStageFile,
   convertAttachmentsToFormDataFiles,
-  generateFileReferences,
   validateFileSize,
 } from '@/lib/files';
 import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
@@ -49,6 +48,9 @@ export interface Attachment {
   isUploading?: boolean;
   uploadProgress?: number;
   uploadError?: string;
+  // Staged file tracking
+  fileId?: string;
+  status?: 'pending' | 'uploading' | 'ready' | 'error';
 }
 
 // Per-mode state for instant tab-like switching
@@ -149,6 +151,7 @@ export function useChat(): UseChatReturn {
   const [messages, setMessages] = useState<UnifiedMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const attachmentsRef = useRef<Attachment[]>([]); // Ref for synchronous access
   const [selectedToolData, setSelectedToolData] = useState<{
     toolMessages: ToolMessagePair[];
     initialIndex: number;
@@ -162,7 +165,12 @@ export function useChat(): UseChatReturn {
   const [activeSandboxId, setActiveSandboxId] = useState<string | undefined>(undefined);
   const [userInitiatedRun, setUserInitiatedRun] = useState(false);
   const [isRetrying, setIsRetrying] = useState(false);
-  
+
+  // Keep attachmentsRef in sync for synchronous access
+  useEffect(() => {
+    attachmentsRef.current = attachments;
+  }, [attachments]);
+
   // Track last message params for retry functionality
   const lastMessageParamsRef = useRef<{
     content: string;
@@ -330,7 +338,7 @@ export function useChat(): UseChatReturn {
   const unifiedAgentStartMutation = useUnifiedAgentStartMutation();
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
-  const uploadFilesMutation = useUploadMultipleFiles();
+  const stageFileMutation = useStageFile();
 
   const lastStreamStartedRef = useRef<string | null>(null);
   const lastCompletedRunIdRef = useRef<string | null>(null);
@@ -405,6 +413,12 @@ export function useChat(): UseChatReturn {
         case 'failed':
           setAgentRunId(null);
           setUserInitiatedRun(false); // Reset when stream ends
+          // Refetch thread data to get updated sandbox info (created lazily during agent run)
+          // This fixes the loading spinner on user uploaded images that need sandboxId
+          if (activeThreadId && !activeThreadId.startsWith('optimistic-')) {
+            log.log('[useChat] Stream ended, refetching thread for sandbox info');
+            queryClient.invalidateQueries({ queryKey: chatKeys.thread(activeThreadId) });
+          }
           break;
         case 'connecting':
         case 'streaming':
@@ -415,7 +429,7 @@ export function useChat(): UseChatReturn {
           break;
       }
     },
-    [setAgentRunId],
+    [setAgentRunId, activeThreadId, queryClient],
   );
 
   const handleStreamError = useCallback((errorMessage: string) => {
@@ -842,7 +856,36 @@ export function useChat(): UseChatReturn {
         log.log('[useChat] Creating new thread via /agent/start with optimistic UI');
 
         // Store attachments before clearing for optimistic display
-        const pendingAttachments = [...attachments];
+        const pendingAttachments = [...attachmentsRef.current];
+
+        // FIRST: Check if any attachments are still uploading - must check BEFORE any UI changes
+        let newThreadFileIds: string[] = [];
+        if (pendingAttachments.length > 0) {
+          const notReady = pendingAttachments.filter(a => a.status !== 'ready');
+          if (notReady.length > 0) {
+            const stillUploading = notReady.filter(a => a.status === 'uploading');
+            if (stillUploading.length > 0) {
+              log.log('[useChat] Cannot send - files still uploading:', stillUploading.length);
+              Alert.alert(
+                t('common.error'),
+                t('attachments.stillUploading') || 'Please wait for files to finish uploading'
+              );
+              return;
+            }
+            // Filter out error attachments
+            const errorAttachments = notReady.filter(a => a.status === 'error');
+            if (errorAttachments.length > 0) {
+              log.warn('[useChat] Some attachments failed to upload, proceeding without them:', errorAttachments.length);
+            }
+          }
+
+          // Collect file_ids from ready attachments
+          newThreadFileIds = pendingAttachments
+            .filter(a => a.status === 'ready' && a.fileId)
+            .map(a => a.fileId!);
+
+          log.log('[useChat] Collected', newThreadFileIds.length, 'file_ids for new thread');
+        }
 
         // Build optimistic content with attachment placeholders for preview
         let optimisticContent = content;
@@ -888,6 +931,7 @@ export function useChat(): UseChatReturn {
               name: a.name,
               type: a.type,
               size: a.size,
+              status: a.status, // Include status to control loading overlay
             }))
           }),
           is_llm_message: false,
@@ -910,13 +954,7 @@ export function useChat(): UseChatReturn {
         // Clear input and attachments immediately for instant feedback
         setInputValue('');
         setAttachments([]);
-        
-        // Convert attachments for upload (we need the data)
-        const formDataFiles = pendingAttachments.length > 0
-          ? await convertAttachmentsToFormDataFiles(pendingAttachments)
-          : [];
-        
-        log.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
+        attachmentsRef.current = [];
         
         // Append hidden context for selected quick action options
         let messageWithContext = content;
@@ -974,7 +1012,7 @@ export function useChat(): UseChatReturn {
             prompt: messageWithContext,
             agentId: agentId,
             modelName: currentModel,
-            files: formDataFiles as any,
+            fileIds: newThreadFileIds.length > 0 ? newThreadFileIds : undefined,
             threadMetadata: Object.keys(threadMetadata).length > 0 ? threadMetadata : undefined,
           });
 
@@ -1066,10 +1104,39 @@ export function useChat(): UseChatReturn {
         }
       } else {
         log.log('[useChat] Sending to existing thread:', currentThreadId);
-        
+
         // Store attachments before clearing for upload
-        const pendingAttachments = [...attachments];
-        
+        const pendingAttachments = [...attachmentsRef.current];
+
+        // FIRST: Check if any attachments are still uploading - must check BEFORE any UI changes
+        let fileIds: string[] = [];
+        if (pendingAttachments.length > 0) {
+          const notReady = pendingAttachments.filter(a => a.status !== 'ready');
+          if (notReady.length > 0) {
+            const stillUploading = notReady.filter(a => a.status === 'uploading');
+            if (stillUploading.length > 0) {
+              log.log('[useChat] Cannot send - files still uploading:', stillUploading.length);
+              Alert.alert(
+                t('common.error'),
+                t('attachments.stillUploading') || 'Please wait for files to finish uploading'
+              );
+              return;
+            }
+            // Filter out error attachments and warn user
+            const errorAttachments = notReady.filter(a => a.status === 'error');
+            if (errorAttachments.length > 0) {
+              log.warn('[useChat] Some attachments failed to upload, proceeding without them:', errorAttachments.length);
+            }
+          }
+
+          // Collect file_ids from ready attachments
+          fileIds = pendingAttachments
+            .filter(a => a.status === 'ready' && a.fileId)
+            .map(a => a.fileId!);
+
+          log.log('[useChat] Collected', fileIds.length, 'file_ids from staged attachments');
+        }
+
         // Build optimistic content with attachment placeholders for preview
         let optimisticContent = content;
         if (pendingAttachments.length > 0) {
@@ -1078,93 +1145,48 @@ export function useChat(): UseChatReturn {
             .join('\n');
           optimisticContent = content ? `${content}\n\n${attachmentRefs}` : attachmentRefs;
         }
-        
+
         const optimisticUserMessage: UnifiedMessage = {
           message_id: 'optimistic-user-' + Date.now(),
           thread_id: currentThreadId,
           type: 'user',
           content: JSON.stringify({ content: optimisticContent }),
-          metadata: JSON.stringify({ 
+          metadata: JSON.stringify({
             pendingAttachments: pendingAttachments.map(a => ({
               uri: a.uri,
               name: a.name,
               type: a.type,
               size: a.size,
+              status: a.status, // Include status to control loading overlay
             }))
           }),
           is_llm_message: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
-        
+
         setMessages((prev) => [...prev, optimisticUserMessage]);
         log.log('✨ [useChat] INSTANT user message display for existing thread');
-        
+
         // Clear input and attachments immediately for instant feedback
         setInputValue('');
         setAttachments([]);
-        
+        attachmentsRef.current = [];
+
         setIsNewThreadOptimistic(true);
-        
+
         let messageContent = content;
-        
+
         // Append hidden context for slides template
         if (selectedQuickAction === 'slides' && selectedQuickActionOption) {
           messageContent += `\n\n----\n\n**Presentation Template:** ${selectedQuickActionOption}`;
           log.log('[useChat] Appended slides template context:', selectedQuickActionOption);
         }
-        
+
         // Append hidden context for image style
         if (selectedQuickAction === 'image' && selectedQuickActionOption) {
           messageContent += `\n\n----\n\n**Image Style:** ${selectedQuickActionOption}`;
           log.log('[useChat] Appended image style context:', selectedQuickActionOption);
-        }
-        
-        if (pendingAttachments.length > 0) {
-          const sandboxId = activeSandboxId;
-          
-          if (!sandboxId) {
-            log.error('[useChat] No sandbox ID available for file upload');
-            Alert.alert(
-              t('common.error'),
-              'Cannot upload files: sandbox not available'
-            );
-            return;
-          }
-          
-          log.log('[useChat] Uploading', pendingAttachments.length, 'files to sandbox:', sandboxId);
-          
-          try {
-            const filesToUpload = await convertAttachmentsToFormDataFiles(pendingAttachments);
-            
-            const uploadResults = await uploadFilesMutation.mutateAsync({
-              sandboxId,
-              files: filesToUpload.map(f => ({
-                uri: f.uri,
-                name: f.name,
-                type: f.type,
-              })),
-            });
-            
-            log.log('[useChat] Files uploaded successfully:', uploadResults.length);
-            
-            const filePaths = uploadResults.map(result => result.path);
-            const fileReferences = generateFileReferences(filePaths);
-            
-            messageContent = messageContent
-              ? `${messageContent}\n\n${fileReferences}`
-              : fileReferences;
-              
-            log.log('[useChat] Message with file references prepared');
-          } catch (uploadError) {
-            log.error('[useChat] File upload failed:', uploadError);
-            
-            Alert.alert(
-              t('common.error'),
-              t('attachments.uploadFailed') || 'Failed to upload files'
-            );
-            return;
-          }
         }
         
         if (!currentModel) {
@@ -1189,6 +1211,7 @@ export function useChat(): UseChatReturn {
             threadId: currentThreadId,
             message: messageContent,
             modelName: currentModel,
+            fileIds: fileIds.length > 0 ? fileIds : undefined,
           });
           
           log.log('[useChat] Message sent, agent run started:', result.agentRunId);
@@ -1226,8 +1249,33 @@ export function useChat(): UseChatReturn {
               
               if (optimisticIndex !== -1) {
                 log.log('[useChat] ✅ Replacing optimistic message with real one');
+                const optimisticMessage = prev[optimisticIndex];
+
+                // Preserve pendingAttachments from optimistic message for local image display
+                // The server message doesn't have local URIs, so we keep them for rendering
+                let mergedMetadata = result.message.metadata;
+                try {
+                  const optimisticMeta = typeof optimisticMessage.metadata === 'string'
+                    ? JSON.parse(optimisticMessage.metadata)
+                    : optimisticMessage.metadata;
+                  const serverMeta = typeof result.message.metadata === 'string'
+                    ? JSON.parse(result.message.metadata)
+                    : (result.message.metadata || {});
+
+                  if (optimisticMeta?.pendingAttachments?.length > 0) {
+                    mergedMetadata = JSON.stringify({
+                      ...serverMeta,
+                      pendingAttachments: optimisticMeta.pendingAttachments,
+                    });
+                  }
+                } catch {
+                  // Keep original metadata on parse error
+                }
+
                 return prev.map((m, index) =>
-                  index === optimisticIndex ? (result.message as UnifiedMessage) : m
+                  index === optimisticIndex
+                    ? { ...(result.message as UnifiedMessage), metadata: mergedMetadata }
+                    : m
                 );
               }
               
@@ -1286,8 +1334,7 @@ export function useChat(): UseChatReturn {
     attachments,
     sendMessageMutation,
     unifiedAgentStartMutation,
-    uploadFilesMutation,
-    activeSandboxId,
+    stageFileMutation,
     selectedQuickAction,
     selectedQuickActionOption,
     t,
@@ -1467,9 +1514,94 @@ export function useChat(): UseChatReturn {
     setIsRetrying(false);
   }, [isRetrying, messages, currentHookRunId, agentRunId, clearStreamError, setStreamError, startStreaming, activeThreadId, refetchMessages, refetchActiveRuns, queryClient, sendMessage]);
 
-  const addAttachment = useCallback((attachment: Attachment) => {
-    setAttachments(prev => [...prev, attachment]);
-  }, []);
+  const addAttachment = useCallback(async (attachment: Attachment) => {
+    // Generate a UUID for the file_id (backend requires UUID format)
+    const localId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+      const r = Math.random() * 16 | 0;
+      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+    const attachmentName = attachment.name || `file_${Date.now()}.jpg`;
+
+    log.log('[useChat] addAttachment called:', {
+      name: attachmentName,
+      uri: attachment.uri?.substring(0, 60),
+      type: attachment.type,
+      mimeType: attachment.mimeType,
+      localId,
+    });
+
+    // Add attachment immediately with pending status
+    const pendingAttachment: Attachment = {
+      ...attachment,
+      name: attachmentName,
+      fileId: localId,
+      status: 'uploading',
+      isUploading: true,
+    };
+    setAttachments(prev => {
+      const newAttachments = [...prev, pendingAttachment];
+      attachmentsRef.current = newAttachments; // Update ref immediately
+      return newAttachments;
+    });
+
+    // Stage the file in the background
+    try {
+      const mimeType = attachment.mimeType || 'application/octet-stream';
+      log.log('[useChat] Starting stage mutation for:', attachmentName, 'mutation exists:', !!stageFileMutation, 'mutateAsync exists:', !!stageFileMutation?.mutateAsync);
+      const result = await stageFileMutation.mutateAsync({
+        file: {
+          uri: attachment.uri,
+          name: attachmentName,
+          type: mimeType,
+        },
+        fileId: localId,
+      });
+
+      // Update attachment with staged file_id and ready status
+      setAttachments(prev => {
+        const newAttachments = prev.map(a =>
+          a.fileId === localId
+            ? { ...a, fileId: result.file_id, status: 'ready' as const, isUploading: false }
+            : a
+        );
+        attachmentsRef.current = newAttachments;
+        return newAttachments;
+      });
+
+      log.log('[useChat] File staged successfully:', result.file_id, result.filename);
+    } catch (error: any) {
+      // Extract error message - handle various error formats
+      let errorMessage = 'Unknown error';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error?.message) {
+        errorMessage = error.message;
+      }
+
+      // Log full error details for debugging
+      log.error('[useChat] Failed to stage file:', errorMessage);
+      log.error('[useChat] Error details:', {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack?.substring(0, 200),
+        keys: error ? Object.keys(error) : [],
+      });
+
+      // Update attachment with error status
+      setAttachments(prev => {
+        const newAttachments = prev.map(a =>
+          a.fileId === localId
+            ? { ...a, status: 'error' as const, isUploading: false, uploadError: errorMessage }
+            : a
+        );
+        attachmentsRef.current = newAttachments;
+        return newAttachments;
+      });
+    }
+  }, [stageFileMutation]);
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments(prev => prev.filter((_, i) => i !== index));

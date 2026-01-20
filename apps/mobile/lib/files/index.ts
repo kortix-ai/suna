@@ -19,6 +19,9 @@ export {
   useCreateSandboxDirectory,
   useDownloadSandboxFile,
   blobToDataURL,
+  // Staged files (for uploads without sandbox)
+  useStageFile,
+  useStageMultipleFiles,
   // Version history hooks
   useFileHistory,
   useFileContentAtCommit,
@@ -29,5 +32,6 @@ export {
   type FileVersion,
   type FileHistoryResponse,
   type CommitInfo,
+  type StagedFileResponse,
 } from './hooks';
 

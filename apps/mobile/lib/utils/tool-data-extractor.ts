@@ -104,12 +104,12 @@ export function extractToolCall(
  */
 export function extractToolResult(toolMessage: UnifiedMessage | null): ToolResultData | null {
   if (!toolMessage) return null;
-  
+
   const metadata = safeJsonParse<ParsedMetadata>(toolMessage.metadata, {});
   const result = metadata.result;
-  
+
   if (!result) return null;
-  
+
   return {
     success: result.success !== undefined ? result.success : true,
     output: result.output !== undefined ? result.output : null,

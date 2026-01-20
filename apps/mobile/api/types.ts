@@ -537,6 +537,7 @@ export interface SendMessageInput {
   modelName?: string;
   agentId?: string;
   files?: UploadedFile[];
+  fileIds?: string[];
 }
 
 export interface FileUploadInput {

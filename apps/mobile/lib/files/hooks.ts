@@ -509,6 +509,159 @@ export function useDownloadSandboxFile() {
 }
 
 // ============================================================================
+// Staged Files (for uploads without sandbox)
+// ============================================================================
+
+export interface StagedFileResponse {
+  file_id: string;
+  filename: string;
+  storage_path: string;
+  mime_type: string;
+  file_size: number;
+  parsed_preview?: string;
+  image_url?: string;
+  status: string;
+}
+
+/**
+ * Stage a file for later use (uploads to storage without needing a sandbox)
+ * This is the preferred method for mobile uploads - files are staged first,
+ * then file_ids are passed to agent/start which handles sandbox upload
+ */
+export function useStageFile(
+  options?: UseMutationOptions<
+    StagedFileResponse,
+    Error,
+    { file: { uri: string; name: string; type: string }; fileId?: string }
+  >
+) {
+  return useMutation({
+    mutationFn: async ({ file, fileId }) => {
+      console.log('[useStageFile] Starting stage for:', file.name, 'uri:', file.uri?.substring(0, 50));
+
+      const token = await getAuthToken();
+      if (!token) {
+        console.error('[useStageFile] No auth token available');
+        throw new Error('Authentication required');
+      }
+
+      const normalizedName = file.name.normalize('NFC');
+      // Generate UUID if not provided (backend requires UUID format)
+      const generatedFileId = fileId || 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = Math.random() * 16 | 0;
+        const v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+
+      console.log('[useStageFile] Preparing FormData:', { name: normalizedName, type: file.type, fileId: generatedFileId });
+
+      const formData = new FormData();
+      formData.append('file', {
+        uri: file.uri,
+        name: normalizedName,
+        type: file.type || 'application/octet-stream',
+      } as any);
+      formData.append('file_id', generatedFileId);
+
+      const url = `${API_URL}/files/stage`;
+      console.log('[useStageFile] Calling API:', url);
+
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+      } catch (fetchError: any) {
+        console.error('[useStageFile] Fetch error:', fetchError?.message || fetchError, 'Name:', fetchError?.name);
+        throw new Error(`Network error: ${fetchError?.message || 'Unknown fetch error'}`);
+      }
+
+      console.log('[useStageFile] Response status:', res.status);
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => '');
+        console.error('[useStageFile] Stage failed:', res.status, errorText);
+        throw new Error(`Stage failed: ${res.status} ${errorText}`);
+      }
+
+      const result = await res.json();
+      console.log('[useStageFile] Stage success:', result.file_id, result.filename);
+      return result;
+    },
+    ...options,
+  });
+}
+
+/**
+ * Stage multiple files sequentially
+ * Returns array of staged file responses with their file_ids
+ */
+export function useStageMultipleFiles(
+  options?: UseMutationOptions<
+    StagedFileResponse[],
+    Error,
+    {
+      files: Array<{ uri: string; name: string; type: string }>;
+      onProgress?: (filename: string, status: 'uploading' | 'ready' | 'error') => void;
+    }
+  >
+) {
+  return useMutation({
+    mutationFn: async ({ files, onProgress }) => {
+      const token = await getAuthToken();
+      if (!token) throw new Error('Authentication required');
+
+      const results: StagedFileResponse[] = [];
+
+      for (const file of files) {
+        const normalizedName = file.name.normalize('NFC');
+        // Generate UUID (backend requires UUID format)
+        const fileId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+          const r = Math.random() * 16 | 0;
+          const v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
+
+        onProgress?.(normalizedName, 'uploading');
+
+        try {
+          const formData = new FormData();
+          formData.append('file', {
+            uri: file.uri,
+            name: normalizedName,
+            type: file.type || 'application/octet-stream',
+          } as any);
+          formData.append('file_id', fileId);
+
+          const res = await fetch(`${API_URL}/files/stage`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+          });
+
+          if (!res.ok) {
+            const errorText = await res.text().catch(() => '');
+            throw new Error(`Stage failed for ${normalizedName}: ${res.status} ${errorText}`);
+          }
+
+          const result = await res.json();
+          results.push(result);
+          onProgress?.(normalizedName, 'ready');
+        } catch (error) {
+          onProgress?.(normalizedName, 'error');
+          throw error;
+        }
+      }
+
+      return results;
+    },
+    ...options,
+  });
+}
+
+// ============================================================================
 // Utilities
 // ============================================================================
 

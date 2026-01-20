@@ -87,7 +87,7 @@ export function ImageLoader({
   };
 
   return (
-    <View className={`relative ${className}`}>
+    <View className={`relative ${className}`} style={{ minHeight: 200 }}>
       {loading && showLoadingState && (
         <View className="absolute inset-0 items-center justify-center bg-muted/30">
           <ActivityIndicator size="large" color={isDark ? '#a855f7' : '#9333ea'} />
@@ -113,6 +113,7 @@ export function ImageLoader({
             handleError();
           }}
           style={[
+            { width: '100%', height: '100%' },
             imageProps.style,
             loading && { opacity: 0 },
           ]}
