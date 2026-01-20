@@ -1010,6 +1010,7 @@ interface PricingSectionProps {
   isAlert?: boolean;
   alertTitle?: string;
   alertSubtitle?: string;
+  showBuyCredits?: boolean;
 }
 
 export function PricingSection({
@@ -1022,7 +1023,8 @@ export function PricingSection({
   customTitle,
   isAlert = false,
   alertTitle,
-  alertSubtitle
+  alertSubtitle,
+  showBuyCredits = false
 }: PricingSectionProps) {
   const t = useTranslations('billing');
   const { user } = useAuth();
@@ -1434,8 +1436,9 @@ export function PricingSection({
           )}
         </div>
 
-        {/* Get Additional Credits Button - Only visible if tier allows credit purchases */}
-        {isAuthenticated &&
+        {/* Get Additional Credits Button - Only visible on dashboard pricing page when tier allows credit purchases */}
+        {showBuyCredits &&
+          isAuthenticated &&
           currentSubscription?.subscription.can_purchase_credits && (
             <div className="w-full max-w-6xl mt-12 flex flex-col items-center gap-4">
               <Button
