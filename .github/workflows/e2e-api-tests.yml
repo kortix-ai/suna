@@ -168,11 +168,11 @@ jobs:
         working-directory: backend
         env:
           TEST_API_URL: ${{ steps.env.outputs.api_url }}
-          # Supabase credentials (same for all environments - uses the shared Supabase instance)
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
-          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
-          SUPABASE_JWT_SECRET: ${{ secrets.SUPABASE_JWT_SECRET }}
+          # Environment-specific Supabase credentials
+          SUPABASE_URL: ${{ steps.env.outputs.environment == 'production' && secrets.PRODUCTION_SUPABASE_URL || (steps.env.outputs.environment == 'staging' && secrets.STAGING_SUPABASE_URL || secrets.DEV_SUPABASE_URL) }}
+          SUPABASE_ANON_KEY: ${{ steps.env.outputs.environment == 'production' && secrets.PRODUCTION_SUPABASE_ANON_KEY || (steps.env.outputs.environment == 'staging' && secrets.STAGING_SUPABASE_ANON_KEY || secrets.DEV_SUPABASE_ANON_KEY) }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ steps.env.outputs.environment == 'production' && secrets.PRODUCTION_SUPABASE_SERVICE_ROLE_KEY || (steps.env.outputs.environment == 'staging' && secrets.STAGING_SUPABASE_SERVICE_ROLE_KEY || secrets.DEV_SUPABASE_SERVICE_ROLE_KEY) }}
+          SUPABASE_JWT_SECRET: ${{ steps.env.outputs.environment == 'production' && secrets.PRODUCTION_SUPABASE_JWT_SECRET || (steps.env.outputs.environment == 'staging' && secrets.STAGING_SUPABASE_JWT_SECRET || secrets.DEV_SUPABASE_JWT_SECRET) }}
           # Environment-specific admin key
           KORTIX_ADMIN_API_KEY: ${{ steps.env.outputs.environment == 'production' && secrets.PRODUCTION_KORTIX_ADMIN_API_KEY || (steps.env.outputs.environment == 'staging' && secrets.STAGING_KORTIX_ADMIN_API_KEY || secrets.DEV_KORTIX_ADMIN_API_KEY) }}
         run: |
