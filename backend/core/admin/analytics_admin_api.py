@@ -2354,6 +2354,11 @@ class ProfitabilitySummary(BaseModel):
     unique_active_users: int   # Users who had usage in this period (including free)
     paying_user_emails: List[str] = []  # Emails of paying users (clickable)
 
+    # Active subscription counts (from credit_accounts table, paid tiers only)
+    total_active_subscriptions: int = 0  # Total paid subs (Stripe + RevenueCat)
+    stripe_active_subscriptions: int = 0  # Stripe paid subscriptions
+    revenuecat_active_subscriptions: int = 0  # RevenueCat paid subscriptions
+
     # Meta
     period_start: str
     period_end: str
@@ -3381,6 +3386,13 @@ async def get_profitability(
         # Sort by email for consistency
         paying_user_emails.sort()
 
+        # Get active subscription counts from credit_accounts (paid tiers only)
+        active_subs_result = await client.rpc('get_active_subscription_counts').execute()
+        active_subs_data = active_subs_result.data[0] if active_subs_result.data else {}
+        stripe_active_subs = active_subs_data.get('stripe_paid', 0) or 0
+        revenuecat_active_subs = active_subs_data.get('revenuecat_paid', 0) or 0
+        total_active_subs = stripe_active_subs + revenuecat_active_subs
+
         return ProfitabilitySummary(
             total_revenue=round(total_revenue, 2),
             total_cost=round(total_cost, 2),
@@ -3402,6 +3414,9 @@ async def get_profitability(
             period_start=range_start.strftime('%Y-%m-%d'),
             period_end=range_end.strftime('%Y-%m-%d'),
             total_payments=total_payments,
+            total_active_subscriptions=total_active_subs,
+            stripe_active_subscriptions=stripe_active_subs,
+            revenuecat_active_subscriptions=revenuecat_active_subs,
         )
 
     except Exception as e:
