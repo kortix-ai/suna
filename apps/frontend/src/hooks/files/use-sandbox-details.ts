@@ -179,6 +179,11 @@ export function useStopSandbox() {
 // Auto-Start Hook - Combines status checking with automatic restart
 // ============================================================================
 
+// Global map to track auto-start attempts per project
+// This prevents multiple hook instances from triggering simultaneous starts
+const globalAutoStartAttempted = new Map<string, boolean>();
+const globalAutoStartInProgress = new Map<string, boolean>();
+
 /**
  * Hook that monitors sandbox status and auto-starts if OFFLINE.
  *
@@ -186,7 +191,7 @@ export function useStopSandbox() {
  * - Auto-starts sandbox when OFFLINE is detected (with sandbox_id present)
  * - Doesn't auto-start for UNKNOWN (no sandbox exists yet - need to create via agent)
  * - Tracks "isAutoStarting" state for UI feedback
- * - Prevents multiple auto-start attempts
+ * - Prevents multiple auto-start attempts (globally across all hook instances)
  * - Returns effective status (STARTING during auto-start attempt)
  *
  * @param projectId - Project ID to monitor
@@ -202,15 +207,24 @@ export function useSandboxStatusWithAutoStart(
 ) {
   const autoStartEnabled = options?.autoStart !== false;
   const [isAutoStarting, setIsAutoStarting] = useState(false);
-  const autoStartAttemptedRef = useRef(false);
   const lastProjectIdRef = useRef<string | undefined>(undefined);
 
   // Reset auto-start state when project changes
   useEffect(() => {
-    if (lastProjectIdRef.current !== projectId) {
-      autoStartAttemptedRef.current = false;
+    if (lastProjectIdRef.current !== projectId && projectId) {
+      // Clear global state for the new project
+      globalAutoStartAttempted.delete(projectId);
+      globalAutoStartInProgress.delete(projectId);
       setIsAutoStarting(false);
       lastProjectIdRef.current = projectId;
+    }
+  }, [projectId]);
+
+  // Sync local state with global state
+  useEffect(() => {
+    if (projectId) {
+      const inProgress = globalAutoStartInProgress.get(projectId) || false;
+      setIsAutoStarting(inProgress);
     }
   }, [projectId]);
 
@@ -221,10 +235,19 @@ export function useSandboxStatusWithAutoStart(
   // Start sandbox mutation
   const startSandbox = useStartSandbox();
 
+  // Use ref to avoid stale closures with mutation
+  const startSandboxRef = useRef(startSandbox);
+  startSandboxRef.current = startSandbox;
+
   // Auto-start logic
   const attemptAutoStart = useCallback(async () => {
-    if (!projectId || !autoStartEnabled) return;
-    if (autoStartAttemptedRef.current) return;
+    if (!projectId) return;
+
+    const alreadyAttempted = globalAutoStartAttempted.get(projectId);
+    const alreadyInProgress = globalAutoStartInProgress.get(projectId);
+
+    if (!autoStartEnabled) return;
+    if (alreadyAttempted || alreadyInProgress) return;
     if (!sandboxState) return;
 
     // Only auto-start if:
@@ -235,32 +258,38 @@ export function useSandboxStatusWithAutoStart(
       sandboxState.status === 'OFFLINE' &&
       sandboxState.sandbox_id &&
       sandboxState.sandbox_id.length > 0 &&
-      !startSandbox.isPending;
+      !startSandboxRef.current.isPending;
 
     if (shouldAutoStart) {
-      autoStartAttemptedRef.current = true;
+      // CRITICAL: Set global flags SYNCHRONOUSLY before any async work
+      // This prevents multiple hook instances from triggering simultaneous starts
+      globalAutoStartAttempted.set(projectId, true);
+      globalAutoStartInProgress.set(projectId, true);
       setIsAutoStarting(true);
 
       try {
-        await startSandbox.mutateAsync(projectId);
+        await startSandboxRef.current.mutateAsync(projectId);
       } catch (error) {
         console.error('[useSandboxStatusWithAutoStart] Auto-start failed:', error);
         // Reset so user can try again
-        autoStartAttemptedRef.current = false;
+        globalAutoStartAttempted.set(projectId, false);
+        globalAutoStartInProgress.set(projectId, false);
+        setIsAutoStarting(false);
       }
     }
-  }, [projectId, autoStartEnabled, sandboxState, startSandbox]);
+  }, [projectId, autoStartEnabled, sandboxState]);
 
   // Trigger auto-start when status becomes OFFLINE
   useEffect(() => {
     if (sandboxState?.status === 'OFFLINE') {
       attemptAutoStart();
     }
-    // Clear isAutoStarting when status changes away from OFFLINE
-    if (sandboxState?.status && sandboxState.status !== 'OFFLINE') {
+    // Clear isAutoStarting when status changes away from OFFLINE (sandbox is now running)
+    if (projectId && sandboxState?.status && sandboxState.status !== 'OFFLINE') {
+      globalAutoStartInProgress.set(projectId, false);
       setIsAutoStarting(false);
     }
-  }, [sandboxState?.status, attemptAutoStart]);
+  }, [sandboxState?.status, attemptAutoStart, projectId]);
 
   // Compute effective status - show STARTING if we're auto-starting
   const effectiveStatus: SandboxStatus | undefined =
@@ -283,8 +312,11 @@ export function useSandboxStatusWithAutoStart(
     autoStartEnabled,
     // Reset auto-start attempt (e.g., for manual retry)
     resetAutoStart: useCallback(() => {
-      autoStartAttemptedRef.current = false;
+      if (projectId) {
+        globalAutoStartAttempted.set(projectId, false);
+        globalAutoStartInProgress.set(projectId, false);
+      }
       setIsAutoStarting(false);
-    }, []),
+    }, [projectId]),
   };
 }

@@ -367,9 +367,8 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: Optional[str] = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    # TEST SNAPSHOT - change back to kortix/suna:0.1.3.28 for production
-    SANDBOX_IMAGE_NAME = "suna-sandbox-0.1.1-test"
-    SANDBOX_SNAPSHOT_NAME = "suna-sandbox-0.1.1-test"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.29"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.29"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
     
     # Debug configuration
