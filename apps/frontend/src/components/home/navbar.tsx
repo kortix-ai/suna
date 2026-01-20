@@ -81,7 +81,11 @@ const drawerMenuVariants = {
   },
 };
 
-export function Navbar() {
+interface NavbarProps {
+  isAbsolute?: boolean;
+}
+
+export function Navbar({ isAbsolute = false }: NavbarProps) {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
@@ -141,7 +145,10 @@ export function Navbar() {
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
-    <header className="sticky top-0 z-50 flex justify-center px-6 md:px-0 pt-4">
+    <header className={cn(
+      "flex justify-center px-6 md:px-0 pt-4",
+      isAbsolute ? "" : "sticky top-0 z-50"
+    )}>
       <div className="w-full max-w-4xl">
         <div className="mx-auto rounded-2xl md:px-6 bg-transparent">
           <div className="relative flex h-[56px] items-center py-2 md:p-4">

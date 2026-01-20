@@ -130,8 +130,8 @@ export function HeroSection() {
             </div>
           </div>
 
-          {/* Chat Input - fixed at bottom with safe area for mobile */}
-          <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 pb-[max(1rem,env(safe-area-inset-bottom))] animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
+          {/* Chat Input - fixed at bottom */}
+          <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
             <div className="w-full max-w-3xl mx-auto">
               <ChatInput
                 ref={chatInputRef}
