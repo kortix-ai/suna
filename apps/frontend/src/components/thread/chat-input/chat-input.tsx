@@ -736,7 +736,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       isLoggedIn = true,
       enableAdvancedConfig = false,
       onConfigureAgent,
-      hideAgentSelection = false,
+      hideAgentSelection = true,
       defaultShowSnackbar = false,
       showToLowCreditUsers = true,
       showScrollToBottomIndicator = false,
