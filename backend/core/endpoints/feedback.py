@@ -15,7 +15,7 @@ router = APIRouter(tags=["feedback"])
 
 class FeedbackRequest(BaseModel):
     """Request model for submitting feedback."""
-    rating: float
+    rating: int
     feedback_text: Optional[str] = None
     help_improve: bool = True
     thread_id: Optional[str] = None  # Optional - feedback can be standalone
@@ -47,11 +47,9 @@ async def submit_feedback(
     client = await db.client
     
     try:
-        # Validate rating (0.5 to 5.0 in 0.5 increments)
-        if feedback_data.rating < 0.5 or feedback_data.rating > 5.0:
-            raise HTTPException(status_code=400, detail="Rating must be between 0.5 and 5.0")
-        if (feedback_data.rating * 2) % 1 != 0:
-            raise HTTPException(status_code=400, detail="Rating must be in 0.5 increments")
+        # Validate rating (1 to 5, whole numbers only)
+        if feedback_data.rating < 1 or feedback_data.rating > 5:
+            raise HTTPException(status_code=400, detail="Rating must be between 1 and 5")
         
         # If thread_id and message_id are provided, verify they exist and user has access
         if feedback_data.thread_id:
@@ -73,7 +71,7 @@ async def submit_feedback(
         
         feedback_payload = {
             "account_id": user_id,
-            "rating": float(feedback_data.rating),
+            "rating": int(feedback_data.rating),
             "feedback_text": feedback_data.feedback_text,
             "help_improve": feedback_data.help_improve,
             "updated_at": datetime.now(timezone.utc).isoformat()

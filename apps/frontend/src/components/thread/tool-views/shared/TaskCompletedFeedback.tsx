@@ -44,13 +44,14 @@ export function TaskCompletedFeedback({
   messageId
 }: TaskCompletedFeedbackProps) {
   const t = useTranslations();
-  const [rating, setRating] = useState<number | null>(null); // Can be 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5
+  const [rating, setRating] = useState<number | null>(null);
   const [feedback, setFeedback] = useState('');
   const [helpImprove, setHelpImprove] = useState(true);
   const [showRatingModal, setShowRatingModal] = useState(false);
   const [submittedFeedback, setSubmittedFeedback] = useState<MessageFeedback | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLoadingFeedback, setIsLoadingFeedback] = useState(false);
+  const [hoveredStar, setHoveredStar] = useState<number | null>(null);
 
   // Fetch existing feedback on mount
   useEffect(() => {
@@ -131,52 +132,33 @@ export function TaskCompletedFeedback({
             {!submittedFeedback && (
               <span className="text-sm text-muted-foreground">{t('thread.rateThisResult')}</span>
             )}
-          <div className="flex items-center gap-0.5">
-            {[1, 2, 3, 4, 5].map((value) => {
-              const fullStarValue = value;
-              const halfStarValue = value - 0.5;
-              const currentRating = submittedFeedback?.rating ?? rating;
-              const isFullStar = currentRating !== null && currentRating >= fullStarValue;
-              const isHalfStar = currentRating !== null && currentRating >= halfStarValue && currentRating < fullStarValue;
-              
-              return (
-                <div key={value} className="relative flex items-center">
-                  {/* Base star for visual display */}
-                  <div className="relative">
+            <div className="flex items-center gap-0.5">
+              {[1, 2, 3, 4, 5].map((value) => {
+                const currentRating = submittedFeedback?.rating ?? rating;
+                const isFilled = currentRating !== null && currentRating >= value;
+                
+                return (
+                  <button
+                    key={value}
+                    onClick={() => !submittedFeedback && handleStarClick(value)}
+                    disabled={!!submittedFeedback}
+                    className={cn(
+                      "transition-transform",
+                      !submittedFeedback && "hover:scale-110 cursor-pointer"
+                    )}
+                  >
                     <Star
                       className={cn(
                         "h-4 w-4 transition-colors",
-                        isFullStar
+                        isFilled
                           ? "text-yellow-500 fill-current"
-                          : isHalfStar
-                          ? "text-yellow-500"
                           : "text-muted-foreground/30"
                       )}
                     />
-                    {/* Visual half star overlay */}
-                    {isHalfStar && (
-                      <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ width: '50%' }}>
-                        <Star className="h-4 w-4 text-yellow-500 fill-current" />
-                      </div>
-                    )}
-                  </div>
-                  {/* Clickable overlay for half-star detection */}
-                  {!submittedFeedback && (
-                    <button
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const isLeftHalf = clickX < rect.width / 2;
-                        handleStarClick(isLeftHalf ? halfStarValue : fullStarValue);
-                      }}
-                      className="absolute inset-0 z-10 hover:scale-110 transition-transform"
-                      style={{ width: '100%', height: '100%' }}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
@@ -204,46 +186,28 @@ export function TaskCompletedFeedback({
 
           <div className="space-y-4 py-4">
             {/* Star Rating */}
-            <div className="flex items-center justify-center gap-1">
+            <div className="flex items-center justify-center gap-2">
               {[1, 2, 3, 4, 5].map((value) => {
-                const fullStarValue = value;
-                const halfStarValue = value - 0.5;
-                const isFullStar = rating !== null && rating >= fullStarValue;
-                const isHalfStar = rating !== null && rating >= halfStarValue && rating < fullStarValue;
+                const isFilled = rating !== null && rating >= value;
+                const isHovered = hoveredStar !== null && hoveredStar >= value;
                 
                 return (
-                  <div key={value} className="relative flex items-center">
-                    {/* Base star for visual display */}
-                    <div className="relative">
-                      <Star
-                        className={cn(
-                          "h-8 w-8 transition-colors",
-                          isFullStar
-                            ? "text-yellow-500 fill-current"
-                            : isHalfStar
-                            ? "text-yellow-500"
-                            : "text-muted-foreground/30"
-                        )}
-                      />
-                      {/* Visual half star overlay */}
-                      {isHalfStar && (
-                        <div className="absolute inset-0 pointer-events-none overflow-hidden" style={{ width: '50%' }}>
-                          <Star className="h-8 w-8 text-yellow-500 fill-current" />
-                        </div>
+                  <button
+                    key={value}
+                    onClick={() => setRating(value)}
+                    onMouseEnter={() => setHoveredStar(value)}
+                    onMouseLeave={() => setHoveredStar(null)}
+                    className="hover:scale-110 transition-transform"
+                  >
+                    <Star
+                      className={cn(
+                        "h-8 w-8 transition-colors",
+                        (isFilled || isHovered)
+                          ? "text-yellow-500 fill-current"
+                          : "text-muted-foreground/30"
                       )}
-                    </div>
-                    {/* Clickable overlay for half-star detection */}
-                    <button
-                      onClick={(e) => {
-                        const rect = e.currentTarget.getBoundingClientRect();
-                        const clickX = e.clientX - rect.left;
-                        const isLeftHalf = clickX < rect.width / 2;
-                        setRating(isLeftHalf ? halfStarValue : fullStarValue);
-                      }}
-                      className="absolute inset-0 z-10 hover:scale-110 transition-transform"
-                      style={{ width: '100%', height: '100%' }}
                     />
-                  </div>
+                  </button>
                 );
               })}
             </div>
