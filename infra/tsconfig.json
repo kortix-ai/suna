@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "outDir": "./dist",
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@components/*": ["components/*"],
+      "@environments/*": ["environments/*"]
+    }
+  },
+  "include": [
+    "components/**/*.ts",
+    "environments/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".pulumi",
+    "cluster",
+    "staging"
+  ]
+}

@@ -242,7 +242,4 @@ apps/mobile/app-example
 # Docker-specific env files
 *.env.docker
 
-# Infra (separate repository)
-infra/
-
 dump.rdb

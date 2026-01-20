@@ -1,0 +1,12 @@
+name: kortix-infra-staging
+description: Kortix STAGING environment - Lightsail + Cloudflare Tunnel
+runtime:
+  name: nodejs
+  options:
+    packagemanager: bun
+config:
+  aws:region: us-west-2
+  pulumi:tags:
+    value:
+      pulumi:template: typescript
+      environment: staging
