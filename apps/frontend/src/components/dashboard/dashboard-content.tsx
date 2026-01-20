@@ -397,6 +397,7 @@ export function DashboardContent() {
                     onModeDeselect={() => setSelectedMode(null)}
                     animatePlaceholder={true}
                     hideAttachments={false}
+                    hideAgentSelection={false}
                     selectedCharts={selectedCharts}
                     selectedOutputFormat={selectedOutputFormat}
                     selectedTemplate={selectedTemplate}
