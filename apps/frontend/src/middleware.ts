@@ -40,6 +40,7 @@ const PUBLIC_ROUTES = [
   '/app', // App download page should be public,
   '/careers',
   '/pricing', // Pricing page should be public
+  '/countryerror', // Country restriction error page should be public
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
 
