@@ -149,21 +149,21 @@ interface ActionFilesSwitcherProps {
 function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionFilesSwitcherProps) {
   const isAction = currentView === 'tools';
   const isFiles = currentView === 'files';
-  
+
   // Size variants
-  const config = size === 'sm' 
+  const config = size === 'sm'
     ? { height: 32, padding: 3, btnWidth: 72, iconSize: 12, fontSize: 11 }
     : { height: 36, padding: 3, btnWidth: 80, iconSize: 14, fontSize: 12 };
-  
+
   const totalWidth = config.btnWidth * 2 + config.padding * 2;
 
   return (
-    <div 
+    <div
       className="relative flex items-center bg-zinc-100 dark:bg-zinc-800/90 rounded-full"
-      style={{ 
-        height: config.height, 
+      style={{
+        height: config.height,
         width: totalWidth,
-        padding: config.padding 
+        padding: config.padding
       }}
     >
       {/* Sliding indicator */}
@@ -174,7 +174,7 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
         animate={{ x: isAction ? 0 : config.btnWidth }}
         transition={{ type: "spring", stiffness: 500, damping: 35 }}
       />
-      
+
       {/* Actions button */}
       <button
         onClick={() => onViewChange('tools')}
@@ -187,7 +187,7 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
         <Activity style={{ width: config.iconSize, height: config.iconSize }} strokeWidth={2.5} />
         <span>Actions</span>
       </button>
-      
+
       {/* Files button */}
       <button
         onClick={() => onViewChange('files')}
@@ -260,9 +260,9 @@ export const PanelHeader = memo(function PanelHeader({
           <DrawerTitle className="sr-only">Kortix Computer</DrawerTitle>
         </div>
         <div className="flex items-center gap-2">
-          <ActionFilesSwitcher 
-            currentView={currentView} 
-            onViewChange={onViewChange} 
+          <ActionFilesSwitcher
+            currentView={currentView}
+            onViewChange={onViewChange}
             size="sm"
           />
           <Button
@@ -282,18 +282,18 @@ export const PanelHeader = memo(function PanelHeader({
   return (
     <div className={cn(
       "flex-shrink-0 grid grid-cols-3 items-center",
-      isMaximized 
-        ? "h-9 px-3" 
+      isMaximized
+        ? "h-9 px-3"
         : "h-14 px-3.5 pt-1 border-b border-border"
     )}>
       <div className="flex items-center justify-start">
-        <ToolbarButtons 
+        <ToolbarButtons
           onClose={onClose}
           isMaximized={isMaximized}
         />
       </div>
-      <div 
-        onClick={() => onMaximize?.()} 
+      <div
+        onClick={() => onMaximize?.()}
         className="flex items-center justify-center cursor-pointer select-none hover:opacity-80 transition-opacity"
       >
         <Image
@@ -313,10 +313,10 @@ export const PanelHeader = memo(function PanelHeader({
           priority
         />
       </div>
-      
+
       <div className="flex items-center justify-end gap-2">
         {/* Show sandbox status indicator when not maximized */}
-        {!isMaximized && <SandboxStatusIndicator status={sandboxStatus} />}
+        {/* {!isMaximized && <SandboxStatusIndicator status={sandboxStatus} />} */}
         <ActionFilesSwitcher
           currentView={currentView}
           onViewChange={onViewChange}
