@@ -1,0 +1,92 @@
+name: Promote Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      promotion:
+        description: 'Promotion path'
+        required: true
+        type: choice
+        options:
+          - 'main → staging'
+          - 'staging → PRODUCTION'
+      confirm:
+        description: 'Type "promote" to confirm'
+        required: true
+  schedule:
+    # Every Monday at 23:59 UTC - automatic staging → PRODUCTION
+    # Cron format: minute hour day-of-month month day-of-week
+    # 1 = Monday (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+    - cron: '59 23 * * 1'
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    # For manual: require confirmation. For scheduled: always run (staging → PRODUCTION)
+    if: github.event_name == 'schedule' || github.event.inputs.confirm == 'promote'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Determine source and target branches
+        id: branches
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            # Scheduled run: staging → PRODUCTION
+            echo "source=staging" >> $GITHUB_OUTPUT
+            echo "target=PRODUCTION" >> $GITHUB_OUTPUT
+            echo "🕐 Scheduled promotion: staging → PRODUCTION"
+          else
+            # Manual run: parse the promotion input
+            PROMOTION="${{ github.event.inputs.promotion }}"
+            if [ "$PROMOTION" == "main → staging" ]; then
+              echo "source=main" >> $GITHUB_OUTPUT
+              echo "target=staging" >> $GITHUB_OUTPUT
+              echo "👤 Manual promotion: main → staging"
+            elif [ "$PROMOTION" == "staging → PRODUCTION" ]; then
+              echo "source=staging" >> $GITHUB_OUTPUT
+              echo "target=PRODUCTION" >> $GITHUB_OUTPUT
+              echo "👤 Manual promotion: staging → PRODUCTION"
+            fi
+          fi
+
+      - name: Promote ${{ steps.branches.outputs.source }} → ${{ steps.branches.outputs.target }}
+        run: |
+          SOURCE="${{ steps.branches.outputs.source }}"
+          TARGET="${{ steps.branches.outputs.target }}"
+          
+          echo "📋 Promoting $SOURCE → $TARGET"
+          
+          git fetch origin
+          git checkout $TARGET
+          git reset --hard origin/$SOURCE
+          git push origin $TARGET --force
+          
+          echo "✅ Successfully promoted $SOURCE → $TARGET"
+
+      - name: Trigger Docker Build (for PRODUCTION)
+        if: steps.branches.outputs.target == 'PRODUCTION'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: production-updated
+          client-payload: '{"ref": "PRODUCTION"}'
+
+      - name: Summary
+        run: |
+          echo "## Branch Promotion Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source**: \`${{ steps.branches.outputs.source }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: \`${{ steps.branches.outputs.target }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name == 'schedule' && 'Scheduled (Monday 23:59 UTC)' || 'Manual' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
