@@ -6,6 +6,8 @@ on:
       - main        # → DEV environment
       - staging     # → STAGING environment (pre-prod)
       - PRODUCTION  # → PRODUCTION environment
+  repository_dispatch:
+    types: [production-updated]  # Triggered by promote-branch workflow
 
 permissions:
   contents: read
@@ -29,27 +31,39 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # Use PRODUCTION branch for repository_dispatch events
+          ref: ${{ github.event_name == 'repository_dispatch' && 'PRODUCTION' || github.ref }}
 
       - name: Set environment variables
         id: set-env
         run: |
-          BRANCH="${GITHUB_REF#refs/heads/}"
-          echo "Branch: $BRANCH"
+          # Handle repository_dispatch events (triggered by promote-branch workflow)
+          if [ "${{ github.event_name }}" == "repository_dispatch" ]; then
+            echo "Triggered by repository_dispatch: ${{ github.event.action }}"
+            echo "environment=production" >> $GITHUB_OUTPUT
+            echo "image_tag=prod" >> $GITHUB_OUTPUT
+            echo "ref=PRODUCTION" >> $GITHUB_OUTPUT
+          else
+            BRANCH="${GITHUB_REF#refs/heads/}"
+            echo "Branch: $BRANCH"
+            echo "ref=$BRANCH" >> $GITHUB_OUTPUT
 
-          case "$BRANCH" in
-            main)
-              echo "environment=dev" >> $GITHUB_OUTPUT
-              echo "image_tag=dev" >> $GITHUB_OUTPUT
-              ;;
-            staging)
-              echo "environment=staging" >> $GITHUB_OUTPUT
-              echo "image_tag=staging" >> $GITHUB_OUTPUT
-              ;;
-            PRODUCTION)
-              echo "environment=production" >> $GITHUB_OUTPUT
-              echo "image_tag=prod" >> $GITHUB_OUTPUT
-              ;;
-          esac
+            case "$BRANCH" in
+              main)
+                echo "environment=dev" >> $GITHUB_OUTPUT
+                echo "image_tag=dev" >> $GITHUB_OUTPUT
+                ;;
+              staging)
+                echo "environment=staging" >> $GITHUB_OUTPUT
+                echo "image_tag=staging" >> $GITHUB_OUTPUT
+                ;;
+              PRODUCTION)
+                echo "environment=production" >> $GITHUB_OUTPUT
+                echo "image_tag=prod" >> $GITHUB_OUTPUT
+                ;;
+            esac
+          fi
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
