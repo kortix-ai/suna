@@ -349,6 +349,7 @@
     "scheduledTriggers": "Geplante Trigger",
     "appTriggers": "App-Trigger",
     "limitsExceeded": "Du hast dein Chat-Limit erreicht. Upgraden deinen Plan, um mehr Chats zu erstellen.",
+    "modeSubtitle": "Wähle einen Modus, um mit Vorlagen und Beispielen zu starten",
     "agentInitiatedSuccessfully": "Worker erfolgreich gestartet",
     "aiAssistantReady": "Dein KI-Assistent ist bereit zu helfen",
     "greetings": {
@@ -936,9 +937,12 @@
   },
   "suna": {
     "samplePrompts": "Beispiel-Prompts",
+    "examplePrompts": "Beispiel-Prompts",
     "chooseStyle": "Wähle einen Stil",
     "chooseTemplate": "Wähle eine Vorlage",
     "chooseOutputFormat": "Wähle Ausgabeformat",
+    "chooseCanvasAction": "Wähle Canvas-Aktion",
+    "chooseVideoStyle": "Wähle Video-Stil",
     "preferredCharts": "Bevorzugte Diagramme",
     "whatWouldYouLike": "Was möchtest du erledigen?",
     "describeTask": "Beschreibe die Aufgabe, die dein Worker erledigen soll...",
@@ -967,6 +971,14 @@
       "anime": "Anime",
       "impressionist": "Impressionistisch",
       "surreal": "Surreal"
+    },
+    "videoStyles": {
+      "cinematic": "Filmisch",
+      "product": "Produkt",
+      "animation": "Animation",
+      "nature": "Natur",
+      "abstract": "Abstrakt",
+      "adventure": "Abenteuer"
     },
     "templates": {
       "minimalist": { "name": "Minimalistisch", "description": "Sauberes und einfaches Design" },
@@ -1012,6 +1024,24 @@
       "wordcloud": "Wortwolke",
       "stacked": "Gestapelte Balken",
       "area": "Fläche"
+    },
+    "canvasActions": {
+      "create": {
+        "name": "Neu erstellen",
+        "description": "Von Grund auf erstellen"
+      },
+      "edit": {
+        "name": "Bild bearbeiten",
+        "description": "Vorhandene Bilder ändern"
+      },
+      "upscale": {
+        "name": "Hochskalieren",
+        "description": "Verbessern und optimieren"
+      },
+      "remove-bg": {
+        "name": "Hintergrund entfernen",
+        "description": "Hintergrund entfernen"
+      }
     },
     "prompts": {
       "image": {

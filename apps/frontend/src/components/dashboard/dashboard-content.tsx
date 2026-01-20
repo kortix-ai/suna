@@ -16,7 +16,10 @@ import { trackPurchase, getStoredCheckoutData, clearCheckoutData } from '@/lib/a
 import { getCheckoutSession } from '@/lib/api/billing';
 import { useTranslations } from 'next-intl';
 import { NotificationDropdown } from '../notifications/notification-dropdown';
-import { AgentStartInput } from '@/components/shared/agent-start-input';
+import { useAgentStartInput } from '@/hooks/dashboard';
+import { ChatInput } from '@/components/thread/chat-input/chat-input';
+import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
+import { Menu } from 'lucide-react';
 
 // Lazy load heavy components that aren't immediately visible
 const UpgradeCelebration = lazy(() => 
@@ -33,6 +36,9 @@ const CreditsDisplay = lazy(() =>
 );
 const ModeIndicator = lazy(() => 
   import('@/components/thread/mode-indicator').then(mod => ({ default: mod.ModeIndicator }))
+);
+const SunaModesPanel = lazy(() => 
+  import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
 
 export function DashboardContent() {
@@ -54,6 +60,8 @@ export function DashboardContent() {
   
   const { data: accountState, isLoading: isAccountStateLoading } = useAccountState({ enabled: !!user });
   const planName = accountStateSelectors.planName(accountState);
+  const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
+  const pricingModalStore = usePricingModalStore();
 
   // Handle tab changes from URL
   React.useEffect(() => {
@@ -244,16 +252,74 @@ export function DashboardContent() {
     setShowConfigDialog(true);
   };
 
+  // Use the agent start input hook for state management
+  const {
+    inputValue,
+    setInputValue,
+    isSubmitting,
+    isRedirecting,
+    chatInputRef,
+    selectedAgentId,
+    setSelectedAgent,
+    isSunaAgent,
+    selectedMode,
+    selectedCharts,
+    selectedOutputFormat,
+    selectedTemplate,
+    setSelectedMode,
+    setSelectedCharts,
+    setSelectedOutputFormat,
+    setSelectedTemplate,
+    handleSubmit,
+  } = useAgentStartInput({
+    redirectOnError: '/dashboard',
+    requireAuth: true,
+    enableAutoSubmit: true,
+    logPrefix: '[Dashboard]',
+  });
+
+  const isFreeTier = accountState?.subscription && (
+    accountState.subscription.tier_key === 'free' ||
+    accountState.subscription.tier_key === 'none' ||
+    !accountState.subscription.tier_key
+  );
+
   return (
     <>
       {/* PlanSelectionModal is rendered globally in layout.tsx - no duplicate needed here */}
 
       <div className="flex flex-col h-screen w-full overflow-hidden relative">
-        {/* Left side - Mode Selector */}
+        {/* Brandmark Background - responsive sizing for all devices */}
+        <div 
+          className="absolute inset-0 pointer-events-none overflow-hidden"
+          aria-hidden="true"
+        >
+          <img
+            src="/kortix-brandmark-bg.svg"
+            alt=""
+            className="absolute left-1/2 -translate-x-1/2 top-[-10%] sm:top-1/2 sm:-translate-y-1/2 w-[140vw] min-w-[700px] h-auto sm:w-[160vw] sm:min-w-[1000px] md:min-w-[1200px] lg:w-[162vw] lg:min-w-[1620px] object-contain select-none invert dark:invert-0"
+            draggable={false}
+          />
+        </div>
+
+        {/* Left side - Menu (mobile) + Mode Selector */}
         <div className={cn(
-          "absolute flex items-center gap-2 left-4 transition-[top] duration-200",
+          "absolute flex items-center gap-1 left-6 transition-[top] duration-200 z-10",
           isWelcomeBannerVisible ? "top-14" : "top-4"
         )}>
+          {/* Mobile menu button - just icon, no background */}
+          {isMobile && (
+            <button
+              onClick={() => {
+                setSidebarOpenState(true);
+                setOpenMobile(true);
+              }}
+              className="p-2 -ml-2 text-muted-foreground hover:text-foreground transition-colors"
+              aria-label="Open menu"
+            >
+              <Menu className="h-5 w-5" />
+            </button>
+          )}
           <Suspense fallback={<div className="h-9 w-32 bg-muted/30 rounded-lg animate-pulse" />}>
             <ModeIndicator />
           </Suspense>
@@ -261,7 +327,7 @@ export function DashboardContent() {
 
         {/* Right side - Notifications & Credits */}
         <div className={cn(
-          "absolute flex items-center gap-2 right-4 transition-[top] duration-200",
+          "absolute flex items-center gap-2 right-6 transition-[top] duration-200 z-10",
           isWelcomeBannerVisible ? "top-14" : "top-4"
         )}>
           <NotificationDropdown />
@@ -270,50 +336,94 @@ export function DashboardContent() {
           </Suspense>
         </div>
 
-        <div className="flex-1 overflow-y-auto">
-          <div className="min-h-full flex flex-col">
-            <div className="flex-1 flex items-start justify-center pt-[25vh] sm:pt-[30vh]">
-              {viewMode === 'super-worker' && (
-                <div className="w-full">
-                  <div className="px-4 py-6 sm:py-8">
-                    <div className="w-full max-w-3xl mx-auto flex flex-col items-center space-y-5 sm:space-y-6 md:space-y-8">
-                      <AgentStartInput
-                        variant="dashboard"
-                        requireAuth={true}
-                        redirectOnError="/dashboard"
-                        showGreeting={true}
-                        greetingClassName="text-2xl sm:text-2xl md:text-3xl font-normal text-foreground/90"
-                        enableAdvancedConfig={false}
-                        onConfigureAgent={handleConfigureAgent}
-                        animatePlaceholder={true}
-                        hideAttachments={false}
-                        showAlertBanners={true}
-                        showModesPanel={true}
-                        isMobile={isMobile}
-                        inputWrapperClassName="w-full flex flex-col items-center animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both"
-                        modesPanelWrapperClassName="px-4 pb-6 sm:pb-8 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both max-w-3xl mx-auto"
-                      />
-                    </div>
+        {/* Main content area - greeting and modes centered */}
+        <div className="flex-1 flex flex-col relative z-[1]">
+          {viewMode === 'super-worker' && (
+            <>
+              {/* Centered content: Greeting + Subtitle + Modes - absolutely positioned for true center */}
+              <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+                <div className="w-full max-w-3xl mx-auto flex flex-col items-center text-center pointer-events-auto">
+                  {/* Greeting */}
+                  <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
+                    <DynamicGreeting className="text-2xl sm:text-3xl md:text-4xl font-medium text-foreground tracking-tight" />
                   </div>
-                </div>
-              )}
-              {(viewMode === 'worker-templates') && (
-                <div className="w-full animate-in fade-in-0 duration-300">
-                  {(isStagingMode() || isLocalMode()) && (
-                    <div className="w-full px-4 pb-8">
-                      <div className="max-w-5xl mx-auto">
-                        <Suspense fallback={<div className="h-64 bg-muted/10 rounded-lg animate-pulse" />}>
-                          <CustomAgentsSection
-                            onAgentSelect={() => {}}
-                          />
-                        </Suspense>
-                      </div>
+                  
+                  {/* Subtitle */}
+                  <p className="mt-3 text-sm sm:text-base text-muted-foreground/70 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-75 fill-mode-both">
+                    {t('modeSubtitle')}
+                  </p>
+                  
+                  {/* Modes Panel */}
+                  {isSunaAgent && (
+                    <div className="mt-8 w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both">
+                      <Suspense fallback={<div className="h-12 bg-muted/10 rounded-lg animate-pulse" />}>
+                        <SunaModesPanel
+                          selectedMode={selectedMode}
+                          onModeSelect={setSelectedMode}
+                          onSelectPrompt={setInputValue}
+                          isMobile={isMobile}
+                          selectedCharts={selectedCharts}
+                          onChartsChange={setSelectedCharts}
+                          selectedOutputFormat={selectedOutputFormat}
+                          onOutputFormatChange={setSelectedOutputFormat}
+                          selectedTemplate={selectedTemplate}
+                          onTemplateChange={setSelectedTemplate}
+                          isFreeTier={isFreeTier || false}
+                          onUpgradeClick={() => pricingModalStore.openPricingModal()}
+                        />
+                      </Suspense>
                     </div>
                   )}
                 </div>
-              )}
+              </div>
+
+              {/* Chat Input - fixed at bottom */}
+              <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
+                <div className="w-full max-w-3xl mx-auto">
+                  <ChatInput
+                    ref={chatInputRef}
+                    onSubmit={handleSubmit}
+                    placeholder={t('describeWhatYouNeed')}
+                    loading={isSubmitting || isRedirecting}
+                    disabled={isSubmitting}
+                    value={inputValue}
+                    onChange={setInputValue}
+                    selectedAgentId={selectedAgentId}
+                    onAgentSelect={setSelectedAgent}
+                    autoFocus={false}
+                    enableAdvancedConfig={false}
+                    onConfigureAgent={handleConfigureAgent}
+                    selectedMode={selectedMode}
+                    onModeDeselect={() => setSelectedMode(null)}
+                    animatePlaceholder={true}
+                    hideAttachments={false}
+                    hideAgentSelection={false}
+                    selectedCharts={selectedCharts}
+                    selectedOutputFormat={selectedOutputFormat}
+                    selectedTemplate={selectedTemplate}
+                  />
+                </div>
+              </div>
+            </>
+          )}
+          
+          {(viewMode === 'worker-templates') && (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="w-full animate-in fade-in-0 duration-300">
+                {(isStagingMode() || isLocalMode()) && (
+                  <div className="w-full px-4 pb-8">
+                    <div className="max-w-5xl mx-auto">
+                      <Suspense fallback={<div className="h-64 bg-muted/10 rounded-lg animate-pulse" />}>
+                        <CustomAgentsSection
+                          onAgentSelect={() => {}}
+                        />
+                      </Suspense>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 

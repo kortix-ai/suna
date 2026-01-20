@@ -1,0 +1,3 @@
+config:
+  kortix-infra-dev:tunnelSecret:
+    secure: AAABAOhaXwgvdp07VhJMic78DvEVkm7eQafpqQIE7K3aXBsVGT8550XTwS00kyjD9T7Ju1rcpbtDf5Rl4ASWjoeaVL4y7RUxdghn6r1RsaY=

@@ -8,9 +8,10 @@ on:
         required: true
         type: choice
         options:
+          - dev
           - staging
           - production
-        default: 'staging'
+        default: 'dev'
       mode:
         description: 'Test mode'
         required: true
@@ -37,21 +38,42 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       
+      - name: Determine API URL
+        id: env
+        run: |
+          case "${{ inputs.environment }}" in
+            production)
+              echo "api_url=https://api.kortix.com" >> $GITHUB_OUTPUT
+              ;;
+            staging)
+              echo "api_url=https://staging-api.kortix.com" >> $GITHUB_OUTPUT
+              ;;
+            dev)
+              echo "api_url=https://dev-api.kortix.com" >> $GITHUB_OUTPUT
+              ;;
+          esac
+      
       - name: Run E2E Benchmark
         env:
-          API_URL: ${{ inputs.environment == 'production' && 'https://api.kortix.com' || 'https://staging-api.suna.so' }}
-          ADMIN_API_KEY: ${{ inputs.environment == 'production' && secrets.PRODUCTION_KORTIX_ADMIN_API_KEY || secrets.STAGING_KORTIX_ADMIN_API_KEY }}
+          API_URL: ${{ steps.env.outputs.api_url }}
+          ADMIN_API_KEY: ${{ inputs.environment == 'production' && secrets.PRODUCTION_KORTIX_ADMIN_API_KEY || (inputs.environment == 'staging' && secrets.STAGING_KORTIX_ADMIN_API_KEY || secrets.DEV_KORTIX_ADMIN_API_KEY) }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -e
           
           # Validate admin API key is configured
           if [ -z "$ADMIN_API_KEY" ]; then
-            if [ "$ENVIRONMENT" = "production" ]; then
-              echo "❌ Error: PRODUCTION_KORTIX_ADMIN_API_KEY is not set"
-            else
-              echo "❌ Error: STAGING_KORTIX_ADMIN_API_KEY is not set"
-            fi
+            case "$ENVIRONMENT" in
+              production)
+                echo "❌ Error: PRODUCTION_KORTIX_ADMIN_API_KEY is not set"
+                ;;
+              staging)
+                echo "❌ Error: STAGING_KORTIX_ADMIN_API_KEY is not set"
+                ;;
+              *)
+                echo "❌ Error: DEV_KORTIX_ADMIN_API_KEY is not set"
+                ;;
+            esac
             echo "Please add it at: https://github.com/${{ github.repository }}/settings/secrets/actions"
             exit 1
           fi
@@ -133,7 +155,7 @@ jobs:
             echo ""
             echo "🔍 Troubleshooting:"
             echo "  1. Verify API URL is correct: $API_URL"
-            echo "  2. Check that STAGING_KORTIX_ADMIN_API_KEY or PRODUCTION_KORTIX_ADMIN_API_KEY is valid"
+            echo "  2. Check that the admin API key is valid for $ENVIRONMENT"
             echo "  3. Ensure the API server is running and accessible"
             echo "  4. Check API server logs for more details"
             exit 1

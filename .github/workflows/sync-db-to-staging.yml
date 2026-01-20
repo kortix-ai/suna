@@ -1,0 +1,102 @@
+name: Sync PROD DB to Lower Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Target environment to sync to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - dev
+      confirm:
+        description: 'Type "sync" to confirm (OVERWRITES TARGET DB!)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync-database:
+    name: Sync PROD → ${{ github.event.inputs.target_environment }}
+    if: github.event.inputs.confirm == 'sync'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment }}
+
+    steps:
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump PROD database
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "🔄 Dumping PROD database..."
+
+          # Dump with custom format, excluding Supabase-managed schemas
+          pg_dump "$PROD_DATABASE_URL" \
+            --no-owner \
+            --no-acl \
+            --no-comments \
+            --exclude-schema=auth \
+            --exclude-schema=storage \
+            --exclude-schema=realtime \
+            --exclude-schema=supabase_functions \
+            --exclude-schema=supabase_migrations \
+            --exclude-schema=extensions \
+            --exclude-schema=vault \
+            --exclude-schema=pgsodium \
+            --exclude-schema=pgsodium_masks \
+            --exclude-schema=graphql \
+            --exclude-schema=graphql_public \
+            -Fc \
+            -f prod_dump.dump
+
+          echo "✅ PROD dump complete ($(du -h prod_dump.dump | cut -f1))"
+
+      - name: Set target database URL
+        id: target
+        run: |
+          if [ "${{ github.event.inputs.target_environment }}" == "staging" ]; then
+            echo "url=${{ secrets.STAGING_DATABASE_URL }}" >> $GITHUB_OUTPUT
+          else
+            echo "url=${{ secrets.DEV_DATABASE_URL }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Restore to ${{ github.event.inputs.target_environment }}
+        env:
+          TARGET_DATABASE_URL: ${{ steps.target.outputs.url }}
+        run: |
+          echo "🔄 Restoring to ${{ github.event.inputs.target_environment }}..."
+
+          # Restore with clean (drop existing objects first)
+          pg_restore \
+            -d "$TARGET_DATABASE_URL" \
+            --clean \
+            --if-exists \
+            --no-owner \
+            --no-acl \
+            --single-transaction \
+            prod_dump.dump || {
+              echo "⚠️ Some errors during restore (may be expected for missing objects)"
+            }
+
+          echo "✅ Restore complete"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f prod_dump.dump
+          echo "🧹 Cleanup complete"
+
+      - name: Summary
+        run: |
+          echo "## Database Sync Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source**: PROD" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: ${{ github.event.inputs.target_environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY

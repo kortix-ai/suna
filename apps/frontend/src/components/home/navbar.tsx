@@ -81,7 +81,11 @@ const drawerMenuVariants = {
   },
 };
 
-export function Navbar() {
+interface NavbarProps {
+  isAbsolute?: boolean;
+}
+
+export function Navbar({ isAbsolute = false }: NavbarProps) {
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('hero');
@@ -141,21 +145,12 @@ export function Navbar() {
   const handleOverlayClick = () => setIsDrawerOpen(false);
 
   return (
-    <header className="sticky top-0 z-50 flex justify-center px-6 md:px-0 pt-4 pb-8 bg-gradient-to-b from-background via-background/80 to-transparent md:bg-none md:pb-0">
-      <div
-        className={cn(
-          'w-full max-w-4xl transition-all duration-300 ease-out',
-          hasScrolled ? 'md:scale-[0.98]' : 'scale-100'
-        )}
-      >
-        <div
-          className={cn(
-            'mx-auto rounded-2xl transition-all duration-300 ease-out border border-transparent',
-            hasScrolled
-              ? 'md:px-3 md:border-border/60 md:backdrop-blur-xl md:bg-background/80 md:shadow-lg md:shadow-black/[0.03]'
-              : 'md:px-6 bg-transparent',
-          )}
-        >
+    <header className={cn(
+      "flex justify-center px-6 md:px-0 pt-4",
+      isAbsolute ? "" : "sticky top-0 z-50"
+    )}>
+      <div className="w-full max-w-4xl">
+        <div className="mx-auto rounded-2xl md:px-6 bg-transparent">
           <div className="relative flex h-[56px] items-center py-2 md:p-4">
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0">

@@ -676,8 +676,8 @@ function PricingTier({
                 >
                   <span
                     className={cn(
-                      "absolute top-1 left-1 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200",
-                      isYearly && "translate-x-6"
+                      "absolute top-1 left-1 w-4 h-4 rounded-full shadow-md transition-transform duration-200",
+                      isYearly ? "bg-white dark:bg-black translate-x-6" : "bg-white"
                     )}
                   />
                 </button>
@@ -737,8 +737,8 @@ function PricingTier({
               >
                 <span
                   className={cn(
-                    "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow-md transition-transform duration-200",
-                    isYearly && "translate-x-5"
+                    "absolute top-0.5 left-0.5 w-4 h-4 rounded-full shadow-md transition-transform duration-200",
+                    isYearly ? "bg-white dark:bg-black translate-x-5" : "bg-white"
                   )}
                 />
               </button>
@@ -1010,6 +1010,7 @@ interface PricingSectionProps {
   isAlert?: boolean;
   alertTitle?: string;
   alertSubtitle?: string;
+  showBuyCredits?: boolean;
 }
 
 export function PricingSection({
@@ -1022,7 +1023,8 @@ export function PricingSection({
   customTitle,
   isAlert = false,
   alertTitle,
-  alertSubtitle
+  alertSubtitle,
+  showBuyCredits = false
 }: PricingSectionProps) {
   const t = useTranslations('billing');
   const { user } = useAuth();
@@ -1434,8 +1436,9 @@ export function PricingSection({
           )}
         </div>
 
-        {/* Get Additional Credits Button - Only visible if tier allows credit purchases */}
-        {isAuthenticated &&
+        {/* Get Additional Credits Button - Only visible on dashboard pricing page when tier allows credit purchases */}
+        {showBuyCredits &&
+          isAuthenticated &&
           currentSubscription?.subscription.can_purchase_credits && (
             <div className="w-full max-w-6xl mt-12 flex flex-col items-center gap-4">
               <Button

@@ -163,6 +163,24 @@ async def get_agent_by_id(agent_id: str, account_id: Optional[str] = None) -> Op
     return serialize_row(dict(result)) if result else None
 
 
+async def get_agent_metadata(agent_id: str) -> Optional[Dict[str, Any]]:
+    sql = "SELECT metadata FROM agents WHERE agent_id = :agent_id"
+    result = await execute_one(sql, {"agent_id": agent_id})
+    if result:
+        metadata = result.get("metadata")
+        return metadata if isinstance(metadata, dict) else {}
+    return None
+
+
+async def get_user_agent_ids(user_id: str) -> List[str]:
+    sql = """
+    SELECT agent_id FROM agents 
+    WHERE account_id = :user_id AND current_version_id IS NOT NULL
+    """
+    rows = await execute(sql, {"user_id": user_id})
+    return [row["agent_id"] for row in rows] if rows else []
+
+
 async def get_agent_count(account_id: str) -> int:
     sql = "SELECT COUNT(*) as count FROM agents WHERE account_id = :account_id"
     result = await execute_one(sql, {"account_id": account_id})
@@ -400,7 +418,7 @@ async def get_running_thread_ids(account_id: str) -> List[str]:
     WHERE t.account_id = :account_id AND ar.status = 'running'
     """
     rows = await execute(sql, {"account_id": account_id})
-    return [row["thread_id"] for row in rows] if rows else []
+    return [str(row["thread_id"]) for row in rows] if rows else []
 
 async def get_default_agent_id(account_id: str) -> Optional[str]:
     sql = """
@@ -410,13 +428,13 @@ async def get_default_agent_id(account_id: str) -> Optional[str]:
     LIMIT 1
     """
     result = await execute_one(sql, {"account_id": account_id})
-    return result["agent_id"] if result else None
+    return str(result["agent_id"]) if result else None
 
 
 async def get_any_agent_id(account_id: str) -> Optional[str]:
     sql = "SELECT agent_id FROM agents WHERE account_id = :account_id LIMIT 1"
     result = await execute_one(sql, {"account_id": account_id})
-    return result["agent_id"] if result else None
+    return str(result["agent_id"]) if result else None
 
 
 async def get_shared_suna_agent(admin_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:

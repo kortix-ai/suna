@@ -104,7 +104,9 @@ class ConversionFunnel(BaseModel):
     visitors: int
     signups: int
     subscriptions: int
-    subscriber_emails: List[str]  # Emails of new paid subscribers for this date
+    # Breakdown by platform (clickable to see emails)
+    web_subscriber_emails: List[str] = []
+    app_subscriber_emails: List[str] = []
     visitor_to_signup_rate: float
     signup_to_subscription_rate: float
     overall_conversion_rate: float
@@ -1281,25 +1283,22 @@ async def get_conversion_funnel(
                 _fetch_revenuecat_revenue(client, range_start_utc, range_end_utc)
             )
 
-            # Collect unique paying customers
-            all_emails: List[str] = []
+            # Collect unique paying customers by platform
+            # Stripe (web): get emails from user_emails dict
+            stripe_emails_dict = stripe_data.get('user_emails', {})
+            web_emails = sorted(set([email for email in stripe_emails_dict.values() if email]))
 
-            # Stripe: get emails from user_emails dict
-            stripe_emails = stripe_data.get('user_emails', {})
-            all_emails.extend([email for email in stripe_emails.values() if email])
+            # RevenueCat (app): emails already fetched via RPC
+            rc_emails_list = rc_data.get('user_emails', [])
+            app_emails = sorted(set([email for email in rc_emails_list if email]))
 
-            # RevenueCat: emails already fetched via RPC
-            rc_emails = rc_data.get('user_emails', [])
-            all_emails.extend([email for email in rc_emails if email])
-
-            # Deduplicate and sort
-            unique_emails = sorted(set(all_emails))
+            # Combined (deduplicated)
+            all_emails = sorted(set(web_emails + app_emails))
 
             return {
-                'count': len(unique_emails),
-                'emails': unique_emails,
-                'web_count': stripe_data.get('payment_count', 0),
-                'app_count': rc_data.get('payment_count', 0),
+                'count': len(all_emails),
+                'web_emails': web_emails,
+                'app_emails': app_emails,
             }
 
         # Execute all queries in parallel
@@ -1311,7 +1310,8 @@ async def get_conversion_funnel(
 
         # Extract count and emails from subs_result
         subscriptions = subs_result['count']
-        subscriber_emails = subs_result['emails']
+        web_subscriber_emails = subs_result['web_emails']
+        app_subscriber_emails = subs_result['app_emails']
 
         # Calculate conversion rates
         visitor_to_signup = (signups / visitors * 100) if visitors > 0 else 0
@@ -1322,7 +1322,8 @@ async def get_conversion_funnel(
             visitors=visitors,
             signups=signups,
             subscriptions=subscriptions,
-            subscriber_emails=subscriber_emails,
+            web_subscriber_emails=web_subscriber_emails,
+            app_subscriber_emails=app_subscriber_emails,
             visitor_to_signup_rate=round(visitor_to_signup, 2),
             signup_to_subscription_rate=round(signup_to_sub, 2),
             overall_conversion_rate=round(overall, 2),
@@ -2353,6 +2354,10 @@ class ProfitabilitySummary(BaseModel):
     unique_active_users: int   # Users who had usage in this period (including free)
     paying_user_emails: List[str] = []  # Emails of paying users (clickable)
 
+    total_active_subscriptions: int = 0
+    stripe_active_subscriptions: int = 0
+    revenuecat_active_subscriptions: int = 0
+
     # Meta
     period_start: str
     period_end: str
@@ -3096,6 +3101,45 @@ async def _fetch_stripe_revenue(start_ts: int, end_ts: int) -> Dict[str, Any]:
     return results
 
 
+async def _fetch_revenuecat_active_subscriptions() -> int:
+    """
+    Fetch active subscription count from RevenueCat API.
+    Returns the number of active subscriptions.
+    """
+    if not config.REVENUECAT_API_KEY or not config.REVENUECAT_PROJECT_ID:
+        logger.warning("RevenueCat API key or project ID not configured, returning 0")
+        return 0
+
+    url = f"https://api.revenuecat.com/v2/projects/{config.REVENUECAT_PROJECT_ID}/metrics/overview"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {config.REVENUECAT_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Find active_subscriptions metric
+            for metric in data.get('metrics', []):
+                if metric.get('id') == 'active_subscriptions':
+                    count = metric.get('value', 0)
+                    logger.info(f"RevenueCat active subscriptions: {count}")
+                    return int(count)
+
+            logger.warning("active_subscriptions metric not found in RevenueCat response")
+            return 0
+
+    except Exception as e:
+        logger.error(f"Failed to fetch RevenueCat active subscriptions: {e}")
+        return 0
+
+
 async def _fetch_revenuecat_revenue(client, range_start: datetime, range_end: datetime) -> Dict[str, Any]:
     """
     Fetch RevenueCat revenue from webhook_events using RPC.
@@ -3380,6 +3424,14 @@ async def get_profitability(
         # Sort by email for consistency
         paying_user_emails.sort()
 
+        active_subs_result, revenuecat_active_subs = await asyncio.gather(
+            client.rpc('get_active_subscription_counts').execute(),
+            _fetch_revenuecat_active_subscriptions()
+        )
+        active_subs_data = active_subs_result.data[0] if active_subs_result.data else {}
+        stripe_active_subs = active_subs_data.get('stripe_paid', 0) or 0
+        total_active_subs = stripe_active_subs + revenuecat_active_subs
+
         return ProfitabilitySummary(
             total_revenue=round(total_revenue, 2),
             total_cost=round(total_cost, 2),
@@ -3401,6 +3453,9 @@ async def get_profitability(
             period_start=range_start.strftime('%Y-%m-%d'),
             period_end=range_end.strftime('%Y-%m-%d'),
             total_payments=total_payments,
+            total_active_subscriptions=total_active_subs,
+            stripe_active_subscriptions=stripe_active_subs,
+            revenuecat_active_subscriptions=revenuecat_active_subs,
         )
 
     except Exception as e:

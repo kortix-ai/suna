@@ -47,9 +47,9 @@ async def _get_tier_info_if_needed(account_id: str, tier_info: Optional[Dict] = 
             'concurrent_runs': limits.get('concurrent_runs', defaults['concurrent_runs']),
             'thread_limit': limits.get('thread_limit', defaults['thread_limit']),
             'project_limit': limits.get('project_limit', defaults['project_limit']),
-            'custom_workers_limit': defaults['custom_workers_limit'],
-            'scheduled_triggers_limit': defaults['scheduled_triggers_limit'],
-            'app_triggers_limit': defaults['app_triggers_limit'],
+            'custom_workers_limit': limits.get('custom_workers_limit', defaults['custom_workers_limit']),
+            'scheduled_triggers_limit': limits.get('scheduled_triggers_limit', defaults['scheduled_triggers_limit']),
+            'app_triggers_limit': limits.get('app_triggers_limit', defaults['app_triggers_limit']),
         }
     except Exception as e:
         logger.warning(f"Could not get tier for {account_id}: {e}, using defaults")

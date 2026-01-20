@@ -36,7 +36,7 @@ import {
   useEngagementSummary,
   useTaskPerformance,
   useProfitability,
-  type AnalyticsSource,
+  useChurnByDate,
 } from '@/hooks/admin/use-admin-analytics';
 import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
@@ -61,7 +61,6 @@ export default function AdminAnalyticsPage() {
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [categoryFilter, setCategoryFilter] = useState<string | null>(null);
   const [tierFilter, setTierFilter] = useState<string | null>(null);
-  const [analyticsSource, setAnalyticsSource] = useState<AnalyticsSource>('vercel');
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [tierViewMode, setTierViewMode] = useState<'revenue' | 'cost' | 'profit'>('revenue');
   const [includeStuckTasks, setIncludeStuckTasks] = useState(false);
@@ -126,10 +125,12 @@ export default function AdminAnalyticsPage() {
   const { data: distribution, isFetching: distributionFetching } = useMessageDistribution(dateFromString, dateToString, isThreadsTab);
   const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateFromString, dateToString, tierFilter, isOverviewOrThreads);
   const { data: tierDistribution } = useTierDistribution(dateFromString, dateToString, isThreadsTab);
-  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateFromString, dateToString, analyticsSource);
+  const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateFromString, dateToString, 'vercel');
   const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateFromString, dateToString);
   const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateFromString, dateToString);
   const { data: profitability, isLoading: profitabilityLoading, isFetching: profitabilityFetching } = useProfitability(dateFromString, dateToString);
+
+  const { data: churnData, isLoading: churnLoading } = useChurnByDate(dateFromString, dateToString);
 
   const isOverviewFetching = engagementFetching || taskFetching || profitabilityFetching;
 
@@ -475,15 +476,6 @@ export default function AdminAnalyticsPage() {
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     Conversion Funnel
                   </h2>
-                  <Select value={analyticsSource} onValueChange={(v) => setAnalyticsSource(v as AnalyticsSource)}>
-                    <SelectTrigger className="w-32 h-8 text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="vercel">Vercel</SelectItem>
-                      <SelectItem value="ga">Google Analytics</SelectItem>
-                    </SelectContent>
-                  </Select>
                 </div>
 
                 <div className="p-5">
@@ -525,36 +517,64 @@ export default function AdminAnalyticsPage() {
                         </div>
                       </div>
 
-                      {/* Paid */}
-                      <Popover>
-                        <PopoverTrigger asChild>
-                          <div className="flex-1 text-center p-4 rounded-r-lg bg-emerald-500/10 cursor-pointer hover:bg-emerald-500/20 transition-colors">
-                            <p className="text-3xl font-bold tracking-tight text-emerald-600">
-                              {conversionFunnel.subscriptions.toLocaleString()}
-                            </p>
-                            <p className="text-sm font-medium mt-1">Paid</p>
-                            <p className="text-xs text-muted-foreground">
-                              {conversionFunnel.visitors > 0
-                                ? ((conversionFunnel.subscriptions / conversionFunnel.visitors) * 100).toFixed(2)
-                                : 0}% of visitors
-                            </p>
-                          </div>
-                        </PopoverTrigger>
-                        <PopoverContent className="w-72 max-h-60 overflow-y-auto">
-                          <h4 className="font-medium text-sm mb-2">New Subscribers</h4>
-                          {conversionFunnel.subscriber_emails?.length > 0 ? (
-                            <ul className="space-y-1">
-                              {conversionFunnel.subscriber_emails.map((email, idx) => (
-                                <li key={idx} className="text-sm">
-                                  <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
-                                </li>
-                              ))}
-                            </ul>
-                          ) : (
-                            <p className="text-sm text-muted-foreground">No new subscribers</p>
-                          )}
-                        </PopoverContent>
-                      </Popover>
+                      {/* Paid - with web/app breakdown */}
+                      <div className="flex-1 text-center p-4 rounded-r-lg bg-emerald-500/10">
+                        <p className="text-3xl font-bold tracking-tight text-emerald-600">
+                          {conversionFunnel.subscriptions.toLocaleString()}
+                        </p>
+                        <p className="text-sm font-medium mt-1">Paid</p>
+                        <p className="text-xs text-muted-foreground">
+                          {conversionFunnel.visitors > 0
+                            ? ((conversionFunnel.subscriptions / conversionFunnel.visitors) * 100).toFixed(2)
+                            : 0}% of visitors
+                        </p>
+                        {/* Web/App breakdown */}
+                        <div className="flex justify-center gap-3 mt-2 text-xs">
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button className="text-blue-600 hover:underline cursor-pointer">
+                                Web: {conversionFunnel.web_subscriber_emails?.length || 0}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 max-h-60 overflow-y-auto">
+                              <h4 className="font-medium text-sm mb-2">Web Subscribers</h4>
+                              {conversionFunnel.web_subscriber_emails?.length > 0 ? (
+                                <ul className="space-y-1">
+                                  {conversionFunnel.web_subscriber_emails.map((email, idx) => (
+                                    <li key={idx} className="text-sm">
+                                      <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">No web subscribers</p>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                          <span className="text-muted-foreground">|</span>
+                          <Popover>
+                            <PopoverTrigger asChild>
+                              <button className="text-purple-600 hover:underline cursor-pointer">
+                                App: {conversionFunnel.app_subscriber_emails?.length || 0}
+                              </button>
+                            </PopoverTrigger>
+                            <PopoverContent className="w-72 max-h-60 overflow-y-auto">
+                              <h4 className="font-medium text-sm mb-2">App Subscribers</h4>
+                              {conversionFunnel.app_subscriber_emails?.length > 0 ? (
+                                <ul className="space-y-1">
+                                  {conversionFunnel.app_subscriber_emails.map((email, idx) => (
+                                    <li key={idx} className="text-sm">
+                                      <UserEmailLink email={email} onUserClick={handleUserEmailClick} />
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="text-sm text-muted-foreground">No app subscribers</p>
+                              )}
+                            </PopoverContent>
+                          </Popover>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <p className="text-sm text-muted-foreground text-center py-4">
@@ -605,8 +625,11 @@ export default function AdminAnalyticsPage() {
                       {/* Row 1: Key financial metrics */}
                       <div className="grid grid-cols-6 gap-4">
                         <div className="text-center p-3 rounded-lg bg-muted/30">
-                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xl font-bold">{profitability.total_active_subscriptions?.toLocaleString() ?? '—'}</p>
                           <p className="text-xs text-muted-foreground">Total Active Subs</p>
+                          <p className="text-[10px] text-muted-foreground mt-1">
+                            Web: {profitability.stripe_active_subscriptions?.toLocaleString() ?? '—'} | App: {profitability.revenuecat_active_subscriptions?.toLocaleString() ?? '—'}
+                          </p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">
                           <p className="text-xl font-bold">—</p>
@@ -617,11 +640,15 @@ export default function AdminAnalyticsPage() {
                           <p className="text-xs text-muted-foreground">ARPU</p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">
-                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xl font-bold">{churnLoading ? '...' : (churnData?.total ?? '—')}</p>
                           <p className="text-xs text-muted-foreground">Churns</p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">
-                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xl font-bold">
+                            {churnLoading ? '...' : (churnData && profitability?.total_active_subscriptions
+                              ? `${((churnData.total / profitability.total_active_subscriptions) * 100).toFixed(2)}%`
+                              : '—')}
+                          </p>
                           <p className="text-xs text-muted-foreground">Churn Rate</p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">
@@ -919,7 +946,7 @@ export default function AdminAnalyticsPage() {
 
           {/* ARR Simulator Tab */}
           <TabsContent value="simulator" className="mt-0">
-            <ARRSimulator analyticsSource={analyticsSource} />
+            <ARRSimulator analyticsSource="vercel" />
           </TabsContent>
         </Tabs>
 

@@ -349,6 +349,7 @@
     "scheduledTriggers": "Trigger pianificati",
     "appTriggers": "Trigger app",
     "limitsExceeded": "Hai raggiunto il limite delle chat. Aggiorna il tuo piano per creare più chat.",
+    "modeSubtitle": "Scegli una modalità per iniziare con modelli ed esempi",
     "agentInitiatedSuccessfully": "Agente avviato con successo",
     "aiAssistantReady": "Il tuo assistente AI è pronto ad aiutare",
     "greetings": {
@@ -938,9 +939,12 @@
   },
   "suna": {
     "samplePrompts": "Prompt di esempio",
+    "examplePrompts": "Prompt di esempio",
     "chooseStyle": "Scegli uno stile",
     "chooseTemplate": "Scegli un modello",
     "chooseOutputFormat": "Scegli formato di output",
+    "chooseCanvasAction": "Scegli azione canvas",
+    "chooseVideoStyle": "Scegli stile video",
     "preferredCharts": "Grafici preferiti",
     "whatWouldYouLike": "Cosa vuoi fare?",
     "describeTask": "Descrivi il compito che vuoi che il tuo Worker completi...",
@@ -969,6 +973,14 @@
       "anime": "Anime",
       "impressionist": "Impressionista",
       "surreal": "Surreale"
+    },
+    "videoStyles": {
+      "cinematic": "Cinematografico",
+      "product": "Prodotto",
+      "animation": "Animazione",
+      "nature": "Natura",
+      "abstract": "Astratto",
+      "adventure": "Avventura"
     },
     "templates": {
       "minimalist": { "name": "Minimalista", "description": "Design pulito e semplice" },
@@ -1014,6 +1026,24 @@
       "wordcloud": "Nuvola di parole",
       "stacked": "Barra impilata",
       "area": "Area"
+    },
+    "canvasActions": {
+      "create": {
+        "name": "Crea nuovo",
+        "description": "Genera da zero"
+      },
+      "edit": {
+        "name": "Modifica immagine",
+        "description": "Modifica immagini esistenti"
+      },
+      "upscale": {
+        "name": "Ingrandisci",
+        "description": "Migliora e ottimizza"
+      },
+      "remove-bg": {
+        "name": "Rimuovi sfondo",
+        "description": "Rimuovi lo sfondo"
+      }
     },
     "prompts": {
       "image": {
