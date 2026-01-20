@@ -12,7 +12,7 @@ const instance = new aws.lightsail.Instance("suna-dev-instance", {
   availabilityZone: "us-west-2a",
   blueprintId: "ubuntu_24_04",
   bundleId: "large_3_0",
-  keyPairName: "LightsailDefaultKeyPair",
+  keyPairName: "kortix-lightsail",
   tags: {
     ...COMMON_TAGS,
     Environment: "dev",
