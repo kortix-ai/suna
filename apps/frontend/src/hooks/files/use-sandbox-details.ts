@@ -1,6 +1,27 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useCallback, useState } from 'react';
 import { backendApi } from '@/lib/api-client';
 import { sandboxKeys } from './keys';
+import type {
+  SandboxStatus,
+  SandboxState,
+  ServicesHealth,
+} from '@agentpress/shared/types/sandbox';
+
+// Re-export types for convenience
+export type { SandboxStatus, SandboxState, ServicesHealth } from '@agentpress/shared/types/sandbox';
+export {
+  deriveSandboxStatus,
+  isSandboxUsable,
+  isSandboxTransitioning,
+  isSandboxOffline,
+  isSandboxFailed,
+  getSandboxStatusLabel,
+} from '@agentpress/shared/types/sandbox';
+
+// ============================================================================
+// Legacy SandboxDetails (kept for backwards compatibility)
+// ============================================================================
 
 export interface SandboxDetails {
   sandbox_id: string;
@@ -22,27 +43,286 @@ interface SandboxDetailsResponse {
   sandbox: SandboxDetails;
 }
 
+/**
+ * Legacy hook - fetches raw sandbox details from Daytona
+ * @deprecated Use useSandboxStatus for unified status with health checks
+ */
 export function useSandboxDetails(projectId: string | undefined, options?: { enabled?: boolean }) {
   return useQuery<SandboxDetails | null>({
     queryKey: sandboxKeys.details(projectId || ''),
     queryFn: async () => {
       if (!projectId) return null;
-      
+
       const response = await backendApi.get<SandboxDetailsResponse>(
         `/project/${projectId}/sandbox`,
         { showErrors: false }
       );
 
       console.log('Sandbox Details Response:', response.data);
-      
+
       if (!response.success || !response.data) {
         throw new Error(response.error?.message || 'Failed to fetch sandbox details');
       }
-      
+
       return response.data.sandbox;
     },
     enabled: !!projectId && (options?.enabled !== false),
     staleTime: 30 * 1000,
     refetchOnWindowFocus: false,
   });
+}
+
+// ============================================================================
+// New Unified Sandbox Status API
+// ============================================================================
+
+/**
+ * Hook to fetch unified sandbox status (combines Daytona state + service health)
+ *
+ * Returns:
+ * - status: LIVE | STARTING | OFFLINE | FAILED | UNKNOWN
+ * - daytonaState: Raw state from Daytona (started/stopped/archived)
+ * - servicesHealth: Health info from sandbox container (when available)
+ *
+ * Features:
+ * - Adaptive polling: 3s when STARTING, 30s otherwise
+ * - Combines Daytona state with in-container health checks
+ */
+export function useSandboxStatus(projectId: string | undefined, options?: { enabled?: boolean }) {
+  return useQuery<SandboxState | null>({
+    queryKey: sandboxKeys.status(projectId || ''),
+    queryFn: async () => {
+      if (!projectId) return null;
+
+      const response = await backendApi.get<SandboxState>(
+        `/project/${projectId}/sandbox/status`,
+        { showErrors: false }
+      );
+
+      if (!response.success || !response.data) {
+        throw new Error(response.error?.message || 'Failed to fetch sandbox status');
+      }
+
+      return response.data;
+    },
+    enabled: !!projectId && (options?.enabled !== false),
+    // Adaptive stale time - faster refresh when starting/unknown
+    staleTime: (query) => {
+      const status = query.state.data?.status;
+      // Very short stale time when transitioning or unknown
+      if (status === 'STARTING' || status === 'UNKNOWN') return 1000;
+      return 10 * 1000;
+    },
+    // Adaptive polling - faster when transitioning or unknown (sandbox might be starting)
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      // Poll faster when sandbox is starting up or unknown
+      if (status === 'STARTING') return 2000;
+      if (status === 'UNKNOWN') return 5000; // Sandbox might be being created
+      if (status === 'OFFLINE') return 10000; // User might start it
+      return 30000;
+    },
+    refetchOnWindowFocus: true, // Refetch when user comes back to tab
+    refetchOnMount: 'always', // Always fetch on mount to show current status immediately
+  });
+}
+
+/**
+ * Mutation hook to start a sandbox
+ */
+export function useStartSandbox() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      console.log('[useStartSandbox] Starting sandbox for project:', projectId);
+      const response = await backendApi.post<{ status: string; sandbox_id: string; message: string }>(
+        `/project/${projectId}/sandbox/start`
+      );
+
+      console.log('[useStartSandbox] Response:', response);
+
+      if (!response.success) {
+        console.error('[useStartSandbox] Failed:', response.error);
+        throw new Error(response.error?.message || 'Failed to start sandbox');
+      }
+
+      console.log('[useStartSandbox] Success:', response.data);
+      return response.data;
+    },
+    onSuccess: (data, projectId) => {
+      console.log('[useStartSandbox] onSuccess, invalidating queries for:', projectId);
+      // Invalidate status query to trigger refetch
+      queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
+    },
+    onError: (error) => {
+      console.error('[useStartSandbox] onError:', error);
+    },
+  });
+}
+
+/**
+ * Mutation hook to stop a sandbox
+ */
+export function useStopSandbox() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      const response = await backendApi.post<{ status: string; sandbox_id: string; message: string }>(
+        `/project/${projectId}/sandbox/stop`
+      );
+
+      if (!response.success) {
+        throw new Error(response.error?.message || 'Failed to stop sandbox');
+      }
+
+      return response.data;
+    },
+    onSuccess: (_, projectId) => {
+      // Invalidate status query to trigger refetch
+      queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
+    },
+  });
+}
+
+// ============================================================================
+// Auto-Start Hook - Combines status checking with automatic restart
+// ============================================================================
+
+/**
+ * Hook that monitors sandbox status and auto-starts if OFFLINE.
+ *
+ * Features:
+ * - Auto-starts sandbox when OFFLINE is detected (with sandbox_id present)
+ * - Doesn't auto-start for UNKNOWN (no sandbox exists yet - need to create via agent)
+ * - Tracks "isAutoStarting" state for UI feedback
+ * - Prevents multiple auto-start attempts
+ * - Returns effective status (STARTING during auto-start attempt)
+ *
+ * @param projectId - Project ID to monitor
+ * @param options.enabled - Whether to enable the hook (default: true)
+ * @param options.autoStart - Whether to auto-start OFFLINE sandboxes (default: true)
+ */
+export function useSandboxStatusWithAutoStart(
+  projectId: string | undefined,
+  options?: {
+    enabled?: boolean;
+    autoStart?: boolean;
+  }
+) {
+  const autoStartEnabled = options?.autoStart !== false;
+  const [isAutoStarting, setIsAutoStarting] = useState(false);
+  const autoStartAttemptedRef = useRef(false);
+  const lastProjectIdRef = useRef<string | undefined>(undefined);
+
+  // Reset auto-start state when project changes
+  useEffect(() => {
+    if (lastProjectIdRef.current !== projectId) {
+      autoStartAttemptedRef.current = false;
+      setIsAutoStarting(false);
+      lastProjectIdRef.current = projectId;
+    }
+  }, [projectId]);
+
+  // Get sandbox status
+  const statusQuery = useSandboxStatus(projectId, { enabled: options?.enabled });
+  const { data: sandboxState } = statusQuery;
+
+  // Start sandbox mutation
+  const startSandbox = useStartSandbox();
+
+  // Auto-start logic
+  const attemptAutoStart = useCallback(async () => {
+    console.log('[useSandboxStatusWithAutoStart] attemptAutoStart called', {
+      projectId,
+      autoStartEnabled,
+      autoStartAttempted: autoStartAttemptedRef.current,
+      sandboxState: sandboxState ? {
+        status: sandboxState.status,
+        sandbox_id: sandboxState.sandbox_id,
+      } : null,
+      isPending: startSandbox.isPending,
+    });
+
+    if (!projectId || !autoStartEnabled) {
+      console.log('[useSandboxStatusWithAutoStart] Skipping: no projectId or autoStart disabled');
+      return;
+    }
+    if (autoStartAttemptedRef.current) {
+      console.log('[useSandboxStatusWithAutoStart] Skipping: already attempted');
+      return;
+    }
+    if (!sandboxState) {
+      console.log('[useSandboxStatusWithAutoStart] Skipping: no sandbox state yet');
+      return;
+    }
+
+    // Only auto-start if:
+    // 1. Status is OFFLINE (sandbox exists but stopped)
+    // 2. We have a sandbox_id (confirms sandbox exists)
+    // 3. Not already starting
+    const shouldAutoStart =
+      sandboxState.status === 'OFFLINE' &&
+      sandboxState.sandbox_id &&
+      sandboxState.sandbox_id.length > 0 &&
+      !startSandbox.isPending;
+
+    console.log('[useSandboxStatusWithAutoStart] shouldAutoStart:', shouldAutoStart);
+
+    if (shouldAutoStart) {
+      console.log('[useSandboxStatusWithAutoStart] Auto-starting offline sandbox:', sandboxState.sandbox_id);
+      autoStartAttemptedRef.current = true;
+      setIsAutoStarting(true);
+
+      try {
+        await startSandbox.mutateAsync(projectId);
+        console.log('[useSandboxStatusWithAutoStart] Auto-start request sent successfully');
+      } catch (error) {
+        console.error('[useSandboxStatusWithAutoStart] Auto-start failed:', error);
+        // Reset so user can try again
+        autoStartAttemptedRef.current = false;
+      } finally {
+        // Keep isAutoStarting true until status changes from OFFLINE
+        // The status polling will update and clear this
+      }
+    }
+  }, [projectId, autoStartEnabled, sandboxState, startSandbox]);
+
+  // Trigger auto-start when status becomes OFFLINE
+  useEffect(() => {
+    if (sandboxState?.status === 'OFFLINE') {
+      attemptAutoStart();
+    }
+    // Clear isAutoStarting when status changes away from OFFLINE
+    if (sandboxState?.status && sandboxState.status !== 'OFFLINE') {
+      setIsAutoStarting(false);
+    }
+  }, [sandboxState?.status, attemptAutoStart]);
+
+  // Compute effective status - show STARTING if we're auto-starting
+  const effectiveStatus: SandboxStatus | undefined =
+    isAutoStarting && sandboxState?.status === 'OFFLINE'
+      ? 'STARTING'
+      : sandboxState?.status;
+
+  return {
+    ...statusQuery,
+    // Override data to include effective status
+    data: sandboxState ? {
+      ...sandboxState,
+      status: effectiveStatus || sandboxState.status,
+    } : null,
+    // Expose original status for debugging
+    originalStatus: sandboxState?.status,
+    // Whether we're in the process of auto-starting
+    isAutoStarting,
+    // Whether auto-start is enabled
+    autoStartEnabled,
+    // Reset auto-start attempt (e.g., for manual retry)
+    resetAutoStart: useCallback(() => {
+      autoStartAttemptedRef.current = false;
+      setIsAutoStarting(false);
+    }, []),
+  };
 }

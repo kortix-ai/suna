@@ -6,6 +6,18 @@
 import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type UseQueryOptions } from '@tanstack/react-query';
 import { API_URL, getAuthToken } from '@/api/config';
 import type { SandboxFile, FileUploadResponse } from '@/api/types';
+import type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
+
+// Re-export sandbox types for convenience
+export type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
+export {
+  deriveSandboxStatus,
+  isSandboxUsable,
+  isSandboxTransitioning,
+  isSandboxOffline,
+  isSandboxFailed,
+  getSandboxStatusLabel,
+} from '@agentpress/shared/types/sandbox';
 
 // API response types (what the backend actually returns)
 interface ApiFileInfo {
@@ -81,6 +93,11 @@ export const fileKeys = {
   fileHistory: (sandboxId: string, path: string) => [...fileKeys.all, 'sandbox', sandboxId, 'history', path] as const,
   fileAtCommit: (sandboxId: string, path: string, commit: string) => [...fileKeys.all, 'sandbox', sandboxId, 'file', path, commit] as const,
   filesAtCommit: (sandboxId: string, path: string, commit: string) => [...fileKeys.all, 'sandbox', sandboxId, 'tree', path, commit] as const,
+};
+
+export const sandboxKeys = {
+  all: ['sandbox'] as const,
+  status: (projectId: string) => [...sandboxKeys.all, 'status', projectId] as const,
 };
 
 // ============================================================================
@@ -553,7 +570,7 @@ export async function blobToDataURL(blob: Blob, filePath?: string): Promise<stri
     const reader = new FileReader();
     reader.onload = () => {
       let dataUrl = reader.result as string;
-      
+
       // If the blob has application/octet-stream mime type and we have a file path,
       // try to fix the mime type based on the file extension
       if (blob.type === 'application/octet-stream' && filePath) {
@@ -567,10 +584,119 @@ export async function blobToDataURL(blob: Blob, filePath?: string): Promise<stri
           );
         }
       }
-      
+
       resolve(dataUrl);
     };
     reader.onerror = reject;
     reader.readAsDataURL(blob);
+  });
+}
+
+// ============================================================================
+// Sandbox Status Hooks
+// ============================================================================
+
+/**
+ * Hook to fetch unified sandbox status (combines Daytona state + service health)
+ *
+ * Returns:
+ * - status: LIVE | STARTING | OFFLINE | FAILED | UNKNOWN
+ * - daytonaState: Raw state from Daytona (started/stopped/archived)
+ * - servicesHealth: Health info from sandbox container (when available)
+ *
+ * Features:
+ * - Adaptive polling: 3s when STARTING, 30s otherwise
+ * - Combines Daytona state with in-container health checks
+ */
+export function useSandboxStatus(
+  projectId: string | undefined,
+  options?: Omit<UseQueryOptions<SandboxState, Error>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: sandboxKeys.status(projectId || ''),
+    queryFn: async () => {
+      if (!projectId) throw new Error('Project ID required');
+
+      const token = await getAuthToken();
+      const res = await fetch(
+        `${API_URL}/project/${projectId}/sandbox/status`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (!res.ok) throw new Error(`Failed to fetch sandbox status: ${res.status}`);
+      return res.json() as Promise<SandboxState>;
+    },
+    enabled: !!projectId,
+    // Adaptive stale time
+    staleTime: 5 * 1000,
+    // Adaptive polling - faster when transitioning
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      // Poll faster when sandbox is starting up
+      return status === 'STARTING' ? 3000 : 30000;
+    },
+    ...options,
+  });
+}
+
+/**
+ * Mutation hook to start a sandbox
+ */
+export function useStartSandbox(
+  options?: UseMutationOptions<
+    { status: string; sandbox_id: string; message: string },
+    Error,
+    string
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/project/${projectId}/sandbox/start`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error(`Failed to start sandbox: ${res.status}`);
+      return res.json();
+    },
+    onSuccess: (_, projectId) => {
+      // Invalidate status query to trigger refetch
+      queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
+    },
+    ...options,
+  });
+}
+
+/**
+ * Mutation hook to stop a sandbox
+ */
+export function useStopSandbox(
+  options?: UseMutationOptions<
+    { status: string; sandbox_id: string; message: string },
+    Error,
+    string
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (projectId: string) => {
+      const token = await getAuthToken();
+      const res = await fetch(`${API_URL}/project/${projectId}/sandbox/stop`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!res.ok) throw new Error(`Failed to stop sandbox: ${res.status}`);
+      return res.json();
+    },
+    onSuccess: (_, projectId) => {
+      // Invalidate status query to trigger refetch
+      queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
+    },
+    ...options,
   });
 }
