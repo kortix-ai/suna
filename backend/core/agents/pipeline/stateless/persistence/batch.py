@@ -42,11 +42,9 @@ class BatchWriter:
             return BatchResult(0, 0, 0, 0)
 
         messages = [e for e in entries if e.write_type == WriteType.MESSAGE]
-        credits = [e for e in entries if e.write_type == WriteType.CREDIT]
-
+        
         results = await asyncio.gather(
-            self._flush_messages(messages),
-            self._flush_credits(credits, account_id),
+            self._flush_messages(messages, account_id),
             return_exceptions=True,
         )
 
@@ -58,8 +56,7 @@ class BatchWriter:
         for i, result in enumerate(results):
             if isinstance(result, Exception):
                 logger.error(f"[BatchWriter] Flush error: {result}")
-                batch = messages if i == 0 else credits
-                for entry in batch:
+                for entry in messages:
                     await self._handle_failure(entry, str(result))
                     failed_count += 1
                     if entry.attempt_count >= self.MAX_RETRIES:
@@ -83,7 +80,7 @@ class BatchWriter:
         return BatchResult(success_count, failed_count, dlq_count, duration_ms)
 
     async def _flush_messages(
-        self, entries: List[WALEntry]
+        self, entries: List[WALEntry], account_id: str
     ) -> Tuple[List[str], List[Tuple[str, str]]]:
         if not entries:
             return [], []
@@ -93,6 +90,7 @@ class BatchWriter:
         succeeded = []
         failed = []
         semaphore = self._get_semaphore()
+        llm_response_end_entries = []
 
         async def bounded_persist(entry: WALEntry) -> Tuple[str, bool, Optional[str]]:
             async with semaphore:
@@ -121,6 +119,10 @@ class BatchWriter:
                     if success:
                         succeeded.append(entry_id)
                         
+                        # Track llm_response_end messages for billing
+                        if entry.data.get("type") == "llm_response_end":
+                            llm_response_end_entries.append(entry)
+                        
                         if entry.data.get("is_llm_message", True):
                             batch_messages_to_cache.append(entry.data)
                     else:
@@ -143,6 +145,10 @@ class BatchWriter:
                         await append_to_cached_message_history(data["thread_id"], message_payload)
                 except Exception as e:
                     logger.warning(f"Failed to update message cache during flush: {e}")
+        
+        # Process billing for llm_response_end messages
+        if llm_response_end_entries:
+            await self._process_billing(llm_response_end_entries, account_id)
 
         return succeeded, failed
 
@@ -165,38 +171,59 @@ class BatchWriter:
 
         return await with_retry(_insert, self._retry_policy)
 
-    async def _flush_credits(
-        self, entries: List[WALEntry], account_id: str
-    ) -> Tuple[List[str], List[Tuple[str, str]]]:
+    async def _process_billing(self, entries: List[WALEntry], account_id: str) -> None:
         if not entries:
-            return [], []
-
-        from core.billing.credits.manager import credit_manager
-
-        total_amount = sum(
-            Decimal(str(e.data.get("amount", 0))) for e in entries
-        )
-
-        if total_amount <= 0:
-            return [e.entry_id for e in entries], []
-
-        thread_id = entries[0].data.get("thread_id")
-        run_id = entries[0].data.get("run_id")
-
-        async def _deduct():
-            await credit_manager.deduct_credits(
-                account_id=account_id,
-                amount=total_amount,
-                description=f"Agent run {run_id}",
-                thread_id=thread_id,
-            )
-            return True
-
-        try:
-            await with_retry(_deduct, self._retry_policy)
-            return [e.entry_id for e in entries], []
-        except Exception as e:
-            return [], [(entry.entry_id, str(e)) for entry in entries]
+            return
+        
+        from core.billing.credits.integration import billing_integration
+        
+        for entry in entries:
+            try:
+                data = entry.data
+                content = data.get("content", {})
+                
+                usage = content.get("usage", {})
+                if not usage:
+                    logger.warning(f"[BatchWriter] No usage data in llm_response_end message {data.get('message_id')}")
+                    continue
+                
+                prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
+                completion_tokens = int(usage.get("completion_tokens", 0) or 0)
+                
+                if prompt_tokens == 0 and completion_tokens == 0:
+                    logger.warning(f"[BatchWriter] Zero tokens in usage data, skipping billing")
+                    continue
+                
+                cache_read_tokens = int(usage.get("cache_read_input_tokens", 0) or 0)
+                if cache_read_tokens == 0:
+                    cache_read_tokens = int((usage.get("prompt_tokens_details") or {}).get("cached_tokens", 0) or 0)
+                
+                cache_creation_tokens = int(usage.get("cache_creation_input_tokens", 0) or 0)
+                
+                model = content.get("model", "unknown")
+                thread_id = data.get("thread_id")
+                message_id = data.get("message_id")
+                
+                logger.debug(f"💰 [BatchWriter] Billing: prompt={prompt_tokens}, completion={completion_tokens}, cache_read={cache_read_tokens}, cache_create={cache_creation_tokens}, model={model}")
+                
+                result = await billing_integration.deduct_usage(
+                    account_id=account_id,
+                    prompt_tokens=prompt_tokens,
+                    completion_tokens=completion_tokens,
+                    model=model,
+                    message_id=str(message_id),
+                    thread_id=str(thread_id),
+                    cache_read_tokens=cache_read_tokens,
+                    cache_creation_tokens=cache_creation_tokens
+                )
+                
+                if result.get('success'):
+                    logger.info(f"✅ [BatchWriter] Successfully billed ${result.get('cost', 0):.6f} for {prompt_tokens + completion_tokens} tokens")
+                else:
+                    logger.error(f"❌ [BatchWriter] Billing failed: {result}")
+                    
+            except Exception as e:
+                logger.error(f"[BatchWriter] Error processing billing for entry {entry.entry_id}: {e}", exc_info=True)
 
     async def _handle_failure(self, entry: WALEntry, error: str) -> None:
         entry.attempt_count += 1
