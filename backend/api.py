@@ -315,9 +315,9 @@ if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")
     allowed_origins.append("http://127.0.0.1:3000")
 
-# Add staging-specific origins (legacy)
+# Add staging-specific origins
 if config.ENV_MODE == EnvMode.STAGING:
-    allowed_origins.append("https://staging.suna.so")
+    allowed_origins.append("https://staging.kortix.com")
     allowed_origins.append("http://localhost:3000")
 
 app.add_middleware(

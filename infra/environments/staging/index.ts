@@ -51,7 +51,6 @@ export const tunnelCname = `${EXISTING_TUNNEL_ID}.cfargotunnel.com`;
 
 export const apiEndpoints = {
   kortix: "staging-api.kortix.com",
-  suna: "staging-api.suna.so",
 };
 
 // Setup instructions
@@ -66,5 +65,4 @@ export const setupInstructions = pulumi.interpolate`
 
 3. API endpoints:
    - https://staging-api.kortix.com
-   - https://staging-api.suna.so
 `;

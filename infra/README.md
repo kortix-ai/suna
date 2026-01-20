@@ -57,7 +57,7 @@ infra/
 | Environment | Infrastructure | API Endpoint | Resources |
 |-------------|---------------|--------------|-----------|
 | **dev** | Lightsail | dev-api.kortix.com | Lightsail (8GB/2vCPU), Cloudflare Tunnel |
-| **staging** | Lightsail | staging-api.kortix.com, staging-api.suna.so | Lightsail (8GB/2vCPU), Cloudflare Tunnel |
+| **staging** | Lightsail | staging-api.kortix.com | Lightsail (8GB/2vCPU), Cloudflare Tunnel |
 | **prod** | ECS + Lightsail | api.kortix.com | Full VPC, ECS cluster, ALB, Lightsail (128GB/32vCPU), Cloudflare Worker Router |
 
 ## Quick Start
@@ -132,7 +132,7 @@ pulumi config set enableHttps true
 ### Staging Environment
 - Lightsail Instance (suna-staging) with Static IP
 - Cloudflare Tunnel
-- DNS Records (staging-api.kortix.com, staging-api.suna.so)
+- DNS Records (staging-api.kortix.com)
 
 ### Prod Environment
 
