@@ -96,9 +96,20 @@ function LegalContent() {
                         <p>
                           <strong>Kortix AI Corp</strong>
                         </p>
+                        <p>Incorporated in Delaware, United States</p>
+                        <p className="mt-4">
+                          <strong>Principal Place of Business:</strong>
+                        </p>
                         <p>701 Tillery Street</p>
                         <p>Unit 12-2521</p>
                         <p>Austin, TX 78702</p>
+                        <p>United States</p>
+                        <p className="mt-4">
+                          <strong>Registered Agent:</strong>
+                        </p>
+                        <p>Firstbase Agent LLC</p>
+                        <p>1007 N Orange St. 4th Floor Suite #1382</p>
+                        <p>Wilmington, DE 19801</p>
                         <p>United States</p>
                       </div>
 
@@ -144,22 +155,23 @@ function LegalContent() {
                         Terms of Service
                       </h2>
                       <p className="text-sm text-muted-foreground mb-6">
-                        Last updated: 13 August 2024
+                        Last updated: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
                         Terms of Service & Privacy Policy
                       </h3>
                       <p className="text-muted-foreground text-balance mb-4">
-                        Last updated and effective date: 13 August 2024
+                        Last updated and effective date: {new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
                       </p>
 
                       <p className="text-muted-foreground text-balance mb-6">
                         PLEASE READ THESE TERMS OF USE ("AGREEMENT" OR "TERMS OF
                         USE" or "TERMS OF SERVICE" or "TERMS AND CONDITIONS")
                         CAREFULLY BEFORE USING THE SERVICES OFFERED BY Kortix AI
-                        Corp (701 Tillery Street Unit 12-2521 Austin, Texas 78702,
-                        United States). THIS AGREEMENT SETS FORTH THE LEGALLY
+                        Corp, a Delaware corporation with its principal place of business
+                        at 701 Tillery Street Unit 12-2521, Austin, Texas 78702, United States
+                        ("Company"). THIS AGREEMENT SETS FORTH THE LEGALLY
                         BINDING TERMS AND CONDITIONS FOR YOUR USE OF THE Kortix
                         WEBSITE AND ALL RELATED SERVICES.
                       </p>
@@ -169,8 +181,9 @@ function LegalContent() {
                       </h3>
                       <ul className="text-muted-foreground space-y-1 mb-6">
                         <li>
-                          "Company" refers to Kortix AI Corp (701 Tillery Street
-                          Unit 12-2521 Austin, Texas 78702, United States).
+                          "Company" refers to Kortix AI Corp, a Delaware corporation
+                          with its principal place of business at 701 Tillery Street
+                          Unit 12-2521, Austin, Texas 78702, United States.
                         </li>
                         <li>
                           "Site" refers to the Kortix website, including any related
@@ -178,24 +191,63 @@ function LegalContent() {
                           time by the Company.
                         </li>
                         <li>
-                          "Service" refers to the Kortix website and all related
-                          services provided by the Company, including the
-                          AI-powered agent that helps you accomplish real-world
-                          tasks.
+                          "Service" refers to the Kortix platform and all related
+                          services provided by the Company, including the platform
+                          for building, managing, and training autonomous AI agents,
+                          browser automation, file management, web intelligence,
+                          system operations, API integrations, and agent builder tools.
+                        </li>
+                        <li>
+                          "Agent" refers to an autonomous AI worker created, configured,
+                          or deployed through the Service that can perform tasks
+                          independently based on user instructions.
+                        </li>
+                        <li>
+                          "Agent Actions" refers to any autonomous operations performed
+                          by Agents, including but not limited to browser automation,
+                          file operations, web crawling, API calls, system commands,
+                          and interactions with third-party services.
                         </li>
                         <li>
                           "User" refers to any individual or entity using the Site
                           or Service.
                         </li>
                         <li>
+                          "Account" refers to a user account with associated resources,
+                          including agents, threads, files, and configurations.
+                        </li>
+                        <li>
+                          "Team Member" refers to an invited user on a shared Account
+                          with appropriate access permissions.
+                        </li>
+                        <li>
+                          "API" refers to programmatic access to the Service via REST
+                          endpoints or the Python SDK.
+                        </li>
+                        <li>
+                          "API Key" refers to authentication credentials issued by
+                          the Company for programmatic access to the Service.
+                        </li>
+                        <li>
                           "Content" refers to any text, images, code, or other
                           material uploaded to or generated by the Site or Service
-                          by Users.
+                          by Users or Agents.
                         </li>
                         <li>
                           "Assets" refers to the results and outputs generated by
-                          the AI models provided by the Service, including any
-                          code, applications, or reports.
+                          Agents or the Service, including any code, applications,
+                          documents, reports, presentations, or other deliverables.
+                        </li>
+                        <li>
+                          "Third-Party Services" refers to external services integrated
+                          with the Service, including but not limited to Composio,
+                          Apify, MCP servers, LLM providers (Anthropic, OpenAI, etc.),
+                          Supabase, and other third-party APIs and services.
+                        </li>
+                        <li>
+                          "Self-Hosting" refers to deployment of the Service on
+                          user's own infrastructure, subject to the terms of the
+                          LICENSE file.
                         </li>
                         <li>
                           "Terms of Use" refers to these terms and conditions
@@ -204,7 +256,7 @@ function LegalContent() {
                         <li>
                           "License" refers to the permissions granted to Users to
                           use the Site and Service as outlined in these Terms of
-                          Use.
+                          Use, or the separate LICENSE file for self-hosting.
                         </li>
                         <li>
                           "DMCA" refers to the Digital Millennium Copyright Act.
@@ -212,7 +264,8 @@ function LegalContent() {
                         <li>
                           "Fees" refers to the subscription or other payments made
                           by Users for access to certain features or levels of the
-                          Service.
+                          Service, including usage-based charges and third-party
+                          service costs passed through.
                         </li>
                         <li>
                           "Notice Address" refers to the contact address for the
@@ -261,76 +314,190 @@ function LegalContent() {
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
+                        Description of Service
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        Kortix is a complete platform for creating, managing, and
+                        training autonomous AI agents. The Service enables Users to
+                        build sophisticated AI agents that can work autonomously
+                        on their behalf. The platform provides:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          <strong>Agent Builder:</strong> Tools to create, configure,
+                          and customize AI agents with specific capabilities and
+                          personalities
+                        </li>
+                        <li>
+                          <strong>Browser Automation:</strong> Agents can navigate
+                          websites, extract data, fill forms, and automate web workflows
+                        </li>
+                        <li>
+                          <strong>File Management:</strong> Agents can create, edit,
+                          and organize documents, spreadsheets, presentations, and code
+                        </li>
+                        <li>
+                          <strong>Web Intelligence:</strong> Web crawling, search
+                          capabilities, data extraction, and information synthesis
+                        </li>
+                        <li>
+                          <strong>System Operations:</strong> Command-line execution,
+                          system administration, and DevOps task automation
+                        </li>
+                        <li>
+                          <strong>API Integrations:</strong> Connection with 2700+
+                          third-party services via Composio, Apify, MCP servers, and
+                          direct API integrations
+                        </li>
+                        <li>
+                          <strong>Multi-Tenant Architecture:</strong> Account management,
+                          team collaboration, shared resources, and API key access
+                        </li>
+                        <li>
+                          <strong>Self-Hosting Options:</strong> Deployment on your own
+                          infrastructure (subject to LICENSE file restrictions)
+                        </li>
+                        <li>
+                          <strong>API and SDK Access:</strong> Programmatic access via
+                          REST endpoints and Python SDK
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        Agents operate autonomously based on your instructions and can
+                        perform complex, multi-step tasks independently. You acknowledge
+                        that Agents may interact with third-party services, access
+                        external data sources, and perform actions that have real-world
+                        consequences.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
                         Rules and Conduct
                       </h3>
                       <p className="text-muted-foreground text-balance mb-4">
-                        By using the Service, you agree that it is intended solely
-                        for the purpose of using an AI assistant to help
-                        accomplish real-world tasks through natural conversation.
-                        The Service's capabilities include browser automation,
-                        file management, web crawling, search capabilities,
-                        command-line execution, website deployment, and
-                        integration with various APIs and services. You
-                        acknowledge and agree that when using the Service, you
-                        must have the necessary rights and permissions for any
-                        content or data you incorporate. You are solely
-                        responsible for ensuring that your use of the Service is
-                        legal and that you have the necessary rights for any tasks
-                        you perform. The Company is not responsible for any
-                        content created or actions taken through the Service and
-                        disclaims all liability for any issues arising from the
-                        created content or performed actions, including but not
-                        limited to copyright infringement, illegal content, or any
-                        other legal matters.
+                        By using the Service, you agree that it is intended for the
+                        purpose of creating and deploying autonomous AI agents to help
+                        accomplish real-world tasks. You acknowledge and agree that when
+                        using the Service, you must have the necessary rights and
+                        permissions for any content, data, or actions you direct Agents
+                        to perform. You are solely responsible for ensuring that your
+                        use of the Service is legal and that you have the necessary
+                        rights for any tasks you perform or direct Agents to perform.
+                        The Company is not responsible for any content created or actions
+                        taken through the Service and disclaims all liability for any
+                        issues arising from the created content or performed actions,
+                        including but not limited to copyright infringement, illegal
+                        content, unauthorized access, or any other legal matters.
                       </p>
 
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Content Moderation & Prohibited Uses
+                      </h3>
                       <p className="text-muted-foreground text-balance mb-4">
-                        As a condition of use, you promise not to use the Service
-                        for any purpose that is prohibited by the Terms of Use. By
-                        way of example, and not as a limitation, you shall not
-                        (and shall not permit any third party to) take any action
-                        (including making use of the Site, any Assets, or our
-                        models or derivatives of our models) that:
+                        <strong>User Responsibility for Agent Outputs.</strong> You are
+                        responsible for reviewing all Agent outputs and ensuring they
+                        comply with applicable laws and these Terms of Use. The Company
+                        reserves the right, but not the obligation, to monitor, review,
+                        and remove any Agent-generated content or disable any Agent
+                        actions that violate these Terms of Use.
                       </p>
-
-                      <ul className="text-muted-foreground space-y-1 mb-6">
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Prohibited Uses.</strong> As a condition of use, you
+                        promise not to use the Service or direct Agents to perform any
+                        action that is prohibited by the Terms of Use. By way of
+                        example, and not as a limitation, you shall not (and shall not
+                        permit any third party or Agent to) take any action that:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
                         <li>
-                          would constitute a violation of any applicable law,
-                          rule, or regulation;
+                          would constitute a violation of any applicable law, rule, or
+                          regulation;
                         </li>
                         <li>
-                          infringes upon any intellectual property or other right
-                          of any other person or entity;
+                          infringes upon any intellectual property or other right of any
+                          other person or entity;
                         </li>
                         <li>
-                          is threatening, abusive, harassing, defamatory,
-                          libelous, deceptive, fraudulent, invasive of another's
-                          privacy, tortious, obscene, offensive, furthering of
-                          self-harm, or profane;
-                        </li>
-                        <li>creates Assets that exploit or abuse children;</li>
-                        <li>
-                          generates or disseminates verifiably false information
-                          with the purpose of harming others;
-                        </li>
-                        <li>impersonates or attempts to impersonate others;</li>
-                        <li>
-                          generates or disseminates personally identifying or
-                          identifiable information;
+                          is threatening, abusive, harassing, defamatory, libelous,
+                          deceptive, fraudulent, invasive of another's privacy, tortious,
+                          obscene, offensive, furthering of self-harm, or profane;
                         </li>
                         <li>
-                          creates Assets that imply or promote support of a
-                          terrorist organization;
+                          creates Assets or Agent outputs that exploit or abuse children;
                         </li>
                         <li>
-                          creates Assets that condone or promote violence against
-                          people based on any protected legal category.
+                          generates or disseminates verifiably false information with the
+                          purpose of harming others;
+                        </li>
+                        <li>
+                          impersonates or attempts to impersonate others;
+                        </li>
+                        <li>
+                          generates or disseminates personally identifying or identifiable
+                          information without authorization;
+                        </li>
+                        <li>
+                          creates Assets that imply or promote support of a terrorist
+                          organization;
+                        </li>
+                        <li>
+                          creates Assets that condone or promote violence against people
+                          based on any protected legal category;
+                        </li>
+                        <li>
+                          uses Agents to circumvent security measures, authentication
+                          systems, or terms of service of third-party services;
+                        </li>
+                        <li>
+                          uses Agents for automated scraping at scale without explicit
+                          permission from the target website or service;
+                        </li>
+                        <li>
+                          uses Agents for competitive intelligence gathering through
+                          unauthorized access or violation of third-party terms;
+                        </li>
+                        <li>
+                          uses Agents to reverse engineer, decompile, or disassemble
+                          third-party services or software;
+                        </li>
+                        <li>
+                          uses Agents for security testing, penetration testing, or
+                          vulnerability scanning without explicit authorization;
+                        </li>
+                        <li>
+                          uses Agents to interfere with, disrupt, or damage any system,
+                          network, or service;
+                        </li>
+                        <li>
+                          uses Agents to send unsolicited communications, spam, or
+                          phishing attempts;
+                        </li>
+                        <li>
+                          uses Agents to access, modify, or delete data without proper
+                          authorization;
+                        </li>
+                        <li>
+                          uses Agents in a manner that violates export control laws or
+                          sanctions;
+                        </li>
+                        <li>
+                          uses Agents to create or distribute malware, viruses, or other
+                          harmful code.
                         </li>
                       </ul>
-
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Third-Party Service Compliance.</strong> When using
+                        Agents to interact with third-party services, you are responsible
+                        for ensuring compliance with those services' terms of service,
+                        acceptable use policies, and rate limits. The Company is not
+                        responsible for violations of third-party terms by your Agents.
+                      </p>
                       <p className="text-muted-foreground text-balance mb-6">
-                        You agree not to use the Service for the purpose of
-                        generating illegal or harmful applications or content.
+                        <strong>Content Removal.</strong> The Company reserves the right
+                        to remove any content, disable any Agent, or suspend or terminate
+                        your Account if it determines, in its sole discretion, that you
+                        have violated these Terms of Use or engaged in prohibited uses.
+                        The Company may take such action without prior notice, though it
+                        will attempt to provide notice when reasonably possible.
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
@@ -348,6 +515,100 @@ function LegalContent() {
                         to indemnify and hold harmless the Company from any
                         claims, losses, damages, or expenses arising out of or
                         related to your created content or performed actions.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Agent Autonomy & Liability
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Autonomous Operation.</strong> Agents created through
+                        the Service operate autonomously based on your instructions.
+                        Once configured and deployed, Agents may perform actions
+                        independently without requiring your immediate supervision or
+                        approval for each action.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>User Responsibility.</strong> You are solely responsible
+                        for all Agent Actions and outputs, including but not limited to:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          All actions performed by Agents on your behalf or at your
+                          direction
+                        </li>
+                        <li>
+                          All content, data, or outputs generated by Agents
+                        </li>
+                        <li>
+                          Agent interactions with third-party services, websites, or
+                          APIs
+                        </li>
+                        <li>
+                          Agent access to, modification of, or deletion of files,
+                          data, or systems
+                        </li>
+                        <li>
+                          Compliance with all applicable laws, regulations, and
+                          third-party terms of service
+                        </li>
+                        <li>
+                          Ensuring you have necessary rights, permissions, and
+                          authorizations for all Agent operations
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Company Disclaimers.</strong> The Company disclaims all
+                        liability for:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Agent errors, malfunctions, bugs, or unintended actions
+                        </li>
+                        <li>
+                          Data loss, corruption, or unauthorized access resulting from
+                          Agent operations
+                        </li>
+                        <li>
+                          Unauthorized Agent actions, including actions beyond the
+                          scope of your instructions
+                        </li>
+                        <li>
+                          Third-party service failures, outages, or changes that
+                          affect Agent functionality
+                        </li>
+                        <li>
+                          Agent-generated content that violates laws, regulations, or
+                          third-party rights
+                        </li>
+                        <li>
+                          Security breaches or vulnerabilities in Agent configurations
+                          or third-party integrations
+                        </li>
+                        <li>
+                          Financial losses, business interruptions, or other
+                          consequences of Agent actions
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Monitoring and Review.</strong> You acknowledge that
+                        Agents operate autonomously and that you should regularly
+                        monitor Agent activities and review Agent outputs. The Company
+                        is not responsible for monitoring your Agents or alerting you
+                        to potentially problematic Agent actions.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        <strong>Indemnification.</strong> You agree to indemnify, defend,
+                        and hold harmless the Company, its affiliates, and their
+                        respective officers, directors, employees, and agents from and
+                        against any and all claims, damages, obligations, losses,
+                        liabilities, costs, or debt, and expenses (including but not
+                        limited to attorney's fees) arising from: (i) your use of and
+                        access to the Service; (ii) your violation of any term of
+                        these Terms of Use; (iii) your violation of any third-party
+                        right, including without limitation any copyright, property, or
+                        privacy right; (iv) any Agent Actions or Agent-generated content;
+                        or (v) any claim that Agent Actions or Agent-generated content
+                        caused damage to a third party.
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
@@ -387,11 +648,159 @@ function LegalContent() {
                         held by others. We respect rights holders internationally,
                         and we ask our users to do the same. If you believe your
                         copyright or trademark is being infringed by the Service,
-                        please write to info@kortix.com and we will process and
+                        please write to legal@kortix.com and we will process and
                         investigate your request and take appropriate actions
                         under the Digital Millennium Copyright Act and other
                         applicable intellectual property laws with respect to any
                         alleged or actual infringement.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Data Retention, Deletion, and User Rights
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Data Retention.</strong> The Company retains your data
+                        for as long as necessary to provide the Service and comply with
+                        legal obligations. Upon account termination, the Company will
+                        delete or anonymize your personal data in accordance with our
+                        data retention policies, except where retention is required by
+                        law or for legitimate business purposes (such as fraud prevention
+                        or dispute resolution). Backup and archival data may be retained
+                        for a limited period after account deletion.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Your Rights.</strong> You have the right to:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          <strong>Access:</strong> Request access to your personal data
+                          and information about how it is processed
+                        </li>
+                        <li>
+                          <strong>Export:</strong> Request export of your data in a
+                          machine-readable format
+                        </li>
+                        <li>
+                          <strong>Correction:</strong> Request correction of inaccurate
+                          or incomplete data
+                        </li>
+                        <li>
+                          <strong>Deletion:</strong> Request deletion of your account and
+                          associated data
+                        </li>
+                        <li>
+                          <strong>Portability:</strong> Request transfer of your data to
+                          another service provider
+                        </li>
+                        <li>
+                          <strong>Objection:</strong> Object to certain types of data
+                          processing
+                        </li>
+                        <li>
+                          <strong>Restriction:</strong> Request restriction of data
+                          processing in certain circumstances
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        To exercise these rights, please contact us at{' '}
+                        <a
+                          href="mailto:info@kortix.com"
+                          className="text-primary hover:underline"
+                        >
+                          info@kortix.com
+                        </a>
+                        . We will respond to your request within a reasonable timeframe
+                        and in accordance with applicable law.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>GDPR Rights (EU Users).</strong> If you are located in
+                        the European Union, you have additional rights under the General
+                        Data Protection Regulation (GDPR), including:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Right to be informed about data processing
+                        </li>
+                        <li>
+                          Right of access to your personal data
+                        </li>
+                        <li>
+                          Right to rectification of inaccurate data
+                        </li>
+                        <li>
+                          Right to erasure ("right to be forgotten")
+                        </li>
+                        <li>
+                          Right to restrict processing
+                        </li>
+                        <li>
+                          Right to data portability
+                        </li>
+                        <li>
+                          Right to object to processing
+                        </li>
+                        <li>
+                          Rights related to automated decision-making and profiling
+                        </li>
+                        <li>
+                          Right to lodge a complaint with a supervisory authority
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        For GDPR-related requests, please contact us at{' '}
+                        <a
+                          href="mailto:info@kortix.com"
+                          className="text-primary hover:underline"
+                        >
+                          info@kortix.com
+                        </a>
+                        . Our legal basis for processing your data includes performance
+                        of contract, legitimate interests, consent, and compliance with
+                        legal obligations. We implement appropriate safeguards for
+                        international data transfers.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>CCPA Rights (California Users).</strong> If you are a
+                        California resident, you have rights under the California
+                        Consumer Privacy Act (CCPA), including:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          <strong>Right to Know:</strong> Request disclosure of
+                          categories and specific pieces of personal information
+                          collected, used, disclosed, or sold
+                        </li>
+                        <li>
+                          <strong>Right to Delete:</strong> Request deletion of personal
+                          information collected from you
+                        </li>
+                        <li>
+                          <strong>Right to Opt-Out:</strong> Opt-out of the sale of
+                          personal information (if applicable)
+                        </li>
+                        <li>
+                          <strong>Right to Non-Discrimination:</strong> Exercise your
+                          rights without discrimination
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        Categories of personal information we collect include:
+                        identifiers (name, email, IP address), commercial information
+                        (purchase history, subscription data), internet activity
+                        (usage data, interactions with Service), geolocation data, and
+                        inferences drawn from the above.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        To exercise your CCPA rights, please contact us at{' '}
+                        <a
+                          href="mailto:info@kortix.com"
+                          className="text-primary hover:underline"
+                        >
+                          info@kortix.com
+                        </a>
+                        . We may require verification of your identity before processing
+                        your request. We will not discriminate against you for exercising
+                        your CCPA rights.
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
@@ -411,7 +820,7 @@ function LegalContent() {
                         pricing will not apply until your next renewal.
                       </p>
 
-                      <p className="text-muted-foreground text-balance mb-6">
+                      <p className="text-muted-foreground text-balance mb-4">
                         Unless otherwise stated, your subscription fees ("Fees")
                         do not include federal, state, local, and foreign taxes,
                         duties, and other similar assessments ("Taxes"). You are
@@ -423,25 +832,205 @@ function LegalContent() {
                         suspend your access to the Services after we provide you
                         with written notice of late payment.
                       </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Usage-Based Billing.</strong> Some features of the
+                        Service may be subject to usage-based billing, including but not
+                        limited to API calls, Agent execution time, data storage, and
+                        third-party service costs (such as LLM provider fees, Apify
+                        costs, etc.). These costs may be passed through to you with
+                        applicable markups. You will be notified of usage-based charges
+                        in advance or as they are incurred.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Credit System.</strong> The Service may utilize a credit
+                        system where 1 credit equals $0.01 USD. Credits may be consumed
+                        for various Service features and third-party service usage.
+                        Credits are non-refundable and may expire according to the terms
+                        of your subscription plan.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        <strong>Payment Methods.</strong> Payments must be made in U.S.
+                        dollars using accepted payment methods. The Company reserves the
+                        right to change accepted payment methods at any time. All
+                        payments are processed securely through third-party payment
+                        processors.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Service Availability & Modifications
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Service Availability.</strong> The Service is provided
+                        "as is" and "as available" without any guarantee of uptime,
+                        availability, or performance. The Company does not provide any
+                        Service Level Agreement (SLA) unless explicitly stated in a
+                        separate written agreement. The Service may be unavailable due to
+                        maintenance, updates, technical issues, or circumstances beyond
+                        the Company's control.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Planned Maintenance.</strong> The Company may perform
+                        planned maintenance that may temporarily interrupt Service
+                        availability. The Company will attempt to provide advance notice
+                        of planned maintenance when reasonably possible, but is not
+                        obligated to do so.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Service Modifications.</strong> The Company reserves the
+                        right to modify, update, or discontinue any feature, function, or
+                        aspect of the Service at any time, with or without notice. This
+                        includes but is not limited to changes to APIs, Agent
+                        capabilities, third-party integrations, user interfaces, and
+                        pricing.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Feature Deprecation.</strong> The Company may deprecate
+                        features, APIs, or functionality with reasonable notice. The
+                        Company will attempt to provide advance notice of deprecations
+                        and migration paths when available, but is not obligated to
+                        maintain backward compatibility indefinitely.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Service Suspension.</strong> The Company reserves the
+                        right to suspend or terminate your access to the Service
+                        immediately, without notice, if you violate these Terms of Use,
+                        engage in fraudulent or illegal activity, or if required by law
+                        or court order.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        <strong>No Guarantees.</strong> The Company does not guarantee
+                        that the Service will be uninterrupted, error-free, secure, or
+                        free from viruses or other harmful components. You acknowledge
+                        that use of the Service involves inherent risks and that the
+                        Company is not responsible for any losses or damages resulting
+                        from Service unavailability, errors, or interruptions.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        API Usage & Rate Limits
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>API Access.</strong> The Service provides programmatic
+                        access via REST endpoints and a Python SDK. API access requires
+                        an API Key, which you can create and manage through your Account.
+                        You are responsible for maintaining the security and
+                        confidentiality of your API Keys.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>API Key Security.</strong> You must not share, publish,
+                        or expose your API Keys. You are responsible for all activities
+                        that occur using your API Keys, whether authorized by you or not.
+                        If you believe an API Key has been compromised, you must
+                        immediately revoke it and create a new one. The Company is not
+                        responsible for any unauthorized access or use of your API Keys.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Rate Limits & Fair Use.</strong> The Service is subject
+                        to rate limits and fair use policies to ensure equitable access
+                        and system stability. Rate limits may vary based on your
+                        subscription plan and may be adjusted by the Company at any time.
+                        You agree not to:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Exceed rate limits or attempt to circumvent rate limiting
+                          mechanisms
+                        </li>
+                        <li>
+                          Use automated tools or scripts to make excessive API calls
+                        </li>
+                        <li>
+                          Engage in any activity that places undue burden on the Service
+                          infrastructure
+                        </li>
+                        <li>
+                          Use the API in a manner that interferes with other users'
+                          access to the Service
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Usage Quotas.</strong> Your subscription plan may include
+                        usage quotas for API calls, Agent executions, data storage, or
+                        other Service features. Quotas reset according to your billing
+                        cycle. Exceeding quotas may result in temporary suspension of
+                        API access or additional charges.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Abuse & Enforcement.</strong> The Company monitors API
+                        usage for abuse, fraud, and violations of these Terms of Use. If
+                        the Company determines, in its sole discretion, that you are
+                        abusing the API or violating these Terms, the Company may:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Temporarily or permanently suspend your API access
+                        </li>
+                        <li>
+                          Revoke your API Keys
+                        </li>
+                        <li>
+                          Terminate your Account
+                        </li>
+                        <li>
+                          Take legal action if necessary
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        <strong>API Changes.</strong> The Company reserves the right to
+                        modify, deprecate, or discontinue API endpoints, SDK
+                        functionality, or authentication methods at any time. The Company
+                        will attempt to provide reasonable notice of breaking changes,
+                        but is not obligated to maintain backward compatibility
+                        indefinitely.
+                      </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
                         Termination
                       </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Termination by Company.</strong> The Company may terminate
+                        your access to all or any part of the Service at any time if you
+                        fail to comply with these Terms of Use, which may result in the
+                        forfeiture and destruction of all information associated with
+                        your account. The Company may also terminate the Service for any
+                        reason with reasonable notice.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Termination by User.</strong> You may terminate your
+                        Account at any time by following the instructions on the Service
+                        or by contacting us at{' '}
+                        <a
+                          href="mailto:info@kortix.com"
+                          className="text-primary hover:underline"
+                        >
+                          info@kortix.com
+                        </a>
+                        . Termination of your Account will result in the deletion of
+                        your data in accordance with our data retention policies.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Data Deletion.</strong> Upon termination, the Company
+                        will delete or anonymize your personal data and Account
+                        information in accordance with applicable law and our data
+                        retention policies. You are responsible for exporting any data
+                        you wish to retain before terminating your Account. The Company
+                        may retain certain data for legal, regulatory, or business
+                        purposes as permitted by law.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Outstanding Obligations.</strong> Any fees paid
+                        hereunder are non-refundable. Upon termination, you remain
+                        responsible for all outstanding fees, charges, and obligations
+                        incurred prior to termination.
+                      </p>
                       <p className="text-muted-foreground text-balance mb-6">
-                        The Company may terminate your access to all or any part
-                        of the Service at any time if you fail to comply with
-                        these Terms of Use, which may result in the forfeiture and
-                        destruction of all information associated with your
-                        account. Further, either party may terminate the Services
-                        for any reason and at any time upon written notice. If you
-                        wish to terminate your account, you may do so by following
-                        the instructions on the Service. Any fees paid hereunder
-                        are non-refundable. Upon any termination, all rights and
-                        licenses granted to you in this Agreement shall
-                        immediately terminate, but all provisions hereof which by
-                        their nature should survive termination shall survive
-                        termination, including, without limitation, warranty
-                        disclaimers, indemnity, and limitations of liability.
+                        <strong>Survival.</strong> Upon any termination, all rights and
+                        licenses granted to you in this Agreement shall immediately
+                        terminate, but all provisions hereof which by their nature
+                        should survive termination shall survive termination, including,
+                        without limitation, warranty disclaimers, indemnity, limitations
+                        of liability, intellectual property provisions, and dispute
+                        resolution provisions.
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
@@ -503,15 +1092,165 @@ function LegalContent() {
                       </h3>
                       <p className="text-muted-foreground text-balance mb-6">
                         Any and all Claims shall be governed by the Federal
-                        Arbitration Act and the internal substantive laws of
-                        Singapore in all respects, without regard for the
-                        jurisdiction or forum in which the user is domiciled,
-                        resides, or is located at the time of such access or use.
-                        Except as provided in the Arbitration Agreement, all
-                        Claims will be brought in the federal or state courts in
-                        Singapore, and you and the Company each unconditionally,
-                        voluntarily, and irrevocably consent to the exclusive
-                        personal jurisdiction and venue of those courts.
+                        Arbitration Act and the internal substantive laws of the
+                        State of Delaware, United States, in all respects, without
+                        regard for the jurisdiction or forum in which the user is
+                        domiciled, resides, or is located at the time of such access
+                        or use. Except as provided in the Arbitration Agreement, all
+                        Claims will be brought in the federal or state courts located
+                        in Delaware, and you and the Company each unconditionally,
+                        voluntarily, and irrevocably consent to the exclusive personal
+                        jurisdiction and venue of those courts.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Third-Party Services & Integrations
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Third-Party Integrations.</strong> The Service integrates
+                        with numerous third-party services, including but not limited to:
+                        Composio (for 2700+ app integrations), Apify (for web scraping),
+                        MCP servers (for external tool integrations), LLM providers
+                        (Anthropic, OpenAI, and others via LiteLLM), Supabase (for
+                        database and authentication), and various other APIs and services.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Your Responsibility.</strong> When using Agents to
+                        interact with third-party services, you are solely responsible
+                        for:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Compliance with all third-party terms of service, acceptable
+                          use policies, and API terms
+                        </li>
+                        <li>
+                          Obtaining necessary authorizations, licenses, and permissions
+                          to access third-party services
+                        </li>
+                        <li>
+                          Ensuring your use of third-party services through Agents is
+                          lawful and authorized
+                        </li>
+                        <li>
+                          Any fees, charges, or costs imposed by third-party services
+                        </li>
+                        <li>
+                          Data privacy and security when sharing data with third-party
+                          services
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Company Disclaimers.</strong> The Company is not
+                        responsible for:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Third-party service availability, outages, or changes
+                        </li>
+                        <li>
+                          Third-party service failures that affect Agent functionality
+                        </li>
+                        <li>
+                          Third-party service modifications, deprecations, or
+                          discontinuations
+                        </li>
+                        <li>
+                          Data handling, privacy practices, or security of third-party
+                          services
+                        </li>
+                        <li>
+                          Violations of third-party terms by your Agents or use of the
+                          Service
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Data Sharing.</strong> When you use Agents to interact
+                        with third-party services, data may be shared with those
+                        services in accordance with their privacy policies and terms of
+                        service. The Company's Privacy Policy describes how we handle
+                        data, but third-party services are governed by their own privacy
+                        policies.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        <strong>Third-Party Service Changes.</strong> Third-party
+                        services may change their APIs, terms, or discontinue services
+                        at any time. The Company is not responsible for maintaining
+                        compatibility with third-party service changes and may need to
+                        update or remove integrations accordingly. The Company will
+                        attempt to provide reasonable notice of significant integration
+                        changes when possible.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Export Control Compliance
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Compliance with Export Laws.</strong> The Service,
+                        including software, technology, and technical data, may be
+                        subject to U.S. export control laws, including the Export
+                        Administration Regulations (EAR) and International Traffic in
+                        Arms Regulations (ITAR). You agree to comply with all applicable
+                        export control laws and regulations.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Prohibited Countries & Users.</strong> You represent and
+                        warrant that you are not located in, under the control of, or a
+                        national or resident of any country subject to U.S. trade
+                        embargoes or sanctions, including but not limited to Cuba, Iran,
+                        North Korea, Syria, and the Crimea region of Ukraine. You also
+                        represent that you are not on any U.S. government list of
+                        prohibited or restricted parties.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Restricted Uses.</strong> You agree not to use the
+                        Service in any manner that would violate U.S. export control
+                        laws, including but not limited to:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Exporting, re-exporting, or transferring the Service to
+                          prohibited countries or restricted parties
+                        </li>
+                        <li>
+                          Using the Service for purposes prohibited by export control
+                          laws
+                        </li>
+                        <li>
+                          Facilitating transactions or activities that violate export
+                          control laws
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        <strong>Company Rights.</strong> The Company reserves the right
+                        to restrict access to the Service from any country or to any
+                        user based on export control requirements, sanctions, or other
+                        legal obligations. The Company may suspend or terminate your
+                        Account if it determines, in its sole discretion, that your use
+                        of the Service violates export control laws or poses a risk of
+                        such violation.
+                      </p>
+
+                      <h3 className="text-lg font-medium tracking-tight">
+                        Self-Hosting
+                      </h3>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        The Service software is available for self-hosting on your own
+                        infrastructure, subject to the terms of the LICENSE file in our
+                        GitHub repository. Self-hosting is governed by the Kortix Public
+                        Source License (KPSL), which includes restrictions on
+                        network-accessible deployments and commercial use. For
+                        network-accessible deployments or commercial use beyond the
+                        LICENSE terms, a separate commercial license agreement is
+                        required. Please refer to the LICENSE file for complete terms
+                        and contact{' '}
+                        <a
+                          href="mailto:hey@kortix.com"
+                          className="text-primary hover:underline"
+                        >
+                          hey@kortix.com
+                        </a>
+                        {' '}for commercial licensing inquiries.
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
@@ -561,36 +1300,101 @@ function LegalContent() {
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
-                        Licensing Terms
+                        Intellectual Property & Ownership
                       </h3>
                       <p className="text-muted-foreground text-balance mb-4">
-                        Subject to your compliance with this Agreement, the
-                        conditions herein, and any limitations applicable to the
-                        Company or by law:
+                        <strong>Service License.</strong> Subject to your compliance
+                        with this Agreement, the conditions herein, and any limitations
+                        applicable to the Company or by law, you are granted a
+                        non-exclusive, limited, non-transferable, non-sublicensable,
+                        non-assignable, freely revocable license to access and use the
+                        Service for business or personal use.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>User Ownership of Assets.</strong> You own all Assets
+                        you create with the Services, including but not limited to:
                       </p>
                       <ul className="text-muted-foreground space-y-1 mb-4">
                         <li>
-                          you are granted a non-exclusive, limited,
-                          non-transferable, non-sublicensable, non-assignable,
-                          freely revocable license to access and use the Service
-                          for business or personal use;
+                          Generated content, code, documents, reports, presentations,
+                          and other deliverables created by Agents
                         </li>
                         <li>
-                          you own all Assets you create with the Services, and
+                          Agent configurations, prompts, and customizations created by
+                          you
                         </li>
                         <li>
-                          we hereby assign to you all rights, title, and interest
-                          in and to such Assets for your personal or commercial
-                          use.
+                          Derivative works based on Agent outputs
+                        </li>
+                        <li>
+                          Data, files, and content you upload or provide to the Service
                         </li>
                       </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        The Company hereby assigns to you all rights, title, and interest
+                        in and to such Assets for your personal or commercial use,
+                        subject to the limitations below.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Company Retained Rights.</strong> The Company retains all
+                        rights in and to:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          The Service platform, software, infrastructure, and technology
+                        </li>
+                        <li>
+                          Pre-existing training data, models, and algorithms used by
+                          underlying AI systems (including but not limited to LLM
+                          providers such as Anthropic, OpenAI, and others)
+                        </li>
+                        <li>
+                          Agent templates, examples, and pre-configured agents provided
+                          by the Company
+                        </li>
+                        <li>
+                          Improvements, modifications, and enhancements to the platform
+                          itself
+                        </li>
+                        <li>
+                          Company trademarks, logos, and branding
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>License to Company.</strong> You grant the Company a
+                        worldwide, non-exclusive, royalty-free license to use, store,
+                        process, and analyze your Assets and Agent configurations for
+                        the purposes of:
+                      </p>
+                      <ul className="text-muted-foreground space-y-1 mb-4">
+                        <li>
+                          Providing, maintaining, and improving the Service
+                        </li>
+                        <li>
+                          Analytics, monitoring, and service optimization
+                        </li>
+                        <li>
+                          Compliance with legal obligations and enforcement of these
+                          Terms of Use
+                        </li>
+                        <li>
+                          Security, fraud prevention, and abuse detection
+                        </li>
+                      </ul>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Third-Party Content.</strong> If your Assets incorporate
+                        third-party content, materials, or intellectual property, you
+                        are solely responsible for obtaining all necessary rights,
+                        licenses, and permissions. The Company does not grant you any
+                        rights to third-party content.
+                      </p>
                       <p className="text-muted-foreground text-balance mb-6">
-                        Otherwise, the Company reserves all rights not expressly
-                        granted under these Terms of Use. Each person must have a
+                        <strong>Account Responsibility.</strong> Each person must have a
                         unique account, and you are responsible for any activity
-                        conducted on your account. A breach or violation of any of
-                        our Terms of Use may result in an immediate termination of
-                        your right to use our Service.
+                        conducted on your account, including by Team Members or through
+                        API Keys you create. A breach or violation of any of our Terms of
+                        Use may result in an immediate termination of your right to use
+                        our Service.
                       </p>
 
                       <h3 className="text-lg font-medium tracking-tight">
@@ -677,9 +1481,9 @@ function LegalContent() {
                       <h3 className="text-lg font-medium tracking-tight">
                         Contact Us
                       </h3>
-                      <p className="text-muted-foreground text-balance mb-6">
-                        For questions regarding the Service, you can get in touch
-                        by emailing us at{' '}
+                      <p className="text-muted-foreground text-balance mb-4">
+                        For questions regarding the Service, you can get in touch by
+                        emailing us at{' '}
                         <a
                           href="mailto:info@kortix.com"
                           className="text-primary hover:underline"
@@ -687,6 +1491,34 @@ function LegalContent() {
                           info@kortix.com
                         </a>
                         .
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Legal Matters:</strong> For legal inquiries, DMCA
+                        notices, or other legal matters, please contact{' '}
+                        <a
+                          href="mailto:legal@kortix.com"
+                          className="text-primary hover:underline"
+                        >
+                          legal@kortix.com
+                        </a>
+                        .
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-4">
+                        <strong>Data Privacy Requests:</strong> For GDPR, CCPA, or other
+                        data privacy requests (access, deletion, portability, etc.),
+                        please contact{' '}
+                        <a
+                          href="mailto:info@kortix.com"
+                          className="text-primary hover:underline"
+                        >
+                          info@kortix.com
+                        </a>
+                        {' '}with the subject line "Privacy Request" and include details
+                        of your request.
+                      </p>
+                      <p className="text-muted-foreground text-balance mb-6">
+                        <strong>Mailing Address:</strong> Kortix AI Corp, 701 Tillery
+                        Street Unit 12-2521, Austin, Texas 78702, United States.
                       </p>
                     </div>
                   ) : (
