@@ -6,6 +6,7 @@ import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, Platform, TouchableOpacity, LayoutAnimation, UIManager, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData, type TextInputSelectionChangeEventData } from 'react-native';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -474,16 +475,10 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [attachAnimatedStyle, isDisabled]
   );
 
-  return (
-    <GestureDetector gesture={swipeDownGesture}>
-      <View
-        className="relative rounded-[30px] overflow-hidden bg-card border border-border"
-        style={containerStyle}
-        collapsable={false}
-        {...props}
-      >
-        <View className="absolute inset-0" />
-        <View className="p-4 flex-1" collapsable={false}>
+  const containerContent = (
+    <>
+      <View className="absolute inset-0" />
+      <View className="p-4 flex-1" collapsable={false}>
           {isRecording ? (
             <RecordingMode
               audioLevels={audioLevels}
@@ -520,7 +515,35 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
             />
           )}
         </View>
-      </View>
+      </>
+    );
+
+  return (
+    <GestureDetector gesture={swipeDownGesture}>
+      {isLiquidGlassAvailable() ? (
+        <GlassView
+          glassEffectStyle="regular"
+          tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)'}
+          isInteractive
+          style={{
+            ...containerStyle,
+            borderRadius: 30,
+            borderWidth: 0.5,
+            borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.06)',
+            overflow: 'hidden',
+          }}
+          {...props}>
+          {containerContent}
+        </GlassView>
+      ) : (
+        <View
+          className="relative rounded-[30px] overflow-hidden bg-card border border-border"
+          style={containerStyle}
+          collapsable={false}
+          {...props}>
+          {containerContent}
+        </View>
+      )}
     </GestureDetector>
   );
 }));

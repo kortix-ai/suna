@@ -8,7 +8,7 @@ import Animated, { useAnimatedStyle, interpolate } from 'react-native-reanimated
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { ToolSnack, type ToolSnackData } from '../ToolSnack';
 import { AttachmentBar } from '@/components/attachments';
-import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/components/quick-actions';
+import { QuickActionBar } from '@/components/quick-actions';
 import { useLanguage } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
@@ -45,13 +45,7 @@ export interface ChatInputSectionProps {
   audioLevels: number[];
 
   // Quick actions
-  selectedQuickAction: string | null;
-  selectedQuickActionOption?: string | null;
-  onClearQuickAction: () => void;
-  onQuickActionPress?: (actionId: string) => void;
-  onQuickActionSelectOption?: (optionId: string) => void;
-  onQuickActionSelectPrompt?: (prompt: string) => void;
-  onQuickActionThreadPress?: (threadId: string) => void;
+  onQuickActionSelectMode?: (modeId: string, prompt: string) => void;
 
   // Agent running state
   isAgentRunning: boolean;
@@ -159,13 +153,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   recordingDuration,
   audioLevel,
   audioLevels,
-  selectedQuickAction,
-  selectedQuickActionOption,
-  onClearQuickAction,
-  onQuickActionPress,
-  onQuickActionSelectOption,
-  onQuickActionSelectPrompt,
-  onQuickActionThreadPress,
+  onQuickActionSelectMode,
   isAgentRunning,
   onStopAgentRun,
   style,
@@ -237,17 +225,6 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
     [colorScheme]
   );
 
-  // Find selected action for expanded view
-  const selectedAction = React.useMemo(() => {
-    if (!selectedQuickAction) return null;
-    return QUICK_ACTIONS.find(a => a.id === selectedQuickAction) || null;
-  }, [selectedQuickAction]);
-
-  // Get translated label for the selected action
-  const selectedActionLabel = React.useMemo(() => {
-    if (!selectedAction) return '';
-    return t(`quickActions.${selectedAction.id}`, { defaultValue: selectedAction.label });
-  }, [selectedAction, t]);
 
   // Expose focus method via ref
   React.useImperativeHandle(ref, () => ({
@@ -311,23 +288,17 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             onDismiss={onToolSnackDismiss}
           />
         )}
-
-        {/* Quick Action Expanded Content - Above Input (only on home) */}
-        {showQuickActions && selectedQuickAction && selectedAction && (
-          <View className="mb-3" collapsable={false}>
-            <QuickActionExpandedView
-              actionId={selectedQuickAction}
-              actionLabel={selectedActionLabel}
-              onSelectOption={(optionId) => onQuickActionSelectOption?.(optionId)}
-              selectedOptionId={selectedQuickActionOption}
-              onSelectPrompt={onQuickActionSelectPrompt}
-              onThreadPress={onQuickActionThreadPress}
+                {/* Quick Action Bar - Above input (mode selector, only on home) */}
+        {showQuickActions && (
+          <View className="px-3 mb-1">
+            <QuickActionBar
+              onSelectMode={onQuickActionSelectMode}
             />
           </View>
         )}
 
         {/* Chat Input */}
-        <View className={containerClassName}>
+        <View className={showQuickActions ? "mx-3 mb-8 -mt-1" : containerClassName}>
           <ChatInput
             ref={chatInputRef}
             value={value}
@@ -347,30 +318,12 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             audioLevels={audioLevels}
             attachments={attachments}
             onRemoveAttachment={onRemoveAttachment}
-            selectedQuickAction={selectedQuickAction}
-            selectedQuickActionOption={selectedQuickActionOption}
-            onClearQuickAction={onClearQuickAction}
             isAuthenticated={isAuthenticated}
             isAgentRunning={isAgentRunning}
             isSendingMessage={isSendingMessage}
             isTranscribing={isTranscribing}
           />
         </View>
-
-        {/* Quick Action Bar - Below input (camera-style mode selector, only on home) */}
-        {showQuickActions && onQuickActionPress && (
-          <Animated.View 
-            style={quickActionsAnimatedStyle}
-            pointerEvents="box-none" 
-            collapsable={false}
-          >
-            <QuickActionBar
-              onActionPress={onQuickActionPress}
-              selectedActionId={selectedQuickAction}
-            />
-          </Animated.View>
-        )}
-
         {/* Safe area bottom padding - animates smoothly with keyboard */}
         {/* When keyboard is open, it covers the bottom safe area so less padding is needed */}
         {!showQuickActions && (

@@ -135,15 +135,9 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
       [chat]
     );
 
-    const handleQuickActionSelectOption = React.useCallback(
-      (optionId: string) => {
-        chat.setSelectedQuickActionOption(optionId);
-      },
-      [chat]
-    );
-
-    const handleQuickActionSelectPrompt = React.useCallback(
-      (prompt: string) => {
+    const handleQuickActionSelectMode = React.useCallback(
+      (modeId: string, prompt: string) => {
+        log.log('🎯 Mode selected:', modeId, 'with prompt:', prompt);
         chat.setInputValue(prompt);
         chatInputRef.current?.focusInput();
       },
@@ -220,7 +214,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
                     onThreadPress={handleQuickActionThreadPress}
                   />
                 ) : (
-                  <BackgroundLogo />
+                  <BackgroundLogo minimal={true} />
                 )}
               </View>
             </GestureDetector>
@@ -246,13 +240,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             audioLevels={audioRecorder.audioLevels}
             attachments={chat.attachments}
             onRemoveAttachment={chat.removeAttachment}
-            selectedQuickAction={chat.selectedQuickAction}
-            selectedQuickActionOption={chat.selectedQuickActionOption}
-            onClearQuickAction={chat.clearQuickAction}
-            onQuickActionPress={chat.handleQuickAction}
-            onQuickActionSelectOption={handleQuickActionSelectOption}
-            onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
-            onQuickActionThreadPress={handleQuickActionThreadPress}
+            onQuickActionSelectMode={handleQuickActionSelectMode}
             isAuthenticated={isAuthenticated}
             isAgentRunning={chat.isAgentRunning}
             isSendingMessage={chat.isSendingMessage}

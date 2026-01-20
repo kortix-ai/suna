@@ -1,15 +1,18 @@
 import * as React from 'react';
-import { Platform, Pressable, ScrollView, View } from 'react-native';
+import { Platform, Pressable, ScrollView, View, Dimensions } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, Easing } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/ui/SearchBar';
 import { KortixLoader } from '@/components/ui';
+import { Host, Text as SwiftUIText } from '@expo/ui/swift-ui';
 import {
   Search,
   Plus,
@@ -23,6 +26,9 @@ import {
   ChevronLeft,
   ChevronFirst,
   ChevronsUpDown,
+  ArrowLeft,
+  ArrowRightIcon,
+  SettingsIcon,
 } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
@@ -41,7 +47,6 @@ import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
 import { WorkerCreationDrawer } from '@/components/workers/WorkerCreationDrawer';
 import { WorkerConfigDrawer } from '@/components/workers/WorkerConfigDrawer';
 import { useAdvancedFeatures } from '@/hooks';
-import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import type {
   Conversation,
   UserProfile,
@@ -396,9 +401,40 @@ export function MenuPage({
   const insets = useSafeAreaInsets();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
+  const plusButtonScale = useSharedValue(1);
+  const backButtonScale = useSharedValue(1);
   const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
   const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
+
+  // Settings page animation - same pattern as menu/home
+  const settingsTranslateX = useSharedValue(0);
+
+  const handleOpenSettings = React.useCallback(() => {
+    settingsTranslateX.value = withTiming(SCREEN_WIDTH, {
+      duration: 200,
+      easing: Easing.out(Easing.exp),
+    });
+    setTimeout(() => setIsSettingsVisible(true), 0);
+  }, []);
+
+  const handleCloseSettings = React.useCallback(() => {
+    settingsTranslateX.value = withTiming(0, {
+      duration: 200,
+      easing: Easing.out(Easing.exp),
+    });
+    setTimeout(() => setIsSettingsVisible(false), 0);
+  }, []);
+
+  React.useEffect(() => {
+    const targetValue = isSettingsVisible ? SCREEN_WIDTH : 0;
+    if (Math.abs(settingsTranslateX.value - targetValue) > 10) {
+      settingsTranslateX.value = withTiming(targetValue, {
+        duration: 200,
+        easing: Easing.out(Easing.exp),
+      });
+    }
+  }, [isSettingsVisible]);
 
   // Debug trigger drawer visibility
   React.useEffect(() => {
@@ -498,13 +534,49 @@ export function MenuPage({
     transform: [{ scale: profileScale.value }],
   }));
 
+  const plusButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: plusButtonScale.value }],
+  }));
+
+  const backButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: backButtonScale.value }],
+  }));
+
+  // Settings page animation - slides in from right
+  const settingsPageStyle = useAnimatedStyle(() => {
+    const progress = settingsTranslateX.value / SCREEN_WIDTH;
+    
+    return {
+      transform: [
+        {
+          translateX: SCREEN_WIDTH - settingsTranslateX.value,
+        },
+      ],
+      opacity: 0.3 + (progress * 0.7),
+    };
+  });
+
+  // Menu content animation - slides left when settings opens
+  const menuContentStyle = useAnimatedStyle(() => {
+    const progress = settingsTranslateX.value / SCREEN_WIDTH;
+    
+    return {
+      transform: [
+        {
+          translateX: -settingsTranslateX.value,
+        },
+      ],
+      opacity: 1 - (progress * 0.3),
+    };
+  });
+
   /**
-   * Handle profile press - Opens settings drawer
+   * Handle profile press - Opens settings instantly
    */
   const handleProfilePress = () => {
     log.log('🎯 Opening settings drawer');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsSettingsVisible(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    handleOpenSettings();
   };
 
   const handleProfilePressIn = () => {
@@ -513,14 +585,6 @@ export function MenuPage({
 
   const handleProfilePressOut = () => {
     profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  /**
-   * Handle settings drawer close
-   */
-  const handleCloseSettings = () => {
-    log.log('🎯 Closing settings drawer');
-    setIsSettingsVisible(false);
   };
 
   /**
@@ -592,61 +656,149 @@ export function MenuPage({
   };
 
   return (
-    <View
-      className="flex-1 overflow-hidden rounded-r-[24px] bg-background"
-      style={{
-        shadowColor: '#000',
-        shadowOffset: { width: -8, height: 0 },
-        shadowOpacity: colorScheme === 'dark' ? 0.6 : 0.2,
-        shadowRadius: 16,
-        elevation: 16,
-      }}>
-      <SafeAreaView edges={['top']} className="flex-1">
+    <View className="flex-1 overflow-hidden bg-background">
+      {/* Settings Page - positioned absolutely, slides in from right */}
+      {isSettingsVisible && (
+        <Animated.View
+          style={[
+            {
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: SCREEN_WIDTH,
+              height: '100%',
+            },
+            settingsPageStyle,
+          ]}
+          className="z-50 bg-background">
+          <SettingsPage visible={isSettingsVisible} profile={profile} onClose={handleCloseSettings} />
+        </Animated.View>
+      )}
+
+      {/* Menu Content - slides left when settings opens */}
+      <Animated.View style={[{ flex: 1 }, menuContentStyle]}>
+        <SafeAreaView edges={['top']} className="flex-1">
         <View className="flex-1 px-6 pt-2">
+          {/* User Profile Section - Now at top */}
           <View className="mb-4 flex-row items-center gap-3">
-            <View className="flex-1">
-              {activeTab === 'chats' && (
-                <SearchBar
-                  value={chatsSearch.query}
-                  onChangeText={chatsSearch.updateQuery}
-                  placeholder={t('menu.searchConversations') || 'Search chats...'}
-                  onClear={chatsSearch.clearSearch}
-                />
-              )}
-              {activeTab === 'workers' && (
-                <SearchBar
-                  value={workersSearch.query}
-                  onChangeText={workersSearch.updateQuery}
-                  placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
-                  onClear={workersSearch.clearSearch}
-                />
-              )}
-              {activeTab === 'triggers' && (
-                <SearchBar
-                  value={triggersSearch.query}
-                  onChangeText={triggersSearch.updateQuery}
-                  placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
-                  onClear={triggersSearch.clearSearch}
-                />
-              )}
-            </View>
             <AnimatedPressable
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                if (activeTab === 'chats') onNewChat?.();
-                else if (activeTab === 'workers') handleWorkerCreate();
-                else if (activeTab === 'triggers') handleTriggerCreate();
-              }}
-              onPressIn={() => {
-                profileScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-              }}
-              onPressOut={() => {
-                profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-              }}
+              onPress={handleProfilePress}
+              onPressIn={handleProfilePressIn}
+              onPressOut={handleProfilePressOut}
               style={profileAnimatedStyle}
-              className="h-11 w-11 items-center justify-center rounded-[21px] bg-primary">
-              <Icon as={Plus} size={20} className="text-primary-foreground" strokeWidth={2.5} />
+              className="flex-1 flex-row items-center gap-3 rounded-2xl">
+              <ProfilePicture
+                imageUrl={user?.user_metadata?.avatar_url || profile?.avatar}
+                size={10}
+                fallbackText={
+                  profile.name ||
+                  user?.user_metadata?.full_name ||
+                  user?.email?.split('@')[0] ||
+                  'User'
+                }
+              />
+              <View className="flex-1 flex-col items-start">
+                <Text className="font-roobert-semibold text-lg text-foreground">
+                  {profile.name || 'User'}
+                </Text>
+              </View>
             </AnimatedPressable>
+            <View className="flex-row items-center gap-2">
+              <AnimatedPressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onClose?.();
+                }}
+                onPressIn={() => {
+                  backButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+                }}
+                onPressOut={() => {
+                  backButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                }}
+                style={[
+                  backButtonAnimatedStyle,
+                  {
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                  },
+                ]}>
+                {isLiquidGlassAvailable() ? (
+                  <GlassView
+                    glassEffectStyle="regular"
+                    tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+                    isInteractive
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderRadius: 22,
+                    }}>
+                    <Icon as={SettingsIcon} size={22} className="text-foreground" strokeWidth={2} />
+                  </GlassView>
+                ) : (
+                  <View
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7',
+                      borderRadius: 22,
+                      borderWidth: 0.5,
+                      borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
+                    }}>
+                    <Icon as={ChevronFirst} size={22} className="text-foreground" strokeWidth={2} />
+                  </View>
+                )}
+              </AnimatedPressable>
+              <AnimatedPressable
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  onClose?.();
+                }}
+                onPressIn={() => {
+                  backButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+                }}
+                onPressOut={() => {
+                  backButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                }}
+                style={[
+                  backButtonAnimatedStyle,
+                  {
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                  },
+                ]}>
+                {isLiquidGlassAvailable() ? (
+                  <GlassView
+                    glassEffectStyle="regular"
+                    tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+                    isInteractive
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderRadius: 22,
+                    }}>
+                    <Icon as={ArrowRightIcon} size={22} className="text-foreground" strokeWidth={2} />
+                  </GlassView>
+                ) : (
+                  <View
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7',
+                      borderRadius: 22,
+                      borderWidth: 0.5,
+                      borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
+                    }}>
+                    <Icon as={ChevronFirst} size={22} className="text-foreground" strokeWidth={2} />
+                  </View>
+                )}
+              </AnimatedPressable>
+            </View>
           </View>
 
           <View className="relative -mx-6 flex-1">
@@ -874,44 +1026,85 @@ export function MenuPage({
           </View>
         </View>
 
+        {/* Search Bar Section - Now at bottom */}
         <View className="gap-4 px-6" style={{ paddingBottom: Math.max(insets.bottom, 16) + 16}}>
-          <AnimatedPressable
-            onPress={handleProfilePress}
-            onPressIn={handleProfilePressIn}
-            onPressOut={handleProfilePressOut}
-            style={profileAnimatedStyle}
-            className="flex-row items-center gap-3 rounded-2xl border border-border p-3">
-            <ProfilePicture
-              imageUrl={user?.user_metadata?.avatar_url || profile?.avatar}
-              size={12}
-              fallbackText={
-                profile.name ||
-                user?.user_metadata?.full_name ||
-                user?.email?.split('@')[0] ||
-                'User'
-              }
-            />
-            <View className="-mt-1.5 flex-col items-start">
-              <Text className="font-roobert-semibold text-lg text-foreground">
-                {profile.name || 'User'}
-              </Text>
-              {profile.planName ? (
-                <View className="flex-row items-center gap-2">
-                  <TierBadge planName={profile.planName} size="sm" variant="default" />
-                </View>
-              ) : (
-                <Text className="font-roobert text-sm text-muted-foreground">
-                  {profile.email || 'Tap to open settings'}
-                </Text>
+          <View className="flex-row items-center gap-3">
+            <View className="flex-1">
+              {activeTab === 'chats' && (
+                <SearchBar
+                  value={chatsSearch.query}
+                  onChangeText={chatsSearch.updateQuery}
+                  placeholder={t('menu.searchConversations') || 'Search chats...'}
+                  onClear={chatsSearch.clearSearch}
+                />
+              )}
+              {activeTab === 'workers' && (
+                <SearchBar
+                  value={workersSearch.query}
+                  onChangeText={workersSearch.updateQuery}
+                  placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
+                  onClear={workersSearch.clearSearch}
+                />
+              )}
+              {activeTab === 'triggers' && (
+                <SearchBar
+                  value={triggersSearch.query}
+                  onChangeText={triggersSearch.updateQuery}
+                  placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
+                  onClear={triggersSearch.clearSearch}
+                />
               )}
             </View>
-            <Icon
-              as={ChevronsUpDown}
-              size={20}
-              className="ml-auto text-muted-foreground"
-              strokeWidth={2}
-            />
-          </AnimatedPressable>
+            <AnimatedPressable
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                if (activeTab === 'chats') onNewChat?.();
+                else if (activeTab === 'workers') handleWorkerCreate();
+                else if (activeTab === 'triggers') handleTriggerCreate();
+              }}
+              onPressIn={() => {
+                plusButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+              }}
+              onPressOut={() => {
+                plusButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+              }}
+              style={[
+                plusButtonAnimatedStyle,
+                {
+                  width: 44,
+                  height: 44,
+                  borderRadius: 22,
+                },
+              ]}>
+              {isLiquidGlassAvailable() ? (
+                <GlassView
+                  glassEffectStyle="regular"
+                  tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+                  isInteractive
+                  style={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderRadius: 22,
+                  }}>
+                  <Icon as={Plus} size={20} className="text-foreground" strokeWidth={2.5} />
+                </GlassView>
+              ) : (
+                <View
+                  style={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7',
+                    borderRadius: 22,
+                    borderWidth: 0.5,
+                    borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
+                  }}>
+                  <Icon as={Plus} size={20} className="text-foreground" strokeWidth={2.5} />
+                </View>
+              )}
+            </AnimatedPressable>
+          </View>
           {advancedFeaturesEnabled && (
             <BottomNav
               activeTab={activeTab}
@@ -922,11 +1115,7 @@ export function MenuPage({
           )}
         </View>
       </SafeAreaView>
-
-      {/* Settings Page */}
-      <AnimatedPageWrapper visible={isSettingsVisible} onClose={handleCloseSettings}>
-        <SettingsPage visible={isSettingsVisible} profile={profile} onClose={handleCloseSettings} />
-      </AnimatedPageWrapper>
+      </Animated.View>
 
       {/* Floating Action Button */}
       {advancedFeaturesEnabled && (

@@ -1,9 +1,11 @@
 import * as React from 'react';
 import { Pressable, View, Keyboard } from 'react-native';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Search, X } from 'lucide-react-native';
 import { Icon } from './icon';
 import { Input } from './input';
 import { log } from '@/lib/logger';
+import { useColorScheme } from 'nativewind';
 
 interface SearchBarProps {
   value: string;
@@ -31,16 +33,16 @@ export function SearchBar({
   onClear,
   className = ""
 }: SearchBarProps) {
+  const { colorScheme } = useColorScheme();
+  
   const handleClear = () => {
     log.log('🎯 Clear search');
     onClear?.();
     Keyboard.dismiss();
   };
 
-  return (
-    <View
-      className={`bg-primary/5 rounded-3xl flex-row items-center px-3 h-12 ${className}`}
-    >
+  const content = (
+    <>
       <Icon
         as={Search}
         size={18}
@@ -74,6 +76,34 @@ export function SearchBar({
           />
         </Pressable>
       )}
+    </>
+  );
+
+  return isLiquidGlassAvailable() ? (
+    <GlassView
+      glassEffectStyle="regular"
+      tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
+      isInteractive
+      style={{
+        height: 44,
+        borderRadius: 24,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        borderWidth: 0.5,
+        borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
+      }}
+      className={className}>
+      {content}
+    </GlassView>
+  ) : (
+    <View
+      className={`bg-primary/5 rounded-3xl flex-row items-center px-3 h-12 ${className}`}
+      style={{
+        borderWidth: 0.5,
+        borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+      }}>
+      {content}
     </View>
   );
 }
