@@ -104,7 +104,9 @@ class ConversionFunnel(BaseModel):
     visitors: int
     signups: int
     subscriptions: int
-    subscriber_emails: List[str]  # Emails of new paid subscribers for this date
+    # Breakdown by platform (clickable to see emails)
+    web_subscriber_emails: List[str] = []
+    app_subscriber_emails: List[str] = []
     visitor_to_signup_rate: float
     signup_to_subscription_rate: float
     overall_conversion_rate: float
@@ -1281,25 +1283,22 @@ async def get_conversion_funnel(
                 _fetch_revenuecat_revenue(client, range_start_utc, range_end_utc)
             )
 
-            # Collect unique paying customers
-            all_emails: List[str] = []
+            # Collect unique paying customers by platform
+            # Stripe (web): get emails from user_emails dict
+            stripe_emails_dict = stripe_data.get('user_emails', {})
+            web_emails = sorted(set([email for email in stripe_emails_dict.values() if email]))
 
-            # Stripe: get emails from user_emails dict
-            stripe_emails = stripe_data.get('user_emails', {})
-            all_emails.extend([email for email in stripe_emails.values() if email])
+            # RevenueCat (app): emails already fetched via RPC
+            rc_emails_list = rc_data.get('user_emails', [])
+            app_emails = sorted(set([email for email in rc_emails_list if email]))
 
-            # RevenueCat: emails already fetched via RPC
-            rc_emails = rc_data.get('user_emails', [])
-            all_emails.extend([email for email in rc_emails if email])
-
-            # Deduplicate and sort
-            unique_emails = sorted(set(all_emails))
+            # Combined (deduplicated)
+            all_emails = sorted(set(web_emails + app_emails))
 
             return {
-                'count': len(unique_emails),
-                'emails': unique_emails,
-                'web_count': stripe_data.get('payment_count', 0),
-                'app_count': rc_data.get('payment_count', 0),
+                'count': len(all_emails),
+                'web_emails': web_emails,
+                'app_emails': app_emails,
             }
 
         # Execute all queries in parallel
@@ -1311,7 +1310,8 @@ async def get_conversion_funnel(
 
         # Extract count and emails from subs_result
         subscriptions = subs_result['count']
-        subscriber_emails = subs_result['emails']
+        web_subscriber_emails = subs_result['web_emails']
+        app_subscriber_emails = subs_result['app_emails']
 
         # Calculate conversion rates
         visitor_to_signup = (signups / visitors * 100) if visitors > 0 else 0
@@ -1322,7 +1322,8 @@ async def get_conversion_funnel(
             visitors=visitors,
             signups=signups,
             subscriptions=subscriptions,
-            subscriber_emails=subscriber_emails,
+            web_subscriber_emails=web_subscriber_emails,
+            app_subscriber_emails=app_subscriber_emails,
             visitor_to_signup_rate=round(visitor_to_signup, 2),
             signup_to_subscription_rate=round(signup_to_sub, 2),
             overall_conversion_rate=round(overall, 2),
