@@ -155,8 +155,8 @@ async def start_pool_service() -> None:
         return
     
 
-    # logger.warning("[SANDBOX_POOL] Pool service DISABLED - sandbox creation paused due to Daytona rate limiting")
-    # return
+    logger.warning("[SANDBOX_POOL] Pool service DISABLED - sandbox creation paused due to high usage")
+    return
     
     service = get_pool_service()
     
