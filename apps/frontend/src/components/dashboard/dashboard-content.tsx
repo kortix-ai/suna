@@ -61,6 +61,7 @@ export function DashboardContent() {
   const { data: accountState, isLoading: isAccountStateLoading } = useAccountState({ enabled: !!user });
   const planName = accountStateSelectors.planName(accountState);
   const { setOpen: setSidebarOpenState, setOpenMobile } = useSidebar();
+  const pricingModalStore = usePricingModalStore();
 
   // Handle tab changes from URL
   React.useEffect(() => {
