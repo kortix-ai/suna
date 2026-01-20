@@ -8,7 +8,7 @@ export default function HomeLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="w-full min-h-dvh relative">
+    <div className="w-full relative">
       <Navbar />
       {children}
     </div>
