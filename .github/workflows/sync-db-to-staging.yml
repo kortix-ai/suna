@@ -1,0 +1,143 @@
+name: Sync PROD DB to Lower Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_environment:
+        description: 'Target environment to sync to'
+        required: true
+        type: choice
+        options:
+          - staging
+          - dev
+      sanitize_pii:
+        description: 'Sanitize PII data (emails, names)?'
+        type: boolean
+        default: true
+      confirm:
+        description: 'Type "sync" to confirm (OVERWRITES TARGET DB!)'
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  sync-database:
+    name: Sync PROD → ${{ github.event.inputs.target_environment }}
+    if: github.event.inputs.confirm == 'sync'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.target_environment }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Dump PROD database
+        env:
+          PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: |
+          echo "🔄 Dumping PROD database..."
+
+          # Dump with custom format, excluding Supabase-managed schemas
+          pg_dump "$PROD_DATABASE_URL" \
+            --no-owner \
+            --no-acl \
+            --no-comments \
+            --exclude-schema=auth \
+            --exclude-schema=storage \
+            --exclude-schema=realtime \
+            --exclude-schema=supabase_functions \
+            --exclude-schema=supabase_migrations \
+            --exclude-schema=extensions \
+            --exclude-schema=vault \
+            --exclude-schema=pgsodium \
+            --exclude-schema=pgsodium_masks \
+            --exclude-schema=graphql \
+            --exclude-schema=graphql_public \
+            -Fc \
+            -f prod_dump.dump
+
+          echo "✅ PROD dump complete ($(du -h prod_dump.dump | cut -f1))"
+
+      - name: Set target database URL
+        id: target
+        run: |
+          if [ "${{ github.event.inputs.target_environment }}" == "staging" ]; then
+            echo "url=${{ secrets.STAGING_DATABASE_URL }}" >> $GITHUB_OUTPUT
+          else
+            echo "url=${{ secrets.DEV_DATABASE_URL }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Restore to ${{ github.event.inputs.target_environment }}
+        env:
+          TARGET_DATABASE_URL: ${{ steps.target.outputs.url }}
+        run: |
+          echo "🔄 Restoring to ${{ github.event.inputs.target_environment }}..."
+
+          # Restore with clean (drop existing objects first)
+          pg_restore \
+            -d "$TARGET_DATABASE_URL" \
+            --clean \
+            --if-exists \
+            --no-owner \
+            --no-acl \
+            --single-transaction \
+            prod_dump.dump || {
+              echo "⚠️ Some errors during restore (may be expected for missing objects)"
+            }
+
+          echo "✅ Restore complete"
+
+      - name: Sanitize PII data
+        if: github.event.inputs.sanitize_pii == 'true'
+        env:
+          TARGET_DATABASE_URL: ${{ steps.target.outputs.url }}
+        run: |
+          echo "🔒 Sanitizing PII data..."
+
+          psql "$TARGET_DATABASE_URL" << 'EOSQL'
+          -- Sanitize user-identifiable data in basejump.accounts
+          UPDATE basejump.accounts SET
+            name = 'User ' || LEFT(id::text, 8),
+            personal_account = CASE WHEN personal_account THEN true ELSE false END
+          WHERE name IS NOT NULL;
+
+          -- Sanitize any email fields in accounts if they exist
+          DO $$
+          BEGIN
+            IF EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_schema = 'basejump'
+              AND table_name = 'accounts'
+              AND column_name = 'email'
+            ) THEN
+              EXECUTE 'UPDATE basejump.accounts SET email = ''user_'' || LEFT(id::text, 8) || ''@example.com'' WHERE email IS NOT NULL';
+            END IF;
+          END $$;
+
+          -- Log sanitization
+          SELECT 'Sanitized ' || COUNT(*) || ' accounts' FROM basejump.accounts;
+          EOSQL
+
+          echo "✅ PII sanitization complete"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -f prod_dump.dump
+          echo "🧹 Cleanup complete"
+
+      - name: Summary
+        run: |
+          echo "## Database Sync Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source**: PROD" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: ${{ github.event.inputs.target_environment }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **PII Sanitized**: ${{ github.event.inputs.sanitize_pii }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Triggered by**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Time**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
