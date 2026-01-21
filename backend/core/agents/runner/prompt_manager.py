@@ -53,7 +53,7 @@ class PromptManager:
             logger.debug(f"⏱️ [PROMPT TIMING] No MCP config in agent_config: 0.0ms")
         
         t3 = time.time()
-        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, fresh_mcp_config)
+        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, fresh_mcp_config, xml_tool_calling)
         logger.debug(f"⏱️ [PROMPT TIMING] _append_mcp_tools_info: {(time.time() - t3) * 1000:.1f}ms")
         
         t4 = time.time()
@@ -239,7 +239,7 @@ class PromptManager:
     
     @staticmethod
     async def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper], 
-                                     fresh_mcp_config: Optional[dict] = None) -> str:
+                                     fresh_mcp_config: Optional[dict] = None, xml_tool_calling: bool = False) -> str:
         if fresh_mcp_config:
             logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
             agent_config = {
@@ -252,13 +252,20 @@ class PromptManager:
         
         mcp_info = "\n\n--- MCP Tools Available ---\n"
         mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
-        mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
-        mcp_info += '<function_calls>\n'
-        mcp_info += '<invoke name="{tool_name}">\n'
-        mcp_info += '<parameter name="param1">value1</parameter>\n'
-        mcp_info += '<parameter name="param2">value2</parameter>\n'
-        mcp_info += '</invoke>\n'
-        mcp_info += '</function_calls>\n\n'
+        
+        # Only add XML format instructions if xml_tool_calling is enabled
+        # When native tool calling is enabled, the tools are available via the API and
+        # adding XML instructions would confuse the model into producing hybrid output
+        if xml_tool_calling:
+            mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
+            mcp_info += '<function_calls>\n'
+            mcp_info += '<invoke name="{tool_name}">\n'
+            mcp_info += '<parameter name="param1">value1</parameter>\n'
+            mcp_info += '<parameter name="param2">value2</parameter>\n'
+            mcp_info += '</invoke>\n'
+            mcp_info += '</function_calls>\n\n'
+        else:
+            mcp_info += "MCP tools can be called directly using their native function names.\n\n"
         
         mcp_info += "Available MCP tools:\n"
         try:
