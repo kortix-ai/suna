@@ -12,11 +12,12 @@ import { PdfPreview } from '@/components/file-previews/PdfPreview';
 import { SpreadsheetPreview } from '@/components/file-previews/SpreadsheetPreview';
 import { DocumentPreview } from '@/components/file-previews/DocumentPreview';
 import { KanvaxPreview } from '@/components/file-previews/KanvaxPreview';
+import { DocxPreview } from '@/components/file-previews/DocxPreview';
 import { FileCarousel } from '@/components/file-layouts/FileCarousel';
 import { FileGrid } from '@/components/file-layouts/FileGrid';
 import { useFileData } from '@/hooks/use-file-data';
 import { getFileType, getFilename } from '@/lib/utils/file-utils';
-import { isImageFile, isPdfExtension, isSpreadsheetExtension, isCsvExtension, isPreviewableFile, isKanvaxFile } from '@/lib/utils/file-types';
+import { isImageFile, isPdfExtension, isSpreadsheetExtension, isCsvExtension, isPreviewableFile, isKanvaxFile, isDocxExtension } from '@/lib/utils/file-types';
 import { Project } from '@/lib/api/threads';
 import { PresentationSlidePreview } from '@/components/thread/tool-views/presentation-tools/PresentationSlidePreview';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
@@ -84,6 +85,7 @@ export function FileAttachment({
     const isImage = isImageFile(filepath);
     const isPdf = isPdfExtension(extension);
     const isSpreadsheet = isSpreadsheetExtension(extension) || isCsvExtension(extension);
+    const isDocx = isDocxExtension(extension);
     const isKanvax = isKanvaxFile(filepath);
     const isPreviewable = isPreviewableFile(filepath);
     const isGridLayout = customStyle?.gridColumn === '1 / -1' || Boolean(customStyle && ('--attachment-height' in customStyle));
@@ -180,6 +182,30 @@ export function FileAttachment({
             );
         }
 
+        // For DOCX, show preview when we have sandboxId (file in sandbox)
+        // Works in both grid and inline layouts
+        if (isDocx && showPreview && sandboxId) {
+            return (
+                <div
+                    className={cn(
+                        "group relative rounded-xl border bg-card overflow-hidden",
+                        isGridLayout
+                            ? "w-full min-h-[300px] max-h-[500px]"
+                            : "w-full max-w-[600px] h-[300px]",
+                        className
+                    )}
+                    style={isGridLayout ? { gridColumn: '1 / -1', ...customStyle } : customStyle}
+                >
+                    <DocxPreview
+                        filepath={filepath}
+                        sandboxId={sandboxId}
+                        localPreviewUrl={localPreviewUrl}
+                        className="h-full w-full"
+                    />
+                </div>
+            );
+        }
+
         // Otherwise show compact FileCard
         return (
             <FileCard
@@ -199,8 +225,8 @@ export function FileAttachment({
     // For images/kanvax with localPreviewUrl, always show preview even if shouldShowPreview is false
     const canShowPreview = shouldShowPreview || ((isImage || isKanvax) && localPreviewUrl);
     
-    // Kanvax handles its own loading state internally, so skip content check for it
-    const needsContentCheck = !isKanvax && !isImage;
+    // Kanvax, images, and DOCX handle their own loading state internally, so skip content check for them
+    const needsContentCheck = !isKanvax && !isImage && !isDocx;
     if (!canShowPreview || waitingForSandbox || hasError || isSandboxDeleted || (needsContentCheck && !hasContent && !localPreviewUrl)) {
         return (
             <FileCard
@@ -277,7 +303,16 @@ export function FileAttachment({
                                 className="h-full w-full"
                             />
                         )}
-                        
+
+                        {isDocx && (
+                            <DocxPreview
+                                filepath={filepath}
+                                sandboxId={sandboxId}
+                                localPreviewUrl={localPreviewUrl}
+                                className="h-full w-full"
+                            />
+                        )}
+
                         {isKanvax && (
                             <KanvaxPreview
                                 filepath={filepath}
@@ -287,7 +322,7 @@ export function FileAttachment({
                             />
                         )}
 
-                        {isPreviewable && !isImage && !isPdf && !isSpreadsheet && !isKanvax && (
+                        {isPreviewable && !isImage && !isPdf && !isSpreadsheet && !isDocx && !isKanvax && (
                             <DocumentPreview
                                 filepath={filepath}
                                 sandboxId={sandboxId}

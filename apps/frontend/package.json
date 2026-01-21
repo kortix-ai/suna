@@ -148,6 +148,7 @@
     "comment-json": "^4.2.5",
     "date-fns": "^3.6.0",
     "diff": "^7.0.0",
+    "docx-preview": "^0.3.7",
     "extract-colors": "^4.2.0",
     "file-saver": "^2.0.5",
     "flags": "^4.0.2",
