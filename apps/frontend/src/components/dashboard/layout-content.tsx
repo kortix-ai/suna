@@ -44,8 +44,8 @@ const PresenceDebug = lazy(() =>
   import('@/components/debug/presence-debug').then(mod => ({ default: mod.PresenceDebug }))
 );
 
-const KortixAppBanners = lazy(() => 
-  import('@/components/announcements/kortix-app-banners').then(mod => ({ default: mod.KortixAppBanners }))
+const SprintLabAppBanners = lazy(() => 
+  import('@/components/announcements/sprintlab-app-banners').then(mod => ({ default: mod.SprintLabAppBanners }))
 );
 
 const MobileAppInterstitial = lazy(() => 
@@ -244,9 +244,9 @@ export default function DashboardLayoutContent({
         <Suspense fallback={null}>
           <PresentationViewerWrapper />
         </Suspense>
-        {/* Kortix App announcement banners */}
+        {/* SprintLab App announcement banners */}
         <Suspense fallback={null}>
-          <KortixAppBanners disableMobileAdvertising={featureFlags.disableMobileAdvertising} />
+          <SprintLabAppBanners disableMobileAdvertising={featureFlags.disableMobileAdvertising} />
         </Suspense>
         {/* Mobile app install interstitial - shown on actual mobile devices */}
         {!featureFlags.disableMobileAdvertising ? (

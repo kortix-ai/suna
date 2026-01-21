@@ -881,7 +881,7 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
             "trigger_slug": req.slug,
             "qualified_name": qualified_name,
             "profile_id": req.profile_id,
-            "model": req.model or "kortix/basic",
+            "model": req.model or "sprintlab/basic",
             **coerced_config,
         }
         if req.agent_prompt:

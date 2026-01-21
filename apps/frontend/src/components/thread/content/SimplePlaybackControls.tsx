@@ -9,7 +9,7 @@ import {
   PanelRightOpen 
 } from 'lucide-react';
 import Link from 'next/link';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 
 interface SimplePlaybackControlsProps {
   projectName: string;
@@ -33,15 +33,15 @@ export function SimplePlaybackControls({
   return (
     <div className={`fixed top-4 ${controlsPositionClass} z-50 transition-all duration-200`}>
       <div className="flex items-center gap-2 rounded-full border border-border/40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 px-3 py-2 shadow-lg">
-        {/* Kortix Logo */}
+        {/* SprintLab Logo */}
         <Link
           href="https://www.kortix.com"
           target="_blank"
           rel="noopener noreferrer"
           className="flex items-center gap-2 text-sm font-medium hover:opacity-80 transition-opacity"
         >
-          <KortixLogo className="h-5 w-5" />
-          <span className="hidden sm:inline">Kortix</span>
+          <SprintLabLogo className="h-5 w-5" />
+          <span className="hidden sm:inline">SprintLab</span>
         </Link>
 
         <div className="h-4 w-px bg-border/40" />

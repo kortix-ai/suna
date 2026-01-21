@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AlertCircle } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { billingApi } from '@/lib/api/billing';
 import { toast } from '@/lib/toast';
 import { formatCredits } from '@agentpress/shared';
@@ -186,7 +186,7 @@ export function CreditPurchaseModal({
                     >
                         {isProcessing ? (
                             <>
-                                <KortixLoader size="small" className="mr-2" />
+                                <SprintLabLoader size="small" className="mr-2" />
                                 Processing...
                             </>
                         ) : (

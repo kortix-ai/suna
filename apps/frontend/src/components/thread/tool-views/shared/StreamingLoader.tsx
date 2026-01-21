@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, memo } from 'react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 
 interface StreamingLoaderProps {
   message?: string;
@@ -24,7 +24,7 @@ export const StreamingLoader = memo(function StreamingLoader({
   return (
     <div className={`flex items-center justify-center h-full w-full ${className || ''}`}>
       <div className="flex flex-col items-center gap-4">
-        <KortixLoader customSize={32} speed={1} />
+        <SprintLabLoader customSize={32} speed={1} />
         <span className="text-sm text-muted-foreground">
           {message || 'Generating content'}{dots}
         </span>

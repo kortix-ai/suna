@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 
 import {
   AlertDialog,
@@ -63,7 +63,7 @@ export function DeleteConfirmationDialog({
           >
             {isDeleting ? (
               <>
-                <KortixLoader size="small" className="mr-2" />
+                <SprintLabLoader size="small" className="mr-2" />
                 Deleting...
               </>
             ) : (

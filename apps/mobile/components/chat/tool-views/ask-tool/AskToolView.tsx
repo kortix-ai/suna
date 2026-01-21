@@ -127,7 +127,7 @@ export function AskToolView({ toolCall, toolResult, isSuccess = true, isStreamin
           <View className="flex-row items-start gap-2.5 rounded-xl border border-border bg-muted/40 dark:bg-muted/20 px-3 py-2.5">
             <Icon as={Info} size={16} className="text-muted-foreground mt-0.5 flex-shrink-0" />
             <Text className="text-sm font-roobert text-muted-foreground flex-1 leading-relaxed">
-              Kortix will automatically continue working once you provide your response.
+              SprintLab will automatically continue working once you provide your response.
             </Text>
           </View>
 

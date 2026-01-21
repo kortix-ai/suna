@@ -25,7 +25,7 @@ SIMPLE_DATASET = [
 print(f"Running simple eval with {len(SIMPLE_DATASET)} test cases...")
 
 Eval(
-    "Kortix Agent - Simple",
+    "SprintLab Agent - Simple",
     data=lambda: SIMPLE_DATASET,
     task=create_agent_task(
         model_name="kortix/basic",

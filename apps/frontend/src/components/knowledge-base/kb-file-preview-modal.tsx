@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { FileIcon, Edit } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { toast } from '@/lib/toast';
 
 interface KBFilePreviewModalProps {
@@ -120,7 +120,7 @@ export function KBFilePreviewModal({ isOpen, onClose, file, onEditSummary }: KBF
                         >
                             {isSaving ? (
                                 <>
-                                    <KortixLoader size="small" />
+                                    <SprintLabLoader size="small" />
                                     Saving...
                                 </>
                             ) : (

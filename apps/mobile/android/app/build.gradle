@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace 'com.kortix.app'
+    namespace 'com.sprintlab.app'
     defaultConfig {
-        applicationId 'com.kortix.app'
+        applicationId 'com.sprintlab.app'
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1

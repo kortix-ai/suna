@@ -97,7 +97,7 @@ class BrowserAutomation {
                     }
                 }
 
-                await this.page.goto('https://kortix.com', { waitUntil: 'networkidle', timeout: 30000 });
+                await this.page.goto('https://sprintlab.id', { waitUntil: 'networkidle', timeout: 30000 });
                 // Wait a bit more for page to fully render and be visible
                 await this.page.waitForTimeout(2000);
                 // Verify page loaded successfully

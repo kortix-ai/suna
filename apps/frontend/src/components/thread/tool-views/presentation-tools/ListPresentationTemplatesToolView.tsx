@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Palette, Sparkles, CheckCircle, AlertTriangle, ArrowLeft, X } from "lucide-react"
-import { KortixLoader } from "@/components/ui/kortix-loader"
+import { SprintLabLoader } from "@/components/ui/sprintlab-loader"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ToolViewIconTitle } from "../shared/ToolViewIconTitle"
 import { ToolViewFooter } from "../shared/ToolViewFooter"
@@ -191,7 +191,7 @@ export function ListPresentationTemplatesToolView({
                             {!isLoaded && (
                               <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-zinc-100 to-zinc-50 dark:from-zinc-800 dark:to-zinc-900 animate-pulse">
                                 <div className="flex flex-col items-center gap-2">
-                                  <KortixLoader customSize={32} />
+                                  <SprintLabLoader customSize={32} />
                                   <span className="text-xs text-zinc-400 dark:text-zinc-600">Loading...</span>
                                 </div>
                               </div>

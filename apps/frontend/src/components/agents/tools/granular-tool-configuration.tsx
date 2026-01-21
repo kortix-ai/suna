@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Search, ChevronDown, ChevronRight, Settings2, Wrench } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { icons } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toast } from '@/lib/toast';
@@ -108,7 +108,7 @@ export const GranularToolConfiguration = ({
 
     if (disabled && isSunaAgent) {
       toast.error("Tools cannot be modified", {
-        description: "Kortix's default tools are managed centrally and cannot be changed.",
+        description: "SprintLab's default tools are managed centrally and cannot be changed.",
       });
       return;
     }
@@ -150,7 +150,7 @@ export const GranularToolConfiguration = ({
 
     if (disabled && isSunaAgent) {
       toast.error("Methods cannot be modified", {
-        description: "Kortix's default tool methods are managed centrally and cannot be changed.",
+        description: "SprintLab's default tool methods are managed centrally and cannot be changed.",
       });
       return;
     }
@@ -259,7 +259,7 @@ export const GranularToolConfiguration = ({
   if (isLoadingTools) {
     return (
       <div className="flex items-center justify-center h-full">
-        <KortixLoader size="large" />
+        <SprintLabLoader size="large" />
         <span className="ml-2 text-muted-foreground">Loading tools...</span>
       </div>
     );

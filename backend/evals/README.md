@@ -1,6 +1,6 @@
-# Kortix Agent Evaluations
+# SprintLab Agent Evaluations
 
-Evaluate Kortix agent performance using **Braintrust** with JSON-based test cases.
+Evaluate SprintLab agent performance using **Braintrust** with JSON-based test cases.
 
 ## Quick Start
 
@@ -23,7 +23,7 @@ uv run python evals/test_quick.py
 
 ### 3. View results
 
-Results are automatically uploaded to: https://www.braintrust.dev/app/Kortix/p/Kortix%20Agent/experiments/
+Results are automatically uploaded to: https://www.braintrust.dev/app/SprintLab/p/SprintLab%20Agent/experiments/
 
 ## Adding Test Cases
 
@@ -94,7 +94,7 @@ The `AgentEvalRunner` handles running agent tasks for evaluation:
 from evals.runner import AgentEvalRunner, EvalCase
 
 runner = AgentEvalRunner(
-    project_name="Kortix Agent",
+    project_name="SprintLab Agent",
     model_name="anthropic/claude-sonnet-4-20250514",  # Optional
     max_iterations=50,
     timeout_seconds=120.0,
@@ -201,7 +201,7 @@ User Input → Agent → LiteLLM → Braintrust Tracing
 | Variable | Description |
 |----------|-------------|
 | `BRAINTRUST_API_KEY` | Your Braintrust API key (required for uploading results) |
-| `EVAL_MODEL` | Override model for evals (default: `kortix/basic`) |
+| `EVAL_MODEL` | Override model for evals (default: `sprintlab/basic`) |
 | `EVAL_EXPERIMENT_NAME` | Custom experiment name (optional) |
 
 **Note**: If you see OpenAI quota errors during eval runs, this is due to the memory embedding system. You can either:

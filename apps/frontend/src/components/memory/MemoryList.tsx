@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { AlertCircle, Brain, Search } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { MemoryCard } from './MemoryCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -104,7 +104,7 @@ export function MemoryList({
               >
                 {isLoading ? (
                   <>
-                    <KortixLoader size="small" className="mr-2" />
+                    <SprintLabLoader size="small" className="mr-2" />
                     {tCommon('loading')}
                   </>
                 ) : (

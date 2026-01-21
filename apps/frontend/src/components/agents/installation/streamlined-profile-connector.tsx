@@ -9,7 +9,7 @@ import {
   Shield,
   Settings
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { toast } from '@/lib/toast';
 import { ComposioCredentialProfileSelector } from '@/components/agents/composio/composio-credential-profile-selector';
 import { ComposioConnector } from '@/components/agents/composio/composio-connector';
@@ -320,7 +320,7 @@ export const ProfileConnector: React.FC<ProfileConnectorProps> = ({
         >
           {isCreatingProfile ? (
             <>
-              <KortixLoader customSize={16} className="mr-1" />
+              <SprintLabLoader customSize={16} className="mr-1" />
               Creating...
             </>
           ) : (

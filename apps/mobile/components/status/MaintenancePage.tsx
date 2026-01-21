@@ -2,8 +2,8 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
+import { SprintLabLogo } from '@/components/ui/SprintLabLogo';
 import { RefreshCw } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 
@@ -19,7 +19,7 @@ export function MaintenancePage({ onRefresh, isRefreshing = false }: Maintenance
   return (
     <View className="flex-1 items-center justify-center bg-background px-6">
       <View className="w-full max-w-sm items-center">
-        <KortixLogo size={32} color={isDark ? 'dark' : 'light'} />
+        <SprintLabLogo size={32} color={isDark ? 'dark' : 'light'} />
         
         <Text className="mt-8 text-center font-roobert-semibold text-3xl text-foreground">
           We'll Be Right Back
@@ -49,7 +49,7 @@ export function MaintenancePage({ onRefresh, isRefreshing = false }: Maintenance
               className="h-12 w-12 items-center justify-center rounded-xl bg-muted active:opacity-80"
             >
               {isRefreshing ? (
-                <KortixLoader size="small" customSize={20} />
+                <SprintLabLoader size="small" customSize={20} />
               ) : (
                 <Icon as={RefreshCw} size={20} className="text-foreground" />
               )}

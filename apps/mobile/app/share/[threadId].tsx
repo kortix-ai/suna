@@ -23,11 +23,11 @@ import Animated, {
 import { API_URL } from '@/api/config';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
+import { SprintLabLogo } from '@/components/ui/SprintLabLogo';
 import { ThreadContent, type ToolMessagePair } from '@/components/chat/ThreadContent';
-import { KortixComputer } from '@/components/kortix-computer';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { SprintLabComputer } from '@/components/sprintlab-computer';
+import { useSprintLabComputerStore } from '@/stores/sprintlab-computer-store';
 
 // Fetch public thread without requiring auth
 async function fetchPublicThread(threadId: string) {
@@ -348,14 +348,14 @@ export default function ShareThreadPage() {
   const insets = useSafeAreaInsets();
   const scrollViewRef = React.useRef<ScrollView>(null);
   
-  // Kortix Computer for viewing tool calls
-  const { isOpen: isKortixComputerOpen, openPanel } = useKortixComputerStore();
+  // SprintLab Computer for viewing tool calls
+  const { isOpen: isSprintLabComputerOpen, openPanel } = useSprintLabComputerStore();
   const [selectedToolData, setSelectedToolData] = React.useState<{
     toolMessages: ToolMessagePair[];
     initialIndex: number;
   } | null>(null);
 
-  // Handle tool press - open Kortix Computer
+  // Handle tool press - open SprintLab Computer
   const handleToolPress = React.useCallback(
     (toolMessages: ToolMessagePair[], initialIndex: number) => {
       setSelectedToolData({ toolMessages, initialIndex });
@@ -448,7 +448,7 @@ export default function ShareThreadPage() {
       <>
         <Stack.Screen options={{ headerShown: false }} />
         <View className="flex-1 bg-background items-center justify-center">
-          <KortixLoader size="large" />
+          <SprintLabLoader size="large" />
         </View>
       </>
     );
@@ -474,7 +474,7 @@ export default function ShareThreadPage() {
 
           <View className="flex-1 mx-3">
             <View className="flex-row items-center gap-2">
-              <KortixLogo size={16} variant="symbol" color={isDark ? 'dark' : 'light'} />
+              <SprintLabLogo size={16} variant="symbol" color={isDark ? 'dark' : 'light'} />
               <Text
                 className="font-roobert-semibold text-base text-foreground"
                 numberOfLines={1}
@@ -528,9 +528,9 @@ export default function ShareThreadPage() {
         )}
       </View>
 
-      {/* Kortix Computer for viewing tool calls */}
-      {isKortixComputerOpen && (
-        <KortixComputer
+      {/* SprintLab Computer for viewing tool calls */}
+      {isSprintLabComputerOpen && (
+        <SprintLabComputer
           toolMessages={selectedToolData?.toolMessages || []}
           currentIndex={selectedToolData?.initialIndex || 0}
           onNavigate={(newIndex) => {

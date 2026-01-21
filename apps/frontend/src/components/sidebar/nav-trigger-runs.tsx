@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ThreadIcon } from './thread-icon';
 import { usePathname, useRouter } from 'next/navigation';
 import { useSidebar } from '@/components/ui/sidebar';
@@ -47,7 +47,7 @@ const TriggerRunItem: React.FC<{
                 <div className="flex items-center gap-3 p-2.5 text-sm">
                     <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
                         {isThreadLoading ? (
-                            <KortixLoader size="small" />
+                            <SprintLabLoader size="small" />
                         ) : (
                             <ThreadIcon
                                 iconName={thread.iconName}

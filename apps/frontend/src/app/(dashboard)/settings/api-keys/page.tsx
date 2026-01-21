@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Key, Plus, Trash2, Copy, Shield, ExternalLink } from 'lucide-react';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from '@/lib/toast';
 
@@ -211,7 +211,7 @@ export default function APIKeysPage() {
             <h1 className="text-2xl font-medium">API Keys</h1>
           </div>
           <p className="text-muted-foreground">
-            Manage your API keys for programmatic access to Kortix
+            Manage your API keys for programmatic access to SprintLab
           </p>
         </div>
 
@@ -220,12 +220,12 @@ export default function APIKeysPage() {
           <CardContent className="">
             <div className="flex items-start gap-4">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-500/20">
-                <KortixLogo size={22} variant="symbol" className="[filter:invert(37%)_sepia(93%)_saturate(1352%)_hue-rotate(207deg)_brightness(97%)_contrast(95%)] dark:[filter:invert(68%)_sepia(44%)_saturate(913%)_hue-rotate(186deg)_brightness(101%)_contrast(96%)]" />
+                <SprintLabLogo size={22} variant="symbol" className="[filter:invert(37%)_sepia(93%)_saturate(1352%)_hue-rotate(207deg)_brightness(97%)_contrast(95%)] dark:[filter:invert(68%)_sepia(44%)_saturate(913%)_hue-rotate(186deg)_brightness(101%)_contrast(96%)]" />
               </div>
               <div className="flex-1 space-y-3">
                 <div>
                   <h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
-                    Kortix API
+                    SprintLab API
                     <Badge variant="secondary" className="h-5 px-1.5 text-xs bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
                       Beta
                     </Badge>
@@ -389,7 +389,7 @@ export default function APIKeysPage() {
               <Key className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
               <h3 className="text-lg font-medium mb-2">No API keys yet</h3>
               <p className="text-muted-foreground mb-4">
-                Create your first API key pair to start using the Kortix API
+                Create your first API key pair to start using the SprintLab API
                 programmatically. Each key includes a public identifier and
                 secret for secure authentication.
               </p>

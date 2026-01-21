@@ -1,4 +1,4 @@
-# Kortix Frontend
+# SprintLab Frontend
 
 ## Quick Setup
 

@@ -9,7 +9,7 @@ import OAIIcon from '@/assets/images/models/OAI.svg';
 import GeminiIcon from '@/assets/images/models/Gemini.svg';
 import GrokIcon from '@/assets/images/models/Grok.svg';
 import MoonshotIcon from '@/assets/images/models/Moonshot.svg';
-import KortixSymbolIcon from '@/assets/brand/kortix-symbol.svg';
+import SprintLabSymbolIcon from '@/assets/brand/kortix-symbol.svg';
 import type { SvgProps } from 'react-native-svg';
 import type React from 'react';
 
@@ -24,19 +24,19 @@ export type ModelProvider =
   | 'kortix';
 
 /**
- * Check if a model ID corresponds to a Kortix mode (Basic or Advanced)
+ * Check if a model ID corresponds to a SprintLab mode (Basic or Advanced)
  */
-export function isKortixMode(modelId: string): boolean {
-  // New Kortix registry IDs
+export function isSprintLabMode(modelId: string): boolean {
+  // New SprintLab registry IDs
   if (modelId === 'kortix/basic' || modelId === 'kortix/power' ||
       modelId === 'kortix-basic' || modelId === 'kortix-power') {
     return true;
   }
-  // Legacy: Kortix Basic (Haiku 4.5)
+  // Legacy: SprintLab Basic (Haiku 4.5)
   if (modelId.includes('claude-haiku-4-5') || modelId.includes('heol2zyy5v48')) {
     return true;
   }
-  // Legacy: Kortix Advanced Mode (Sonnet 4.5)
+  // Legacy: SprintLab Advanced Mode (Sonnet 4.5)
   if (modelId.includes('claude-sonnet-4-5') || modelId.includes('few7z4l830xh')) {
     return true;
   }
@@ -47,8 +47,8 @@ export function isKortixMode(modelId: string): boolean {
  * Get the provider from a model ID
  */
 export function getModelProvider(modelId: string): ModelProvider {
-  // Check for Kortix modes first
-  if (isKortixMode(modelId)) {
+  // Check for SprintLab modes first
+  if (isSprintLabMode(modelId)) {
     return 'kortix';
   }
   if (modelId.includes('anthropic') || modelId.includes('claude')) {
@@ -92,7 +92,7 @@ export function getModelProviderName(modelId: string): string {
   const provider = getModelProvider(modelId);
 
   const nameMap: Record<ModelProvider, string> = {
-    kortix: 'Kortix',
+    kortix: 'SprintLab',
     anthropic: 'Anthropic',
     openai: 'OpenAI',
     google: 'Google',
@@ -112,7 +112,7 @@ export function getModelProviderIcon(modelId: string): React.FC<SvgProps> {
   const provider = getModelProvider(modelId);
 
   const iconMap: Record<ModelProvider, React.FC<SvgProps>> = {
-    kortix: KortixSymbolIcon, // Kortix modes use the Kortix symbol
+    kortix: SprintLabSymbolIcon, // SprintLab modes use the SprintLab symbol
     anthropic: AnthropicIcon,
     openai: OAIIcon,
     google: GeminiIcon,

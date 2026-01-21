@@ -1,5 +1,5 @@
 ---
-description: "Guide for implementing new tools in Kortix AgentPress - covers backend, frontend, and mobile integration"
+description: "Guide for implementing new tools in SprintLab AgentPress - covers backend, frontend, and mobile integration"
 alwaysApply: false
 globs:
   - "backend/core/tools/**/*.py"

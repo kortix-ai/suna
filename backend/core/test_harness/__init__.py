@@ -1,5 +1,5 @@
 """
-E2E Test Harness for Kortix Agent System
+E2E Test Harness for SprintLab Agent System
 
 Provides comprehensive API-based E2E testing with:
 - Core Test mode: Real LLM calls with full metrics

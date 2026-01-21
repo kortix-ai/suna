@@ -3,7 +3,7 @@ import { Modal, View, Pressable, Dimensions, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import { X } from 'lucide-react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -112,7 +112,7 @@ export function TemplatePreviewModal({
                 className="absolute inset-0 items-center justify-center" 
                 style={{ backgroundColor: isDark ? '#121215' : '#ffffff' }}
               >
-                <KortixLoader size="large" />
+                <SprintLabLoader size="large" />
                 <Text className="text-sm text-muted-foreground mt-4">
                   Loading template...
                 </Text>

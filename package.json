@@ -2,9 +2,9 @@
   "name": "agentpress",
   "private": true,
   "scripts": {
-    "dev:frontend": "pnpm --filter Kortix dev",
-    "dev:mobile": "pnpm --filter kortix dev",
-    "build:frontend": "pnpm --filter Kortix build"
+    "dev:frontend": "pnpm --filter SprintLab dev",
+    "dev:mobile": "pnpm --filter sprintlab dev",
+    "build:frontend": "pnpm --filter SprintLab build"
   },
   "pnpm": {
     "overrides": {

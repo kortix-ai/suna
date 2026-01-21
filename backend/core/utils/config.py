@@ -289,7 +289,7 @@ class Configuration:
     ENABLE_USER_CONTEXT: bool = True
     MEMORY_EMBEDDING_PROVIDER: Optional[str] = "openai"
     MEMORY_EMBEDDING_MODEL: Optional[str] = "text-embedding-3-small"
-    MEMORY_EXTRACTION_MODEL: Optional[str] = "kortix/basic"
+    MEMORY_EXTRACTION_MODEL: Optional[str] = "sprintlab/basic"
     VOYAGE_API_KEY: Optional[str] = None
     GROQ_API_KEY: Optional[str] = None
     OPENROUTER_API_KEY: Optional[str] = None
@@ -299,8 +299,8 @@ class Configuration:
     OPENROUTER_API_BASE: Optional[str] = "https://openrouter.ai/api/v1"
     OPENAI_COMPATIBLE_API_KEY: Optional[str] = None
     OPENAI_COMPATIBLE_API_BASE: Optional[str] = None
-    OR_SITE_URL: Optional[str] = "https://www.kortix.com"
-    OR_APP_NAME: Optional[str] = "Kortix.com"
+    OR_SITE_URL: Optional[str] = "https://www.sprintlab.id"
+    OR_APP_NAME: Optional[str] = "SprintLab.id"
     
     # Frontend URL configuration
     FRONTEND_URL_ENV: Optional[str] = None
@@ -392,7 +392,7 @@ class Configuration:
     LANGFUSE_HOST: Optional[str] = "https://cloud.langfuse.com"
 
     # Admin API key for server-side operations
-    KORTIX_ADMIN_API_KEY: Optional[str] = None
+    SPRINTLAB_ADMIN_API_KEY: Optional[str] = None
 
     # API Keys system configuration
     API_KEY_SECRET: Optional[str] = "default-secret-key-change-in-production"
@@ -499,10 +499,10 @@ class Configuration:
     def FRONTEND_URL(self) -> str:
         """
         Get the frontend URL based on environment.
-        
+
         Returns:
-        - Production: 'https://kortix.com' (or FRONTEND_URL_ENV if set)
-        - Staging: 'https://staging.kortix.com' (or FRONTEND_URL_ENV if set)
+        - Production: 'https://sprintlab.id' (or FRONTEND_URL_ENV if set)
+        - Staging: 'https://staging.sprintlab.id' (or FRONTEND_URL_ENV if set)
         - Local: FRONTEND_URL_ENV or 'http://localhost:3000'
         """
         # Check for environment variable override first
@@ -511,14 +511,14 @@ class Configuration:
         
         # Environment-based defaults
         if self.ENV_MODE == EnvMode.PRODUCTION:
-            return 'https://kortix.com'
+            return 'https://sprintlab.id'
         elif self.ENV_MODE == EnvMode.STAGING:
             return 'http://localhost:3000'
         else:
             return 'http://localhost:3000'
     
     def _generate_admin_api_key(self) -> str:
-        """Generate a secure admin API key for Kortix administrative functions."""
+        """Generate a secure admin API key for SprintLab administrative functions."""
         # Generate 32 random bytes and encode as hex for a readable API key
         key_bytes = secrets.token_bytes(32)
         return key_bytes.hex()
@@ -542,9 +542,9 @@ class Configuration:
         self._load_from_env()
         
         # Auto-generate admin API key if not present
-        if not self.KORTIX_ADMIN_API_KEY:
-            self.KORTIX_ADMIN_API_KEY = self._generate_admin_api_key()
-            logger.info("Auto-generated KORTIX_ADMIN_API_KEY for administrative functions")
+        if not self.SPRINTLAB_ADMIN_API_KEY:
+            self.SPRINTLAB_ADMIN_API_KEY = self._generate_admin_api_key()
+            logger.info("Auto-generated SPRINTLAB_ADMIN_API_KEY for administrative functions")
         
         # Perform validation
         self._validate()

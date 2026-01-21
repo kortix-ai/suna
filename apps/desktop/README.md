@@ -1,11 +1,11 @@
-# Kortix Desktop
+# SprintLab Desktop
 
-Minimal Electron wrapper for the Kortix web application with deep linking support.
+Minimal Electron wrapper for the SprintLab web application with deep linking support.
 
 ## Features
 
 - Native macOS/Windows/Linux desktop app
-- Deep linking for magic link authentication (`kortix://` protocol)
+- Deep linking for magic link authentication (`sprintlab://` protocol)
 - Integrated navigation controls (back, forward, reload, copy URL)
 - Keyboard shortcuts (Cmd+Left/Right, Cmd+R, Cmd+Shift+C)
 
@@ -43,7 +43,7 @@ Set `APP_URL` environment variable to load a different URL:
 APP_URL=http://localhost:3000 npm start
 ```
 
-By default, it loads `https://kortix.com/`.
+By default, it loads `https://sprintlab.id/`.
 
 ## Installation
 
@@ -51,12 +51,12 @@ For end users, see [INSTALLATION.md](./INSTALLATION.md) for detailed installatio
 
 ## Deep Linking
 
-The app registers the `kortix://` protocol for magic link authentication:
+The app registers the `sprintlab://` protocol for magic link authentication:
 
 1. User enters email in desktop app
-2. Magic link email contains `kortix://auth/callback?code=xxx`
+2. Magic link email contains `sprintlab://auth/callback?code=xxx`
 3. User clicks link in email
-4. Operating system opens Kortix Desktop app
+4. Operating system opens SprintLab Desktop app
 5. App handles auth callback and logs user in
 
 The protocol is automatically registered when the app is installed.

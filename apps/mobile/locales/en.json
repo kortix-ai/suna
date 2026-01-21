@@ -89,7 +89,7 @@
     "openEmailApp": "Open email app",
     "goToSignIn": "Go to sign in",
     "verifyEmailInstructions": "Click the link in the email to verify your account, then sign in.",
-    "welcomeTitle": "Hire Kortix for",
+    "welcomeTitle": "Hire SprintLab for",
     "rotatingPhrases": {
       "presentations": "presentations",
       "writing": "writing",
@@ -114,13 +114,13 @@
       "passwordTooShort": "Password must be at least 8 characters"
     },
     "drawer": {
-      "defaultTitle": "Welcome to Kortix",
+      "defaultTitle": "Welcome to SprintLab",
       "defaultMessage": "The AI Super Mega Giga app.",
-      "signInToChat": "Welcome to Kortix",
+      "signInToChat": "Welcome to SprintLab",
       "signInToChatMessage": "The AI Super Mega Giga app.",
-      "signUpUnlock": "Welcome to Kortix",
+      "signUpUnlock": "Welcome to SprintLab",
       "signUpUnlockMessage": "The AI Super Mega Giga app.",
-      "welcomeBack": "Welcome to Kortix",
+      "welcomeBack": "Welcome to SprintLab",
       "welcomeBackMessage": "The AI Super Mega Giga app.",
       "signUpToContinue": "Sign up to continue",
       "signUpToContinueMessage": "Please sign up or sign in to create and select workers, connect apps and much more"
@@ -128,7 +128,7 @@
     "guest": {
       "label": "Guest",
       "title": "Browse Without\nan Account",
-      "description": "Try Kortix with limited features. No signup required!",
+      "description": "Try SprintLab with limited features. No signup required!",
       "continue": "Continue as Guest",
       "signUp": "Sign Up Instead",
       "agreement": "By continuing, you agree to our",
@@ -138,12 +138,12 @@
     }
   },
   "onboarding": {
-    "welcome": "See what Kortix can do",
+    "welcome": "See what SprintLab can do",
     "welcomeSubtitle": "Your AI assistant that takes action",
     "skip": "Skip",
     "next": "Next",
     "getStarted": "Get Started",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "SprintLab Computer",
     "ready": "Ready",
     "examples": {
       "presentations": {
@@ -260,8 +260,8 @@
   },
   "chat": {
     "newChat": "New Chat",
-    "placeholder": "Give Kortix a task...",
-    "inputPlaceholder": "Ask Kortix anything...",
+    "placeholder": "Give SprintLab a task...",
+    "inputPlaceholder": "Ask SprintLab anything...",
     "recording": "Recording...",
     "cancelRecording": "Cancel recording",
     "stopRecording": "Stop recording",
@@ -274,7 +274,7 @@
     "rateThisResult": "Rate this result",
     "feedbackHelpsImprove": "Your feedback helps us improve",
     "additionalFeedbackOptional": "Additional feedback (optional)",
-    "helpKortixImprove": "Help Kortix improve with my feedback",
+    "helpSprintLabImprove": "Help SprintLab improve with my feedback",
     "submit": "Submit",
     "submitting": "Submitting...",
     "suggestedFollowUps": "Suggested follow-ups",
@@ -295,7 +295,7 @@
     "newWorker": "New Worker",
     "myWorkers": "My Workers",
     "searchAgents": "Search workers",
-    "defaultAgent": "Kortix",
+    "defaultAgent": "SprintLab",
     "defaultDescription": "General purpose AI for all tasks",
     "superWorker": "Super Worker",
     "coder": "Coder",
@@ -516,7 +516,7 @@
     "mode": "Mode"
   },
   "placeholders": {
-    "default": "Give Kortix a task...",
+    "default": "Give SprintLab a task...",
     "search": "Search...",
     "searchConversations": "Search chats",
     "searchAgents": "Search workers",
@@ -600,12 +600,12 @@
   "beta": {
     "title": "Beta Features",
     "webSupportTitle": "Fully Supported on Web",
-    "webSupportDescription": "Available on Kortix.com. Coming to mobile soon—still work-in-progress here.",
-    "visitKortix": "Visit Kortix.com",
+    "webSupportDescription": "Available on SprintLab.com. Coming to mobile soon—still work-in-progress here.",
+    "visitSprintLab": "Visit SprintLab.com",
     "advancedFeatures": "Advanced Features",
     "mobileBeta": "Mobile Beta",
     "pleaseNote": "Please Note",
-    "mobileWarning": "Work-in-progress on mobile and may have issues. For the best experience, use Kortix.com."
+    "mobileWarning": "Work-in-progress on mobile and may have issues. For the best experience, use SprintLab.com."
   },
   "accountDeletion": {
     "title": "Delete Account",

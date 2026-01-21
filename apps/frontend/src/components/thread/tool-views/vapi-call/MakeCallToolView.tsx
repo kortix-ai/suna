@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Phone, CheckCircle, Clock, User, Mic, Brain, AlertTriangle } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -190,7 +190,7 @@ export function MakeCallToolView({
               isActive && "animate-pulse"
             )}>
               {isActive ? (
-                <KortixLoader customSize={20} />
+                <SprintLabLoader customSize={20} />
               ) : (
                 <Phone className="w-5 h-5 text-zinc-700 dark:text-zinc-300" />
               )}
@@ -365,7 +365,7 @@ export function MakeCallToolView({
               )}
               {isActive && liveTranscript.length === 0 && (
                 <div className="text-center py-8">
-                  <KortixLoader customSize={24} className="mx-auto mb-2" />
+                  <SprintLabLoader customSize={24} className="mx-auto mb-2" />
                   <p className="text-sm text-muted-foreground">Waiting for conversation to start...</p>
                 </div>
               )}

@@ -32,7 +32,7 @@ import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { log } from '@/lib/logger';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSprintLabComputerStore } from '@/stores/sprintlab-computer-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -733,9 +733,9 @@ export function useChat(): UseChatReturn {
     
     setMessages([]);
 
-    // Reset Kortix Computer state when switching threads
-    useKortixComputerStore.getState().reset();
-    log.log('[useChat] Reset Kortix Computer state');
+    // Reset SprintLab Computer state when switching threads
+    useSprintLabComputerStore.getState().reset();
+    log.log('[useChat] Reset SprintLab Computer state');
 
     // Dismiss keyboard before navigation to avoid stale keyboard metrics
     Keyboard.dismiss();
@@ -789,9 +789,9 @@ export function useChat(): UseChatReturn {
     clearStreamError(); // Clear any previous error state
     stopStreaming();
     
-    // Reset Kortix Computer state when starting new chat
-    useKortixComputerStore.getState().reset();
-    log.log('[useChat] Reset Kortix Computer state for new chat');
+    // Reset SprintLab Computer state when starting new chat
+    useSprintLabComputerStore.getState().reset();
+    log.log('[useChat] Reset SprintLab Computer state for new chat');
   }, [stopStreaming, clearStreamError]);
 
   const updateThreadTitle = useCallback(async (newTitle: string) => {

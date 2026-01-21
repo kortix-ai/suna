@@ -281,7 +281,7 @@ export function FeedbackDrawer() {
               {t('chat.howWasThisResult', { defaultValue: 'Rate this result' })}
             </Text>
             <Text className="text-sm font-roobert text-muted-foreground">
-              {t('chat.feedbackHelpsImprove', { defaultValue: 'Your feedback helps improve Kortix' })}
+              {t('chat.feedbackHelpsImprove', { defaultValue: 'Your feedback helps improve SprintLab' })}
             </Text>
           </View>
           <BottomSheetTouchable
@@ -354,7 +354,7 @@ export function FeedbackDrawer() {
             )}
           </View>
           <Text className="text-sm font-roobert text-foreground flex-1">
-            {t('chat.helpKortixImprove', { defaultValue: 'Help Kortix improve with this feedback' })}
+            {t('chat.helpSprintLabImprove', { defaultValue: 'Help SprintLab improve with this feedback' })}
           </Text>
         </BottomSheetTouchable>
 

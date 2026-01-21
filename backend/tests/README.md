@@ -58,7 +58,7 @@ curl -X POST "http://localhost:8000/v1/admin/tests/e2e?test_filter=test_complete
 
 - Backend API running (default: `http://localhost:8000/v1`)
 - Environment variables configured in `.env`
-- `KORTIX_ADMIN_API_KEY` set for API endpoint access
+- `SPRINTLAB_ADMIN_API_KEY` set for API endpoint access
 
 ## Test Structure
 

@@ -1,5 +1,5 @@
 import { Cloud, CloudOff, Check, AlertCircle, RefreshCw } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -48,7 +48,7 @@ export function SyncStatusIndicator({
     switch (status) {
       case 'syncing':
         return {
-          icon: <KortixLoader customSize={14} />,
+          icon: <SprintLabLoader customSize={14} />,
           label: 'Saving...',
           ...grayStyle,
         };

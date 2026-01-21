@@ -12,7 +12,7 @@ import {
   Minus,
   Plus,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import {
   formatTimestamp,
   getToolTitle,
@@ -74,7 +74,7 @@ import { toast } from '@/lib/toast';
 import { PresentationSlideCard } from '../presentation-tools/PresentationSlideCard';
 import { PresentationSlideSkeleton } from '../presentation-tools/PresentationSlideSkeleton';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSprintLabComputerStore } from '@/stores/sprintlab-computer-store';
 import { useSmoothStream } from '@/lib/streaming';
 
 const UnifiedDiffView: React.FC<{ lineDiff: LineDiff[]; fileName?: string }> = ({ lineDiff, fileName }) => (
@@ -221,8 +221,8 @@ export function FileOperationToolView({
   // Presentation viewer store for opening fullscreen presentation
   const { openPresentation } = usePresentationViewerStore();
   
-  // Kortix Computer store for opening files in Files Manager
-  const { openFileInComputer } = useKortixComputerStore();
+  // SprintLab Computer store for opening files in Files Manager
+  const { openFileInComputer } = useSprintLabComputerStore();
 
   // Extract from structured metadata
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
@@ -1272,7 +1272,7 @@ export function FileOperationToolView({
                   </ScrollArea>
                   {isStreaming && oldStr && newStr && (
                     <div className="px-4 py-2 bg-zinc-50 dark:bg-zinc-950/30 border-t border-zinc-200 dark:border-zinc-700 flex items-center gap-2">
-                      <KortixLoader customSize={14} />
+                      <SprintLabLoader customSize={14} />
                       <span className="text-xs text-zinc-600 dark:text-zinc-400">Streaming changes...</span>
                     </div>
                   )}

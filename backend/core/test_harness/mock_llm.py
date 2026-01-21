@@ -258,7 +258,7 @@ class MockLLMProvider:
             if len(prompt) < 10:
                 return "Hello! I'm here to help you. What would you like to do?"
             elif 'yourself' in prompt.lower() or 'who are you' in prompt.lower():
-                return "I'm Kortix, an AI assistant that can help you with various tasks including file operations, running commands, and searching the web."
+                return "I'm SprintLab, an AI assistant that can help you with various tasks including file operations, running commands, and searching the web."
             else:
                 return "I understand your question. Let me provide you with a helpful response based on the information available."
         

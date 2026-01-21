@@ -29,7 +29,7 @@ function wasDismissedRecently(): boolean {
   return Date.now() - parseInt(dismissedAt, 10) < DISMISS_EXPIRY_MS;
 }
 
-function KortixLogo({ className }: { className?: string }) {
+function SprintLabLogo({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 30 25" fill="currentColor" className={className}>
       <path d="M25.5614 24.916H29.8268C29.8268 19.6306 26.9378 15.0039 22.6171 12.4587C26.9377 9.91355 29.8267 5.28685 29.8267 0.00146484H25.5613C25.5613 5.00287 21.8906 9.18692 17.0654 10.1679V0.00146484H12.8005V10.1679C7.9526 9.20401 4.3046 5.0186 4.3046 0.00146484H0.0391572C0.0391572 5.28685 2.92822 9.91355 7.24884 12.4587C2.92818 15.0039 0.0390625 19.6306 0.0390625 24.916H4.30451C4.30451 19.8989 7.95259 15.7135 12.8005 14.7496V24.9206H17.0654V14.7496C21.9133 15.7134 25.5614 19.8989 25.5614 24.916Z" />
@@ -112,13 +112,13 @@ export function MobileAppInterstitial() {
             <div className="p-5 flex items-center gap-4">
               {/* App Icon */}
               <div className="w-14 h-14 bg-black dark:bg-white rounded-xl flex items-center justify-center flex-shrink-0">
-                <KortixLogo className="w-7 h-7 text-white dark:text-black" />
+                <SprintLabLogo className="w-7 h-7 text-white dark:text-black" />
               </div>
 
               {/* Text */}
               <div className="flex-1 min-w-0">
                 <h3 className="text-base font-semibold text-neutral-900 dark:text-white mb-0.5">
-                  Get Kortix for Mobile
+                  Get SprintLab for Mobile
                 </h3>
                 <p className="text-sm text-neutral-500 dark:text-neutral-400">
                   Your AI Worker, in your pocket

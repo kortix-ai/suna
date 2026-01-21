@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { AlertTriangle, ExternalLink, X, Square, Zap, Rocket } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -107,7 +107,7 @@ const RunningThreadItem: React.FC<RunningThreadItemProps> = ({
                 disabled={stopAgentMutation.isPending || threadInfo.isLoading}
               >
                 {stopAgentMutation.isPending ? (
-                  <KortixLoader size="small" />
+                  <SprintLabLoader size="small" />
                 ) : (
                   <Square className="h-3 w-3" />
                 )}
@@ -292,7 +292,7 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
           
           {isLoadingThreads ? (
             <div className="flex items-center justify-center py-4">
-              <KortixLoader size="small" />
+              <SprintLabLoader size="small" />
               <span className="ml-2 text-sm text-muted-foreground">Loading threads...</span>
             </div>
           ) : runningThreadIds.length === 0 ? (

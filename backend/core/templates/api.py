@@ -419,7 +419,7 @@ async def get_all_kortix_templates(
             error_str = str(e)
         except Exception:
             error_str = f"Error of type {type(e).__name__}"
-        logger.error(f"Error getting all Kortix templates: {error_str}")
+        logger.error(f"Error getting all SprintLab templates: {error_str}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/marketplace", response_model=MarketplaceTemplatesResponse)
@@ -428,7 +428,7 @@ async def get_marketplace_templates(
     limit: Optional[int] = Query(20, ge=1, le=100, description="Number of items per page"),
     search: Optional[str] = Query(None, description="Search term for name"),
     tags: Optional[str] = Query(None, description="Comma-separated list of tags to filter by"),
-    is_kortix_team: Optional[bool] = Query(None, description="Filter for Kortix team templates"),
+    is_kortix_team: Optional[bool] = Query(None, description="Filter for SprintLab team templates"),
     mine: Optional[bool] = Query(None, description="Filter to show only user's own templates"),
     sort_by: Optional[str] = Query("download_count", description="Sort field: download_count, newest, name"),
     sort_order: Optional[str] = Query("desc", description="Sort order: asc, desc"),

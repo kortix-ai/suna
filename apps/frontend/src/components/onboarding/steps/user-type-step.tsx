@@ -77,7 +77,7 @@ export const UserTypeStep = () => {
               className="text-center space-y-8"
             >
               <div>
-                <h1 className="text-4xl font-medium mb-3">Welcome to Kortix</h1>
+                <h1 className="text-4xl font-medium mb-3">Welcome to SprintLab</h1>
                 <p className="text-lg text-muted-foreground">Choose your account type</p>
               </div>
 

@@ -142,7 +142,7 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
   
   // Determine if Suna agent is selected (for modes panel)
   const isSunaAgent = isLoadingAgents 
-    ? true // Show Kortix modes while loading
+    ? true // Show SprintLab modes while loading
     : (selectedAgent?.metadata?.is_suna_default || (!selectedAgentId && sunaAgent !== undefined) || false);
   
   // Initialize agent selection when agents are loaded

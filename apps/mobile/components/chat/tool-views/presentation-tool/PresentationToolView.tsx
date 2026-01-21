@@ -14,7 +14,7 @@ import { PresentationSlideCard } from './PresentationSlideCard';
 import { FullScreenPresentationViewer } from './FullScreenPresentationViewer';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 
@@ -360,7 +360,7 @@ export function PresentationToolView({
         }}
       >
         <View className="flex-1 w-full items-center justify-center py-12 px-6">
-          <KortixLoader size="large" />
+          <SprintLabLoader size="large" />
           <Text className="text-lg font-roobert-semibold text-foreground mb-2 mt-6">
             {isStreaming ? 'Creating Slide...' : 'Loading Presentation'}
           </Text>

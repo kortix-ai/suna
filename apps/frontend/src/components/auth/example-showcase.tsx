@@ -4,9 +4,9 @@ import { useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
 import Image from 'next/image';
 import { Computer, CornerDownLeft, Paperclip, Mic, Zap, FolderOpen, Globe, Presentation, BarChart3, FileText, Search, Image as ImageIcon, ChevronRight, File, Database } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { motion } from 'framer-motion';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 
 type ViewType = 'terminal' | 'files' | 'browser';
 type IconType = 'computer' | 'presentation' | 'chart' | 'file' | 'search' | 'image' | 'database';
@@ -332,8 +332,8 @@ export function ExampleShowcase() {
                       <div className="max-w-[90%] space-y-1">
                         <div className="flex items-center gap-1 mb-1">
                           <img
-                            src="/kortix-logomark-white.svg"
-                            alt="Kortix"
+                            src="/sprintlab-logomark-white.svg"
+                            alt="SprintLab"
                             className="dark:invert-0 invert flex-shrink-0"
                             style={{ height: '8px', width: 'auto' }}
                           />
@@ -358,7 +358,7 @@ export function ExampleShowcase() {
                         <IconComponent className="h-2.5 w-2.5 text-muted-foreground flex-shrink-0" />
                         <span className="font-mono text-[9px] text-foreground">{step.title}</span>
                         {isCurrentStep && (
-                          <KortixLoader size="small" className="ml-0.5" />
+                          <SprintLabLoader size="small" className="ml-0.5" />
                         )}
                       </button>
                     </div>
@@ -422,7 +422,7 @@ export function ExampleShowcase() {
                   {/* Right buttons */}
                   <div className="flex gap-1 items-center flex-shrink-0">
                     <button className="px-2 py-1 rounded-lg border bg-background flex items-center gap-1">
-                      <span className="text-[8px] font-medium">Kortix</span>
+                      <span className="text-[8px] font-medium">SprintLab</span>
                       <svg className="w-2 h-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
@@ -439,14 +439,14 @@ export function ExampleShowcase() {
             </div>
           </div>
 
-          {/* Right Side - Kortix Computer (Floating) */}
+          {/* Right Side - SprintLab Computer (Floating) */}
           <div className="flex-1 bg-background p-4">
             <Card className="w-full h-full !rounded-2xl !p-0 !gap-0 overflow-hidden flex flex-col">
               {/* Computer Header */}
               <div className="border-b px-3 py-2 flex items-center justify-between bg-card shrink-0">
                 <div className="flex items-center gap-1.5">
-                  <KortixLogo size={12} />
-                  <span className="text-xs font-medium">Kortix Computer</span>
+                  <SprintLabLogo size={12} />
+                  <span className="text-xs font-medium">SprintLab Computer</span>
                 </div>
                 <div className="flex items-center gap-0.5 border rounded-full bg-card p-1 relative">
                   <div className="p-1 relative z-10 pointer-events-none">

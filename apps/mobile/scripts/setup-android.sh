@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Android Emulator Setup Script for Kortix Mobile
+# Android Emulator Setup Script for SprintLab Mobile
 # Run once: ./scripts/setup-android.sh
 
 set -e
@@ -39,7 +39,7 @@ export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-
 if ! grep -q "ANDROID_HOME" ~/.zshrc 2>/dev/null; then
     echo -e "${YELLOW}Adding Android SDK to ~/.zshrc...${NC}"
     echo '' >> ~/.zshrc
-    echo '# Android SDK (added by Kortix setup script)' >> ~/.zshrc
+    echo '# Android SDK (added by SprintLab setup script)' >> ~/.zshrc
     echo 'export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools' >> ~/.zshrc
     echo 'export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator' >> ~/.zshrc
     echo -e "${GREEN}✓ Added to ~/.zshrc${NC}"
@@ -54,7 +54,7 @@ echo -e "${YELLOW}Installing Android SDK components (this may take a few minutes
 sdkmanager "platform-tools" "emulator" "platforms;android-34" "system-images;android-34;google_apis;arm64-v8a" > /dev/null 2>&1
 
 # Create AVD if it doesn't exist
-AVD_NAME="Kortix_Dev"
+AVD_NAME="SprintLab_Dev"
 if ! avdmanager list avd 2>/dev/null | grep -q "$AVD_NAME"; then
     echo -e "${YELLOW}Creating Android Virtual Device: $AVD_NAME...${NC}"
     echo "no" | avdmanager create avd \

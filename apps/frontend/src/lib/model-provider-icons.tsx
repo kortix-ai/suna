@@ -11,22 +11,22 @@ export type ModelProvider =
   | 'moonshotai'
   | 'bedrock'
   | 'openrouter'
-  | 'kortix';
+  | 'sprintlab';
 
 /**
- * Check if a model ID corresponds to a Kortix mode (Basic, Advanced, or Test)
+ * Check if a model ID corresponds to a SprintLab mode (Basic, Advanced, or Test)
  */
-export function isKortixMode(modelId: string): boolean {
-  // New Kortix registry IDs
-  if (modelId === 'kortix/basic' || modelId === 'kortix/power' || modelId === 'kortix/test' ||
-      modelId === 'kortix-basic' || modelId === 'kortix-power' || modelId === 'kortix-test') {
+export function isSprintLabMode(modelId: string): boolean {
+  // New SprintLab registry IDs
+  if (modelId === 'sprintlab/basic' || modelId === 'sprintlab/power' || modelId === 'sprintlab/test' ||
+      modelId === 'sprintlab-basic' || modelId === 'sprintlab-power' || modelId === 'sprintlab-test') {
     return true;
   }
-  // Legacy: Kortix Basic (Haiku 4.5)
+  // Legacy: SprintLab Basic (Haiku 4.5)
   if (modelId.includes('claude-haiku-4-5') || modelId.includes('heol2zyy5v48')) {
     return true;
   }
-  // Legacy: Kortix Advanced Mode (Sonnet 4.5)
+  // Legacy: SprintLab Advanced Mode (Sonnet 4.5)
   if (modelId.includes('claude-sonnet-4-5') || modelId.includes('few7z4l830xh')) {
     return true;
   }
@@ -37,9 +37,9 @@ export function isKortixMode(modelId: string): boolean {
  * Get the provider from a model ID
  */
 export function getModelProvider(modelId: string): ModelProvider {
-  // Check for Kortix modes first
-  if (isKortixMode(modelId)) {
-    return 'kortix';
+  // Check for SprintLab modes first
+  if (isSprintLabMode(modelId)) {
+    return 'sprintlab';
   }
   if (modelId.includes('anthropic') || modelId.includes('claude')) {
     return 'anthropic';
@@ -94,7 +94,7 @@ export function ModelProviderIcon({
   const provider = getModelProvider(modelId);
 
   const iconMap: Record<ModelProvider, string> = {
-    kortix: '/kortix-symbol.svg', // Kortix modes use the Kortix symbol
+    sprintlab: '/sprintlab-symbol.svg', // SprintLab modes use the SprintLab symbol
     anthropic: '/images/models/Anthropic.svg',
     openai: '/images/models/OAI.svg',
     google: '/images/models/Gemini.svg',
@@ -104,8 +104,8 @@ export function ModelProviderIcon({
     openrouter: '/images/models/OAI.svg', // Default to OpenAI icon for OpenRouter
   };
 
-  // Special handling for Kortix symbol - needs different invert behavior
-  const isKortix = provider === 'kortix';
+  // Special handling for SprintLab symbol - needs different invert behavior
+  const isSprintLab = provider === 'sprintlab';
 
   const iconSrc = iconMap[provider];
 
@@ -143,9 +143,9 @@ export function ModelProviderIcon({
         height={size * 0.6}
         className={cn(
           "object-contain",
-          // Kortix symbol: invert in dark mode (black symbol → white)
+          // SprintLab symbol: invert in dark mode (black symbol → white)
           // Other icons: invert in dark mode (black icons → white)
-          isKortix ? "dark:invert" : "dark:brightness-0 dark:invert"
+          isSprintLab ? "dark:invert" : "dark:brightness-0 dark:invert"
         )}
         style={{ width: size * 0.6, height: size * 0.6 }}
       />
@@ -160,7 +160,7 @@ export function getModelProviderName(modelId: string): string {
   const provider = getModelProvider(modelId);
 
   const nameMap: Record<ModelProvider, string> = {
-    kortix: 'Kortix',
+    sprintlab: 'SprintLab',
     anthropic: 'Anthropic',
     openai: 'OpenAI',
     google: 'Google',

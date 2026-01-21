@@ -1,11 +1,11 @@
 {
-  "name": "kortix-desktop",
+  "name": "sprintlab-desktop",
   "version": "1.0.0",
-  "description": "Kortix Desktop",
+  "description": "SprintLab Desktop",
   "author": {
-    "name": "Kortix",
-    "email": "support@kortix.com",
-    "url": "https://kortix.com"
+    "name": "SprintLab",
+    "email": "support@sprintlab.id",
+    "url": "https://sprintlab.id"
   },
   "main": "main.js",
   "scripts": {
@@ -24,11 +24,11 @@
     "electron-builder": "^25.1.8"
   },
   "build": {
-    "appId": "com.kortix.desktop",
-    "productName": "Kortix",
+    "appId": "com.sprintlab.desktop",
+    "productName": "SprintLab",
     "protocols": {
-      "name": "Kortix",
-      "schemes": ["kortix"]
+      "name": "SprintLab",
+      "schemes": ["sprintlab"]
     },
     "mac": {
       "target": "dmg",

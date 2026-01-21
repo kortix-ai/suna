@@ -1,9 +1,9 @@
-# Kortix Robots.txt
+# SprintLab Robots.txt
 User-agent: *
 Allow: /
 
 # Sitemap
-Sitemap: https://kortix.com/sitemap.xml
+Sitemap: https://sprintlab.id/sitemap.xml
 
 # Disallow sensitive routes
 Disallow: /api/

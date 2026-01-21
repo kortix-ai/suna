@@ -94,7 +94,7 @@ function LegalContent() {
                       </h3>
                       <div className="text-muted-foreground mb-6 space-y-2">
                         <p>
-                          <strong>Kortix AI Corp</strong>
+                          <strong>SprintLab AI Corp</strong>
                         </p>
                         <p>701 Tillery Street</p>
                         <p>Unit 12-2521</p>
@@ -121,7 +121,7 @@ function LegalContent() {
                         Responsible for Content
                       </h3>
                       <p className="text-muted-foreground mb-6">
-                        Kortix AI Corp is responsible for the content of this
+                        SprintLab AI Corp is responsible for the content of this
                         website in accordance with applicable laws.
                       </p>
 
@@ -157,10 +157,10 @@ function LegalContent() {
                       <p className="text-muted-foreground text-balance mb-6">
                         PLEASE READ THESE TERMS OF USE ("AGREEMENT" OR "TERMS OF
                         USE" or "TERMS OF SERVICE" or "TERMS AND CONDITIONS")
-                        CAREFULLY BEFORE USING THE SERVICES OFFERED BY Kortix AI
+                        CAREFULLY BEFORE USING THE SERVICES OFFERED BY SprintLab AI
                         Corp (701 Tillery Street Unit 12-2521 Austin, Texas 78702,
                         United States). THIS AGREEMENT SETS FORTH THE LEGALLY
-                        BINDING TERMS AND CONDITIONS FOR YOUR USE OF THE Kortix
+                        BINDING TERMS AND CONDITIONS FOR YOUR USE OF THE SprintLab
                         WEBSITE AND ALL RELATED SERVICES.
                       </p>
 
@@ -169,16 +169,16 @@ function LegalContent() {
                       </h3>
                       <ul className="text-muted-foreground space-y-1 mb-6">
                         <li>
-                          "Company" refers to Kortix AI Corp (701 Tillery Street
+                          "Company" refers to SprintLab AI Corp (701 Tillery Street
                           Unit 12-2521 Austin, Texas 78702, United States).
                         </li>
                         <li>
-                          "Site" refers to the Kortix website, including any related
+                          "Site" refers to the SprintLab website, including any related
                           features, content, or applications offered from time to
                           time by the Company.
                         </li>
                         <li>
-                          "Service" refers to the Kortix website and all related
+                          "Service" refers to the SprintLab website and all related
                           services provided by the Company, including the
                           AI-powered agent that helps you accomplish real-world
                           tasks.
@@ -549,7 +549,7 @@ function LegalContent() {
                         Trademarks and Patents
                       </h3>
                       <p className="text-muted-foreground text-balance mb-6">
-                        All Kortix logos, marks, and designations are trademarks or
+                        All SprintLab logos, marks, and designations are trademarks or
                         registered trademarks of the Company. All other trademarks
                         mentioned on this website are the property of their
                         respective owners. The trademarks and logos displayed on
@@ -639,14 +639,14 @@ function LegalContent() {
                       <p className="text-muted-foreground text-balance mb-6">
                         ALL USE OF THE SERVICE AND ANY CONTENT IS UNDERTAKEN
                         ENTIRELY AT YOUR OWN RISK. THE SERVICE (INCLUDING, WITHOUT
-                        LIMITATION, THE Kortix WEB APP AND ANY CONTENT) IS PROVIDED
+                        LIMITATION, THE SprintLab WEB APP AND ANY CONTENT) IS PROVIDED
                         "AS IS" AND "AS AVAILABLE" AND IS WITHOUT WARRANTY OF ANY
                         KIND, EXPRESS OR IMPLIED, INCLUDING, BUT NOT LIMITED TO,
                         THE IMPLIED WARRANTIES OF TITLE, NON-INFRINGEMENT,
                         MERCHANTABILITY, AND FITNESS FOR A PARTICULAR PURPOSE, AND
                         ANY WARRANTIES IMPLIED BY ANY COURSE OF PERFORMANCE OR
                         USAGE OF TRADE, ALL OF WHICH ARE EXPRESSLY DISCLAIMED.
-                        Kortix DOES NOT GUARANTEE THE ACCURACY, COMPLETENESS, OR
+                        SprintLab DOES NOT GUARANTEE THE ACCURACY, COMPLETENESS, OR
                         RELIABILITY OF THE AI-GENERATED CONTENT, AND USERS ASSUME
                         FULL RESPONSIBILITY FOR ANY APPLICATIONS CREATED USING THE
                         SERVICE. SOME STATES DO NOT ALLOW LIMITATIONS ON HOW LONG
@@ -712,7 +712,7 @@ function LegalContent() {
                       </p>
 
                       <p className="text-muted-foreground text-balance mb-6">
-                        References to our "Services" at Kortix in this statement
+                        References to our "Services" at SprintLab in this statement
                         include our website, apps, and other products and
                         services. This statement applies to our Services that
                         display or reference this Privacy Statement. Third-party
@@ -721,7 +721,7 @@ function LegalContent() {
                       </p>
 
                       <p className="text-muted-foreground text-balance mb-6">
-                        Kortix does not collect biometric or identifying
+                        SprintLab does not collect biometric or identifying
                         information. All data is processed securely and any data
                         is deleted upon account removal.
                       </p>

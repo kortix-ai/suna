@@ -1,6 +1,6 @@
 services:
   api:
-    image: ghcr.io/kortix-ai/suna/suna-backend:latest
+    image: ghcr.io/sprintlab-ai/suna/suna-backend:latest
     platform: linux/amd64
     build:
       context: .
@@ -44,7 +44,7 @@ services:
   # Worker service removed - agent runs now execute directly in API process
   # Memory/categorization tasks also run directly as async background tasks
   # worker:
-  #   image: ghcr.io/kortix-ai/suna/suna-backend:latest
+  #   image: ghcr.io/sprintlab-ai/suna/suna-backend:latest
   #   platform: linux/amd64
   #   build:
   #     context: .

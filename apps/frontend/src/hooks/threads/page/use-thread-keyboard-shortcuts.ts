@@ -14,7 +14,7 @@ interface UseKeyboardShortcutsProps {
  *
  * Note: We intentionally do NOT treat plain inputs/textareas as "editable" here.
  * On the thread page, users almost always have focus in the chat textarea, and we
- * still want Cmd+I / Cmd+B to reliably toggle the Kortix Computer / left sidebar.
+ * still want Cmd+I / Cmd+B to reliably toggle the SprintLab Computer / left sidebar.
  */
 function isEditableElementFocused(): boolean {
   const el = document.activeElement;
@@ -80,7 +80,7 @@ export function useThreadKeyboardShortcuts({
         }
         return;
       }
-      // Intentionally do NOT close the Kortix Computer on Escape.
+      // Intentionally do NOT close the SprintLab Computer on Escape.
       // Escape is commonly used inside editors / in-panel UIs and should not dismiss the panel.
     };
 

@@ -60,7 +60,7 @@ export function NotificationSettingsPanel() {
     try {
       await notificationAPI.sendTestNotification(
         'Test Notification',
-        'This is a test notification from Kortix. If you see this, your notifications are working!'
+        'This is a test notification from SprintLab. If you see this, your notifications are working!'
       );
       toast.success('Test notification sent!');
     } catch (error) {

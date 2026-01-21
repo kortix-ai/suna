@@ -1,7 +1,7 @@
 import type React from "react"
 import { Check, ListTodo, X, Circle, CircleCheck } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { KortixLoader } from "@/components/ui/kortix-loader"
+import { SprintLabLoader } from "@/components/ui/sprintlab-loader"
 import { extractTaskListData, type Task, type Section } from "./_utils"
 import { getToolTitle } from "../utils"
 import type { ToolViewProps } from "../types"
@@ -117,7 +117,7 @@ export const TaskListToolView: React.FC<ToolViewProps> = ({
         {isStreaming && !hasData ? (
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-zinc-100 dark:bg-zinc-800 shadow-inner">
-              <KortixLoader size="medium" />
+              <SprintLabLoader size="medium" />
             </div>
             <h3 className="text-xl font-semibold mb-2 text-zinc-900 dark:text-zinc-100">
               Loading Tasks

@@ -4,7 +4,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Mail, X, Check } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useSendReferralEmails } from '@/hooks/referrals/use-referrals';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
@@ -150,7 +150,7 @@ export function ReferralEmailInvitation({ className }: ReferralEmailProps) {
               )}
             >
               {status === 'sending' && (
-                <KortixLoader size="small" />
+                <SprintLabLoader size="small" />
               )}
               {status === 'sent' && (
                 <Check className="h-3 w-3" />
@@ -195,7 +195,7 @@ export function ReferralEmailInvitation({ className }: ReferralEmailProps) {
           disabled={!hasUnsentEmails || isSending}
         >
           {isSending ? (
-            <KortixLoader size="small" />
+            <SprintLabLoader size="small" />
           ) : (
             <Mail className="h-4 w-4 sm:mr-1.5" />
           )}

@@ -4,7 +4,7 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
 import { cn } from '@/lib/utils';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useFileData } from '@/hooks/use-file-data';
 
 interface CanvasElement {
@@ -167,7 +167,7 @@ export function KanvaxPreview({
   if (isLoading || (!localPreviewUrl && !data && retryCount < 15)) {
     return (
       <div className={cn("h-full w-full flex items-center justify-center bg-muted", className)}>
-        <KortixLoader size="medium" />
+        <SprintLabLoader size="medium" />
       </div>
     );
   }

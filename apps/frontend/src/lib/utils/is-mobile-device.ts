@@ -98,7 +98,7 @@ export const MOBILE_APP_STORE_LINKS = {
 } as const;
 
 /**
- * Deep link scheme for opening the Kortix app
+ * Deep link scheme for opening the SprintLab app
  */
 export const KORTIX_DEEP_LINK = 'kortix://';
 

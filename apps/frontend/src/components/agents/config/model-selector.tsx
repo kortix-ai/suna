@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Check, Search, AlertTriangle, Crown, Cpu, Plus, Edit, Trash, KeyRound, Lock } from 'lucide-react';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { ModelProviderIcon } from '@/lib/model-provider-icons';
 import { Button } from '@/components/ui/button';
 import {
@@ -25,14 +25,14 @@ import { CustomModelDialog, CustomModelFormData } from '@/components/thread/chat
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import Link from 'next/link';
 
-// Helper to render model labels with special styling for Kortix modes
+// Helper to render model labels with special styling for SprintLab modes
 const ModelLabel = ({ label, className }: { label: string; className?: string }) => {
-    if (label === 'Kortix Advanced Mode') {
+    if (label === 'SprintLab Advanced Mode') {
         return (
             <span className={cn("flex items-center gap-2", className)}>
-                <span className="font-medium">Kortix</span>
+                <span className="font-medium">SprintLab</span>
                 <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 dark:bg-primary/15 rounded-full">
-                    <KortixLogo size={12} variant="symbol" />
+                    <SprintLabLogo size={12} variant="symbol" />
                     <span className="text-[11px] font-semibold tracking-wide uppercase text-primary">
                         Advanced
                     </span>
@@ -40,20 +40,20 @@ const ModelLabel = ({ label, className }: { label: string; className?: string })
             </span>
         );
     }
-    if (label === 'Kortix Basic') {
+    if (label === 'SprintLab Basic') {
         return (
             <span className={cn("flex items-center gap-2", className)}>
-                <span className="font-medium">Kortix</span>
+                <span className="font-medium">SprintLab</span>
                 <span className="text-xs font-medium text-muted-foreground px-1.5 py-0.5 bg-muted/50 rounded-md">
                     Basic
                 </span>
             </span>
         );
     }
-    if (label === 'Kortix Test') {
+    if (label === 'SprintLab Test') {
         return (
             <span className={cn("flex items-center gap-2", className)}>
-                <span className="font-medium">Kortix</span>
+                <span className="font-medium">SprintLab</span>
                 <span className="text-xs font-medium text-amber-600 dark:text-amber-500 px-1.5 py-0.5 bg-amber-500/10 rounded-md">
                     Test
                 </span>
@@ -223,7 +223,7 @@ export function AgentModelSelector({
       const isPowerModel = modelId === 'kortix/power';
       openPricingModal({
         isAlert: true,
-        alertTitle: isPowerModel ? 'Upgrade to access Kortix Advanced mode' : 'Upgrade to access this model',
+        alertTitle: isPowerModel ? 'Upgrade to access SprintLab Advanced mode' : 'Upgrade to access this model',
       });
     }
   };
@@ -398,7 +398,7 @@ export function AgentModelSelector({
           </TooltipTrigger>
           {!accessible && !isLocalMode() ? (
             <TooltipContent side="left" className="text-xs max-w-xs">
-              <p>{isPowerModel ? 'Upgrade to access Kortix Advanced mode' : 'Upgrade to access this model'}</p>
+              <p>{isPowerModel ? 'Upgrade to access SprintLab Advanced mode' : 'Upgrade to access this model'}</p>
             </TooltipContent>
           ) : isLowQuality ? (
             <TooltipContent side="left" className="text-xs max-w-xs">

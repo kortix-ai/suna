@@ -10,7 +10,7 @@ import {
   FileSpreadsheet,
   File,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ImageRenderer } from '@/components/file-renderers/image-renderer';
 import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { XlsxRenderer } from '@/components/file-renderers/xlsx-renderer';
@@ -192,7 +192,7 @@ export function FullScreenFileViewer({
       return (
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
-            <KortixLoader size="medium" />
+            <SprintLabLoader size="medium" />
             <p className="mt-4 text-sm text-zinc-500 dark:text-zinc-400">Loading file...</p>
           </div>
         </div>

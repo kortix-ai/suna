@@ -1,7 +1,7 @@
 import { Stack, useRouter } from 'expo-router';
 import { useEffect } from 'react';
 import { View } from 'react-native';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import { log } from '@/lib/logger';
 
 export default function NotFoundScreen() {
@@ -21,7 +21,7 @@ export default function NotFoundScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 items-center justify-center bg-background">
-        <KortixLoader size="xlarge" />
+        <SprintLabLoader size="xlarge" />
       </View>
     </>
   );

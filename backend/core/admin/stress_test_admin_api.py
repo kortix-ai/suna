@@ -32,9 +32,9 @@ router = APIRouter(prefix="/admin/stress-test", tags=["admin-stress-test"])
 #
 # Example for prod:
 #   STRESS_TEST_ALB_URL=https://your-alb-name.region.elb.amazonaws.com
-#   STRESS_TEST_HOST_HEADER=api.yourdomain.com  (optional, defaults to api.kortix.com)
+#   STRESS_TEST_HOST_HEADER=api.yourdomain.com  (optional, defaults to api.sprintlab.id)
 STRESS_TEST_ALB_URL = os.getenv("STRESS_TEST_ALB_URL")
-STRESS_TEST_HOST_HEADER = os.getenv("STRESS_TEST_HOST_HEADER", "api.kortix.com")
+STRESS_TEST_HOST_HEADER = os.getenv("STRESS_TEST_HOST_HEADER", "api.sprintlab.id")
 
 # ============================================================================
 # MODELS

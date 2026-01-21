@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Image as ImageIcon, ImageOff, CheckCircle, AlertTriangle, Download, ZoomIn, ZoomOut, Trash2 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from '../types';
 import {
   formatTimestamp,
@@ -100,7 +100,7 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
   if (waitingForSandbox || isLoading) {
     return (
       <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
-        <KortixLoader size="large" className="mb-4" />
+        <SprintLabLoader size="large" className="mb-4" />
         <p className="text-xs text-muted-foreground">
           {waitingForSandbox ? 'Connecting to sandbox...' : 'Loading image...'}
         </p>
@@ -132,7 +132,7 @@ function SafeImage({ src, alt, filePath, className, sandboxId, project }: {
   if (!finalImageUrl) {
     return (
       <div className="flex py-8 flex-col items-center justify-center w-full h-64 bg-gradient-to-b from-zinc-50 to-zinc-100 dark:from-zinc-900/50 dark:to-zinc-800/30 rounded-lg border-zinc-200 dark:border-zinc-700/50 shadow-inner">
-        <KortixLoader size="large" className="mb-4" />
+        <SprintLabLoader size="large" className="mb-4" />
         <p className="text-xs text-muted-foreground">Preparing image...</p>
       </div>
     );

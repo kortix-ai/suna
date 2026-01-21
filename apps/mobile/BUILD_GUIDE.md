@@ -53,7 +53,7 @@ eas build --profile testflight --platform android --auto-submit
 # 1. app.json (line 5)
 "version": "1.1.1"
 
-# 2. ios/Kortix/Info.plist (CFBundleShortVersionString - line 24)
+# 2. ios/SprintLab/Info.plist (CFBundleShortVersionString - line 24)
 <string>1.1.1</string>
 
 # 3. android/app/build.gradle (versionName - line 96)

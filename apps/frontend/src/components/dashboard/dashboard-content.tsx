@@ -169,7 +169,7 @@ export function DashboardContent() {
             item_name: checkoutData.item_name,   // e.g., "Pro Yearly" - matches add_to_cart
             coupon: couponId,
             discount: discountAmount,
-            item_brand: 'Kortix AI',
+            item_brand: 'SprintLab AI',
             item_category: 'Plans',
             item_list_id: 'plans_listing',
             item_list_name: 'Plans Listing',

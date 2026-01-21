@@ -29,7 +29,7 @@ def configure_openapi(app: FastAPI) -> None:
             return app.openapi_schema
         
         openapi_schema = get_openapi(
-            title="Kortix API",
+            title="SprintLab API",
             version="1.0.0",
             description="""
 ## Authentication
@@ -40,16 +40,16 @@ This API supports two authentication methods:
 Use the `X-API-Key` header with your API key in the format: `pk_xxx:sk_xxx`
 
 ```bash
-curl -H "X-API-Key: pk_abc123:sk_def456" https://api.kortix.com/v1/threads
+curl -H "X-API-Key: pk_abc123:sk_def456" https://api.sprintlab.id/v1/threads
 ```
 
-**Get your API key:** [https://www.kortix.com/settings/api-keys](https://www.kortix.com/settings/api-keys)
+**Get your API key:** [https://www.sprintlab.id/settings/api-keys](https://www.sprintlab.id/settings/api-keys)
 
 ### 2. Bearer Token (JWT)
 Use the `Authorization` header with a Supabase JWT token:
 
 ```bash
-curl -H "Authorization: Bearer eyJhbG..." https://api.kortix.com/v1/threads
+curl -H "Authorization: Bearer eyJhbG..." https://api.sprintlab.id/v1/threads
 ```
             """,
             routes=app.routes,
@@ -61,7 +61,7 @@ curl -H "Authorization: Bearer eyJhbG..." https://api.kortix.com/v1/threads
                 "type": "apiKey",
                 "in": "header",
                 "name": "X-API-Key",
-                "description": "API Key in format pk_xxx:sk_xxx — Generate at https://www.kortix.com/settings/api-keys"
+                "description": "API Key in format pk_xxx:sk_xxx — Generate at https://www.sprintlab.id/settings/api-keys"
             },
             "BearerAuth": {
                 "type": "http",

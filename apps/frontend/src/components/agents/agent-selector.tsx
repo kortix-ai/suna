@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Search, Plus, Check, ChevronDown } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -253,7 +253,7 @@ export const AgentSelector: React.FC<AgentSelectorProps> = ({
               >
                 {isFetching ? (
                   <>
-                    <KortixLoader customSize={12} className="mr-1" />
+                    <SprintLabLoader customSize={12} className="mr-1" />
                     Loading...
                   </>
                 ) : (

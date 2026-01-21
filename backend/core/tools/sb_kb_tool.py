@@ -59,7 +59,7 @@ class SandboxKbTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
         self.kb_version = "0.1.2"
-        self.kb_download_url = f"https://github.com/kortix-ai/kb-fusion/releases/download/v{self.kb_version}/kb"
+        self.kb_download_url = f"https://github.com/sprintlab-ai/kb-fusion/releases/download/v{self.kb_version}/kb"
 
     async def _execute_kb_command(self, command: str, cwd: str = None) -> dict:
         await self._ensure_sandbox()

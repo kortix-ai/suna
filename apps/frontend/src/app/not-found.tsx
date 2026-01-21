@@ -5,7 +5,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { AnimatedBg } from '@/components/ui/animated-bg';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 
 export default function NotFound() {
   return (
@@ -16,7 +16,7 @@ export default function NotFound() {
 
         <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
           {/* Logo - 32px height */}
-          <KortixLogo size={32} />
+          <SprintLabLogo size={32} />
 
           {/* Title - 43px */}
           <h1 className="text-[43px] font-normal tracking-tight text-foreground leading-none text-center">

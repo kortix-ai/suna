@@ -22,7 +22,7 @@ import {
   Activity,
   ArrowRight
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { TriggerProvider } from './types';
 import { useTriggerProviders } from '@/hooks/triggers';
 
@@ -123,7 +123,7 @@ export const TriggerBrowseDialog: React.FC<TriggerBrowseDialogProps> = ({
           <div className="flex-1 overflow-y-auto space-y-6">
             {loading ? (
               <div className="flex items-center justify-center py-8">
-                <KortixLoader size="large" />
+                <SprintLabLoader size="large" />
               </div>
             ) : error ? (
               <div className="text-center py-8">

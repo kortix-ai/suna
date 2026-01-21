@@ -2,7 +2,7 @@ import { Stack, useRouter, Redirect } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useAuthContext } from '@/contexts';
 import { View } from 'react-native';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import { log } from '@/lib/logger';
 
 /**
@@ -27,7 +27,7 @@ export default function AuthLayout() {
           justifyContent: 'center',
         }}
       >
-        <KortixLoader size="xlarge" />
+        <SprintLabLoader size="xlarge" />
       </View>
     );
   }

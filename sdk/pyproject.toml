@@ -1,7 +1,7 @@
 [project]
-name = "kortix"
+name = "sprintlab"
 version = "0.1.0"
-description = "Kortix SDK"
+description = "SprintLab SDK"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = ["asyncio>=3.4.3", "httpx>=0.28.1", "fastmcp>=2.10.6"]

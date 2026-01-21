@@ -59,7 +59,7 @@ export default function CreditsPage() {
                 <li className="flex items-start gap-3">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
                   <div>
-                    <span className="font-medium text-foreground">Kortix computer:</span> The execution environment that powers code execution, browser automation, and interactive task processing.
+                    <span className="font-medium text-foreground">SprintLab computer:</span> The execution environment that powers code execution, browser automation, and interactive task processing.
                   </div>
                 </li>
                 <li className="flex items-start gap-3">

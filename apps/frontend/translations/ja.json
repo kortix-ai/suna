@@ -367,7 +367,7 @@
       ],
       "random": [
         "お帰りなさい！",
-        "やあ！Kortixに何でも聞いてね",
+        "やあ！SprintLabに何でも聞いてね",
         "何を達成したい？",
         "すごいものを作ろう",
         "いつでも準備OK！",
@@ -397,7 +397,7 @@
     "chatDescription": "シンプルな往復会話",
     "sampleAnswers": "サンプル回答",
     "samplePrompts": "サンプルプロンプト",
-    "waitingForUserResponse": "あなたの回答後、Kortixは自律的に作業を続けます。",
+    "waitingForUserResponse": "あなたの回答後、SprintLabは自律的に作業を続けます。",
     "taskCompleted": "タスク完了",
     "uploadingFiles": "{count} 個のファイルをアップロード中...",
     "uploadingFilesOne": "{count} 個のファイルをアップロード中...",
@@ -414,7 +414,7 @@
     "running": "実行中",
     "minimizeToFloatingPreview": "フローティングプレビューに最小化",
     "close": "閉じる",
-    "noActionsYet": "Kortix Computer",
+    "noActionsYet": "SprintLab Computer",
     "workerActionsDescription": "起動中",
     "emptyActionsDescription": "ワーカーのアクションがここに表示されます",
     "toolIsRunning": "ツールが実行中です",
@@ -424,7 +424,7 @@
     "rateThisResult": "この結果を評価",
     "feedbackHelpsImprove": "フィードバックは改善に役立ちます",
     "additionalFeedbackOptional": "追加のフィードバック（任意）",
-    "helpKortixImprove": "フィードバックでKortixの改善にご協力ください",
+    "helpSprintLabImprove": "フィードバックでSprintLabの改善にご協力ください",
     "submit": "送信",
     "submitting": "送信中...",
     "feedbackSubmittedSuccess": "フィードバックが正常に送信されました",
@@ -447,10 +447,10 @@
     "heroPlaceholder": "Workerに完了させたいタスクを説明..."
   },
   "showcase": {
-    "title": "Kortix: あなたの自律型AIワーカー",
+    "title": "SprintLab: あなたの自律型AIワーカー",
     "subtitle": "複雑なタスクのために構築され、すべてのために設計されました。シンプルなリクエストからメガ複雑なプロジェクトまで、すべてを処理する究極のAIアシスタント。",
     "tryItOut": "試してみる",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "SprintLab Computer",
     "running": "実行中",
     "workers": {
       "images": {
@@ -568,10 +568,10 @@
     },
     "creditsExplainedPage": {
       "title": "クレジットの説明",
-      "subtitle": "Kortixでのクレジットの仕組みについて知っておくべきすべて",
+      "subtitle": "SprintLabでのクレジットの仕組みについて知っておくべきすべて",
       "understandingCredits": {
         "title": "クレジットの理解",
-        "description": "クレジットは、Kortixのプラットフォーム操作における共通通貨として機能します。AIワーカーが実行するすべてのアクション（データ分析からコード生成まで）は、タスクの複雑さと必要なリソースに基づいてクレジットを消費します。"
+        "description": "クレジットは、SprintLabのプラットフォーム操作における共通通貨として機能します。AIワーカーが実行するすべてのアクション（データ分析からコード生成まで）は、タスクの複雑さと必要なリソースに基づいてクレジットを消費します。"
       },
       "howCreditsWork": {
         "title": "クレジットの仕組み",
@@ -589,7 +589,7 @@
       },
       "gettingMoreCredits": {
         "title": "より多くのクレジットを取得",
-        "description": "Kortixでクレジットを取得する方法はいくつかあります：",
+        "description": "SprintLabでクレジットを取得する方法はいくつかあります：",
         "monthlySubscription": {
           "title": "月額サブスクリプションクレジット",
           "description": "有料プランに含まれ、毎月自動的に更新されます。これらは期限付きクレジットです。"
@@ -609,7 +609,7 @@
       },
       "typesOfCredits": {
         "title": "クレジットの種類",
-        "description": "Kortixは2種類のクレジットを使用して、使用管理の柔軟性を提供します：",
+        "description": "SprintLabは2種類のクレジットを使用して、使用管理の柔軟性を提供します：",
         "expiringCredits": {
           "title": "期限付きクレジット",
           "description": "月額サブスクリプションクレジット",
@@ -622,7 +622,7 @@
         },
         "creditPriority": {
           "title": "クレジット優先順位：",
-          "description": "Kortixを使用する場合、期限付きクレジットが最初に消費されます。期限付きクレジットが使い果たされた後にのみ、期限なしクレジットが使用されます。"
+          "description": "SprintLabを使用する場合、期限付きクレジットが最初に消費されます。期限付きクレジットが使い果たされた後にのみ、期限なしクレジットが使用されます。"
         }
       }
     },
@@ -676,16 +676,16 @@
       "continue": "続ける",
       "keepCurrentPlan": "現在のプランを維持",
       "feedbackTitle": "改善にご協力ください",
-      "feedbackSubtitle": "あなたのフィードバックがKortixの未来を形作ります",
+      "feedbackSubtitle": "あなたのフィードバックがSprintLabの未来を形作ります",
       "whatWouldMakeYouStay": "何があれば続けていただけますか？",
-      "feedbackPlaceholder": "Kortixをあなたにとって価値あるものにするために、私たちが変更または追加できることが1つあるとしたら、それは何ですか？",
+      "feedbackPlaceholder": "SprintLabをあなたにとって価値あるものにするために、私たちが変更または追加できることが1つあるとしたら、それは何ですか？",
       "feedbackFooter": "私たちのチームはすべての回答を読んでいます。あなたの言葉が次に何を構築するかに直接影響します。",
       "confirmDowngrade": "ダウングレードを確認",
       "processing": "処理中...",
       "pleaseSelectReason": "理由を選択してください",
       "reasons": {
         "tooExpensive": "私のニーズには高すぎる",
-        "notUsingOften": "Kortixを十分に使用していない",
+        "notUsingOften": "SprintLabを十分に使用していない",
         "foundAlternative": "別のソリューションを見つけた",
         "technicalIssues": "技術的な問題が発生した",
         "resultsNotGood": "結果が期待に沿わなかった",
@@ -699,7 +699,7 @@
     "enterCode": "コードを入力",
     "logIntoAccount": "アカウントにログイン",
     "createAccount": "アカウントを作成",
-    "signInOrCreateAccount": "Kortixアカウントにログインまたは作成",
+    "signInOrCreateAccount": "SprintLabアカウントにログインまたは作成",
     "continueWithGoogle": "Googleで続ける",
     "continueWithGitHub": "GitHubで続ける",
     "orEmail": "またはメール",
@@ -744,7 +744,7 @@
     "alreadySignedIn": "すでにログインしています。操作は不要です。",
     "goToDashboard": "ダッシュボードへ",
     "signInToContinue": "続行するにはログイン",
-    "signInOrCreateAccountToTalk": "ログインまたはアカウントを作成してKortixと話す",
+    "signInOrCreateAccountToTalk": "ログインまたはアカウントを作成してSprintLabと話す",
     "orContinueWithEmail": "またはメールで続ける",
     "signInWithEmail": "メールでログイン",
     "createNewAccount": "新しいアカウントを作成",
@@ -1197,7 +1197,7 @@
   "announcements": {
     "memories": {
       "title": "メモリーのご紹介",
-      "description": "Kortixがすべての会話であなたの好みとコンテキストを記憶するようになりました",
+      "description": "SprintLabがすべての会話であなたの好みとコンテキストを記憶するようになりました",
       "features": {
         "personalized": {
           "title": "パーソナライズされた体験",

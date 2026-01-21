@@ -4,8 +4,8 @@ import { Suspense } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AlertTriangle, CheckCircle, Clock, Wrench, Activity, Shield, Database, Globe, Zap } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { useTechnicalIssueQuery } from '@/hooks/edge-flags';
 import { AnimatedBg } from '@/components/ui/animated-bg';
 
@@ -95,13 +95,13 @@ function StatusPageContent() {
         <AnimatedBg variant="hero" />
         <div className="relative z-10 flex flex-col items-center px-4 sm:px-6 pt-16 pb-8">
           <div className="flex flex-col items-center gap-6 text-center">
-            <KortixLogo size={32} />
+            <SprintLabLogo size={32} />
             <div className="space-y-2">
               <h1 className="text-2xl font-bold tracking-tight text-foreground">
                 System Status
               </h1>
               <p className="text-sm text-muted-foreground max-w-md">
-                Real-time status of all Kortix services
+                Real-time status of all SprintLab services
               </p>
             </div>
             <div className={`flex items-center gap-2 px-4 py-2 rounded-full backdrop-blur-sm border ${
@@ -181,7 +181,7 @@ function StatusPageContent() {
                   Service Status
                 </CardTitle>
                 <CardDescription className="text-sm">
-                  Current operational status of all Kortix services
+                  Current operational status of all SprintLab services
                 </CardDescription>
               </CardHeader>
               <CardContent>
@@ -226,7 +226,7 @@ export default function StatusPage() {
     <Suspense
       fallback={
         <div className="min-h-screen flex items-center justify-center">
-          <KortixLoader size="large" />
+          <SprintLabLoader size="large" />
         </div>
       }
     >

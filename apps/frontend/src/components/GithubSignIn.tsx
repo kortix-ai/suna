@@ -6,7 +6,7 @@ import { toast } from '@/lib/toast';
 import { Icons } from './home/icons';
 // Using proper GitHub brand icon from Icons component
 import { useAuthMethodTracking } from '@/stores/auth-tracking';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'next-intl';
 
@@ -166,7 +166,7 @@ export default function GitHubSignIn({ returnUrl, referralCode }: GitHubSignInPr
         type="button"
       >
         {isLoading ? (
-          <KortixLoader size="small" />
+          <SprintLabLoader size="small" />
         ) : (
           <Icons.github className="w-4 h-4" />
         )}

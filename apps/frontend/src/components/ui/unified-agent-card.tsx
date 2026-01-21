@@ -3,7 +3,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Check, Plus, Download, CheckCircle, Globe, GlobeLock, GitBranch, Trash2, MoreVertical, User, ArrowRight } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -25,7 +25,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { cn } from '@/lib/utils';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { AgentAvatar } from '@/components/thread/content/agent-avatar';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 
@@ -179,14 +179,14 @@ const CardAvatar: React.FC<{
 
 // Badge components
 const MarketplaceBadge: React.FC<{ 
-  isKortixTeam?: boolean; 
+  isSprintLabTeam?: boolean; 
   isOwner?: boolean;
-}> = ({ isKortixTeam, isOwner }) => (
+}> = ({ isSprintLabTeam, isOwner }) => (
   <div className="flex gap-1 flex-wrap">
-    {isKortixTeam && (
+    {isSprintLabTeam && (
       <Badge variant="secondary" className="bg-blue-100 text-blue-700 border-0 dark:bg-blue-950 dark:text-blue-300">
         <CheckCircle className="h-3 w-3 mr-1" />
-        Kortix
+        SprintLab
       </Badge>
     )}
     {isOwner && (
@@ -547,7 +547,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
     const renderBadge = () => {
       switch (variant) {
         case 'marketplace':
-          return <MarketplaceBadge isKortixTeam={data.is_kortix_team} isOwner={isOwner} />;
+          return <MarketplaceBadge isSprintLabTeam={data.is_kortix_team} isOwner={isOwner} />;
         case 'template':
           return <TemplateBadge isPublic={data.is_public} />;
         case 'agent':
@@ -600,7 +600,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
             >
               {isActioning ? (
                 <>
-                  <KortixLoader size="small" className="mr-2" />
+                  <SprintLabLoader size="small" className="mr-2" />
                   Installing...
                 </>
               ) : (
@@ -648,7 +648,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
             >
               {isActioning ? (
                 <>
-                  <KortixLoader size="small" />
+                  <SprintLabLoader size="small" />
                   {data.is_public ? 'Unpublishing...' : 'Publishing...'}
                 </>
               ) : (
@@ -725,7 +725,7 @@ export const UnifiedAgentCard: React.FC<UnifiedAgentCardProps> = ({
               >
                 {isActioning ? (
                   <>
-                    <KortixLoader size="small" />
+                    <SprintLabLoader size="small" />
                     Deleting...
                   </>
                 ) : (

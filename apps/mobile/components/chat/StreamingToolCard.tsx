@@ -3,7 +3,7 @@ import { View, ScrollView, NativeScrollEvent, NativeSyntheticEvent } from 'react
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { CheckCircle2, CircleDashed } from 'lucide-react-native';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { getUserFriendlyToolName } from '@agentpress/shared';
 // NOTE: useSmoothText removed - displaying content immediately (following frontend pattern)
 import { getToolIcon } from '@/lib/icons/tool-icons';
@@ -220,7 +220,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
         {fallbackIsCompleted ? (
           <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
         ) : (
-          <KortixLoader size="small" />
+          <SprintLabLoader size="small" />
         )}
       </View>
     );
@@ -254,7 +254,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
         {isCompleted ? (
           <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
         ) : (
-          <KortixLoader size="small" />
+          <SprintLabLoader size="small" />
         )}
       </View>
     );
@@ -279,7 +279,7 @@ export const StreamingToolCard = React.memo(function StreamingToolCard({ content
         {isCompleted ? (
           <Icon as={CheckCircle2} size={16} className="text-emerald-500" />
         ) : (
-          <KortixLoader size="small" />
+          <SprintLabLoader size="small" />
         )}
       </View>
 

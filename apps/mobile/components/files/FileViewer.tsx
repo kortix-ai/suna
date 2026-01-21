@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Modal, Pressable, Share, Platform, Alert } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import { X, Download, Share2, ChevronLeft, ChevronRight, Lock } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -329,7 +329,7 @@ export function FileViewer({
                 className="relative p-2"
                 style={{ opacity: isDownloading ? 0.6 : 1 }}>
                 {isDownloading ? (
-                  <KortixLoader size={22} />
+                  <SprintLabLoader size={22} />
                 ) : (
                   <Icon
                     as={hasFreeTier ? Lock : Download}
@@ -371,7 +371,7 @@ export function FileViewer({
         <View className="flex-1">
           {isLoading ? (
             <View className="flex-1 items-center justify-center">
-              <KortixLoader size="large" />
+              <SprintLabLoader size="large" />
               <Text className="mt-4 text-sm text-muted-foreground">Loading file...</Text>
             </View>
           ) : hasError ? (

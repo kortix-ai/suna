@@ -34,7 +34,7 @@ class TestNotificationRequest(BaseModel):
     event_type: NotificationEvent = NotificationEvent.SYSTEM_ALERT
     channels: Optional[List[NotificationChannel]] = None
     title: str = "Test Notification"
-    message: str = "This is a test notification from Kortix"
+    message: str = "This is a test notification from SprintLab"
 
 
 class SendNotificationRequest(BaseModel):

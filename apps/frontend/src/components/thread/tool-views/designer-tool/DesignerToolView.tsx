@@ -15,7 +15,7 @@ import {
   Lock,
   Unlock,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { extractDesignerData } from './_utils';
@@ -78,7 +78,7 @@ function DesignElementImage({
   if (!element.directUrl && isLoading && !finalUrl) {
     return (
       <div className="flex items-center justify-center w-full h-full bg-muted/50 animate-pulse rounded-lg">
-        <KortixLoader customSize={32} />
+        <SprintLabLoader customSize={32} />
       </div>
     );
   }
@@ -626,7 +626,7 @@ export function DesignerToolView({
               )}
               {isStreaming && (
                 <div className="flex flex-col items-center justify-center h-96 text-center">
-                  <KortixLoader size="medium" className="mb-4" />
+                  <SprintLabLoader size="medium" className="mb-4" />
                   <h3 className="text-lg font-medium text-foreground mb-2">
                     Generating Design
                   </h3>

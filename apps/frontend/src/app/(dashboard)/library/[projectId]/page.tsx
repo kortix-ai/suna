@@ -2,13 +2,13 @@
 
 import React, { useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useThreads } from '@/hooks/threads/use-threads';
 import { usePresentationViewerStore, PresentationViewerWrapper } from '@/stores/presentation-viewer-store';
 import { useFileViewerStore, FileViewerWrapper } from '@/stores/file-viewer-store';
-import { FileBrowserView } from '@/components/thread/kortix-computer/FileBrowserView';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { FileBrowserView } from '@/components/thread/sprintlab-computer/FileBrowserView';
+import { useSprintLabComputerStore } from '@/stores/sprintlab-computer-store';
 
 export default function LibraryBrowserPage({
   params,
@@ -22,7 +22,7 @@ export default function LibraryBrowserPage({
   const router = useRouter();
 
   // Reset the currentPath in the store when mounting the library page
-  const { navigateToPath } = useKortixComputerStore();
+  const { navigateToPath } = useSprintLabComputerStore();
   useEffect(() => {
     // Start at workspace root when opening library
     navigateToPath('/workspace');
@@ -77,7 +77,7 @@ export default function LibraryBrowserPage({
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-background">
-        <KortixLoader size="medium" />
+        <SprintLabLoader size="medium" />
       </div>
     );
   }

@@ -16,7 +16,7 @@ import {
   Table,
   CheckCircle2,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from './types';
 import { getToolTitle } from './utils';
 import { Card, CardContent } from '@/components/ui/card';
@@ -151,7 +151,7 @@ export function UploadFileToolView({
                 <FileIcon className="h-5 w-5 text-zinc-400" />
               </div>
               <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-700">
-                <KortixLoader customSize={12} />
+                <SprintLabLoader customSize={12} />
               </div>
             </div>
             <div className="flex-1 min-w-0">

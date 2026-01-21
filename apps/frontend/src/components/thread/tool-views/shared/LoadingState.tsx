@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Progress } from '@/components/ui/progress';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 
 interface LoadingStateProps {
   icon?: LucideIcon;
@@ -15,8 +15,8 @@ interface LoadingStateProps {
   progressText?: string;
   autoProgress?: boolean;
   initialProgress?: number;
-  /** If true, uses KortixLoader instead of the icon */
-  useKortixLoader?: boolean;
+  /** If true, uses SprintLabLoader instead of the icon */
+  useSprintLabLoader?: boolean;
 }
 
 export function LoadingState({
@@ -30,7 +30,7 @@ export function LoadingState({
   progressText,
   autoProgress = true,
   initialProgress = 0,
-  useKortixLoader = true,
+  useSprintLabLoader = true,
 }: LoadingStateProps): React.JSX.Element {
   const [progress, setProgress] = useState(initialProgress);
 
@@ -53,12 +53,12 @@ export function LoadingState({
     <div className="flex flex-col items-center justify-center h-full min-h-[400px] overflow-hidden scrollbar-hide py-12 px-6">
       <div className="text-center w-full max-w-sm">
         <div className={cn("w-12 h-12 rounded-full mx-auto mb-6 flex items-center justify-center", bgColor)}>
-          {useKortixLoader ? (
-            <KortixLoader customSize={20} />
+          {useSprintLabLoader ? (
+            <SprintLabLoader customSize={20} />
           ) : Icon ? (
             <Icon className={cn("h-5 w-5", iconColor)} />
           ) : (
-            <KortixLoader customSize={20} />
+            <SprintLabLoader customSize={20} />
           )}
         </div>
         

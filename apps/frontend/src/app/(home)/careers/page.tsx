@@ -59,7 +59,7 @@ export default function CareersPage() {
             </div>
             
             <h1 className="text-4xl md:text-5xl lg:text-6xl font-medium tracking-tight text-balance">
-              Work at Kortix
+              Work at SprintLab
             </h1>
             
             <p className="text-foreground text-[1.375rem] md:text-[1.5rem] leading-[1.6] tracking-[-0.025em] font-medium max-w-2xl opacity-50">

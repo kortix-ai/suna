@@ -4,7 +4,7 @@ import { useRouter, Stack } from 'expo-router';
 import { CheckCircle2, AlertCircle } from 'lucide-react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import { useAuthContext } from '@/contexts';
 import { useAccountInitialization } from '@/hooks/useAccountInitialization';
 import { useBillingContext } from '@/contexts/BillingContext';
@@ -158,7 +158,7 @@ export default function SettingUpScreen() {
                       </Text>
                     </View>
                     <View className="h-12 w-12 items-center justify-center ml-4">
-                      <KortixLoader size="small" customSize={24} />
+                      <SprintLabLoader size="small" customSize={24} />
                     </View>
                   </View>
                 </View>

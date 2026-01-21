@@ -5,7 +5,7 @@ import { useReferralCode, useReferralStats } from '@/hooks/referrals/use-referra
 import { useTranslations } from 'next-intl';
 import { ReferralCodeSection } from './referral-code-section';
 import { ReferralStatsCards } from './referral-stats-cards';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { ReferralEmailInvitation } from './referral-email-invitation';
 
 export function ReferralsTab() {
@@ -18,8 +18,8 @@ export function ReferralsTab() {
       {/* Header */}
       <div className="flex flex-col items-center text-center mb-4 sm:mb-6">
         <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">
-          <KortixLogo size={24} variant="symbol" className="sm:hidden" />
-          <KortixLogo size={32} variant="symbol" className="hidden sm:block" />
+          <SprintLabLogo size={24} variant="symbol" className="sm:hidden" />
+          <SprintLabLogo size={32} variant="symbol" className="hidden sm:block" />
         </div>
         <h2 className="text-lg sm:text-xl font-semibold text-foreground">
           {t('title')}

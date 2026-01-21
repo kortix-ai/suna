@@ -10,12 +10,12 @@ import { useState, useEffect, Suspense, lazy } from 'react';
 import { signUp, verifyOtp, resendMagicLink } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { MailCheck, Clock, ExternalLink } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useAuth } from '@/components/AuthProvider';
 import { useAuthMethodTracking } from '@/stores/auth-tracking';
 import { toast } from '@/lib/toast';
 import { useTranslations } from 'next-intl';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { ReferralCodeDialog } from '@/components/referrals/referral-code-dialog';
 import { isElectron, getAuthOrigin } from '@/lib/utils/is-electron';
 import { ExampleShowcase } from '@/components/auth/example-showcase';
@@ -272,7 +272,7 @@ function LoginContent() {
   if (isLoading || user) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <KortixLoader size="medium" />
+        <SprintLabLoader size="medium" />
       </div>
     );
   }
@@ -562,7 +562,7 @@ function LoginContent() {
     <div className="min-h-screen bg-background relative">
       <div className="absolute top-6 left-6 z-10">
         <Link href="/" className="flex items-center space-x-2">
-          <KortixLogo size={28} />
+          <SprintLabLogo size={28} />
         </Link>
       </div>
       <div className="flex min-h-screen">
@@ -730,7 +730,7 @@ export default function Login() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-background flex items-center justify-center">
-          <KortixLoader size="medium" />
+          <SprintLabLoader size="medium" />
         </div>
       }
     >

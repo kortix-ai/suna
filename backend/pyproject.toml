@@ -1,5 +1,5 @@
 [project]
-name = "kortix"
+name = "sprintlab"
 version = "1.0"
 description = "platform to build, manage and train AI Agents"
 authors = [{ name = "marko-kraemer", email = "mail@markokraemer.com" }]
@@ -106,8 +106,8 @@ dependencies = [
 ]
 
 [project.urls]
-homepage = "https://www.kortix.com"
-repository = "https://github.com/kortix-ai/suna"
+homepage = "https://www.sprintlab.id"
+repository = "https://github.com/sprintlab-ai/suna"
 
 [tool.uv]
 package = false

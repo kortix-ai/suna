@@ -113,7 +113,7 @@ export function TrialManagement() {
                 </li>
               </ul>
               <p className="text-muted-foreground text-sm pt-2">
-                To continue using Kortix after cancelling, you'll need to purchase a subscription.
+                To continue using SprintLab after cancelling, you'll need to purchase a subscription.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>

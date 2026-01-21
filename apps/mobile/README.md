@@ -1,1 +1,1 @@
-# Kortix Mobile App
+# SprintLab Mobile App

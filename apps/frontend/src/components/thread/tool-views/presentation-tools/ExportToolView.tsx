@@ -2,7 +2,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { Presentation, FileText, Download } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp } from '../utils';
 import { downloadPresentation, DownloadFormat } from '../utils/presentation-utils';
@@ -201,12 +201,12 @@ export function ExportToolView({
             className="flex-1 h-12 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-medium"
           >
             {downloadingFormat === 'pdf' ? (
-              <KortixLoader customSize={16} variant="white" className="mr-2 dark:hidden" />
+              <SprintLabLoader customSize={16} variant="white" className="mr-2 dark:hidden" />
             ) : (
               <FileText className="h-4 w-4 mr-2" />
             )}
             {downloadingFormat === 'pdf' ? (
-              <KortixLoader customSize={16} variant="black" className="mr-2 hidden dark:flex" />
+              <SprintLabLoader customSize={16} variant="black" className="mr-2 hidden dark:flex" />
             ) : null}
             Download PDF
           </Button>
@@ -218,12 +218,12 @@ export function ExportToolView({
             className="flex-1 h-12 bg-black hover:bg-zinc-800 text-white dark:bg-white dark:hover:bg-zinc-200 dark:text-black font-medium"
           >
             {downloadingFormat === 'pptx' ? (
-              <KortixLoader customSize={16} variant="white" className="mr-2 dark:hidden" />
+              <SprintLabLoader customSize={16} variant="white" className="mr-2 dark:hidden" />
             ) : (
               <Presentation className="h-4 w-4 mr-2" />
             )}
             {downloadingFormat === 'pptx' ? (
-              <KortixLoader customSize={16} variant="black" className="mr-2 hidden dark:flex" />
+              <SprintLabLoader customSize={16} variant="black" className="mr-2 hidden dark:flex" />
             ) : null}
             Download PPTX
           </Button>

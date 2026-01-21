@@ -15,7 +15,7 @@ import { AgentAvatar } from './AgentAvatar';
 import { useAgent } from '@/contexts/AgentContext';
 import { useColorScheme } from 'nativewind';
 import type { Agent } from '@/api/types';
-import { KortixLogo } from '@/components/ui/KortixLogo';
+import { SprintLabLogo } from '@/components/ui/SprintLabLogo';
 
 interface AgentIdentifierProps extends ViewProps {
   agentId?: string | null;

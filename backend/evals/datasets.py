@@ -1,5 +1,5 @@
 """
-Evaluation Datasets for Kortix Agent.
+Evaluation Datasets for SprintLab Agent.
 
 This module provides various test datasets for evaluation:
 1. Static test cases for regression testing
@@ -23,7 +23,7 @@ from core.utils.logger import logger
 BASIC_TESTS = [
     {
         "input": "Hello, who are you?",
-        "expected_behavior": "Should introduce itself as Kortix, an AI assistant",
+        "expected_behavior": "Should introduce itself as SprintLab, an AI assistant",
         "tags": ["basic", "greeting"],
     },
     {
@@ -215,7 +215,7 @@ def load_from_braintrust_dataset(
 
 
 def create_golden_dataset_from_logs(
-    project: str = "Kortix Agent",
+    project: str = "SprintLab Agent",
     min_score: float = 0.8,
     limit: int = 100,
 ) -> List[Dict[str, Any]]:

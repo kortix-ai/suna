@@ -1,6 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
 import { Pressable, TextInput, View } from 'react-native';
@@ -194,7 +194,7 @@ export function ThreadHeader({
 
           {(isUpdating || isLoading) && (
             <View className="ml-2">
-              <KortixLoader size="large" />
+              <SprintLabLoader size="large" />
             </View>
           )}
         </View>

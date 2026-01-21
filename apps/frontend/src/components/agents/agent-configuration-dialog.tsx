@@ -44,10 +44,10 @@ import {
   Lock,
   Sparkles,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { toast } from '@/lib/toast';
 import { cn } from '@/lib/utils';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAccountState } from '@/hooks/billing';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
@@ -245,7 +245,7 @@ export function AgentConfigurationDialog({
     if (!isNameEditable) {
       if (isSunaAgent) {
         toast.error("Name cannot be edited", {
-          description: "Kortix's name is managed centrally and cannot be changed.",
+          description: "SprintLab's name is managed centrally and cannot be changed.",
         });
       }
       setEditName(formData.name);
@@ -261,7 +261,7 @@ export function AgentConfigurationDialog({
     if (!isSystemPromptEditable) {
       if (isSunaAgent) {
         toast.error("System prompt cannot be edited", {
-          description: "Kortix's system prompt is managed centrally.",
+          description: "SprintLab's system prompt is managed centrally.",
         });
       }
       return;
@@ -278,7 +278,7 @@ export function AgentConfigurationDialog({
     if (!areToolsEditable) {
       if (isSunaAgent) {
         toast.error("Tools cannot be edited", {
-          description: "Kortix's tools are managed centrally.",
+          description: "SprintLab's tools are managed centrally.",
         });
       }
       return;
@@ -596,7 +596,7 @@ export function AgentConfigurationDialog({
                   disabled={exportMutation.isPending}
                 >
                   {exportMutation.isPending ? (
-                    <KortixLoader customSize={16} />
+                    <SprintLabLoader customSize={16} />
                   ) : (
                     <Download className="h-4 w-4" />
                   )}
@@ -606,7 +606,7 @@ export function AgentConfigurationDialog({
           </DialogHeader>
           {isLoading ? (
             <div className="flex-1 flex items-center justify-center">
-              <KortixLoader size="large" />
+              <SprintLabLoader size="large" />
             </div>
           ) : (
             <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as typeof activeTab)} className="flex-1 flex flex-col min-h-0">
@@ -652,7 +652,7 @@ export function AgentConfigurationDialog({
                       <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
                         <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
-                          You can't edit the main Kortix, but you can create a new AI Worker that you can modify as you wish.
+                          You can't edit the main SprintLab, but you can create a new AI Worker that you can modify as you wish.
                         </AlertDescription>
                       </Alert>
                     )}
@@ -673,7 +673,7 @@ export function AgentConfigurationDialog({
                       <Alert className="mb-4 bg-blue-50 border-blue-200 dark:bg-blue-950/20 dark:border-blue-900">
                         <Info className="h-4 w-4 text-blue-600 dark:text-blue-400" />
                         <AlertDescription className="text-sm text-blue-800 dark:text-blue-300">
-                          You can't edit the main Kortix, but you can create a new AI Worker that you can modify as you wish.
+                          You can't edit the main SprintLab, but you can create a new AI Worker that you can modify as you wish.
                         </AlertDescription>
                       </Alert>
                     )}
@@ -827,7 +827,7 @@ export function AgentConfigurationDialog({
             >
               {isSaving ? (
                 <>
-                  <KortixLoader customSize={16} className="mr-1" />
+                  <SprintLabLoader customSize={16} className="mr-1" />
                   Saving...
                 </>
               ) : (

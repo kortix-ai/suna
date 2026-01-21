@@ -36,7 +36,7 @@
     "greeting": [
         {
             "input": "Hello, who are you?",
-            "expected_behavior": "Should introduce itself as Kortix",
+            "expected_behavior": "Should introduce itself as SprintLab",
             "tags": [
                 "basic",
                 "greeting"

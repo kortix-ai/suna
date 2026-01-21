@@ -1,7 +1,7 @@
-# Kortix Project - Development Rules
+# SprintLab Project - Development Rules
 
 ## Project Overview
-Kortix is a React Native + Expo app built with TypeScript, NativeWind (Tailwind CSS), and a custom design system.
+SprintLab is a React Native + Expo app built with TypeScript, NativeWind (Tailwind CSS), and a custom design system.
 
 ## Core Technologies
 - **Framework**: React Native (Expo)

@@ -3,7 +3,7 @@ import { View, ScrollView, Pressable, NativeScrollEvent, NativeSyntheticEvent } 
 import { WebView } from 'react-native-webview';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import {
   Code,
   Eye,
@@ -37,7 +37,7 @@ import { JsonRenderer } from './JsonRenderer';
 import { CsvRenderer } from './CsvRenderer';
 import { XlsxRenderer } from './XlsxRenderer';
 import { ToolViewCard, TabSwitcher, StatusBadge, LoadingState, CodeRenderer, FileDownloadButton } from '../shared';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { useSprintLabComputerStore } from '@/stores/sprintlab-computer-store';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
@@ -95,7 +95,7 @@ export function FileOperationToolView({
   project,
   streamingText,
 }: ToolViewProps) {
-  const { openFileInComputer } = useKortixComputerStore();
+  const { openFileInComputer } = useSprintLabComputerStore();
   const [isCopyingContent, setIsCopyingContent] = useState(false);
   const [activeTab, setActiveTab] = useState<'code' | 'preview' | 'changes'>('preview');
   const sourceScrollRef = useRef<ScrollView>(null);
@@ -462,7 +462,7 @@ export function FileOperationToolView({
               {presentationName}{slideNumber ? ` - Slide ${slideNumber}` : ''}
             </Text>
             <View className="flex-row items-center gap-2">
-              <KortixLoader size="small" customSize={16} />
+              <SprintLabLoader size="small" customSize={16} />
               <Text className="text-sm text-primary">Writing slide content...</Text>
             </View>
           </View>

@@ -27,7 +27,7 @@ import {
   BarChart3,
   Plug,
 } from 'lucide-react-native';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import type { UserProfile } from '../menu/types';
 import { LanguagePage } from './LanguagePage';
 import { NameEditPage } from './NameEditPage';
@@ -425,7 +425,7 @@ const SettingsItem = React.memo(
         className="flex-row items-center justify-between py-4">
         <View className="flex-row items-center gap-3">
           {isLoading ? (
-            <KortixLoader size="small" customSize={20} />
+            <SprintLabLoader size="small" customSize={20} />
           ) : (
             <Icon as={icon} size={20} className={iconColor} strokeWidth={2} />
           )}

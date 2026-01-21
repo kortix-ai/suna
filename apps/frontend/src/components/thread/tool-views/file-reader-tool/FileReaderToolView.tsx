@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewHeader } from '../shared/ToolViewHeader';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { getToolTitle } from '../utils';
@@ -399,7 +399,7 @@ export function FileReaderToolView({
                 <HeaderIcon className="h-5 w-5 text-zinc-400" />
               </div>
               <div className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-white dark:bg-zinc-900 flex items-center justify-center shadow-sm border border-zinc-200 dark:border-zinc-700">
-                <KortixLoader customSize={12} />
+                <SprintLabLoader customSize={12} />
               </div>
             </div>
             <div className="flex-1 min-w-0">

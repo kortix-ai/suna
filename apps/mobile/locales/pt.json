@@ -77,7 +77,7 @@
     "guest": {
       "label": "Visitante",
       "title": "Browse Without\nan Account",
-      "description": "Try Kortix with limited features. No signup required!",
+      "description": "Try SprintLab with limited features. No signup required!",
       "continue": "Continue as Guest",
       "signUp": "Sign Up Instead",
       "agreement": "By continuing, you agree to our",
@@ -94,7 +94,7 @@
     "logIn": "Entrar",
     "passwordsDontMatch": "Senhas não coincidem",
     "passwordTooShort": "Senha deve ter pelo menos 8 caracteres",
-    "welcomeTitle": "Contrate o Kortix para",
+    "welcomeTitle": "Contrate o SprintLab para",
     "rotatingPhrases": {
       "presentations": "apresentações",
       "writing": "escrita",
@@ -118,12 +118,12 @@
     }
   },
   "onboarding": {
-    "welcome": "Veja o que o Kortix pode fazer",
+    "welcome": "Veja o que o SprintLab pode fazer",
     "welcomeSubtitle": "Seu assistente IA que age",
     "skip": "Pular",
     "next": "Próximo",
     "getStarted": "Começar",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "SprintLab Computer",
     "ready": "Pronto",
     "examples": {
       "presentations": {
@@ -232,8 +232,8 @@
   },
   "chat": {
     "newChat": "Novo Chat",
-    "placeholder": "Dê uma tarefa para o Kortix...",
-    "inputPlaceholder": "Pergunte qualquer coisa ao Kortix...",
+    "placeholder": "Dê uma tarefa para o SprintLab...",
+    "inputPlaceholder": "Pergunte qualquer coisa ao SprintLab...",
     "recording": "Gravando...",
     "cancelRecording": "Cancelar gravação",
     "stopRecording": "Parar gravação",
@@ -246,7 +246,7 @@
     "rateThisResult": "Avaliar este resultado",
     "feedbackHelpsImprove": "Teu feedback nos ajuda a melhorar",
     "additionalFeedbackOptional": "Feedback adicional (opcional)",
-    "helpKortixImprove": "Ajuda Kortix a melhorar com meu feedback",
+    "helpSprintLabImprove": "Ajuda SprintLab a melhorar com meu feedback",
     "submit": "Enviar",
     "submitting": "Enviando...",
     "suggestedFollowUps": "Sugestões de acompanhamento",
@@ -261,7 +261,7 @@
     "newWorker": "Novo Worker",
     "myWorkers": "Meus Workers",
     "searchAgents": "Buscar workers",
-    "defaultAgent": "Kortix",
+    "defaultAgent": "SprintLab",
     "defaultDescription": "IA para todas as tarefas",
     "superWorker": "Super Worker",
     "coder": "Coder",
@@ -515,12 +515,12 @@
   "beta": {
     "title": "Recursos Beta",
     "webSupportTitle": "Totalmente Suportado na Web",
-    "webSupportDescription": "Disponível em Kortix.com. Em breve no mobile—ainda em desenvolvimento aqui.",
-    "visitKortix": "Visitar Kortix.com",
+    "webSupportDescription": "Disponível em SprintLab.com. Em breve no mobile—ainda em desenvolvimento aqui.",
+    "visitSprintLab": "Visitar SprintLab.com",
     "advancedFeatures": "Recursos Avançados",
     "mobileBeta": "Beta Mobile",
     "pleaseNote": "Observação",
-    "mobileWarning": "Em desenvolvimento no mobile e pode ter problemas. Para a melhor experiência, use Kortix.com."
+    "mobileWarning": "Em desenvolvimento no mobile e pode ter problemas. Para a melhor experiência, use SprintLab.com."
   },
   "accountDeletion": {
     "title": "Excluir Conta",
@@ -556,7 +556,7 @@
     "chooseModelFor": "Escolhe um modelo para o worker {{agent}}"
   },
   "placeholders": {
-    "default": "Dê uma tarefa para o Kortix...",
+    "default": "Dê uma tarefa para o SprintLab...",
     "search": "Buscar...",
     "searchConversations": "Buscar chats",
     "searchAgents": "Buscar workers",

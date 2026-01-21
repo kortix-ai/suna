@@ -15,7 +15,7 @@ NC='\033[0m'
 export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
 export PATH=$PATH:$ANDROID_HOME/cmdline-tools/latest/bin:$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator
 
-AVD_NAME="Kortix_Dev"
+AVD_NAME="SprintLab_Dev"
 
 # Check if emulator is already running
 if adb devices 2>/dev/null | grep -q "emulator"; then
@@ -80,7 +80,7 @@ fi
 
 # Start Expo dev client
 echo -e "${YELLOW}Starting Expo dev client...${NC}"
-echo -e "${GREEN}✓ When Expo starts, manually open the Kortix dev client app on the emulator${NC}"
+echo -e "${GREEN}✓ When Expo starts, manually open the SprintLab dev client app on the emulator${NC}"
 echo -e "${GREEN}  Or scan the QR code / enter the URL shown in the terminal${NC}"
 echo ""
 

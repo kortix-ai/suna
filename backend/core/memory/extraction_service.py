@@ -9,7 +9,7 @@ from .models import ExtractedMemory, MemoryType
 
 class MemoryExtractionService:
     def __init__(self, model: Optional[str] = None):
-        self.model = model or config.MEMORY_EXTRACTION_MODEL or "kortix/basic"
+        self.model = model or config.MEMORY_EXTRACTION_MODEL or "sprintlab/basic"
         self._client = None
     
     @property

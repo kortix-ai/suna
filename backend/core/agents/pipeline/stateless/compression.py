@@ -45,12 +45,16 @@ class ContextCompressor:
     ) -> CompressionResult:
         from core.ai_models import model_manager
         from core.agentpress.prompt_caching import add_cache_control
-        
+
         lookup_model = registry_model_id or model_name
+        # Convert registry model ID to litellm model ID for token counting
+        # litellm's token_counter doesn't recognize custom model IDs like "sprintlab/basic"
+        litellm_model = model_manager.get_litellm_model_id(lookup_model)
+
         if len(messages) <= 2:
             cached_system = add_cache_control(system_prompt)
             prepared = [cached_system] + messages
-            tokens = await ContextCompressor.fast_token_count(prepared, model_name)
+            tokens = await ContextCompressor.fast_token_count(prepared, litellm_model)
             return CompressionResult(
                 messages=messages,
                 actual_tokens=tokens,
@@ -60,12 +64,12 @@ class ContextCompressor:
         
         context_window = model_manager.get_context_window(lookup_model)
         safety_threshold = ContextCompressor.calculate_safety_threshold(context_window)
-        
+
         cached_system = add_cache_control(system_prompt)
         prepared = [cached_system] + messages
-        
+
         count_start = time.time()
-        actual_tokens = await ContextCompressor.fast_token_count(prepared, model_name)
+        actual_tokens = await ContextCompressor.fast_token_count(prepared, litellm_model)
         count_time = (time.time() - count_start) * 1000
         
         if count_time > 100:
@@ -85,14 +89,14 @@ class ContextCompressor:
         compress_start = time.time()
         compressed_messages = await ContextCompressor._apply_compression(
             messages=messages,
-            model_name=model_name,
+            model_name=litellm_model,
             system_prompt=system_prompt,
             actual_tokens=actual_tokens,
             thread_id=thread_id
         )
-        
+
         prepared_compressed = [cached_system] + compressed_messages
-        new_tokens = await ContextCompressor.fast_token_count(prepared_compressed, model_name)
+        new_tokens = await ContextCompressor.fast_token_count(prepared_compressed, litellm_model)
         
         compress_time = (time.time() - compress_start) * 1000
         saved_tokens = actual_tokens - new_tokens
@@ -145,30 +149,32 @@ class ContextCompressor:
     ) -> Tuple[List[Dict[str, Any]], int]:
         from core.ai_models import model_manager
         from core.agentpress.prompt_caching import add_cache_control
-        
+
         lookup_model = registry_model_id or model_name
-        
-        actual_tokens = await ContextCompressor.fast_token_count(prepared_messages, model_name)
-        
+        # Convert registry model ID to litellm model ID for token counting
+        litellm_model = model_manager.get_litellm_model_id(lookup_model)
+
+        actual_tokens = await ContextCompressor.fast_token_count(prepared_messages, litellm_model)
+
         context_window = model_manager.get_context_window(lookup_model)
         safety_threshold = ContextCompressor.calculate_safety_threshold(context_window)
-        
+
         if actual_tokens < safety_threshold:
             return prepared_messages, actual_tokens
-        
+
         logger.warning(f"⚠️ [LATE COMPRESSION] Over threshold ({actual_tokens} >= {safety_threshold})")
-        
+
         compressed_messages = await ContextCompressor._apply_compression(
             messages=messages,
-            model_name=model_name,
+            model_name=litellm_model,
             system_prompt=system_prompt,
             actual_tokens=actual_tokens,
             thread_id=thread_id
         )
-    
+
         cached_system = add_cache_control(system_prompt)
         new_prepared = [cached_system] + compressed_messages
-        new_tokens = await ContextCompressor.fast_token_count(new_prepared, model_name)
+        new_tokens = await ContextCompressor.fast_token_count(new_prepared, litellm_model)
         
         logger.info(f"✨ [LATE COMPRESSION] Complete: {actual_tokens} -> {new_tokens} tokens")
         

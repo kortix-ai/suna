@@ -102,7 +102,7 @@
     },
     "referrals": {
       "title": "Freunde empfehlen & Credits verdienen",
-      "description": "Lade Freunde zu Kortix ein und verdient beide",
+      "description": "Lade Freunde zu SprintLab ein und verdient beide",
       "creditsPerReferral": "+400 Credits",
       "youEarn": "Du verdienst",
       "friendGets": "Dein Freund bekommt",
@@ -368,7 +368,7 @@
       ],
       "random": [
         "Schön, dass du da bist!",
-        "Ahoi! Was kann Kortix für dich tun?",
+        "Ahoi! Was kann SprintLab für dich tun?",
         "Was möchtest du erledigen?",
         "Lass uns was Geniales bauen",
         "Bin startklar!",
@@ -398,7 +398,7 @@
     "chatDescription": "Einfache Unterhaltung",
     "sampleAnswers": "Beispielantworten",
     "samplePrompts": "Beispiel-Prompts",
-    "waitingForUserResponse": "Kortix wird nach deiner Antwort eigenständig weiterarbeiten.",
+    "waitingForUserResponse": "SprintLab wird nach deiner Antwort eigenständig weiterarbeiten.",
     "taskCompleted": "Aufgabe abgeschlossen",
     "uploadingFiles": "Lade {count} Datei{plural} hoch...",
     "uploadingFilesOne": "Lade {count} Datei hoch...",
@@ -415,7 +415,7 @@
     "running": "Läuft",
     "minimizeToFloatingPreview": "Auf schwebende Vorschau minimieren",
     "close": "Schließen",
-    "noActionsYet": "Kortix Computer",
+    "noActionsYet": "SprintLab Computer",
     "workerActionsDescription": "Wird gestartet",
     "emptyActionsDescription": "Worker-Aktionen werden hier angezeigt",
     "toolIsRunning": "Tool läuft",
@@ -425,7 +425,7 @@
     "rateThisResult": "Dieses Ergebnis bewerten",
     "feedbackHelpsImprove": "Dein Feedback hilft uns, uns zu verbessern",
     "additionalFeedbackOptional": "Zusätzliches Feedback (optional)",
-    "helpKortixImprove": "Hilf Kortix mit deinem Feedback, sich zu verbessern",
+    "helpSprintLabImprove": "Hilf SprintLab mit deinem Feedback, sich zu verbessern",
     "submit": "Absenden",
     "submitting": "Wird gesendet...",
     "feedbackSubmittedSuccess": "Feedback erfolgreich übermittelt",
@@ -487,10 +487,10 @@
     },
     "creditsExplainedPage": {
       "title": "Credits erklärt",
-      "subtitle": "Alles, was du über die Funktionsweise von Credits bei Kortix wissen musst",
+      "subtitle": "Alles, was du über die Funktionsweise von Credits bei SprintLab wissen musst",
       "understandingCredits": {
         "title": "Credits verstehen",
-        "description": "Credits dienen als universelle Währung von Kortix für Plattformoperationen. Jede Aktion, die deine KI-Agenten ausführen – von der Datenanalyse bis zur Codegenerierung – verbraucht Credits basierend auf der Komplexität der Aufgabe und den erforderlichen Ressourcen."
+        "description": "Credits dienen als universelle Währung von SprintLab für Plattformoperationen. Jede Aktion, die deine KI-Agenten ausführen – von der Datenanalyse bis zur Codegenerierung – verbraucht Credits basierend auf der Komplexität der Aufgabe und den erforderlichen Ressourcen."
       },
       "howCreditsWork": {
         "title": "Wie Credits funktionieren",
@@ -508,7 +508,7 @@
       },
       "gettingMoreCredits": {
         "title": "Mehr Credits erhalten",
-        "description": "Es gibt mehrere Möglichkeiten, Credits bei Kortix zu erhalten:",
+        "description": "Es gibt mehrere Möglichkeiten, Credits bei SprintLab zu erhalten:",
         "monthlySubscription": {
           "title": "Monatliche Abonnement-Credits",
           "description": "Im Rahmen deines kostenpflichtigen Plans enthalten und jeden Monat automatisch erneuert. Dies sind ablaufende Credits."
@@ -528,7 +528,7 @@
       },
       "typesOfCredits": {
         "title": "Arten von Credits",
-        "description": "Kortix verwendet zwei Arten von Credits, um dir Flexibilität bei der Verwaltung deiner Nutzung zu geben:",
+        "description": "SprintLab verwendet zwei Arten von Credits, um dir Flexibilität bei der Verwaltung deiner Nutzung zu geben:",
         "expiringCredits": {
           "title": "Ablaufende Credits",
           "description": "Monatliche Abonnement-Credits",
@@ -541,7 +541,7 @@
         },
         "creditPriority": {
           "title": "Credit-Priorität:",
-          "description": "Wenn du Kortix verwendest, werden zuerst ablaufende Credits verbraucht. Erst nachdem deine ablaufenden Credits aufgebraucht sind, werden nicht ablaufende Credits verwendet."
+          "description": "Wenn du SprintLab verwendest, werden zuerst ablaufende Credits verbraucht. Erst nachdem deine ablaufenden Credits aufgebraucht sind, werden nicht ablaufende Credits verwendet."
         }
       }
     },
@@ -595,16 +595,16 @@
       "continue": "Weiter",
       "keepCurrentPlan": "Meinen aktuellen Plan behalten",
       "feedbackTitle": "Helfen Sie uns, besser zu werden",
-      "feedbackSubtitle": "Ihr Feedback prägt die Zukunft von Kortix",
+      "feedbackSubtitle": "Ihr Feedback prägt die Zukunft von SprintLab",
       "whatWouldMakeYouStay": "Was würde Sie zum Bleiben bewegen?",
-      "feedbackPlaceholder": "Wenn wir eine Sache ändern oder hinzufügen könnten, die Kortix für Sie lohnenswert machen würde, was wäre das?",
+      "feedbackPlaceholder": "Wenn wir eine Sache ändern oder hinzufügen könnten, die SprintLab für Sie lohnenswert machen würde, was wäre das?",
       "feedbackFooter": "Unser Team liest jede Antwort. Ihre Worte beeinflussen direkt, was wir als Nächstes entwickeln.",
       "confirmDowngrade": "Downgrade bestätigen",
       "processing": "Wird verarbeitet...",
       "pleaseSelectReason": "Bitte wählen Sie einen Grund",
       "reasons": {
         "tooExpensive": "Es ist zu teuer für meine Bedürfnisse",
-        "notUsingOften": "Ich nutze Kortix nicht genug",
+        "notUsingOften": "Ich nutze SprintLab nicht genug",
         "foundAlternative": "Ich habe eine andere Lösung gefunden",
         "technicalIssues": "Ich hatte technische Probleme",
         "resultsNotGood": "Die Ergebnisse entsprachen nicht meinen Erwartungen",
@@ -618,7 +618,7 @@
     "enterCode": "Code eingeben",
     "logIntoAccount": "In dein Konto einloggen",
     "createAccount": "Konto erstellen",
-    "signInOrCreateAccount": "Melde dich an oder erstelle dein Kortix-Konto",
+    "signInOrCreateAccount": "Melde dich an oder erstelle dein SprintLab-Konto",
     "continueWithGoogle": "Mit Google fortfahren",
     "continueWithGitHub": "Mit GitHub fortfahren",
     "orEmail": "oder E-Mail",
@@ -663,7 +663,7 @@
     "alreadySignedIn": "Du bist bereits angemeldet. Keine Aktion erforderlich.",
     "goToDashboard": "Zum Dashboard",
     "signInToContinue": "Anmelden, um fortzufahren",
-    "signInOrCreateAccountToTalk": "Melde dich an oder erstelle ein Konto, um mit Kortix zu sprechen",
+    "signInOrCreateAccountToTalk": "Melde dich an oder erstelle ein Konto, um mit SprintLab zu sprechen",
     "orContinueWithEmail": "oder mit E-Mail fortfahren",
     "signInWithEmail": "Mit E-Mail anmelden",
     "createNewAccount": "Neues Konto erstellen",
@@ -827,10 +827,10 @@
     "heroPlaceholder": "Beschreibe die Aufgabe, die dein Worker erledigen soll..."
   },
   "showcase": {
-    "title": "Kortix: Dein autonomer KI-Worker",
+    "title": "SprintLab: Dein autonomer KI-Worker",
     "subtitle": "Gebaut für komplexe Aufgaben, entwickelt für alles. Der ultimative KI-Assistent, der alles bewältigt—von einfachen Anfragen bis hin zu mega-komplexen Projekten.",
     "tryItOut": "Ausprobieren",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "SprintLab Computer",
     "running": "Läuft",
     "workers": {
       "images": {
@@ -1108,7 +1108,7 @@
   "announcements": {
     "memories": {
       "title": "Wir stellen Erinnerungen vor",
-      "description": "Kortix merkt sich jetzt Ihre Präferenzen und den Kontext über alle Gespräche hinweg",
+      "description": "SprintLab merkt sich jetzt Ihre Präferenzen und den Kontext über alle Gespräche hinweg",
       "features": {
         "personalized": {
           "title": "Personalisierte Erfahrung",

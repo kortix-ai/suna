@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { Search, X, FileText } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useRouter, usePathname } from 'next/navigation';
 import { format } from 'date-fns';
 
@@ -248,7 +248,7 @@ export function SidebarSearch() {
                   >
                     <div className="flex items-center">
                       {isThreadLoading ? (
-                        <KortixLoader size="small" className="mr-2" />
+                        <SprintLabLoader size="small" className="mr-2" />
                       ) : (
                         <FileText className="mr-2 h-4 w-4 shrink-0" />
                       )}

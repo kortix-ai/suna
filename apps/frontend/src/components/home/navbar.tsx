@@ -9,7 +9,7 @@ import Link from 'next/link';
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { useRouter, usePathname } from 'next/navigation';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
 import { AppDownloadQR } from '@/components/common/app-download-qr';
@@ -160,7 +160,7 @@ export function Navbar() {
             {/* Left Section - Logo */}
             <div className="flex items-center justify-start flex-shrink-0">
               <Link href="/" className="flex items-center gap-3">
-                <KortixLogo size={18} variant='logomark' />
+                <SprintLabLogo size={18} variant='logomark' />
               </Link>
             </div>
 
@@ -260,7 +260,7 @@ export function Navbar() {
             {/* Header - matches navbar positioning */}
             <div className="flex h-[56px] items-center justify-between px-6 py-2">
               <Link href="/" className="flex items-center gap-3" onClick={() => setIsDrawerOpen(false)}>
-                <KortixLogo size={18} variant='logomark' />
+                <SprintLabLogo size={18} variant='logomark' />
               </Link>
               <button
                 onClick={toggleDrawer}

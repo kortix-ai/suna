@@ -1,10 +1,10 @@
 import React from 'react';
 import { Maximize2 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { getToolIcon, getUserFriendlyToolName, extractPrimaryParam } from '@/components/thread/utils';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { ToolCallInput } from '@/components/thread/kortix-computer';
+import { ToolCallInput } from '@/components/thread/sprintlab-computer';
 import { motion } from 'framer-motion';
 
 export type { ToolCallInput };
@@ -80,7 +80,7 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
     >
       <motion.div
-        layoutId="kortix-computer-window"
+        layoutId="sprintlab-computer-window"
         className="bg-card border border-border rounded-3xl p-2 w-full cursor-pointer group"
         onClick={onExpand}
         whileHover={{ scale: 1.01 }}
@@ -94,7 +94,7 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
           <div className="flex-shrink-0">
             <div className="w-10 h-10 rounded-2xl flex items-center justify-center bg-gradient-to-br from-zinc-500/20 to-zinc-600/10 border border-zinc-500/20">
               {isStreaming ? (
-                <KortixLoader size="small" />
+                <SprintLabLoader size="small" />
               ) : (
                 <CurrentToolIcon className="h-5 w-5 text-zinc-500 dark:text-zinc-400" />
               )}
@@ -142,7 +142,7 @@ export const FloatingToolPreview: React.FC<FloatingToolPreviewProps> = ({
                     : "text-red-500"
               )}>
                 {isStreaming
-                  ? `${agentName || 'Kortix'} is working...`
+                  ? `${agentName || 'SprintLab'} is working...`
                   : isSuccess
                     ? "Success"
                     : "Failed"

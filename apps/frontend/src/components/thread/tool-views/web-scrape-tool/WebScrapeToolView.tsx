@@ -9,7 +9,7 @@ import {
   Copy,
   Check,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from '../types';
 import { getToolTitle } from '../utils';
 import { extractWebScrapeData } from './_utils';
@@ -200,8 +200,8 @@ export function WebScrapeToolView({
                       )}
                     </span>
 
-                    {/* Kortix loading animation */}
-                    <KortixLoader customSize={16} />
+                    {/* SprintLab loading animation */}
+                    <SprintLabLoader customSize={16} />
                   </motion.div>
                 );
               })}

@@ -40,7 +40,7 @@ class Colors:
 
 # --- UI Helpers ---
 def print_banner():
-    """Prints the Kortix Super Worker setup banner."""
+    """Prints the SprintLab Super Worker setup banner."""
     print(
         f"""
 {Colors.BLUE}{Colors.BOLD}
@@ -362,7 +362,7 @@ def load_existing_env_vars():
             "COMPOSIO_API_KEY": backend_env.get("COMPOSIO_API_KEY", ""),
             "COMPOSIO_WEBHOOK_SECRET": backend_env.get("COMPOSIO_WEBHOOK_SECRET", ""),
         },
-        "kortix": {
+        "sprintlab": {
             "KORTIX_ADMIN_API_KEY": backend_env.get("KORTIX_ADMIN_API_KEY", ""),
         },
         "vapi": {
@@ -469,7 +469,7 @@ def generate_encryption_key():
 
 
 def generate_admin_api_key():
-    """Generates a secure admin API key for Kortix."""
+    """Generates a secure admin API key for SprintLab."""
     # Generate 32 random bytes and encode as hex for a readable API key
     key_bytes = secrets.token_bytes(32)
     return key_bytes.hex()
@@ -618,7 +618,7 @@ class SetupWizard:
             "webhook": existing_env_vars["webhook"],
             "mcp": existing_env_vars["mcp"],
             "composio": existing_env_vars["composio"],
-            "kortix": existing_env_vars["kortix"],
+            "sprintlab": existing_env_vars["sprintlab"],
             "vapi": existing_env_vars.get("vapi", {}),
             "stripe": existing_env_vars.get("stripe", {}),
             "langfuse": existing_env_vars.get("langfuse", {}),
@@ -755,11 +755,11 @@ class SetupWizard:
             config_items.append(
                 f"{Colors.YELLOW}○{Colors.ENDC} Morph (recommended)")
 
-        # Check Kortix configuration
-        if self.env_vars["kortix"]["KORTIX_ADMIN_API_KEY"]:
-            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} Kortix Admin")
+        # Check SprintLab configuration
+        if self.env_vars["sprintlab"]["KORTIX_ADMIN_API_KEY"]:
+            config_items.append(f"{Colors.GREEN}✓{Colors.ENDC} SprintLab Admin")
         else:
-            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} Kortix Admin")
+            config_items.append(f"{Colors.YELLOW}○{Colors.ENDC} SprintLab Admin")
 
         if any("✓" in item for item in config_items):
             print_info("Current configuration status:")
@@ -797,7 +797,7 @@ class SetupWizard:
         """Runs the setup wizard."""
         print_banner()
         print(
-            "This wizard will guide you through setting up Kortix Super Worker, an open-source generalist AI Worker.\n"
+            "This wizard will guide you through setting up SprintLab Super Worker, an open-source generalist AI Worker.\n"
         )
 
         # Show current configuration status
@@ -806,7 +806,7 @@ class SetupWizard:
         # Check if setup is already complete
         if self.is_setup_complete():
             print_info("Setup already complete!")
-            print_info("Would you like to start Kortix Super Worker?")
+            print_info("Would you like to start SprintLab Super Worker?")
             print()
             print("[1] Start with Docker Compose")
             print("[2] Start manually (show commands)")
@@ -817,7 +817,7 @@ class SetupWizard:
             choice = input("Enter your choice (1-4): ").strip()
             
             if choice == "1":
-                print_info("Starting Kortix Super Worker with Docker Compose...")
+                print_info("Starting SprintLab Super Worker with Docker Compose...")
                 # User explicitly chose Docker Compose start from the completion menu,
                 # so don't ask again how to start – just use automatic Docker mode.
                 self.start_suna(ask_start_method=False)
@@ -851,7 +851,7 @@ class SetupWizard:
             self.run_step_optional(6, self.collect_morph_api_key, "Morph API Key (Optional)")
             self.run_step_optional(7, self.collect_search_api_keys, "Search API Keys (Optional)")
             self.run_step_optional(8, self.collect_rapidapi_keys, "RapidAPI Keys (Optional)")
-            self.run_step(9, self.collect_kortix_keys)
+            self.run_step(9, self.collect_sprintlab_keys)
             # Supabase Cron does not require keys; ensure DB migrations enable cron functions
             self.run_step_optional(10, self.collect_webhook_keys, "Webhook Configuration (Optional)")
             self.run_step_optional(11, self.collect_mcp_keys, "MCP Configuration (Optional)")
@@ -913,7 +913,7 @@ class SetupWizard:
             return
 
         print_info(
-            "You can start Kortix Super Worker using either Docker Compose or by manually starting the services."
+            "You can start SprintLab Super Worker using either Docker Compose or by manually starting the services."
         )
         
         # Important note about Supabase compatibility
@@ -921,9 +921,9 @@ class SetupWizard:
         print(f"  • {Colors.GREEN}Docker Compose{Colors.ENDC} → Only supports {Colors.CYAN}Cloud Supabase{Colors.ENDC} (Local Supabase not supported)")
         print(f"  • {Colors.GREEN}Manual Setup{Colors.ENDC} → Only supports {Colors.CYAN}Cloud Supabase{Colors.ENDC} (Local Supabase not supported)")
         print(f"\n  Why? Docker networking can't easily reach local Supabase containers.")
-        print(f"  Want to fix this? See: {Colors.CYAN}https://github.com/kortix-ai/suna/issues/1920{Colors.ENDC}")
+        print(f"  Want to fix this? See: {Colors.CYAN}https://github.com/sprintlab-ai/suna/issues/1920{Colors.ENDC}")
         
-        print(f"\n{Colors.CYAN}How would you like to set up Kortix Super Worker?{Colors.ENDC}")
+        print(f"\n{Colors.CYAN}How would you like to set up SprintLab Super Worker?{Colors.ENDC}")
         print(
             f"{Colors.CYAN}[1] {Colors.GREEN}Manual{Colors.ENDC} {Colors.CYAN}(Cloud Supabase only - Local not supported){Colors.ENDC}"
         )
@@ -1025,18 +1025,18 @@ class SetupWizard:
         for directory in required_dirs:
             if not os.path.isdir(directory):
                 print_error(
-                    f"'{directory}' directory not found. Make sure you're in the Kortix Super Worker repository root."
+                    f"'{directory}' directory not found. Make sure you're in the SprintLab Super Worker repository root."
                 )
                 sys.exit(1)
 
         for file in required_files:
             if not os.path.isfile(file):
                 print_error(
-                    f"'{file}' not found. Make sure you're in the Kortix Super Worker repository root."
+                    f"'{file}' not found. Make sure you're in the SprintLab Super Worker repository root."
                 )
                 sys.exit(1)
 
-        print_success("Kortix Super Worker repository detected.")
+        print_success("SprintLab Super Worker repository detected.")
         return True
 
     def _get_input(
@@ -1071,7 +1071,7 @@ class SetupWizard:
         """Collects Supabase project information from the user."""
         print_step(3, self.total_steps, "Collecting Supabase Information")
 
-        print_info("Kortix Super Worker REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
+        print_info("SprintLab Super Worker REQUIRES a Supabase project to function. Without these keys, the application will crash on startup.")
         
         # Proceed with Cloud Supabase setup (local Supabase warning already shown in choose_setup_method)
         self.env_vars["supabase_setup_method"] = "cloud"
@@ -1468,7 +1468,7 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Kortix Super Worker REQUIRES Daytona for sandboxing functionality. Without this key, sandbox features will fail.")
+                "SprintLab Super Worker REQUIRES Daytona for sandboxing functionality. Without this key, sandbox features will fail.")
             input("Press Enter to continue once you have your API key...")
 
         print_api_key_prompt("DAYTONA_API_KEY", optional=False, existing_value=self.env_vars["daytona"]["DAYTONA_API_KEY"])
@@ -1504,16 +1504,16 @@ class SetupWizard:
         print_success("Daytona information saved.")
 
         print_warning(
-            "IMPORTANT: You must create a Kortix Super Worker snapshot in Daytona for it to work properly."
+            "IMPORTANT: You must create a SprintLab Super Worker snapshot in Daytona for it to work properly."
         )
         print_info(
             f"Visit {Colors.GREEN}https://app.daytona.io/dashboard/snapshots{Colors.ENDC}{Colors.CYAN} to create a snapshot."
         )
         print_info("Create a snapshot with these exact settings:")
         print_info(
-            f"   - Name:\t\t{Colors.GREEN}kortix/suna:0.1.3.28{Colors.ENDC}")
+            f"   - Name:\t\t{Colors.GREEN}sprintlab/suna:0.1.3.28{Colors.ENDC}")
         print_info(
-            f"   - Snapshot name:\t{Colors.GREEN}kortix/suna:0.1.3.28{Colors.ENDC}")
+            f"   - Snapshot name:\t{Colors.GREEN}sprintlab/suna:0.1.3.28{Colors.ENDC}")
         print_info(
             f"   - Entrypoint:\t{Colors.GREEN}/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf{Colors.ENDC}"
         )
@@ -1620,7 +1620,7 @@ class SetupWizard:
             )
         else:
             print_info(
-                "LLM providers are OPTIONAL tools that enable AI features in Kortix Super Worker.")
+                "LLM providers are OPTIONAL tools that enable AI features in SprintLab Super Worker.")
             print_info(
                 "Supported: Anthropic (Recommended), OpenAI, Groq, OpenRouter, xAI, Google Gemini, OpenAI Compatible, AWS Bedrock."
             )
@@ -1710,7 +1710,7 @@ class SetupWizard:
         if configured_providers:
             print_success(f"LLM providers configured: {', '.join(configured_providers)}")
         else:
-            print_warning("No LLM providers configured - add them before running Kortix.")
+            print_warning("No LLM providers configured - add them before running SprintLab.")
         
         print_success("LLM configuration saved.")
 
@@ -1728,7 +1728,7 @@ class SetupWizard:
             print_info("AI-powered code editing is enabled using Morph.")
             return
 
-        print_info("Kortix Super Worker uses Morph for fast, intelligent code editinsg.")
+        print_info("SprintLab Super Worker uses Morph for fast, intelligent code editinsg.")
         print_info(
             "This is optional but highly recommended for the best experience.")
         print_info(f"Learn more about Morph at: {Colors.GREEN}https://morphllm.com/{Colors.ENDC}")
@@ -1786,9 +1786,9 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Search APIs are OPTIONAL tools that enhance Kortix Super Worker's capabilities.")
+                "Search APIs are OPTIONAL tools that enhance SprintLab Super Worker's capabilities.")
             print_info(
-                "Without these, Kortix Super Worker will work but won't have web search or scraping functionality.")
+                "Without these, SprintLab Super Worker will work but won't have web search or scraping functionality.")
             print()
             print(f"{Colors.CYAN}Available Search Tools:{Colors.ENDC}")
             print(f"  {Colors.GREEN}🔍 Tavily{Colors.ENDC} - Web search")
@@ -1869,7 +1869,7 @@ class SetupWizard:
         if configured_search_tools:
             print_success(f"Search tools configured: {', '.join(configured_search_tools)}")
         else:
-            print_info("No search tools configured - Kortix Super Worker will work without web search capabilities.")
+            print_info("No search tools configured - SprintLab Super Worker will work without web search capabilities.")
 
         print_success("Search and scraping keys saved.")
 
@@ -1894,15 +1894,15 @@ class SetupWizard:
         else:
             print_info("Skipping RapidAPI key.")
 
-    def collect_kortix_keys(self):
-        """Auto-generates the Kortix admin API key."""
-        print_step(9, self.total_steps, "Auto-generating Kortix Admin API Key")
+    def collect_sprintlab_keys(self):
+        """Auto-generates the SprintLab admin API key."""
+        print_step(9, self.total_steps, "Auto-generating SprintLab Admin API Key")
 
         # Always generate a new key (overwrite existing if any)
-        print_info("Generating a secure admin API key for Kortix administrative functions...")
-        self.env_vars["kortix"]["KORTIX_ADMIN_API_KEY"] = generate_admin_api_key()
-        print_success("Kortix admin API key generated.")
-        print_success("Kortix admin configuration saved.")
+        print_info("Generating a secure admin API key for SprintLab administrative functions...")
+        self.env_vars["sprintlab"]["KORTIX_ADMIN_API_KEY"] = generate_admin_api_key()
+        print_success("SprintLab admin API key generated.")
+        print_success("SprintLab admin configuration saved.")
 
     def collect_mcp_keys(self):
         """Collects the MCP configuration."""
@@ -1938,9 +1938,9 @@ class SetupWizard:
             )
         else:
             print_info(
-                "Composio is REQUIRED for Kortix Super Worker. Without this key, Composio features will fail.")
+                "Composio is REQUIRED for SprintLab Super Worker. Without this key, Composio features will fail.")
             print_info(
-                "Composio provides tools and integrations for Kortix Super Worker agents.")
+                "Composio provides tools and integrations for SprintLab Super Worker agents.")
             print_info(
                 "With Composio, your agents can interact with 200+ external services including:")
             print_info("  • Email services (Gmail, Outlook, SendGrid)")
@@ -1989,7 +1989,7 @@ class SetupWizard:
             print_info(
                 "Webhook base URL is required for workflows to receive callbacks.")
             print_info(
-                "This must be a publicly accessible URL where Kortix Super Worker API can receive webhooks from Supabase Cron.")
+                "This must be a publicly accessible URL where SprintLab Super Worker API can receive webhooks from Supabase Cron.")
             print_info(
                 "For local development, you can use services like ngrok or localtunnel to expose http://localhost:8000 to the internet.")
 
@@ -2074,7 +2074,7 @@ class SetupWizard:
             **self.env_vars["mcp"],
             **self.env_vars["composio"],
             **self.env_vars["daytona"],
-            **self.env_vars["kortix"],
+            **self.env_vars["sprintlab"],
             **self.env_vars.get("vapi", {}),
             **self.env_vars.get("stripe", {}),
             **self.env_vars.get("langfuse", {}),
@@ -2086,7 +2086,7 @@ class SetupWizard:
             "NEXT_PUBLIC_URL": "http://localhost:3000",
         }
 
-        backend_env_content = f"# Generated by Kortix Super Worker install script for '{self.env_vars['setup_method']}' setup\n\n"
+        backend_env_content = f"# Generated by SprintLab Super Worker install script for '{self.env_vars['setup_method']}' setup\n\n"
         for key, value in backend_env.items():
             backend_env_content += f"{key}={value or ''}\n"
 
@@ -2106,11 +2106,11 @@ class SetupWizard:
             "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
             "NEXT_PUBLIC_BACKEND_URL": backend_url,
             "NEXT_PUBLIC_URL": "http://localhost:3000",
-            "KORTIX_ADMIN_API_KEY": self.env_vars["kortix"]["KORTIX_ADMIN_API_KEY"],
+            "KORTIX_ADMIN_API_KEY": self.env_vars["sprintlab"]["KORTIX_ADMIN_API_KEY"],
             **self.env_vars.get("frontend", {}),
         }
 
-        frontend_env_content = "# Generated by Kortix Super Worker install script\n\n"
+        frontend_env_content = "# Generated by SprintLab Super Worker install script\n\n"
         for key, value in frontend_env.items():
             frontend_env_content += f"{key}={value or ''}\n"
 
@@ -2129,7 +2129,7 @@ class SetupWizard:
             "EXPO_PUBLIC_URL": "http://localhost:3000",
         }
 
-        mobile_env_content = "# Generated by Kortix Super Worker install script\n\n"
+        mobile_env_content = "# Generated by SprintLab Super Worker install script\n\n"
         for key, value in mobile_env.items():
             mobile_env_content += f"{key}={value or ''}\n"
 
@@ -2150,7 +2150,7 @@ class SetupWizard:
                 "NEXT_PUBLIC_SUPABASE_ANON_KEY": self.env_vars["supabase"]["SUPABASE_ANON_KEY"],
             }
 
-            root_env_content = "# Generated by Kortix Super Worker install script for Docker Compose\n"
+            root_env_content = "# Generated by SprintLab Super Worker install script for Docker Compose\n"
             root_env_content += "# This file is read by docker-compose.yaml to pass environment variables to containers\n\n"
             for key, value in root_env.items():
                 root_env_content += f"{key}={value or ''}\n"
@@ -2168,7 +2168,7 @@ class SetupWizard:
             "This step will apply database migrations to your Supabase instance."
         )
         print_info(
-            "Migrations are required for Kortix Super Worker to function properly."
+            "Migrations are required for SprintLab Super Worker to function properly."
         )
 
         # Determine if local or cloud setup based on user's choice
@@ -2409,12 +2409,12 @@ class SetupWizard:
         return False
 
     def start_suna(self, ask_start_method: bool = True):
-        """Starts Kortix Super Worker using Docker Compose or shows instructions for manual startup.
+        """Starts SprintLab Super Worker using Docker Compose or shows instructions for manual startup.
 
         If ask_start_method is False and setup_method is 'docker', we skip the
         automatic/manual prompt and start via Docker Compose automatically.
         """
-        print_step(17, self.total_steps, "Starting Kortix Super Worker")
+        print_step(17, self.total_steps, "Starting SprintLab Super Worker")
         
         compose_cmd = self.get_compose_command()
         if not compose_cmd:
@@ -2432,7 +2432,7 @@ class SetupWizard:
             self.env_vars["start_method"] = "automatic"
         else:
             # Ask user how they want to start
-            print_info("\nHow would you like to start Kortix Super Worker?")
+            print_info("\nHow would you like to start SprintLab Super Worker?")
             print(f"  {Colors.CYAN}[1]{Colors.ENDC} Automatic - Start services automatically")
             print(f"  {Colors.CYAN}[2]{Colors.ENDC} Manual - Show commands to run manually")
             
@@ -2452,7 +2452,7 @@ class SetupWizard:
                     # We already printed detailed guidance; don't attempt a build that will likely fail.
                     return
 
-                print_info("Starting Kortix Super Worker with Docker Compose...")
+                print_info("Starting SprintLab Super Worker with Docker Compose...")
                 try:
                     subprocess.run(
                         compose_cmd + ["up", "-d", "--build"],
@@ -2469,13 +2469,13 @@ class SetupWizard:
                         shell=IS_WINDOWS,
                     )
                     if "backend" in result.stdout and "frontend" in result.stdout:
-                        print_success("Kortix Super Worker services are starting up!")
+                        print_success("SprintLab Super Worker services are starting up!")
                     else:
                         print_warning(
                             f"Some services might not be running. Check '{compose_cmd_str} ps' for details."
                         )
                 except subprocess.SubprocessError as e:
-                    print_error(f"Failed to start Kortix Super Worker with Docker Compose: {e}")
+                    print_error(f"Failed to start SprintLab Super Worker with Docker Compose: {e}")
                     print_warning(
                         "The Docker build might be failing due to environment variable issues during build time."
                     )
@@ -2500,7 +2500,7 @@ class SetupWizard:
             # Manual setup - run services natively (not in Docker containers)
             if choice == "1":
                 # Automatic manual start - start Redis in Docker, backend/frontend natively
-                print_info("Starting Kortix Super Worker automatically (manual mode)...")
+                print_info("Starting SprintLab Super Worker automatically (manual mode)...")
                 print_info("This will start Redis (Docker), Backend (uv), and Frontend (pnpm).")
                 try:
                     # Step 1: Start Redis via Docker
@@ -2561,7 +2561,7 @@ class SetupWizard:
                     print_info("Waiting for services to initialize...")
                     time.sleep(5)
 
-                    print_success("Kortix Super Worker services started!")
+                    print_success("SprintLab Super Worker services started!")
                     print_info(f"{Colors.CYAN}🌐 Access Suna at: http://localhost:3000{Colors.ENDC}")
                     print_info(f"\nTo view logs:")
                     print_info(f"  Backend:  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
@@ -2585,10 +2585,10 @@ class SetupWizard:
     def final_instructions(self):
         """Shows final instructions to the user."""
         print(
-            f"\n{Colors.GREEN}{Colors.BOLD}✨ Kortix Super Worker Setup Complete! ✨{Colors.ENDC}\n")
+            f"\n{Colors.GREEN}{Colors.BOLD}✨ SprintLab Super Worker Setup Complete! ✨{Colors.ENDC}\n")
 
         print_info(
-            f"Kortix Super Worker is configured with your LLM API keys and ready to use."
+            f"SprintLab Super Worker is configured with your LLM API keys and ready to use."
         )
         print_info(
             f"Delete the {Colors.RED}.setup_progress{Colors.ENDC} file to reset the setup."
@@ -2601,7 +2601,7 @@ class SetupWizard:
         start_method = self.env_vars.get("start_method", "manual")
         
         if self.env_vars["setup_method"] == "docker":
-            print_info("Your Kortix Super Worker instance is ready to use!")
+            print_info("Your SprintLab Super Worker instance is ready to use!")
             
             if start_method == "automatic":
                 print_info("Services are starting automatically. Use these commands to manage:")
@@ -2634,7 +2634,7 @@ class SetupWizard:
             # Manual setup
             if start_method == "automatic":
                 # Services are already running - just show management commands
-                print_info("Services are running! Access Kortix Super Worker at: http://localhost:3000")
+                print_info("Services are running! Access SprintLab Super Worker at: http://localhost:3000")
                 print(f"\n{Colors.BOLD}View logs:{Colors.ENDC}")
                 print(f"  {Colors.CYAN}tail -f backend.log{Colors.ENDC}")
                 print(f"  {Colors.CYAN}tail -f frontend.log{Colors.ENDC}")
@@ -2643,7 +2643,7 @@ class SetupWizard:
                 print(f"\n{Colors.YELLOW}💡 Tip:{Colors.ENDC} Use '{Colors.CYAN}python start.py{Colors.ENDC}' to manage services")
             else:
                 # Manual start - show startup commands
-                print_info("To start Kortix Super Worker, run these commands in separate terminals:")
+                print_info("To start SprintLab Super Worker, run these commands in separate terminals:")
 
                 # Show Supabase start command for local setup
                 step_num = 1
@@ -2678,7 +2678,7 @@ class SetupWizard:
                     )
                     print(f"{Colors.CYAN}   cd backend && npx supabase stop{Colors.ENDC}")
 
-                print("\nOnce all services are running, access Kortix Super Worker at: http://localhost:3000")
+                print("\nOnce all services are running, access SprintLab Super Worker at: http://localhost:3000")
 
 
 if __name__ == "__main__":

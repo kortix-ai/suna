@@ -151,7 +151,7 @@ interface NewThreadEmptyStateProps {
   };
 }
 
-// Silver shine spotlight effect matching Kortix brand
+// Silver shine spotlight effect matching SprintLab brand
 function SpotlightCard({ children, className, onClick }: { children: React.ReactNode; className?: string; onClick?: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -932,8 +932,8 @@ export function NewThreadEmptyState({ onSubmit, className }: NewThreadEmptyState
     <div className={cn('flex flex-col gap-6 max-w-3xl w-full mx-auto', className)}>
       <div className="flex items-center gap-2">
         <img
-          src="/kortix-logomark-white.svg"
-          alt="Kortix"
+          src="/sprintlab-logomark-white.svg"
+          alt="SprintLab"
           className="dark:invert-0 invert"
           style={{ height: '14px', width: 'auto' }}
         />

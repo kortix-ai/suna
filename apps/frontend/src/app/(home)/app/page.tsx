@@ -14,8 +14,8 @@ const STORE_LINKS = {
   android: 'https://play.google.com/store/apps/details?id=com.kortix.app',
 };
 
-// Kortix symbol SVG (inline to avoid loading issues)
-function KortixSymbol({ size = 24, className }: { size?: number; className?: string }) {
+// SprintLab symbol SVG (inline to avoid loading issues)
+function SprintLabSymbol({ size = 24, className }: { size?: number; className?: string }) {
   return (
     <svg 
       width={size} 
@@ -80,16 +80,16 @@ export default function AppDownloadPage() {
             {/* App icon */}
             <div className="relative mb-6 z-10">
               <div className="relative w-20 h-20 bg-foreground rounded-[20px] flex items-center justify-center">
-                <KortixSymbol size={40} className="text-background" />
+                <SprintLabSymbol size={40} className="text-background" />
               </div>
             </div>
             
             <h1 className="text-2xl md:text-3xl font-semibold text-foreground text-center tracking-tight mb-3">
-              Kortix for Mobile
+              SprintLab for Mobile
             </h1>
             <p className="text-base text-muted-foreground text-center max-w-xl leading-relaxed">
               Your AI Worker, in your pocket.<br />
-              Download the app and take Kortix with you everywhere.
+              Download the app and take SprintLab with you everywhere.
             </p>
           </motion.div>
 

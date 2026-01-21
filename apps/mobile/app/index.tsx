@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { View, Text } from 'react-native';
 import { useRouter, Stack } from 'expo-router';
-import { KortixLoader } from '@/components/ui';
+import { SprintLabLoader } from '@/components/ui';
 import { useAuthContext, useBillingContext } from '@/contexts';
 import { useOnboarding } from '@/hooks/useOnboarding';
 import { usePushNotifications } from '@/hooks/usePushNotifications';
@@ -135,7 +135,7 @@ export default function SplashScreen() {
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background items-center justify-center">
-        <KortixLoader customSize={56} />
+        <SprintLabLoader customSize={56} />
         <Text className="text-muted-foreground text-sm mt-4">
           {getStatusText()}
         </Text>

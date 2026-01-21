@@ -43,7 +43,7 @@ BEGIN
                 v_initial_credits,
                 v_initial_credits,
                 'tier_grant',
-                'Welcome to Kortix! Free tier initial credits'
+                'Welcome to SprintLab! Free tier initial credits'
             );
             
             RAISE LOG 'Created free tier account for new user % with % credits', NEW.id, v_initial_credits;

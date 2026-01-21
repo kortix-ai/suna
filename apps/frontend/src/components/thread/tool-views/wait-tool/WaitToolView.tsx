@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Clock, CheckCircle, AlertTriangle, Timer } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from '../types';
 import { formatTimestamp, getToolTitle } from '../utils';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -125,10 +125,10 @@ export function WaitToolView({
       <CardContent className="p-0 flex-1 overflow-hidden relative">
         <div className="h-full flex items-center justify-center p-8">
           <div className="flex flex-col items-center text-center max-w-md">
-            {/* Timer icon with KortixLoader animation when streaming */}
+            {/* Timer icon with SprintLabLoader animation when streaming */}
             <div className="relative mb-6">
               {isStreaming ? (
-                <KortixLoader customSize={96} />
+                <SprintLabLoader customSize={96} />
               ) : (
                 <Timer className="h-24 w-24 text-muted-foreground" />
               )}
@@ -155,7 +155,7 @@ export function WaitToolView({
               )}>
                 {isStreaming ? (
                   <span className="flex items-center gap-2">
-                    <KortixLoader customSize={12} />
+                    <SprintLabLoader customSize={12} />
                     Waiting in progress...
                   </span>
                 ) : (

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { AlertCircle, CheckCircle2, XCircle, Clock } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { cn } from '@/lib/utils';
 import { ApifyApproval } from '@/hooks/apify/use-apify-approvals';
 import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify/use-apify-approvals';
@@ -120,7 +120,7 @@ export function ApifyApprovalCard({ approval, threadId, onApproved }: ApifyAppro
             >
               {approveMutation.isPending ? (
                 <>
-                  <KortixLoader customSize={16} className="mr-2" />
+                  <SprintLabLoader customSize={16} className="mr-2" />
                   Approving...
                 </>
               ) : (

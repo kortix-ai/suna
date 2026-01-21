@@ -91,7 +91,7 @@ class SandboxFileReaderTool(SandboxToolsBase):
                 self._kb_ready = True
                 return True
             
-            url = f"https://github.com/kortix-ai/kb-fusion/releases/download/v{KB_VERSION}/kb"
+            url = f"https://github.com/sprintlab-ai/kb-fusion/releases/download/v{KB_VERSION}/kb"
             result = await self.sandbox.process.exec(
                 f"curl -L -f {url} -o /tmp/kb && chmod +x /tmp/kb && mv /tmp/kb /usr/local/bin/kb"
             )

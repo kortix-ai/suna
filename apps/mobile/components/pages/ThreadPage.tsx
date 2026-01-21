@@ -23,8 +23,8 @@ import {
 } from '@/components/chat';
 import { parseToolMessage } from '@agentpress/shared';
 import { ThreadHeader } from '@/components/threads';
-import { KortixComputer } from '@/components/kortix-computer';
-import { useKortixComputerStore } from '@/stores/kortix-computer-store';
+import { SprintLabComputer } from '@/components/sprintlab-computer';
+import { useSprintLabComputerStore } from '@/stores/sprintlab-computer-store';
 import { useVoicePlayerStore } from '@/stores/voice-player-store';
 import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
 import { useThread } from '@/lib/chat';
@@ -333,11 +333,11 @@ export function ThreadPage({
   }, []);
 
   const {
-    isOpen: isKortixComputerOpen,
+    isOpen: isSprintLabComputerOpen,
     openPanel,
     openFileInComputer,
     openFileBrowser,
-  } = useKortixComputerStore();
+  } = useSprintLabComputerStore();
 
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
@@ -345,13 +345,13 @@ export function ThreadPage({
   const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
 
   React.useEffect(() => {
-    if (isKortixComputerOpen) {
+    if (isSprintLabComputerOpen) {
       refetchThreadData();
     } else {
       // Clear selected tool data when panel closes
       setSelectedToolData(null);
     }
-  }, [isKortixComputerOpen, refetchThreadData]);
+  }, [isSprintLabComputerOpen, refetchThreadData]);
 
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
@@ -1214,8 +1214,8 @@ export function ThreadPage({
       />
 
 
-      {isKortixComputerOpen && (
-        <KortixComputer
+      {isSprintLabComputerOpen && (
+        <SprintLabComputer
           toolMessages={selectedToolData?.toolMessages || []}
           currentIndex={selectedToolData?.initialIndex || 0}
           onNavigate={(newIndex) => {

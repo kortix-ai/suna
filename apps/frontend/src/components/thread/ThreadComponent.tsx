@@ -66,7 +66,7 @@ import { fileQueryKeys } from '@/hooks/files';
 import { useProjectRealtime } from '@/hooks/threads';
 import { handleGoogleSlidesUpload } from './tool-views/utils/presentation-utils';
 import { useTranslations } from 'next-intl';
-import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-computer-store';
+import { useSprintLabComputerStore, useSetIsSidePanelOpen } from '@/stores/sprintlab-computer-store';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
@@ -344,9 +344,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     setAutoOpenedPanel(true);
   }, [setIsSidePanelOpen, setAutoOpenedPanel]);
 
-  const openFileInComputer = useKortixComputerStore((state) => state.openFileInComputer);
-  const openFileBrowser = useKortixComputerStore((state) => state.openFileBrowser);
-  const setSandboxContext = useKortixComputerStore((state) => state.setSandboxContext);
+  const openFileInComputer = useSprintLabComputerStore((state) => state.openFileInComputer);
+  const openFileBrowser = useSprintLabComputerStore((state) => state.openFileBrowser);
+  const setSandboxContext = useSprintLabComputerStore((state) => state.setSandboxContext);
 
   const billingModal = useBillingModal();
   const threadBilling = useThreadBilling(
@@ -847,7 +847,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     url.searchParams.delete('modeStarter');
     window.history.replaceState({}, '', url.pathname + url.search);
     
-    // Open the side panel to show KortixComputer
+    // Open the side panel to show SprintLabComputer
     if (!isSidePanelOpen) {
       toggleSidePanel();
     }
@@ -871,7 +871,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     url.searchParams.delete('modeStarter');
     window.history.replaceState({}, '', url.pathname + url.search);
     
-    // Open the side panel to show KortixComputer
+    // Open the side panel to show SprintLabComputer
     if (!isSidePanelOpen) {
       toggleSidePanel();
     }
@@ -912,7 +912,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       }
     }, 100);
 
-    // Keep the side panel open to show KortixComputer
+    // Keep the side panel open to show SprintLabComputer
     if (!isSidePanelOpen) {
       toggleSidePanel();
     }
@@ -1470,7 +1470,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   // SEO title update
   useEffect(() => {
     if (projectName) {
-      document.title = `${projectName} | Kortix`;
+      document.title = `${projectName} | SprintLab`;
 
       const metaDescription = document.querySelector(
         'meta[name="description"]',
@@ -1478,13 +1478,13 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       if (metaDescription) {
         metaDescription.setAttribute(
           'content',
-          `${projectName} - Interactive Worker conversation powered by Kortix`,
+          `${projectName} - Interactive Worker conversation powered by SprintLab`,
         );
       }
 
       const ogTitle = document.querySelector('meta[property="og:title"]');
       if (ogTitle) {
-        ogTitle.setAttribute('content', `${projectName} | Kortix`);
+        ogTitle.setAttribute('content', `${projectName} | SprintLab`);
       }
 
       const ogDescription = document.querySelector(

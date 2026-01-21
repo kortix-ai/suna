@@ -2,7 +2,7 @@
 
 import React, { useEffect } from 'react';
 import { AlertTriangle, ExternalLink, Square, Zap, X } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -161,7 +161,7 @@ export const AgentRunLimitBanner: React.FC<AgentRunLimitBannerProps> = ({
           {/* Running agent info */}
           {isAnyLoading ? (
             <div className="flex items-center justify-center py-6">
-              <KortixLoader size="small" />
+              <SprintLabLoader size="small" />
               <span className="ml-2 text-sm text-muted-foreground">Loading active worker...</span>
             </div>
           ) : firstRunningAgent?.agentRun ? (
@@ -193,7 +193,7 @@ export const AgentRunLimitBanner: React.FC<AgentRunLimitBannerProps> = ({
                         disabled={stopAgentMutation.isPending}
                       >
                         {stopAgentMutation.isPending ? (
-                          <KortixLoader size="small" />
+                          <SprintLabLoader size="small" />
                         ) : (
                           <Square className="h-3 w-3" />
                         )}

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { toast } from '@/lib/toast';
 import { Icons } from './home/icons';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { Button } from '@/components/ui/button';
 import { useTranslations } from 'next-intl';
 
@@ -54,7 +54,7 @@ export default function GoogleSignIn({ returnUrl, referralCode }: GoogleSignInPr
       type="button"
     >
       {isLoading ? (
-        <KortixLoader size="small" />
+        <SprintLabLoader size="small" />
       ) : (
         <Icons.google className="w-4 h-4" />
       )}

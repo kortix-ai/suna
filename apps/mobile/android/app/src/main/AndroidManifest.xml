@@ -29,31 +29,31 @@
         <action android:name="android.intent.action.VIEW"/>
         <category android:name="android.intent.category.DEFAULT"/>
         <category android:name="android.intent.category.BROWSABLE"/>
-        <data android:scheme="kortix"/>
-        <data android:scheme="exp+kortix"/>
+        <data android:scheme="sprintlab"/>
+        <data android:scheme="exp+sprintlab"/>
       </intent-filter>
       <intent-filter android:autoVerify="true" data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="https" android:host="kortix.com" android:pathPrefix="/auth/callback"/>
-        <data android:scheme="https" android:host="www.kortix.com" android:pathPrefix="/auth/callback"/>
+        <data android:scheme="https" android:host="sprintlab.id" android:pathPrefix="/auth/callback"/>
+        <data android:scheme="https" android:host="www.sprintlab.id" android:pathPrefix="/auth/callback"/>
         <data android:scheme="https" android:host="staging.suna.so" android:pathPrefix="/auth/callback"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
       <intent-filter android:autoVerify="true" data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="https" android:host="kortix.com" android:pathPrefix="/share"/>
-        <data android:scheme="https" android:host="www.kortix.com" android:pathPrefix="/share"/>
+        <data android:scheme="https" android:host="sprintlab.id" android:pathPrefix="/share"/>
+        <data android:scheme="https" android:host="www.sprintlab.id" android:pathPrefix="/share"/>
         <data android:scheme="https" android:host="staging.suna.so" android:pathPrefix="/share"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>
       <intent-filter data-generated="true">
         <action android:name="android.intent.action.VIEW"/>
-        <data android:scheme="kortix" android:host="auth" android:pathPrefix="/callback"/>
-        <data android:scheme="kortix" android:host="auth" android:pathPrefix="/reset-password"/>
-        <data android:scheme="kortix" android:host="share"/>
-        <data android:scheme="exp+kortix"/>
+        <data android:scheme="sprintlab" android:host="auth" android:pathPrefix="/callback"/>
+        <data android:scheme="sprintlab" android:host="auth" android:pathPrefix="/reset-password"/>
+        <data android:scheme="sprintlab" android:host="share"/>
+        <data android:scheme="exp+sprintlab"/>
         <category android:name="android.intent.category.BROWSABLE"/>
         <category android:name="android.intent.category.DEFAULT"/>
       </intent-filter>

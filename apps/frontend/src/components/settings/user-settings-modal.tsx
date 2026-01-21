@@ -34,7 +34,7 @@ import {
     Upload,
     Brain,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { cn } from '@/lib/utils';
 import {
     Tooltip,
@@ -519,7 +519,7 @@ function GeneralTab({ onClose }: { onClose: () => void }) {
                                 className="absolute inset-0 flex items-center justify-center bg-black/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
                             >
                                 {isUploadingAvatar ? (
-                                    <KortixLoader size="small" variant="white" />
+                                    <SprintLabLoader size="small" variant="white" />
                                 ) : (
                                     <Camera className="h-5 w-5 text-white" />
                                 )}

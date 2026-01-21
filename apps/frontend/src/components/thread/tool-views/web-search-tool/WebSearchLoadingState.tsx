@@ -24,7 +24,7 @@ import {
   type LucideIcon
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 
 interface QueryStyle {
   icon: LucideIcon;
@@ -335,8 +335,8 @@ export function WebSearchLoadingState({
                     {query}
                   </span>
 
-                  {/* Kortix loading animation */}
-                  <KortixLoader customSize={16} />
+                  {/* SprintLab loading animation */}
+                  <SprintLabLoader customSize={16} />
                 </motion.div>
               );
             })}

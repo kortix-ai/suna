@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Settings, Trash2, Star, MessageCircle, Wrench, Globe, GlobeLock, Download, Shield, AlertTriangle, GitBranch } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { Button } from '@/components/ui/button';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { Dialog, DialogContent, DialogTitle, DialogHeader, DialogDescription } from '@/components/ui/dialog';
@@ -165,7 +165,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
                     >
                       {isUnpublishing ? (
                         <>
-                          <KortixLoader customSize={16} />
+                          <SprintLabLoader customSize={16} />
                           Making Private...
                         </>
                       ) : (
@@ -185,7 +185,7 @@ const AgentModal: React.FC<AgentModalProps> = ({
                   >
                     {isPublishing ? (
                       <>
-                        <KortixLoader customSize={16} />
+                        <SprintLabLoader customSize={16} />
                         Publishing...
                       </>
                     ) : (
@@ -277,7 +277,7 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
               {isDeleting && (
                 <div className="absolute inset-0 bg-destructive/10 backdrop-blur-sm rounded-lg z-20 flex items-center justify-center">
                   <div className="bg-background/95 backdrop-blur-sm rounded-lg px-4 py-3 flex items-center gap-2 shadow-lg border">
-                    <KortixLoader customSize={16} />
+                    <SprintLabLoader customSize={16} />
                     <span className="text-sm font-medium text-destructive">Deleting...</span>
                   </div>
                 </div>
@@ -320,7 +320,7 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
                         onClick={(e) => e.stopPropagation()}
                       >
                         {isDeleting ? (
-                          <KortixLoader customSize={14} />
+                          <SprintLabLoader customSize={14} />
                         ) : (
                           <Trash2 className="h-3.5 w-3.5" />
                         )}
@@ -352,7 +352,7 @@ export const AgentsGrid: React.FC<AgentsGridProps> = ({
                         >
                           {isDeleting ? (
                             <>
-                              <KortixLoader customSize={16} className="mr-2" />
+                              <SprintLabLoader customSize={16} className="mr-2" />
                               Deleting...
                             </>
                           ) : (

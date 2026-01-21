@@ -14,7 +14,7 @@ import {
   ExternalLink,
   Pencil,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ThreadIcon } from './thread-icon';
 import { toast } from '@/lib/toast';
 import Link from 'next/link';
@@ -134,7 +134,7 @@ const ThreadItemCard: React.FC<ThreadItemCardProps> = ({
           {/* Icon */}
           <div className="relative flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
             {isThreadLoading ? (
-              <KortixLoader size="small" />
+              <SprintLabLoader size="small" />
             ) : (
               <ThreadIcon
                 iconName={projectGroup.iconName}
@@ -201,7 +201,7 @@ const ThreadItemCard: React.FC<ThreadItemCardProps> = ({
                     disabled={isCreatingChat}
                   >
                     {isCreatingChat ? (
-                      <KortixLoader size="small" className="mr-2" />
+                      <SprintLabLoader size="small" className="mr-2" />
                     ) : (
                       <Plus className="mr-2 h-4 w-4" />
                     )}
@@ -887,7 +887,7 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
                                                 }}
                                               >
                                                 {isCreatingChat ? (
-                                                  <KortixLoader size="small" />
+                                                  <SprintLabLoader size="small" />
                                                 ) : (
                                                   <Plus className="h-3.5 w-3.5" />
                                                 )}
@@ -1034,7 +1034,7 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
                       </button>
 
                       <span className="text-xs text-muted-foreground flex items-center gap-1.5 tabular-nums">
-                        {isThreadsFetching && <KortixLoader size="small" />}
+                        {isThreadsFetching && <SprintLabLoader size="small" />}
                         <span className="font-medium">{currentPage}</span>
                         <span>/</span>
                         <span>{totalPages}</span>
@@ -1080,7 +1080,7 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
         <div className="mx-3 mt-3 p-3 bg-muted/30 rounded-xl border border-border">
           <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
             <span className="flex items-center gap-2">
-              <KortixLoader size="small" />
+              <SprintLabLoader size="small" />
               Deleting...
             </span>
             <span className="tabular-nums font-medium">

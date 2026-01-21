@@ -38,7 +38,7 @@ export function ReferralCodeSection({ referralCode, isLoading }: ReferralCodeSec
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Join Kortix with my referral link',
+          title: 'Join SprintLab with my referral link',
           text: 'Get 400 free credits when you sign up with my referral link!',
           url: referralCode.referral_url,
         });

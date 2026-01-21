@@ -7,10 +7,10 @@
     font-family: 'Roobert-Regular';
   }
 
-  /* Light Mode (Default) - Kortix Brand */
+  /* Light Mode (Default) - SprintLab Brand */
   :root {
-    --background: 0 0% 96%;         /* #F6F6F6 - Kortix White */
-    --foreground: 218 12% 7%;          /* #121215 - Kortix Black */
+    --background: 0 0% 96%;         /* #F6F6F6 - SprintLab White */
+    --foreground: 218 12% 7%;          /* #121215 - SprintLab Black */
     --card: 210 20% 98%;                 /* #F9FAFB - Pure white cards */
     --card-foreground: 218 12% 7%;     /* #121215 - Card text */
     --popover: 0 0% 100%;              /* #FFFFFF - Popover background */
@@ -35,10 +35,10 @@
     --chart-5: 27 87% 67%;
   }
 
-  /* Dark Mode - Kortix Brand */
+  /* Dark Mode - SprintLab Brand */
   .dark:root {
-    --background: 240 8% 8%;          /* #121215 - Kortix Black */
-    --foreground: 240 11% 97%;         /* #F8F8F8 - Kortix White */
+    --background: 240 8% 8%;          /* #121215 - SprintLab Black */
+    --foreground: 240 11% 97%;         /* #F8F8F8 - SprintLab White */
     --card: 240 4% 9%;                 /* #161618 - Dark cards */
     --card-foreground: 240 11% 97%;    /* #F8F8F8 - Card text */
     --popover: 220 6% 9%;              /* #161618 - Popover background */

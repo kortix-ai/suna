@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus, Calendar, User } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { formatDistanceToNow } from 'date-fns';
 import { toast } from '@/lib/toast';
 import type { ComposioToolkit, ComposioProfile } from '@/hooks/composio/utils';
@@ -118,7 +118,7 @@ export const ComposioProfileSelector: React.FC<ComposioProfileSelectorProps> = (
           >
             {isLoading ? (
               <>
-                <KortixLoader customSize={16} className="mr-2" />
+                <SprintLabLoader customSize={16} className="mr-2" />
                 Loading...
               </>
             ) : selectedProfileId === 'new' ? (

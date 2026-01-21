@@ -11,7 +11,7 @@
     "android:build": "eas build:dev --platform android",
     "android:prebuild": "npx expo prebuild --platform android --clean",
     "android:setup": "./scripts/setup-android.sh",
-    "android:emulator": "emulator -avd Kortix_Dev",
+    "android:emulator": "emulator -avd SprintLab_Dev",
     "ios": "expo start -c --ios",
     "web": "expo start -c --web",
     "clean": "rm -rf .expo node_modules"

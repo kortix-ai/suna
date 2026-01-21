@@ -39,14 +39,14 @@ export default function CreditsPage() {
         <section>
           <h2 className="text-2xl font-semibold mb-4">What are credits?</h2>
           <p className="text-lg mb-8">
-            Credits are Kortix's standard unit of measurement for platform usage. Think of them as tokens that power your AI agents - the more complex or lengthy the task, the more credits it requires.
+            Credits are SprintLab's standard unit of measurement for platform usage. Think of them as tokens that power your AI agents - the more complex or lengthy the task, the more credits it requires.
           </p>
         </section>
 
         <section>
           <h2 className="text-2xl font-semibold mb-4">Types of Credits</h2>
           <p className="mb-6">
-            Kortix uses two types of credits to give you flexibility in how you manage your usage:
+            SprintLab uses two types of credits to give you flexibility in how you manage your usage:
           </p>
 
           <div className="grid gap-4 md:grid-cols-2 mb-8">
@@ -100,7 +100,7 @@ export default function CreditsPage() {
           <Alert className="mb-8">
             <Info className="h-4 w-4" />
             <AlertDescription>
-              <strong>Credit Priority:</strong> When you use Kortix, expiring credits are consumed first. 
+              <strong>Credit Priority:</strong> When you use SprintLab, expiring credits are consumed first. 
               Only after your expiring credits run out will non-expiring credits be used.
             </AlertDescription>
           </Alert>
@@ -164,7 +164,7 @@ export default function CreditsPage() {
         <section>
           <h2 className="text-2xl font-semibold mb-4">Getting More Credits</h2>
           <p className="mb-6">
-            There are several ways to obtain credits in Kortix:
+            There are several ways to obtain credits in SprintLab:
           </p>
 
           <div className="space-y-4 mb-8">

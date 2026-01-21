@@ -1,6 +1,6 @@
 # E2E Test Harness
 
-Comprehensive API-based E2E testing system for benchmarking the Kortix agent system.
+Comprehensive API-based E2E testing system for benchmarking the SprintLab agent system.
 
 ## Features
 
@@ -26,7 +26,7 @@ supabase db push
 python api.py
 ```
 
-**Note**: The test harness automatically creates a test user (`testuser@kortix.ai`) if it doesn't exist. No manual user setup required!
+**Note**: The test harness automatically creates a test user (`testuser@sprintlab.id`) if it doesn't exist. No manual user setup required!
 
 ### 3. Run a Test
 
@@ -35,17 +35,17 @@ python api.py
 ```bash
 # Core test (real LLM)
 curl -X POST http://localhost:8000/v1/admin/test-harness/run \
-  -H "X-Admin-Api-Key: $KORTIX_ADMIN_API_KEY" \
+  -H "X-Admin-Api-Key: $SPRINTLAB_ADMIN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "mode": "core_test",
     "concurrency": 3,
-    "model": "kortix/basic"
+    "model": "sprintlab/basic"
   }'
 
 # Get results
 curl http://localhost:8000/v1/admin/test-harness/runs/{run_id} \
-  -H "X-Admin-Api-Key: $KORTIX_ADMIN_API_KEY"
+  -H "X-Admin-Api-Key: $SPRINTLAB_ADMIN_API_KEY"
 ```
 
 #### Via GitHub Actions:
@@ -69,7 +69,7 @@ The test harness includes 13 deterministic test prompts covering:
 View all prompts:
 ```bash
 curl http://localhost:8000/v1/admin/test-harness/prompts \
-  -H "X-Admin-Api-Key: $KORTIX_ADMIN_API_KEY"
+  -H "X-Admin-Api-Key: $SPRINTLAB_ADMIN_API_KEY"
 ```
 
 ## API Endpoints
@@ -83,7 +83,7 @@ Start a new benchmark test
   "mode": "core_test",
   "prompt_ids": ["file_ops_1", "shell_1"],
   "concurrency": 5,
-  "model": "kortix/basic",
+  "model": "sprintlab/basic",
   "num_executions": 100,
   "metadata": {"branch": "main", "commit": "abc123"}
 }
@@ -214,7 +214,7 @@ The `mock_llm.py` module provides deterministic responses. Customize `_determine
 - All endpoints require `X-Admin-Api-Key` header
 - Uses existing admin authentication system
 - No public access to test harness
-- Test user (`testuser@kortix.ai`) is automatically created with minimal permissions
+- Test user (`testuser@sprintlab.id`) is automatically created with minimal permissions
 
 ## Performance
 

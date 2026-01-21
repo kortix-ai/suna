@@ -18,7 +18,7 @@ import {
   Globe,
   Play
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ToolViewProps } from '../types';
 import { getToolTitle, normalizeContentToString } from '../utils';
 import { cn } from '@/lib/utils';
@@ -364,7 +364,7 @@ const FileExplorer: React.FC<{
             <div className="flex-1 overflow-hidden">
               {loadingFile ? (
                 <div className="flex items-center justify-center h-full p-8">
-                  <KortixLoader customSize={24} />
+                  <SprintLabLoader customSize={24} />
                 </div>
               ) : fileContent ? (
                 <ScrollArea className="h-full w-full">

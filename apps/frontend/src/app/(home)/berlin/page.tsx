@@ -125,7 +125,7 @@ export default function BerlinPage() {
               </div>
               
               <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-balance text-center px-4 sm:px-2">
-                Kortix.
+                SprintLab.
               </h1>
               
               <div className="text-center space-y-2 max-w-3xl px-4">

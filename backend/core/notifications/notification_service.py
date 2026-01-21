@@ -7,7 +7,7 @@ from .presence_service import presence_service
 from .models import UserNotificationSettings
 from core.services.email import email_service
 
-KORTIX_HELLO_EMAIL = 'hello@kortix.com'
+SPRINTLAB_HELLO_EMAIL = 'hello@sprintlab.id'
 
 class NotificationService:
     def __init__(self):
@@ -79,7 +79,7 @@ class NotificationService:
             thread_result = await client.table('threads').select('project_id').eq('thread_id', thread_id).maybe_single().execute()
             project_id = thread_result.data.get('project_id') if thread_result and thread_result.data else None
             
-            task_url = f"https://www.kortix.com/projects/{project_id}/thread/{thread_id}" if project_id else f"https://www.kortix.com/thread/{thread_id}"
+            task_url = f"https://www.sprintlab.id/projects/{project_id}/thread/{thread_id}" if project_id else f"https://www.sprintlab.id/thread/{thread_id}"
             
             payload = {
                 "first_name": account_info.get("first_name"),

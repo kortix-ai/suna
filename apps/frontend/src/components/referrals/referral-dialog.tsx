@@ -12,7 +12,7 @@ import { useReferralDialog } from '@/stores/referral-dialog';
 import { ReferralCodeSection } from './referral-code-section';
 import { ReferralStatsCards } from './referral-stats-cards';
 import { ReferralEmailInvitation } from './referral-email-invitation';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { Handshake } from 'lucide-react';
 
 interface ReferralDialogProps {
@@ -36,7 +36,7 @@ export function ReferralDialog({ open: controlledOpen, onOpenChange: controlledO
           {/* Logo & Header */}
           <div className="flex flex-col items-center text-center mb-3 sm:mb-5">
             <div className="mb-6">
-              <KortixLogo size={24} variant="symbol" />
+              <SprintLabLogo size={24} variant="symbol" />
             </div>
             <DialogTitle className="text-base sm:text-xl font-semibold text-foreground">
               {t('title')}

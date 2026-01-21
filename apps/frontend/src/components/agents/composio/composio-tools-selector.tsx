@@ -16,7 +16,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Search, Save, AlertCircle, Filter, X, ChevronDown } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { backendApi } from '@/lib/api-client';
 import { useComposioTools } from '@/hooks/composio/use-composio';
 import { cn } from '@/lib/utils';
@@ -551,7 +551,7 @@ export const ComposioToolsSelector: React.FC<ComposioToolsSelectorProps> = ({
               >
                 {isSaving ? (
                   <>
-                    <KortixLoader customSize={16} className="mr-1" />
+                    <SprintLabLoader customSize={16} className="mr-1" />
                     Saving...
                   </>
                 ) : (

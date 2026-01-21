@@ -40,7 +40,7 @@ import {
   MessageSquare,
   ExternalLink,
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useAdminUserDetails, useAdminUserThreads, useAdminUserActivity } from '@/hooks/admin/use-admin-users';
 import {
   useUserBillingSummary,
@@ -616,7 +616,7 @@ export function AdminUserDetailsDialog({
                       >
                         {processRefundMutation.isPending ? (
                           <>
-                            <KortixLoader size="small" className="mr-2" />
+                            <SprintLabLoader size="small" className="mr-2" />
                             Processing...
                           </>
                         ) : (

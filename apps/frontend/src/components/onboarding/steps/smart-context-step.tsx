@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { StepWrapper } from '../shared/step-wrapper';
@@ -103,7 +103,7 @@ export const SmartContextStep = () => {
               {isExtracting && (
                 <div className="absolute top-3 right-3">
                   <div className="flex items-center gap-2 text-sm text-muted-foreground bg-background/80 backdrop-blur-sm px-2 py-1 rounded-md">
-                    <KortixLoader size="small" />
+                    <SprintLabLoader size="small" />
                     Analyzing...
                   </div>
                 </div>

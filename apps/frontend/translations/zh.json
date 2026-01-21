@@ -367,7 +367,7 @@
       ],
       "random": [
         "欢迎回来！",
-        "嘿！Kortix能为你做什么？",
+        "嘿！SprintLab能为你做什么？",
         "你想完成什么？",
         "让我们创造点厉害的东西",
         "随时准备好！",
@@ -397,7 +397,7 @@
     "chatDescription": "简单的来回对话",
     "sampleAnswers": "示例答案",
     "samplePrompts": "示例提示",
-    "waitingForUserResponse": "您回答后，Kortix将继续自主工作。",
+    "waitingForUserResponse": "您回答后，SprintLab将继续自主工作。",
     "taskCompleted": "任务已完成",
     "uploadingFiles": "正在上传 {count} 个文件...",
     "uploadingFilesOne": "正在上传 {count} 个文件...",
@@ -414,7 +414,7 @@
     "running": "运行中",
     "minimizeToFloatingPreview": "最小化到浮动预览",
     "close": "关闭",
-    "noActionsYet": "Kortix Computer",
+    "noActionsYet": "SprintLab Computer",
     "workerActionsDescription": "正在启动",
     "emptyActionsDescription": "Worker 操作将显示在此处",
     "toolIsRunning": "工具正在运行",
@@ -424,7 +424,7 @@
     "rateThisResult": "评价此结果",
     "feedbackHelpsImprove": "您的反馈帮助我们改进",
     "additionalFeedbackOptional": "附加反馈（可选）",
-    "helpKortixImprove": "帮助 Kortix 通过您的反馈改进",
+    "helpSprintLabImprove": "帮助 SprintLab 通过您的反馈改进",
     "submit": "提交",
     "submitting": "提交中...",
     "feedbackSubmittedSuccess": "反馈提交成功",
@@ -447,10 +447,10 @@
     "heroPlaceholder": "描述你想让你的 Worker 完成的任务..."
   },
   "showcase": {
-    "title": "Kortix：您的自主AI工作器",
+    "title": "SprintLab：您的自主AI工作器",
     "subtitle": "为复杂任务而构建，为一切而设计。终极AI助手，处理一切——从简单请求到超级复杂的项目。",
     "tryItOut": "试试看",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "SprintLab Computer",
     "running": "运行中",
     "workers": {
       "images": {
@@ -568,10 +568,10 @@
     },
     "creditsExplainedPage": {
       "title": "积分说明",
-      "subtitle": "关于 Kortix 积分工作原理你需要知道的一切",
+      "subtitle": "关于 SprintLab 积分工作原理你需要知道的一切",
       "understandingCredits": {
         "title": "了解积分",
-        "description": "积分是 Kortix 平台操作的通用货币。你的 AI Workers 执行的每个操作——从分析数据到生成代码——都会根据任务的复杂性和所需资源消耗积分。"
+        "description": "积分是 SprintLab 平台操作的通用货币。你的 AI Workers 执行的每个操作——从分析数据到生成代码——都会根据任务的复杂性和所需资源消耗积分。"
       },
       "howCreditsWork": {
         "title": "积分如何工作",
@@ -589,7 +589,7 @@
       },
       "gettingMoreCredits": {
         "title": "获取更多积分",
-        "description": "在 Kortix 中有几种获取积分的方式：",
+        "description": "在 SprintLab 中有几种获取积分的方式：",
         "monthlySubscription": {
           "title": "月度订阅积分",
           "description": "包含在你的付费计划中，每月自动续订。这些是过期积分。"
@@ -609,7 +609,7 @@
       },
       "typesOfCredits": {
         "title": "积分类型",
-        "description": "Kortix 使用两种类型的积分，让你灵活管理使用：",
+        "description": "SprintLab 使用两种类型的积分，让你灵活管理使用：",
         "expiringCredits": {
           "title": "过期积分",
           "description": "月度订阅积分",
@@ -622,7 +622,7 @@
         },
         "creditPriority": {
           "title": "积分优先级：",
-          "description": "当你使用 Kortix 时，过期积分首先被消耗。只有在过期积分用完后，才会使用不过期积分。"
+          "description": "当你使用 SprintLab 时，过期积分首先被消耗。只有在过期积分用完后，才会使用不过期积分。"
         }
       }
     },
@@ -676,16 +676,16 @@
       "continue": "继续",
       "keepCurrentPlan": "保留我的当前计划",
       "feedbackTitle": "帮助我们改进",
-      "feedbackSubtitle": "您的反馈塑造Kortix的未来",
+      "feedbackSubtitle": "您的反馈塑造SprintLab的未来",
       "whatWouldMakeYouStay": "什么会让您留下来？",
-      "feedbackPlaceholder": "如果我们可以改变或添加一件事来让Kortix对您有价值，那会是什么？",
+      "feedbackPlaceholder": "如果我们可以改变或添加一件事来让SprintLab对您有价值，那会是什么？",
       "feedbackFooter": "我们的团队会阅读每一条回复。您的反馈直接影响我们接下来构建什么。",
       "confirmDowngrade": "确认降级",
       "processing": "处理中...",
       "pleaseSelectReason": "请选择一个原因",
       "reasons": {
         "tooExpensive": "对我的需求来说太贵了",
-        "notUsingOften": "我使用Kortix不够频繁",
+        "notUsingOften": "我使用SprintLab不够频繁",
         "foundAlternative": "我找到了其他解决方案",
         "technicalIssues": "我遇到了技术问题",
         "resultsNotGood": "结果没有达到我的期望",
@@ -699,7 +699,7 @@
     "enterCode": "输入代码",
     "logIntoAccount": "登录你的账户",
     "createAccount": "创建账号",
-    "signInOrCreateAccount": "登录或创建您的Kortix账户",
+    "signInOrCreateAccount": "登录或创建您的SprintLab账户",
     "continueWithGoogle": "使用 Google 继续",
     "continueWithGitHub": "使用 GitHub 继续",
     "orEmail": "或邮箱",
@@ -744,7 +744,7 @@
     "alreadySignedIn": "您已登录，无需任何操作。",
     "goToDashboard": "前往控制台",
     "signInToContinue": "登录以继续",
-    "signInOrCreateAccountToTalk": "登录或创建账户以与Kortix对话",
+    "signInOrCreateAccountToTalk": "登录或创建账户以与SprintLab对话",
     "orContinueWithEmail": "或使用邮箱继续",
     "signInWithEmail": "使用邮箱登录",
     "createNewAccount": "创建新账户",
@@ -1197,7 +1197,7 @@
   "announcements": {
     "memories": {
       "title": "介绍记忆功能",
-      "description": "Kortix 现在可以在所有对话中记住您的偏好和上下文",
+      "description": "SprintLab 现在可以在所有对话中记住您的偏好和上下文",
       "features": {
         "personalized": {
           "title": "个性化体验",

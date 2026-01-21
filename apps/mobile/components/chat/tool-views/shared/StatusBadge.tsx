@@ -2,7 +2,7 @@ import React from 'react';
 import { View } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { CheckCircle2, AlertCircle, LucideIcon, AlertTriangle } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 
@@ -45,7 +45,7 @@ export function StatusBadge({
           bg: isDark ? 'bg-blue-900/60' : 'bg-blue-100',
           text: isDark ? 'text-blue-300' : 'text-blue-700',
           border: isDark ? 'border-blue-800/50' : 'border-blue-200',
-          defaultIcon: null, // Uses KortixLoader for streaming
+          defaultIcon: null, // Uses SprintLabLoader for streaming
           isStreaming: true,
         };
       case 'warning':
@@ -85,7 +85,7 @@ export function StatusBadge({
         }}
       >
         {(styles as any).isStreaming ? (
-          <KortixLoader size="small" customSize={14} />
+          <SprintLabLoader size="small" customSize={14} />
         ) : IconComponent ? (
           <Icon
             as={IconComponent}
@@ -102,7 +102,7 @@ export function StatusBadge({
       className={`flex-row items-center gap-1.5 px-2.5 py-1 rounded-full border ${styles.bg} ${styles.border} ${className}`}
     >
       {(styles as any).isStreaming ? (
-        <KortixLoader size="small" customSize={14} />
+        <SprintLabLoader size="small" customSize={14} />
       ) : IconComponent ? (
         <Icon
           as={IconComponent}

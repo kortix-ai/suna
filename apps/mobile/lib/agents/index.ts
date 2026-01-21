@@ -10,10 +10,10 @@ export * from './hooks';
 export { agentKeys, useAgents, useAgent, useCreateAgent, useUpdateAgent, useDeleteAgent } from './hooks';
 
 /**
- * Check if an agent is the default Kortix/SUNA agent
+ * Check if an agent is the default SprintLab/SUNA agent
  * Uses metadata and name checks - no hardcoded IDs
  */
-export const isKortixDefaultAgent = (agent?: { 
+export const isSprintLabDefaultAgent = (agent?: { 
   agent_id?: string; 
   name?: string; 
   metadata?: { is_suna_default?: boolean } 
@@ -32,15 +32,15 @@ export const isKortixDefaultAgent = (agent?: {
 };
 
 /**
- * Check if an agent ID represents the default Kortix agent
+ * Check if an agent ID represents the default SprintLab agent
  * For cases where we only have an ID and need to check against a list of agents
  */
-export const isKortixDefaultAgentId = (
+export const isSprintLabDefaultAgentId = (
   agentId: string | null | undefined, 
   agents: Array<{ agent_id?: string; name?: string; metadata?: { is_suna_default?: boolean } }>
 ): boolean => {
-  if (!agentId) return true; // No agent ID = default Kortix
+  if (!agentId) return true; // No agent ID = default SprintLab
   const agent = agents.find(a => a.agent_id === agentId);
-  return isKortixDefaultAgent(agent);
+  return isSprintLabDefaultAgent(agent);
 };
 

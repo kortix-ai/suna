@@ -15,7 +15,7 @@ import {
   History,
   Plus
 } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { formatDistanceToNow } from 'date-fns';
 import { useAgentVersions, useActivateAgentVersion } from '@/hooks/agents/use-agent-versions';
 import { Agent } from '@/hooks/agents/utils';
@@ -37,7 +37,7 @@ export function AgentVersionManager({ agent, onCreateVersion }: AgentVersionMana
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center justify-center">
-            <KortixLoader size="large" />
+            <SprintLabLoader size="large" />
           </div>
         </CardContent>
       </Card>

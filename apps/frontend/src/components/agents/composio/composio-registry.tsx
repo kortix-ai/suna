@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Card } from '@/components/ui/card';
 import { Search, Zap, X, Settings, ChevronDown, ChevronUp, Server, Lock } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useComposioCategories, useComposioToolkitsInfinite } from '@/hooks/composio/use-composio';
 import { useComposioProfiles } from '@/hooks/composio/use-composio-profiles';
 import { useAgent } from '@/hooks/agents/use-agents';
@@ -710,7 +710,7 @@ export const ComposioRegistry: React.FC<ComposioRegistryProps> = ({
                           >
                             {isFetchingNextPage ? (
                               <>
-                                <KortixLoader customSize={16} className="mr-1" />
+                                <SprintLabLoader customSize={16} className="mr-1" />
                                 Loading more...
                               </>
                             ) : (

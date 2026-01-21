@@ -1,12 +1,12 @@
 services:
-  kortix-suna:
+  sprintlab-suna:
     platform: linux/amd64
     build:
       context: .
       dockerfile: ${DOCKERFILE:-Dockerfile}
       args:
         TARGETPLATFORM: ${TARGETPLATFORM:-linux/amd64}
-    image: kortix/suna:0.1.3.28
+    image: sprintlab/suna:0.1.3.28
     ports:
       - "6080:6080"  # noVNC web interface
       - "5901:5901"  # VNC port

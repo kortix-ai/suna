@@ -5,14 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useSearchParams } from 'next/navigation';
 import { useState, useEffect, Suspense } from 'react';
 import { AlertCircle, ArrowLeft, Lock } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { toast } from '@/lib/toast';
 
 import { Input } from '@/components/ui/input';
 import { SubmitButton } from '@/components/ui/submit-button';
 import { signInWithPassword, signUpWithPassword } from '../actions';
 import { useAuth } from '@/components/AuthProvider';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { cn } from '@/lib/utils';
 
 function PasswordAuthContent() {
@@ -78,7 +78,7 @@ function PasswordAuthContent() {
             <div className="relative z-10 pt-24 pb-8 max-w-md mx-auto h-full w-full flex flex-col gap-2 items-center justify-center">
               <div className="absolute top-6 left-6 z-10">
                 <Link href="/" className="flex items-center space-x-2">
-                  <KortixLogo size={28} />
+                  <SprintLabLogo size={28} />
                 </Link>
               </div>
 
@@ -264,7 +264,7 @@ export default function PasswordAuth() {
     <Suspense
       fallback={
         <main className="flex flex-col items-center justify-center min-h-screen w-full">
-          <KortixLoader size="large" />
+          <SprintLabLoader size="large" />
         </main>
       }
     >

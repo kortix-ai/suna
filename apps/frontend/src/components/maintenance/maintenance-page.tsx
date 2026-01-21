@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { useApiHealth } from '@/hooks/usage/use-health';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { isLocalMode } from '@/lib/config';
 import { AnimatedBg } from '@/components/ui/animated-bg';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 
 export function MaintenancePage() {
   const [lastChecked, setLastChecked] = useState<Date | null>(null);
@@ -40,7 +40,7 @@ export function MaintenancePage() {
 
         <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
           {/* Logo - 32px height */}
-          <KortixLogo size={32} />
+          <SprintLabLogo size={32} />
 
           {/* Title - 43px */}
           <h1 className="text-[43px] font-normal tracking-tight textforeground leading-none">
@@ -77,7 +77,7 @@ export function MaintenancePage() {
                   className="h-12 w-12 bg-border"
                 >
                   {isCheckingHealth ? (
-                    <KortixLoader size="small" customSize={20} />
+                    <SprintLabLoader size="small" customSize={20} />
                   ) : (
                     <RefreshCw className="h-5 w-5 text-foreground" />
                   )}

@@ -12,7 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { FileText, Sparkles, Save, X, Info } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 
 interface EditSummaryModalProps {
     isOpen: boolean;
@@ -139,7 +139,7 @@ export function EditSummaryModal({
                     >
                         {isLoading ? (
                             <>
-                                <KortixLoader size="small" />
+                                <SprintLabLoader size="small" />
                                 Saving...
                             </>
                         ) : (

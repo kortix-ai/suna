@@ -45,7 +45,7 @@ class TestHarnessRunner:
             cleanup_threads: Whether to delete test threads after completion (default: True)
         """
         self.base_url = base_url or "http://localhost:8000/v1"
-        self.admin_api_key = admin_api_key or config.KORTIX_ADMIN_API_KEY
+        self.admin_api_key = admin_api_key or config.SPRINTLAB_ADMIN_API_KEY
         self.test_account_id = test_account_id  # Will be set on first use
         self.cleanup_threads = cleanup_threads
         self.metrics = MetricsCollector()
@@ -58,16 +58,16 @@ class TestHarnessRunner:
     async def _ensure_test_user(self) -> str:
         """
         Ensure test user exists and return their ID.
-        
-        Looks for user with email 'testuser@kortix.ai' and creates if not exists.
-        
+
+        Looks for user with email 'testuser@sprintlab.id' and creates if not exists.
+
         Returns:
             user_id: UUID of the test user
         """
         if self._test_user_initialized and self.test_account_id:
             return self.test_account_id
-        
-        TEST_USER_EMAIL = "testuser@kortix.ai"
+
+        TEST_USER_EMAIL = "testuser@sprintlab.id"
         
         from core.services.supabase import DBConnection
         db = DBConnection()

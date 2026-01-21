@@ -77,7 +77,7 @@
     "guest": {
       "label": "ゲスト",
       "title": "Browse Without\nan Account",
-      "description": "Try Kortix with limited features. No signup required!",
+      "description": "Try SprintLab with limited features. No signup required!",
       "continue": "Continue as Guest",
       "signUp": "Sign Up Instead",
       "agreement": "By continuing, you agree to our",
@@ -94,7 +94,7 @@
     "logIn": "ログイン",
     "passwordsDontMatch": "パスワードが一致しません",
     "passwordTooShort": "パスワードは8文字以上必要です",
-    "welcomeTitle": "Kortixを雇って",
+    "welcomeTitle": "SprintLabを雇って",
     "rotatingPhrases": {
       "presentations": "プレゼン",
       "writing": "文書作成",
@@ -118,12 +118,12 @@
     }
   },
   "onboarding": {
-    "welcome": "Kortixができることを見る",
+    "welcome": "SprintLabができることを見る",
     "welcomeSubtitle": "行動するAIアシスタント",
     "skip": "スキップ",
     "next": "次へ",
     "getStarted": "始める",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "SprintLab Computer",
     "ready": "準備完了",
     "examples": {
       "presentations": {
@@ -230,8 +230,8 @@
   },
   "chat": {
     "newChat": "新しいチャット",
-    "placeholder": "Kortixにタスクを...",
-    "inputPlaceholder": "Kortixに何でも聞いて...",
+    "placeholder": "SprintLabにタスクを...",
+    "inputPlaceholder": "SprintLabに何でも聞いて...",
     "recording": "録音中...",
     "cancelRecording": "録音キャンセル",
     "stopRecording": "録音停止",
@@ -244,7 +244,7 @@
     "rateThisResult": "この結果を評価",
     "feedbackHelpsImprove": "フィードバックは改善に役立ちます",
     "additionalFeedbackOptional": "追加のフィードバック（任意）",
-    "helpKortixImprove": "フィードバックでKortixの改善にご協力ください",
+    "helpSprintLabImprove": "フィードバックでSprintLabの改善にご協力ください",
     "submit": "送信",
     "submitting": "送信中...",
     "suggestedFollowUps": "提案されたフォローアップ",
@@ -259,7 +259,7 @@
     "newWorker": "新しいWorker",
     "myWorkers": "マイWorkers",
     "searchAgents": "Worker検索",
-    "defaultAgent": "Kortix",
+    "defaultAgent": "SprintLab",
     "defaultDescription": "すべてのタスクに対応する汎用AI",
     "superWorker": "Super Worker",
     "coder": "Coder",
@@ -513,12 +513,12 @@
   "beta": {
     "title": "ベータ機能",
     "webSupportTitle": "Web版で完全サポート",
-    "webSupportDescription": "Kortix.comで利用可能。モバイル版は近日公開予定—こちらではまだ開発中です。",
-    "visitKortix": "Kortix.comを訪問",
+    "webSupportDescription": "SprintLab.comで利用可能。モバイル版は近日公開予定—こちらではまだ開発中です。",
+    "visitSprintLab": "SprintLab.comを訪問",
     "advancedFeatures": "高度な機能",
     "mobileBeta": "モバイルベータ",
     "pleaseNote": "注意事項",
-    "mobileWarning": "モバイル版は開発中で問題が発生する可能性があります。最良の体験のため、Kortix.comをご利用ください。"
+    "mobileWarning": "モバイル版は開発中で問題が発生する可能性があります。最良の体験のため、SprintLab.comをご利用ください。"
   },
   "accountDeletion": {
     "title": "アカウント削除",
@@ -554,7 +554,7 @@
     "chooseModelFor": "Worker {{agent}} のモデルを選択"
   },
   "placeholders": {
-    "default": "Kortixにタスクを...",
+    "default": "SprintLabにタスクを...",
     "search": "検索...",
     "searchConversations": "チャット検索",
     "searchAgents": "Worker検索",

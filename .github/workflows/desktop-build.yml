@@ -352,7 +352,7 @@ jobs:
             ./artifacts/macos-arm64/*
             ./artifacts/windows/*
           body: |
-            ## Kortix Desktop App ${{ steps.version.outputs.version }}
+            ## SprintLab Desktop App ${{ steps.version.outputs.version }}
             
             ### Downloads
             
@@ -368,13 +368,13 @@ jobs:
             **macOS:**
             1. Download the appropriate `.dmg` file for your Mac (Apple Silicon or Intel)
             2. Open the `.dmg` file
-            3. Drag Kortix to your Applications folder
-            4. Open Kortix from Applications
+            3. Drag SprintLab to your Applications folder
+            4. Open SprintLab from Applications
             
             **Windows:**
             1. Download and run the `.exe` installer
             2. Follow the installation wizard
-            3. Launch Kortix from the Start Menu
+            3. Launch SprintLab from the Start Menu
             
             ---
             

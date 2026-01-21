@@ -77,7 +77,7 @@
     "guest": {
       "label": "Ospite",
       "title": "Browse Without\nan Account",
-      "description": "Try Kortix with limited features. No signup required!",
+      "description": "Try SprintLab with limited features. No signup required!",
       "continue": "Continue as Guest",
       "signUp": "Sign Up Instead",
       "agreement": "By continuing, you agree to our",
@@ -93,7 +93,7 @@
     "resetFailed": "Impossibile inviare l'email. Riprova.",
     "passwordsDontMatch": "Le password non corrispondono",
     "passwordTooShort": "La password deve avere almeno 8 caratteri",
-    "welcomeTitle": "Assumi Kortix per",
+    "welcomeTitle": "Assumi SprintLab per",
     "rotatingPhrases": {
       "presentations": "presentazioni",
       "writing": "scrittura",
@@ -117,12 +117,12 @@
     }
   },
   "onboarding": {
-    "welcome": "Scopri cosa può fare Kortix",
+    "welcome": "Scopri cosa può fare SprintLab",
     "welcomeSubtitle": "Il tuo assistente IA che agisce",
     "skip": "Salta",
     "next": "Avanti",
     "getStarted": "Inizia",
-    "kortixComputer": "Kortix Computer",
+    "kortixComputer": "SprintLab Computer",
     "ready": "Pronto",
     "examples": {
       "presentations": {
@@ -231,8 +231,8 @@
   },
   "chat": {
     "newChat": "Nuova Chat",
-    "placeholder": "Dai a Kortix un compito...",
-    "inputPlaceholder": "Chiedi qualsiasi cosa a Kortix...",
+    "placeholder": "Dai a SprintLab un compito...",
+    "inputPlaceholder": "Chiedi qualsiasi cosa a SprintLab...",
     "recording": "Registrazione...",
     "cancelRecording": "Annulla registrazione",
     "stopRecording": "Interrompi registrazione",
@@ -245,7 +245,7 @@
     "rateThisResult": "Valuta questo risultato",
     "feedbackHelpsImprove": "Il tuo feedback ci aiuta a migliorare",
     "additionalFeedbackOptional": "Feedback aggiuntivo (opzionale)",
-    "helpKortixImprove": "Aiuta Kortix a migliorare con il mio feedback",
+    "helpSprintLabImprove": "Aiuta SprintLab a migliorare con il mio feedback",
     "submit": "Invia",
     "submitting": "Invio in corso...",
     "suggestedFollowUps": "Suggerimenti di follow-up",
@@ -260,7 +260,7 @@
     "newWorker": "Nuovo Worker",
     "myWorkers": "I miei Workers",
     "searchAgents": "Cerca workers",
-    "defaultAgent": "Kortix",
+    "defaultAgent": "SprintLab",
     "defaultDescription": "IA generica per tutti i compiti",
     "superWorker": "Super Worker",
     "coder": "Coder",
@@ -514,12 +514,12 @@
   "beta": {
     "title": "Funzionalità Beta",
     "webSupportTitle": "Completamente Supportato sul Web",
-    "webSupportDescription": "Disponibile su Kortix.com. In arrivo su mobile presto—ancora in sviluppo qui.",
-    "visitKortix": "Visita Kortix.com",
+    "webSupportDescription": "Disponibile su SprintLab.com. In arrivo su mobile presto—ancora in sviluppo qui.",
+    "visitSprintLab": "Visita SprintLab.com",
     "advancedFeatures": "Funzionalità Avanzate",
     "mobileBeta": "Beta Mobile",
     "pleaseNote": "Nota Bene",
-    "mobileWarning": "In sviluppo su mobile e potrebbe avere problemi. Per la migliore esperienza, usa Kortix.com."
+    "mobileWarning": "In sviluppo su mobile e potrebbe avere problemi. Per la migliore esperienza, usa SprintLab.com."
   },
   "accountDeletion": {
     "title": "Elimina Account",
@@ -555,7 +555,7 @@
     "chooseModelFor": "Scegli un modello per il worker {{agent}}"
   },
   "placeholders": {
-    "default": "Dai a Kortix un compito...",
+    "default": "Dai a SprintLab un compito...",
     "search": "Cerca...",
     "searchConversations": "Cerca chat",
     "searchAgents": "Cerca workers",

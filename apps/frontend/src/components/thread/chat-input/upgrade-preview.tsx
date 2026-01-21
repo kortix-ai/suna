@@ -62,12 +62,12 @@ export const UpgradePreview: React.FC<UpgradePreviewProps> = ({
             <div className="flex-1 min-w-0">
                 <motion.div className="flex items-center gap-2 mb-0.5">
                     <h4 className="text-sm font-medium text-foreground truncate">
-                        Unlock the full Kortix experience
+                        Unlock the full SprintLab experience
                     </h4>
                 </motion.div>
 
                 <span className="text-xs text-muted-foreground truncate block">
-                    Kortix Advanced mode, 100+ Integrations, Triggers, Custom AI Workers & more
+                    SprintLab Advanced mode, 100+ Integrations, Triggers, Custom AI Workers & more
                 </span>
             </div>
 

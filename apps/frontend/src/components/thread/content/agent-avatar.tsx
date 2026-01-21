@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useAgentFromCache } from '@/hooks/agents/use-agents';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 import { DynamicIcon } from 'lucide-react/dynamic';
 import { Bot } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -33,7 +33,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
   // Agent data props
   agent: propAgent,
   agentId,
-  fallbackName = "Kortix",
+  fallbackName = "SprintLab",
 
   // Direct props
   iconName: propIconName,
@@ -89,7 +89,7 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       >
-        <KortixLogo size={size * 0.5} />
+        <SprintLabLogo size={size * 0.5} />
       </div>
     );
   }
@@ -154,7 +154,7 @@ interface AgentNameProps {
 export const AgentName: React.FC<AgentNameProps> = ({
   agent: propAgent,
   agentId,
-  fallback = "Kortix"
+  fallback = "SprintLab"
 }) => {
   const cachedAgent = useAgentFromCache(!propAgent && agentId ? agentId : undefined);
   const agent = propAgent || cachedAgent;

@@ -31,7 +31,7 @@ export function MemorySettings() {
           <AlertDescription className="text-sm">
             <strong className="text-foreground">Coming Soon</strong>
             <p className="text-muted-foreground mt-1">
-              Memory is currently under development. This feature will allow Kortix to remember important information from your conversations to provide more personalized and context-aware responses.
+              Memory is currently under development. This feature will allow SprintLab to remember important information from your conversations to provide more personalized and context-aware responses.
             </p>
           </AlertDescription>
         </Alert>

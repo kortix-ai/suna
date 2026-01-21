@@ -7,7 +7,7 @@ import {
   Trash2,
   Frown,
 } from "lucide-react";
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ThreadIcon } from "./thread-icon";
 import { toast } from "@/lib/toast";
 import { usePathname, useRouter } from "next/navigation";
@@ -65,7 +65,7 @@ const TaskItem: React.FC<{
       {/* Icon with optional running indicator */}
       <div className="relative flex-shrink-0">
         {isLoading ? (
-          <KortixLoader size="small" />
+          <SprintLabLoader size="small" />
         ) : (
           <ThreadIcon
             iconName={thread.iconName}

@@ -107,7 +107,7 @@ function renderAskToolCall(
         <View className="flex-row items-center gap-2">
           <Icon as={Clock} size={16} className="text-orange-500" />
           <Text className="text-sm text-muted-foreground">
-            Kortix will proceed to work autonomously after you answer.
+            SprintLab will proceed to work autonomously after you answer.
           </Text>
         </View>
       )}

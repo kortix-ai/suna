@@ -8,7 +8,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useTheme } from 'next-themes';
 import { useEffect, useState } from 'react';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import { SprintLabLogo } from '@/components/sidebar/sprintlab-logo';
 
 export function FooterSection() {
   const tablet = useMediaQuery('(max-width: 1024px)');
@@ -27,7 +27,7 @@ export function FooterSection() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between p-10">
             <div className="flex flex-col items-start justify-start gap-y-5 max-w-xs mx-0">
               <Link href="/" className="flex items-center gap-2">
-                <KortixLogo size={20} />
+                <SprintLabLogo size={20} />
               </Link>
               <p className="tracking-tight text-muted-foreground font-medium">
                 {siteConfig.hero.description}

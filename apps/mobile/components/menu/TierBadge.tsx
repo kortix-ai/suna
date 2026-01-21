@@ -18,7 +18,7 @@ interface TierBadgeProps {
  * Four variants: Basic (gray), Plus (pink gradient), Pro (orange gradient), Ultra (rainbow gradient).
  * 
  * The SVG badges are pre-designed and contain:
- * - Kortix icon
+ * - SprintLab icon
  * - Tier name text
  * - Background styling
  * 

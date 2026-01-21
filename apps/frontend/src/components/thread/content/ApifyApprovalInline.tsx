@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Clock, CheckCircle2, AlertCircle } from 'lucide-react';
-import { KortixLoader } from '@/components/ui/kortix-loader';
+import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
 import { ApifyApproval } from '@/hooks/apify/use-apify-approvals';
 import { useApproveApifyRequest, useGetApifyApprovalStatus } from '@/hooks/apify/use-apify-approvals';
 
@@ -106,7 +106,7 @@ export function ApifyApprovalInline({ approval, threadId, onApproved }: ApifyApp
         >
           {approveMutation.isPending ? (
             <>
-              <KortixLoader size="small" className="mr-2" />
+              <SprintLabLoader size="small" className="mr-2" />
               Approving...
             </>
           ) : (

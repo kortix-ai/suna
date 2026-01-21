@@ -138,7 +138,7 @@ async def publish_to_cloudwatch(metrics: dict) -> bool:
         ]
         
         cloudwatch.put_metric_data(
-            Namespace='Kortix',
+            Namespace='SprintLab',
             MetricData=metric_data
         )
         logger.debug(f"Published metrics to CloudWatch: {metrics.get('active_agent_runs')} active runs, {metrics.get('orphaned_streams')} orphaned streams")

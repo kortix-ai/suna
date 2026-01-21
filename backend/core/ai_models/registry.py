@@ -59,9 +59,9 @@ class PricingPresets:
     )
 
 
-FREE_MODEL_ID = "kortix/basic"
-PREMIUM_MODEL_ID = "kortix/power"
-IMAGE_MODEL_ID = "kortix/haiku"
+FREE_MODEL_ID = "sprintlab/basic"
+PREMIUM_MODEL_ID = "sprintlab/power"
+IMAGE_MODEL_ID = "sprintlab/haiku"
 
 
 def _create_anthropic_model_config() -> ModelConfig:
@@ -71,7 +71,7 @@ def _create_anthropic_model_config() -> ModelConfig:
 def _create_minimax_model_config() -> ModelConfig:
     return ModelConfig(
         reasoning=ReasoningSettings(enabled=True, split_output=True),
-        extra_body={"app": "Kortix.com"},
+        extra_body={"app": "SprintLab.id"},
     )
 
 
@@ -94,7 +94,7 @@ class ModelFactory:
             provider = ModelProvider.ANTHROPIC
         
         return Model(
-            id="kortix/haiku",
+            id="sprintlab/haiku",
             name="Claude Haiku 4.5",
             litellm_model_id=litellm_id,
             provider=provider,
@@ -124,7 +124,7 @@ class ModelFactory:
             provider = ModelProvider.MINIMAX
         
         return Model(
-            id="kortix/minimax",
+            id="sprintlab/minimax",
             name="MiniMax M2.1",
             litellm_model_id=litellm_id,
             provider=provider,
@@ -148,11 +148,11 @@ class ModelFactory:
     def create_basic_model(main_llm: str) -> Model:
         if main_llm == "bedrock":
             return Model(
-                id="kortix/basic",
-                name="Kortix Basic",
+                id="sprintlab/basic",
+                name="SprintLab Basic",
                 litellm_model_id=BedrockConfig.get_haiku_arn(),
                 provider=ModelProvider.BEDROCK,
-                aliases=["kortix-basic", "Kortix Basic"],
+                aliases=["sprintlab-basic", "SprintLab Basic"],
                 context_window=200_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -169,11 +169,11 @@ class ModelFactory:
             )
         elif main_llm == "anthropic":
             return Model(
-                id="kortix/basic",
-                name="Kortix Basic",
+                id="sprintlab/basic",
+                name="SprintLab Basic",
                 litellm_model_id="anthropic/claude-haiku-4-5-20251001",
                 provider=ModelProvider.ANTHROPIC,
-                aliases=["kortix-basic", "Kortix Basic"],
+                aliases=["sprintlab-basic", "SprintLab Basic"],
                 context_window=200_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -190,11 +190,11 @@ class ModelFactory:
             )
         elif main_llm == "grok":
             return Model(
-                id="kortix/basic",
-                name="Kortix Basic",
+                id="sprintlab/basic",
+                name="SprintLab Basic",
                 litellm_model_id="openrouter/x-ai/grok-4.1-fast",
                 provider=ModelProvider.OPENROUTER,
-                aliases=["kortix-basic", "Kortix Basic"],
+                aliases=["sprintlab-basic", "SprintLab Basic"],
                 context_window=2_000_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -210,11 +210,11 @@ class ModelFactory:
             )
         elif main_llm == "openai":
             return Model(
-                id="kortix/basic",
-                name="Kortix Basic",
+                id="sprintlab/basic",
+                name="SprintLab Basic",
                 litellm_model_id="openrouter/openai/gpt-4o-mini",
                 provider=ModelProvider.OPENROUTER,
-                aliases=["kortix-basic", "Kortix Basic"],
+                aliases=["sprintlab-basic", "SprintLab Basic"],
                 context_window=128_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -229,11 +229,11 @@ class ModelFactory:
             )
         else:  # minimax
             return Model(
-                id="kortix/basic",
-                name="Kortix Basic",
+                id="sprintlab/basic",
+                name="SprintLab Basic",
                 litellm_model_id="openrouter/minimax/minimax-m2.1",
                 provider=ModelProvider.OPENROUTER,
-                aliases=["kortix-basic", "Kortix Basic"],
+                aliases=["sprintlab-basic", "SprintLab Basic"],
                 context_window=200_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -253,11 +253,11 @@ class ModelFactory:
     def create_power_model(main_llm: str) -> Model:
         if main_llm == "bedrock":
             return Model(
-                id="kortix/power",
-                name="Kortix Advanced Mode",
+                id="sprintlab/power",
+                name="SprintLab Advanced Mode",
                 litellm_model_id=BedrockConfig.get_haiku_arn(),
                 provider=ModelProvider.BEDROCK,
-                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                aliases=["sprintlab-power", "SprintLab POWER Mode", "SprintLab Power", "SprintLab Advanced Mode"],
                 context_window=200_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -275,11 +275,11 @@ class ModelFactory:
             )
         elif main_llm == "anthropic":
             return Model(
-                id="kortix/power",
-                name="Kortix Advanced Mode",
+                id="sprintlab/power",
+                name="SprintLab Advanced Mode",
                 litellm_model_id="anthropic/claude-haiku-4-5-20251001",
                 provider=ModelProvider.ANTHROPIC,
-                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                aliases=["sprintlab-power", "SprintLab POWER Mode", "SprintLab Power", "SprintLab Advanced Mode"],
                 context_window=200_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -297,11 +297,11 @@ class ModelFactory:
             )
         elif main_llm == "grok":
             return Model(
-                id="kortix/power",
-                name="Kortix Advanced Mode",
+                id="sprintlab/power",
+                name="SprintLab Advanced Mode",
                 litellm_model_id="openrouter/x-ai/grok-4.1-fast",
                 provider=ModelProvider.OPENROUTER,
-                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                aliases=["sprintlab-power", "SprintLab POWER Mode", "SprintLab Power", "SprintLab Advanced Mode"],
                 context_window=2_000_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -318,11 +318,11 @@ class ModelFactory:
             )
         elif main_llm == "openai":
             return Model(
-                id="kortix/power",
-                name="Kortix Advanced Mode",
+                id="sprintlab/power",
+                name="SprintLab Advanced Mode",
                 litellm_model_id="openrouter/openai/gpt-4o-mini",
                 provider=ModelProvider.OPENROUTER,
-                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                aliases=["sprintlab-power", "SprintLab POWER Mode", "SprintLab Power", "SprintLab Advanced Mode"],
                 context_window=128_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -337,11 +337,11 @@ class ModelFactory:
             )
         else:  # minimax
             return Model(
-                id="kortix/power",
-                name="Kortix Advanced Mode",
+                id="sprintlab/power",
+                name="SprintLab Advanced Mode",
                 litellm_model_id="openrouter/minimax/minimax-m2.1",
                 provider=ModelProvider.OPENROUTER,
-                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                aliases=["sprintlab-power", "SprintLab POWER Mode", "SprintLab Power", "SprintLab Advanced Mode"],
                 context_window=200_000,
                 capabilities=[
                     ModelCapability.CHAT,
@@ -360,11 +360,11 @@ class ModelFactory:
     @staticmethod
     def create_test_model() -> Model:
         return Model(
-            id="kortix/test",
-            name="Kortix Test",
+            id="sprintlab/test",
+            name="SprintLab Test",
             litellm_model_id="openrouter/minimax/minimax-m2.1",
             provider=ModelProvider.OPENROUTER,
-            aliases=["kortix-test", "Kortix Test"],
+            aliases=["sprintlab-test", "SprintLab Test"],
             context_window=200_000,
             capabilities=[
                 ModelCapability.CHAT,
@@ -383,7 +383,7 @@ class ModelFactory:
     @staticmethod
     def create_grok_4_1_fast() -> Model:
         return Model(
-            id="kortix/grok-4-1-fast",
+            id="sprintlab/grok-4-1-fast",
             name="Grok 4.1 Fast",
             litellm_model_id="openrouter/x-ai/grok-4.1-fast",
             provider=ModelProvider.OPENROUTER,
@@ -405,7 +405,7 @@ class ModelFactory:
     @staticmethod
     def create_gpt4o_mini() -> Model:
         return Model(
-            id="kortix/gpt4o-mini",
+            id="sprintlab/gpt4o-mini",
             name="GPT-4o Mini",
             litellm_model_id="openrouter/openai/gpt-4o-mini",
             provider=ModelProvider.OPENROUTER,
@@ -426,7 +426,7 @@ class ModelFactory:
     @staticmethod
     def create_gpt5_mini() -> Model:
         return Model(
-            id="kortix/gpt-5-mini",
+            id="sprintlab/gpt-5-mini",
             name="GPT-5 Mini",
             litellm_model_id="openrouter/openai/gpt-4o-mini",
             provider=ModelProvider.OPENROUTER,
