@@ -21,9 +21,13 @@ export {
   extractTierLimitErrorState,
   getTierLimitErrorTitle,
   getTierLimitErrorAction,
+  // UI formatting utilities
+  formatTierLimitErrorForUI,
+  formatTierErrorForUI,
 } from '@agentpress/shared/errors';
 
 export type {
   TierErrorType,
   TierLimitErrorState,
+  TierLimitErrorUI,
 } from '@agentpress/shared/errors';
