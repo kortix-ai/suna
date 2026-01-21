@@ -117,6 +117,12 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     setSelectedTemplate,
   } = useSunaModePersistence();
   
+  // Callback to reset loading states when a background error occurs
+  const handleBackgroundError = useCallback(() => {
+    setIsSubmitting(false);
+    setIsRedirecting(false);
+  }, []);
+
   // Optimistic agent start hook
   const {
     startAgent,
@@ -125,7 +131,10 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     showAgentLimitBanner,
     setShowAgentLimitBanner,
     clearAgentLimitData,
-  } = useOptimisticAgentStart(redirectOnError);
+  } = useOptimisticAgentStart({
+    redirectOnError,
+    onBackgroundError: handleBackgroundError,
+  });
   
   // Fetch agents - only when user is authenticated
   const { data: agentsResponse, isLoading: isLoadingAgents } = useAgents({
