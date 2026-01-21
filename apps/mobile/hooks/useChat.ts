@@ -21,12 +21,14 @@ import {
 } from '@/lib/chat';
 import {
   useUploadMultipleFiles,
+  useStageFiles,
   convertAttachmentsToFormDataFiles,
   generateFileReferences,
   validateFileSize,
 } from '@/lib/files';
 import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
 import { detectModeFromContent } from '@/lib/chat/modeDetection';
+import { generateUUID, generateOptimisticId } from '@/lib/utils';
 import { useAgentStream } from './useAgentStream';
 import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
@@ -46,6 +48,8 @@ export interface Attachment {
   name?: string;
   size?: number;
   mimeType?: string;
+  fileId?: string;
+  status?: 'pending' | 'uploading' | 'ready' | 'error';
   isUploading?: boolean;
   uploadProgress?: number;
   uploadError?: string;
@@ -154,7 +158,7 @@ export function useChat(): UseChatReturn {
     initialIndex: number;
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
-  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('slides');
+  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
   const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [modeViewState, setModeViewState] = useState<'thread-list' | 'thread'>('thread-list');
@@ -169,6 +173,7 @@ export function useChat(): UseChatReturn {
     agentId: string;
     agentName: string;
   } | null>(null);
+  
   
   // Per-mode full state: keeps entire mode state in memory for instant switching (like browser tabs)
   const [modeStates, setModeStates] = useState<Record<string, ModeState>>({});;
@@ -331,6 +336,7 @@ export function useChat(): UseChatReturn {
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
   const uploadFilesMutation = useUploadMultipleFiles();
+  const stageFilesMutation = useStageFiles();
 
   const lastStreamStartedRef = useRef<string | null>(null);
   const lastCompletedRunIdRef = useRef<string | null>(null);
@@ -854,7 +860,7 @@ export function useChat(): UseChatReturn {
         }
 
         // Generate optimistic thread ID for instant side menu display
-        const optimisticThreadId = 'optimistic-thread-' + Date.now();
+        const optimisticThreadId = generateOptimisticId();
         const optimisticTimestamp = new Date().toISOString();
 
         // Create optimistic thread title from first ~50 chars of content
@@ -878,16 +884,19 @@ export function useChat(): UseChatReturn {
         );
 
         const optimisticUserMessage: UnifiedMessage = {
-          message_id: 'optimistic-user-' + Date.now(),
+          message_id: generateOptimisticId(),
           thread_id: optimisticThreadId,
           type: 'user',
           content: JSON.stringify({ content: optimisticContent }),
           metadata: JSON.stringify({
+            // Include all attachments in pending state
+            // Show loading spinner only for files still uploading
             pendingAttachments: pendingAttachments.map(a => ({
               uri: a.uri,
               name: a.name,
               type: a.type,
               size: a.size,
+              status: a.status, // Include status so UI knows which ones are ready
             }))
           }),
           is_llm_message: false,
@@ -911,12 +920,12 @@ export function useChat(): UseChatReturn {
         setInputValue('');
         setAttachments([]);
         
-        // Convert attachments for upload (we need the data)
-        const formDataFiles = pendingAttachments.length > 0
-          ? await convertAttachmentsToFormDataFiles(pendingAttachments)
-          : [];
+        // Extract file IDs from staged attachments (matching web flow)
+        const stagedFileIds = pendingAttachments
+          .filter(a => a.status === 'ready' && a.fileId)
+          .map(a => a.fileId!);
         
-        log.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
+        log.log('[useChat] Using', stagedFileIds.length, 'staged file IDs');
         
         // Append hidden context for selected quick action options
         let messageWithContext = content;
@@ -974,7 +983,7 @@ export function useChat(): UseChatReturn {
             prompt: messageWithContext,
             agentId: agentId,
             modelName: currentModel,
-            files: formDataFiles as any,
+            fileIds: stagedFileIds.length > 0 ? stagedFileIds : undefined,
             threadMetadata: Object.keys(threadMetadata).length > 0 ? threadMetadata : undefined,
           });
 
@@ -1080,16 +1089,19 @@ export function useChat(): UseChatReturn {
         }
         
         const optimisticUserMessage: UnifiedMessage = {
-          message_id: 'optimistic-user-' + Date.now(),
+          message_id: generateOptimisticId(),
           thread_id: currentThreadId,
           type: 'user',
           content: JSON.stringify({ content: optimisticContent }),
           metadata: JSON.stringify({ 
+            // Include all attachments in pending state
+            // Show loading spinner only for files still uploading
             pendingAttachments: pendingAttachments.map(a => ({
               uri: a.uri,
               name: a.name,
               type: a.type,
               size: a.size,
+              status: a.status, // Include status so UI knows which ones are ready
             }))
           }),
           is_llm_message: false,
@@ -1120,51 +1132,13 @@ export function useChat(): UseChatReturn {
           log.log('[useChat] Appended image style context:', selectedQuickActionOption);
         }
         
-        if (pendingAttachments.length > 0) {
-          const sandboxId = activeSandboxId;
-          
-          if (!sandboxId) {
-            log.error('[useChat] No sandbox ID available for file upload');
-            Alert.alert(
-              t('common.error'),
-              'Cannot upload files: sandbox not available'
-            );
-            return;
-          }
-          
-          log.log('[useChat] Uploading', pendingAttachments.length, 'files to sandbox:', sandboxId);
-          
-          try {
-            const filesToUpload = await convertAttachmentsToFormDataFiles(pendingAttachments);
-            
-            const uploadResults = await uploadFilesMutation.mutateAsync({
-              sandboxId,
-              files: filesToUpload.map(f => ({
-                uri: f.uri,
-                name: f.name,
-                type: f.type,
-              })),
-            });
-            
-            log.log('[useChat] Files uploaded successfully:', uploadResults.length);
-            
-            const filePaths = uploadResults.map(result => result.path);
-            const fileReferences = generateFileReferences(filePaths);
-            
-            messageContent = messageContent
-              ? `${messageContent}\n\n${fileReferences}`
-              : fileReferences;
-              
-            log.log('[useChat] Message with file references prepared');
-          } catch (uploadError) {
-            log.error('[useChat] File upload failed:', uploadError);
-            
-            Alert.alert(
-              t('common.error'),
-              t('attachments.uploadFailed') || 'Failed to upload files'
-            );
-            return;
-          }
+        // Extract file IDs from staged attachments (matching web flow)
+        const stagedFileIds = pendingAttachments
+          .filter(a => a.status === 'ready' && a.fileId)
+          .map(a => a.fileId!);
+        
+        if (stagedFileIds.length > 0) {
+          log.log('[useChat] Using', stagedFileIds.length, 'staged file IDs for existing thread');
         }
         
         if (!currentModel) {
@@ -1189,6 +1163,7 @@ export function useChat(): UseChatReturn {
             threadId: currentThreadId,
             message: messageContent,
             modelName: currentModel,
+            fileIds: stagedFileIds.length > 0 ? stagedFileIds : undefined,
           });
           
           log.log('[useChat] Message sent, agent run started:', result.agentRunId);
@@ -1467,9 +1442,79 @@ export function useChat(): UseChatReturn {
     setIsRetrying(false);
   }, [isRetrying, messages, currentHookRunId, agentRunId, clearStreamError, setStreamError, startStreaming, activeThreadId, refetchMessages, refetchActiveRuns, queryClient, sendMessage]);
 
-  const addAttachment = useCallback((attachment: Attachment) => {
-    setAttachments(prev => [...prev, attachment]);
-  }, []);
+  const addAttachment = useCallback(async (attachment: Attachment) => {
+    const fileId = generateUUID();
+    
+    const mimeType = attachment.mimeType || attachment.type || 'application/octet-stream';
+    if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+      Alert.alert(
+        t('common.error'),
+        'HEIC images are not supported. Please use JPEG or PNG format.'
+      );
+      return;
+    }
+    
+    // Add attachment with uploading status
+    const attachmentWithId = {
+      ...attachment,
+      fileId,
+      status: 'uploading' as const,
+      isUploading: true,
+    };
+    
+    setAttachments(prev => [...prev, attachmentWithId]);
+    
+    // Immediately stage the file
+    try {
+      await stageFilesMutation.mutateAsync({
+        files: [{
+          uri: attachment.uri,
+          name: attachment.name || 'file',
+          type: mimeType,
+          fileId,
+        }],
+      });
+      
+      // Update status to ready
+      setAttachments(prev => 
+        prev.map(a => 
+          a.fileId === fileId 
+            ? { ...a, status: 'ready' as const, isUploading: false }
+            : a
+        )
+      );
+    } catch (error) {
+      log.error('[useChat] File staging failed:', error);
+      
+      // Check for HEIC error from backend
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isHeicError = errorMessage.toLowerCase().includes('heic') || errorMessage.toLowerCase().includes('heif');
+      
+      // Update status to error
+      setAttachments(prev => 
+        prev.map(a => 
+          a.fileId === fileId 
+            ? { 
+                ...a, 
+                status: 'error' as const, 
+                isUploading: false, 
+                uploadError: isHeicError 
+                  ? 'HEIC format not supported' 
+                  : 'Failed to upload file' 
+              }
+            : a
+        )
+      );
+      
+      // Show user-friendly error
+      if (isHeicError) {
+        Alert.alert(
+          t('common.error'),
+          'HEIC images are not supported. Please use JPEG or PNG format.'
+        );
+      }
+    }
+  }, [stageFilesMutation, t]);
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments(prev => prev.filter((_, i) => i !== index));
@@ -1490,6 +1535,7 @@ export function useChat(): UseChatReturn {
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.8,
+      exif: false, // Reduces file size, outputs JPEG
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -1520,6 +1566,7 @@ export function useChat(): UseChatReturn {
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 0.8,
+      exif: false, // Reduces file size, outputs JPEG
     });
 
     if (!result.canceled) {
