@@ -1,0 +1,33 @@
+{
+  "name": "suna-infrastructure",
+  "version": "1.0.0",
+  "description": "Suna unified infrastructure - Pulumi IaC",
+  "private": true,
+  "main": "index.ts",
+  "scripts": {
+    "dev:preview": "cd environments/dev && pulumi preview",
+    "dev:up": "cd environments/dev && pulumi up",
+    "dev:destroy": "cd environments/dev && pulumi destroy",
+    "staging:preview": "cd environments/staging && pulumi preview",
+    "staging:up": "cd environments/staging && pulumi up",
+    "staging:destroy": "cd environments/staging && pulumi destroy",
+    "prod:preview": "cd environments/prod && pulumi preview",
+    "prod:up": "cd environments/prod && pulumi up",
+    "prod:destroy": "cd environments/prod && pulumi destroy",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@pulumi/aws": "^7.7.0",
+    "@pulumi/awsx": "^3.0.0",
+    "@pulumi/cloudflare": "^5.0.0",
+    "@pulumi/pulumi": "^3.113.0",
+    "@pulumi/random": "^4.0.0"
+  },
+  "trustedDependencies": [
+    "protobufjs"
+  ]
+}

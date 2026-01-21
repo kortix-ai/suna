@@ -133,7 +133,8 @@ async def _initial_pool_warmup(service: SandboxPoolService) -> None:
             logger.info(f"[SANDBOX_POOL] Warmup progress: {created_total}/{to_create} sandboxes created")
             
             if created_total < to_create:
-                await asyncio.sleep(1)
+                logger.info(f"[SANDBOX_POOL] Waiting {config.batch_delay}s before next batch to avoid rate limits...")
+                await asyncio.sleep(config.batch_delay)
         
         logger.info(f"[SANDBOX_POOL] Initial warmup complete: created {created_total} sandboxes")
         
@@ -152,6 +153,10 @@ async def start_pool_service() -> None:
     if not config.enabled:
         logger.info("[SANDBOX_POOL] Pool service is disabled via configuration")
         return
+    
+
+    logger.warning("[SANDBOX_POOL] Pool service DISABLED - sandbox creation paused due to high usage")
+    return
     
     service = get_pool_service()
     

@@ -361,14 +361,15 @@ class Configuration:
     # RevenueCat configuration
     REVENUECAT_WEBHOOK_SECRET: Optional[str] = None
     REVENUECAT_API_KEY: Optional[str] = None
+    REVENUECAT_PROJECT_ID: Optional[str] = None
     
     # Stripe Product IDs
     STRIPE_PRODUCT_ID_PROD: Optional[str] = 'prod_SCl7AQ2C8kK1CD'
     STRIPE_PRODUCT_ID_STAGING: Optional[str] = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.28"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.28"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.29"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.29"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
     
     # Debug configuration

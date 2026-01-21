@@ -68,8 +68,7 @@ export default function AppDownloadPage() {
   return (
     <main className="w-full min-h-screen bg-background relative flex flex-col">
 
-      <div className="relative z-10 flex flex-col items-center justify-center flex-1 px-6 py-16">
-        <div className="w-full max-w-5xl mx-auto">
+      <div className="relative z-10 flex-1 max-w-4xl mx-auto px-6 md:px-10 py-16">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: -20 }}
@@ -149,7 +148,7 @@ export default function AppDownloadPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            className="w-full max-w-4xl mx-auto"
+            className="w-full"
           >
             <h2 className="text-2xl md:text-3xl font-medium text-foreground mb-12">
               Why you'll love it
@@ -181,7 +180,6 @@ export default function AppDownloadPage() {
             </div>
           </motion.div>
 
-        </div>
       </div>
 
       <SimpleFooter />

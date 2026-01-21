@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { View, ScrollView, Pressable, Alert, Modal, FlatList } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -28,6 +28,9 @@ import {
   useFilesAtCommit,
   useRevertToCommit,
   fetchCommitInfo,
+  useSandboxStatusWithAutoStart,
+  useSandboxStatusByIdWithAutoStart,
+  isSandboxUsable,
   type FileVersion,
   type CommitInfo,
 } from '@/lib/files/hooks';
@@ -37,6 +40,7 @@ import { VersionBanner } from './VersionBanner';
 
 interface FileBrowserViewProps {
   sandboxId: string;
+  projectId?: string;
   project?: {
     id: string;
     name: string;
@@ -79,6 +83,7 @@ function getBreadcrumbSegments(path: string): BreadcrumbSegment[] {
 
 export function FileBrowserView({
   sandboxId,
+  projectId,
   project,
 }: FileBrowserViewProps) {
   const insets = useSafeAreaInsets();
@@ -100,7 +105,37 @@ export function FileBrowserView({
   const [isLoadingRevertInfo, setIsLoadingRevertInfo] = useState(false);
   const [isReverting, setIsReverting] = useState(false);
 
-  // Current files query
+  // Track validated presentation folders (folders that have metadata.json)
+  const [validatedPresentationFolders, setValidatedPresentationFolders] = useState<Set<string>>(new Set());
+
+  // Get the effective project ID
+  const effectiveProjectId = projectId || project?.id;
+
+  // Get unified sandbox status with auto-start
+  // If we have a projectId, use that; otherwise fall back to sandboxId
+  const projectStatusQuery = useSandboxStatusWithAutoStart(effectiveProjectId, {
+    enabled: !!effectiveProjectId,
+  });
+
+  const sandboxIdStatusQuery = useSandboxStatusByIdWithAutoStart(sandboxId, {
+    enabled: !effectiveProjectId && !!sandboxId,
+  });
+
+  // Use whichever query is active
+  const statusQuery = effectiveProjectId ? projectStatusQuery : sandboxIdStatusQuery;
+  const {
+    data: sandboxStatusData,
+    isAutoStarting,
+    isLoading: isLoadingSandboxStatus,
+    isFetching: isFetchingSandboxStatus,
+    isError: isSandboxStatusError,
+    error: sandboxStatusError,
+  } = statusQuery;
+
+  const sandboxStatus = sandboxStatusData?.status;
+  const isSandboxReady = sandboxStatus ? isSandboxUsable(sandboxStatus) : false;
+
+  // Current files query - only fetch when sandbox is LIVE (or if we don't have projectId to check)
   const {
     data: files = [],
     isLoading: isLoadingFiles,
@@ -110,7 +145,9 @@ export function FileBrowserView({
     refetchOnMount: 'always',
     staleTime: 0,
     gcTime: 0,
-    enabled: !selectedVersion, // Disable when viewing a version
+    // Disable when viewing a version or sandbox not ready
+    // If no projectId, fall back to old behavior and just try to load
+    enabled: !selectedVersion && isSandboxReady,
   });
 
   // Version history query
@@ -160,25 +197,87 @@ export function FileBrowserView({
     [navigateToPath],
   );
 
-  const isPresentationFolder = useCallback((file: SandboxFile): boolean => {
-    if (file.type !== 'directory') return false;
-
-    const pathParts = file.path.split('/').filter(Boolean);
-
+  // Helper to check if a path is a direct child of /presentations/ folder
+  const isDirectChildOfPresentations = useCallback((filePath: string): boolean => {
+    const pathParts = filePath.split('/').filter(Boolean);
+    // Path should be like: /workspace/presentations/my_presentation
+    // PathParts would be: ["workspace", "presentations", "my_presentation"]
     if (pathParts.length >= 3) {
       const parentIndex = pathParts.length - 2;
       if (pathParts[parentIndex] === 'presentations') {
         return true;
       }
     }
-
     return false;
   }, []);
+
+  // Validate presentation folders by checking for metadata.json
+  const validatePresentationFolders = useCallback(async (folders: SandboxFile[]) => {
+    if (!project?.sandbox?.sandbox_url) return;
+    
+    const sandboxUrl = project.sandbox.sandbox_url;
+    const foldersToValidate = folders.filter(f => f.type === 'directory' && isDirectChildOfPresentations(f.path));
+    
+    if (foldersToValidate.length === 0) return;
+    
+    const newValidated = new Set(validatedPresentationFolders);
+    
+    // Validate each folder in parallel
+    await Promise.all(foldersToValidate.map(async (folder) => {
+      // Skip if already validated
+      if (newValidated.has(folder.path)) return;
+      
+      try {
+        const folderName = folder.path.split('/').pop() || '';
+        const sanitizedName = folderName.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
+        const metadataUrl = `${sandboxUrl}/workspace/presentations/${sanitizedName}/metadata.json?t=${Date.now()}`;
+        
+        const response = await fetch(metadataUrl, {
+          method: 'HEAD', // Just check if it exists
+          cache: 'no-cache',
+        });
+        
+        if (response.ok) {
+          newValidated.add(folder.path);
+        }
+      } catch {
+        // Folder doesn't have valid metadata.json - not a presentation
+      }
+    }));
+    
+    setValidatedPresentationFolders(newValidated);
+  }, [project?.sandbox?.sandbox_url, validatedPresentationFolders, isDirectChildOfPresentations]);
+
+  // Trigger validation when viewing presentations folder
+  useEffect(() => {
+    const isInPresentationsFolder = currentPath === '/workspace/presentations' || 
+                                    currentPath === '/presentations' ||
+                                    currentPath.endsWith('/presentations');
+    
+    if (isInPresentationsFolder && displayFiles.length > 0 && project?.sandbox?.sandbox_url) {
+      validatePresentationFolders(displayFiles);
+    }
+  }, [currentPath, displayFiles, project?.sandbox?.sandbox_url, validatePresentationFolders]);
+
+  // Check if a folder is a presentation folder
+  // A presentation folder must be:
+  // 1. A direct child of /workspace/presentations/ or /presentations/
+  // 2. Have a metadata.json file (validated)
+  const isPresentationFolder = useCallback((file: SandboxFile): boolean => {
+    if (file.type !== 'directory') return false;
+    
+    // Must be a direct child of /presentations/
+    if (!isDirectChildOfPresentations(file.path)) return false;
+    
+    // Must have been validated (has metadata.json)
+    return validatedPresentationFolders.has(file.path);
+  }, [isDirectChildOfPresentations, validatedPresentationFolders]);
 
   const handleItemClick = useCallback(
     (file: SandboxFile) => {
       if (file.type === 'directory') {
-        if (isPresentationFolder(file)) {
+        // Use structural check for click behavior - viewer will validate metadata.json
+        if (isDirectChildOfPresentations(file.path)) {
           if (selectedVersion) {
             Alert.alert('Info', 'Cannot view presentations from historical versions');
             return;
@@ -191,7 +290,7 @@ export function FileBrowserView({
         openFile(file.path);
       }
     },
-    [navigateToPath, openFile, isPresentationFolder, selectedVersion],
+    [navigateToPath, openFile, isDirectChildOfPresentations, selectedVersion],
   );
 
   const handleUploadImage = async () => {
@@ -302,7 +401,10 @@ export function FileBrowserView({
   }, [isPresentationFolder]);
 
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
-  const isComputerStarted = project?.sandbox?.sandbox_url ? true : false;
+  // Use sandbox status for accurate "started" check instead of just URL existence
+  const isComputerStarted = isSandboxReady;
+  // Include sandbox status loading in isLoading
+  const isLoadingStatus = isLoadingSandboxStatus || isFetchingSandboxStatus;
   const isLoading = isLoadingFiles || isLoadingVersionFiles;
 
   const renderVersionItem = ({ item, index }: { item: FileVersion; index: number }) => {
@@ -432,7 +534,48 @@ export function FileBrowserView({
 
       {/* File Explorer */}
       <View className="flex-1">
-        {isLoading ? (
+        {/* Show loading while fetching sandbox status */}
+        {hasSandbox && isLoadingStatus && !sandboxStatus ? (
+          <View className="flex-1 items-center justify-center gap-2 p-8">
+            <KortixLoader size="large" />
+            <Text className="text-sm font-roobert-medium text-center">
+              Checking computer status...
+            </Text>
+          </View>
+        ) : hasSandbox && isSandboxStatusError ? (
+          /* Show error when status check failed */
+          <View className="flex-1 items-center justify-center gap-2 p-8">
+            <Icon
+              as={AlertTriangle}
+              size={48}
+              className="text-destructive"
+              strokeWidth={1.5}
+            />
+            <Text className="text-sm font-roobert-medium text-center text-destructive">
+              Failed to check computer status
+            </Text>
+            <Text className="text-xs text-muted-foreground text-center max-w-xs">
+              {sandboxStatusError?.message || 'Unknown error'}
+            </Text>
+          </View>
+        ) : hasSandbox && !isSandboxReady && (sandboxStatus || isAutoStarting) ? (
+          /* Show sandbox status when not ready */
+          <View className="flex-1 items-center justify-center gap-2 p-8">
+            <KortixLoader size="large" />
+            <Text className="text-sm font-roobert-medium text-center">
+              {(sandboxStatus === 'STARTING' || isAutoStarting) && (isAutoStarting ? 'Waking up computer...' : 'Computer starting...')}
+              {sandboxStatus === 'OFFLINE' && !isAutoStarting && 'Computer offline'}
+              {sandboxStatus === 'FAILED' && 'Computer unavailable'}
+              {sandboxStatus === 'UNKNOWN' && 'Initializing...'}
+            </Text>
+            <Text className="text-xs text-muted-foreground text-center">
+              {(sandboxStatus === 'STARTING' || isAutoStarting) && 'Files will appear once the computer is ready'}
+              {sandboxStatus === 'OFFLINE' && !isAutoStarting && 'Attempting to start the computer...'}
+              {sandboxStatus === 'FAILED' && 'There was an issue starting the computer'}
+              {sandboxStatus === 'UNKNOWN' && 'Setting up your workspace...'}
+            </Text>
+          </View>
+        ) : isLoading ? (
           <View className="flex-1 items-center justify-center gap-2">
             <SprintLabLoader size="large" />
             <Text className="text-sm text-muted-foreground">
@@ -454,15 +597,6 @@ export function FileBrowserView({
                 </Text>
                 <Text className="text-xs text-muted-foreground text-center">
                   A computer will be created when you start working on this task
-                </Text>
-              </>
-            ) : !isComputerStarted ? (
-              <>
-                <Text className="text-sm font-roobert-medium text-center">
-                  Computer is not started yet
-                </Text>
-                <Text className="text-xs text-muted-foreground text-center">
-                  Files will appear once the computer is ready
                 </Text>
               </>
             ) : (

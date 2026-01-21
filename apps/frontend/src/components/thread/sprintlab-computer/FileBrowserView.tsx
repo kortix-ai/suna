@@ -69,6 +69,7 @@ import { PresentationSlidePreview } from '../tool-views/presentation-tools/Prese
 import { PresentationSlideSkeleton } from '../tool-views/presentation-tools/PresentationSlideSkeleton';
 import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { useSandboxStatusWithAutoStart, isSandboxUsable } from '@/hooks/files/use-sandbox-details';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -93,6 +94,11 @@ const MEDIA_EXTENSIONS = [...VIDEO_EXTENSIONS, ...AUDIO_EXTENSIONS];
 // Folders to hide in library view (internal/utility folders)
 const HIDDEN_FOLDERS = ['downloads', 'node_modules', '.git', '__pycache__', 'assets', 'images', 'fonts', 'scripts', 'src', 'dist', 'build', 'public', 'static'];
 
+// Check if a file is a presentation slide (slide_XX.html pattern)
+function isPresentationSlideFile(filePath: string): boolean {
+  return /\/presentations\/[^\/]+\/slide_\d+\.html$/i.test(filePath);
+}
+
 // Check if a file is a main output (something the user generated/requested)
 function isMainOutput(file: FileInfo, isPresentationFolder: (f: FileInfo) => boolean): boolean {
   // Presentation folders are main outputs
@@ -113,6 +119,11 @@ function isMainOutput(file: FileInfo, isPresentationFolder: (f: FileInfo) => boo
     }
     // Hide generic folders - only show presentation folders
     return false;
+  }
+  
+  // Presentation slide files are main outputs
+  if (isPresentationSlideFile(file.path)) {
+    return true;
   }
   
   // For files, check if they're main output types
@@ -438,12 +449,14 @@ function ThumbnailPreview({
   sandboxId, 
   project,
   isPresentationFolder,
+  slideInfo,
   fallbackIcon
 }: { 
   file: FileInfo; 
   sandboxId: string; 
   project?: Project;
   isPresentationFolder: boolean;
+  slideInfo?: { isSlide: boolean; presentationName: string | null; slideNumber: number | null };
   fallbackIcon: React.ReactNode;
 }) {
   const extension = file.name.split('.').pop()?.toLowerCase() || '';
@@ -476,7 +489,30 @@ function ThumbnailPreview({
   const isLoading = blobLoading || textLoading;
   const hasError = blobError || textError;
   
-  // For presentation folders, show the slide preview
+  // For presentation slide files (slide_XX.html), show the slide preview
+  if (slideInfo?.isSlide && slideInfo.presentationName && slideInfo.slideNumber) {
+    if (project?.sandbox?.sandbox_url) {
+      return (
+        <PresentationSlidePreview
+          presentationName={slideInfo.presentationName}
+          project={project}
+          className="w-full h-full"
+          initialSlide={slideInfo.slideNumber}
+        />
+      );
+    }
+    // Show skeleton while waiting for sandbox
+    return (
+      <PresentationSlideSkeleton
+        slideNumber={slideInfo.slideNumber}
+        slideTitle={`Slide ${slideInfo.slideNumber}`}
+        isGenerating={true}
+        className="w-full h-full"
+      />
+    );
+  }
+  
+  // For presentation folders (legacy - no longer used)
   if (isPresentationFolder) {
     const presentationName = file.name;
     if (project?.sandbox?.sandbox_url) {
@@ -646,7 +682,13 @@ export function FileBrowserView({
     featureName: 'files',
   });
 
-  // Use React Query for directory listing
+  // Get unified sandbox status with auto-start - this tells us if sandbox is actually ready
+  // Auto-starts OFFLINE sandboxes automatically
+  const { data: sandboxStatusData, isAutoStarting } = useSandboxStatusWithAutoStart(projectId);
+  const sandboxStatus = sandboxStatusData?.status;
+  const isSandboxReady = sandboxStatus ? isSandboxUsable(sandboxStatus) : false;
+
+  // Use React Query for directory listing - only fetch when sandbox is LIVE
   const {
     data: files = [],
     isLoading: isLoadingFiles,
@@ -654,7 +696,7 @@ export function FileBrowserView({
     refetch: refetchFiles,
     failureCount: dirRetryAttempt,
   } = useDirectoryQuery(sandboxId || '', currentPath, {
-    enabled: !!sandboxId && sandboxId.trim() !== '' && !!currentPath,
+    enabled: !!sandboxId && sandboxId.trim() !== '' && !!currentPath && isSandboxReady,
     staleTime: 0,
   });
 
@@ -680,9 +722,10 @@ export function FileBrowserView({
   const [revertLoadingInfo, setRevertLoadingInfo] = useState(false);
   const [revertInProgress, setRevertInProgress] = useState(false);
 
-  // Check computer status
+  // Check computer status - use unified status for accurate state
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
-  const isComputerStarted = project?.sandbox?.sandbox_url ? true : false;
+  // Use sandbox status for accurate "started" check instead of just URL existence
+  const isComputerStarted = isSandboxReady;
 
   // Function to ensure a path starts with /workspace
   const normalizePath = useCallback((path: unknown): string => {
@@ -733,25 +776,38 @@ export function FileBrowserView({
     [navigateToPath],
   );
 
-  // Check if a folder is a presentation folder
-  // A presentation folder is a direct child of /workspace/presentations/ or /presentations/
-  // NOT any nested folder inside a presentation (like images/, assets/, etc.)
-  const isPresentationFolder = useCallback((file: FileInfo): boolean => {
-    if (!file.is_dir) return false;
-    
-    // Get the parent path
-    const pathParts = file.path.split('/').filter(Boolean);
-    
-    // Check if parent folder is "presentations" and this is a direct child
+  // Helper to check if a path is a direct child of /presentations/ folder
+  const isDirectChildOfPresentations = useCallback((filePath: string): boolean => {
+    const pathParts = filePath.split('/').filter(Boolean);
     // Path should be like: /workspace/presentations/my_presentation
     // PathParts would be: ["workspace", "presentations", "my_presentation"]
     if (pathParts.length >= 3) {
-      const parentIndex = pathParts.length - 2; // Index of the parent folder
+      const parentIndex = pathParts.length - 2;
       if (pathParts[parentIndex] === 'presentations') {
         return true;
       }
     }
+    return false;
+  }, []);
+
+  // Check if a file is a presentation slide (slide_XX.html pattern)
+  const isPresentationSlide = useCallback((file: FileInfo): { isSlide: boolean; presentationName: string | null; slideNumber: number | null } => {
+    if (file.is_dir) return { isSlide: false, presentationName: null, slideNumber: null };
     
+    // Match slide_XX.html pattern
+    const slideMatch = file.path.match(/\/presentations\/([^\/]+)\/slide_(\d+)\.html$/i);
+    if (slideMatch) {
+      return {
+        isSlide: true,
+        presentationName: slideMatch[1],
+        slideNumber: parseInt(slideMatch[2], 10),
+      };
+    }
+    return { isSlide: false, presentationName: null, slideNumber: null };
+  }, []);
+
+  // No longer treat folders as presentations - just show them as regular folders
+  const isPresentationFolder = useCallback((_file: FileInfo): boolean => {
     return false;
   }, []);
 
@@ -759,8 +815,9 @@ export function FileBrowserView({
   const handleItemClick = useCallback(
     (file: FileInfo) => {
       if (file.is_dir) {
-        // Check if it's a presentation folder (direct child of /presentations/)
-        if (isPresentationFolder(file)) {
+        // Check if it's a potential presentation folder (direct child of /presentations/)
+        // Use structural check here - FileViewerView will validate metadata.json
+        if (isDirectChildOfPresentations(file.path)) {
           // Presentations not supported in version view
           if (selectedVersion) {
             toast.info('Cannot view presentations from historical versions');
@@ -796,7 +853,7 @@ export function FileBrowserView({
         }
       }
     },
-    [navigateToPath, openFile, isPresentationFolder, selectedVersion, isLibraryView, sandboxId, session?.access_token, openFileViewer, openPresentation, project?.sandbox?.sandbox_url],
+    [navigateToPath, openFile, isDirectChildOfPresentations, selectedVersion, isLibraryView, sandboxId, session?.access_token, openFileViewer, openPresentation, project?.sandbox?.sandbox_url],
   );
 
   // Recursive function to discover all files from the current path
@@ -1786,6 +1843,7 @@ export function FileBrowserView({
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
                     {mainOutputFiles.map((file) => {
                       const isPresentation = isPresentationFolder(file);
+                      const slideInfo = isPresentationSlide(file);
                       return (
                         <div
                           key={file.path}
@@ -1798,12 +1856,12 @@ export function FileBrowserView({
                               {getFileIcon(file, 'header')}
                             </div>
                             <span className="flex-1 font-medium truncate text-sm">{file.name}</span>
-                            {isPresentation && (
+                            {(isPresentation || slideInfo.isSlide) && (
                               <Badge 
                                 variant="secondary" 
                                 className="text-[10px] px-1.5 py-0 bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                               >
-                                Slides
+                                {slideInfo.isSlide ? `Slide ${slideInfo.slideNumber}` : 'Slides'}
                               </Badge>
                             )}
                             <DropdownMenu>
@@ -1830,13 +1888,14 @@ export function FileBrowserView({
                             </DropdownMenu>
                           </div>
                           
-                          {/* Preview - show thumbnail for images and presentations */}
+                          {/* Preview - show thumbnail for images, slides, and presentations */}
                           <div className="w-full aspect-[16/10] relative overflow-hidden">
                             <ThumbnailPreview
                               file={file}
                               sandboxId={sandboxId}
                               project={project}
                               isPresentationFolder={isPresentation}
+                              slideInfo={slideInfo}
                               fallbackIcon={getFileIcon(file, 'large')}
                             />
                           </div>
@@ -1950,7 +2009,28 @@ export function FileBrowserView({
 
       {/* File Explorer */}
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
-        {(isLoadingFiles || isLoadingVersionFiles) ? (
+        {/* Show sandbox status when not ready */}
+        {hasSandbox && !isSandboxReady && sandboxStatus ? (
+          <div className="h-full w-full flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
+            <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+              <KortixLoader size="medium" />
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                  {sandboxStatus === 'STARTING' && (isAutoStarting ? 'Waking up computer...' : 'Computer starting...')}
+                  {sandboxStatus === 'OFFLINE' && 'Computer offline'}
+                  {sandboxStatus === 'FAILED' && 'Computer unavailable'}
+                  {sandboxStatus === 'UNKNOWN' && 'Initializing...'}
+                </h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  {sandboxStatus === 'STARTING' && 'Files will appear once the computer is ready.'}
+                  {sandboxStatus === 'OFFLINE' && 'The computer is currently stopped. Attempting to start...'}
+                  {sandboxStatus === 'FAILED' && 'There was an issue starting the computer.'}
+                  {sandboxStatus === 'UNKNOWN' && 'Setting up your workspace...'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (isLoadingFiles || isLoadingVersionFiles) ? (
           <div className="h-full w-full max-w-full flex flex-col items-center justify-center gap-2 min-w-0">
             <SprintLabLoader size="medium" />
             <p className="text-xs text-muted-foreground">
@@ -1975,20 +2055,9 @@ export function FileBrowserView({
                       {isInlineLibrary ? 'Nothing here yet' : 'Files not available'}
                     </h3>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      {isInlineLibrary 
+                      {isInlineLibrary
                         ? 'Your files will appear here once you start a conversation.'
                         : 'A computer will be created when you start working on this task. Files will appear here once ready.'}
-                    </p>
-                  </>
-                ) : !isComputerStarted ? (
-                  <>
-                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                      {isInlineLibrary ? 'Waking up...' : 'Computer starting...'}
-                    </h3>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      {isInlineLibrary 
-                        ? 'Just a moment while things get ready.'
-                        : 'Files will appear once the computer is ready.'}
                     </p>
                   </>
                 ) : (
@@ -1997,7 +2066,7 @@ export function FileBrowserView({
                       {isInlineLibrary ? 'No files yet' : 'Directory is empty'}
                     </h3>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      {isInlineLibrary 
+                      {isInlineLibrary
                         ? 'Start a conversation to create files.'
                         : 'This folder doesn\'t contain any files yet.'}
                     </p>
@@ -2015,6 +2084,7 @@ export function FileBrowserView({
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-full min-w-0">
                   {mainPanelFiles.map((file) => {
                     const isPresentation = isPresentationFolder(file);
+                    const slideInfo = isPresentationSlide(file);
                     return (
                       <div
                         key={file.path}
@@ -2027,12 +2097,12 @@ export function FileBrowserView({
                             {getFileIcon(file, 'header')}
                           </div>
                           <span className="flex-1 font-medium truncate text-sm">{file.name}</span>
-                          {isPresentation && (
+                          {(isPresentation || slideInfo.isSlide) && (
                             <Badge 
                               variant="secondary" 
                               className="text-[10px] px-1.5 py-0 bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
                             >
-                              Slides
+                              {slideInfo.isSlide ? `Slide ${slideInfo.slideNumber}` : 'Slides'}
                             </Badge>
                           )}
                           
@@ -2091,6 +2161,7 @@ export function FileBrowserView({
                             sandboxId={sandboxId}
                             project={project}
                             isPresentationFolder={isPresentation}
+                            slideInfo={slideInfo}
                             fallbackIcon={getFileIcon(file, 'large')}
                           />
                         </div>

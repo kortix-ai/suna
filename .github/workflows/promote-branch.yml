@@ -1,0 +1,153 @@
+name: Promote Branch
+
+on:
+  workflow_dispatch:
+    inputs:
+      promotion:
+        description: 'Promotion path'
+        required: true
+        type: choice
+        options:
+          - 'main → staging'
+          - 'staging → PRODUCTION'
+      confirm:
+        description: 'Type "promote" to confirm'
+        required: true
+      skip_e2e_check:
+        description: 'EMERGENCY: Skip E2E check (type "emergency" to bypass)'
+        required: false
+        type: string
+        default: ''
+  schedule:
+    # Every Monday at 23:59 UTC - automatic staging → PRODUCTION
+    # Cron format: minute hour day-of-month month day-of-week
+    # 1 = Monday (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+    - cron: '59 23 * * 1'
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    # For manual: require confirmation. For scheduled: always run (staging → PRODUCTION)
+    if: github.event_name == 'schedule' || github.event.inputs.confirm == 'promote'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+
+      - name: Determine source and target branches
+        id: branches
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            # Scheduled run: staging → PRODUCTION
+            echo "source=staging" >> $GITHUB_OUTPUT
+            echo "target=PRODUCTION" >> $GITHUB_OUTPUT
+            echo "🕐 Scheduled promotion: staging → PRODUCTION"
+          else
+            # Manual run: parse the promotion input
+            PROMOTION="${{ github.event.inputs.promotion }}"
+            if [ "$PROMOTION" == "main → staging" ]; then
+              echo "source=main" >> $GITHUB_OUTPUT
+              echo "target=staging" >> $GITHUB_OUTPUT
+              echo "👤 Manual promotion: main → staging"
+            elif [ "$PROMOTION" == "staging → PRODUCTION" ]; then
+              echo "source=staging" >> $GITHUB_OUTPUT
+              echo "target=PRODUCTION" >> $GITHUB_OUTPUT
+              echo "👤 Manual promotion: staging → PRODUCTION"
+            fi
+          fi
+
+      - name: Check E2E tests passed
+        if: github.event.inputs.skip_e2e_check != 'emergency'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SOURCE="${{ steps.branches.outputs.source }}"
+          echo "🔍 Checking E2E test status on $SOURCE branch..."
+
+          # Get the latest E2E test run for the source branch
+          LATEST_RUN=$(gh run list --workflow="E2E API Tests" --branch="$SOURCE" --status=completed --limit=1 --json conclusion,headSha,createdAt -q '.[0]')
+
+          if [ -z "$LATEST_RUN" ] || [ "$LATEST_RUN" == "null" ]; then
+            echo "⚠️ No E2E test runs found for $SOURCE branch"
+            echo "Run E2E tests first or use emergency bypass (skip_e2e_check=emergency)"
+            exit 1
+          fi
+
+          CONCLUSION=$(echo "$LATEST_RUN" | jq -r '.conclusion')
+          HEAD_SHA=$(echo "$LATEST_RUN" | jq -r '.headSha')
+          CREATED_AT=$(echo "$LATEST_RUN" | jq -r '.createdAt')
+
+          # Get the current HEAD of source branch
+          CURRENT_SHA=$(git rev-parse origin/$SOURCE)
+
+          echo "Latest E2E run: $CONCLUSION (sha: ${HEAD_SHA:0:7}, date: $CREATED_AT)"
+          echo "Current $SOURCE HEAD: ${CURRENT_SHA:0:7}"
+
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "❌ E2E tests did not pass (status: $CONCLUSION)"
+            echo "Fix the tests or use emergency bypass (skip_e2e_check=emergency)"
+            exit 1
+          fi
+
+          echo "✅ E2E tests passed"
+
+      - name: Emergency bypass warning
+        if: github.event.inputs.skip_e2e_check == 'emergency'
+        run: |
+          echo "⚠️ ============================================== ⚠️"
+          echo "⚠️  EMERGENCY BYPASS: Skipping E2E test check!   ⚠️"
+          echo "⚠️  Triggered by: ${{ github.actor }}            ⚠️"
+          echo "⚠️ ============================================== ⚠️"
+
+      - name: Promote ${{ steps.branches.outputs.source }} → ${{ steps.branches.outputs.target }}
+        run: |
+          SOURCE="${{ steps.branches.outputs.source }}"
+          TARGET="${{ steps.branches.outputs.target }}"
+          
+          echo "📋 Promoting $SOURCE → $TARGET"
+          
+          git fetch origin
+          git checkout $TARGET
+          git reset --hard origin/$SOURCE
+          git push origin $TARGET --force
+          
+          echo "✅ Successfully promoted $SOURCE → $TARGET"
+
+      - name: Trigger Docker Build (for staging)
+        if: steps.branches.outputs.target == 'staging'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: staging-updated
+          client-payload: '{"ref": "staging"}'
+
+      - name: Trigger Docker Build (for PRODUCTION)
+        if: steps.branches.outputs.target == 'PRODUCTION'
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: production-updated
+          client-payload: '{"ref": "PRODUCTION"}'
+
+      - name: Summary
+        run: |
+          echo "## Branch Promotion Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Source**: \`${{ steps.branches.outputs.source }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Target**: \`${{ steps.branches.outputs.target }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Trigger**: ${{ github.event_name == 'schedule' && 'Scheduled (Monday 23:59 UTC)' || 'Manual' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Actor**: ${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ github.event.inputs.skip_e2e_check }}" == "emergency" ]; then
+            echo "- **⚠️ E2E Check**: BYPASSED (emergency)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "- **E2E Check**: Passed" >> $GITHUB_STEP_SUMMARY
+          fi

@@ -155,8 +155,7 @@ class MessageBuilder:
             "updated_at": stream_start,
             "agent_id": agent_id,
             "agent_version_id": None,
-            "created_by_user_id": None,
-            "is_omitted": False
+            "created_by_user_id": None
         }
 
     def build_tool_call_chunk(
@@ -245,8 +244,7 @@ class MessageBuilder:
             "updated_at": stream_start,
             "agent_id": None,
             "agent_version_id": None,
-            "created_by_user_id": None,
-            "is_omitted": False
+            "created_by_user_id": None
         }
 
     def build_tool_result(
@@ -316,8 +314,7 @@ class MessageBuilder:
             "updated_at": stream_start,
             "agent_id": None,
             "agent_version_id": None,
-            "created_by_user_id": None,
-            "is_omitted": False
+            "created_by_user_id": None
         }
 
     def build_tool_completed(
@@ -356,8 +353,7 @@ class MessageBuilder:
             "updated_at": stream_start,
             "agent_id": None,
             "agent_version_id": None,
-            "created_by_user_id": None,
-            "is_omitted": False
+            "created_by_user_id": None
         }
 
     def build_finish_message(self, finish_reason: str, tools_executed: bool = False) -> Dict[str, Any]:
@@ -376,8 +372,7 @@ class MessageBuilder:
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "agent_id": None,
             "agent_version_id": None,
-            "created_by_user_id": None,
-            "is_omitted": False
+            "created_by_user_id": None
         }
 
     def build_termination_message(self) -> Dict[str, Any]:
@@ -395,8 +390,7 @@ class MessageBuilder:
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "agent_id": None,
             "agent_version_id": None,
-            "created_by_user_id": None,
-            "is_omitted": False
+            "created_by_user_id": None
         }
 
     def build_terminating_tool_status(self, tc_id: str, tool_name: str) -> Dict[str, Any]:
@@ -415,8 +409,7 @@ class MessageBuilder:
             "updated_at": datetime.now(timezone.utc).isoformat(),
             "agent_id": None,
             "agent_version_id": None,
-            "created_by_user_id": None,
-            "is_omitted": False
+            "created_by_user_id": None
         }
 
     def build_status_message(self, status: str, message: str) -> Dict[str, Any]:

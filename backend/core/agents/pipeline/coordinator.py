@@ -353,6 +353,17 @@ class PipelineCoordinator:
         if memory_context and messages:
             messages_with_context = [memory_context] + messages
         
+        # Fast pre-check - only do full validation if needed
+        from core.agentpress.context_manager import ContextManager
+        context_manager = ContextManager()
+        if context_manager.needs_tool_ordering_repair(messages_with_context):
+            logger.warning("[PipelineCoordinator] Tool ordering issue detected, repairing...")
+            messages_with_context = context_manager.repair_tool_call_pairing(messages_with_context)
+            is_ordered, out_of_order_ids, _ = context_manager.validate_tool_call_ordering(messages_with_context)
+            if not is_ordered:
+                messages_with_context = context_manager.remove_out_of_order_tool_pairs(messages_with_context, out_of_order_ids)
+                messages_with_context = context_manager.repair_tool_call_pairing(messages_with_context)
+        
         from core.agentpress.prompt_caching import add_cache_control
         cached_system = add_cache_control(system_prompt)
         prepared_messages = [cached_system] + messages_with_context

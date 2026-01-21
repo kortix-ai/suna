@@ -51,6 +51,7 @@ from core.services import api_keys_api
 from core.notifications import api as notifications_api
 from core.services.orphan_cleanup import cleanup_orphaned_agent_runs
 from auth import api as auth_api
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 
 
 if sys.platform == "win32":
@@ -157,7 +158,6 @@ async def lifespan(app: FastAPI):
         
         yield
 
-        # Shutdown sequence: Set flag first so health checks fail
         _is_shutting_down = True
         logger.info(f"Starting graceful shutdown for instance {instance_id}")
         
@@ -300,20 +300,25 @@ async def log_requests_middleware(request: Request, call_next):
         raise
 
 # Define allowed origins based on environment
-allowed_origins = ["https://www.sprintlab.id", "https://sprintlab.id", "https://prod-test.sprintlab.id"]
-allow_origin_regex = None
+allowed_origins = [
+    "https://www.sprintlab.id",
+    "https://sprintlab.id",
+    "https://dev.sprintlab.id",
+    "https://staging.sprintlab.id",
+    "https://prod-test.sprintlab.id",
+]
+# Allow all *.sprintlab.id subdomains and Vercel preview deployments
+allow_origin_regex = r"https://([a-z0-9-]+\.)?sprintlab\.id|https://.*-sprintlab\.vercel\.app"
 
-# Add staging-specific origins
+# Add local origins for development
 if config.ENV_MODE == EnvMode.LOCAL:
     allowed_origins.append("http://localhost:3000")
     allowed_origins.append("http://127.0.0.1:3000")
 
 # Add staging-specific origins
 if config.ENV_MODE == EnvMode.STAGING:
-    allowed_origins.append("https://staging.suna.so")
+    allowed_origins.append("https://staging.sprintlab.id")
     allowed_origins.append("http://localhost:3000")
-    # Allow Vercel preview deployments
-    allow_origin_regex = r"https://.*-sprintlabai\.vercel\.app"
 
 app.add_middleware(
     CORSMiddleware,
@@ -429,6 +434,19 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "instance_id": instance_id,
     }
+
+@api_router.post("/prewarm", summary="Prewarm User Caches", operation_id="prewarm_user", tags=["system"])
+async def prewarm_user_caches(user_id: str = Depends(verify_and_get_user_id_from_jwt)):
+    async def _do_prewarm():
+        try:
+            from core.cache.runtime_cache import prewarm_user_agents
+            await prewarm_user_agents(user_id)
+        except Exception as e:
+            logger.warning(f"[PREWARM] Background prewarm failed for {user_id[:8]}...: {e}")
+    
+    asyncio.create_task(_do_prewarm())
+    
+    return {"status": "accepted", "message": "Prewarming started in background"}
 
 @api_router.get("/metrics", summary="System Metrics", operation_id="metrics", tags=["system"])
 async def metrics_endpoint():

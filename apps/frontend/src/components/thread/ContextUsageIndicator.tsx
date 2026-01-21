@@ -7,16 +7,12 @@ import { cn } from "@/lib/utils"
 interface ContextUsageIndicatorProps {
   threadId: string
   modelName?: string
-  radius?: number
-  strokeWidth?: number
   className?: string
 }
 
 export const ContextUsageIndicator = ({
   threadId,
   modelName,
-  radius: radiusProp = 28,
-  strokeWidth: strokeWidthProp = 4,
   className,
 }: ContextUsageIndicatorProps) => {
   const contextUsage = useContextUsageStore((state) => state.getUsage(threadId))
@@ -25,6 +21,7 @@ export const ContextUsageIndicator = ({
   if (!contextUsage || !contextUsage.current_tokens) return null
 
   const { current_tokens } = contextUsage
+  console.log("current_tokens", current_tokens)
 
   const modelData = modelName ? allModels.find((m) => m.id === modelName) : null
   const context_window = modelData?.contextWindow || 200000
@@ -33,31 +30,35 @@ export const ContextUsageIndicator = ({
   const rawPct = (current_tokens / context_window) * 100
   const percentage = Math.max(0, Math.min(100, rawPct))
 
-  const radius = radiusProp
-  const strokeWidth = strokeWidthProp
+  const getColor = (pct: number) => {
+    if (pct < 60) return "text-muted-foreground"
+    if (pct < 75) return "text-blue-500"
+    if (pct < 90) return "text-orange-500"
+    return "text-red-500"
+  }
+
+  const colorClass = getColor(percentage)
+  const radius = 8
+  const strokeWidth = 2
   const circumference = 2 * Math.PI * radius
   const strokeDashoffset = circumference - (percentage / 100) * circumference
-
-  const getNeutralStroke = (pct: number) => (pct < 75 ? "var(--color-muted-foreground)" : "var(--foreground)")
-  const strokeColor = getNeutralStroke(percentage)
-
   const size = (radius + strokeWidth) * 2
 
   return (
-    <div className={cn("absolute inset-0 pointer-events-none", className)}>
-      <TooltipProvider>
-        <Tooltip delayDuration={250}>
-          <TooltipTrigger asChild>
+    <TooltipProvider>
+      <Tooltip delayDuration={200}>
+        <TooltipTrigger asChild>
+          <div className={cn(
+            "flex items-center justify-center cursor-help transition-opacity hover:opacity-100",
+            percentage < 60 ? "opacity-60" : "opacity-100",
+            className
+          )}>
             <svg
-              className={cn("absolute inset-0 -rotate-90 w-full h-full pointer-events-auto")}
+              className="w-6 h-6 -rotate-90"
               viewBox={`0 0 ${size} ${size}`}
               role="img"
               aria-label={`Context usage ${percentage.toFixed(1)} percent`}
             >
-              <title>Context usage</title>
-              <desc>{`${current_tokens.toLocaleString()} of ${context_window.toLocaleString()} tokens used.`}</desc>
-
-              {/* background circle stays neutral */}
               <circle
                 cx={radius + strokeWidth}
                 cy={radius + strokeWidth}
@@ -65,11 +66,8 @@ export const ContextUsageIndicator = ({
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={strokeWidth}
-                className="stroke-current opacity-50"
-                style={{ stroke: "var(--foreground)" }}
+                className="stroke-muted-foreground/30"
               />
-
-              {/* progress circle: neutral grayscale only */}
               <circle
                 cx={radius + strokeWidth}
                 cy={radius + strokeWidth}
@@ -80,32 +78,35 @@ export const ContextUsageIndicator = ({
                 strokeDasharray={circumference}
                 strokeDashoffset={strokeDashoffset}
                 strokeLinecap="round"
-                className="stroke-current transition-[stroke-dashoffset,stroke] duration-300 ease-out"
-                style={{ stroke: strokeColor }}
+                className={cn(
+                  "transition-all duration-500 ease-out",
+                  colorClass
+                )}
               />
             </svg>
-          </TooltipTrigger>
-          <TooltipContent
-            side="top"
-            align="center"
-            className="w-auto max-w-xs px-2.5 py-1.5 text-xs"
-          >
-            <div className="flex flex-col gap-0.5">
-              <p className="font-medium">Context: {percentage.toFixed(1)}%</p>
-              <p className="text-muted-foreground">
-                {current_tokens.toLocaleString()} / {context_window.toLocaleString()} tokens
-              </p>
-              {displayModelName && <p className="text-muted-foreground">{displayModelName}</p>}
+          </div>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          align="center"
+          className="px-3 py-2 text-xs"
+        >
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              <span className="font-semibold">Context:</span>
+              <span className={cn("font-mono", colorClass)}>{percentage.toFixed(1)}%</span>
             </div>
-          </TooltipContent>
-        </Tooltip>
-      </TooltipProvider>
-
-      <span className="sr-only">
-        Context usage {percentage.toFixed(1)} percent. {current_tokens.toLocaleString()} of{" "}
-        {context_window.toLocaleString()} tokens used
-        {displayModelName ? ` for model ${displayModelName}.` : "."}
-      </span>
-    </div>
+            <div className="text-muted-foreground font-mono text-[10px]">
+              {current_tokens.toLocaleString()} / {context_window.toLocaleString()}
+            </div>
+            {displayModelName && (
+              <div className="text-muted-foreground text-[10px] mt-0.5 border-t border-border/50 pt-1">
+                {displayModelName}
+              </div>
+            )}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   )
 }

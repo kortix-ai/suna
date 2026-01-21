@@ -48,7 +48,7 @@ export function getFrontendUrl(): string {
     return 'https://kortix.com';
   }
   if (BACKEND_URL.includes('staging.api') || BACKEND_URL.includes('staging-api')) {
-    return 'https://staging.suna.so';
+    return 'https://staging.kortix.com';
   }
 
   // Fall back to environment-based defaults
@@ -56,7 +56,7 @@ export function getFrontendUrl(): string {
     case EnvMode.PRODUCTION:
       return 'https://kortix.com';
     case EnvMode.STAGING:
-      return 'https://staging.suna.so';
+      return 'https://staging.kortix.com';
     case EnvMode.LOCAL:
     default:
       return 'http://localhost:3000';

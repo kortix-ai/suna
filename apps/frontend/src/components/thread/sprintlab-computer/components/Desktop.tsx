@@ -14,7 +14,7 @@ import { Project } from '@/lib/api/threads';
 import { ApiMessageType } from '@/components/thread/types';
 import { ViewType } from '@/stores/sprintlab-computer-store';
 import { cn } from '@/lib/utils';
-import { useSandboxDetails } from '@/hooks/files/use-sandbox-details';
+import { useSandboxDetails, useSandboxStatus } from '@/hooks/files/use-sandbox-details';
 import { useDirectoryQuery, fetchFileContent, fileQueryKeys } from '@/hooks/files/use-file-queries';
 import { useFileUpload } from '@/hooks/files/use-file-mutations';
 import { DesktopContextMenu } from './DesktopContextMenu';
@@ -206,8 +206,11 @@ export const SandboxDesktop = memo(function SandboxDesktop({
   const fileUploadMutation = useFileUpload();
   const { session } = useAuth();
 
+  // Legacy details for backwards compat
   const { data: sandboxDetails, isLoading: sandboxLoading, error: sandboxError } = useSandboxDetails(project_id);
-  
+  // New unified status with health checks
+  const { data: sandboxStatus, isLoading: statusLoading } = useSandboxStatus(project_id);
+
   const sandboxId = project?.sandbox?.id;
   const { data: workspaceFiles = [] } = useDirectoryQuery(sandboxId, '/workspace', {
     enabled: !!sandboxId,
@@ -723,7 +726,8 @@ export const SandboxDesktop = memo(function SandboxDesktop({
           {sandboxInfoOpen && (
             <SandboxInfoCard
               sandboxDetails={sandboxDetails}
-              isLoading={sandboxLoading}
+              sandboxStatus={sandboxStatus}
+              isLoading={sandboxLoading || statusLoading}
             />
           )}
           {visibleWindows.map(window => {
@@ -914,7 +918,8 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                   >
                     <SystemInfoContent
                       sandboxDetails={sandboxDetails}
-                      isLoading={sandboxLoading}
+                      sandboxStatus={sandboxStatus}
+                      isLoading={sandboxLoading || statusLoading}
                     />
                   </AppWindow>
                 );

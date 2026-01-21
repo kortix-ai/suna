@@ -77,7 +77,9 @@ export interface ConversionFunnel {
   visitors: number;
   signups: number;
   subscriptions: number;
-  subscriber_emails: string[];  // Emails of new paid subscribers for this date
+  // Breakdown by platform (clickable to see emails)
+  web_subscriber_emails: string[];
+  app_subscriber_emails: string[];
   visitor_to_signup_rate: number;
   signup_to_subscription_rate: number;
   overall_conversion_rate: number;
@@ -591,14 +593,15 @@ export function useChurnByDate(dateFrom: string, dateTo: string) {
     queryKey: ['admin', 'analytics', 'churn-by-date', dateFrom, dateTo],
     queryFn: async (): Promise<ChurnByDateResponse> => {
       const response = await backendApi.get(
-        `/admin/analytics/arr/churn?date_from=${dateFrom}&date_to=${dateTo}`
+        `/admin/analytics/arr/churn?date_from=${dateFrom}&date_to=${dateTo}`,
+        { timeout: 90000 }
       );
       if (response.error) {
         throw new Error(response.error.message);
       }
       return response.data;
     },
-    staleTime: 60000, // 1 minute
+    staleTime: 300000, // 5 minutes cache
     enabled: !!dateFrom && !!dateTo,
     retry: 1,
   });
@@ -747,7 +750,9 @@ export interface TaskPerformance {
   running_runs: number;
   pending_runs: number;  // Not started yet
   success_rate: number;  // completed / (completed + failed + stopped)
-  avg_duration_seconds: number | null;
+  avg_duration_seconds: number | null;  // Excludes stuck tasks (> 1hr)
+  avg_duration_with_stuck_seconds: number | null;  // Includes all tasks
+  stuck_task_count: number;  // Tasks with duration > 1hr (likely stuck)
   runs_by_status: Record<string, number>;
 }
 
@@ -853,6 +858,7 @@ export interface TierProfitability {
   provider: 'stripe' | 'revenuecat';
   payment_count: number;
   unique_users: number;
+  usage_users: number;  // Users with LLM usage (from credit_ledger)
   total_revenue: number;
   total_cost: number;
   total_actual_cost: number;
@@ -890,6 +896,10 @@ export interface ProfitabilitySummary {
   unique_paying_users: number;   // Users who made a payment
   unique_active_users: number;   // Users who had usage (including free)
   paying_user_emails: string[];  // Emails of paying users (clickable)
+
+  total_active_subscriptions: number;
+  stripe_active_subscriptions: number;
+  revenuecat_active_subscriptions: number;
 
   // Meta
   period_start: string;

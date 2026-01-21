@@ -10,9 +10,9 @@
     </array>
     <key>com.apple.developer.associated-domains</key>
     <array>
-      <string>applinks:sprintlab.ai</string>
-      <string>applinks:www.sprintlab.ai</string>
-      <string>applinks:staging.suna.so</string>
+<string>applinks:sprintlab.id</string>
+      <string>applinks:www.sprintlab.id</string>
+      <string>applinks:staging.sprintlab.id</string>
     </array>
   </dict>
 </plist>

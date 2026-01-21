@@ -66,11 +66,15 @@ function UserProfileSection({ user }: { user: any }) {
 function FloatingMobileMenuButton() {
   const { setOpenMobile, openMobile, setOpen } = useSidebar();
   const isMobile = useIsMobile();
+  const pathname = usePathname();
 
-  if (!isMobile || openMobile) return null;
+  // Don't show floating button on dashboard - it has its own inline menu button
+  const isDashboard = pathname === '/dashboard';
+
+  if (!isMobile || openMobile || isDashboard) return null;
 
   return (
-    <div className="fixed top-6 left-4 z-50">
+    <div className="fixed top-6 left-6 z-50">
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
@@ -283,8 +287,11 @@ export function SidebarLeft({
     >
       <SidebarHeader className="pt-4 overflow-visible">
         <div className="relative flex h-[32px] items-center">
-          {/* Logo - fixed position at 32px from left, never moves */}
-          <div className="absolute left-6 flex items-center justify-center group/logo">
+          {/* Logo - fixed position, matches dashboard header on mobile */}
+          <div className={cn(
+            "absolute flex items-center justify-center group/logo",
+            "left-6"
+          )}>
 
             <Link href="/dashboard" onClick={() => isMobile && setOpenMobile(false)} className="flex items-center justify-center">
               <SprintLabLogo 
@@ -511,7 +518,7 @@ export function SidebarLeft({
         )
       } */}
 
-      <div className={cn("pb-4", state === 'collapsed' ? "px-6" : "px-6")}>
+      <div className="px-6 pb-4">
         <UserProfileSection user={user} />
       </div>
       <SidebarRail />

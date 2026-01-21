@@ -348,6 +348,7 @@
     "scheduledTriggers": "计划触发器",
     "appTriggers": "应用触发器",
     "limitsExceeded": "你已达到聊天限制。升级你的计划以创建更多聊天。",
+    "modeSubtitle": "选择一个模式，开始使用模板和示例",
     "agentInitiatedSuccessfully": "智能体启动成功",
     "aiAssistantReady": "你的 AI 助手已准备好帮助",
     "greetings": {
@@ -935,9 +936,12 @@
   },
   "suna": {
     "samplePrompts": "示例提示",
+    "examplePrompts": "示例提示",
     "chooseStyle": "选择风格",
     "chooseTemplate": "选择模板",
     "chooseOutputFormat": "选择输出格式",
+    "chooseCanvasAction": "选择画布操作",
+    "chooseVideoStyle": "选择视频风格",
     "preferredCharts": "首选图表",
     "whatWouldYouLike": "你想完成什么？",
     "describeTask": "描述你想让你的 Worker 完成的任务...",
@@ -966,6 +970,14 @@
       "anime": "动漫",
       "impressionist": "印象派",
       "surreal": "超现实"
+    },
+    "videoStyles": {
+      "cinematic": "电影风格",
+      "product": "产品展示",
+      "animation": "动画",
+      "nature": "自然",
+      "abstract": "抽象",
+      "adventure": "冒险"
     },
     "templates": {
       "minimalist": {
@@ -1101,6 +1113,24 @@
       "wordcloud": "词云",
       "stacked": "堆叠柱状图",
       "area": "面积图"
+    },
+    "canvasActions": {
+      "create": {
+        "name": "新建",
+        "description": "从零开始生成"
+      },
+      "edit": {
+        "name": "编辑图片",
+        "description": "修改现有图片"
+      },
+      "upscale": {
+        "name": "放大",
+        "description": "增强和改进"
+      },
+      "remove-bg": {
+        "name": "移除背景",
+        "description": "删除背景"
+      }
     },
     "prompts": {
       "image": {

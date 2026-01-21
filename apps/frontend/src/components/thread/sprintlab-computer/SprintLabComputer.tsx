@@ -34,6 +34,7 @@ import { SandboxDesktop } from './components/Desktop';
 import { EnhancedFileBrowser } from './components/EnhancedFileBrowser';
 import { useDirectoryQuery } from '@/hooks/files';
 import { getToolNumber } from '@/hooks/messages/tool-tracking';
+import { useSandboxStatusWithAutoStart } from '@/hooks/files/use-sandbox-details';
 
 export interface ToolCallInput {
   toolCall: ToolCallData;
@@ -134,10 +135,14 @@ export const SprintLabComputer = memo(function SprintLabComputer({
 
   const effectiveSandboxIdForQuery = sandboxId || project?.sandbox?.id || '';
   const { data: enhancedBrowserFiles = [] } = useDirectoryQuery(
-    effectiveSandboxIdForQuery, 
-    currentPath, 
+    effectiveSandboxIdForQuery,
+    currentPath,
     { enabled: !!effectiveSandboxIdForQuery && isMaximized }
   );
+
+  // Fetch unified sandbox status (combines Daytona state + service health)
+  // Auto-starts OFFLINE sandboxes when detected
+  const { data: sandboxStatus } = useSandboxStatusWithAutoStart(projectId);
 
   const currentViewRef = useRef(activeView);
 
@@ -731,6 +736,7 @@ export const SprintLabComputer = memo(function SprintLabComputer({
             showFilesTab={true}
             isMaximized={isMaximized}
             isSuiteMode={isSuiteMode}
+            sandboxStatus={sandboxStatus?.status}
             onToggleSuiteMode={() => {
               if (isSuiteMode) {
                 // Exit suite mode - restore previous size
@@ -790,6 +796,7 @@ export const SprintLabComputer = memo(function SprintLabComputer({
             currentView={activeView}
             onViewChange={setActiveView}
             showFilesTab={true}
+            sandboxStatus={sandboxStatus?.status}
           />
 
           <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>

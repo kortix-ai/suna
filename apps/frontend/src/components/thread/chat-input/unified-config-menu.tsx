@@ -483,16 +483,10 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
         >
             {onAgentSelect ? (
                 <div className="flex items-center gap-2 min-w-0 max-w-[180px]">
-                    {isSprintLabAgent ? (
-                        <SprintLabLogo variant="logomark" size={14} />
-                    ) : (
-                        <>
-                            {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 24)}
-                            <span className="truncate text-sm font-medium">
-                                {displayAgent?.name}
-                            </span>
-                        </>
-                    )}
+{renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent, 24)}
+                    <span className="truncate text-sm font-medium">
+                        {isSprintLabAgent ? 'SprintLab' : displayAgent?.name}
+                    </span>
                     <ChevronDown size={12} className="opacity-60 flex-shrink-0" />
                 </div>
             ) : (
@@ -560,14 +554,12 @@ const LoggedInMenu: React.FC<UnifiedConfigMenuProps> = memo(function LoggedInMen
                                         <SpotlightCard className={cn("transition-colors cursor-pointer bg-transparent", isSprintLabAgent ? "p-2" : "")}>
                                             <DropdownMenuSub>
                                                 <DropdownMenuSubTrigger className="flex items-center gap-3 text-sm cursor-pointer px-1 hover:bg-transparent focus:bg-transparent data-[state=open]:bg-transparent w-full">
-                                                    {isSprintLabAgent ? (
-                                                        <SprintLabLogo variant="logomark" size={14} />
-                                                    ) : (
-                                                        <div className="flex items-center">
-                                                            {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
-                                                            <span className="flex-1 truncate font-medium text-left">{displayAgent?.name}</span>
-                                                        </div>
-                                                    )}
+<div className="flex items-center gap-3">
+                                                        {renderAgentIcon(isLoading && !displayAgent ? placeholderSunaAgent : displayAgent)}
+                                                        <span className="flex-1 truncate font-medium text-left">
+                                                            {isSprintLabAgent ? 'SprintLab' : displayAgent?.name}
+                                                        </span>
+                                                    </div>
                                                 </DropdownMenuSubTrigger>
                                                 <DropdownMenuPortal>
                                                     <DropdownMenuSubContent className="w-[320px] px-0 py-3 border-[1.5px] border-border rounded-2xl max-h-[500px] overflow-hidden" sideOffset={8}>

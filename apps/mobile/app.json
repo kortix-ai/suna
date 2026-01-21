@@ -21,9 +21,9 @@
       "bundleIdentifier": "com.sprintlab.app",
       "usesAppleSignIn": true,
       "associatedDomains": [
-        "applinks:sprintlab.id",
+"applinks:sprintlab.id",
         "applinks:www.sprintlab.id",
-        "applinks:staging.suna.so"
+        "applinks:staging.sprintlab.id"
       ],
       "infoPlist": {
         "NSCameraUsageDescription": "SprintLab needs camera access to let you capture photos and attach them to your saved conversations with the AI Worker. For example, you can photograph a document, whiteboard, or product for analysis and receive insights that are stored in your conversation history.",
@@ -57,7 +57,7 @@
             },
             {
               "scheme": "https",
-              "host": "staging.suna.so",
+              "host": "staging.kortix.com",
               "pathPrefix": "/auth/callback"
             }
           ],
@@ -82,7 +82,7 @@
             },
             {
               "scheme": "https",
-              "host": "staging.suna.so",
+              "host": "staging.kortix.com",
               "pathPrefix": "/share"
             }
           ],

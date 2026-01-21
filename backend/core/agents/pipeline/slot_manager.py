@@ -56,12 +56,18 @@ def _get_tier_from_config(tier_name: str) -> Dict[str, Any]:
             'thread_limit': 10,
             'project_limit': 20,
             'concurrent_runs': 1,
+            'custom_workers_limit': 0,
+            'scheduled_triggers_limit': 0,
+            'app_triggers_limit': 0,
         }
     return {
         'name': tier_obj.name,
         'thread_limit': tier_obj.thread_limit,
         'project_limit': tier_obj.project_limit,
         'concurrent_runs': tier_obj.concurrent_runs,
+        'custom_workers_limit': tier_obj.custom_workers_limit,
+        'scheduled_triggers_limit': tier_obj.scheduled_triggers_limit,
+        'app_triggers_limit': tier_obj.app_triggers_limit,
     }
 
 

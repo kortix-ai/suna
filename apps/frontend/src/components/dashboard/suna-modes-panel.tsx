@@ -61,6 +61,14 @@ import {
   Cloud,
   BarChart2,
   AreaChart,
+  ClipboardList,
+  FileCode2,
+  Handshake,
+  ChartColumnBig,
+  Footprints,
+  Library,
+  ShieldCheck,
+  NotebookPen,
   type LucideIcon,
 } from 'lucide-react';
 import { SprintLabLoader } from '@/components/ui/sprintlab-loader';
@@ -224,14 +232,14 @@ const modes: Mode[] = [
     options: {
       title: 'Choose a template',
       items: [
-        { id: 'prd', name: 'PRD', description: 'Product requirements document', icon: 'fileText' },
-        { id: 'technical', name: 'Technical', description: 'Technical documentation', icon: 'fileCode' },
-        { id: 'proposal', name: 'Proposal', description: 'Business proposal', icon: 'lightbulb' },
-        { id: 'report', name: 'Report', description: 'Detailed report format', icon: 'fileBarChart' },
-        { id: 'guide', name: 'Guide', description: 'Step-by-step guide', icon: 'bookOpen' },
-        { id: 'wiki', name: 'Wiki', description: 'Knowledge base article', icon: 'bookMarked' },
-        { id: 'policy', name: 'Policy', description: 'Policy document', icon: 'scale' },
-        { id: 'meeting-notes', name: 'Meeting Notes', description: 'Meeting minutes', icon: 'users' },
+        { id: 'prd', name: 'PRD', description: 'Product requirements document', icon: 'clipboardList' },
+        { id: 'technical', name: 'Technical', description: 'Technical documentation', icon: 'fileCode2' },
+        { id: 'proposal', name: 'Proposal', description: 'Business proposal', icon: 'handshake' },
+        { id: 'report', name: 'Report', description: 'Detailed report format', icon: 'chartColumnBig' },
+        { id: 'guide', name: 'Guide', description: 'Step-by-step guide', icon: 'footprints' },
+        { id: 'wiki', name: 'Wiki', description: 'Knowledge base article', icon: 'library' },
+        { id: 'policy', name: 'Policy', description: 'Policy document', icon: 'shieldCheck' },
+        { id: 'meeting-notes', name: 'Meeting Notes', description: 'Meeting minutes', icon: 'notebookPen' },
       ],
     },
   },
@@ -382,6 +390,14 @@ const getOptionIcon = (iconType: string, className: string = "w-5 h-5") => {
     bookMarked: <BookMarked className={className} />,
     scale: <Scale className={className} />,
     users: <Users className={className} />,
+    clipboardList: <ClipboardList className={className} />,
+    fileCode2: <FileCode2 className={className} />,
+    handshake: <Handshake className={className} />,
+    chartColumnBig: <ChartColumnBig className={className} />,
+    footprints: <Footprints className={className} />,
+    library: <Library className={className} />,
+    shieldCheck: <ShieldCheck className={className} />,
+    notebookPen: <NotebookPen className={className} />,
     // Slides templates
     palette: <Palette className={className} />,
     circle: <Circle className={className} />,
@@ -417,150 +433,6 @@ const getOptionIcon = (iconType: string, className: string = "w-5 h-5") => {
 const getRandomPrompts = (prompts: SamplePrompt[], count: number): SamplePrompt[] => {
   const shuffled = [...prompts].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
-};
-
-// Output format icon component
-const OutputFormatIcon = ({ type, className }: { type: string; className?: string }) => {
-  const baseClasses = cn('w-full h-full', className);
-  
-  switch (type) {
-    case 'spreadsheet':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Table background */}
-          <rect x="10" y="20" width="80" height="60" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="4"/>
-          
-          {/* Header row background */}
-          <rect x="10" y="20" width="80" height="12" fill="currentColor" opacity="0.15" rx="4" />
-          
-          {/* Grid lines - horizontal */}
-          <line x1="10" y1="32" x2="90" y2="32" stroke="currentColor" strokeWidth="2" opacity="0.4"/>
-          <line x1="10" y1="44" x2="90" y2="44" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          <line x1="10" y1="56" x2="90" y2="56" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          <line x1="10" y1="68" x2="90" y2="68" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          
-          {/* Grid lines - vertical */}
-          <line x1="30" y1="20" x2="30" y2="80" stroke="currentColor" strokeWidth="1.5" opacity="0.3"/>
-          <line x1="50" y1="20" x2="50" y2="80" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          <line x1="70" y1="20" x2="70" y2="80" stroke="currentColor" strokeWidth="1" opacity="0.25"/>
-          
-          {/* Data cells */}
-          <rect x="14" y="24" width="12" height="5" fill="currentColor" opacity="0.7" rx="1"/>
-          <rect x="34" y="36" width="12" height="5" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="54" y="48" width="12" height="5" fill="currentColor" opacity="0.4" rx="1"/>
-          <rect x="74" y="60" width="12" height="5" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="14" y="48" width="12" height="5" fill="currentColor" opacity="0.4" rx="1"/>
-          <rect x="34" y="60" width="12" height="5" fill="currentColor" opacity="0.5" rx="1"/>
-          
-          {/* Formula bar */}
-          <rect x="10" y="10" width="80" height="7" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.2" rx="2"/>
-          <text x="13" y="15" fontSize="6" opacity="0.4">fx</text>
-          <rect x="22" y="12" width="30" height="3" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'dashboard':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Top left widget - KPI */}
-          <rect x="10" y="15" width="35" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3" rx="4"/>
-          <rect x="10" y="15" width="35" height="8" fill="currentColor" opacity="0.1" rx="4"/>
-          <circle cx="17" cy="19" r="2" fill="currentColor" opacity="0.6"/>
-          <rect x="22" y="17.5" width="18" height="3" fill="currentColor" opacity="0.4" rx="1"/>
-          <text x="15" y="36" fontSize="12" opacity="0.7" fontWeight="600">42K</text>
-          
-          {/* Top right widget - Line chart */}
-          <rect x="52" y="15" width="38" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3" rx="4"/>
-          <path d="M 58,35 L 65,30 L 72,32 L 79,28 L 84,31" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round"/>
-          <circle cx="58" cy="35" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="65" cy="30" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="72" cy="32" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="79" cy="28" r="1.5" fill="currentColor" opacity="0.7"/>
-          <circle cx="84" cy="31" r="1.5" fill="currentColor" opacity="0.7"/>
-          
-          {/* Bottom widget - Bar chart */}
-          <rect x="10" y="50" width="80" height="35" fill="none" stroke="currentColor" strokeWidth="1.5" opacity="0.3" rx="4"/>
-          <rect x="18" y="65" width="8" height="15" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="32" y="60" width="8" height="20" fill="currentColor" opacity="0.6" rx="1"/>
-          <rect x="46" y="62" width="8" height="18" fill="currentColor" opacity="0.5" rx="1"/>
-          <rect x="60" y="55" width="8" height="25" fill="currentColor" opacity="0.7" rx="1"/>
-          <rect x="74" y="58" width="8" height="22" fill="currentColor" opacity="0.6" rx="1"/>
-          <line x1="10" y1="80" x2="90" y2="80" stroke="currentColor" strokeWidth="1" opacity="0.2"/>
-        </svg>
-      );
-    
-    case 'report':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Document */}
-          <rect x="20" y="10" width="60" height="80" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          {/* Page fold effect */}
-          <path d="M 70,10 L 80,20 L 80,10 Z" fill="currentColor" opacity="0.1"/>
-          
-          {/* Title */}
-          <rect x="28" y="20" width="44" height="5" fill="currentColor" opacity="0.8" rx="1"/>
-          
-          {/* Subtitle */}
-          <rect x="28" y="28" width="30" height="3" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          {/* Paragraph lines */}
-          <rect x="28" y="36" width="44" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="28" y="40" width="40" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="28" y="44" width="42" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          {/* Chart section */}
-          <rect x="28" y="52" width="44" height="22" fill="currentColor" opacity="0.05" rx="2"/>
-          <rect x="34" y="64" width="6" height="8" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="42" y="60" width="6" height="12" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="50" y="62" width="6" height="10" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="58" y="58" width="6" height="14" fill="currentColor" opacity="0.8" rx="0.5"/>
-          <line x1="28" y1="72" x2="72" y2="72" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
-          
-          {/* More text */}
-          <rect x="28" y="78" width="38" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="28" y="82" width="44" height="2" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'slides':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          {/* Main slide */}
-          <rect x="15" y="20" width="70" height="52" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.4" rx="3"/>
-          
-          {/* Title area */}
-          <rect x="22" y="28" width="35" height="5" fill="currentColor" opacity="0.8" rx="1"/>
-          
-          {/* Subtitle */}
-          <rect x="22" y="36" width="25" height="3" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          {/* Content bullets */}
-          <circle cx="24" cy="46" r="1" fill="currentColor" opacity="0.6"/>
-          <rect x="28" y="45" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <circle cx="24" cy="52" r="1" fill="currentColor" opacity="0.6"/>
-          <rect x="28" y="51" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <circle cx="24" cy="58" r="1" fill="currentColor" opacity="0.6"/>
-          <rect x="28" y="57" width="22" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          {/* Image placeholder */}
-          <rect x="58" y="44" width="20" height="20" fill="currentColor" opacity="0.1" rx="2"/>
-          <circle cx="68" cy="54" r="6" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3"/>
-          <path d="M 60,60 L 65,55 L 70,58 L 76,52" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/>
-          
-          {/* Slide indicators */}
-          <rect x="20" y="78" width="10" height="6" fill="currentColor" opacity="0.3" rx="1"/>
-          <rect x="35" y="78" width="10" height="6" fill="currentColor" opacity="0.7" rx="1"/>
-          <rect x="50" y="78" width="10" height="6" fill="currentColor" opacity="0.3" rx="1"/>
-          <rect x="65" y="78" width="10" height="6" fill="currentColor" opacity="0.3" rx="1"/>
-        </svg>
-      );
-    
-    default:
-      return <Table className="w-6 h-6" />;
-  }
 };
 
 // Slide template icon component
@@ -820,217 +692,6 @@ const SlideTemplateIcon = ({ type, className }: { type: string; className?: stri
     
     default:
       return <Presentation className="w-6 h-6" />;
-  }
-};
-
-// Docs template icon component
-const DocsTemplateIcon = ({ type, className }: { type: string; className?: string }) => {
-  const baseClasses = cn('w-full h-full', className);
-  
-  switch (type) {
-    case 'prd':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="30" height="5" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="30" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="38" width="15" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="44" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="48" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="25" y="55" width="18" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="28" y="60" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <path d="M 29,61 L 30,62.5 L 31.5,60.5" stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.7"/>
-          <rect x="33" y="61" width="20" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="28" y="65" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <rect x="33" y="66" width="18" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="73" width="15" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="78" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'technical':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="25" height="4" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="29" width="18" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="37" width="48" height="15" fill="currentColor" opacity="0.1" rx="2"/>
-          <text x="28" y="44" fontSize="6" opacity="0.5" fontFamily="monospace">{'<code>'}</text>
-          <rect x="30" y="46" width="20" height="1" fill="currentColor" opacity="0.4" rx="0.3"/>
-          <rect x="32" y="49" width="18" height="1" fill="currentColor" opacity="0.4" rx="0.3"/>
-          
-          <rect x="25" y="57" width="15" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="62" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="66" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="70" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="72" cy="25" r="3" fill="currentColor" opacity="0.6"/>
-          <path d="M 70,25 L 71,26 L 74,23" stroke="var(--background)" strokeWidth="1" fill="none"/>
-        </svg>
-      );
-    
-    case 'proposal':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <circle cx="50" cy="28" r="6" fill="currentColor" opacity="0.6"/>
-          <path d="M 50,34 L 50,40" stroke="currentColor" strokeWidth="2" opacity="0.6"/>
-          <path d="M 50,40 L 46,45 M 50,40 L 54,45" stroke="currentColor" strokeWidth="2" opacity="0.6"/>
-          
-          <rect x="30" y="50" width="40" height="3" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="32" y="56" width="36" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          <rect x="25" y="63" width="22" height="15" fill="currentColor" opacity="0.15" rx="2"/>
-          <rect x="29" y="68" width="5" height="6" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="36" y="70" width="5" height="4" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          <rect x="52" y="63" width="22" height="15" fill="currentColor" opacity="0.15" rx="2"/>
-          <circle cx="63" cy="70" r="4" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.6"/>
-          <path d="M 66,73 L 69,76" stroke="currentColor" strokeWidth="1.5" opacity="0.6"/>
-        </svg>
-      );
-    
-    case 'report':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="35" height="4" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="29" width="25" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <line x1="25" y1="37" x2="75" y2="37" stroke="currentColor" strokeWidth="1" opacity="0.2"/>
-          
-          <rect x="25" y="42" width="48" height="18" fill="currentColor" opacity="0.08" rx="2"/>
-          <rect x="30" y="52" width="5" height="6" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="50" width="5" height="8" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="44" y="48" width="5" height="10" fill="currentColor" opacity="0.8" rx="0.5"/>
-          <rect x="51" y="50" width="5" height="8" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="58" y="53" width="5" height="5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <line x1="25" y1="58" x2="73" y2="58" stroke="currentColor" strokeWidth="0.5" opacity="0.3"/>
-          
-          <rect x="25" y="66" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="70" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="74" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="78" width="43" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'guide':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          <rect x="25" y="22" width="28" height="4" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="29" width="20" height="2" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <circle cx="30" cy="41" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="44" fontSize="6" fill="var(--background)" fontWeight="bold">1</text>
-          <rect x="37" y="38" width="15" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="42" width="30" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="30" cy="53" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="56" fontSize="6" fill="var(--background)" fontWeight="bold">2</text>
-          <rect x="37" y="50" width="18" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="54" width="32" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="30" cy="65" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="68" fontSize="6" fill="var(--background)" fontWeight="bold">3</text>
-          <rect x="37" y="62" width="16" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-          <rect x="37" y="66" width="28" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="30" cy="77" r="4" fill="currentColor" opacity="0.7"/>
-          <text x="28" y="80" fontSize="6" fill="var(--background)" fontWeight="bold">4</text>
-          <rect x="37" y="74" width="20" height="2.5" fill="currentColor" opacity="0.6" rx="0.5"/>
-        </svg>
-      );
-    
-    case 'wiki':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <path d="M 30,23 L 35,32 L 40,23 L 45,32 L 50,23" stroke="currentColor" strokeWidth="2" fill="none" opacity="0.6" strokeLinecap="round"/>
-          
-          <rect x="25" y="38" width="25" height="3" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="25" y="44" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="48" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="52" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="25" y="59" width="20" height="3" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="65" width="35" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="69" width="38" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="55" y="38" width="18" height="14" fill="currentColor" opacity="0.12" rx="2"/>
-          <circle cx="64" cy="45" r="3" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5"/>
-          <path d="M 57,49 L 60,46 L 64,48 L 71,43" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.5"/>
-          
-          <path d="M 30,78 L 35,75 L 40,78" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.4" strokeLinecap="round"/>
-          <path d="M 45,78 L 50,75 L 55,78" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.4" strokeLinecap="round"/>
-        </svg>
-      );
-    
-    case 'policy':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <path d="M 48,20 L 50,25 L 52,20" stroke="currentColor" strokeWidth="1" fill="none" opacity="0.4"/>
-          <circle cx="50" cy="30" r="5" stroke="currentColor" strokeWidth="1.5" fill="none" opacity="0.6"/>
-          <path d="M 50,35 L 50,38" stroke="currentColor" strokeWidth="1.5" opacity="0.6"/>
-          <circle cx="50" cy="39" r="1" fill="currentColor" opacity="0.6"/>
-          
-          <rect x="30" y="45" width="40" height="3" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="32" y="51" width="36" height="2" fill="currentColor" opacity="0.5" rx="0.5"/>
-          
-          <line x1="28" y1="58" x2="72" y2="58" stroke="currentColor" strokeWidth="0.5" opacity="0.2"/>
-          
-          <rect x="25" y="62" width="48" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="25" y="66" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="70" width="48" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="74" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="78" width="45" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <rect x="60" y="80" width="15" height="3" fill="currentColor" opacity="0.15" rx="1"/>
-          <text x="62" y="83" fontSize="5" opacity="0.5">Sign</text>
-        </svg>
-      );
-    
-    case 'meeting-notes':
-      return (
-        <svg viewBox="0 0 100 100" className={baseClasses} fill="currentColor">
-          <rect x="20" y="15" width="60" height="70" fill="none" stroke="currentColor" strokeWidth="2" opacity="0.3" rx="3"/>
-          
-          <circle cx="28" cy="23" r="2" fill="currentColor" opacity="0.6"/>
-          <circle cx="35" cy="23" r="2" fill="currentColor" opacity="0.6"/>
-          <circle cx="42" cy="23" r="2" fill="currentColor" opacity="0.6"/>
-          
-          <rect x="25" y="30" width="30" height="3.5" fill="currentColor" opacity="0.8" rx="1"/>
-          <rect x="58" y="30" width="15" height="3" fill="currentColor" opacity="0.5" rx="1"/>
-          
-          <rect x="25" y="38" width="12" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="43" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <rect x="30" y="44" width="25" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="25" y="48" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <path d="M 26,49 L 27,50.5 L 28.5,48.5" stroke="currentColor" strokeWidth="0.8" fill="none" opacity="0.7"/>
-          <rect x="30" y="49" width="28" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          <rect x="25" y="53" width="3" height="3" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.5"/>
-          <rect x="30" y="54" width="22" height="1.5" fill="currentColor" opacity="0.4" rx="0.5"/>
-          
-          <rect x="25" y="62" width="15" height="2.5" fill="currentColor" opacity="0.7" rx="0.5"/>
-          <rect x="25" y="67" width="35" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="71" width="40" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          <rect x="25" y="75" width="32" height="1.5" fill="currentColor" opacity="0.3" rx="0.5"/>
-          
-          <circle cx="72" cy="78" r="4" fill="currentColor" opacity="0.6"/>
-          <path d="M 70,78 L 71.5,79.5 L 74,77" stroke="var(--background)" strokeWidth="1" fill="none"/>
-        </svg>
-      );
-    
-    default:
-      return <FileText className="w-6 h-6" />;
   }
 };
 
@@ -1325,6 +986,11 @@ export function SunaModesPanel({
   const selectedTemplateId = controlledSelectedTemplate ?? uncontrolledSelectedTemplateId;
   const setSelectedTemplateId = onTemplateChange ?? setUncontrolledSelectedTemplateId;
 
+  // State for mode modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<ModeType | null>(null);
+  const modalModeData = modalMode ? modes.find((m) => m.id === modalMode) : null;
+
   // Randomize prompts when mode changes or on mount
   useEffect(() => {
     if (selectedMode) {
@@ -1352,6 +1018,10 @@ export function SunaModesPanel({
   
   // Handler for chart selection toggle
   const handleChartToggle = (chartId: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     const newCharts = selectedCharts.includes(chartId) 
       ? selectedCharts.filter(id => id !== chartId)
       : [...selectedCharts, chartId];
@@ -1360,17 +1030,29 @@ export function SunaModesPanel({
   
   // Handler for output format selection
   const handleOutputFormatSelect = (formatId: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     const newFormat = selectedOutputFormat === formatId ? null : formatId;
     setSelectedOutputFormat(newFormat);
   };
   
-  // Handler for prompt selection - just pass through without modification
+  // Handler for prompt selection - selects the mode and sets the prompt
   const handlePromptSelect = (prompt: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     onSelectPrompt(prompt);
   };
 
-  // Handler for template selection (only stores the template ID)
+  // Handler for template selection (stores the template ID and selects the mode)
   const handleTemplateSelect = (templateId: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     setSelectedTemplateId(templateId);
   };
 
@@ -1401,15 +1083,24 @@ export function SunaModesPanel({
 
   return (
     <div className="w-full space-y-4">
-      {/* Mode Tabs - SprintLab minimal design */}
-      <div className="flex items-center justify-center animate-in fade-in-0 zoom-in-95 duration-300 px-2 sm:px-0">
-        <div className="grid grid-cols-3 gap-2 sm:inline-flex sm:gap-2">
+{/* Mode Tabs - SprintLab minimal design */}
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
+        className="flex items-center justify-center"
+      >
+        <div className="w-full grid grid-cols-3 gap-2 sm:w-auto sm:inline-flex sm:gap-2">
           {modes.map((mode) => {
             const isActive = selectedMode === mode.id;
             return (
               <motion.button
                 key={mode.id}
-                onClick={() => onModeSelect(isActive ? null : mode.id)}
+                onClick={() => {
+                  setModalMode(mode.id);
+                  setIsModalOpen(true);
+                  // Don't select the mode yet - only select when user makes a choice in the modal
+                }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
@@ -1438,12 +1129,20 @@ export function SunaModesPanel({
             );
           })}
         </div>
-      </div>
+      </motion.div>
 
-      {/* Mode-specific Options - Only show when a mode is selected */}
-      {selectedMode && currentMode?.options && (
-        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-75">
-          <p className="text-xs text-muted-foreground/60">
+      {/* Mode-specific Options - Hidden, now shown in modal
+      <AnimatePresence mode="wait">
+        {selectedMode && currentMode?.options && (
+          <motion.div 
+            key={`options-${selectedMode}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            className="space-y-3"
+          >
+            <p className="text-xs text-muted-foreground/60">
             {currentMode.options.title === 'Choose a style' ? t('chooseStyle') :
              currentMode.options.title === 'Choose a template' ? t('chooseTemplate') :
              currentMode.options.title === 'Choose output format' ? t('chooseOutputFormat') :
@@ -1513,7 +1212,7 @@ export function SunaModesPanel({
                           className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
                         />
                       )}
-                      {/* Preview button overlay */}
+                      -- Preview button overlay --
                       <Button
                         variant="secondary"
                         size="sm"
@@ -1662,7 +1361,7 @@ export function SunaModesPanel({
                       ) : (
                         <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
                       )}
-                      {/* Lock overlay for free users */}
+                      -- Lock overlay for free users --
                       {isFreeTier && (
                         <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
                           <Lock className="w-5 h-5 text-muted-foreground" />
@@ -1678,14 +1377,24 @@ export function SunaModesPanel({
               <ScrollBar orientation="horizontal" />
             </ScrollArea>
           )}
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      */}
 
-      {/* Chart Types Section (for Data mode) - Only show when data is selected */}
-      {selectedMode === 'data' && currentMode?.chartTypes && (
-        <div className="space-y-3 animate-in fade-in-0 zoom-in-95 duration-300 delay-150">
-          <p className="text-xs text-muted-foreground/60">
-            {t('preferredCharts')}
+      {/* Chart Types Section - Hidden, now shown in modal
+      <AnimatePresence mode="wait">
+        {selectedMode === 'data' && currentMode?.chartTypes && (
+          <motion.div 
+            key="chart-types"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1], delay: 0.05 }}
+            className="space-y-3"
+          >
+            <p className="text-xs text-muted-foreground/60">
+              {t('preferredCharts')}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {currentMode.chartTypes.items.map((chart) => {
@@ -1720,14 +1429,23 @@ export function SunaModesPanel({
                 </Card>
               );
             })}
-          </div>
-        </div>
-      )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      */}
 
-      {/* Sample Prompts - Visual Grid with Thumbnails */}
-      {selectedMode && displayedPrompts && displayedPrompts.length > 0 && (
-        <div className="animate-in fade-in-0 zoom-in-95 duration-300">
-          {/* Upgrade Banner for Video Mode - Free Users */}
+      {/* Sample Prompts - Hidden, now shown in modal
+      <AnimatePresence mode="wait">
+        {selectedMode && displayedPrompts && displayedPrompts.length > 0 && (
+          <motion.div
+            key={`prompts-${selectedMode}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+          >
+          -- Upgrade Banner for Video Mode - Free Users --
           {selectedMode === 'video' && isFreeTier && (
             <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-card border border-border">
               <div className="flex items-center gap-3">
@@ -1781,12 +1499,748 @@ export function SunaModesPanel({
               showTitle={false}
             />
           </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      */}
+
+      {/* Mode-specific Options Expanded - Hidden, now shown in modal
+      <AnimatePresence mode="wait">
+        {selectedMode && currentMode?.options && (
+          <motion.div 
+            key={`options-expanded-${selectedMode}`}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
+            className="space-y-3"
+          >
+            <h3 className="text-sm font-medium text-muted-foreground">
+            {currentMode.options.title === 'Choose a style' ? t('chooseStyle') :
+             currentMode.options.title === 'Choose a template' ? t('chooseTemplate') :
+             currentMode.options.title === 'Choose output format' ? t('chooseOutputFormat') :
+             currentMode.options.title}
+          </h3>
+          
+          {selectedMode === 'image' && (
+            <ScrollArea className="w-full">
+              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 pb-2">
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-primary/5 transition-all duration-200 border border-border rounded-xl overflow-hidden"
+                    onClick={() => handlePromptSelect(`Generate an image using ${item.name.toLowerCase()} style`)}
+                  >
+                    <div className="w-full aspect-square bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 20vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {t(`styles.${item.id}`) || item.name}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+
+          {selectedMode === 'slides' && (
+            <ScrollArea className="w-full">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pb-2">
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className={cn(
+                      "flex flex-col gap-2 cursor-pointer group p-2 hover:bg-primary/5 transition-all duration-200 border rounded-xl relative",
+                      selectedTemplateId === item.id
+                        ? "border-primary bg-primary/5"
+                        : "border-border"
+                    )}
+                    onClick={() => handleTemplateSelect(item.id)}
+                  >
+                    <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, 25vw"
+                          className="object-contain"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <SlideTemplateIcon 
+                          type={item.id} 
+                          className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                        />
+                      )}
+                      -- Preview button overlay --
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        className="absolute top-2 right-2 h-8 w-8 p-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 hover:bg-white dark:bg-zinc-800/90 dark:hover:bg-zinc-800 shadow-md"
+                        onMouseEnter={() => handlePreloadPdf(item.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handlePdfPreview(item.id, item.name);
+                        }}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
+                        {t(`templates.${item.id}.name`) || item.name}
+                      </p>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">
+                          {t(`templates.${item.id}.description`) || item.description}
+                        </p>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+
+          {selectedMode === 'docs' && (
+            <ScrollArea className="w-full">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 pb-2">
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col gap-2 cursor-pointer group p-3 hover:bg-primary/5 transition-all duration-200 border border-border rounded-xl"
+                    onClick={() =>
+                      handlePromptSelect(
+                        `Create a ${item.name} document: ${item.description}`
+                      )
+                    }
+                  >
+                    <div className="w-full aspect-[3/4] bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 flex items-center justify-center p-3">
+                      <div className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200">
+                        {getOptionIcon(item.icon, "w-8 h-8")}
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <p className="text-xs font-medium text-foreground group-hover:text-primary transition-colors duration-200">
+                        {t(`templates.${item.id}.name`) || item.name}
+                      </p>
+                      {item.description && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">
+                          {t(`templates.${item.id}.description`) || item.description}
+                        </p>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+
+          {selectedMode === 'data' && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+              {currentMode.options.items.map((item) => {
+                const isSelected = selectedOutputFormat === item.id;
+                return (
+                  <Card
+                    key={item.id}
+                    className={cn(
+                      "p-3 cursor-pointer transition-all duration-200 group rounded-xl relative",
+                      isSelected 
+                        ? "bg-primary/10 border-primary border-2" 
+                        : "border border-border hover:bg-primary/5 hover:border-primary/30"
+                    )}
+                    onClick={() => handleOutputFormatSelect(item.id)}
+                  >
+                    <AnimatePresence>
+                      {isSelected && (
+                        <motion.div
+                          initial={{ scale: 0, opacity: 0 }}
+                          animate={{ scale: 1, opacity: 1 }}
+                          exit={{ scale: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-primary rounded-full flex items-center justify-center z-10"
+                        >
+                          <Check className="w-4 h-4 text-primary-foreground" strokeWidth={3} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                    <div className="flex flex-col items-center gap-2.5 text-center">
+                      <div className={cn(
+                        "w-full aspect-square rounded-lg flex items-center justify-center p-3 transition-all duration-200",
+                        isSelected 
+                          ? "bg-primary/15" 
+                          : "bg-muted/30 group-hover:bg-muted/50"
+                      )}>
+                        {getOptionIcon(
+                          (item as { icon?: string }).icon || '',
+                          cn(
+                            "w-8 h-8 transition-colors duration-200",
+                            isSelected 
+                              ? "text-primary" 
+                              : "text-foreground/50 group-hover:text-primary/70"
+                          )
+                        )}
+                      </div>
+                      <div className="space-y-0.5">
+                        <p className={cn(
+                          "text-xs font-semibold transition-colors duration-200",
+                          isSelected 
+                            ? "text-primary" 
+                            : "text-foreground/80 group-hover:text-primary"
+                        )}>
+                          {t(`outputFormats.${item.id}.name`) || item.name}
+                        </p>
+                        {item.description && (
+                          <p className="text-xs text-muted-foreground">
+                            {t(`outputFormats.${item.id}.description`) || item.description}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedMode === 'canvas' && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {currentMode.options.items.map((item) => {
+                // Generate action-specific prompts
+                const getCanvasPrompt = (actionId: string) => {
+                  switch (actionId) {
+                    case 'create':
+                      return 'Create a new image for me: [describe what you want]';
+                    case 'edit':
+                      return 'Edit my image: [I will upload the image and describe what changes I want]';
+                    case 'upscale':
+                      return 'Upscale my image to higher resolution - I will upload the image';
+                    case 'remove-bg':
+                      return 'Remove the background from my image - I will upload the image';
+                    default:
+                      return `${item.name}: ${item.description}`;
+                  }
+                };
+                return (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none"
+                    onClick={() => handlePromptSelect(getCanvasPrompt(item.id))}
+                  >
+                    <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 50vw, 25vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Palette className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedMode === 'video' && (
+            <ScrollArea className="w-full">
+              <div className={cn(
+                "grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2",
+                isFreeTier && "opacity-50 pointer-events-none"
+              )}>
+                {currentMode.options.items.map((item) => (
+                  <Card
+                    key={item.id}
+                    className="flex flex-col items-center gap-2 cursor-pointer group p-2 bg-transparent hover:bg-transparent transition-all duration-200 border border-border hover:border-border rounded-xl overflow-hidden shadow-none relative"
+                    onClick={() => !isFreeTier && handlePromptSelect(`Generate a ${item.name.toLowerCase()} style video`)}
+                  >
+                    <div className="w-full aspect-square rounded-lg border border-transparent group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                      {item.image ? (
+                        <Image 
+                          src={item.image} 
+                          alt={item.name}
+                          fill
+                          sizes="(max-width: 640px) 33vw, (max-width: 768px) 25vw, 16vw"
+                          className="object-cover"
+                          loading="lazy"
+                        />
+                      ) : (
+                        <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      )}
+                      -- Lock overlay for free users --
+                      {isFreeTier && (
+                        <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
+                          <Lock className="w-5 h-5 text-muted-foreground" />
+                        </div>
+                      )}
+                    </div>
+                    <span className="text-xs text-center text-foreground/70 group-hover:text-foreground transition-colors duration-200 font-medium">
+                      {item.name}
+                    </span>
+                  </Card>
+                ))}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+      */}
+
+      {/* Chart Types Section Expanded - Hidden, now shown in modal
+      <AnimatePresence mode="wait">
+        {selectedMode === 'data' && currentMode?.chartTypes && (
+          <motion.div 
+            key="chart-types-expanded"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -4 }}
+            transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1], delay: 0.05 }}
+            className="space-y-3"
+          >
+            <h3 className="text-sm font-medium text-muted-foreground">
+              {t('preferredCharts')}
+            </h3>
+            <ScrollArea className="w-full">
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 pb-2">
+              {currentMode.chartTypes.items.map((chart) => {
+                const isSelected = selectedCharts.includes(chart.id);
+                return (
+                  <motion.div
+                    key={chart.id}
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ duration: 0.1 }}
+                  >
+                    <Card
+                      className={cn(
+                        "flex flex-col items-center gap-2 cursor-pointer group p-3 transition-all duration-200 rounded-xl relative",
+                        isSelected 
+                          ? "bg-primary/10 border-primary border-2" 
+                          : "border border-border hover:bg-primary/5 hover:border-primary/30"
+                      )}
+                      onClick={() => handleChartToggle(chart.id)}
+                    >
+                      <AnimatePresence>
+                        {isSelected && (
+                          <motion.div
+                            initial={{ scale: 0, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            exit={{ scale: 0, opacity: 0 }}
+                            transition={{ duration: 0.2, type: "spring", stiffness: 300 }}
+                            className="absolute -top-2 -right-2 w-5 h-5 bg-primary rounded-full flex items-center justify-center z-10"
+                          >
+                            <Check className="w-3 h-3 text-primary-foreground" strokeWidth={3} />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                      <div className={cn(
+                        "w-full aspect-square rounded-lg flex items-center justify-center p-2.5 transition-all duration-200",
+                        isSelected 
+                          ? "bg-primary/15" 
+                          : "bg-muted/20 group-hover:bg-muted/35"
+                      )}>
+                        <ChartIcon 
+                          type={chart.id} 
+                          className={cn(
+                            "transition-colors duration-200",
+                            isSelected 
+                              ? "text-primary" 
+                              : "text-foreground/60 group-hover:text-primary"
+                          )} 
+                        />
+                      </div>
+                      <span className={cn(
+                        "text-xs text-center transition-colors duration-200 font-medium",
+                        isSelected 
+                          ? "text-primary" 
+                          : "text-foreground/70 group-hover:text-foreground"
+                      )}>
+                        {t(`charts.${chart.id}`) || chart.name}
+                      </span>
+                    </Card>
+                  </motion.div>
+                );
+              })}
+              </div>
+              <ScrollBar orientation="horizontal" />
+            </ScrollArea>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      */}
+
+      {/* Mode Selection Modal */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => {
+        setIsModalOpen(open);
+        if (!open) {
+          setModalMode(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl h-[70vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              {modalModeData?.icon}
+              <span>{modalModeData?.label}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 overflow-auto">
+            <div className="px-6">
+            <div className="py-4 space-y-6">
+              {/* Mode-specific Options */}
+              {modalModeData?.options && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {modalModeData.options.title === 'Choose a style' ? t('chooseStyle') :
+                     modalModeData.options.title === 'Choose a template' ? t('chooseTemplate') :
+                     modalModeData.options.title === 'Choose output format' ? t('chooseOutputFormat') :
+                     modalModeData.options.title === 'Choose canvas action' ? t('chooseCanvasAction') :
+                     modalModeData.options.title === 'Choose video style' ? t('chooseVideoStyle') :
+                     modalModeData.options.title}
+                  </p>
+                  
+                  {/* Image Styles */}
+                  {modalMode === 'image' && (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden"
+                          onClick={() => {
+                            handlePromptSelect(`Generate an image using ${item.name.toLowerCase()} style`);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-full aspect-square bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                            {item.image ? (
+                              <Image 
+                                src={item.image} 
+                                alt={item.name}
+                                fill
+                                sizes="(max-width: 640px) 33vw, 25vw"
+                                className="object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                            )}
+                          </div>
+                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                            {t(`styles.${item.id}`) || item.name}
+                          </span>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Slides Templates */}
+                  {modalMode === 'slides' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className={cn(
+                            "flex flex-col gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border rounded-xl relative",
+                            selectedTemplateId === item.id
+                              ? "border-primary bg-primary/5"
+                              : "border-border"
+                          )}
+                          onClick={() => {
+                            handleTemplateSelect(item.id);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
+                            {item.image ? (
+                              <Image 
+                                src={item.image} 
+                                alt={item.name}
+                                fill
+                                sizes="(max-width: 640px) 50vw, 33vw"
+                                className="object-contain"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <SlideTemplateIcon 
+                                type={item.id} 
+                                className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                              />
+                            )}
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors duration-200">
+                              {t(`templates.${item.id}.name`) || item.name}
+                            </p>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Docs Types */}
+                  {modalMode === 'docs' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
+                          onClick={() => {
+                            handlePromptSelect(`Create a ${item.name} document: ${item.description}`);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-12 h-12 rounded-2xl bg-muted/50 group-hover:bg-primary/10 border border-border/50 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
+                            {getOptionIcon((item as { icon?: string }).icon || '')}
+                          </div>
+                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                            {t(`templates.${item.id}.name`) || item.name}
+                          </span>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Data Output Formats */}
+                  {modalMode === 'data' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => {
+                        const isSelected = selectedOutputFormat === item.id;
+                        return (
+                          <Card
+                            key={item.id}
+                            className={cn(
+                              "flex flex-col items-center gap-3 cursor-pointer group p-4 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                              isSelected 
+                                ? "bg-primary/10 border-primary" 
+                                : "bg-transparent hover:bg-muted border-border"
+                            )}
+                            onClick={() => {
+                              handleOutputFormatSelect(item.id);
+                              setIsModalOpen(false);
+                            }}
+                          >
+                            <div className={cn(
+                              "w-12 h-12 rounded-2xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                              isSelected
+                                ? "bg-primary/15 border-primary/30 text-primary"
+                                : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                            )}>
+                              {getOptionIcon((item as { icon?: string }).icon || '')}
+                            </div>
+                            <span className={cn(
+                              "text-xs text-center transition-colors duration-200 font-medium",
+                              isSelected
+                                ? "text-foreground"
+                                : "text-muted-foreground group-hover:text-foreground"
+                            )}>
+                              {t(`outputFormats.${item.id}.name`) || item.name}
+                            </span>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Canvas Actions */}
+                  {modalMode === 'canvas' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => {
+                        const getCanvasPrompt = (actionId: string) => {
+                          switch (actionId) {
+                            case 'create': return 'Create a new image for me: [describe what you want]';
+                            case 'edit': return 'Edit my image: [I will upload the image and describe what changes I want]';
+                            case 'upscale': return 'Upscale my image to higher resolution - I will upload the image';
+                            case 'remove-bg': return 'Remove the background from my image - I will upload the image';
+                            default: return `${item.name}: ${item.description}`;
+                          }
+                        };
+                        return (
+                          <Card
+                            key={item.id}
+                            className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
+                            onClick={() => {
+                              handlePromptSelect(getCanvasPrompt(item.id));
+                              setIsModalOpen(false);
+                            }}
+                          >
+                            <div className="w-12 h-12 rounded-2xl bg-muted/50 border border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
+                              {getOptionIcon((item as { icon?: string }).icon || '')}
+                            </div>
+                            <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                              {t(`canvasActions.${item.id}.name`) || item.name}
+                            </span>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Video Styles */}
+                  {modalMode === 'video' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden"
+                          onClick={() => {
+                            handlePromptSelect(`Create a ${item.name.toLowerCase()} style video`);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-full aspect-video bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                            {item.image ? (
+                              <Image 
+                                src={item.image} 
+                                alt={item.name}
+                                fill
+                                sizes="(max-width: 640px) 50vw, 33vw"
+                                className="object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                            )}
+                          </div>
+                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                            {t(`videoStyles.${item.id}`) || item.name}
+                          </span>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Chart Types for Data Mode */}
+              {modalMode === 'data' && modalModeData?.chartTypes && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t('preferredCharts')}
+                  </p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                    {modalModeData.chartTypes.items.map((chart) => {
+                      const isSelected = selectedCharts.includes(chart.id);
+                      return (
+                        <Card
+                          key={chart.id}
+                          className={cn(
+                            "flex flex-col items-center gap-2 cursor-pointer group p-3 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                            isSelected 
+                              ? "bg-primary/10 border-primary" 
+                              : "bg-transparent hover:bg-muted border-border"
+                          )}
+                          onClick={() => handleChartToggle(chart.id)}
+                        >
+                          <div className={cn(
+                            "w-10 h-10 rounded-xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                            isSelected
+                              ? "bg-primary/15 border-primary/30 text-primary"
+                              : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                          )}>
+                            {getOptionIcon((chart as { icon?: string }).icon || '')}
+                          </div>
+                          <span className={cn(
+                            "text-xs text-center transition-colors duration-200 font-medium",
+                            isSelected 
+                              ? "text-foreground" 
+                              : "text-muted-foreground group-hover:text-foreground"
+                          )}>
+                            {t(`charts.${chart.id}`) || chart.name}
+                          </span>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Sample Prompts - for modes that have options (not research) */}
+              {modalMode !== 'research' && modalModeData?.samplePrompts && modalModeData.samplePrompts.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t('examplePrompts')}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {modalModeData.samplePrompts.slice(0, 6).map((prompt, index) => (
+                      <Card
+                        key={index}
+                        className="p-3 cursor-pointer hover:bg-muted transition-colors border border-border rounded-xl group"
+                        onClick={() => {
+                          handlePromptSelect(prompt.text);
+                          setIsModalOpen(false);
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2">
+                            {prompt.text}
+                          </p>
+                          <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground flex-shrink-0 transition-colors" />
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Research mode - only prompts, no options */}
+              {modalMode === 'research' && modalModeData?.samplePrompts && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t('examplePrompts')}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {modalModeData.samplePrompts.slice(0, 8).map((prompt, index) => (
+                      <Card
+                        key={index}
+                        className="p-3 cursor-pointer hover:bg-muted transition-colors border border-border rounded-xl group"
+                        onClick={() => {
+                          handlePromptSelect(prompt.text);
+                          setIsModalOpen(false);
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2">
+                            {prompt.text}
+                          </p>
+                          <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground flex-shrink-0 transition-colors" />
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
       {/* PDF Preview Modal */}
       <Dialog open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-0">
             <DialogTitle>
               Template Preview: {selectedTemplate?.name}

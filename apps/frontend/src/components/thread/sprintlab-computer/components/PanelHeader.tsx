@@ -1,7 +1,7 @@
 'use client';
 
 import { memo, useState, useEffect } from 'react';
-import { Minimize2, Wifi, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging, FolderOpen, Activity } from 'lucide-react';
+import { Minimize2, Wifi, BatteryLow, BatteryMedium, BatteryFull, BatteryCharging, FolderOpen, Activity, Loader2, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { DrawerTitle } from '@/components/ui/drawer';
 import { ViewType } from '@/stores/sprintlab-computer-store';
@@ -10,6 +10,7 @@ import { ViewToggle } from './ViewToggle';
 import { ToolbarButtons } from './ToolbarButtons';
 import Image from 'next/image';
 import { motion } from 'framer-motion';
+import type { SandboxStatus } from '@/hooks/files/use-sandbox-details';
 
 function useBatteryStatus() {
   const [batteryInfo, setBatteryInfo] = useState<{ level: number; charging: boolean } | null>(null);
@@ -82,12 +83,53 @@ function BatteryIcon({ level, charging }: { level: number; charging: boolean }) 
   return <BatteryFull className="h-4.5 w-4.5" />;
 }
 
-function StatusBar() {
+function SandboxStatusIndicator({ status }: { status?: SandboxStatus }) {
+  if (!status) return null;
+
+  switch (status) {
+    case 'LIVE':
+      // Solid green dot
+      return (
+        <span className="h-2 w-2 rounded-full bg-green-500" title="Live" />
+      );
+    case 'STARTING':
+      // Flashing/pulsing green dot
+      return (
+        <span className="relative flex h-2 w-2" title="Starting">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500" />
+        </span>
+      );
+    case 'FAILED':
+      // Red dot
+      return (
+        <span className="h-2 w-2 rounded-full bg-red-500" title="Services unhealthy" />
+      );
+    case 'OFFLINE':
+      // Gray dot
+      return (
+        <span className="h-2 w-2 rounded-full bg-gray-400" title="Offline" />
+      );
+    case 'UNKNOWN':
+      // Pulsing gray/yellow dot - sandbox may not exist yet or is being created
+      return (
+        <span className="relative flex h-2 w-2" title="Initializing">
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-50" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-yellow-500" />
+        </span>
+      );
+    default:
+      return null;
+  }
+}
+
+function StatusBar({ sandboxStatus }: { sandboxStatus?: SandboxStatus }) {
   const batteryInfo = useBatteryStatus();
   const currentTime = useCurrentTime();
 
   return (
-    <div className="flex items-center gap-2 text-[11px]">
+    <div className="flex items-center gap-3 text-[11px]">
+      <SandboxStatusIndicator status={sandboxStatus} />
       <div className="flex items-center gap-1">
         <Wifi className="h-3.5 w-3.5" />
       </div>
@@ -107,21 +149,21 @@ interface ActionFilesSwitcherProps {
 function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionFilesSwitcherProps) {
   const isAction = currentView === 'tools';
   const isFiles = currentView === 'files';
-  
+
   // Size variants
-  const config = size === 'sm' 
+  const config = size === 'sm'
     ? { height: 32, padding: 3, btnWidth: 72, iconSize: 12, fontSize: 11 }
     : { height: 36, padding: 3, btnWidth: 80, iconSize: 14, fontSize: 12 };
-  
+
   const totalWidth = config.btnWidth * 2 + config.padding * 2;
 
   return (
-    <div 
+    <div
       className="relative flex items-center bg-zinc-100 dark:bg-zinc-800/90 rounded-full"
-      style={{ 
-        height: config.height, 
+      style={{
+        height: config.height,
         width: totalWidth,
-        padding: config.padding 
+        padding: config.padding
       }}
     >
       {/* Sliding indicator */}
@@ -132,12 +174,12 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
         animate={{ x: isAction ? 0 : config.btnWidth }}
         transition={{ type: "spring", stiffness: 500, damping: 35 }}
       />
-      
+
       {/* Actions button */}
       <button
         onClick={() => onViewChange('tools')}
         className={cn(
-          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors",
+          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors cursor-pointer",
           isAction ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400 dark:text-zinc-500"
         )}
         style={{ width: config.btnWidth, height: config.height - config.padding * 2, fontSize: config.fontSize }}
@@ -145,12 +187,12 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
         <Activity style={{ width: config.iconSize, height: config.iconSize }} strokeWidth={2.5} />
         <span>Actions</span>
       </button>
-      
+
       {/* Files button */}
       <button
         onClick={() => onViewChange('files')}
         className={cn(
-          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors",
+          "relative z-10 flex items-center justify-center gap-1.5 rounded-full font-medium transition-colors cursor-pointer",
           isFiles ? "text-zinc-900 dark:text-zinc-100" : "text-zinc-400 dark:text-zinc-500"
         )}
         style={{ width: config.btnWidth, height: config.height - config.padding * 2, fontSize: config.fontSize }}
@@ -176,6 +218,7 @@ interface PanelHeaderProps {
   isSuiteMode?: boolean;
   onToggleSuiteMode?: () => void;
   hideViewToggle?: boolean;
+  sandboxStatus?: SandboxStatus;
 }
 
 export const PanelHeader = memo(function PanelHeader({
@@ -192,6 +235,7 @@ export const PanelHeader = memo(function PanelHeader({
   isSuiteMode = false,
   onToggleSuiteMode,
   hideViewToggle = false,
+  sandboxStatus,
 }: PanelHeaderProps) {
   if (variant === 'drawer') {
     return (
@@ -216,9 +260,9 @@ export const PanelHeader = memo(function PanelHeader({
           <DrawerTitle className="sr-only">SprintLab Computer</DrawerTitle>
         </div>
         <div className="flex items-center gap-2">
-          <ActionFilesSwitcher 
-            currentView={currentView} 
-            onViewChange={onViewChange} 
+          <ActionFilesSwitcher
+            currentView={currentView}
+            onViewChange={onViewChange}
             size="sm"
           />
           <Button
@@ -238,18 +282,18 @@ export const PanelHeader = memo(function PanelHeader({
   return (
     <div className={cn(
       "flex-shrink-0 grid grid-cols-3 items-center",
-      isMaximized 
-        ? "h-9 px-3" 
+      isMaximized
+        ? "h-9 px-3"
         : "h-14 px-3.5 pt-1 border-b border-border"
     )}>
       <div className="flex items-center justify-start">
-        <ToolbarButtons 
+        <ToolbarButtons
           onClose={onClose}
           isMaximized={isMaximized}
         />
       </div>
-      <div 
-        onClick={() => onMaximize?.()} 
+      <div
+        onClick={() => onMaximize?.()}
         className="flex items-center justify-center cursor-pointer select-none hover:opacity-80 transition-opacity"
       >
         <Image
@@ -269,18 +313,16 @@ export const PanelHeader = memo(function PanelHeader({
           priority
         />
       </div>
-      
+
       <div className="flex items-center justify-end gap-2">
-        <ActionFilesSwitcher 
-          currentView={currentView} 
-          onViewChange={onViewChange} 
+        {/* Show sandbox status indicator when not maximized */}
+        {/* {!isMaximized && <SandboxStatusIndicator status={sandboxStatus} />} */}
+        <ActionFilesSwitcher
+          currentView={currentView}
+          onViewChange={onViewChange}
           size={isMaximized ? 'sm' : 'md'}
         />
-        {isMaximized && (
-          <>
-            <StatusBar />
-          </>
-        )}
+        {isMaximized && <StatusBar sandboxStatus={sandboxStatus} />}
       </div>
     </div>
   );

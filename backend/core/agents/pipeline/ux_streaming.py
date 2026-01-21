@@ -118,3 +118,43 @@ async def stream_user_error(
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
     return await _stream_event(stream_key, event)
+
+
+async def stream_context_usage(
+    stream_key: str,
+    current_tokens: int,
+    message_count: int = 0,
+    compressed: bool = False
+) -> bool:
+    event = {
+        "type": "context_usage",
+        "current_tokens": current_tokens,
+        "message_count": message_count,
+        "compressed": compressed,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    return await _stream_event(stream_key, event)
+
+
+async def stream_summarizing(
+    stream_key: str,
+    status: str,
+    tokens_before: Optional[int] = None,
+    tokens_after: Optional[int] = None,
+    messages_before: Optional[int] = None,
+    messages_after: Optional[int] = None,
+) -> bool:
+    event = {
+        "type": "summarizing context",
+        "status": status,
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+    if tokens_before is not None:
+        event["tokens_before"] = tokens_before
+    if tokens_after is not None:
+        event["tokens_after"] = tokens_after
+    if messages_before is not None:
+        event["messages_before"] = messages_before
+    if messages_after is not None:
+        event["messages_after"] = messages_after
+    return await _stream_event(stream_key, event)

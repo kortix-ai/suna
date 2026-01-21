@@ -176,13 +176,13 @@ export function MessageActions({ text }: MessageActionsProps) {
         iconColor={iconColor}
       />
 
-      {/* Speaker button */}
-      <ActionButton
+      {/* Speaker button - COMMENTED OUT */}
+      {/* <ActionButton
         onPress={handleSpeak}
         icon={Volume2}
         disabled={isVoiceLoading}
         iconColor={iconColor}
-      />
+      /> */}
 
       {/* Thumbs up - animated visibility */}
       <AnimatedView style={[styles.thumbContainer, thumbsUpAnimatedStyle]}>

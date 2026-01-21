@@ -109,6 +109,11 @@ class SandboxPoolService:
             return 0
     
     async def create_pooled_sandbox(self) -> Optional[str]:
+        current_size = await self.get_pool_size()
+        if current_size >= self.config.max_size:
+            logger.warning(f"[SANDBOX_POOL] Pool at max capacity ({current_size}/{self.config.max_size}), skipping creation")
+            return None
+        
         try:
             sandbox_pass = str(uuid.uuid4())
             

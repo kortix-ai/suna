@@ -33,6 +33,12 @@ import { useAvailableModels } from '@/lib/models';
 import { useBillingContext } from '@/contexts/BillingContext';
 import { log } from '@/lib/logger';
 import { useSprintLabComputerStore } from '@/stores/sprintlab-computer-store';
+import {
+  extractTierLimitErrorState,
+  parseTierRestrictionError,
+  getTierLimitErrorTitle,
+  getTierLimitErrorAction,
+} from '@agentpress/shared/errors';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -1025,37 +1031,34 @@ export function useChat(): UseChatReturn {
             }
           );
 
-          // Clear optimistic state on error - go back to dashboard
+          // Clear optimistic state and navigate back
           setMessages([]);
           setIsNewThreadOptimistic(false);
-          setActiveThreadId(undefined); // Navigate back to HomePage
+          setActiveThreadId(undefined);
 
-          const errorMessage = agentStartError?.message || '';
-          const errorCode = agentStartError?.code || agentStartError?.detail?.error_code;
+          // Parse and handle tier restriction errors (thread limit, billing, etc.)
+          const parsedError = parseTierRestrictionError(agentStartError);
+          const tierError = extractTierLimitErrorState(parsedError);
           
-          // Handle concurrent agent run limit (AGENT_RUN_LIMIT_EXCEEDED)
-          if (errorCode === 'AGENT_RUN_LIMIT_EXCEEDED' || (agentStartError?.status === 402 && errorMessage.includes('concurrent'))) {
-            const detail = agentStartError?.detail || {};
-            const runningCount = detail.running_count || 0;
-            const limit = detail.limit || 1;
-            const message = detail.message || `Maximum of ${limit} concurrent agent run${limit > 1 ? 's' : ''} allowed. You currently have ${runningCount} running.`;
+          if (tierError) {
+            log.log('⚠️ [useChat] Tier limit error detected:', tierError.type, tierError.message);
+            // Show native alert dialog for tier limit errors
+            const title = getTierLimitErrorTitle(tierError);
+            const actionText = getTierLimitErrorAction(tierError);
             
-            log.log('⚠️ Concurrent agent run limit reached');
             Alert.alert(
-              'Concurrent Runs Limit Reached',
-              `${message}\n\nPlease stop a running agent or wait for one to complete before starting a new one.`,
-              [{ text: 'OK' }]
+              title,
+              tierError.message,
+              [
+                { text: 'Dismiss', style: 'cancel' },
+                { 
+                  text: actionText, 
+                  onPress: () => router.push('/plans'),
+                  style: 'default',
+                },
+              ],
+              { cancelable: true }
             );
-            return;
-          }
-          
-          // Handle project limit
-          if (agentStartError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
-            log.log('💳 Project limit exceeded - opening billing modal');
-            router.push({
-              pathname: '/plans',
-              params: { creditsExhausted: 'true' },
-            });
             return;
           }
           
@@ -1245,34 +1248,32 @@ export function useChat(): UseChatReturn {
         } catch (sendMessageError: any) {
           log.error('[useChat] Error sending message to existing thread:', sendMessageError);
           
-          const errorMessage = sendMessageError?.message || '';
-          const errorCode = sendMessageError?.code || sendMessageError?.detail?.error_code;
+          // Parse and handle tier restriction errors (thread limit, billing, etc.)
+          const parsedError = parseTierRestrictionError(sendMessageError);
+          const tierError = extractTierLimitErrorState(parsedError);
           
-          // Handle concurrent agent run limit (AGENT_RUN_LIMIT_EXCEEDED)
-          if (errorCode === 'AGENT_RUN_LIMIT_EXCEEDED' || (sendMessageError?.status === 402 && errorMessage.includes('concurrent'))) {
-            const detail = sendMessageError?.detail || {};
-            const runningCount = detail.running_count || 0;
-            const limit = detail.limit || 1;
-            const message = detail.message || `Maximum of ${limit} concurrent agent run${limit > 1 ? 's' : ''} allowed. You currently have ${runningCount} running.`;
+          if (tierError) {
+            log.log('⚠️ [useChat] Tier limit error detected:', tierError.type, tierError.message);
+            // Show native alert dialog for tier limit errors
+            const title = getTierLimitErrorTitle(tierError);
+            const actionText = getTierLimitErrorAction(tierError);
             
-            log.log('⚠️ Concurrent agent run limit reached');
             Alert.alert(
-              'Concurrent Runs Limit Reached',
-              `${message}\n\nPlease stop a running agent or wait for one to complete before starting a new one.`,
-              [{ text: 'OK' }]
+              title,
+              tierError.message,
+              [
+                { text: 'Dismiss', style: 'cancel' },
+                { 
+                  text: actionText, 
+                  onPress: () => router.push('/plans'),
+                  style: 'default',
+                },
+              ],
+              { cancelable: true }
             );
             return;
           }
           
-          // Handle project limit
-          if (sendMessageError?.status === 402 && errorCode === 'PROJECT_LIMIT_EXCEEDED') {
-            log.log('💳 Project limit exceeded - opening billing modal');
-            router.push({
-              pathname: '/plans',
-              params: { creditsExhausted: 'true' },
-            });
-            return;
-          }
           throw sendMessageError;
         }
       }

@@ -92,7 +92,15 @@ def archive_stopped_sandboxes(dry_run=False, save_json=False, json_filename=None
     else:
         # Get all sandboxes from API
         try:
-            sandboxes = daytona.list()
+            response = daytona.list()
+            # Handle pagination - extract sandboxes list
+            if hasattr(response, 'sandboxes'):
+                sandboxes = response.sandboxes
+            elif hasattr(response, 'items'):
+                sandboxes = response.items
+            else:
+                sandboxes = list(response)
+            
             print(f"✓ Found {len(sandboxes)} total sandboxes")
             
             # Print sandbox data for debugging
@@ -105,6 +113,8 @@ def archive_stopped_sandboxes(dry_run=False, save_json=False, json_filename=None
                 
         except Exception as e:
             print(f"✗ Failed to list sandboxes: {e}")
+            import traceback
+            traceback.print_exc()
             return False
         
         # Save raw list as JSON if requested
@@ -164,12 +174,21 @@ def main():
         try:
             from daytona import Daytona
             daytona = Daytona()
-            sandboxes = daytona.list()
-            print(f"RAW SANDBOXES DATA: {sandboxes}")
+            response = daytona.list()
+            # Handle pagination
+            if hasattr(response, 'sandboxes'):
+                sandboxes = response.sandboxes
+            elif hasattr(response, 'items'):
+                sandboxes = response.items
+            else:
+                sandboxes = list(response)
+            print(f"RAW SANDBOXES DATA: Found {len(sandboxes)} sandboxes")
             save_raw_list_as_json(sandboxes, args.json_file)
             sys.exit(0)
         except Exception as e:
             print(f"✗ Failed to save JSON: {e}")
+            import traceback
+            traceback.print_exc()
             sys.exit(1)
     
     success = archive_stopped_sandboxes(

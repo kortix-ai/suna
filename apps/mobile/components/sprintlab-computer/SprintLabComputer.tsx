@@ -56,6 +56,8 @@ export function SprintLabComputer({
   sandboxId,
 }: SprintLabComputerProps) {
   log.log('[SprintLabComputer] Render - toolMessages:', toolMessages.length, 'currentIndex:', currentIndex);
+  log.log('[SprintLabComputer] project:', project ? { id: project.id, name: project.name, hasSandbox: !!project.sandbox } : 'undefined');
+  log.log('[SprintLabComputer] sandboxId prop:', sandboxId);
   
   const insets = useSafeAreaInsets();
 
@@ -229,11 +231,13 @@ export function SprintLabComputer({
                 <FileViewerView
                   sandboxId={effectiveSandboxId}
                   filePath={selectedFilePath}
+                  projectId={project?.id}
                   project={project}
                 />
               ) : (
                 <FileBrowserView
                   sandboxId={effectiveSandboxId}
+                  projectId={project?.id}
                   project={project}
                 />
               )}

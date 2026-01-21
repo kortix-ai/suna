@@ -22,7 +22,6 @@ import {
   KeyRound,
   Plug,
   Zap,
-  Shield,
   DollarSign,
   Users,
   BarChart3,
@@ -440,14 +439,6 @@ export function NavUserWithTeams({
                     Advanced
                   </DropdownMenuLabel>
                   <DropdownMenuGroup>
-                    {user.isAdmin && (
-                      <DropdownMenuItem asChild>
-                        <Link href="/admin/billing" className="gap-2 p-2">
-                          <Shield className="h-4 w-4" />
-                          <span>Admin Panel</span>
-                        </Link>
-                      </DropdownMenuItem>
-                    )}
                     {user.isAdmin && (
                       <DropdownMenuItem asChild>
                         <Link href="/admin/feedback" className="gap-2 p-2">

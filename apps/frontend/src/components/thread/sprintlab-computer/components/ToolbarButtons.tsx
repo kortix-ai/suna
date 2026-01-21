@@ -26,7 +26,7 @@ export const ToolbarButtons = memo(function ToolbarButtons({
           <motion.button
             onClick={onClose}
             className={cn(
-              "w-7 h-7 rounded-full flex items-center justify-center",
+              "w-7 h-7 rounded-full flex items-center justify-center cursor-pointer",
               isMaximized && "w-5 h-5",
               "text-muted-foreground hover:text-foreground hover:bg-background hover:shadow-sm",
               "transition-colors duration-150"

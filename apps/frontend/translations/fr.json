@@ -348,6 +348,7 @@
     "scheduledTriggers": "Triggers Programmées",
     "appTriggers": "Triggers d'App",
     "limitsExceeded": "Tu as atteint ta limite de chats. Améliore ton plan pour créer plus de chats.",
+    "modeSubtitle": "Choisis un mode pour commencer avec des modèles et exemples",
     "agentInitiatedSuccessfully": "Agent démarré avec succès",
     "aiAssistantReady": "Ton assistant IA est prêt à aider",
     "greetings": {
@@ -935,9 +936,12 @@
   },
   "suna": {
     "samplePrompts": "Exemples de prompts",
+    "examplePrompts": "Exemples de prompts",
     "chooseStyle": "Choisis un style",
     "chooseTemplate": "Choisis un template",
     "chooseOutputFormat": "Choisis le format de sortie",
+    "chooseCanvasAction": "Choisis une action canvas",
+    "chooseVideoStyle": "Choisis un style vidéo",
     "preferredCharts": "Graphiques préférés",
     "whatWouldYouLike": "Qu'est-ce que tu veux faire ?",
     "describeTask": "Décris la tâche que tu veux que ton Worker accomplisse...",
@@ -966,6 +970,14 @@
       "anime": "Anime",
       "impressionist": "Impressionniste",
       "surreal": "Surréaliste"
+    },
+    "videoStyles": {
+      "cinematic": "Cinématique",
+      "product": "Produit",
+      "animation": "Animation",
+      "nature": "Nature",
+      "abstract": "Abstrait",
+      "adventure": "Aventure"
     },
     "templates": {
       "minimalist": {
@@ -1101,6 +1113,24 @@
       "wordcloud": "Nuage de mots",
       "stacked": "Barres empilées",
       "area": "Aire"
+    },
+    "canvasActions": {
+      "create": {
+        "name": "Créer",
+        "description": "Générer à partir de zéro"
+      },
+      "edit": {
+        "name": "Modifier l'image",
+        "description": "Modifier les images existantes"
+      },
+      "upscale": {
+        "name": "Agrandir",
+        "description": "Améliorer et optimiser"
+      },
+      "remove-bg": {
+        "name": "Supprimer le fond",
+        "description": "Supprimer l'arrière-plan"
+      }
     },
     "prompts": {
       "image": {

@@ -40,6 +40,9 @@ import {
   useRevertToCommit,
   fetchCommitInfo,
   blobToDataURL,
+  useSandboxStatusWithAutoStart,
+  useSandboxStatusByIdWithAutoStart,
+  isSandboxUsable,
   type FileVersion,
   type CommitInfo,
 } from '@/lib/files/hooks';
@@ -52,6 +55,7 @@ import { log } from '@/lib/logger';
 interface FileViewerViewProps {
   sandboxId: string;
   filePath: string;
+  projectId?: string;
   project?: {
     id: string;
     name: string;
@@ -67,6 +71,7 @@ interface FileViewerViewProps {
 export function FileViewerView({
   sandboxId,
   filePath,
+  projectId,
   project,
 }: FileViewerViewProps) {
   const insets = useSafeAreaInsets();
@@ -87,6 +92,34 @@ export function FileViewerView({
     setSelectedVersion,
     clearSelectedVersion,
   } = useSprintLabComputerStore();
+
+  // Get the effective project ID
+  const effectiveProjectId = projectId || project?.id;
+
+  // Get unified sandbox status with auto-start
+  // If we have a projectId, use that; otherwise fall back to sandboxId
+  const projectStatusQuery = useSandboxStatusWithAutoStart(effectiveProjectId, {
+    enabled: !!effectiveProjectId,
+  });
+
+  const sandboxIdStatusQuery = useSandboxStatusByIdWithAutoStart(sandboxId, {
+    enabled: !effectiveProjectId && !!sandboxId,
+  });
+
+  // Use whichever query is active
+  const statusQuery = effectiveProjectId ? projectStatusQuery : sandboxIdStatusQuery;
+  const {
+    data: sandboxStatusData,
+    isAutoStarting,
+    isLoading: isLoadingSandboxStatus,
+    isFetching: isFetchingSandboxStatus,
+    isError: isSandboxStatusError,
+    error: sandboxStatusError,
+  } = statusQuery;
+
+  const sandboxStatus = sandboxStatusData?.status;
+  const isSandboxReady = sandboxStatus ? isSandboxUsable(sandboxStatus) : false;
+  const isLoadingStatus = isLoadingSandboxStatus || isFetchingSandboxStatus;
 
   const [blobUrl, setBlobUrl] = useState<string | undefined>();
   const [versionBlobUrl, setVersionBlobUrl] = useState<string | undefined>();
@@ -113,14 +146,14 @@ export function FileViewerView({
   const canEdit = (isMarkdown || isText) && !selectedVersion;
 
   // Binary file types that should be fetched as blob, not text
-  const isBinaryFile = previewType === FilePreviewType.IMAGE || 
+  const isBinaryFile = previewType === FilePreviewType.IMAGE ||
                        previewType === FilePreviewType.PDF ||
                        previewType === FilePreviewType.XLSX ||
                        previewType === FilePreviewType.BINARY;
-  const shouldFetchText = !isBinaryFile && !selectedVersion;
-  const shouldFetchBlob = isBinaryFile && !selectedVersion;
+  const shouldFetchText = !isBinaryFile && !selectedVersion && isSandboxReady;
+  const shouldFetchBlob = isBinaryFile && !selectedVersion && isSandboxReady;
 
-  // Current file content
+  // Current file content - only fetch when sandbox is ready
   const {
     data: textContent,
     isLoading: isLoadingText,
@@ -691,7 +724,48 @@ export function FileViewerView({
 
       {/* Content */}
       <View className="flex-1">
-        {isLoading ? (
+        {/* Show loading while fetching sandbox status */}
+        {isLoadingStatus && !sandboxStatus ? (
+          <View className="flex-1 items-center justify-center p-8">
+            <KortixLoader size="large" />
+            <Text className="text-sm text-primary opacity-50 mt-4">
+              Checking computer status...
+            </Text>
+          </View>
+        ) : isSandboxStatusError ? (
+          /* Show error when status check failed */
+          <View className="flex-1 items-center justify-center p-8">
+            <Icon
+              as={AlertTriangle}
+              size={48}
+              className="text-destructive"
+              strokeWidth={1.5}
+            />
+            <Text className="text-sm text-destructive mt-4">
+              Failed to check computer status
+            </Text>
+            <Text className="text-xs text-primary opacity-50 mt-2 text-center max-w-xs">
+              {sandboxStatusError?.message || 'Unknown error'}
+            </Text>
+          </View>
+        ) : !isSandboxReady && (sandboxStatus || isAutoStarting) ? (
+          /* Show sandbox status when not ready */
+          <View className="flex-1 items-center justify-center p-8">
+            <KortixLoader size="large" />
+            <Text className="text-sm text-primary opacity-50 mt-4">
+              {(sandboxStatus === 'STARTING' || isAutoStarting) && (isAutoStarting ? 'Waking up computer...' : 'Computer starting...')}
+              {sandboxStatus === 'OFFLINE' && !isAutoStarting && 'Computer offline'}
+              {sandboxStatus === 'FAILED' && 'Computer unavailable'}
+              {sandboxStatus === 'UNKNOWN' && 'Initializing...'}
+            </Text>
+            <Text className="text-xs text-primary opacity-30 mt-2 text-center">
+              {(sandboxStatus === 'STARTING' || isAutoStarting) && 'File will load once the computer is ready'}
+              {sandboxStatus === 'OFFLINE' && !isAutoStarting && 'Attempting to start the computer...'}
+              {sandboxStatus === 'FAILED' && 'There was an issue starting the computer'}
+              {sandboxStatus === 'UNKNOWN' && 'Setting up your workspace...'}
+            </Text>
+          </View>
+        ) : isLoading ? (
           <View className="flex-1 items-center justify-center">
             <SprintLabLoader size="large" />
             <Text className="text-sm text-primary opacity-50 mt-4">

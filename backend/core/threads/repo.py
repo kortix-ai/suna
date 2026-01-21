@@ -2,6 +2,16 @@ from typing import Optional, List, Dict, Any, Tuple
 from core.services.db import execute, execute_one, serialize_row, serialize_rows
 from core.utils.logger import logger
 
+
+def _sanitize_null_bytes(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace('\u0000', '')
+    elif isinstance(value, dict):
+        return {k: _sanitize_null_bytes(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [_sanitize_null_bytes(item) for item in value]
+    return value
+
 async def list_user_threads(
     account_id: str,
     limit: int = 100,
@@ -249,6 +259,7 @@ async def create_message(
     sql = """
     INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, created_at)
     VALUES (:message_id, :thread_id, :type, :is_llm_message, :content, :created_at)
+    ON CONFLICT (message_id) DO NOTHING
     RETURNING *
     """
     
@@ -257,11 +268,11 @@ async def create_message(
         "thread_id": thread_id,
         "type": message_type,
         "is_llm_message": is_llm_message,
-        "content": content,
+        "content": _sanitize_null_bytes(content),
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
-    return dict(result) if result else None
+    return dict(result) if result else {"message_id": message_id, "thread_id": thread_id}
 
 
 async def delete_message(thread_id: str, message_id: str, is_llm_message: bool = True) -> bool:
@@ -629,6 +640,7 @@ async def create_message_full(
     sql = """
     INSERT INTO messages (message_id, thread_id, type, is_llm_message, content, metadata, created_at)
     VALUES (:message_id, :thread_id, :type, :is_llm_message, :content, :metadata, :created_at)
+    ON CONFLICT (message_id) DO NOTHING
     RETURNING *
     """
     
@@ -637,12 +649,13 @@ async def create_message_full(
         "thread_id": thread_id,
         "type": message_type,
         "is_llm_message": is_llm_message,
-        "content": content,
-        "metadata": metadata,
+        "content": _sanitize_null_bytes(content),
+        "metadata": _sanitize_null_bytes(metadata),
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
-    return dict(result) if result else None
+    # If ON CONFLICT triggered, result will be None but the message exists
+    return dict(result) if result else {"message_id": message_id, "thread_id": thread_id}
 
 
 async def get_project_for_sandbox(project_id: str) -> Optional[Dict[str, Any]]:
@@ -747,7 +760,7 @@ async def get_llm_messages(
         FROM messages
         WHERE thread_id = :thread_id 
           AND is_llm_message = true
-          AND is_omitted = false
+          AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
           AND type != 'image_context'
         ORDER BY created_at ASC
         LIMIT :limit
@@ -767,7 +780,7 @@ async def get_llm_messages_paginated(
     FROM messages
     WHERE thread_id = :thread_id 
       AND is_llm_message = true
-      AND is_omitted = false
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
       AND type != 'image_context'
     ORDER BY created_at ASC
     LIMIT :limit 
@@ -787,7 +800,7 @@ async def get_image_context_messages(thread_id: str) -> List[Dict[str, Any]]:
     FROM messages
     WHERE thread_id = :thread_id 
       AND type = 'image_context'
-      AND is_omitted = false
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     ORDER BY created_at ASC
     """
     rows = await execute(sql, {"thread_id": thread_id})
@@ -1015,13 +1028,12 @@ async def save_compressed_message(
     
     sql = """
     UPDATE messages
-    SET metadata = :metadata, is_omitted = :is_omitted, updated_at = :updated_at
+    SET metadata = :metadata, updated_at = :updated_at
     WHERE message_id = :message_id
     """
     await execute_mutate(sql, {
         "message_id": message_id,
         "metadata": metadata,
-        "is_omitted": is_omission,
         "updated_at": datetime.now(timezone.utc)
     })
     return True
@@ -1136,12 +1148,11 @@ async def mark_tool_results_as_omitted(thread_id: str, tool_call_ids: List[str])
     UPDATE messages
     SET 
         metadata = COALESCE(metadata, '{{}}'::jsonb) || '{{"omitted": true}}'::jsonb,
-        is_omitted = true,
         updated_at = NOW()
     WHERE thread_id = :thread_id
       AND is_llm_message = true
       AND content->>'tool_call_id' IN ({placeholders})
-      AND is_omitted = false
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     RETURNING message_id
     """
     
@@ -1182,7 +1193,7 @@ async def remove_tool_calls_from_assistants(thread_id: str, tool_call_ids: List[
     WHERE thread_id = :thread_id
     AND type = 'assistant'
     AND is_llm_message = true
-    AND is_omitted = false
+    AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
     ORDER BY created_at ASC
     """
     messages = await execute(sql, {'thread_id': thread_id})
@@ -1224,7 +1235,7 @@ async def remove_tool_calls_from_assistants(thread_id: str, tool_call_ids: List[
             await execute_mutate(
                 """
                 UPDATE messages
-                SET metadata = :metadata, is_omitted = true, updated_at = NOW()
+                SET metadata = :metadata, updated_at = NOW()
                 WHERE message_id = :message_id
                 """,
                 {'message_id': msg['message_id'], 'metadata': metadata}
@@ -1350,6 +1361,7 @@ async def insert_message(
         :message_id, :thread_id, :type, :content, :is_llm_message, 
         :metadata, :agent_id, :agent_version_id, :created_at
     )
+    ON CONFLICT (message_id) DO NOTHING
     RETURNING *
     """
     
@@ -1357,15 +1369,15 @@ async def insert_message(
         "message_id": message_id,
         "thread_id": thread_id,
         "type": message_type,
-        "content": content,
+        "content": _sanitize_null_bytes(content),
         "is_llm_message": is_llm_message,
-        "metadata": metadata or {},
+        "metadata": _sanitize_null_bytes(metadata or {}),
         "agent_id": agent_id,
         "agent_version_id": agent_version_id,
         "created_at": now
     }, commit=True)
     
-    return dict(result) if result else None
+    return dict(result) if result else {"message_id": message_id, "thread_id": thread_id}
 
 
 async def get_latest_message_type(thread_id: str) -> Optional[str]:

@@ -7,11 +7,13 @@
   "exports": {
     ".": "./src/index.ts",
     "./types": "./src/types/index.ts",
+    "./types/sandbox": "./src/types/sandbox.ts",
     "./streaming": "./src/streaming/index.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",
     "./animations": "./src/animations/index.ts",
-    "./constants": "./src/constants/upload-limits.ts"
+    "./constants": "./src/constants/upload-limits.ts",
+    "./errors": "./src/errors/index.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

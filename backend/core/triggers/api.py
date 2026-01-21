@@ -139,6 +139,13 @@ async def sync_triggers_to_version_config(agent_id: str):
         
         logger.debug(f"Synced {len(triggers)} triggers to version config for agent {agent_id}")
         
+        try:
+            from core.cache.runtime_cache import invalidate_agent_config_cache
+            await invalidate_agent_config_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after trigger sync")
+        except Exception as cache_error:
+            logger.warning(f"Cache invalidation failed for agent {agent_id}: {cache_error}")
+        
     except Exception as e:
         logger.error(f"Failed to sync triggers to version config: {e}")
 

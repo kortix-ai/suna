@@ -44,7 +44,7 @@ export function AdminFeedbackTable() {
 
   const renderStars = (rating: number) => {
     const fullStars = Math.floor(rating);
-    const hasHalfStar = rating % 1 !== 0;
+    const hasHalfStar = rating % 1 >= 0.5;
     
     return (
       <div className="flex items-center gap-1">
@@ -54,7 +54,7 @@ export function AdminFeedbackTable() {
           } else if (i === fullStars && hasHalfStar) {
             return <Star key={i} className="h-4 w-4 fill-yellow-500 text-yellow-500" style={{ clipPath: 'inset(0 50% 0 0)' }} />;
           } else {
-            return <Star key={i} className="h-4 w-4 text-muted-foreground" />;
+            return <Star key={i} className="h-4 w-4 text-muted-foreground/30" />;
           }
         })}
         <span className="ml-1 text-sm font-medium">{rating.toFixed(1)}</span>
@@ -181,16 +181,12 @@ export function AdminFeedbackTable() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All ratings</SelectItem>
-              <SelectItem value="5.0">5 stars</SelectItem>
-              <SelectItem value="4.5">4.5 stars</SelectItem>
-              <SelectItem value="4.0">4 stars</SelectItem>
-              <SelectItem value="3.5">3.5 stars</SelectItem>
-              <SelectItem value="3.0">3 stars</SelectItem>
-              <SelectItem value="2.5">2.5 stars</SelectItem>
-              <SelectItem value="2.0">2 stars</SelectItem>
-              <SelectItem value="1.5">1.5 stars</SelectItem>
-              <SelectItem value="1.0">1 star</SelectItem>
-              <SelectItem value="0.5">0.5 stars</SelectItem>
+              <SelectItem value="5">5 stars</SelectItem>
+              <SelectItem value="4">4 stars</SelectItem>
+              <SelectItem value="3">3 stars</SelectItem>
+              <SelectItem value="2">2 stars</SelectItem>
+              <SelectItem value="1">1 star</SelectItem>
+              <SelectItem value="0.5">Below 1 star</SelectItem>
             </SelectContent>
           </Select>
         </div>

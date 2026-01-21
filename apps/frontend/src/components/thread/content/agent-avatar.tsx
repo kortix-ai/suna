@@ -84,12 +84,17 @@ export const AgentAvatar: React.FC<AgentAvatarProps> = ({
     return (
       <div
         className={cn(
-          "flex items-center justify-center bg-card border",
+          "flex items-center justify-center bg-zinc-900 dark:bg-zinc-100 border-transparent",
           filteredClassName
         )}
         style={{ width: size, height: size, ...borderRadiusStyle }}
       >
-        <SprintLabLogo size={size * 0.5} />
+<img
+          src="/sprintlab-symbol.svg"
+          alt="SprintLab"
+          className="flex-shrink-0 invert dark:invert-0"
+          style={{ width: `${size * 0.5}px`, height: `${size * 0.5}px` }}
+        />
       </div>
     );
   }
