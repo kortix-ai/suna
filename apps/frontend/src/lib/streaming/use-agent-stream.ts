@@ -212,7 +212,13 @@ export function useAgentStream(
   const invalidateQueries = useCallback(() => {
     const keys = optionsRef.current.queryKeys || [];
     keys.forEach((key) => {
-      queryClient.invalidateQueries({ queryKey: Array.isArray(key) ? key : [key] });
+      const queryKey = Array.isArray(key) ? key : [key];
+      // Use refetchType: 'all' for threads/projects to ensure sidebar updates
+      const isThreadsOrProjects = queryKey[0] === 'threads' || queryKey[0] === 'projects';
+      queryClient.invalidateQueries({ 
+        queryKey,
+        refetchType: isThreadsOrProjects ? 'all' : 'active',
+      });
     });
   }, [queryClient]);
   

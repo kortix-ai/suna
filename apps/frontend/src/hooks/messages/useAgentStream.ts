@@ -15,7 +15,7 @@ import { agentKeys } from '@/hooks/agents/keys';
 import { composioKeys } from '@/hooks/composio/keys';
 import { knowledgeBaseKeys } from '@/hooks/knowledge-base/keys';
 import { fileQueryKeys } from '@/hooks/files/use-file-queries';
-import { threadKeys } from '@/hooks/threads/keys';
+import { threadKeys, projectKeys } from '@/hooks/threads/keys';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { accountStateKeys } from '@/hooks/billing';
 import { clearToolTracking } from './tool-tracking';
@@ -62,6 +62,11 @@ export function useAgentStream(
       ['active-agent-runs'],
       accountStateKeys.all,
       threadKeys.messages(threadId),
+      // CRITICAL: Include threads and projects list so sidebar updates after stream completion
+      threadKeys.lists(),
+      threadKeys.all,
+      projectKeys.lists(),
+      projectKeys.all,
     ];
 
     if (agentId) {

@@ -940,50 +940,69 @@ async def stream_agent_run(
         skip_catchup = client_last_id and client_last_id != "0"
 
         try:
-            entries = []
-            if not skip_catchup:
-                entries = await redis.stream_range(stream_key) or []
-                if entries:
-                    for entry_id, fields in entries:
-                        response = json.loads(fields.get('data', '{}'))
-                        response['_event_id'] = entry_id
-                        yield f"data: {json.dumps(response)}\n\n"
-                        last_id = entry_id
-                        if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
-                            return
-                    
-                    if last_id != "0":
-                        try:
-                            safe_idx = find_last_safe_boundary(entries)
-                            if safe_idx >= 0:
-                                safe_id = entries[safe_idx][0]
-                                if '-' in safe_id:
-                                    parts = safe_id.split('-')
-                                    if len(parts) == 2:
-                                        next_id = f"{parts[0]}-{int(parts[1]) + 1}"
-                                        await redis.xtrim_minid(stream_key, next_id, approximate=True)
-                        except Exception as e:
-                            logger.warning(f"Error in stream catch-up: {e}")
-
-            if agent_run_data.get('status') != 'running':
-                yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
-                return
-
+            # CRITICAL FIX: Subscribe FIRST, then catch-up to avoid race condition
+            # The race condition occurs when:
+            # 1. Catch-up reads messages 1-5
+            # 2. Messages 6-8 are written to Redis during catch-up
+            # 3. Hub pump reads and processes 6-8 (no subscribers yet)
+            # 4. Subscriber joins AFTER 6-8 were processed
+            # 5. Subscriber misses 6-8 forever
+            #
+            # Fix: Subscribe first so the queue captures new messages while we catch-up
+            # Then yield catch-up messages, then process queue (filtering duplicates)
+            
             timeout_count = 0
             ping_count = 0
-            received_data = bool(entries) if not skip_catchup else False
+            received_data = False
             MAX_PINGS_WITHOUT_DATA = 4
+            catchup_ids = set()  # Track IDs seen during catch-up for deduplication
 
             try:
+                # Subscribe to hub FIRST to capture any new messages
+                logger.debug(f"[STREAM] Subscribing to {stream_key} with last_id={last_id}")
                 async with redis.redis.hub.subscription(stream_key, last_id) as queue:
+                    # NOW do catch-up while subscribed (queue captures concurrent writes)
+                    if not skip_catchup:
+                        entries = await redis.stream_range(stream_key) or []
+                        logger.debug(f"[STREAM] Catch-up found {len(entries)} entries for {stream_key}")
+                        if entries:
+                            for entry_id, fields in entries:
+                                response = json.loads(fields.get('data', '{}'))
+                                response['_event_id'] = entry_id
+                                yield f"data: {json.dumps(response)}\n\n"
+                                last_id = entry_id
+                                catchup_ids.add(entry_id)  # Track for deduplication
+                                received_data = True
+                                if response.get('type') == 'status' and response.get('status') in ['completed', 'failed', 'stopped', 'error']:
+                                    return
+                            
+                            if last_id != "0":
+                                try:
+                                    safe_idx = find_last_safe_boundary(entries)
+                                    if safe_idx >= 0:
+                                        safe_id = entries[safe_idx][0]
+                                        if '-' in safe_id:
+                                            parts = safe_id.split('-')
+                                            if len(parts) == 2:
+                                                next_id = f"{parts[0]}-{int(parts[1]) + 1}"
+                                                await redis.xtrim_minid(stream_key, next_id, approximate=True)
+                                except Exception as e:
+                                    logger.warning(f"Error in stream catch-up: {e}")
+
+                    if agent_run_data.get('status') != 'running':
+                        yield f"data: {json.dumps({'type': 'status', 'status': 'completed'})}\n\n"
+                        return
+
+                    logger.debug(f"[STREAM] Starting queue processing for {stream_key}, catchup_ids={len(catchup_ids)}")
+                    # Process messages from the queue (including any that arrived during catch-up)
                     async for msg in redis.redis.hub.iter_queue(queue, timeout=0.5):
                         if terminate:
                             break
 
                         if msg is not None:
                             entry_id, fields = msg
-                            # Dedupe: skip if we already saw this in catch-up
-                            if compare_stream_ids(entry_id, last_id) <= 0:
+                            # Dedupe: skip if we already saw this in catch-up or earlier
+                            if entry_id in catchup_ids or compare_stream_ids(entry_id, last_id) <= 0:
                                 continue
                             received_data = True
                             timeout_count = 0

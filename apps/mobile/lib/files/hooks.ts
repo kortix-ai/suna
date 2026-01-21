@@ -8,6 +8,7 @@ import { useMutation, useQuery, useQueryClient, type UseMutationOptions, type Us
 import { API_URL, getAuthToken } from '@/api/config';
 import type { SandboxFile, FileUploadResponse } from '@/api/types';
 import type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
+import { normalizeFilenameToNFC } from './utils';
 
 // Re-export sandbox types for convenience
 export type { SandboxState, SandboxStatus } from '@agentpress/shared/types/sandbox';
@@ -368,7 +369,8 @@ export function useUploadFileToSandbox(
       const token = await getAuthToken();
       if (!token) throw new Error('Authentication required');
 
-      const normalizedName = file.name.normalize('NFC');
+      // Normalize filename for Unix compatibility (removes colons, special chars, etc.)
+      const normalizedName = normalizeFilenameToNFC(file.name);
       const uploadPath = destinationPath || `/workspace/uploads/${normalizedName}`;
 
       const formData = new FormData();
@@ -399,6 +401,54 @@ export function useUploadFileToSandbox(
   });
 }
 
+
+export function useStageFiles(
+  options?: UseMutationOptions<
+    Array<{ file_id: string; filename: string; storage_path: string; mime_type: string; file_size: number; status: string }>,
+    Error,
+    {
+      files: Array<{ uri: string; name: string; type: string; fileId: string }>;
+      onProgress?: (fileId: string, progress: number) => void;
+    }
+  >
+) {
+  return useMutation({
+    mutationFn: async ({ files, onProgress }) => {
+      const token = await getAuthToken();
+      if (!token) throw new Error('Authentication required');
+
+      const results: Array<{ file_id: string; filename: string; storage_path: string; mime_type: string; file_size: number; status: string }> = [];
+
+      for (const file of files) {
+        // Normalize filename for Unix compatibility (removes colons, special chars, etc.)
+        const normalizedName = normalizeFilenameToNFC(file.name);
+        const formData = new FormData();
+        formData.append('file', {
+          uri: file.uri,
+          name: normalizedName,
+          type: file.type || 'application/octet-stream',
+        } as any);
+        formData.append('file_id', file.fileId);
+
+        const res = await fetch(`${API_URL}/files/stage`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+          body: formData,
+        });
+
+        if (!res.ok) throw new Error(`Staging failed for ${file.name}: ${res.status}`);
+        
+        const result = await res.json();
+        results.push(result);
+        onProgress?.(file.fileId, 100);
+      }
+
+      return results;
+    },
+    ...options,
+  });
+}
+
 export function useUploadMultipleFiles(
   options?: UseMutationOptions<
     FileUploadResponse[],
@@ -420,7 +470,8 @@ export function useUploadMultipleFiles(
       const results: FileUploadResponse[] = [];
 
       for (const file of files) {
-        const normalizedName = file.name.normalize('NFC');
+        // Normalize filename for Unix compatibility (removes colons, special chars, etc.)
+        const normalizedName = normalizeFilenameToNFC(file.name);
         const formData = new FormData();
         formData.append('file', {
           uri: file.uri,
