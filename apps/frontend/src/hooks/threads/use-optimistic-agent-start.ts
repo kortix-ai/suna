@@ -45,6 +45,13 @@ export interface AgentLimitInfo {
   runningThreadIds: string[];
 }
 
+export interface UseOptimisticAgentStartOptions {
+  /** Path to redirect to on error (e.g., '/dashboard' or '/') */
+  redirectOnError?: string;
+  /** Callback when a background error occurs (e.g., billing limit) - useful for resetting parent loading states */
+  onBackgroundError?: () => void;
+}
+
 export interface UseOptimisticAgentStartReturn {
   startAgent: (options: OptimisticAgentStartOptions) => Promise<OptimisticAgentStartResult | null>;
   isStarting: boolean;
@@ -64,11 +71,16 @@ export interface UseOptimisticAgentStartReturn {
  * - Calling the backend API
  * - Handling errors uniformly (billing, limits, etc.)
  * 
- * @param redirectOnError - Path to redirect to on error (e.g., '/dashboard' or '/')
+ * @param options - Configuration options for the hook
  */
 export function useOptimisticAgentStart(
-  redirectOnError: string = '/dashboard'
+  options: UseOptimisticAgentStartOptions | string = {}
 ): UseOptimisticAgentStartReturn {
+  // Support legacy string argument for backwards compatibility
+  const normalizedOptions = typeof options === 'string'
+    ? { redirectOnError: options }
+    : options;
+  const { redirectOnError = '/dashboard', onBackgroundError } = normalizedOptions;
   const router = useRouter();
   const queryClient = useQueryClient();
   const tBilling = useTranslations('billing');
@@ -90,25 +102,29 @@ export function useOptimisticAgentStart(
     const errorUI = formatTierErrorForUI(error);
     if (errorUI) {
       router.replace(redirectOnError);
-      pricingModalStore.openPricingModal({ 
+      pricingModalStore.openPricingModal({
         isAlert: true,
         alertTitle: errorUI.alertTitle,
         alertSubtitle: errorUI.alertSubtitle
       });
+      // Notify parent to reset loading states
+      onBackgroundError?.();
     }
-  }, [router, redirectOnError, pricingModalStore]);
+  }, [router, redirectOnError, pricingModalStore, onBackgroundError]);
 
   // Special handler for AgentRunLimitError (needs banner, not just modal)
   const handleAgentRunLimitError = useCallback((error: AgentRunLimitError) => {
     console.log('[OptimisticAgentStart] Caught AgentRunLimitError');
     const { running_thread_ids, running_count } = error.detail;
+    // Notify parent to reset loading states
+    onBackgroundError?.();
     setAgentLimitData({
       runningCount: running_count,
       runningThreadIds: running_thread_ids,
     });
     setShowAgentLimitBanner(true);
     router.replace(redirectOnError);
-  }, [router, redirectOnError]);
+  }, [router, redirectOnError, onBackgroundError]);
 
   const startAgent = useCallback(async (
     options: OptimisticAgentStartOptions
@@ -234,6 +250,8 @@ export function useOptimisticAgentStart(
             (error?.status === 402 && error?.detail?.running_count !== undefined)) {
           const running_thread_ids = error.detail?.running_thread_ids || [];
           const running_count = error.detail?.running_count || 0;
+          // Notify parent to reset loading states
+          onBackgroundError?.();
           setAgentLimitData({
             runningCount: running_count,
             runningThreadIds: running_thread_ids,
@@ -281,6 +299,7 @@ export function useOptimisticAgentStart(
     redirectOnError,
     handleTierError,
     handleAgentRunLimitError,
+    onBackgroundError,
   ]);
 
   return {
