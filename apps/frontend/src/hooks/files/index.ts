@@ -30,4 +30,16 @@ export { useImageContent } from './use-image-content';
 // Export external image hook
 export { useExternalImage } from './use-external-image';
 
-
+// Export sandbox status hooks
+export {
+  useSandboxStatus,
+  useSandboxStatusWithAutoStart,
+  useSandboxDetails,
+  useStartSandbox,
+  useStopSandbox,
+  isSandboxUsable,
+  isSandboxTransitioning,
+  isSandboxOffline,
+  isSandboxFailed,
+  getSandboxStatusLabel,
+} from './use-sandbox-details';

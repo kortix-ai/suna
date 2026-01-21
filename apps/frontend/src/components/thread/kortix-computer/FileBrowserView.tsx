@@ -69,6 +69,7 @@ import { PresentationSlidePreview } from '../tool-views/presentation-tools/Prese
 import { PresentationSlideSkeleton } from '../tool-views/presentation-tools/PresentationSlideSkeleton';
 import { PdfRenderer } from '@/components/file-renderers/pdf-renderer';
 import { UnifiedMarkdown } from '@/components/markdown/unified-markdown';
+import { useSandboxStatusWithAutoStart, isSandboxUsable } from '@/hooks/files/use-sandbox-details';
 
 const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
@@ -681,7 +682,13 @@ export function FileBrowserView({
     featureName: 'files',
   });
 
-  // Use React Query for directory listing
+  // Get unified sandbox status with auto-start - this tells us if sandbox is actually ready
+  // Auto-starts OFFLINE sandboxes automatically
+  const { data: sandboxStatusData, isAutoStarting } = useSandboxStatusWithAutoStart(projectId);
+  const sandboxStatus = sandboxStatusData?.status;
+  const isSandboxReady = sandboxStatus ? isSandboxUsable(sandboxStatus) : false;
+
+  // Use React Query for directory listing - only fetch when sandbox is LIVE
   const {
     data: files = [],
     isLoading: isLoadingFiles,
@@ -689,7 +696,7 @@ export function FileBrowserView({
     refetch: refetchFiles,
     failureCount: dirRetryAttempt,
   } = useDirectoryQuery(sandboxId || '', currentPath, {
-    enabled: !!sandboxId && sandboxId.trim() !== '' && !!currentPath,
+    enabled: !!sandboxId && sandboxId.trim() !== '' && !!currentPath && isSandboxReady,
     staleTime: 0,
   });
 
@@ -715,9 +722,10 @@ export function FileBrowserView({
   const [revertLoadingInfo, setRevertLoadingInfo] = useState(false);
   const [revertInProgress, setRevertInProgress] = useState(false);
 
-  // Check computer status
+  // Check computer status - use unified status for accurate state
   const hasSandbox = !!(project?.sandbox?.id || sandboxId);
-  const isComputerStarted = project?.sandbox?.sandbox_url ? true : false;
+  // Use sandbox status for accurate "started" check instead of just URL existence
+  const isComputerStarted = isSandboxReady;
 
   // Function to ensure a path starts with /workspace
   const normalizePath = useCallback((path: unknown): string => {
@@ -2001,7 +2009,28 @@ export function FileBrowserView({
 
       {/* File Explorer */}
       <div className="flex-1 overflow-hidden max-w-full min-w-0">
-        {(isLoadingFiles || isLoadingVersionFiles) ? (
+        {/* Show sandbox status when not ready */}
+        {hasSandbox && !isSandboxReady && sandboxStatus ? (
+          <div className="h-full w-full flex flex-col items-center justify-center p-8 bg-zinc-50 dark:bg-zinc-900/50">
+            <div className="flex flex-col items-center space-y-4 max-w-sm text-center">
+              <KortixLoader size="medium" />
+              <div className="space-y-2">
+                <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
+                  {sandboxStatus === 'STARTING' && (isAutoStarting ? 'Waking up computer...' : 'Computer starting...')}
+                  {sandboxStatus === 'OFFLINE' && 'Computer offline'}
+                  {sandboxStatus === 'FAILED' && 'Computer unavailable'}
+                  {sandboxStatus === 'UNKNOWN' && 'Initializing...'}
+                </h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  {sandboxStatus === 'STARTING' && 'Files will appear once the computer is ready.'}
+                  {sandboxStatus === 'OFFLINE' && 'The computer is currently stopped. Attempting to start...'}
+                  {sandboxStatus === 'FAILED' && 'There was an issue starting the computer.'}
+                  {sandboxStatus === 'UNKNOWN' && 'Setting up your workspace...'}
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (isLoadingFiles || isLoadingVersionFiles) ? (
           <div className="h-full w-full max-w-full flex flex-col items-center justify-center gap-2 min-w-0">
             <KortixLoader size="medium" />
             <p className="text-xs text-muted-foreground">
@@ -2026,20 +2055,9 @@ export function FileBrowserView({
                       {isInlineLibrary ? 'Nothing here yet' : 'Files not available'}
                     </h3>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      {isInlineLibrary 
+                      {isInlineLibrary
                         ? 'Your files will appear here once you start a conversation.'
                         : 'A computer will be created when you start working on this task. Files will appear here once ready.'}
-                    </p>
-                  </>
-                ) : !isComputerStarted ? (
-                  <>
-                    <h3 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">
-                      {isInlineLibrary ? 'Waking up...' : 'Computer starting...'}
-                    </h3>
-                    <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      {isInlineLibrary 
-                        ? 'Just a moment while things get ready.'
-                        : 'Files will appear once the computer is ready.'}
                     </p>
                   </>
                 ) : (
@@ -2048,7 +2066,7 @@ export function FileBrowserView({
                       {isInlineLibrary ? 'No files yet' : 'Directory is empty'}
                     </h3>
                     <p className="text-sm text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                      {isInlineLibrary 
+                      {isInlineLibrary
                         ? 'Start a conversation to create files.'
                         : 'This folder doesn\'t contain any files yet.'}
                     </p>

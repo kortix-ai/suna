@@ -3,7 +3,9 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 import os
+import subprocess
 from pathlib import Path
+from typing import Dict, List, Optional
 
 # Import PDF router, PPTX router, DOCX router, and Visual HTML Editor router
 from html_to_pdf_router import router as pdf_router
@@ -260,6 +262,108 @@ async def list_html_files():
         print(f"❌ Error listing HTML files: {e}")
         from fastapi import HTTPException
         raise HTTPException(status_code=500, detail=str(e))
+
+# Health check endpoint - must be defined before catch-all route
+@app.get("/health")
+async def health_check():
+    """
+    Check health of all supervisord-managed services.
+    Returns aggregate status and per-service breakdown.
+
+    Returns:
+        - status: "healthy" | "starting" | "degraded" | "unhealthy"
+        - services: dict of service_name -> "running" | "stopped" | "starting" | "error"
+        - critical_services: list of services that must be running for healthy status
+    """
+    services_status: Dict[str, str] = {}
+
+    # Critical services that must be running for sandbox to be usable
+    critical_services: List[str] = ['xvfb', 'x11vnc', 'novnc', 'http_server', 'browserApi']
+
+    try:
+        # Run supervisorctl status to get all service states
+        result = subprocess.run(
+            ["supervisorctl", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+
+        # Parse output format: "program_name    STATE     extra info"
+        # Example: "xvfb             RUNNING   pid 123, uptime 0:01:00"
+        for line in result.stdout.strip().split('\n'):
+            if not line.strip():
+                continue
+            parts = line.split()
+            if len(parts) >= 2:
+                service_name = parts[0]
+                state = parts[1].lower()
+
+                # Map supervisord states to our simplified states
+                if state == 'running':
+                    services_status[service_name] = 'running'
+                elif state in ('stopped', 'exited', 'fatal'):
+                    services_status[service_name] = 'stopped'
+                elif state in ('starting', 'backoff'):
+                    services_status[service_name] = 'starting'
+                else:
+                    services_status[service_name] = 'error'
+
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "unhealthy",
+            "error": "supervisorctl timeout",
+            "services": {},
+            "critical_services": critical_services
+        }
+    except FileNotFoundError:
+        return {
+            "status": "unhealthy",
+            "error": "supervisorctl not found",
+            "services": {},
+            "critical_services": critical_services
+        }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "error": str(e),
+            "services": {},
+            "critical_services": critical_services
+        }
+
+    # Determine overall status based on critical services
+    critical_running = sum(
+        1 for svc in critical_services
+        if services_status.get(svc) == 'running'
+    )
+    critical_starting = sum(
+        1 for svc in critical_services
+        if services_status.get(svc) == 'starting'
+    )
+    critical_failed = sum(
+        1 for svc in critical_services
+        if services_status.get(svc) in ('stopped', 'error')
+    )
+
+    # All critical services running = healthy
+    if critical_running == len(critical_services):
+        overall = "healthy"
+    # Some starting, none failed = starting
+    elif critical_starting > 0 and critical_failed == 0:
+        overall = "starting"
+    # Some failed = degraded
+    elif critical_failed > 0 and critical_running > 0:
+        overall = "degraded"
+    # All failed or none running = unhealthy
+    else:
+        overall = "unhealthy"
+
+    return {
+        "status": overall,
+        "services": services_status,
+        "critical_services": critical_services
+    }
+
 
 # Serve files at root level
 # This route handles both HTML files and static assets (CSS, JS, images, etc.)
