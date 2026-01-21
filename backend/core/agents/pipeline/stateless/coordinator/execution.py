@@ -126,7 +126,6 @@ class ExecutionEngine:
     async def execute_step(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = self._state.get_messages()
         
-        # Fast pre-check - only do full validation if needed
         context_manager = ToolCallValidator()
         if context_manager.needs_tool_ordering_repair(messages):
             logger.warning("[ExecutionEngine] Tool ordering issue detected, repairing...")
@@ -166,11 +165,6 @@ class ExecutionEngine:
                 self._state._messages.append(msg)
             logger.debug(f"✅ [ExecutionEngine] State updated after compression: {len(self._state._messages)} messages")
         
-        cost = self._state.estimate_cost(tokens, 1000)
-        if not self._state.deduct_credits(cost):
-            yield {"type": "error", "error": "Insufficient credits", "error_code": "INSUFFICIENT_CREDITS"}
-            return
-
         processor_config = ProcessorConfig(
             xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
             native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING,
@@ -179,7 +173,13 @@ class ExecutionEngine:
             tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
         )
 
-        logger.debug(f"📤 [ExecutionEngine] Sending {len(prepared)} messages, {tokens} tokens")
+        logger.info(f"📤 [ExecutionEngine] Sending {len(prepared)} messages, {tokens} tokens to {self._state.model_name}")
+        
+        if len(prepared) < 2:
+            logger.error(f"[ExecutionEngine] No valid messages to send (only {len(prepared)} messages after processing)")
+            self._state._terminate("error: no_valid_messages")
+            yield {"type": "error", "error": "No valid messages to send", "error_code": "NO_MESSAGES"}
+            return
         
         validator = ToolCallValidator()
         is_valid, orphaned_ids, unanswered_ids = validator.validate_tool_call_pairing(prepared)
@@ -204,19 +204,29 @@ class ExecutionEngine:
             )
 
         executor = LLMExecutor()
-        response = await executor.execute(
-            prepared_messages=prepared,
-            llm_model=self._state.model_name,
-            llm_temperature=0,
-            llm_max_tokens=None,
-            openapi_tool_schemas=self._state.tool_schemas,
-            tool_choice="auto",
-            native_tool_calling=processor_config.native_tool_calling,
-            xml_tool_calling=processor_config.xml_tool_calling,
-            stream=True
-        )
+        try:
+            response = await executor.execute(
+                prepared_messages=prepared,
+                llm_model=self._state.model_name,
+                llm_temperature=0,
+                llm_max_tokens=None,
+                openapi_tool_schemas=self._state.tool_schemas,
+                tool_choice="auto",
+                native_tool_calling=processor_config.native_tool_calling,
+                xml_tool_calling=processor_config.xml_tool_calling,
+                stream=True
+            )
+        except Exception as e:
+            error_msg = str(e)[:200]
+            logger.error(f"[ExecutionEngine] LLM executor exception: {error_msg}", exc_info=True)
+            self._state._terminate(f"error: {error_msg[:100]}")
+            yield {"type": "error", "error": error_msg, "error_code": "LLM_EXECUTOR_ERROR"}
+            return
 
         if isinstance(response, dict) and response.get("status") == "error":
+            error_msg = response.get("message", "unknown LLM error")
+            logger.error(f"[ExecutionEngine] LLM returned error: {error_msg}")
+            self._state._terminate(f"error: {error_msg[:100]}")
             yield response
             return
 

@@ -356,6 +356,7 @@
     "scheduledTriggers": "Scheduled Triggers",
     "appTriggers": "App Triggers",
     "limitsExceeded": "You've reached your chat limit. Upgrade your plan to create more chats.",
+    "modeSubtitle": "Choose a mode to get started with templates and examples",
     "agentInitiatedSuccessfully": "Worker initiated successfully",
     "aiAssistantReady": "Your AI assistant is ready to help",
     "greetings": {
@@ -943,9 +944,12 @@
   },
   "suna": {
     "samplePrompts": "Sample prompts",
+    "examplePrompts": "Example prompts",
     "chooseStyle": "Choose a style",
     "chooseTemplate": "Choose a template",
     "chooseOutputFormat": "Choose output format",
+    "chooseCanvasAction": "Choose canvas action",
+    "chooseVideoStyle": "Choose video style",
     "preferredCharts": "Preferred charts",
     "whatWouldYouLike": "What do you want to get done?",
     "describeTask": "Describe the task you want your Worker to complete...",
@@ -974,6 +978,14 @@
       "anime": "Anime",
       "impressionist": "Impressionist",
       "surreal": "Surreal"
+    },
+    "videoStyles": {
+      "cinematic": "Cinematic",
+      "product": "Product",
+      "animation": "Animation",
+      "nature": "Nature",
+      "abstract": "Abstract",
+      "adventure": "Adventure"
     },
     "templates": {
       "minimalist": {
@@ -1109,6 +1121,24 @@
       "wordcloud": "Word cloud",
       "stacked": "Stacked bar",
       "area": "Area"
+    },
+    "canvasActions": {
+      "create": {
+        "name": "Create New",
+        "description": "Generate from scratch"
+      },
+      "edit": {
+        "name": "Edit Image",
+        "description": "Modify existing images"
+      },
+      "upscale": {
+        "name": "Upscale",
+        "description": "Enhance and improve"
+      },
+      "remove-bg": {
+        "name": "Remove BG",
+        "description": "Remove background"
+      }
     },
     "prompts": {
       "image": {

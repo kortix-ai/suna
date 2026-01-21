@@ -437,6 +437,13 @@ async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
             raise HTTPException(status_code=403, detail="Unable to delete agent - permission denied or agent not found")
         
         try:
+            from core.cache.runtime_cache import invalidate_agent_config_cache
+            await invalidate_agent_config_cache(agent_id)
+            logger.debug(f"🗑️ Invalidated cache for deleted agent {agent_id}")
+        except Exception as cache_error:
+            logger.warning(f"Agent config cache invalidation failed for {agent_id}: {str(cache_error)}")
+        
+        try:
             from core.utils.cache import Cache
             await Cache.invalidate(f"agent_count_limit:{user_id}")
         except Exception as cache_error:

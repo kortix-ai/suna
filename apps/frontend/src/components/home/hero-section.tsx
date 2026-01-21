@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { useIsMobile } from '@/hooks/utils';
-import dynamic from 'next/dynamic';
 import {
   Dialog,
   DialogContent,
@@ -16,14 +15,14 @@ import {
 } from '@/components/ui/dialog';
 import { useTranslations } from 'next-intl';
 import { trackCtaSignup } from '@/lib/analytics/gtm';
-import { AgentStartInput } from '@/components/shared/agent-start-input';
+import { useAgentStartInput } from '@/hooks/dashboard';
+import { ChatInput } from '@/components/thread/chat-input/chat-input';
+import { DynamicGreeting } from '@/components/ui/dynamic-greeting';
 
-// Use next/dynamic with ssr:false to prevent prefetching heavy chunks
-const AnimatedBg = dynamic(
-  () => import('@/components/ui/animated-bg').then(mod => mod.AnimatedBg),
-  { ssr: false }
+// Lazy load heavy components
+const SunaModesPanel = lazy(() => 
+  import('@/components/dashboard/suna-modes-panel').then(mod => ({ default: mod.SunaModesPanel }))
 );
-
 const GoogleSignIn = lazy(() => import('@/components/GoogleSignIn'));
 
 const BlurredDialogOverlay = () => (
@@ -31,6 +30,7 @@ const BlurredDialogOverlay = () => (
 );
 
 export function HeroSection() {
+  const t = useTranslations('dashboard');
   const tAuth = useTranslations('auth');
   const isMobile = useIsMobile();
   const router = useRouter();
@@ -50,67 +50,110 @@ export function HeroSection() {
     trackCtaSignup();
     setAuthDialogOpen(true);
   };
+
+  // Use the agent start input hook for state management (same as dashboard)
+  const {
+    inputValue,
+    setInputValue,
+    isSubmitting,
+    isRedirecting,
+    chatInputRef,
+    selectedAgentId,
+    setSelectedAgent,
+    selectedMode,
+    selectedCharts,
+    selectedOutputFormat,
+    selectedTemplate,
+    setSelectedMode,
+    setSelectedCharts,
+    setSelectedOutputFormat,
+    setSelectedTemplate,
+    handleSubmit,
+  } = useAgentStartInput({
+    redirectOnError: '/',
+    requireAuth: true,
+    onAuthRequired: handleAuthRequired,
+    enableAutoSubmit: true,
+    logPrefix: '[HeroSection]',
+  });
   
   return (
-    <section id="hero" className="w-full relative overflow-hidden">
-      <div className="relative flex flex-col items-center w-full px-6 pb-8 sm:pb-10">
-        <AnimatedBg
-          variant="hero"
-          sizeMultiplier={isMobile ? 0.7 : 1}
-          blurMultiplier={isMobile ? 0.6 : 1}
-          customArcs={isMobile ? {
-            left: [
-              {
-                pos: { left: -150, top: 30 },
-                size: 380,
-                tone: 'medium' as const,
-                opacity: 0.15,
-                delay: 0.5,
-                x: [0, 15, -8, 0],
-                y: [0, 12, -6, 0],
-                scale: [0.82, 1.08, 0.94, 0.82],
-                blur: ['12px', '20px', '16px', '12px'],
-              },
-            ],
-            right: [
-              {
-                pos: { right: -120, top: 140 },
-                size: 300,
-                tone: 'dark' as const,
-                opacity: 0.2,
-                delay: 1.0,
-                x: [0, -18, 10, 0],
-                y: [0, 14, -8, 0],
-                scale: [0.86, 1.14, 1.0, 0.86],
-                blur: ['10px', '6px', '8px', '10px'],
-              },
-            ],
-          } : undefined}
-        />
+    <section id="hero" className="w-full h-dvh relative overflow-hidden">
+      <div className="flex flex-col h-full w-full overflow-hidden relative">
+        {/* Brandmark Background - responsive sizing for all devices */}
+        <div 
+          className="absolute inset-0 pointer-events-none overflow-hidden"
+          aria-hidden="true"
+        >
+          <img
+            src="/kortix-brandmark-bg.svg"
+            alt=""
+            className="absolute left-1/2 -translate-x-1/2 top-[-10%] sm:top-1/2 sm:-translate-y-1/2 w-[140vw] min-w-[700px] h-auto sm:w-[160vw] sm:min-w-[1000px] md:min-w-[1200px] lg:w-[162vw] lg:min-w-[1620px] object-contain select-none invert dark:invert-0"
+            draggable={false}
+          />
+        </div>
 
-        <div className="relative z-10 pt-20 sm:pt-24 md:pt-32 pb-24 sm:pb-32 mx-auto h-full w-full sm:max-w-6xl flex flex-col items-center justify-center min-h-[calc(100vh-120px)]">
-          <div className="flex flex-col items-center justify-center gap-4 sm:gap-5 pt-12 sm:pt-20 sm:max-w-4xl mx-auto pb-4 sm:pb-5">
-            {/* Greeting is rendered inside AgentStartInput */}
+        {/* Main content area - greeting and modes centered */}
+        <div className="flex-1 flex flex-col relative z-[1]">
+          {/* Centered content: Greeting + Subtitle + Modes - absolutely positioned for true center */}
+          <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+            <div className="w-full max-w-3xl mx-auto flex flex-col items-center text-center pointer-events-auto">
+              {/* Greeting */}
+              <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
+                <DynamicGreeting className="text-2xl sm:text-3xl md:text-4xl font-medium text-foreground tracking-tight" />
+              </div>
+              
+              {/* Subtitle */}
+              <p className="mt-3 text-sm sm:text-base text-muted-foreground/70 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-75 fill-mode-both">
+                {t('modeSubtitle')}
+              </p>
+              
+              {/* Modes Panel */}
+              <div className="mt-8 w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both">
+                <Suspense fallback={<div className="h-12 bg-muted/10 rounded-lg animate-pulse" />}>
+                  <SunaModesPanel
+                    selectedMode={selectedMode}
+                    onModeSelect={setSelectedMode}
+                    onSelectPrompt={setInputValue}
+                    isMobile={isMobile}
+                    selectedCharts={selectedCharts}
+                    onChartsChange={setSelectedCharts}
+                    selectedOutputFormat={selectedOutputFormat}
+                    onOutputFormatChange={setSelectedOutputFormat}
+                    selectedTemplate={selectedTemplate}
+                    onTemplateChange={setSelectedTemplate}
+                    isFreeTier={true}
+                    onUpgradeClick={() => {}}
+                  />
+                </Suspense>
+              </div>
+            </div>
           </div>
 
-          <div className="flex flex-col items-center w-full sm:max-w-3xl mx-auto gap-2 flex-wrap justify-center mt-1">
-            <div className="w-full relative">
-              <div className="relative z-10 w-full flex flex-col items-center space-y-4">
-                <AgentStartInput
-                  variant="hero"
-                  requireAuth={true}
-                  onAuthRequired={handleAuthRequired}
-                  redirectOnError="/"
-                  showGreeting={true}
-                  greetingClassName="text-2xl sm:text-3xl md:text-3xl lg:text-4xl font-medium text-balance text-center sm:px-2"
-                  autoFocus={false}
-                  showLoginStatus={true}
-                  showAlertBanners={false}
-                  showModesPanel={true}
-                  isMobile={isMobile}
-                  modesPanelWrapperClassName="w-full sm:max-w-3xl mx-auto mt-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both"
-                />
-              </div>
+          {/* Chat Input - fixed at bottom */}
+          <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
+            <div className="w-full max-w-3xl mx-auto">
+              <ChatInput
+                ref={chatInputRef}
+                onSubmit={handleSubmit}
+                placeholder={t('describeWhatYouNeed')}
+                loading={isSubmitting || isRedirecting}
+                disabled={isSubmitting}
+                value={inputValue}
+                onChange={setInputValue}
+                isLoggedIn={!!user}
+                selectedAgentId={selectedAgentId}
+                onAgentSelect={setSelectedAgent}
+                autoFocus={false}
+                enableAdvancedConfig={false}
+                selectedMode={selectedMode}
+                onModeDeselect={() => setSelectedMode(null)}
+                animatePlaceholder={true}
+                hideAttachments={false}
+                selectedCharts={selectedCharts}
+                selectedOutputFormat={selectedOutputFormat}
+                selectedTemplate={selectedTemplate}
+              />
             </div>
           </div>
         </div>

@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Pulumi
+.pulumi/
+
+# Environment files (contain secrets)
+.env
+*.env
+!*.env.example
+suna.env
+
+# SSH keys
+*.pem
+*.key
+
+# Build output
+dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Lock files (optional - you may want to commit these)
+# bun.lock
+# package-lock.json

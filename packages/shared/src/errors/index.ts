@@ -516,3 +516,91 @@ export function getTierLimitErrorAction(errorState: TierLimitErrorState): string
       return 'Upgrade';
   }
 }
+
+// ============================================================================
+// UI Formatting Utilities
+// ============================================================================
+
+export interface TierLimitErrorUI {
+  alertTitle: string;
+  alertSubtitle: string;
+}
+
+/**
+ * Format a tier limit error for display in the pricing modal.
+ * Returns user-friendly title and subtitle.
+ */
+export function formatTierLimitErrorForUI(errorState: TierLimitErrorState): TierLimitErrorUI {
+  switch (errorState.type) {
+    case 'THREAD_LIMIT_EXCEEDED':
+      return {
+        alertTitle: 'Thread Limit Reached',
+        alertSubtitle: `You've reached your thread limit (${errorState.currentCount || 0}/${errorState.limit || 0}). Upgrade your plan to create more threads.`,
+      };
+    
+    case 'AGENT_RUN_LIMIT_EXCEEDED':
+      return {
+        alertTitle: 'Concurrent Worker Run Limit Reached',
+        alertSubtitle: `You're currently running ${errorState.runningCount || 0} of ${errorState.limit || 1} allowed concurrent workers. Upgrade your plan to run more workers simultaneously.`,
+      };
+    
+    case 'PROJECT_LIMIT_EXCEEDED':
+      return {
+        alertTitle: 'Project Limit Reached',
+        alertSubtitle: `You've reached your project limit (${errorState.currentCount || 0}/${errorState.limit || 0}). Upgrade your plan to create more projects.`,
+      };
+    
+    case 'AGENT_LIMIT_EXCEEDED':
+      return {
+        alertTitle: 'Worker Limit Reached',
+        alertSubtitle: `You've reached your worker limit (${errorState.currentCount || 0}/${errorState.limit || 0}). Upgrade your plan to create more workers.`,
+      };
+    
+    case 'TRIGGER_LIMIT_EXCEEDED':
+      return {
+        alertTitle: 'Trigger Limit Reached',
+        alertSubtitle: `You've reached your trigger limit (${errorState.currentCount || 0}/${errorState.limit || 0}). Upgrade your plan to create more triggers.`,
+      };
+    
+    case 'MODEL_ACCESS_DENIED':
+      return {
+        alertTitle: 'Premium Model Access Required',
+        alertSubtitle: 'This AI model is only available on higher tier plans. Upgrade to access premium models.',
+      };
+    
+    case 'CUSTOM_WORKER_LIMIT_EXCEEDED':
+      return {
+        alertTitle: 'Custom Worker Limit Reached',
+        alertSubtitle: `You've reached your custom worker limit (${errorState.currentCount || 0}/${errorState.limit || 0}). Upgrade your plan to create more custom workers.`,
+      };
+    
+    case 'INSUFFICIENT_CREDITS':
+      return {
+        alertTitle: 'You ran out of credits',
+        alertSubtitle: 'Upgrade your plan to get more credits and continue using the AI assistant.',
+      };
+    
+    case 'BILLING_ERROR':
+      return {
+        alertTitle: 'Billing check failed',
+        alertSubtitle: errorState.message || 'Please upgrade to continue.',
+      };
+    
+    default:
+      return {
+        alertTitle: 'Limit Reached',
+        alertSubtitle: errorState.message || 'Upgrade your plan to continue.',
+      };
+  }
+}
+
+/**
+ * Format any tier restriction error for UI display.
+ * Handles both typed errors and TierLimitErrorState.
+ * Returns null if the error is not a tier restriction error.
+ */
+export function formatTierErrorForUI(error: any): TierLimitErrorUI | null {
+  const errorState = extractTierLimitErrorState(error);
+  if (!errorState) return null;
+  return formatTierLimitErrorForUI(errorState);
+}

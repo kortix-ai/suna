@@ -7,6 +7,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./types": "./src/types/index.ts",
+    "./types/sandbox": "./src/types/sandbox.ts",
     "./streaming": "./src/streaming/index.ts",
     "./tools": "./src/tools/index.ts",
     "./utils": "./src/utils/index.ts",

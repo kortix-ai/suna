@@ -1,7 +1,3 @@
-"""
-Agent configuration loading utilities.
-"""
-
 import time
 from typing import Optional, Dict, Any
 
@@ -16,7 +12,8 @@ async def load_agent_config_fast(
     from core.cache.runtime_cache import (
         get_static_suna_config, 
         get_cached_user_mcps,
-        get_cached_agent_config
+        get_cached_agent_config,
+        get_cached_agent_type
     )
     
     t = time.time()
@@ -31,32 +28,37 @@ async def load_agent_config_fast(
                 logger.warning(f"[AGENT CONFIG FAST] No default agent for {account_id}")
                 return await load_agent_config(None, account_id, user_id)
         
-        static_config = get_static_suna_config()
-        if static_config:
-            cached_mcps = await get_cached_user_mcps(agent_id)
-            
-            agent_config = {
-                'agent_id': agent_id,
-                'system_prompt': static_config['system_prompt'],
-                'model': static_config['model'],
-                'agentpress_tools': static_config['agentpress_tools'],
-                'centrally_managed': static_config['centrally_managed'],
-                'is_suna_default': static_config['is_suna_default'],
-                'restrictions': static_config['restrictions'],
-                'configured_mcps': cached_mcps.get('configured_mcps', []) if cached_mcps else [],
-                'custom_mcps': cached_mcps.get('custom_mcps', []) if cached_mcps else [],
-                'triggers': cached_mcps.get('triggers', []) if cached_mcps else [],
-                '_mcps_need_loading': cached_mcps is None,
-            }
-            logger.info(f"⏱️ [AGENT CONFIG FAST] Static config: {(time.time() - t) * 1000:.1f}ms (mcps_cached={cached_mcps is not None})")
-            return agent_config
+        agent_type = await get_cached_agent_type(agent_id)
         
-        cached_config = await get_cached_agent_config(agent_id)
-        if cached_config:
-            logger.info(f"⏱️ [AGENT CONFIG FAST] Full cache hit: {(time.time() - t) * 1000:.1f}ms")
-            return cached_config
+        if agent_type == "suna":
+            static_config = get_static_suna_config()
+            if static_config:
+                cached_mcps = await get_cached_user_mcps(agent_id)
+                agent_config = {
+                    'agent_id': agent_id,
+                    'system_prompt': static_config['system_prompt'],
+                    'model': static_config['model'],
+                    'agentpress_tools': static_config['agentpress_tools'],
+                    'centrally_managed': static_config['centrally_managed'],
+                    'is_suna_default': static_config['is_suna_default'],
+                    'restrictions': static_config['restrictions'],
+                    'configured_mcps': cached_mcps.get('configured_mcps', []) if cached_mcps else [],
+                    'custom_mcps': cached_mcps.get('custom_mcps', []) if cached_mcps else [],
+                    'triggers': cached_mcps.get('triggers', []) if cached_mcps else [],
+                    '_mcps_need_loading': cached_mcps is None,
+                }
+                logger.info(f"⏱️ [AGENT CONFIG FAST] Suna (cached type): {(time.time() - t) * 1000:.1f}ms")
+                return agent_config
         
-        logger.info(f"⏱️ [AGENT CONFIG FAST] Cache miss, falling back to full load")
+        elif agent_type == "custom":
+            # Custom agent: check full config cache
+            cached_config = await get_cached_agent_config(agent_id)
+            if cached_config:
+                logger.info(f"⏱️ [AGENT CONFIG FAST] Custom (cached): {(time.time() - t) * 1000:.1f}ms")
+                return cached_config
+        
+        # Cache miss - fall back to full DB load (will also populate cache)
+        logger.info(f"⏱️ [AGENT CONFIG FAST] Cache miss (type={agent_type}), falling back to full load")
         return await load_agent_config(agent_id, account_id, user_id)
         
     except Exception as e:
@@ -111,51 +113,29 @@ async def load_agent_config(
                         raise HTTPException(status_code=404, detail="No agents available. Please create an agent first.")
                 return agent_data.to_dict()
         
-        from core.cache.runtime_cache import (
-            get_static_suna_config, 
-            get_cached_user_mcps,
-            get_cached_agent_config
-        )
+        from core.cache.runtime_cache import get_cached_agent_config
         
-        static_config = get_static_suna_config()
-        cached_mcps = await get_cached_user_mcps(agent_id)
+        t_cache = time.time()
+        cached_config = await get_cached_agent_config(agent_id)
         
-        if static_config and cached_mcps is not None:
-            agent_config = {
-                'agent_id': agent_id,
-                'system_prompt': static_config['system_prompt'],
-                'model': static_config['model'],
-                'agentpress_tools': static_config['agentpress_tools'],
-                'centrally_managed': static_config['centrally_managed'],
-                'is_suna_default': static_config['is_suna_default'],
-                'restrictions': static_config['restrictions'],
-                'configured_mcps': cached_mcps.get('configured_mcps', []),
-                'custom_mcps': cached_mcps.get('custom_mcps', []),
-                'triggers': cached_mcps.get('triggers', []),
-            }
-            logger.info(f"⏱️ [AGENT CONFIG] memory + Redis MCPs: {(time.time() - t) * 1000:.1f}ms (CACHE HIT)")
+        if cached_config:
+            agent_config = cached_config
+            logger.info(f"⏱️ [AGENT CONFIG] get_cached_agent_config: {(time.time() - t_cache) * 1000:.1f}ms (CACHE HIT)")
+        elif account_id:
+            logger.info(f"⏱️ [AGENT CONFIG] Cache miss, loading from DB...")
+            t_db = time.time()
+            from core.agents.agent_loader import get_agent_loader
+            loader = await get_agent_loader()
+            agent_data = await loader.load_agent(agent_id, account_id, load_config=True)
+            agent_config = agent_data.to_dict()
+            logger.info(f"⏱️ [AGENT CONFIG] DB load: {(time.time() - t_db) * 1000:.1f}ms (CACHE MISS)")
         else:
-            t_cache = time.time()
-            cached_config = await get_cached_agent_config(agent_id)
-            
-            if cached_config:
-                agent_config = cached_config
-                logger.info(f"⏱️ [AGENT CONFIG] get_cached_agent_config: {(time.time() - t_cache) * 1000:.1f}ms (CACHE HIT)")
-            elif account_id:
-                logger.info(f"⏱️ [AGENT CONFIG] Cache miss, loading from DB...")
-                t_db = time.time()
-                from core.agents.agent_loader import get_agent_loader
-                loader = await get_agent_loader()
-                agent_data = await loader.load_agent(agent_id, account_id, load_config=True)
-                agent_config = agent_data.to_dict()
-                logger.info(f"⏱️ [AGENT CONFIG] DB load: {(time.time() - t_db) * 1000:.1f}ms (CACHE MISS)")
-            else:
-                t_db = time.time()
-                from core.agents.agent_loader import get_agent_loader
-                loader = await get_agent_loader()
-                agent_data = await loader.load_agent(agent_id, agent_id, load_config=True)
-                agent_config = agent_data.to_dict()
-                logger.info(f"⏱️ [AGENT CONFIG] DB load (no account): {(time.time() - t_db) * 1000:.1f}ms")
+            t_db = time.time()
+            from core.agents.agent_loader import get_agent_loader
+            loader = await get_agent_loader()
+            agent_data = await loader.load_agent(agent_id, agent_id, load_config=True)
+            agent_config = agent_data.to_dict()
+            logger.info(f"⏱️ [AGENT CONFIG] DB load (no account): {(time.time() - t_db) * 1000:.1f}ms")
         
         if agent_config:
             logger.debug(f"Using agent {agent_config.get('agent_id')} for this agent run")
