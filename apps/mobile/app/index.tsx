@@ -121,8 +121,8 @@ export default function SplashScreen() {
       // the full setup flow - go straight to home, regardless of subscription status.
       // This prevents showing "Initializing Account" to users who already completed setup.
       if (hasCompletedOnboarding) {
-        log.log('🚀 → /home (onboarding completed, early navigation:', canNavigateEarly, ')');
-        router.replace('/home');
+        log.log('🚀 → /(app) (onboarding completed, early navigation:', canNavigateEarly, ')');
+        router.replace('/(app)');
       } else if (!hasActiveSubscription) {
         // New user: Account initialization happens automatically via webhook on signup.
         // Only show setting-up as a fallback if webhook failed or user signed up before this change.

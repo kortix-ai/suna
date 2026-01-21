@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { ThreadActionsDrawer } from './ThreadActionsDrawer';
 import { log } from '@/lib/logger';
+import { router } from 'expo-router';
 
 // Only import ContextMenu on native platforms
 let ContextMenu: React.ComponentType<any> | null = null;
@@ -40,6 +41,7 @@ interface ThreadHeaderProps {
   threadTitle?: string;
   onTitleChange?: (newTitle: string) => void;
   onBackPress?: () => void;
+  onNewChat?: () => void;
   onShare?: () => void;
   onFiles?: () => void;
   onDelete?: () => void;
@@ -50,6 +52,7 @@ export function ThreadHeader({
   threadTitle,
   onTitleChange,
   onBackPress,
+  onNewChat,
   onShare,
   onFiles,
   onDelete,
@@ -66,17 +69,7 @@ export function ThreadHeader({
   const [isActionsDrawerOpen, setIsActionsDrawerOpen] = React.useState(false);
   const titleInputRef = React.useRef<TextInput>(null);
 
-  const backScale = useSharedValue(1);
-  const newChatScale = useSharedValue(1);
   const moreScale = useSharedValue(1);
-
-  const backAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: backScale.value }],
-  }));
-
-  const newChatAnimatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: newChatScale.value }],
-  }));
 
   const moreAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: moreScale.value }],
@@ -91,14 +84,13 @@ export function ThreadHeader({
   }, [threadTitle]);
 
   const handleBackPress = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onBackPress?.();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
   };
 
   const handleNewChatPress = () => {
+    router.push('/(app)');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    // Navigate back to homepage
-    onBackPress?.();
   };
 
   const handleEditTitlePress = () => {
@@ -180,15 +172,8 @@ export function ThreadHeader({
         }}
       >
         <View className="flex-row items-center justify-between">
-          <AnimatedPressable
-            onPressIn={() => {
-              backScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-            }}
-            onPressOut={() => {
-              backScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-            }}
+          <Pressable
             onPress={handleBackPress}
-            style={backAnimatedStyle}
             hitSlop={8}
             accessibilityRole="button"
             accessibilityLabel={t('threadHeader.goBack')}
@@ -197,12 +182,13 @@ export function ThreadHeader({
               <GlassView
                 glassEffectStyle="regular"
                 tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+                isInteractive
                 style={{
                   justifyContent: 'center',
                   alignItems: 'center',
-                  borderRadius: 20,
-                  height: 40,
-                  width: 40,
+                  borderRadius: 22,
+                  height: 44,
+                  width: 44,
                 }}
               >
                 <Icon
@@ -218,9 +204,9 @@ export function ThreadHeader({
                   justifyContent: 'center',
                   alignItems: 'center',
                   backgroundColor: isDark ? '#2C2C2E' : '#E8E8ED',
-                  borderRadius: 20,
-                  height: 40,
-                  width: 40,
+                  borderRadius: 22,
+                  height: 44,
+                  width: 44,
                 }}
               >
                 <Icon
@@ -231,7 +217,7 @@ export function ThreadHeader({
                 />
               </View>
             )}
-          </AnimatedPressable>
+          </Pressable>
           <View 
             className="absolute left-0 right-0 items-center justify-center"
             style={{
@@ -322,15 +308,8 @@ export function ThreadHeader({
                   gap: 2,
                 }}
               >
-                <AnimatedPressable
-                  onPressIn={() => {
-                    newChatScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-                  }}
-                  onPressOut={() => {
-                    newChatScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                  }}
+                <Pressable
                   onPress={handleNewChatPress}
-                  style={newChatAnimatedStyle}
                   hitSlop={8}
                   accessibilityRole="button"
                   accessibilityLabel={t('threadHeader.newChat')}
@@ -350,7 +329,7 @@ export function ThreadHeader({
                       strokeWidth={2}
                     />
                   </View>
-                </AnimatedPressable>
+                </Pressable>
                 
                 {Platform.OS === 'ios' && ContextMenu ? (
                   <ContextMenu
@@ -379,8 +358,8 @@ export function ThreadHeader({
                         style={{
                           justifyContent: 'center',
                           alignItems: 'center',
-                          width: 36,
-                          height: 36,
+                          width: 44,
+                          height: 44,
                         }}
                       >
                         <Icon
@@ -410,8 +389,8 @@ export function ThreadHeader({
                       style={{
                         justifyContent: 'center',
                         alignItems: 'center',
-                        width: 36,
-                        height: 36,
+                        width: 44,
+                        height: 44,
                       }}
                     >
                       <Icon
@@ -427,15 +406,8 @@ export function ThreadHeader({
             </View>
           ) : !isEditingTitle ? (
             <View className="flex-row gap-2">
-              <AnimatedPressable
-                onPressIn={() => {
-                  newChatScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-                }}
-                onPressOut={() => {
-                  newChatScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                }}
+              <Pressable
                 onPress={handleNewChatPress}
-                style={newChatAnimatedStyle}
                 hitSlop={8}
                 accessibilityRole="button"
                 accessibilityLabel={t('threadHeader.newChat')}
@@ -457,7 +429,7 @@ export function ThreadHeader({
                     strokeWidth={2}
                   />
                 </View>
-              </AnimatedPressable>
+              </Pressable>
 
               <AnimatedPressable
                 onPressIn={() => {

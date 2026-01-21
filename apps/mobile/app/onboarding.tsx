@@ -283,10 +283,10 @@ export default function OnboardingScreen() {
       queryClient.invalidateQueries({ queryKey: agentKeys.lists() });
       queryClient.invalidateQueries({ queryKey: modelKeys.available() });
       await loadAgents();
-      router.replace('/home');
+      router.replace('/(app)');
     } catch (error) {
       log.error('Failed to complete onboarding:', error);
-      router.replace('/home');
+      router.replace('/(app)');
     }
   }, [loadAgents, refetchBilling, queryClient, router, markSetupComplete, markAsCompleted]);
 

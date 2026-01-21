@@ -68,7 +68,7 @@ export function WorkerConfigPage({
       router.back();
     } else {
       // If no previous screen, navigate to home
-      router.replace('/home');
+      router.replace('/(app)');
     }
   };
 

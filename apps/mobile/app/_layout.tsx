@@ -537,9 +537,11 @@ export default function RootLayout() {
                                   <Stack.Screen name="setting-up" />
                                   <Stack.Screen name="onboarding" />
                                   <Stack.Screen
-                                    name="home"
+                                    name="(app)"
                                     options={{
+                                      headerShown: false,
                                       gestureEnabled: false,
+                                      animation: 'fade',
                                     }}
                                   />
                                   <Stack.Screen
@@ -549,8 +551,6 @@ export default function RootLayout() {
                                       animation: 'fade',
                                     }}
                                   />
-                                  <Stack.Screen name="trigger-detail" />
-                                  <Stack.Screen name="worker-config" />
                                   <Stack.Screen
                                     name="share/[threadId]"
                                     options={{
@@ -609,8 +609,8 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // RULE 2: Authenticated users should NEVER see auth screens
     // This prevents back navigation/gestures from showing auth to logged-in users
     if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to /home');
-      router.replace('/home');
+      log.log('🚫 Authenticated user on auth screen, redirecting to /(app)');
+      router.replace('/(app)');
       return;
     }
   }, [isAuthenticated, authLoading, segments, router]);

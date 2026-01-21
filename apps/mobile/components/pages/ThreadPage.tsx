@@ -37,6 +37,7 @@ import { log } from '@/lib/logger';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
+  onNewChat?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
   onOpenWorkerConfig?: (
@@ -286,6 +287,7 @@ const DynamicIslandRefresh = React.memo(function DynamicIslandRefresh({
 
 export function ThreadPage({
   onMenuPress,
+  onNewChat,
   chat,
   isAuthenticated,
   onOpenWorkerConfig: externalOpenWorkerConfig,
@@ -944,7 +946,8 @@ export function ThreadPage({
             log.error('Failed to update thread title:', error);
           }
         }}
-        onBackPress={chat.showModeThreadList}
+        onBackPress={onMenuPress}
+        onNewChat={onNewChat}
         onShare={async () => {
           if (!chat.activeThread?.id) return;
           try {
@@ -992,10 +995,6 @@ export function ThreadPage({
         audioLevels={audioRecorder.audioLevels}
         attachments={chat.attachments}
         onRemoveAttachment={chat.removeAttachment}
-        selectedQuickAction={chat.selectedQuickAction}
-        selectedQuickActionOption={chat.selectedQuickActionOption}
-        onClearQuickAction={chat.clearQuickAction}
-        onQuickActionPress={chat.handleQuickAction}
         isAuthenticated={isAuthenticated}
         isAgentRunning={chat.isAgentRunning}
         isSendingMessage={chat.isSendingMessage}

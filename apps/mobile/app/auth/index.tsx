@@ -206,7 +206,7 @@ export default function AuthScreen() {
       if (Platform.OS === 'android') {
         const onBackPress = () => {
           if (isAuthenticated) {
-            router.replace('/home');
+            router.replace('/(app)');
             return true;
           }
           return false;
@@ -222,7 +222,7 @@ export default function AuthScreen() {
     if (isAuthenticated) {
       log.log('🔄 Auth page: user authenticated, closing drawer and redirecting to /home');
       emailDrawerRef.current?.close();
-      router.replace('/home');
+      router.replace('/(app)');
     }
   }, [isAuthenticated, router]);
 

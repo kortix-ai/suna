@@ -1693,16 +1693,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 {renderAgentIndicator(null)}
               </View>
               
-              {/* Unified loader container - consistent height prevents layout shift */}
-              {/* Both contemplating and brewing share same container to avoid jump */}
-              {/* overflow-hidden prevents bouncing animations from expanding the container */}
               {(isContemplating || isBrewing) && (
                 <View className="h-6 justify-center overflow-hidden">
-                  {isContemplating ? (
-                    <Text className="text-xs text-muted-foreground italic">Contemplating response...</Text>
-                  ) : (
-                    <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
-                  )}
+                  <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
                 </View>
               )}
               

@@ -24,7 +24,7 @@ export default function PlansScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/home');
+      router.replace('/(app)');
     }
   };
 
@@ -34,7 +34,7 @@ export default function PlansScreen() {
       if (router.canGoBack()) {
         router.back();
       } else {
-        router.replace('/home');
+        router.replace('/(app)');
       }
     }, 1500);
   };
