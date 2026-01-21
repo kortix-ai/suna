@@ -919,3 +919,62 @@
   animation: stream-blue-blur 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
   display: inline;
 }
+
+/* DOCX Preview Styles - Clean, no paper wrapper */
+.docx-container {
+  background: white;
+  padding: 24px;
+}
+
+/* Direct content styling (no wrapper mode) */
+.docx-container > section.docx-preview {
+  width: 100%;
+  max-width: 100%;
+  padding: 0;
+  margin: 0;
+}
+
+/* Ensure proper text rendering */
+.docx-container .docx-preview {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  line-height: 1.6;
+  color: #1a1a1a;
+}
+
+/* Typography improvements */
+.docx-container .docx-preview p {
+  margin-bottom: 0.75em;
+}
+
+.docx-container .docx-preview h1,
+.docx-container .docx-preview h2,
+.docx-container .docx-preview h3 {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+
+.docx-container .docx-preview table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+.docx-container .docx-preview td,
+.docx-container .docx-preview th {
+  border: 1px solid #ddd;
+  padding: 8px;
+}
+
+/* Dark mode support */
+.dark .docx-container {
+  background: hsl(var(--background));
+}
+
+.dark .docx-container .docx-preview {
+  color: hsl(var(--foreground));
+}
+
+.dark .docx-container .docx-preview td,
+.dark .docx-container .docx-preview th {
+  border-color: hsl(var(--border));
+}

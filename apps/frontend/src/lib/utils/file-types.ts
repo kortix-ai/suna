@@ -10,6 +10,7 @@ export const PREVIEWABLE_EXTENSIONS = [
   'json',
   'csv', 'tsv',
   'xlsx', 'xls',
+  'docx',
   'pdf',
   'txt',
   'kanvax',
@@ -108,6 +109,10 @@ export function isCsvExtension(ext: string): boolean {
 export function isSpreadsheetExtension(ext: string): boolean {
   const e = ext.toLowerCase();
   return e === 'xlsx' || e === 'xls';
+}
+
+export function isDocxExtension(ext: string): boolean {
+  return ext.toLowerCase() === 'docx';
 }
 
 export function isPdfExtension(ext: string): boolean {
