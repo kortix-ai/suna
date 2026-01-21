@@ -218,14 +218,19 @@ export function useOptimisticAgentStart(
           sessionStorage.setItem('optimistic_agent_run_thread', threadId);
         }
         
-        // Invalidate all relevant queries so the thread page picks up the new data
-        queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
-        queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
-        // Also invalidate the thread-specific queries
-        queryClient.invalidateQueries({ queryKey: ['thread', threadId] });
-        queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'agent-runs'] });
-        queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'messages'] });
-        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+        // Invalidate all relevant queries so the sidebar and thread page pick up the new data
+        // Use 'threads' prefix to match ALL threads queries (lists, paginated, etc.)
+        // refetchType: 'all' ensures even inactive queries are refetched
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['threads'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['projects'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] }),
+          // Also invalidate the thread-specific queries
+          queryClient.invalidateQueries({ queryKey: ['thread', threadId] }),
+          queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'agent-runs'] }),
+          queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'messages'] }),
+          queryClient.invalidateQueries({ queryKey: ['project', projectId] }),
+        ]);
         // Reset starting state
         setIsStarting(false);
       }).catch((error) => {
