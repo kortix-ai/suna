@@ -15,6 +15,7 @@ export {
   useSandboxImageBlob,
   useUploadFileToSandbox,
   useUploadMultipleFiles,
+  useStageFiles,
   useDeleteSandboxFile,
   useCreateSandboxDirectory,
   useDownloadSandboxFile,

@@ -1114,7 +1114,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
             ].filter(Boolean);
 
             // Parse pending attachments from metadata (for optimistic messages)
-            let pendingAttachments: Array<{ uri: string; name: string; type: string; size?: number }> = [];
+            let pendingAttachments: Array<{ uri: string; name: string; type: string; size?: number; status?: string }> = [];
             try {
               const metadata = typeof message.metadata === 'string' 
                 ? JSON.parse(message.metadata) 
@@ -1137,39 +1137,44 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 {/* Render pending attachments (local URIs from optimistic messages) */}
                 {pendingAttachments.length > 0 && (
                   <View className="flex-row flex-wrap justify-end gap-2 mb-2">
-                    {pendingAttachments.map((attachment, idx) => (
-                      <View
-                        key={`pending-${idx}`}
-                        className="rounded-2xl overflow-hidden border border-border"
-                        style={{ width: 120, height: 120 }}
-                      >
-                        {attachment.type === 'image' || attachment.type === 'video' ? (
-                          <>
-                            <Image
-                              source={{ uri: attachment.uri }}
-                              style={{ width: '100%', height: '100%' }}
-                              resizeMode="cover"
-                            />
-                            {/* Uploading overlay */}
-                            <View 
-                              className="absolute inset-0 bg-black/40 items-center justify-center"
-                              style={{ borderRadius: 16 }}
-                            >
-                              <View className="bg-white/20 rounded-full p-2">
-                                <KortixLoader size="small" />
-                              </View>
+                    {pendingAttachments.map((attachment, idx) => {
+                      const isUploading = attachment.status !== 'ready';
+                      return (
+                        <View
+                          key={`pending-${idx}`}
+                          className="rounded-2xl overflow-hidden border border-border"
+                          style={{ width: 120, height: 120 }}
+                        >
+                          {attachment.type === 'image' || attachment.type === 'video' ? (
+                            <>
+                              <Image
+                                source={{ uri: attachment.uri }}
+                                style={{ width: '100%', height: '100%' }}
+                                resizeMode="cover"
+                              />
+                              {/* Uploading overlay - only show if still uploading */}
+                              {isUploading && (
+                                <View 
+                                  className="absolute inset-0 bg-black/40 items-center justify-center"
+                                  style={{ borderRadius: 16 }}
+                                >
+                                  <View className="bg-white/20 rounded-full p-2">
+                                    <KortixLoader size="small" />
+                                  </View>
+                                </View>
+                              )}
+                            </>
+                          ) : (
+                            <View className="flex-1 items-center justify-center bg-card">
+                              {isUploading && <KortixLoader size="small" />}
+                              <Text className="text-xs text-muted-foreground text-center px-2 mt-2" numberOfLines={2}>
+                                {attachment.name}
+                              </Text>
                             </View>
-                          </>
-                        ) : (
-                          <View className="flex-1 items-center justify-center bg-card">
-                            <KortixLoader size="small" />
-                            <Text className="text-xs text-muted-foreground text-center px-2 mt-2" numberOfLines={2}>
-                              {attachment.name}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    ))}
+                          )}
+                        </View>
+                      );
+                    })}
                   </View>
                 )}
 

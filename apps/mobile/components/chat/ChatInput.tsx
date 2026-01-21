@@ -178,6 +178,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   // Derived values - use ref for hasText to avoid re-renders
   const hasAttachments = attachments.length > 0;
+  const hasUploadingFiles = attachments.some(a => a.status === 'uploading' || a.isUploading);
   // hasContent computed from ref - no state dependency
   const getHasContent = React.useCallback(() => {
     return !!(textValueRef.current && textValueRef.current.trim()) || attachments.length > 0;
@@ -360,7 +361,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Main button press handler
   const handleButtonPress = React.useCallback(() => {
     const hasContent = getHasContent(); // Compute from ref at press time
-    log.log('[ChatInput] 🔘 Button pressed!', { isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping });
+    log.log('[ChatInput] 🔘 Button pressed!', { isAgentRunning, isRecording, hasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, hasUploadingFiles });
 
     // Priority 1: Stop if agent is running OR if we're in sending/transcribing state
     if (isAgentRunning || isSendingMessage || isTranscribing) {
@@ -376,8 +377,12 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       return;
     }
 
-    // Priority 3: Send message if has content
+    // Priority 3: Send message if has content (but NOT if files are uploading)
     if (hasContent) {
+      if (hasUploadingFiles) {
+        log.warn('⚠️ Files are still uploading - cannot send message yet');
+        return;
+      }
       if (!hasAgent) {
         log.warn('⚠️ No agent selected - cannot send message');
         return;
@@ -396,7 +401,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
       return;
     }
     onAudioRecord?.();
-  }, [isAgentRunning, isRecording, getHasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
+  }, [isAgentRunning, isRecording, getHasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, hasUploadingFiles, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
   // Content size change handler - iOS smooth, Android instant
   const handleContentSizeChange = React.useCallback(
@@ -512,6 +517,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
               isAuthenticated={isAuthenticated}
               hasAgent={hasAgent}
               hasAttachments={hasAttachments}
+              hasUploadingFiles={hasUploadingFiles}
             />
           )}
         </View>
@@ -615,6 +621,7 @@ interface NormalModeProps {
   isAuthenticated: boolean;
   hasAgent: boolean;
   hasAttachments: boolean;
+  hasUploadingFiles: boolean;
 }
 
 // NOT memo'd - we want instant re-renders for button state
@@ -637,6 +644,7 @@ const NormalMode = ({
   isAuthenticated,
   hasAgent,
   hasAttachments,
+  hasUploadingFiles,
 }: NormalModeProps) => {
   // REANIMATED shared value for INSTANT button icon switching
   // This bypasses React rendering entirely - updates on UI thread!
@@ -728,8 +736,8 @@ const NormalMode = ({
           {/* Main action button */}
           <TouchableOpacity
             onPress={onButtonPress}
-            disabled={isStopping || (!hasAgent && !isAgentRunning && !isSendingMessage)}
-            style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: isStopping ? 0.5 : ((!hasAgent && !isAgentRunning && !isSendingMessage) ? 0.4 : 1) }}
+            disabled={isStopping || hasUploadingFiles || (!hasAgent && !isAgentRunning && !isSendingMessage)}
+            style={{ width: 40, height: 40, borderRadius: 18, alignItems: 'center', justifyContent: 'center', opacity: (isStopping || hasUploadingFiles) ? 0.5 : ((!hasAgent && !isAgentRunning && !isSendingMessage) ? 0.4 : 1) }}
             className={(isAgentRunning || isSendingMessage || isTranscribing || isStopping) ? 'bg-foreground' : 'bg-primary'}
             hitSlop={ANDROID_HIT_SLOP}
             activeOpacity={0.7}

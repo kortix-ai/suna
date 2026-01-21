@@ -97,6 +97,11 @@ class FreeTierService:
                     )
 
                 logger.info(f"[FREE TIER] ✅ LOCAL mode: Created mock subscription {mock_subscription_id} for {account_id}")
+
+                # Invalidate account_state cache to ensure fresh data is fetched
+                from ..shared.cache_utils import invalidate_account_state_cache
+                await invalidate_account_state_cache(account_id)
+
                 return {
                     'success': True,
                     'subscription_id': mock_subscription_id,
@@ -200,7 +205,12 @@ class FreeTierService:
                 logger.info(f"[FREE TIER] User {account_id} already has sufficient credits, skipping grant")
             
             logger.info(f"[FREE TIER] ✅ Successfully created free tier subscription {subscription.id} for {account_id}")
-            
+
+            # Invalidate account_state cache to ensure fresh data is fetched
+            from ..shared.cache_utils import invalidate_account_state_cache
+            await invalidate_account_state_cache(account_id)
+            logger.info(f"[FREE TIER] Invalidated account_state cache for {account_id}")
+
             return {
                 'success': True,
                 'subscription_id': subscription.id,

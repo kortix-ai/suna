@@ -83,7 +83,7 @@ class StreamHub:
             if stream_key not in self._pumps:
                 self._pumps[stream_key] = asyncio.create_task(self._pump(stream_key, last_id))
                 self.streams_active += 1
-                logger.debug(f"Hub: Started pump for {stream_key}")
+                logger.info(f"[HUB] Started pump for {stream_key}, last_id={last_id}")
         return queue
 
     async def unsubscribe(self, stream_key: str, queue: asyncio.Queue):
@@ -121,6 +121,7 @@ class StreamHub:
                                 try:
                                     queue.put_nowait((msg_id, fields))
                                     self.messages_delivered += 1
+                                    logger.info(f"[HUB] Delivered msg {msg_id} to queue for {stream_key}")
                                 except asyncio.QueueFull:
                                     self.messages_dropped += 1
                 except (ConnectionError, RedisConnectionError, OSError) as e:

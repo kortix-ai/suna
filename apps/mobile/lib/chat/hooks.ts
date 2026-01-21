@@ -232,13 +232,13 @@ export function useUnifiedAgentStart(
   options?: UseMutationOptions<
     { thread_id: string; agent_run_id: string; status: string },
     Error,
-    { threadId?: string; prompt?: string; files?: any[]; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
+    { threadId?: string; prompt?: string; files?: any[]; fileIds?: string[]; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
   >
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ threadId, prompt, files, modelName, agentId, threadMetadata }) => {
+    mutationFn: async ({ threadId, prompt, files, fileIds, modelName, agentId, threadMetadata }) => {
       const formData = new FormData();
       
       if (threadId) formData.append('thread_id', threadId);
@@ -247,7 +247,13 @@ export function useUnifiedAgentStart(
       if (agentId) formData.append('agent_id', agentId);
       if (threadMetadata) formData.append('thread_metadata', JSON.stringify(threadMetadata));
       
-      if (files?.length) {
+      // New approach: pass staged file IDs (matching web)
+      if (fileIds?.length) {
+        // Append each file ID individually - FormData arrays work differently than web
+        fileIds.forEach(fileId => formData.append('file_ids', fileId));
+      }
+      // Legacy: raw files (for backward compatibility during transition)
+      else if (files?.length) {
         files.forEach((file) => formData.append('files', file as any));
       }
 
@@ -360,6 +366,7 @@ export function useSendMessage(
         threadId: input.threadId,
         modelName: input.modelName,
         agentId: input.agentId,
+        fileIds: input.fileIds,
       });
 
       log.log('✅ [useSendMessage] Step 2 complete: Agent started', agentRun);

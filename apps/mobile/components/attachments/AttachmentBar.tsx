@@ -1,14 +1,3 @@
-/**
- * Attachment Bar - Elegant, minimal horizontal attachment display
- * 
- * Design Philosophy:
- * - Vercel-inspired minimalism
- * - Compact, elegant cards
- * - Subtle animations
- * - Floating appearance
- * - Clean, modern aesthetic
- */
-
 import React from 'react';
 import { View, ScrollView, Image, Pressable, ActivityIndicator } from 'react-native';
 import { Text } from '@/components/ui/text';
@@ -19,12 +8,10 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
-  withTiming,
   FadeIn,
   FadeOut,
 } from 'react-native-reanimated';
 import type { Attachment } from '@/hooks/useChat';
-import { formatFileSize } from '@/lib/files/utils';
 import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -35,15 +22,14 @@ interface AttachmentBarProps {
   onRemove: (index: number) => void;
 }
 
-/**
- * Minimal Attachment Bar - Floating, compact design
- */
 export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
   const { colorScheme } = useColorScheme();
-
   if (attachments.length === 0) return null;
-
-  const uploadingCount = attachments.filter(a => a.isUploading).length;
+  const uploadingCount = attachments.filter(a => a.status === 'uploading' || a.isUploading).length;
+  
+  const MAX_VISIBLE = 3;
+  const visibleAttachments = attachments.slice(0, MAX_VISIBLE);
+  const remainingCount = Math.max(0, attachments.length - MAX_VISIBLE);
 
   return (
     <AnimatedView
@@ -51,7 +37,6 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
       exiting={FadeOut.duration(150)}
       className="px-3 pb-2"
     >
-      {/* Minimal status - only when uploading */}
       {uploadingCount > 0 && (
         <View className="flex-row items-center mb-1.5 px-1">
           <View className="w-1 h-1 rounded-full bg-primary mr-1.5" />
@@ -60,8 +45,6 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
           </Text>
         </View>
       )}
-
-      {/* Compact horizontal attachments */}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
@@ -69,7 +52,7 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
         className="flex-row"
         style={{ overflow: 'visible' }}
       >
-        {attachments.map((attachment, index) => (
+        {visibleAttachments.map((attachment, index) => (
           <AttachmentItem
             key={`${attachment.uri}-${index}`}
             attachment={attachment}
@@ -77,14 +60,44 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
             onRemove={onRemove}
           />
         ))}
+        {remainingCount > 0 && (
+          <RemainingAttachmentsCard count={remainingCount} />
+        )}
       </ScrollView>
     </AnimatedView>
   );
 }
 
-/**
- * Compact Attachment Item - Minimal, elegant design
- */
+function RemainingAttachmentsCard({ count }: { count: number }) {
+  const { colorScheme } = useColorScheme();
+
+  return (
+    <AnimatedView
+      entering={FadeIn.duration(200)}
+      className="relative"
+    >
+      <View
+        className="rounded-2xl overflow-hidden bg-card border border-border/50"
+        style={{ 
+          width: 80,
+          height: 80,
+          shadowColor: '#000',
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.05,
+          shadowRadius: 2,
+        }}
+      >
+        <View className="items-center justify-center w-full h-full">
+          <Text className="text-2xl font-roobert-semibold text-foreground">
+            +{count}
+          </Text>
+        </View>
+      </View>
+    </AnimatedView>
+  );
+}
+
+
 function AttachmentItem({
   attachment,
   index,
@@ -127,9 +140,8 @@ function AttachmentItem({
     removeScale.value = withSpring(1, { damping: 20, stiffness: 400 });
   };
 
-  const isUploading = attachment.isUploading;
-  const hasError = !!attachment.uploadError;
-  const displayName = attachment.name || `${attachment.type}.file`;
+  const isUploading = attachment.status === 'uploading' || attachment.isUploading;
+  const hasError = attachment.status === 'error' || !!attachment.uploadError;
 
   return (
     <AnimatedView
@@ -138,7 +150,6 @@ function AttachmentItem({
       style={animatedStyle}
       className="relative"
     >
-      {/* Compact card - 64px */}
       <Pressable
         onPressIn={handlePressIn}
         onPressOut={handlePressOut}
@@ -158,7 +169,6 @@ function AttachmentItem({
           shadowRadius: 2,
         }}
       >
-        {/* Image Preview */}
         {(attachment.type === 'image' || attachment.type === 'video') && (
           <View className="relative w-full h-full">
             <Image
@@ -166,8 +176,6 @@ function AttachmentItem({
               style={{ width: '100%', height: '100%' }}
               resizeMode="cover"
             />
-            
-            {/* Minimal video badge */}
             {attachment.type === 'video' && !isUploading && !hasError && (
               <View className="absolute top-1 left-1 bg-black/60 backdrop-blur-sm rounded px-1 py-0.5">
                 <Text className="text-[9px] font-roobert-semibold text-white tracking-tight">
@@ -175,8 +183,6 @@ function AttachmentItem({
                 </Text>
               </View>
             )}
-            
-            {/* Minimal upload overlay */}
             {isUploading && (
               <View className="absolute inset-0 bg-black/20 backdrop-blur-[2px] items-center justify-center">
                 <View className="bg-white/90 dark:bg-black/80 rounded-full p-1.5">
@@ -184,8 +190,6 @@ function AttachmentItem({
                 </View>
               </View>
             )}
-            
-            {/* Minimal error overlay */}
             {hasError && (
               <View className="absolute inset-0 bg-destructive/10 items-center justify-center">
                 <View className="bg-destructive/90 rounded-full p-1">
@@ -200,8 +204,6 @@ function AttachmentItem({
             )}
           </View>
         )}
-
-        {/* Document/File Preview */}
         {attachment.type === 'document' && (
           <View className="items-center justify-center w-full h-full">
             {!isUploading && !hasError ? (
@@ -233,8 +235,6 @@ function AttachmentItem({
           </View>
         )}
       </Pressable>
-
-      {/* Remove Button - Large and easy to tap */}
       {!isUploading && (
         <AnimatedPressable
           onPress={handleRemove}
@@ -266,4 +266,3 @@ function AttachmentItem({
     </AnimatedView>
   );
 }
-
