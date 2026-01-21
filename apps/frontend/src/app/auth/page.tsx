@@ -7,8 +7,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useMediaQuery } from '@/hooks/utils';
-import { useState, useEffect, Suspense, lazy } from 'react';
-import { signUp, verifyOtp, resendMagicLink } from './actions';
+import { useState, useEffect, Suspense, lazy, useRef } from 'react';
+import { signUp, verifyOtp } from './actions';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Mail, MailCheck, Clock, ExternalLink } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
@@ -72,10 +72,11 @@ function LoginContent() {
   const [linkExpired, setLinkExpired] = useState(isExpired);
   const [expiredEmailState, setExpiredEmailState] = useState(expiredEmail);
   const [resendEmail, setResendEmail] = useState('');
-  const [showOtpInput, setShowOtpInput] = useState(false);
   const [otpCode, setOtpCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
-  const [useOtpFallback, setUseOtpFallback] = useState(false);
+  const [newCodeSent, setNewCodeSent] = useState(false);
+  const [autoSendingCode, setAutoSendingCode] = useState(false);
+  const [autoSendError, setAutoSendError] = useState(false);
+  const autoSendAttempted = useRef(false);
 
   useEffect(() => {
     setMounted(true);
@@ -95,6 +96,37 @@ function LoginContent() {
       }
     }
   }, [isExpired, expiredEmail]);
+
+  // Auto-send new OTP code when link expires (if we have the email)
+  useEffect(() => {
+    const autoSendNewCode = async () => {
+      if (!isExpired || !expiredEmail || autoSendAttempted.current || isLoading || user) {
+        return;
+      }
+
+      autoSendAttempted.current = true;
+      setAutoSendingCode(true);
+
+      try {
+        // Call backend API to send OTP-only email
+        const response = await backendApi.post('/auth/send-otp', { email: expiredEmail });
+
+        if (response.success) {
+          setNewCodeSent(true);
+          setAutoSendError(false);
+        } else {
+          setAutoSendError(true);
+        }
+      } catch (error) {
+        console.error('Auto-send failed:', error);
+        setAutoSendError(true);
+      } finally {
+        setAutoSendingCode(false);
+      }
+    };
+
+    autoSendNewCode();
+  }, [isExpired, expiredEmail, isLoading, user]);
 
   const handleAuth = async (prevState: any, formData: FormData) => {
     trackSendAuthLink();
@@ -189,46 +221,6 @@ function LoginContent() {
     };
   };
 
-  // Send OTP-only email (no magic link button) via backend
-  const handleSendOtpEmail = async (prevState: any, formData: FormData) => {
-    trackSendAuthLink();
-    markEmailAsUsed();
-
-    const email = expiredEmailState || formData.get('email') as string;
-    if (!email) {
-      toast.error(t('pleaseEnterValidEmail'));
-      return {};
-    }
-
-    setRegistrationEmail(email);
-
-    try {
-      // Call backend API to send OTP-only email
-      const response = await backendApi.post('/auth/send-otp', { email });
-
-      if (response.success) {
-        setExpiredEmailState(email);
-        setCodeSent(true);
-        setShowOtpInput(true);
-        setOtpCode('');
-        return { success: true };
-      } else {
-        const errorMessage = response.error?.message || 'Failed to send verification code';
-        toast.error('Failed to send code', {
-          description: errorMessage,
-          duration: 5000,
-        });
-        return {};
-      }
-    } catch (error: any) {
-      toast.error('Failed to send code', {
-        description: error.message || 'An error occurred',
-        duration: 5000,
-      });
-      return {};
-    }
-  };
-
   // Don't block render while checking auth - let content show immediately
   // The useEffect will redirect if user is already authenticated
 
@@ -278,8 +270,8 @@ function LoginContent() {
     );
   }
 
-  // Handle resend magic link
-  const handleResendMagicLink = async (prevState: any, formData: FormData) => {
+  // Handle sending OTP code (for expired link flow)
+  const handleSendOtpCode = async (prevState: any, formData: FormData) => {
     trackSendAuthLink();
     markEmailAsUsed();
 
@@ -289,33 +281,31 @@ function LoginContent() {
       return {};
     }
 
-    formData.set('email', email);
-    formData.set('returnUrl', returnUrl || '/dashboard');
-    formData.set('origin', isElectron() ? getAuthOrigin() : window.location.origin);
-    formData.set('acceptedTerms', 'true');
-    if (isElectron()) {
-      formData.set('isDesktopApp', 'true');
-    }
+    try {
+      const response = await backendApi.post('/auth/send-otp', { email });
 
-    const result = await resendMagicLink(prevState, formData);
-
-    if (result && typeof result === 'object' && 'success' in result && result.success) {
-      setRegistrationEmail(email);
-      setExpiredEmailState(email);
-      setLinkExpired(false);
-      setRegistrationSuccess(true);
-      return result;
-    }
-
-    if (result && typeof result === 'object' && 'message' in result) {
-      toast.error('Failed to send magic link', {
-        description: result.message as string,
+      if (response.success) {
+        setRegistrationEmail(email);
+        setExpiredEmailState(email);
+        setNewCodeSent(true);
+        setOtpCode('');
+        setAutoSendError(false);
+        return { success: true };
+      } else {
+        const errorMessage = response.error?.message || 'Failed to send verification code';
+        toast.error('Failed to send code', {
+          description: errorMessage,
+          duration: 5000,
+        });
+        return {};
+      }
+    } catch (error: any) {
+      toast.error('Failed to send code', {
+        description: error.message || 'An error occurred',
         duration: 5000,
       });
       return {};
     }
-
-    return result;
   };
 
   // Expired link view
@@ -323,136 +313,108 @@ function LoginContent() {
     const emailForProvider = expiredEmailState || resendEmail;
     const provider = emailForProvider ? getEmailProviderInfo(emailForProvider) : null;
 
+    // Split OTP into individual digits for the segmented input
+    const otpDigits = otpCode.padEnd(6, '').split('');
+
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center p-4">
-        <div className="w-full max-w-md mx-auto">
-          <div className="text-center">
-            {!codeSent ? (
-              // Step 1: Link expired, offer to resend or use OTP
-              <>
-                <div className="bg-orange-50 dark:bg-orange-950/20 rounded-full p-4 mb-6 inline-flex">
-                  <Clock className="h-12 w-12 text-orange-500 dark:text-orange-400" />
+      <div className="w-full relative overflow-hidden min-h-screen">
+        <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
+          {/* Animated background - same as registration success for consistency */}
+          <Suspense fallback={null}>
+            <AnimatedBg variant="hero" />
+          </Suspense>
+
+          <div className="relative z-10 w-full max-w-[420px] flex flex-col items-center">
+            {autoSendingCode ? (
+              // Loading: Auto-sending new code
+              <div className="flex flex-col items-center gap-6 animate-in fade-in duration-300">
+                <KortixLogo size={32} />
+
+                <div className="relative">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-foreground/5 to-transparent animate-pulse" />
+                  <KortixLoader size="medium" />
                 </div>
 
-                <h1 className="text-3xl font-semibold text-foreground mb-4">
-                  {t('magicLinkExpired')}
-                </h1>
-
-                <p className="text-muted-foreground mb-6">
-                  {t('magicLinkExpiredDescription')}
-                </p>
-
-                {expiredEmailState && (
-                  <p className="text-lg font-medium mb-6 text-foreground">
-                    {expiredEmailState}
+                <div className="text-center space-y-2">
+                  <h1 className="text-[28px] sm:text-[32px] font-normal tracking-tight text-foreground leading-none">
+                    Link expired
+                  </h1>
+                  <p className="text-[15px] text-foreground/50">
+                    Sending a fresh code to your email...
                   </p>
-                )}
+                </div>
+              </div>
+            ) : newCodeSent ? (
+              // Success: New code sent, show OTP input
+              <div className="flex flex-col items-center gap-6 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <KortixLogo size={32} />
 
-                {!useOtpFallback ? (
-                  // Primary: Resend magic link
-                  <form className="space-y-4">
-                    {!expiredEmailState && (
-                      <Input
-                        id="email"
-                        name="email"
-                        type="email"
-                        placeholder={t('emailAddress')}
-                        required
-                        onChange={(e) => setResendEmail(e.target.value)}
-                      />
-                    )}
-
-                    <SubmitButton
-                      formAction={handleResendMagicLink}
-                      className="w-full h-10"
-                      pendingText="Sending..."
-                      disabled={!expiredEmailState && !resendEmail}
-                    >
-                      Resend magic link
-                    </SubmitButton>
-
-                    <button
-                      type="button"
-                      onClick={() => setUseOtpFallback(true)}
-                      className="text-sm text-muted-foreground hover:text-foreground hover:underline transition-colors w-full text-center"
-                    >
-                      Having trouble? Use verification code instead
-                    </button>
-                  </form>
-                ) : (
-                  // Fallback: Send OTP code
-                  <form className="space-y-4">
-                    {!expiredEmailState && (
-                      <Input
-                        id="email"
-                        name="email"
-                        type="email"
-                        placeholder={t('emailAddress')}
-                        required
-                        onChange={(e) => setResendEmail(e.target.value)}
-                      />
-                    )}
-
-                    <SubmitButton
-                      formAction={handleSendOtpEmail}
-                      className="w-full h-10"
-                      pendingText="Sending..."
-                      disabled={!expiredEmailState && !resendEmail}
-                    >
-                      Send verification code
-                    </SubmitButton>
-
-                    <p className="text-xs text-muted-foreground text-center">
-                      We'll send a 6-digit code instead of a clickable link.
-                    </p>
-
-                    <button
-                      type="button"
-                      onClick={() => setUseOtpFallback(false)}
-                      className="text-sm text-muted-foreground hover:text-foreground transition-colors w-full text-center"
-                    >
-                      ← Back to magic link
-                    </button>
-                  </form>
-                )}
-              </>
-            ) : (
-              // Step 2: Code sent, show OTP input
-              <>
-                <div className="bg-green-50 dark:bg-green-950/20 rounded-full p-4 mb-6 inline-flex">
-                  <MailCheck className="h-12 w-12 text-green-500 dark:text-green-400" />
+                {/* Success indicator */}
+                <div className="relative">
+                  <div className="absolute inset-0 bg-emerald-500/20 rounded-full blur-xl" />
+                  <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-b from-emerald-400/20 to-emerald-500/10 border border-emerald-500/20">
+                    <MailCheck className="h-7 w-7 text-emerald-500" />
+                  </div>
                 </div>
 
-                <h1 className="text-3xl font-semibold text-foreground mb-4">
-                  Check your email
-                </h1>
+                <div className="text-center space-y-2">
+                  <h1 className="text-[28px] sm:text-[32px] font-normal tracking-tight text-foreground leading-none">
+                    Check your email
+                  </h1>
+                  <p className="text-[15px] text-foreground/50">
+                    We sent a 6-digit code to
+                  </p>
+                  <p className="text-[15px] font-medium text-foreground">
+                    {expiredEmailState || resendEmail}
+                  </p>
+                </div>
 
-                <p className="text-muted-foreground mb-2">
-                  We sent a 6-digit code to
-                </p>
+                {/* Segmented OTP Input */}
+                <label htmlFor="otp-input" className="w-full cursor-text">
+                  <div className="flex justify-center gap-2 sm:gap-3">
+                    {[0, 1, 2, 3, 4, 5].map((index) => (
+                      <div
+                        key={index}
+                        className={`
+                          relative w-11 h-14 sm:w-12 sm:h-16
+                          rounded-xl border-2 transition-all duration-200
+                          flex items-center justify-center
+                          text-xl sm:text-2xl font-medium font-mono
+                          ${otpDigits[index]
+                            ? 'border-foreground/20 bg-card shadow-sm'
+                            : 'border-border bg-background'
+                          }
+                          ${index === otpCode.length && otpCode.length < 6
+                            ? 'border-foreground/40 ring-2 ring-foreground/10'
+                            : ''
+                          }
+                        `}
+                      >
+                        {otpDigits[index] || (
+                          <span className="text-foreground/20">·</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
 
-                <p className="text-lg font-medium mb-6 text-foreground">
-                  {expiredEmailState || resendEmail}
-                </p>
-
-                <form className="space-y-4">
-                  <Input
-                    id="otp"
-                    name="otp"
+                  {/* Hidden actual input for keyboard/paste support */}
+                  <input
                     type="text"
                     inputMode="numeric"
                     pattern="[0-9]*"
                     maxLength={6}
-                    placeholder="000000"
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                    className="text-center text-2xl tracking-[0.5em] font-mono h-14"
+                    className="sr-only"
                     autoFocus
+                    id="otp-input"
                   />
+                </label>
 
+                <form className="w-full space-y-3">
                   <SubmitButton
                     formAction={handleVerifyOtp}
-                    className="w-full h-10"
+                    className="w-full h-12 rounded-xl text-[15px] font-medium"
                     pendingText="Verifying..."
                     disabled={otpCode.length !== 6}
                   >
@@ -460,30 +422,110 @@ function LoginContent() {
                   </SubmitButton>
 
                   {provider && (
-                    <Button asChild variant="outline" size="lg" className="w-full">
+                    <Button asChild variant="outline" size="lg" className="w-full h-12 rounded-xl">
                       <a
                         href={provider.url}
                         target="_blank"
                         rel="noopener noreferrer"
+                        className="flex items-center justify-center gap-2"
                       >
-                        {t('openProvider', { provider: provider.name })}
                         <ExternalLink className="h-4 w-4" />
+                        <span>{t('openProvider', { provider: provider.name })}</span>
                       </a>
                     </Button>
                   )}
                 </form>
 
                 <button
-                  onClick={() => {
-                    setCodeSent(false);
-                    setShowOtpInput(false);
-                    setOtpCode('');
+                  onClick={async () => {
+                    const email = expiredEmailState || resendEmail;
+                    if (!email) return;
+
+                    setAutoSendingCode(true);
+                    try {
+                      const response = await backendApi.post('/auth/send-otp', { email });
+                      if (response.success) {
+                        setOtpCode('');
+                        toast.success('New code sent!');
+                      } else {
+                        toast.error('Failed to send code');
+                      }
+                    } catch {
+                      toast.error('Failed to send code');
+                    } finally {
+                      setAutoSendingCode(false);
+                    }
                   }}
-                  className="mt-6 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  className="text-[13px] text-foreground/40 hover:text-foreground/70 transition-colors"
                 >
-                  Didn't receive it? Send again
+                  Didn't receive it? <span className="underline underline-offset-2">Send again</span>
                 </button>
-              </>
+              </div>
+            ) : (
+              // No email provided or auto-send failed - show manual form
+              <div className="flex flex-col items-center gap-6 w-full animate-in fade-in slide-in-from-bottom-4 duration-500">
+                <KortixLogo size={32} />
+
+                {/* Warning indicator */}
+                <div className="relative">
+                  <div className="absolute inset-0 bg-amber-500/20 rounded-full blur-xl" />
+                  <div className="relative flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-b from-amber-400/20 to-amber-500/10 border border-amber-500/20">
+                    <Clock className="h-7 w-7 text-amber-500" />
+                  </div>
+                </div>
+
+                <div className="text-center space-y-2">
+                  <h1 className="text-[28px] sm:text-[32px] font-normal tracking-tight text-foreground leading-none">
+                    {t('magicLinkExpired')}
+                  </h1>
+                  <p className="text-[15px] text-foreground/50 max-w-[280px]">
+                    {autoSendError
+                      ? "We couldn't send a code automatically. Try again below."
+                      : t('magicLinkExpiredDescription')
+                    }
+                  </p>
+                </div>
+
+                {expiredEmailState && (
+                  <Card className="w-full bg-card/50 border border-border/50 backdrop-blur-sm">
+                    <CardContent className="p-4 flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted">
+                        <Mail className="h-5 w-5 text-muted-foreground" />
+                      </div>
+                      <span className="text-[14px] font-medium text-foreground truncate">
+                        {expiredEmailState}
+                      </span>
+                    </CardContent>
+                  </Card>
+                )}
+
+                <form className="w-full space-y-4">
+                  {!expiredEmailState && (
+                    <Input
+                      id="email"
+                      name="email"
+                      type="email"
+                      placeholder={t('emailAddress')}
+                      required
+                      onChange={(e) => setResendEmail(e.target.value)}
+                      className="h-12 rounded-xl text-[15px]"
+                    />
+                  )}
+
+                  <SubmitButton
+                    formAction={handleSendOtpCode}
+                    className="w-full h-12 rounded-xl text-[15px] font-medium"
+                    pendingText="Sending..."
+                    disabled={!expiredEmailState && !resendEmail}
+                  >
+                    Send verification code
+                  </SubmitButton>
+
+                  <p className="text-[12px] text-foreground/40 text-center">
+                    We'll send a 6-digit code to verify it's you
+                  </p>
+                </form>
+              </div>
             )}
           </div>
         </div>
