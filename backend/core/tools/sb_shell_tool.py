@@ -17,52 +17,53 @@ from core.utils.logger import logger
     weight=20,
     visible=True,
     usage_guide="""
-### CLI OPERATIONS & TERMINAL COMMANDS
+## Shell - Execute terminal commands in the workspace
 
-**EXECUTION:**
-- Commands run synchronously and wait for completion (blocking)
-- Default timeout is 300 seconds (5 minutes)
-- Output is streamed in real-time and returned upon completion
+Executes shell commands in the workspace directory with real-time output streaming.
 
-**LONG-RUNNING PROCESSES:**
-For processes that need to run in the background (servers, watches, etc.), use tmux directly:
+### When to Use
+- Installing packages (pip install, npm install, apt-get)
+- Running build commands and scripts
+- Git operations
+- System administration tasks
+- Running tests or linters
+- Any task requiring shell execution
+
+### When NOT to Use
+- DO NOT use cat/head/tail to read files - use read_file or search_file instead
+- DO NOT use sed/awk to edit files - use edit_file or str_replace instead
+- DO NOT use echo/heredoc to create files - use create_file instead
+- DO NOT use find/grep for searching - use search_file or the dedicated search tools
+
+### Important Notes
+- Commands run synchronously with a default 300s (5 minutes) timeout
+- Output is streamed in real-time
+- Working directory is /workspace by default
+- Use ABSOLUTE paths in commands (e.g., /workspace/src/main.py)
+- Always use non-interactive flags (-y, --yes, -f) to avoid prompts
+- Chain commands with && for sequential execution
+
+### Long-Running Processes
+For background processes (servers, watches), use tmux:
 ```bash
-# Start a background server
+# Start background server
 tmux new-session -d -s myserver 'npm run dev'
 
-# Start multiple background processes
-tmux new-session -d -s build 'npm run watch'
-tmux new-session -d -s logs 'tail -f app.log'
-
-# Check on a background process
+# Check on process
 tmux capture-pane -t myserver -p
 
-# Kill a background process
+# Kill process
 tmux kill-session -t myserver
-
-# List all background sessions
-tmux list-sessions
 ```
 
-**COMMAND EXECUTION GUIDELINES:**
-- Chain commands with && for sequential execution
-- Use | for piping output between commands
-- Avoid commands requiring confirmation; use -y or -f flags
-- For large outputs, redirect to files: `cmd > output.txt`
+### Port 8080
+Port 8080 is AUTO-EXPOSED and publicly accessible. DO NOT start web servers manually - files served from /workspace are automatically available via preview URLs.
 
-**BEST PRACTICES:**
-- Use non-interactive flags (-y, --yes, -f) to avoid prompts
+### Best Practices
+- Prefer CLI tools over Python scripts for file ops, text processing
 - Chain multiple commands with && to minimize tool calls
-- Use pipe operator to pass command outputs
-- Use `bc` for simple calculations, Python for complex math
-
-**CLI TOOLS PREFERENCE:**
-- Always prefer CLI tools over Python scripts when possible
-- CLI tools are faster for: file operations, text processing, system operations
-- Use Python only when: complex logic required, CLI tools insufficient
-
-**DO NOT start web servers directly** - port 8080 is already running and publicly accessible.
-Use tmux for any server processes that need to persist.
+- For large outputs, redirect to files: `cmd > output.txt`
+- Use `bc` for simple math, Python for complex calculations
 """
 )
 class SandboxShellTool(SandboxToolsBase):

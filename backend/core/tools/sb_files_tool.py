@@ -21,46 +21,57 @@ from typing import Optional
     weight=10,
     visible=True,
     usage_guide="""
-### FILE OPERATIONS
+## File Operations - Create, edit, and manage files in the workspace
 
-**CORE CAPABILITIES:**
-- Creating, reading, modifying, and deleting files
-- Organizing files into directories/folders
-- Converting between file formats
-- Searching through file contents
-- Batch processing multiple files
-- AI-powered intelligent file editing with natural language instructions using `edit_file` tool exclusively
+Provides file system operations relative to /workspace directory.
 
-**MANDATORY FILE EDITING TOOL:**
-- **MUST use edit_file for ALL file modifications**
-- This is a powerful AI tool that handles everything from simple replacements to complex refactoring
-- NEVER use echo or sed to modify files - always use edit_file
-- Provide clear natural language instructions and the code changes
+### Available Tools
+- **create_file**: Create new files with content
+- **edit_file**: AI-powered intelligent editing (PREFERRED for modifications)
+- **str_replace**: Exact string replacement (when edit_file isn't suitable)
+- **full_file_rewrite**: Complete file replacement (use sparingly)
+- **delete_file**: Delete files (requires user confirmation)
 
-**FILE MANAGEMENT BEST PRACTICES:**
-- Use file tools for reading, writing, appending, and editing
-- Actively save intermediate results
-- Create organized file structures with clear naming conventions
-- Store different types of data in appropriate formats
+### When to Use
+- Creating new files (code, config, data, HTML)
+- Modifying existing files with code changes
+- Organizing project structure
 
-**ONE FILE PER REQUEST RULE:**
-- For a single user request, create ONE file and edit it throughout the process
-- Treat the file as a living document that you continuously update
-- Edit existing files rather than creating multiple new files
-- Build one comprehensive file that contains all related content
+### When NOT to Use
+- DO NOT use shell commands (echo, sed, awk) for file operations
+- DO NOT use cat/head/tail to read files - use read_file or search_file instead
+- DO NOT create files unless necessary - prefer editing existing files
 
-**CSS & STYLE GUIDELINES:**
-- **KORTIX BRAND COLORS:** Always use Kortix on-brand black/white color scheme
-- **NO GRADIENTS WHATSOEVER:** Absolutely forbidden - use solid colors only (black, white, or shades of gray)
-- **NO PURPLE COLORS:** Purple is absolutely forbidden in any form - no purple backgrounds, no purple text, no purple accents, no purple anything
-- **NO GENERIC AI/TECH GRADIENTS:** Explicitly forbidden: purple-to-blue gradients, blue-to-purple gradients, any purple/blue/teal gradient combinations, or any other generic "AI tech" gradient schemes
-- **SOLID COLORS ONLY:** Use only solid black, white, or shades of gray - no gradients, no color transitions, no fancy effects, NO PURPLE
+### File Editing Strategy
+1. **Always read before editing**: Use read_file or search_file first to understand current content
+2. **Use edit_file for modifications**: It's AI-powered and handles complex refactoring
+3. **Use str_replace for precise changes**: When you need exact string replacement
+4. **Use full_file_rewrite sparingly**: Only when complete replacement is necessary
 
-**🚨 FILE DELETION SAFETY:**
+### edit_file Format
+When using edit_file, specify changes with the `// ... existing code ...` pattern:
+```
+// ... existing code ...
+FIRST_EDIT
+// ... existing code ...
+SECOND_EDIT
+// ... existing code ...
+```
+- Include 3-5 lines of context around each change
+- DO NOT omit code without using the marker
+- Make ALL edits to a file in a SINGLE edit_file call
+
+### Important Rules
+- All paths are relative to /workspace (e.g., "src/main.py")
 - NEVER delete files without explicit user confirmation
-- Before calling `delete_file`, MUST use `ask` tool to request permission
-- Example: "Can I delete [filename]? This cannot be undone."
-- Only proceed with deletion after user explicitly approves
+- NEVER create files unless absolutely necessary
+- Prefer editing existing files over creating new ones
+- One comprehensive file is better than multiple fragmented files
+
+### Styling Guidelines (for HTML/CSS)
+- Use Kortix brand colors: black/white/gray scheme
+- NO gradients, NO purple colors
+- Solid colors only - modern, clean aesthetic
 """
 )
 class SandboxFilesTool(SandboxToolsBase):

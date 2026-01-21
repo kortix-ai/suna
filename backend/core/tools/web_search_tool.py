@@ -24,80 +24,68 @@ import httpx
     weight=30,
     visible=True,
     usage_guide="""
-### WEB SEARCH & CONTENT EXTRACTION
+## Web Search - Search the internet for up-to-date information
 
-**🚨 CRITICAL: USE BATCH MODE - ONE CALL, MULTIPLE QUERIES**
-- **NEVER** make multiple separate web_search calls
-- **ALWAYS** pass ALL your queries as an array in a SINGLE call
-- This is FASTER (parallel execution) and costs FEWER TOKENS
-- ❌ WRONG: 3 separate calls for "Tesla news", "Tesla stock", "Tesla products"
-- ✅ CORRECT: ONE call with query=["Tesla news", "Tesla stock", "Tesla products"]
+Search the web for current information, news, research, and facts beyond training data.
 
-**WEB SEARCH CAPABILITIES:**
-- Search the web for up-to-date information with direct question answering
-- **BATCH SEARCHING:** Execute multiple queries concurrently in ONE call for faster research
-- Retrieve relevant images related to search queries
-- Get comprehensive search results with titles, URLs, and snippets
-- Find recent news, articles, and information beyond training data
-- Scrape webpage content for detailed information extraction when needed
+### Available Tools
+- **web_search**: Search the web with single or BATCH queries
+- **scrape_webpage**: Extract full content from web pages
 
-**RESEARCH BEST PRACTICES:**
-1. **Collect ALL queries first, then make ONE batch call:**
-   - Think about all the information you need
-   - Combine all queries into a single array
-   - Make ONE web_search call with all queries
-   - Example: web_search(query=["topic overview", "use cases", "pricing", "competitors"], num_results=5)
+### When to Use
+- Finding current information, news, recent events
+- Researching topics that require up-to-date data
+- Gathering information from multiple sources
+- Fact-checking or verifying claims
 
-2. **Research Workflow with Automatic Content Extraction:**
-   - **MANDATORY**: Collect all search needs → ONE web_search call with array of queries
-   - **CORRECT FORMAT**: web_search(query=["query1", "query2", "query3"], num_results=5)
-   - **WRONG FORMAT**: Never make 3 separate web_search calls!
-   - **AUTOMATIC CONTENT EXTRACTION**: After web_search, automatically identify qualitative sources:
-     * Academic papers (arxiv.org, pubmed, Semantic Scholar, etc.) → Use get_paper_details for papers with paper IDs
-     * Long-form articles, research reports, detailed content → Use scrape-webpage to extract full content
-     * Collect multiple qualitative URLs and scrape them in batch for efficiency
-   - **MANDATORY**: Never rely solely on search snippets - always extract and read full content from qualitative sources
-   - Only if scrape-webpage fails or interaction required: use browser automation tools
+### When NOT to Use
+- For information already in the conversation context
+- When the user provides all necessary information
+- For simple calculations or logic that doesn't need external data
 
-**BATCH MODE EXAMPLE:**
-- Single call: web_search(query=["AI trends 2025", "machine learning applications", "GPT competitors"], num_results=5)
-- All 3 queries execute in parallel - much faster than 3 separate calls!
-- Returns batch_results with all query results in one response
+### Critical: BATCH MODE
 
-**WEB SEARCH BEST PRACTICES:**
-- **🚨 ALWAYS BATCH YOUR QUERIES** - never make multiple web_search calls when one batch call works
-- **FORMAT**: query=["query1", "query2", "query3"] (native array, NOT JSON string)
-- **num_results**: Must be an integer (5), NOT a string ("5")
-- Use specific, targeted questions to get direct answers
-- Include key terms and contextual information in search queries
-- Filter search results by date when freshness is important
-- Review the direct answer, images, and search results
-- Analyze multiple search results to cross-validate information
+**ALWAYS batch multiple queries into ONE call:**
+- ❌ WRONG: 3 separate web_search calls
+- ✅ CORRECT: ONE call with query=["topic 1", "topic 2", "topic 3"]
 
-**CONTENT EXTRACTION DECISION TREE:**
-1. ALWAYS start with ONE web_search call using BATCH MODE (array of all queries)
-2. **AUTOMATICALLY identify qualitative sources** from search results:
-   - Academic papers (arxiv.org, pubmed, Semantic Scholar, IEEE, ACM, Nature, Science, etc.)
-   - Long-form articles, research reports, detailed blog posts
-   - Documentation pages, guides, whitepapers
-   - Any source with substantial qualitative content
-3. **AUTOMATICALLY extract content** from identified qualitative sources:
-   - For Semantic Scholar papers: Use get_paper_details with paper_id (extract from URL or search result)
-   - For other papers/articles: Use scrape-webpage to get full content
-   - Batch scrape multiple URLs together for efficiency
-4. **MANDATORY**: Read extracted content thoroughly - don't rely on search snippets alone
-5. Only skip scraping if web-search already provides complete answers AND no qualitative sources are present
-6. Only use browser tools if scrape-webpage fails or interaction is required
+Batch mode is FASTER (parallel execution) and more EFFICIENT.
 
-**DATA FRESHNESS:**
-- Always check publication dates of search results
-- Prioritize recent sources for time-sensitive information
-- Use date filters to ensure information relevance
-- Provide timestamp context when sharing web search information
-- Specify date ranges when searching for time-sensitive topics
+### Usage Pattern
 
-**TIME CONTEXT FOR RESEARCH:**
-- CRITICAL: When searching for latest news or time-sensitive information, ALWAYS use the current date/time values provided at runtime as reference points
+```
+# Correct - batch all queries
+web_search(query=["Tesla news", "Tesla stock", "Tesla products"], num_results=5)
+
+# Wrong - never do this
+web_search(query="Tesla news")
+web_search(query="Tesla stock")  # Wasteful!
+web_search(query="Tesla products")  # Wasteful!
+```
+
+### Research Workflow
+
+1. **Collect ALL queries first**, then make ONE batch call
+2. **Review results** - identify qualitative sources
+3. **Extract content** from promising URLs using scrape_webpage (batch multiple URLs)
+4. **NEVER rely solely on snippets** - always read full content from good sources
+
+### Content Extraction Decision
+
+After web_search, identify and scrape:
+- Academic papers (arxiv, pubmed, IEEE, Nature)
+- Long-form articles, research reports
+- Documentation, guides, whitepapers
+- Any source with substantial content
+
+Use scrape_webpage to batch-scrape multiple URLs efficiently.
+
+### Important Notes
+- query parameter: native array ["q1", "q2"], NOT JSON string
+- num_results: integer (5), NOT string ("5")
+- Check publication dates for time-sensitive info
+- Cross-validate information across multiple sources
+- Only use browser tools if scraping fails or requires interaction
 """
 )
 class SandboxWebSearchTool(SandboxToolsBase):

@@ -23,36 +23,67 @@ KB_VERSION = "0.1.2"
     weight=35,
     visible=True,
     usage_guide="""
-### FILE READING & SEARCH - USE search_file BY DEFAULT!
+## File Reader - Read and search document content
 
-**DEFAULT: Always use search_file first!**
-- use search_file with file_path "uploads/document.pdf" and query "what is this about"
-- Returns relevant chunks without flooding context!
+Read and semantically search files in the workspace. Supports PDFs, Word docs, Excel, code files, and more.
 
-**SUPPORTED FILE TYPES:**
-- PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx)
-- Excel (.xls, .xlsx), CSV, JSON, XML
-- Code files (py, js, ts, java, etc.)
-- Text files (txt, md, log, etc.)
+### Available Tools
+- **search_file**: Semantic search within files (PREFERRED - returns relevant chunks)
+- **read_file**: Read full file content (use sparingly)
 
-**SCANNED/IMAGE-ONLY PDFs:**
-- If extraction returns empty, use CLI: `pdftoppm -png -r 300 file.pdf /tmp/page` then `tesseract /tmp/page-1.png stdout -l eng`
+### When to Use search_file (95% of cases)
+- Reading PDFs, Word docs, Excel, PowerPoint
+- Finding specific information in large files
+- Any file over 2KB
+- When you need relevant sections, not full content
 
-**Only use read_file for:**
+### When to Use read_file
 - Tiny config files (<2KB)
 - When you need EXACT full content
+- Code files where you need everything
 
-**EXAMPLES:**
-- PDF: use search_file with file_path "uploads/report.pdf" and query "key findings"
-- Excel: use search_file with file_path "uploads/data.xlsx" and query "sales summary"
-- PowerPoint: use search_file with file_path "uploads/deck.pptx" and query "main slides"
-- Word: use search_file with file_path "uploads/doc.docx" and query "contract terms"
-- Config: use read_file with file_path "uploads/config.json" (tiny files only!)
+### When NOT to Use
+- For images → use load_image instead
+- If you can get information from search results → check first
 
-**CRITICAL:**
-- 95% of files → use search_file
-- Images → use load_image
-- ❌ NEVER use read_file on large files!
+### Supported File Types
+- **Documents**: PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx)
+- **Data**: Excel (.xls, .xlsx), CSV, JSON, XML
+- **Code**: py, js, ts, java, c, cpp, go, rs, etc.
+- **Text**: txt, md, log, yaml, toml, ini
+
+### Usage Examples
+
+```
+# CORRECT - semantic search (returns relevant chunks)
+search_file(file_path="uploads/report.pdf", query="key findings")
+search_file(file_path="uploads/data.xlsx", query="sales figures")
+
+# CORRECT - small config file
+read_file(file_path="uploads/config.json")
+
+# WRONG - never read large files directly
+read_file(file_path="uploads/huge_report.pdf")  # Use search_file instead!
+```
+
+### Batch Mode
+Both tools support reading/searching multiple files concurrently:
+```
+search_file(file_paths=["file1.pdf", "file2.pdf"], query="topic")
+read_file(file_paths=["config1.json", "config2.json"])
+```
+
+### Scanned PDFs
+If text extraction returns empty (scanned/image-only PDF), use OCR via CLI:
+```bash
+pdftoppm -png -r 300 file.pdf /tmp/page
+tesseract /tmp/page-1.png stdout -l eng
+```
+
+### Important Notes
+- search_file prevents context flooding - use it by default
+- Batch multiple files in one call for efficiency
+- Images (jpg, png, gif, webp, svg) → use load_image, not these tools
 """
 )
 class SandboxFileReaderTool(SandboxToolsBase):
