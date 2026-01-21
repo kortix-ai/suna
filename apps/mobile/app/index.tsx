@@ -65,6 +65,11 @@ export default function SplashScreen() {
   const onboardingReady = !isAuthenticated || !onboardingLoading;
   const allDataReady = authReady && billingReady && onboardingReady;
 
+  // Optimize UX: For returning users (authenticated + onboarded), navigate immediately without waiting for all data
+  // This prevents showing the loader for users who just want to open the app
+  const canNavigateEarly = authReady && isAuthenticated && !onboardingLoading && hasCompletedOnboarding;
+  const shouldNavigate = canNavigateEarly || allDataReady;
+
   // Status text for debugging
   const getStatusText = () => {
     if (!authReady) return 'Checking session...';
@@ -86,16 +91,18 @@ export default function SplashScreen() {
       hasCompletedOnboarding,
       hasActiveSubscription,
       allDataReady,
+      canNavigateEarly,
+      shouldNavigate,
       hasNavigated
     });
-  }, [authLoading, isAuthenticated, billingLoading, subscriptionData, onboardingLoading, hasCompletedOnboarding, hasActiveSubscription, allDataReady, hasNavigated]);
+  }, [authLoading, isAuthenticated, billingLoading, subscriptionData, onboardingLoading, hasCompletedOnboarding, hasActiveSubscription, allDataReady, canNavigateEarly, shouldNavigate, hasNavigated]);
 
   React.useEffect(() => {
     // Don't navigate twice
     if (hasNavigated) return;
     
-    // Wait until all data is ready
-    if (!allDataReady) return;
+    // Wait until we can navigate (either early for returning users, or when all data is ready for new users)
+    if (!shouldNavigate) return;
 
     // Small delay to ensure React state is settled
     const timer = setTimeout(() => {
@@ -114,7 +121,7 @@ export default function SplashScreen() {
       // the full setup flow - go straight to home, regardless of subscription status.
       // This prevents showing "Initializing Account" to users who already completed setup.
       if (hasCompletedOnboarding) {
-        log.log('🚀 → /home (onboarding completed)');
+        log.log('🚀 → /home (onboarding completed, early navigation:', canNavigateEarly, ')');
         router.replace('/home');
       } else if (!hasActiveSubscription) {
         // New user: Account initialization happens automatically via webhook on signup.
@@ -129,16 +136,22 @@ export default function SplashScreen() {
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [allDataReady, hasNavigated, isAuthenticated, hasActiveSubscription, hasCompletedOnboarding, router]);
+  }, [shouldNavigate, hasNavigated, isAuthenticated, hasActiveSubscription, hasCompletedOnboarding, canNavigateEarly, router]);
+
+  const showLoader = !canNavigateEarly;
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background items-center justify-center">
-        <KortixLoader customSize={56} />
-        <Text className="text-muted-foreground text-sm mt-4">
-          {getStatusText()}
-        </Text>
+        {showLoader && (
+          <>
+            <KortixLoader customSize={56} />
+            <Text className="text-muted-foreground text-sm mt-4">
+              {getStatusText()}
+            </Text>
+          </>
+        )}
       </View>
     </>
   );

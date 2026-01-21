@@ -27,7 +27,13 @@ export function FooterSection() {
           <div className="flex flex-col md:flex-row md:items-center md:justify-between p-10">
             <div className="flex flex-col items-start justify-start gap-y-5 max-w-xs mx-0">
               <Link href="/" className="flex items-center gap-2">
-                <KortixLogo size={20} />
+                {/* Wordmark on mobile, symbol on desktop */}
+                <span className="md:hidden">
+                  <KortixLogo size={18} variant="logomark" />
+                </span>
+                <span className="hidden md:block">
+                  <KortixLogo size={20} variant="symbol" />
+                </span>
               </Link>
               <p className="tracking-tight text-muted-foreground font-medium">
                 {siteConfig.hero.description}

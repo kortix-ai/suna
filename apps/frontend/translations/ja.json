@@ -348,6 +348,7 @@
     "scheduledTriggers": "スケジュールトリガー",
     "appTriggers": "アプリトリガー",
     "limitsExceeded": "チャットの制限に達しました。プランをアップグレードしてもっとチャットを作成しよう。",
+    "modeSubtitle": "テンプレートと例で始めるモードを選択してください",
     "agentInitiatedSuccessfully": "エージェントが正常に開始されました",
     "aiAssistantReady": "AIアシスタントがヘルプの準備ができています",
     "greetings": {
@@ -935,9 +936,12 @@
   },
   "suna": {
     "samplePrompts": "サンプルプロンプト",
+    "examplePrompts": "サンプルプロンプト",
     "chooseStyle": "スタイルを選択",
     "chooseTemplate": "テンプレートを選択",
     "chooseOutputFormat": "出力形式を選択",
+    "chooseCanvasAction": "キャンバスアクションを選択",
+    "chooseVideoStyle": "ビデオスタイルを選択",
     "preferredCharts": "推奨チャート",
     "whatWouldYouLike": "何をやりたい？",
     "describeTask": "Workerに完了させたいタスクを説明...",
@@ -966,6 +970,14 @@
       "anime": "アニメ",
       "impressionist": "印象派",
       "surreal": "シュール"
+    },
+    "videoStyles": {
+      "cinematic": "シネマティック",
+      "product": "プロダクト",
+      "animation": "アニメーション",
+      "nature": "ネイチャー",
+      "abstract": "アブストラクト",
+      "adventure": "アドベンチャー"
     },
     "templates": {
       "minimalist": {
@@ -1101,6 +1113,24 @@
       "wordcloud": "ワードクラウド",
       "stacked": "積み上げ棒グラフ",
       "area": "エリアチャート"
+    },
+    "canvasActions": {
+      "create": {
+        "name": "新規作成",
+        "description": "ゼロから生成"
+      },
+      "edit": {
+        "name": "画像を編集",
+        "description": "既存の画像を変更"
+      },
+      "upscale": {
+        "name": "アップスケール",
+        "description": "拡大・改善"
+      },
+      "remove-bg": {
+        "name": "背景を削除",
+        "description": "背景を除去"
+      }
     },
     "prompts": {
       "image": {

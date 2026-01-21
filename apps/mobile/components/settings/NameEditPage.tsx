@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, TextInput, Alert, Keyboard, ScrollView } from 'react-native';
+import { Pressable, View, TextInput, Alert, Keyboard, ScrollView, Platform } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -10,7 +10,7 @@ import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Save, Mail, AlertTriangle } from 'lucide-react-native';
-import { SettingsHeader } from './SettingsHeader';
+import { NativeHeader } from './NativeHeader';
 import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/ui';
@@ -150,26 +150,26 @@ export function NameEditPage({
   if (!visible) return null;
 
   const hasChanges = name.trim() !== currentName && name.trim().length > 0;
+  const backgroundColor = Platform.OS === 'ios'
+    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
+    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
   
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-      
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
-          keyboardShouldPersistTaps="handled"
-        >
-          <SettingsHeader
-            title={t('nameEdit.title')}
-            onClose={handleClose}
-            disabled={isLoading}
-          />
+    <View style={{ flex: 1, backgroundColor }}>
+      <ScrollView 
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        keyboardShouldPersistTaps="handled"
+      >
+        <NativeHeader
+          title={t('nameEdit.title')}
+          onBack={handleClose}
+          onSave={hasChanges ? handleSave : undefined}
+          saveLabel={t('common.save', 'Save')}
+          saveDisabled={isLoading || !hasChanges}
+          loading={isLoading}
+        />
           
           <View className="px-6 pb-8">
             <View className="mb-8 items-center pt-8">
@@ -230,85 +230,9 @@ export function NameEditPage({
                 </View>
               </View>
             </View>
-
-            <SaveButton
-              onPress={handleSave}
-              disabled={!hasChanges || isLoading}
-              isLoading={isLoading}
-              hasChanges={hasChanges}
-            />
           </View>
-          <View className="h-20" />
+          <View style={{ height: 80 }} />
         </ScrollView>
-      </View>
     </View>
-  );
-}
-
-interface SaveButtonProps {
-  onPress: () => void;
-  disabled?: boolean;
-  isLoading?: boolean;
-  hasChanges?: boolean;
-}
-
-function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProps) {
-  const { colorScheme } = useColorScheme();
-  const { t } = useLanguage();
-  const scale = useSharedValue(1);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-  
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-  
-  if (!hasChanges && !isLoading) {
-    return null;
-  }
-  
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${
-        disabled ? 'bg-muted/50' : 'bg-primary'
-      }`}
-    >
-      {isLoading ? (
-        <>
-          <KortixLoader 
-            size="small" 
-            forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saving')}
-          </Text>
-        </>
-      ) : (
-        <>
-          <Icon 
-            as={Save} 
-            size={16} 
-            className="text-primary-foreground" 
-            strokeWidth={2.5} 
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saveChanges')}
-          </Text>
-        </>
-      )}
-    </AnimatedPressable>
   );
 }

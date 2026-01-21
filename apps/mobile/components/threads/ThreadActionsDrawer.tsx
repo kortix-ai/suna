@@ -2,7 +2,7 @@ import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
 import { useLanguage } from '@/contexts';
 import * as Haptics from 'expo-haptics';
-import { Share2, FolderOpen, Trash2, type LucideIcon } from 'lucide-react-native';
+import { Share2, FolderOpen, Trash2, PenBox, type LucideIcon } from 'lucide-react-native';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
 import { View, Alert, Pressable, Platform } from 'react-native';
@@ -17,6 +17,7 @@ import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
 interface ThreadActionsDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  onEditTitle?: () => void;
   onShare?: () => void;
   onFiles?: () => void;
   onDelete?: () => void;
@@ -84,6 +85,7 @@ const ActionRow = React.memo(function ActionRow({
 export function ThreadActionsDrawer({
   isOpen,
   onClose,
+  onEditTitle,
   onShare,
   onFiles,
   onDelete,
@@ -110,6 +112,13 @@ export function ThreadActionsDrawer({
   const handleDismiss = React.useCallback(() => {
     onClose();
   }, [onClose]);
+
+  const handleEditTitle = React.useCallback(() => {
+    bottomSheetRef.current?.dismiss();
+    setTimeout(() => {
+      onEditTitle?.();
+    }, 100);
+  }, [onEditTitle]);
 
   const handleShare = React.useCallback(() => {
     bottomSheetRef.current?.dismiss();
@@ -194,6 +203,13 @@ export function ThreadActionsDrawer({
         </View>
 
         <View>
+          {onEditTitle && (
+            <ActionRow
+              icon={PenBox}
+              label={t('threadActions.editTitle')}
+              onPress={handleEditTitle}
+            />
+          )}
           {onShare && (
             <ActionRow
               icon={Share2}

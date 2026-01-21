@@ -1,8 +1,7 @@
 import * as React from 'react';
-import { Platform, Pressable, ScrollView, View, Dimensions } from 'react-native';
+import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, Easing } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -29,11 +28,12 @@ import {
   ArrowLeft,
   ArrowRightIcon,
   SettingsIcon,
+  PenBox,
 } from 'lucide-react-native';
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
-import { SettingsPage } from '@/components/settings/SettingsPage';
+import { SettingsDrawer } from '@/components/settings/SettingsDrawer';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
@@ -407,34 +407,13 @@ export function MenuPage({
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
   const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
 
-  // Settings page animation - same pattern as menu/home
-  const settingsTranslateX = useSharedValue(0);
-
   const handleOpenSettings = React.useCallback(() => {
-    settingsTranslateX.value = withTiming(SCREEN_WIDTH, {
-      duration: 200,
-      easing: Easing.out(Easing.exp),
-    });
-    setTimeout(() => setIsSettingsVisible(true), 0);
+    setIsSettingsVisible(true);
   }, []);
 
   const handleCloseSettings = React.useCallback(() => {
-    settingsTranslateX.value = withTiming(0, {
-      duration: 200,
-      easing: Easing.out(Easing.exp),
-    });
-    setTimeout(() => setIsSettingsVisible(false), 0);
+    setIsSettingsVisible(false);
   }, []);
-
-  React.useEffect(() => {
-    const targetValue = isSettingsVisible ? SCREEN_WIDTH : 0;
-    if (Math.abs(settingsTranslateX.value - targetValue) > 10) {
-      settingsTranslateX.value = withTiming(targetValue, {
-        duration: 200,
-        easing: Easing.out(Easing.exp),
-      });
-    }
-  }, [isSettingsVisible]);
 
   // Debug trigger drawer visibility
   React.useEffect(() => {
@@ -542,33 +521,6 @@ export function MenuPage({
     transform: [{ scale: backButtonScale.value }],
   }));
 
-  // Settings page animation - slides in from right
-  const settingsPageStyle = useAnimatedStyle(() => {
-    const progress = settingsTranslateX.value / SCREEN_WIDTH;
-    
-    return {
-      transform: [
-        {
-          translateX: SCREEN_WIDTH - settingsTranslateX.value,
-        },
-      ],
-      opacity: 0.3 + (progress * 0.7),
-    };
-  });
-
-  // Menu content animation - slides left when settings opens
-  const menuContentStyle = useAnimatedStyle(() => {
-    const progress = settingsTranslateX.value / SCREEN_WIDTH;
-    
-    return {
-      transform: [
-        {
-          translateX: -settingsTranslateX.value,
-        },
-      ],
-      opacity: 1 - (progress * 0.3),
-    };
-  });
 
   /**
    * Handle profile press - Opens settings instantly
@@ -657,26 +609,6 @@ export function MenuPage({
 
   return (
     <View className="flex-1 overflow-hidden bg-background">
-      {/* Settings Page - positioned absolutely, slides in from right */}
-      {isSettingsVisible && (
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: SCREEN_WIDTH,
-              height: '100%',
-            },
-            settingsPageStyle,
-          ]}
-          className="z-50 bg-background">
-          <SettingsPage visible={isSettingsVisible} profile={profile} onClose={handleCloseSettings} />
-        </Animated.View>
-      )}
-
-      {/* Menu Content - slides left when settings opens */}
-      <Animated.View style={[{ flex: 1 }, menuContentStyle]}>
         <SafeAreaView edges={['top']} className="flex-1">
         <View className="flex-1 px-6 pt-2">
           {/* User Profile Section - Now at top */}
@@ -1087,7 +1019,7 @@ export function MenuPage({
                     alignItems: 'center',
                     borderRadius: 22,
                   }}>
-                  <Icon as={Plus} size={20} className="text-foreground" strokeWidth={2.5} />
+                  <Icon as={PenBox} size={20} className="text-foreground" strokeWidth={2.5} />
                 </GlassView>
               ) : (
                 <View
@@ -1100,7 +1032,7 @@ export function MenuPage({
                     borderWidth: 0.5,
                     borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
                   }}>
-                  <Icon as={Plus} size={20} className="text-foreground" strokeWidth={2.5} />
+                  <Icon as={PenBox} size={20} className="text-foreground" strokeWidth={2.5} />
                 </View>
               )}
             </AnimatedPressable>
@@ -1115,7 +1047,6 @@ export function MenuPage({
           )}
         </View>
       </SafeAreaView>
-      </Animated.View>
 
       {/* Floating Action Button */}
       {advancedFeaturesEnabled && (
@@ -1151,6 +1082,12 @@ export function MenuPage({
           onClose={onCloseWorkerConfigDrawer || (() => {})}
         />
       )}
+
+      <SettingsDrawer
+        visible={isSettingsVisible}
+        onClose={handleCloseSettings}
+        profile={profile}
+      />
     </View>
   );
 }

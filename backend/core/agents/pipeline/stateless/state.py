@@ -64,10 +64,6 @@ class RunState:
         self._pending_tool_calls: List[Dict[str, Any]] = []
         self._accumulated_content: str = ""
 
-        self._credit_shadow: Decimal = Decimal("0")
-        self._initial_credits: Decimal = Decimal("0")
-        self._total_deducted: Decimal = Decimal("0")
-
         self._step_counter: int = 0
         self._message_counter: int = 0
 
@@ -103,10 +99,10 @@ class RunState:
     async def _load_initial_state(self) -> None:
         await asyncio.gather(
             self._load_messages(),
-            self._load_credits(),
+            self._check_credits(),
             return_exceptions=True,
         )
-        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs, ${self._credit_shadow}")
+        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs, credits OK")
 
     async def _load_messages(self) -> None:
         try:
@@ -126,15 +122,30 @@ class RunState:
         except Exception as e:
             logger.warning(f"[RunState] Load messages failed: {e}")
 
-    async def _load_credits(self) -> None:
+    async def _check_credits(self) -> None:
         try:
-            from core.billing.credits.manager import credit_manager
-            balance = await credit_manager.get_balance(self.account_id, use_cache=True)
-            self._credit_shadow = Decimal(str(balance.get('total', 0) if isinstance(balance, dict) else balance or 0))
-            self._initial_credits = self._credit_shadow
+            from core.billing.credits.integration import billing_integration
+            from core.utils.config import config, EnvMode
+            from core.agents.pipeline.ux_streaming import stream_user_error
+            
+            if config.ENV_MODE == EnvMode.LOCAL:
+                logger.debug("[RunState] Skipping credit check in local mode")
+                return
+            
+            can_run, message, _ = await billing_integration.check_and_reserve_credits(
+                self.account_id, wait_for_cache_ms=3000
+            )
+            
+            if not can_run:
+                logger.error(f"[RunState] {message}")
+                self._terminate(f"insufficient_credits")
+                await stream_user_error(
+                    stream_key=self.stream_key,
+                    error=message,
+                    error_code="INSUFFICIENT_CREDITS"
+                )
         except Exception as e:
-            logger.warning(f"[RunState] Load credits failed: {e}")
-            self._credit_shadow = Decimal("999999")
+            logger.warning(f"[RunState] Credit check failed: {e}")
 
     @property
     def step(self) -> int:
@@ -148,9 +159,7 @@ class RunState:
     def termination_reason(self) -> Optional[str]:
         return self._termination_reason
 
-    @property
-    def credits_remaining(self) -> Decimal:
-        return self._credit_shadow
+    # NOTE: credits_remaining removed - no longer tracking shadow balance
 
     @property
     def total_deducted(self) -> Decimal:
@@ -178,11 +187,7 @@ class RunState:
         if self._step_counter >= self.MAX_STEPS:
             self._terminate("max_steps_exceeded")
             return False
-
-        if self._credit_shadow < Decimal("0.001"):
-            self._terminate("insufficient_credits")
-            return False
-
+            
         return True
 
     def next_step(self) -> int:
@@ -422,30 +427,6 @@ class RunState:
     def has_credits(self, required: Decimal = Decimal("0.001")) -> bool:
         return self._credit_shadow >= required
 
-    def deduct_credits(self, amount: Decimal) -> bool:
-        if self._credit_shadow < amount:
-            return False
-
-        self._credit_shadow -= amount
-        self._total_deducted += amount
-        self._last_activity = time.time()
-
-        self._pending_writes.append(PendingWrite(
-            write_type="credit",
-            data={
-                "account_id": self.account_id,
-                "amount": float(amount),
-                "thread_id": self.thread_id,
-                "run_id": self.run_id,
-            }
-        ))
-
-        self._check_flush_threshold()
-        return True
-
-    def estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> Decimal:
-        return Decimal(str((prompt_tokens + completion_tokens) / 1000 * 0.01))
-
     def _check_flush_threshold(self) -> None:
         if len(self._pending_writes) >= self.MAX_PENDING_WRITES:
             task = asyncio.create_task(self.flush())
@@ -524,8 +505,6 @@ class RunState:
             "step": self._step_counter,
             "messages": len(self._messages),
             "pending_writes": len(self._pending_writes),
-            "credits": float(self._credit_shadow),
-            "deducted": float(self._total_deducted),
             "duration": self.duration_seconds,
             "active": self.is_active,
         }

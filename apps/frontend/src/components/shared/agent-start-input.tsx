@@ -34,6 +34,12 @@ export interface AgentStartInputProps {
   showGreeting?: boolean;
   /** Custom greeting className */
   greetingClassName?: string;
+  /** Whether to show subtitle below greeting */
+  showSubtitle?: boolean;
+  /** Custom subtitle text */
+  subtitle?: string;
+  /** Custom subtitle className */
+  subtitleClassName?: string;
   /** Whether to enable advanced config in chat input */
   enableAdvancedConfig?: boolean;
   /** Callback when agent configuration is requested */
@@ -66,6 +72,9 @@ export function AgentStartInput({
   redirectOnError,
   showGreeting = true,
   greetingClassName,
+  showSubtitle = false,
+  subtitle,
+  subtitleClassName,
   enableAdvancedConfig = false,
   onConfigureAgent,
   animatePlaceholder = false,
@@ -158,6 +167,11 @@ export function AgentStartInput({
       {showGreeting && (
         <div className="flex flex-col items-center text-center w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
           <DynamicGreeting className={greetingClassName || defaultGreetingClass} />
+          {showSubtitle && (
+            <p className={subtitleClassName || "mt-3 text-sm sm:text-base text-muted-foreground"}>
+              {subtitle || t('modeSubtitle')}
+            </p>
+          )}
         </div>
       )}
       
@@ -227,8 +241,8 @@ export function AgentStartInput({
         )}
       </div>
       
-      {/* Suna Modes Panel */}
-      {showModesPanel && isSunaAgent && (
+      {/* Suna Modes Panel - Always show for hero variant (LP), otherwise check isSunaAgent */}
+      {showModesPanel && (variant === 'hero' || isSunaAgent) && (
         <div className={modesPanelWrapperClassName || "w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-200 fill-mode-both"}>
           <Suspense fallback={<div className="h-24 bg-muted/10 rounded-lg animate-pulse" />}>
             <SunaModesPanel

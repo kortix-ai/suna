@@ -25,11 +25,11 @@ const getBackendUrl = (): string => {
       .replace(/[^a-z0-9-]/g, '-')
       .replace(/-+/g, '-')
       .replace(/^-|-$/g, '');
-    return `https://${sanitizedBranch}.api-staging.suna.so/v1`;
+    return `https://${sanitizedBranch}.staging-api.kortix.com/v1`;
   }
-  
+
   // Main branch / staging (default)
-  return 'https://staging-api.suna.so/v1';
+  return 'https://staging-api.kortix.com/v1';
 };
 
 const nextConfig = (): NextConfig => ({

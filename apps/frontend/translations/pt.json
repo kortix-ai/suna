@@ -348,6 +348,7 @@
     "scheduledTriggers": "Triggers Agendados",
     "appTriggers": "Triggers de App",
     "limitsExceeded": "Atingiste teu limite de chats. Melhora teu plano para criar mais chats.",
+    "modeSubtitle": "Escolhe um modo para começar com modelos e exemplos",
     "agentInitiatedSuccessfully": "Worker iniciado com sucesso",
     "aiAssistantReady": "Teu assistente de IA está pronto para ajudar",
     "greetings": {
@@ -935,9 +936,12 @@
   },
   "suna": {
     "samplePrompts": "Prompts de exemplo",
+    "examplePrompts": "Prompts de exemplo",
     "chooseStyle": "Escolhe um estilo",
     "chooseTemplate": "Escolhe um template",
     "chooseOutputFormat": "Escolhe formato de saída",
+    "chooseCanvasAction": "Escolhe ação de canvas",
+    "chooseVideoStyle": "Escolhe estilo de vídeo",
     "preferredCharts": "Gráficos preferidos",
     "whatWouldYouLike": "O que tu queres fazer?",
     "describeTask": "Descreve a tarefa que queres que teu Worker complete...",
@@ -966,6 +970,14 @@
       "anime": "Anime",
       "impressionist": "Impressionista",
       "surreal": "Surrealista"
+    },
+    "videoStyles": {
+      "cinematic": "Cinematográfico",
+      "product": "Produto",
+      "animation": "Animação",
+      "nature": "Natureza",
+      "abstract": "Abstrato",
+      "adventure": "Aventura"
     },
     "templates": {
       "minimalist": {
@@ -1101,6 +1113,24 @@
       "wordcloud": "Nuvem de palavras",
       "stacked": "Barras empilhadas",
       "area": "Área"
+    },
+    "canvasActions": {
+      "create": {
+        "name": "Criar novo",
+        "description": "Gerar do zero"
+      },
+      "edit": {
+        "name": "Editar imagem",
+        "description": "Modificar imagens existentes"
+      },
+      "upscale": {
+        "name": "Ampliar",
+        "description": "Melhorar e otimizar"
+      },
+      "remove-bg": {
+        "name": "Remover fundo",
+        "description": "Remover o fundo"
+      }
     },
     "prompts": {
       "image": {

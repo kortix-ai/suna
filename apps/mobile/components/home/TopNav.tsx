@@ -130,8 +130,9 @@ export function TopNav({
               flex: 1,
               alignItems: 'center',
               justifyContent: 'center',
-              borderRadius: 20,
-              borderWidth: 0.5,
+              borderRadius: 22,
+              height: 44,
+              width: 44,
               borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
             }}>
             <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />

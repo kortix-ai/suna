@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, Alert, ScrollView, TextInput } from 'react-native';
+import { Pressable, View, Alert, ScrollView, TextInput, Platform, StyleSheet, TouchableOpacity } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -10,7 +10,7 @@ import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Trash2, Calendar, XCircle, AlertTriangle, CheckCircle } from 'lucide-react-native';
-import { SettingsHeader } from './SettingsHeader';
+import { NativeHeader } from './NativeHeader';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/ui';
 import { 
@@ -117,28 +117,26 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
 
   const hasPendingDeletion = deletionStatus?.has_pending_deletion;
   const isLoading = requestDeletion.isPending || cancelDeletion.isPending || isCheckingStatus;
+  
+  const backgroundColor = Platform.OS === 'ios'
+    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
+    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
 
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
+    <View style={{ flex: 1, backgroundColor }}>
+      <NativeHeader
+        title={t('accountDeletion.title')}
+        onBack={handleClose}
       />
-
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
-          className="flex-1" 
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
-          keyboardShouldPersistTaps="handled"
-        >
-          <SettingsHeader
-            title={t('accountDeletion.title')}
-            onClose={handleClose}
-            disabled={isLoading}
-          />
-
-          <View className="px-6 pb-8">
+      
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16 }}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        keyboardShouldPersistTaps="handled"
+      >
+        <View style={{ gap: 16 }}>
             {hasPendingDeletion ? (
               <>
                 <View className="mb-8 items-center pt-4">
@@ -257,11 +255,10 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                 />
               </>
             )}
-          </View>
+        </View>
 
-          <View className="h-20" />
-        </ScrollView>
-      </View>
+        <View style={{ height: 80 }} />
+      </ScrollView>
     </View>
   );
 }
@@ -289,50 +286,41 @@ interface ActionButtonProps {
 function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label, variant }: ActionButtonProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
-  const scale = useSharedValue(1);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  const bgClass = disabled
-    ? 'bg-muted/50'
+  const backgroundColor = disabled
+    ? (colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED')
     : variant === 'destructive'
-      ? 'bg-destructive'
-      : 'bg-primary';
+      ? '#FF3B30'
+      : (colorScheme === 'dark' ? '#0A84FF' : '#007AFF');
 
   const textColor = disabled
-    ? 'text-muted-foreground'
-    : variant === 'destructive'
-      ? 'text-destructive-foreground'
-      : 'text-primary-foreground';
+    ? (colorScheme === 'dark' ? '#8E8E93' : '#6E6E73')
+    : '#FFFFFF';
 
   return (
-    <AnimatedPressable
+    <TouchableOpacity
       onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
       disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${bgClass}`}
+      activeOpacity={0.7}
+      style={{
+        backgroundColor,
+        borderRadius: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        opacity: disabled ? 0.5 : 1,
+      }}
     >
       {isLoading ? (
         <>
           <KortixLoader 
             size="small" 
-            forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
+            customSize={16}
           />
-          <Text className={`${textColor} text-sm font-roobert-medium`}>
+          <Text style={{ color: textColor, fontSize: 17, fontWeight: '600' }}>
             {t('accountDeletion.processing')}
           </Text>
         </>
@@ -340,15 +328,15 @@ function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label
         <>
           <Icon 
             as={IconComponent} 
-            size={16} 
-            className={textColor} 
+            size={18} 
+            color={textColor}
             strokeWidth={2.5} 
           />
-          <Text className={`${textColor} text-sm font-roobert-medium`}>
+          <Text style={{ color: textColor, fontSize: 17, fontWeight: '600' }}>
             {label}
           </Text>
         </>
       )}
-    </AnimatedPressable>
+    </TouchableOpacity>
   );
 }

@@ -41,7 +41,6 @@ class ToolResult:
     """
     success: bool
     output: Any
-
 @dataclass
 class ToolMetadata:
     """Container for tool-level metadata.

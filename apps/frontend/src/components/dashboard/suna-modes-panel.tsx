@@ -986,6 +986,11 @@ export function SunaModesPanel({
   const selectedTemplateId = controlledSelectedTemplate ?? uncontrolledSelectedTemplateId;
   const setSelectedTemplateId = onTemplateChange ?? setUncontrolledSelectedTemplateId;
 
+  // State for mode modal
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<ModeType | null>(null);
+  const modalModeData = modalMode ? modes.find((m) => m.id === modalMode) : null;
+
   // Randomize prompts when mode changes or on mount
   useEffect(() => {
     if (selectedMode) {
@@ -1013,6 +1018,10 @@ export function SunaModesPanel({
   
   // Handler for chart selection toggle
   const handleChartToggle = (chartId: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     const newCharts = selectedCharts.includes(chartId) 
       ? selectedCharts.filter(id => id !== chartId)
       : [...selectedCharts, chartId];
@@ -1021,17 +1030,29 @@ export function SunaModesPanel({
   
   // Handler for output format selection
   const handleOutputFormatSelect = (formatId: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     const newFormat = selectedOutputFormat === formatId ? null : formatId;
     setSelectedOutputFormat(newFormat);
   };
   
-  // Handler for prompt selection - just pass through without modification
+  // Handler for prompt selection - selects the mode and sets the prompt
   const handlePromptSelect = (prompt: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     onSelectPrompt(prompt);
   };
 
-  // Handler for template selection (only stores the template ID)
+  // Handler for template selection (stores the template ID and selects the mode)
   const handleTemplateSelect = (templateId: string) => {
+    // Select the mode when user makes a choice
+    if (modalMode) {
+      onModeSelect(modalMode);
+    }
     setSelectedTemplateId(templateId);
   };
 
@@ -1075,7 +1096,11 @@ export function SunaModesPanel({
             return (
               <motion.button
                 key={mode.id}
-                onClick={() => onModeSelect(isActive ? null : mode.id)}
+                onClick={() => {
+                  setModalMode(mode.id);
+                  setIsModalOpen(true);
+                  // Don't select the mode yet - only select when user makes a choice in the modal
+                }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
                 transition={{ type: "spring", stiffness: 400, damping: 25 }}
@@ -1106,7 +1131,7 @@ export function SunaModesPanel({
         </div>
       </motion.div>
 
-      {/* Mode-specific Options - Only show when a mode is selected */}
+      {/* Mode-specific Options - Hidden, now shown in modal
       <AnimatePresence mode="wait">
         {selectedMode && currentMode?.options && (
           <motion.div 
@@ -1187,7 +1212,7 @@ export function SunaModesPanel({
                           className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
                         />
                       )}
-                      {/* Preview button overlay */}
+                      -- Preview button overlay --
                       <Button
                         variant="secondary"
                         size="sm"
@@ -1336,7 +1361,7 @@ export function SunaModesPanel({
                       ) : (
                         <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
                       )}
-                      {/* Lock overlay for free users */}
+                      -- Lock overlay for free users --
                       {isFreeTier && (
                         <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
                           <Lock className="w-5 h-5 text-muted-foreground" />
@@ -1355,8 +1380,9 @@ export function SunaModesPanel({
           </motion.div>
         )}
       </AnimatePresence>
+      */}
 
-      {/* Chart Types Section (for Data mode) - Only show when data is selected */}
+      {/* Chart Types Section - Hidden, now shown in modal
       <AnimatePresence mode="wait">
         {selectedMode === 'data' && currentMode?.chartTypes && (
           <motion.div 
@@ -1407,8 +1433,9 @@ export function SunaModesPanel({
           </motion.div>
         )}
       </AnimatePresence>
+      */}
 
-      {/* Sample Prompts - Visual Grid with Thumbnails */}
+      {/* Sample Prompts - Hidden, now shown in modal
       <AnimatePresence mode="wait">
         {selectedMode && displayedPrompts && displayedPrompts.length > 0 && (
           <motion.div
@@ -1418,7 +1445,7 @@ export function SunaModesPanel({
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.2, ease: [0.4, 0, 0.2, 1] }}
           >
-          {/* Upgrade Banner for Video Mode - Free Users */}
+          -- Upgrade Banner for Video Mode - Free Users --
           {selectedMode === 'video' && isFreeTier && (
             <div className="flex items-center justify-between gap-3 p-3 mb-4 rounded-xl bg-card border border-border">
               <div className="flex items-center gap-3">
@@ -1475,8 +1502,9 @@ export function SunaModesPanel({
           </motion.div>
         )}
       </AnimatePresence>
+      */}
 
-      {/* Mode-specific Options - Only show when a mode is selected */}
+      {/* Mode-specific Options Expanded - Hidden, now shown in modal
       <AnimatePresence mode="wait">
         {selectedMode && currentMode?.options && (
           <motion.div 
@@ -1557,7 +1585,7 @@ export function SunaModesPanel({
                           className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
                         />
                       )}
-                      {/* Preview button overlay */}
+                      -- Preview button overlay --
                       <Button
                         variant="secondary"
                         size="sm"
@@ -1762,7 +1790,7 @@ export function SunaModesPanel({
                       ) : (
                         <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
                       )}
-                      {/* Lock overlay for free users */}
+                      -- Lock overlay for free users --
                       {isFreeTier && (
                         <div className="absolute inset-0 bg-background/60 flex items-center justify-center">
                           <Lock className="w-5 h-5 text-muted-foreground" />
@@ -1781,8 +1809,9 @@ export function SunaModesPanel({
           </motion.div>
         )}
       </AnimatePresence>
+      */}
 
-      {/* Chart Types Section (for Data mode) - Only show when data is selected */}
+      {/* Chart Types Section Expanded - Hidden, now shown in modal
       <AnimatePresence mode="wait">
         {selectedMode === 'data' && currentMode?.chartTypes && (
           <motion.div 
@@ -1862,10 +1891,356 @@ export function SunaModesPanel({
           </motion.div>
         )}
       </AnimatePresence>
+      */}
+
+      {/* Mode Selection Modal */}
+      <Dialog open={isModalOpen} onOpenChange={(open) => {
+        setIsModalOpen(open);
+        if (!open) {
+          setModalMode(null);
+        }
+      }}>
+        <DialogContent className="sm:max-w-2xl h-[70vh] flex flex-col p-0 gap-0 overflow-hidden">
+          <DialogHeader className="px-6 py-4 border-b flex-shrink-0">
+            <DialogTitle className="flex items-center gap-2">
+              {modalModeData?.icon}
+              <span>{modalModeData?.label}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 min-h-0 overflow-auto">
+            <div className="px-6">
+            <div className="py-4 space-y-6">
+              {/* Mode-specific Options */}
+              {modalModeData?.options && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {modalModeData.options.title === 'Choose a style' ? t('chooseStyle') :
+                     modalModeData.options.title === 'Choose a template' ? t('chooseTemplate') :
+                     modalModeData.options.title === 'Choose output format' ? t('chooseOutputFormat') :
+                     modalModeData.options.title === 'Choose canvas action' ? t('chooseCanvasAction') :
+                     modalModeData.options.title === 'Choose video style' ? t('chooseVideoStyle') :
+                     modalModeData.options.title}
+                  </p>
+                  
+                  {/* Image Styles */}
+                  {modalMode === 'image' && (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden"
+                          onClick={() => {
+                            handlePromptSelect(`Generate an image using ${item.name.toLowerCase()} style`);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-full aspect-square bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                            {item.image ? (
+                              <Image 
+                                src={item.image} 
+                                alt={item.name}
+                                fill
+                                sizes="(max-width: 640px) 33vw, 25vw"
+                                className="object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                            )}
+                          </div>
+                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                            {t(`styles.${item.id}`) || item.name}
+                          </span>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Slides Templates */}
+                  {modalMode === 'slides' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className={cn(
+                            "flex flex-col gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border rounded-xl relative",
+                            selectedTemplateId === item.id
+                              ? "border-primary bg-primary/5"
+                              : "border-border"
+                          )}
+                          onClick={() => {
+                            handleTemplateSelect(item.id);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
+                            {item.image ? (
+                              <Image 
+                                src={item.image} 
+                                alt={item.name}
+                                fill
+                                sizes="(max-width: 640px) 50vw, 33vw"
+                                className="object-contain"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <SlideTemplateIcon 
+                                type={item.id} 
+                                className="text-foreground/50 group-hover:text-primary/70 transition-colors duration-200" 
+                              />
+                            )}
+                          </div>
+                          <div className="space-y-0.5">
+                            <p className="text-xs font-medium text-muted-foreground group-hover:text-foreground transition-colors duration-200">
+                              {t(`templates.${item.id}.name`) || item.name}
+                            </p>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Docs Types */}
+                  {modalMode === 'docs' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
+                          onClick={() => {
+                            handlePromptSelect(`Create a ${item.name} document: ${item.description}`);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-12 h-12 rounded-2xl bg-muted/50 group-hover:bg-primary/10 border border-border/50 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
+                            {getOptionIcon((item as { icon?: string }).icon || '')}
+                          </div>
+                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                            {t(`templates.${item.id}.name`) || item.name}
+                          </span>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Data Output Formats */}
+                  {modalMode === 'data' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => {
+                        const isSelected = selectedOutputFormat === item.id;
+                        return (
+                          <Card
+                            key={item.id}
+                            className={cn(
+                              "flex flex-col items-center gap-3 cursor-pointer group p-4 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                              isSelected 
+                                ? "bg-primary/10 border-primary" 
+                                : "bg-transparent hover:bg-muted border-border"
+                            )}
+                            onClick={() => {
+                              handleOutputFormatSelect(item.id);
+                              setIsModalOpen(false);
+                            }}
+                          >
+                            <div className={cn(
+                              "w-12 h-12 rounded-2xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                              isSelected
+                                ? "bg-primary/15 border-primary/30 text-primary"
+                                : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                            )}>
+                              {getOptionIcon((item as { icon?: string }).icon || '')}
+                            </div>
+                            <span className={cn(
+                              "text-xs text-center transition-colors duration-200 font-medium",
+                              isSelected
+                                ? "text-foreground"
+                                : "text-muted-foreground group-hover:text-foreground"
+                            )}>
+                              {t(`outputFormats.${item.id}.name`) || item.name}
+                            </span>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Canvas Actions */}
+                  {modalMode === 'canvas' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      {modalModeData.options.items.map((item) => {
+                        const getCanvasPrompt = (actionId: string) => {
+                          switch (actionId) {
+                            case 'create': return 'Create a new image for me: [describe what you want]';
+                            case 'edit': return 'Edit my image: [I will upload the image and describe what changes I want]';
+                            case 'upscale': return 'Upscale my image to higher resolution - I will upload the image';
+                            case 'remove-bg': return 'Remove the background from my image - I will upload the image';
+                            default: return `${item.name}: ${item.description}`;
+                          }
+                        };
+                        return (
+                          <Card
+                            key={item.id}
+                            className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
+                            onClick={() => {
+                              handlePromptSelect(getCanvasPrompt(item.id));
+                              setIsModalOpen(false);
+                            }}
+                          >
+                            <div className="w-12 h-12 rounded-2xl bg-muted/50 border border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
+                              {getOptionIcon((item as { icon?: string }).icon || '')}
+                            </div>
+                            <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                              {t(`canvasActions.${item.id}.name`) || item.name}
+                            </span>
+                          </Card>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Video Styles */}
+                  {modalMode === 'video' && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {modalModeData.options.items.map((item) => (
+                        <Card
+                          key={item.id}
+                          className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden"
+                          onClick={() => {
+                            handlePromptSelect(`Create a ${item.name.toLowerCase()} style video`);
+                            setIsModalOpen(false);
+                          }}
+                        >
+                          <div className="w-full aspect-video bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
+                            {item.image ? (
+                              <Image 
+                                src={item.image} 
+                                alt={item.name}
+                                fill
+                                sizes="(max-width: 640px) 50vw, 33vw"
+                                className="object-cover"
+                                loading="lazy"
+                              />
+                            ) : (
+                              <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                            )}
+                          </div>
+                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                            {t(`videoStyles.${item.id}`) || item.name}
+                          </span>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Chart Types for Data Mode */}
+              {modalMode === 'data' && modalModeData?.chartTypes && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t('preferredCharts')}
+                  </p>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                    {modalModeData.chartTypes.items.map((chart) => {
+                      const isSelected = selectedCharts.includes(chart.id);
+                      return (
+                        <Card
+                          key={chart.id}
+                          className={cn(
+                            "flex flex-col items-center gap-2 cursor-pointer group p-3 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                            isSelected 
+                              ? "bg-primary/10 border-primary" 
+                              : "bg-transparent hover:bg-muted border-border"
+                          )}
+                          onClick={() => handleChartToggle(chart.id)}
+                        >
+                          <div className={cn(
+                            "w-10 h-10 rounded-xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                            isSelected
+                              ? "bg-primary/15 border-primary/30 text-primary"
+                              : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                          )}>
+                            {getOptionIcon((chart as { icon?: string }).icon || '')}
+                          </div>
+                          <span className={cn(
+                            "text-xs text-center transition-colors duration-200 font-medium",
+                            isSelected 
+                              ? "text-foreground" 
+                              : "text-muted-foreground group-hover:text-foreground"
+                          )}>
+                            {t(`charts.${chart.id}`) || chart.name}
+                          </span>
+                        </Card>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Sample Prompts - for modes that have options (not research) */}
+              {modalMode !== 'research' && modalModeData?.samplePrompts && modalModeData.samplePrompts.length > 0 && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t('examplePrompts')}
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {modalModeData.samplePrompts.slice(0, 6).map((prompt, index) => (
+                      <Card
+                        key={index}
+                        className="p-3 cursor-pointer hover:bg-muted transition-colors border border-border rounded-xl group"
+                        onClick={() => {
+                          handlePromptSelect(prompt.text);
+                          setIsModalOpen(false);
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2">
+                            {prompt.text}
+                          </p>
+                          <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground flex-shrink-0 transition-colors" />
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Research mode - only prompts, no options */}
+              {modalMode === 'research' && modalModeData?.samplePrompts && (
+                <div className="space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {t('examplePrompts')}
+                  </p>
+                  <div className="grid grid-cols-1 gap-2">
+                    {modalModeData.samplePrompts.slice(0, 8).map((prompt, index) => (
+                      <Card
+                        key={index}
+                        className="p-3 cursor-pointer hover:bg-muted transition-colors border border-border rounded-xl group"
+                        onClick={() => {
+                          handlePromptSelect(prompt.text);
+                          setIsModalOpen(false);
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm text-muted-foreground group-hover:text-foreground transition-colors line-clamp-2">
+                            {prompt.text}
+                          </p>
+                          <ArrowUpRight className="w-4 h-4 text-muted-foreground group-hover:text-foreground flex-shrink-0 transition-colors" />
+                        </div>
+                      </Card>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            </div>
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
 
       {/* PDF Preview Modal */}
       <Dialog open={isPdfModalOpen} onOpenChange={setIsPdfModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] p-0">
+        <DialogContent className="sm:max-w-4xl max-h-[90vh] p-0">
           <DialogHeader className="p-6 pb-0">
             <DialogTitle>
               Template Preview: {selectedTemplate?.name}

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, ScrollView } from 'react-native';
+import { Pressable, View, ScrollView, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -9,9 +9,10 @@ import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Check } from 'lucide-react-native';
-import { SettingsHeader } from './SettingsHeader';
+import { NativeHeader } from './NativeHeader';
 import * as Haptics from 'expo-haptics';
 import { log } from '@/lib/logger';
+import { useColorScheme } from 'nativewind';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -33,6 +34,7 @@ interface LanguagePageProps {
 
 export function LanguagePage({ visible, onClose }: LanguagePageProps) {
   const { currentLanguage, availableLanguages, setLanguage, t } = useLanguage();
+  const { colorScheme } = useColorScheme();
 
   const handleLanguageSelect = async (languageCode: string) => {
     log.log('🌍 Language selected:', languageCode);
@@ -49,23 +51,21 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
 
   if (!visible) return null;
 
-  return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
+  const backgroundColor = Platform.OS === 'ios'
+    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
+    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
 
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
-        >
-          <SettingsHeader
-            title={t('language.title')}
-            onClose={handleClose}
-          />
+  return (
+    <View style={{ flex: 1, backgroundColor }}>
+      <ScrollView
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+      >
+        <NativeHeader
+          title={t('language.title')}
+          onBack={handleClose}
+        />
 
           <View className="px-6 pb-8">
             <View className="mb-3">
@@ -86,9 +86,8 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
             </View>
           </View>
 
-          <View className="h-20" />
+          <View style={{ height: 80 }} />
         </ScrollView>
-      </View>
     </View>
   );
 }

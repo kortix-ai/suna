@@ -361,6 +361,7 @@ class Configuration:
     # RevenueCat configuration
     REVENUECAT_WEBHOOK_SECRET: Optional[str] = None
     REVENUECAT_API_KEY: Optional[str] = None
+    REVENUECAT_PROJECT_ID: Optional[str] = None
     
     # Stripe Product IDs
     STRIPE_PRODUCT_ID_PROD: Optional[str] = 'prod_SCl7AQ2C8kK1CD'

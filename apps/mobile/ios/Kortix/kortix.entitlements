@@ -12,7 +12,7 @@
     <array>
       <string>applinks:kortix.com</string>
       <string>applinks:www.kortix.com</string>
-      <string>applinks:staging.suna.so</string>
+      <string>applinks:staging.kortix.com</string>
     </array>
   </dict>
 </plist>

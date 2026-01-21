@@ -729,10 +729,12 @@
     "openMenu": "メニューを開く",
     "enterTitle": "タイトルを入力",
     "threadActions": "スレッドアクション",
+    "newChat": "新しいチャット",
     "untitled": "無題"
   },
   "threadActions": {
     "title": "スレッドアクション",
+    "editTitle": "タイトルを編集",
     "upgradeRequired": "アップグレードが必要",
     "upgradeRequiredMessage": "スレッドの共有は有料プランで利用可能です。この機能のロックを解除するにはアップグレードしてください。",
     "upgrade": "アップグレード",

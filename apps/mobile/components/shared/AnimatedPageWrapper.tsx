@@ -42,11 +42,8 @@ export function AnimatedPageWrapper({ visible, onClose, children, disableGesture
   }, [visible]);
 
   const animatedStyle = useAnimatedStyle(() => {
-    const progress = 1 - (translateX.value / SCREEN_WIDTH);
-    
     return {
       transform: [{ translateX: translateX.value }],
-      opacity: 0.3 + (progress * 0.7), // Fade in from 0.3 to 1
     };
   });
 
@@ -54,8 +51,17 @@ export function AnimatedPageWrapper({ visible, onClose, children, disableGesture
 
   return (
     <AnimatedView
-      style={animatedStyle}
-      className="absolute inset-0 z-50"
+      style={[
+        animatedStyle,
+        {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 50,
+        }
+      ]}
     >
       {children}
     </AnimatedView>

@@ -520,30 +520,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
 
   return (
     <GestureDetector gesture={swipeDownGesture}>
-      {isLiquidGlassAvailable() ? (
-        <GlassView
-          glassEffectStyle="regular"
-          tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.03)' : 'rgba(0, 0, 0, 0.02)'}
-          isInteractive
-          style={{
-            ...containerStyle,
-            borderRadius: 30,
-            borderWidth: 0.5,
-            borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.06)',
-            overflow: 'hidden',
-          }}
-          {...props}>
-          {containerContent}
-        </GlassView>
-      ) : (
-        <View
-          className="relative rounded-[30px] overflow-hidden bg-card border border-border"
-          style={containerStyle}
-          collapsable={false}
-          {...props}>
-          {containerContent}
-        </View>
-      )}
+      <View
+        className="relative rounded-[30px] overflow-hidden bg-muted/40 backdrop-blur-sm border border-border"
+        style={containerStyle}
+        collapsable={false}
+        {...props}>
+        {containerContent}
+      </View>
     </GestureDetector>
   );
 }));

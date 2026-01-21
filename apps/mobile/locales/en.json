@@ -842,10 +842,12 @@
     "openMenu": "Open menu",
     "enterTitle": "Enter title",
     "threadActions": "Thread actions",
+    "newChat": "New chat",
     "untitled": "Untitled"
   },
   "threadActions": {
     "title": "Thread Actions",
+    "editTitle": "Edit Title",
     "upgradeRequired": "Upgrade Required",
     "upgradeRequiredMessage": "Sharing threads is available on paid plans. Upgrade to unlock this feature.",
     "upgrade": "Upgrade",

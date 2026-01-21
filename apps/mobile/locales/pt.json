@@ -731,10 +731,12 @@
     "openMenu": "Abrir menu",
     "enterTitle": "Digite o título",
     "threadActions": "Ações da conversa",
+    "newChat": "Nova conversa",
     "untitled": "Sem título"
   },
   "threadActions": {
     "title": "Ações da Conversa",
+    "editTitle": "Editar Título",
     "upgradeRequired": "Upgrade Necessário",
     "upgradeRequiredMessage": "Compartilhar conversas está disponível em planos pagos. Faça upgrade para desbloquear esta funcionalidade.",
     "upgrade": "Fazer Upgrade",

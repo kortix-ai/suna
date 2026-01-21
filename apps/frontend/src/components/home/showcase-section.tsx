@@ -145,7 +145,7 @@ export function ShowCaseSection() {
     const currentWorker = workers.find(w => w.id === activeWorker) || workers[0];
 
     return (
-        <section className="w-full px-4 sm:px-6 py-12 sm:py-16 md:py-24 lg:py-32">
+        <section className="w-full px-6 py-12 sm:py-16 md:py-24 lg:py-32">
             <div className="max-w-7xl mx-auto">
                 {/* Header */}
                 <div className="text-center mb-8 sm:mb-12 md:mb-16 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">

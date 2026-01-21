@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, ScrollView } from 'react-native';
+import { Pressable, View, ScrollView, Platform, StyleSheet, TouchableOpacity } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -10,7 +10,7 @@ import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
-import { SettingsHeader } from './SettingsHeader';
+import { NativeHeader } from './NativeHeader';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -96,77 +96,68 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   
   if (!visible) return null;
 
+  const backgroundColor = Platform.OS === 'ios'
+    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
+    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
+
   if (themePreference === null) {
     return (
-      <View className="absolute inset-0 z-50">
-        <Pressable
-          onPress={handleClose}
-          className="absolute inset-0 bg-black/50"
-        />
-        <View className="absolute top-0 left-0 right-0 bottom-0 bg-background items-center justify-center">
-          <Text className="text-muted-foreground">Loading...</Text>
-        </View>
+      <View style={{ flex: 1, backgroundColor, alignItems: 'center', justifyContent: 'center' }}>
+        <Text className="text-muted-foreground">Loading...</Text>
       </View>
     );
   }
   
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
+    <View style={{ flex: 1, backgroundColor }}>
+      <NativeHeader
+        title={t('theme.title')}
+        onBack={handleClose}
       />
       
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
-          className="flex-1" 
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
-        >
-          <SettingsHeader
-            title={t('theme.title')}
-            onClose={handleClose}
+      <ScrollView 
+        style={{ flex: 1 }}
+        contentContainerStyle={{ padding: 16 }}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+      >
+        <View style={{ 
+          backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF',
+          borderRadius: 20,
+          overflow: 'hidden',
+          marginBottom: 16,
+        }}>
+          <ThemeOption
+            icon={Sun}
+            label={t('theme.light')}
+            description={t('theme.lightDescription')}
+            isSelected={themePreference === 'light'}
+            onPress={() => handleThemeSelect('light')}
+            disabled={isTransitioning}
+            isFirst={true}
+          />
+          
+          <ThemeOption
+            icon={Moon}
+            label={t('theme.dark')}
+            description={t('theme.darkDescription')}
+            isSelected={themePreference === 'dark'}
+            onPress={() => handleThemeSelect('dark')}
+            disabled={isTransitioning}
           />
 
-          <View className="px-6 pb-8">
-            <View className="mb-3">
-              <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                {t('theme.themeOptions')}
-              </Text>
-            </View>
-
-            <View className="gap-3">
-              <ThemeOption
-                icon={Sun}
-                label={t('theme.light')}
-                description={t('theme.lightDescription')}
-                isSelected={themePreference === 'light'}
-                onPress={() => handleThemeSelect('light')}
-                disabled={isTransitioning}
-              />
-              
-              <ThemeOption
-                icon={Moon}
-                label={t('theme.dark')}
-                description={t('theme.darkDescription')}
-                isSelected={themePreference === 'dark'}
-                onPress={() => handleThemeSelect('dark')}
-                disabled={isTransitioning}
-              />
-
-              <ThemeOption
-                icon={Monitor}
-                label={t('theme.system')}
-                description={t('theme.systemDescription')}
-                isSelected={themePreference === 'system'}
-                onPress={() => handleThemeSelect('system')}
-                disabled={isTransitioning}
-              />
-            </View>
-          </View>
-          <View className="h-20" />
-        </ScrollView>
-      </View>
+          <ThemeOption
+            icon={Monitor}
+            label={t('theme.system')}
+            description={t('theme.systemDescription')}
+            isSelected={themePreference === 'system'}
+            onPress={() => handleThemeSelect('system')}
+            disabled={isTransitioning}
+            isLast={true}
+          />
+        </View>
+        <View style={{ height: 80 }} />
+      </ScrollView>
     </View>
   );
 }
@@ -178,69 +169,59 @@ interface ThemeOptionProps {
   isSelected: boolean;
   onPress: () => void;
   disabled?: boolean;
+  isFirst?: boolean;
+  isLast?: boolean;
 }
 
-function ThemeOption({ icon, label, description, isSelected, onPress, disabled }: ThemeOptionProps) {
-  const scale = useSharedValue(1);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-  
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
+function ThemeOption({ icon, label, description, isSelected, onPress, disabled, isFirst, isLast }: ThemeOptionProps) {
+  const { colorScheme } = useColorScheme();
   
   return (
-    <AnimatedPressable
-      onPress={disabled ? undefined : onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`bg-primary/5 rounded-3xl p-4 ${
-        disabled ? 'opacity-60' : 'active:opacity-80'
-      }`}
-    >
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center gap-3 flex-1">
-          <View className={`h-10 w-10 rounded-full items-center justify-center ${
-            isSelected ? 'bg-primary' : 'bg-primary/10'
-          }`}>
-            <Icon 
-              as={icon} 
-              size={18} 
-              className={isSelected ? 'text-primary-foreground' : 'text-primary'} 
-              strokeWidth={2.5} 
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-sm font-roobert-semibold text-foreground mb-0.5">
+    <>
+      {!isFirst && (
+        <View
+          style={{
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: colorScheme === 'dark' ? '#38383A' : '#C6C6C8',
+            marginLeft: 16,
+          }}
+        />
+      )}
+      <TouchableOpacity
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
+        activeOpacity={0.6}
+        style={{
+          paddingHorizontal: 16,
+          paddingVertical: 12,
+          minHeight: 56,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+          <Icon 
+            as={icon} 
+            size={24} 
+            className="text-foreground"
+            strokeWidth={2} 
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 17, color: colorScheme === 'dark' ? '#FFFFFF' : '#000000' }}>
               {label}
-            </Text>
-            <Text className="text-xs font-roobert text-muted-foreground">
-              {description}
             </Text>
           </View>
         </View>
         
         {isSelected && (
-          <View className="ml-2 h-5 w-5 items-center justify-center rounded-full bg-primary">
-            <Icon 
-              as={Check} 
-              size={12} 
-              className="text-primary-foreground" 
-              strokeWidth={3} 
-            />
-          </View>
+          <Icon 
+            as={Check} 
+            size={24}
+            color={colorScheme === 'dark' ? '#0A84FF' : '#007AFF'}
+            strokeWidth={2.5} 
+          />
         )}
-      </View>
-    </AnimatedPressable>
+      </TouchableOpacity>
+    </>
   );
 }

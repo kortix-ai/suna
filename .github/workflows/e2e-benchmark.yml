@@ -46,10 +46,10 @@ jobs:
               echo "api_url=https://api.kortix.com" >> $GITHUB_OUTPUT
               ;;
             staging)
-              echo "api_url=https://staging-api.suna.so" >> $GITHUB_OUTPUT
+              echo "api_url=https://staging-api.kortix.com" >> $GITHUB_OUTPUT
               ;;
             dev)
-              echo "api_url=https://dev-api.suna.so" >> $GITHUB_OUTPUT
+              echo "api_url=https://dev-api.kortix.com" >> $GITHUB_OUTPUT
               ;;
           esac
       

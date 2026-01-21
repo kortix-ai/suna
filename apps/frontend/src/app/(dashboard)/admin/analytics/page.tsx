@@ -36,6 +36,7 @@ import {
   useEngagementSummary,
   useTaskPerformance,
   useProfitability,
+  useChurnByDate,
 } from '@/hooks/admin/use-admin-analytics';
 import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
@@ -128,6 +129,8 @@ export default function AdminAnalyticsPage() {
   const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateFromString, dateToString);
   const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateFromString, dateToString);
   const { data: profitability, isLoading: profitabilityLoading, isFetching: profitabilityFetching } = useProfitability(dateFromString, dateToString);
+
+  const { data: churnData, isLoading: churnLoading } = useChurnByDate(dateFromString, dateToString);
 
   const isOverviewFetching = engagementFetching || taskFetching || profitabilityFetching;
 
@@ -622,8 +625,11 @@ export default function AdminAnalyticsPage() {
                       {/* Row 1: Key financial metrics */}
                       <div className="grid grid-cols-6 gap-4">
                         <div className="text-center p-3 rounded-lg bg-muted/30">
-                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xl font-bold">{profitability.total_active_subscriptions?.toLocaleString() ?? '—'}</p>
                           <p className="text-xs text-muted-foreground">Total Active Subs</p>
+                          <p className="text-[10px] text-muted-foreground mt-1">
+                            Web: {profitability.stripe_active_subscriptions?.toLocaleString() ?? '—'} | App: {profitability.revenuecat_active_subscriptions?.toLocaleString() ?? '—'}
+                          </p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">
                           <p className="text-xl font-bold">—</p>
@@ -634,11 +640,15 @@ export default function AdminAnalyticsPage() {
                           <p className="text-xs text-muted-foreground">ARPU</p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">
-                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xl font-bold">{churnLoading ? '...' : (churnData?.total ?? '—')}</p>
                           <p className="text-xs text-muted-foreground">Churns</p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">
-                          <p className="text-xl font-bold">—</p>
+                          <p className="text-xl font-bold">
+                            {churnLoading ? '...' : (churnData && profitability?.total_active_subscriptions
+                              ? `${((churnData.total / profitability.total_active_subscriptions) * 100).toFixed(2)}%`
+                              : '—')}
+                          </p>
                           <p className="text-xs text-muted-foreground">Churn Rate</p>
                         </div>
                         <div className="text-center p-3 rounded-lg bg-muted/30">

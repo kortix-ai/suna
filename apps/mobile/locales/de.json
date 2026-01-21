@@ -736,10 +736,12 @@
     "openMenu": "Menü öffnen",
     "enterTitle": "Titel eingeben",
     "threadActions": "Thread-Aktionen",
+    "newChat": "Neuer Chat",
     "untitled": "Ohne Titel"
   },
   "threadActions": {
     "title": "Thread-Aktionen",
+    "editTitle": "Titel Bearbeiten",
     "upgradeRequired": "Upgrade Erforderlich",
     "upgradeRequiredMessage": "Thread-Freigabe ist nur in kostenpflichtigen Plänen verfügbar. Upgrade, um diese Funktion freizuschalten.",
     "upgrade": "Upgraden",

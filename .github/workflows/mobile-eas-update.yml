@@ -168,9 +168,9 @@ jobs:
             echo "environment=production" >> $GITHUB_OUTPUT
           else
             # Staging environment for main and staging branches
-            echo "EXPO_PUBLIC_SUPABASE_URL=https://heprlhlltebrxydgtsjs.supabase.co" >> $GITHUB_ENV
-            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhlcHJsaGxsdGVicnh5ZGd0c2pzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDUxODcxNjQsImV4cCI6MjA2MDc2MzE2NH0.YRo1iZw06YSxqBhotBnD1d5jZxw7hHwswe1wKp8VpfA" >> $GITHUB_ENV
-            echo "EXPO_PUBLIC_BACKEND_URL=https://staging-api.suna.so/v1" >> $GITHUB_ENV
+            echo "EXPO_PUBLIC_SUPABASE_URL=https://ujzsbwvurfyeuerxxeaz.supabase.co" >> $GITHUB_ENV
+            echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqenNid3Z1cmZ5ZXVlcnh4ZWF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MDQwMzUsImV4cCI6MjA4NDQ4MDAzNX0.-yXpKNQphoh5F4MSPxVkW1P63Ow7jZvHgFppS2KMfWc" >> $GITHUB_ENV
+            echo "EXPO_PUBLIC_BACKEND_URL=https://staging-api.kortix.com/v1" >> $GITHUB_ENV
             echo "environment=staging" >> $GITHUB_OUTPUT
           fi
 
