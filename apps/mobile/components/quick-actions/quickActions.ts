@@ -4,7 +4,8 @@ import {
   Table2, 
   FileText, 
   Users, 
-  Search 
+  Search,
+  MessageCircle
 } from 'lucide-react-native';
 import type { QuickAction } from '../shared/types';
 
@@ -13,8 +14,14 @@ import type { QuickAction } from '../shared/types';
  * 
  * Predefined quick actions that appear above the chat input.
  * Each action represents a capability or tool the user can access.
+ * "general" is the default mode with no specific capabilities.
  */
 export const QUICK_ACTIONS: QuickAction[] = [
+  {
+    id: 'general',
+    label: 'General',
+    icon: MessageCircle,
+  },
   {
     id: 'slides',
     label: 'Slides',

@@ -4,7 +4,8 @@ import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withTiming,
-  runOnJS
+  runOnJS,
+  Easing,
 } from 'react-native-reanimated';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -23,13 +24,16 @@ export function AnimatedPageWrapper({ visible, onClose, children, disableGesture
 
   React.useEffect(() => {
     if (visible) {
-      translateX.value = SCREEN_WIDTH;
       setShouldRender(true);
-      requestAnimationFrame(() => {
-        translateX.value = withTiming(0, { duration: 300 });
+      translateX.value = withTiming(0, { 
+        duration: 200,
+        easing: Easing.out(Easing.exp),
       });
     } else {
-      translateX.value = withTiming(SCREEN_WIDTH, { duration: 300 }, (finished) => {
+      translateX.value = withTiming(SCREEN_WIDTH, { 
+        duration: 200,
+        easing: Easing.out(Easing.exp),
+      }, (finished) => {
         if (finished) {
           runOnJS(setShouldRender)(false);
         }
@@ -37,17 +41,27 @@ export function AnimatedPageWrapper({ visible, onClose, children, disableGesture
     }
   }, [visible]);
 
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: translateX.value }],
-  }));
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ translateX: translateX.value }],
+    };
+  });
 
   if (!shouldRender) return null;
 
-  // Simplified version without GestureDetector - just animated slide
   return (
     <AnimatedView
-      style={animatedStyle}
-      className="absolute inset-0 z-50"
+      style={[
+        animatedStyle,
+        {
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 50,
+        }
+      ]}
     >
       {children}
     </AnimatedView>

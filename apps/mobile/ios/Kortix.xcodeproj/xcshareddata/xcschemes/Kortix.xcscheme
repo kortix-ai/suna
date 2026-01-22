@@ -17,7 +17,7 @@
                BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
                BuildableName = "Kortix.app"
                BlueprintName = "Kortix"
-               ReferencedContainer = "container:Kortix.xcodeproj">
+               ReferencedContainer = "container:kortix.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -35,13 +35,13 @@
                BlueprintIdentifier = "00E356ED1AD99517003FC87E"
                BuildableName = "KortixTests.xctest"
                BlueprintName = "KortixTests"
-               ReferencedContainer = "container:Kortix.xcodeproj">
+               ReferencedContainer = "container:kortix.xcodeproj">
             </BuildableReference>
          </TestableReference>
       </Testables>
    </TestAction>
    <LaunchAction
-      buildConfiguration = "Debug"
+      buildConfiguration = "Release"
       selectedDebuggerIdentifier = "Xcode.DebuggerFoundation.Debugger.LLDB"
       selectedLauncherIdentifier = "Xcode.DebuggerFoundation.Launcher.LLDB"
       launchStyle = "0"
@@ -57,7 +57,7 @@
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
             BuildableName = "Kortix.app"
             BlueprintName = "Kortix"
-            ReferencedContainer = "container:Kortix.xcodeproj">
+            ReferencedContainer = "container:kortix.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -74,7 +74,7 @@
             BlueprintIdentifier = "13B07F861A680F5B00A75B9A"
             BuildableName = "Kortix.app"
             BlueprintName = "Kortix"
-            ReferencedContainer = "container:Kortix.xcodeproj">
+            ReferencedContainer = "container:kortix.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, Alert, ScrollView } from 'react-native';
+import { Pressable, View, Alert, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -26,47 +26,34 @@ import {
   Wallet,
   BarChart3,
   Plug,
+  X,
 } from 'lucide-react-native';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import type { UserProfile } from '../menu/types';
-import { LanguagePage } from './LanguagePage';
-import { NameEditPage } from './NameEditPage';
-import { ThemePage } from './ThemePage';
-import { BetaPage } from './BetaPage';
-import { BillingPage } from './BillingPage';
-import { PlanPage } from './PlanPage';
-import { UsagePage } from './UsagePage';
-import { AccountDeletionPage } from './AccountDeletionPage';
 import { SettingsHeader } from './SettingsHeader';
-import { IntegrationsPage } from './IntegrationsPage';
-import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import * as Haptics from 'expo-haptics';
 import { useAccountDeletionStatus } from '@/hooks/useAccountDeletion';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
+import { cn } from '@/lib';
+import { ProfilePicture } from './ProfilePicture';
+import { getBackgroundColor, getDrawerBackgroundColor, getPadding } from '@agentpress/shared';
 
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+type PageType = 'main' | 'name' | 'language' | 'theme' | 'beta' | 'account-deletion';
 
 interface SettingsPageProps {
   visible: boolean;
   profile?: UserProfile;
   onClose: () => void;
+  isDrawer?: boolean;
+  onNavigate?: (page: PageType) => void;
 }
 
-export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
+export function SettingsPage({ visible, profile, onClose, isDrawer = false, onNavigate }: SettingsPageProps) {
   const { colorScheme } = useColorScheme();
   const { user, signOut, isSigningOut } = useAuthContext();
   const { t } = useLanguage();
   const router = useRouter();
-  const [isLanguagePageVisible, setIsLanguagePageVisible] = React.useState(false);
-  const [isNameEditPageVisible, setIsNameEditPageVisible] = React.useState(false);
-  const [isThemePageVisible, setIsThemePageVisible] = React.useState(false);
-  const [isBetaPageVisible, setIsBetaPageVisible] = React.useState(false);
-  const [isPlanPageVisible, setIsPlanPageVisible] = React.useState(false);
-  const [isBillingPageVisible, setIsBillingPageVisible] = React.useState(false);
-  const [isUsagePageVisible, setIsUsagePageVisible] = React.useState(false);
-  const [isAccountDeletionPageVisible, setIsAccountDeletionPageVisible] = React.useState(false);
-  const [isIntegrationsPageVisible, setIsIntegrationsPageVisible] = React.useState(false);
 
   const { useNativePaywall, presentUpgradePaywall } = useUpgradePaywall();
   const isGuest = !user;
@@ -102,8 +89,10 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
   const handleName = React.useCallback(() => {
     log.log('🎯 Name/Profile management pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsNameEditPageVisible(true);
-  }, []);
+    if (onNavigate) {
+      onNavigate('name');
+    }
+  }, [onNavigate]);
 
   const handlePlan = React.useCallback(async () => {
     log.log('🎯 Plan pressed');
@@ -114,57 +103,57 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
       log.log('📱 Using native RevenueCat paywall');
       await presentUpgradePaywall();
     } else {
-      // Otherwise, show the custom PlanPage
-      setIsPlanPageVisible(true);
+      // Navigate to plans route (full screen)
+      router.push('/plans');
     }
-  }, [useNativePaywall, presentUpgradePaywall]);
+  }, [useNativePaywall, presentUpgradePaywall, router]);
 
   const handleBilling = React.useCallback(() => {
     log.log('🎯 Billing pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsBillingPageVisible(true);
-  }, []);
+    router.push('/plans');
+  }, [router]);
 
   const handleUsage = React.useCallback(() => {
     log.log('🎯 Usage pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsUsagePageVisible(true);
-  }, []);
-
-  const handleIntegrations = React.useCallback(() => {
-    log.log('🎯 Integrations pressed');
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsIntegrationsPageVisible(true);
-  }, []);
+    router.push('/usage');
+  }, [router]);
 
   const handleTheme = React.useCallback(() => {
     log.log('🎯 Theme pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsThemePageVisible(true);
-  }, []);
+    if (onNavigate) {
+      onNavigate('theme');
+    }
+  }, [onNavigate]);
 
   const handleLanguage = React.useCallback(() => {
     log.log('🎯 App Language pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsLanguagePageVisible(true);
-  }, []);
+    if (onNavigate) {
+      onNavigate('language');
+    }
+  }, [onNavigate]);
 
   const handleBeta = React.useCallback(() => {
     log.log('🎯 Beta pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    setIsBetaPageVisible(true);
-  }, []);
+    if (onNavigate) {
+      onNavigate('beta');
+    }
+  }, [onNavigate]);
 
   const handleAccountDeletion = React.useCallback(() => {
     log.log('🎯 Account deletion pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    setIsAccountDeletionPageVisible(true);
-  }, []);
+    if (onNavigate) {
+      onNavigate('account-deletion');
+    }
+  }, [onNavigate]);
 
   const handleSignOut = React.useCallback(async () => {
-    if (isSigningOut) return; // Prevent multiple sign out attempts
+    if (isSigningOut) return;
 
     log.log('🎯 Sign Out pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -201,6 +190,96 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
 
   if (!visible) return null;
 
+  const settingsContent = (
+    <View style={{ 
+      flex: 1, 
+      backgroundColor: getDrawerBackgroundColor(Platform.OS, colorScheme),
+      paddingHorizontal: getPadding(Platform.OS, 'md'),
+      paddingTop: getPadding(Platform.OS, 'sm'),
+      paddingBottom: 100,
+    }}>
+      <TouchableOpacity 
+        onPress={handleName}
+        activeOpacity={0.7}
+        style={{
+          paddingVertical: 16,
+          paddingHorizontal: 16,
+          marginBottom: 8,
+        }}
+        className="flex-row items-center justify-between bg-muted-foreground/10 rounded-3xl">
+        <View className="flex-row items-center gap-3 flex-1">
+          <ProfilePicture size={12} imageUrl={user?.user_metadata?.avatar_url} fallbackText={userName} />
+          <View className="flex-1">
+            <Text className="font-roobert-bold text-lg text-foreground">
+              {userName}
+            </Text>
+            <Text className="font-roobert-medium text-sm text-muted-foreground">
+              {userEmail}
+            </Text>
+          </View>
+        </View>
+        <Icon
+          as={ChevronRight}
+          size={20}
+          color={colorScheme === 'dark' ? '#48484A' : '#C7C7CC'}
+          strokeWidth={2.5}
+        />
+      </TouchableOpacity>
+      <SettingsSection title={t('settings.account', 'Account')}>
+        <SettingsItem icon={CreditCard} label={t('settings.plan', 'Plan')} onPress={handlePlan} />
+        <SettingsSeparator />
+        <SettingsItem icon={Wallet} label={t('settings.billing', 'Billing')} onPress={handleBilling} />
+        <SettingsSeparator />
+        <SettingsItem icon={BarChart3} label={t('settings.usage', 'Usage')} onPress={handleUsage} />
+      </SettingsSection>
+
+      <SettingsSection title={t('settings.preferences', 'Preferences')}>
+        <SettingsItem
+          icon={colorScheme === 'dark' ? Sun : Moon}
+          label={t('settings.themeTitle') || 'Theme'}
+          onPress={handleTheme}
+        />
+        <SettingsSeparator />
+        <SettingsItem icon={Globe} label={t('settings.language')} onPress={handleLanguage} />
+        <SettingsSeparator />
+        <SettingsItem icon={FlaskConical} label={t('settings.beta') || 'Beta'} onPress={handleBeta} />
+      </SettingsSection>
+
+      {!isGuest && (
+        <SettingsSection>
+          <SettingsItem
+            icon={Trash2}
+            label={
+              deletionStatus?.has_pending_deletion
+                ? t('accountDeletion.deletionScheduled')
+                : t('accountDeletion.deleteYourAccount')
+            }
+            onPress={handleAccountDeletion}
+            showBadge={deletionStatus?.has_pending_deletion}
+            destructive
+          />
+          <SettingsSeparator />
+          <SettingsItem
+            icon={LogOut}
+            label={t('settings.signOut')}
+            onPress={handleSignOut}
+            isLoading={isSigningOut}
+            destructive
+          />
+        </SettingsSection>
+      )}
+      
+      {/* Bottom spacing */}
+      <View style={{ height: 32 }} />
+    </View>
+  );
+
+  // Render as drawer content (no wrapper, no header)
+  if (isDrawer) {
+    return settingsContent;
+  }
+
+  // Render as full-page modal (with wrapper and header)
   return (
     <View className="absolute inset-0 z-50">
       <Pressable onPress={handleClose} className="absolute inset-0 bg-black/50" />
@@ -211,153 +290,90 @@ export function SettingsPage({ visible, profile, onClose }: SettingsPageProps) {
           removeClippedSubviews={true}>
           <SettingsHeader title={t('settings.title')} onClose={handleClose} />
 
-          {/* Settings List */}
-          <View className="px-6">
-            <SettingsItem icon={User} label={t('settings.name')} onPress={handleName} />
-
-            <SettingsItem
-              icon={CreditCard}
-              label={t('settings.plan', 'Plan')}
-              onPress={handlePlan}
-            />
-
-            <SettingsItem
-              icon={Wallet}
-              label={t('settings.billing', 'Billing')}
-              onPress={handleBilling}
-            />
-
-            <SettingsItem
-              icon={BarChart3}
-              label={t('settings.usage', 'Usage')}
-              onPress={handleUsage}
-            />
-
-            {/* <SettingsItem
-              icon={Plug}
-              label={t('integrations.title', 'Integrations')}
-              onPress={handleIntegrations}
-            /> */}
-
-            <SettingsItem
-              icon={colorScheme === 'dark' ? Sun : Moon}
-              label={t('settings.themeTitle') || 'Theme'}
-              onPress={handleTheme}
-            />
-
-            <SettingsItem icon={Globe} label={t('settings.language')} onPress={handleLanguage} />
-
-            <SettingsItem
-              icon={FlaskConical}
-              label={t('settings.beta') || 'Beta'}
-              onPress={handleBeta}
-            />
-
-            {!isGuest && (
-              <SettingsItem
-                icon={Trash2}
-                label={
-                  deletionStatus?.has_pending_deletion
-                    ? t('accountDeletion.deletionScheduled')
-                    : t('accountDeletion.deleteYourAccount')
-                }
-                onPress={handleAccountDeletion}
-                showBadge={deletionStatus?.has_pending_deletion}
-              />
-            )}
-            {!isGuest && (
-              <SettingsItem
-                icon={LogOut}
-                label={t('settings.signOut')}
-                onPress={handleSignOut}
-                isLoading={isSigningOut}
-              />
-            )}
-          </View>
+          {settingsContent}
+          
           <View className="h-20" />
         </ScrollView>
       </View>
-
-      <AnimatedPageWrapper
-        visible={isLanguagePageVisible}
-        onClose={() => setIsLanguagePageVisible(false)}>
-        <LanguagePage visible onClose={() => setIsLanguagePageVisible(false)} />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
-        visible={isNameEditPageVisible}
-        onClose={() => setIsNameEditPageVisible(false)}>
-        <NameEditPage
-          visible
-          currentName={userName}
-          onClose={() => setIsNameEditPageVisible(false)}
-          onNameUpdated={(newName) => {
-            log.log('✅ Name updated to:', newName);
-          }}
-        />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
-        visible={isThemePageVisible}
-        onClose={() => setIsThemePageVisible(false)}>
-        <ThemePage visible onClose={() => setIsThemePageVisible(false)} />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper visible={isBetaPageVisible} onClose={() => setIsBetaPageVisible(false)}>
-        <BetaPage visible onClose={() => setIsBetaPageVisible(false)} />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
-        visible={isPlanPageVisible}
-        onClose={() => setIsPlanPageVisible(false)}
-        disableGesture>
-        <PlanPage visible onClose={() => setIsPlanPageVisible(false)} />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
-        visible={isBillingPageVisible}
-        onClose={() => setIsBillingPageVisible(false)}
-        disableGesture>
-        <BillingPage
-          visible
-          onClose={() => setIsBillingPageVisible(false)}
-          onChangePlan={async () => {
-            setIsBillingPageVisible(false);
-            // If RevenueCat is available, present the native paywall directly
-            if (useNativePaywall) {
-              log.log('📱 Using RevenueCat paywall from billing');
-              setTimeout(async () => {
-                await presentUpgradePaywall();
-              }, 100);
-            } else {
-              // Otherwise show the custom plan page
-              log.log('📄 Using custom plan page from billing');
-              setTimeout(() => setIsPlanPageVisible(true), 100);
-            }
-          }}
-        />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
-        visible={isUsagePageVisible}
-        onClose={() => setIsUsagePageVisible(false)}>
-        <UsagePage visible onClose={() => setIsUsagePageVisible(false)} />
-      </AnimatedPageWrapper>
-
-      <AnimatedPageWrapper
-        visible={isAccountDeletionPageVisible}
-        onClose={() => setIsAccountDeletionPageVisible(false)}>
-        <AccountDeletionPage visible onClose={() => setIsAccountDeletionPageVisible(false)} />
-      </AnimatedPageWrapper>
-      {/* <AnimatedPageWrapper
-        visible={isIntegrationsPageVisible}
-        onClose={() => setIsIntegrationsPageVisible(false)}>
-        <IntegrationsPage visible onClose={() => setIsIntegrationsPageVisible(false)} />
-      </AnimatedPageWrapper> */}
     </View>
   );
 }
 
+// Settings Section Header
+interface SettingsSectionProps {
+  title?: string;
+  children: React.ReactNode;
+}
+
+const SettingsSection = ({ title, children }: SettingsSectionProps) => {
+  const { colorScheme } = useColorScheme();
+  const isIOS = Platform.OS === 'ios';
+  
+  return (
+    <View style={{ marginTop: title ? (isIOS ? 20 : 0) : (isIOS ? 16 : 0) }}>
+      {title && isIOS && (
+        <Text
+          style={{
+            fontSize: 13,
+            fontWeight: '400',
+            color: colorScheme === 'dark' ? '#8E8E93' : '#6E6E73',
+            marginBottom: 8,
+            paddingLeft: 16,
+            textTransform: 'uppercase',
+          }}>
+          {title}
+        </Text>
+      )}
+      {title && !isIOS && (
+        <View
+          style={{
+            paddingHorizontal: 16,
+            paddingTop: 16,
+            paddingBottom: 8,
+          }}>
+          <Text
+            style={{
+              fontSize: 14,
+              fontWeight: '500',
+              color: colorScheme === 'dark' ? '#BB86FC' : '#6200EE',
+            }}>
+            {title}
+          </Text>
+        </View>
+      )}
+      <View
+        style={isIOS ? {
+          borderRadius: 20,
+          overflow: 'hidden',
+        } : {
+          backgroundColor: colorScheme === 'dark' ? '#1E1E1E' : '#FFFFFF',
+          marginBottom: 8,
+        }}
+        className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
+      >
+        {children}
+      </View>
+    </View>
+  );
+};
+
+// Settings Separator (hairline between items)
+const SettingsSeparator = () => {
+  const { colorScheme } = useColorScheme();
+  const isIOS = Platform.OS === 'ios';
+  
+  return (
+    <View
+      style={{
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: colorScheme === 'dark' ? '#38383A' : '#C6C6C8',
+        marginLeft: isIOS ? 52 : 16, // iOS: align with text after icon, Android: standard indent
+      }}
+    />
+  );
+};
+
+// Settings Item
 interface SettingsItemProps {
   icon: typeof User;
   label: string;
@@ -376,8 +392,9 @@ const SettingsItem = React.memo(
     showBadge = false,
     isLoading = false,
   }: SettingsItemProps) => {
-    const scale = useSharedValue(1);
+    const { colorScheme } = useColorScheme();
     const rotation = useSharedValue(0);
+    const isIOS = Platform.OS === 'ios';
 
     React.useEffect(() => {
       if (isLoading) {
@@ -391,56 +408,75 @@ const SettingsItem = React.memo(
       }
     }, [isLoading, rotation]);
 
-    const animatedStyle = useAnimatedStyle(() => ({
-      transform: [{ scale: scale.value }],
-      opacity: isLoading ? 0.6 : 1,
-    }));
-
     const iconAnimatedStyle = useAnimatedStyle(() => ({
       transform: [{ rotate: `${rotation.value}deg` }],
     }));
 
-    const handlePressIn = React.useCallback(() => {
-      if (!isLoading) {
-        scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-      }
-    }, [scale, isLoading]);
-
-    const handlePressOut = React.useCallback(() => {
-      if (!isLoading) {
-        scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-      }
-    }, [scale, isLoading]);
-
-    const iconColor = destructive ? 'text-destructive' : 'text-primary';
-    const textColor = destructive ? 'text-destructive' : 'text-foreground';
-
     return (
-      <AnimatedPressable
+      <TouchableOpacity
         onPress={isLoading ? undefined : onPress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
         disabled={isLoading}
-        style={animatedStyle}
-        className="flex-row items-center justify-between py-4">
-        <View className="flex-row items-center gap-3">
+        activeOpacity={0.6}
+        style={{
+          paddingHorizontal: 16,
+          paddingVertical: isIOS ? 11 : 14,
+          minHeight: isIOS ? 44 : 56,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: isIOS ? 12 : 16, flex: 1 }}>
           {isLoading ? (
-            <KortixLoader size="small" customSize={20} />
+            <View style={{ width: 20, height: 20 }}>
+              <KortixLoader size="small" customSize={20} />
+            </View>
           ) : (
-            <Icon as={icon} size={20} className={iconColor} strokeWidth={2} />
+            <Animated.View style={[iconAnimatedStyle]}>
+              <Icon 
+                as={icon} 
+                size={isIOS ? 20 : 24} 
+                className={cn(
+                  colorScheme === 'dark' ? 'text-foreground' : 'text-foreground', 
+                  destructive ? 'text-destructive' : 'text-foreground'
+                )} 
+                strokeWidth={2} 
+              />
+            </Animated.View>
           )}
-          <Text className={`font-roobert-medium text-lg ${textColor}`}>{label}</Text>
+          <Text 
+            style={{ 
+              fontSize: isIOS ? 17 : 16, 
+              flex: 1,
+              fontWeight: isIOS ? '400' : '500'
+            }} 
+            className={cn(
+              colorScheme === 'dark' ? 'text-foreground' : 'text-foreground', 
+              destructive ? 'text-destructive' : 'text-foreground'
+            )}>
+            {label}
+          </Text>
           {showBadge && (
-            <View className="rounded-full bg-destructive/20 px-2 py-0.5">
-              <Text className="font-roobert-medium text-xs text-destructive">Scheduled</Text>
+            <View
+              style={{
+                backgroundColor: colorScheme === 'dark' ? 'rgba(255, 59, 48, 0.2)' : 'rgba(255, 59, 48, 0.15)',
+                paddingHorizontal: 8,
+                paddingVertical: 2,
+                borderRadius: 4,
+              }}>
+              <Text style={{ fontSize: 12, color: '#FF3B30', fontWeight: '500' }}>Scheduled</Text>
             </View>
           )}
         </View>
 
         {!destructive && !isLoading && (
-          <Icon as={ChevronRight} size={16} className="text-foreground/40" strokeWidth={2} />
+          <Icon
+            as={ChevronRight}
+            size={isIOS ? 20 : 24}
+            color={colorScheme === 'dark' ? '#48484A' : '#C7C7CC'}
+            strokeWidth={2.5}
+          />
         )}
-      </AnimatedPressable>
+      </TouchableOpacity>
     );
   }
 );

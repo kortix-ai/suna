@@ -1,17 +1,20 @@
 import * as React from 'react';
-import { Dimensions, Animated } from 'react-native';
+import { Dimensions, Animated, View } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
 import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
+import { KortixLogo } from '../ui/KortixLogo';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 
-/**
- * Background Logo Component with Simple Fade
- */
-export function BackgroundLogo() {
+interface BackgroundLogoProps {
+  minimal?: boolean;
+}
+
+export function BackgroundLogo({ minimal = false }: BackgroundLogoProps) {
   const { colorScheme } = useColorScheme();
   const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  
 
   React.useEffect(() => {
     // Simple slow fade in
@@ -24,6 +27,16 @@ export function BackgroundLogo() {
 
   const leftOffset = (SCREEN_WIDTH - 393) / 2;
   const SymbolComponent = colorScheme === 'dark' ? KortixSymbolWhite : KortixSymbolBlack;
+
+  if(minimal) {
+    return (
+      <View className="flex-1 items-center justify-center">
+        <View className='mb-20 opacity-30'>
+          <KortixLogo size={50} />
+        </View>
+      </View>
+    );
+  }
 
   return (
     <Animated.View

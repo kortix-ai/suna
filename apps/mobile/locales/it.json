@@ -94,6 +94,7 @@
     "passwordsDontMatch": "Le password non corrispondono",
     "passwordTooShort": "La password deve avere almeno 8 caratteri",
     "welcomeTitle": "Assumi Kortix per",
+    "welcomeSubtitle": "Crea qualsiasi cosa con Kortix",
     "rotatingPhrases": {
       "presentations": "presentazioni",
       "writing": "scrittura",
@@ -730,10 +731,12 @@
     "openMenu": "Apri menu",
     "enterTitle": "Inserisci titolo",
     "threadActions": "Azioni thread",
+    "newChat": "Nuova chat",
     "untitled": "Senza titolo"
   },
   "threadActions": {
     "title": "Azioni Thread",
+    "editTitle": "Modifica Titolo",
     "upgradeRequired": "Upgrade Richiesto",
     "upgradeRequiredMessage": "La condivisione dei thread è disponibile nei piani a pagamento. Aggiorna per sbloccare questa funzione.",
     "upgrade": "Aggiorna",

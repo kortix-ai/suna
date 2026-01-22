@@ -11,7 +11,7 @@ export default function UsageScreen() {
     if (router.canGoBack()) {
       router.back();
     } else {
-      router.replace('/home');
+      router.replace('/(app)');
     }
   };
 

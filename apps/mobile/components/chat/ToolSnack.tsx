@@ -6,6 +6,7 @@ import { Maximize2, Volume2, Play, Pause, X, RotateCcw } from 'lucide-react-nati
 import { getToolIcon } from '@/lib/icons/tool-icons';
 import { getUserFriendlyToolName, parseToolMessage, type ParsedToolData } from '@agentpress/shared';
 import { useColorScheme } from 'nativewind';
+import { LiquidGlass } from '@/components/ui';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -256,90 +257,108 @@ export const ToolSnack = React.memo(function ToolSnack({
       voiceTogglePlayPause();
     };
 
+    const voiceContent = (
+      <>
+        {/* Voice Icon */}
+        <View
+          className="w-10 h-10 rounded-2xl items-center justify-center"
+          style={{
+            backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
+          }}
+        >
+          {isVoiceLoading ? (
+            <LottieView
+              source={require('@/components/animations/loading.json')}
+              style={{ width: 24, height: 24 }}
+              autoPlay
+              loop
+              speed={1.2}
+              colorFilters={[
+                {
+                  keypath: '*',
+                  color: isDark ? '#a1a1aa' : '#71717a',
+                },
+              ]}
+            />
+          ) : (
+            <Icon as={Volume2} size={20} className="text-muted-foreground" />
+          )}
+        </View>
+
+        {/* Text Preview */}
+        <View className="flex-1 min-w-0">
+          <Text
+            className="text-sm font-roobert-medium text-foreground"
+            numberOfLines={1}
+          >
+            {voiceDisplayText || 'Voice'}
+          </Text>
+        </View>
+
+        {/* Status Badge */}
+        <View
+          className="flex-row items-center gap-1.5 px-2 py-1 rounded-full"
+          style={{ backgroundColor: voiceStatusBgColor }}
+        >
+          <View
+            className={`w-1.5 h-1.5 rounded-full ${isVoiceLoading ? 'animate-pulse' : ''}`}
+            style={{ backgroundColor: voiceStatusDotColor }}
+          />
+          <Text
+            className="text-xs font-roobert-medium"
+            style={{ color: voiceStatusDotColor }}
+            numberOfLines={1}
+          >
+            {voiceStatusText}
+          </Text>
+        </View>
+
+        {/* Play/Pause/Replay Button */}
+        {(isVoicePlaying || isVoicePaused || isVoiceEnded) && (
+          <Pressable
+            onPress={handleVoicePlayPause}
+            className="w-8 h-8 rounded-full items-center justify-center bg-primary active:opacity-70"
+          >
+            <Icon
+              as={isVoiceEnded ? RotateCcw : isVoicePlaying ? Pause : Play}
+              size={14}
+              className="text-primary-foreground"
+              style={!isVoicePlaying && !isVoiceEnded ? { marginLeft: 2 } : undefined}
+            />
+          </Pressable>
+        )}
+
+        {/* Close Button */}
+        <Pressable
+          onPress={handleDismiss}
+          className="w-8 h-8 rounded-full items-center justify-center active:opacity-70"
+          style={{
+            backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
+          }}
+        >
+          <Icon as={X} size={16} className="text-muted-foreground" />
+        </Pressable>
+      </>
+    );
+
     return (
       <GestureDetector gesture={panGesture}>
         <Animated.View style={animatedStyle} className="mx-3 mb-2">
-          <View className="flex-row items-center gap-3 rounded-3xl p-2 border border-border bg-card">
-            {/* Voice Icon */}
-            <View
-              className="w-10 h-10 rounded-2xl items-center justify-center"
-              style={{
-                backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
-              }}
-            >
-              {isVoiceLoading ? (
-                <LottieView
-                  source={require('@/components/animations/loading.json')}
-                  style={{ width: 24, height: 24 }}
-                  autoPlay
-                  loop
-                  speed={1.2}
-                  colorFilters={[
-                    {
-                      keypath: '*',
-                      color: isDark ? '#a1a1aa' : '#71717a',
-                    },
-                  ]}
-                />
-              ) : (
-                <Icon as={Volume2} size={20} className="text-muted-foreground" />
-              )}
-            </View>
-
-            {/* Text Preview */}
-            <View className="flex-1 min-w-0">
-              <Text
-                className="text-sm font-roobert-medium text-foreground"
-                numberOfLines={1}
-              >
-                {voiceDisplayText || 'Voice'}
-              </Text>
-            </View>
-
-            {/* Status Badge */}
-            <View
-              className="flex-row items-center gap-1.5 px-2 py-1 rounded-full"
-              style={{ backgroundColor: voiceStatusBgColor }}
-            >
-              <View
-                className={`w-1.5 h-1.5 rounded-full ${isVoiceLoading ? 'animate-pulse' : ''}`}
-                style={{ backgroundColor: voiceStatusDotColor }}
-              />
-              <Text
-                className="text-xs font-roobert-medium"
-                style={{ color: voiceStatusDotColor }}
-                numberOfLines={1}
-              >
-                {voiceStatusText}
-              </Text>
-            </View>
-
-            {/* Play/Pause/Replay Button */}
-            {(isVoicePlaying || isVoicePaused || isVoiceEnded) && (
-              <Pressable
-                onPress={handleVoicePlayPause}
-                className="w-8 h-8 rounded-full items-center justify-center bg-primary active:opacity-70"
-              >
-                <Icon
-                  as={isVoiceEnded ? RotateCcw : isVoicePlaying ? Pause : Play}
-                  size={14}
-                  className="text-primary-foreground"
-                  style={!isVoicePlaying && !isVoiceEnded ? { marginLeft: 2 } : undefined}
-                />
-              </Pressable>
-            )}
-
-            {/* Close Button */}
-            <Pressable
-              onPress={handleDismiss}
-              className="w-8 h-8 rounded-full items-center justify-center active:opacity-70"
-              style={{
-                backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
-              }}
-            >
-              <Icon as={X} size={16} className="text-muted-foreground" />
-            </Pressable>
-          </View>
+          <LiquidGlass
+            tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
+            isInteractive
+            borderRadius={24}
+            borderWidth={0.5}
+            borderColor={isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)'}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              padding: 8,
+            }}
+          >
+            {voiceContent}
+          </LiquidGlass>
         </Animated.View>
       </GestureDetector>
     );
@@ -370,72 +389,89 @@ export const ToolSnack = React.memo(function ToolSnack({
       ? 'Success'
       : 'Failed';
 
+  const toolContent = (
+    <>
+      {/* Tool Icon */}
+      <View
+        className="w-10 h-10 rounded-2xl items-center justify-center"
+        style={{
+          backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
+        }}
+      >
+        {isStreaming ? (
+          <LottieView
+            source={require('@/components/animations/loading.json')}
+            style={{ width: 24, height: 24 }}
+            autoPlay
+            loop
+            speed={1.2}
+            colorFilters={[
+              {
+                keypath: '*',
+                color: isDark ? '#a1a1aa' : '#71717a',
+              },
+            ]}
+          />
+        ) : (
+          <Icon as={ToolIcon} size={20} className="text-muted-foreground" />
+        )}
+      </View>
+
+      {/* Tool Info */}
+      <View className="flex-1 min-w-0">
+        <Text
+          className="text-sm font-roobert-medium text-foreground"
+          numberOfLines={1}
+        >
+          {displayName}
+        </Text>
+      </View>
+
+      {/* Status Badge */}
+      <View
+        className="flex-row items-center gap-1.5 px-2 py-1 rounded-full"
+        style={{ backgroundColor: statusBgColor }}
+      >
+        <View
+          key={isStreaming ? 'streaming' : 'static'}
+          className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'animate-pulse' : ''}`}
+          style={{ backgroundColor: statusDotColor }}
+        />
+        <Text
+          className="text-xs font-roobert-medium"
+          style={{ color: statusTextColor }}
+          numberOfLines={1}
+        >
+          {statusText}
+        </Text>
+      </View>
+
+      {/* Expand Icon */}
+      <View className="pr-1">
+        <Icon as={Maximize2} size={16} className="text-muted-foreground" />
+      </View>
+    </>
+  );
+
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle} className="mx-3 mb-2">
-        <Pressable
-          onPress={onPress}
-          className="flex-row items-center gap-3 rounded-3xl p-2 border border-border bg-card active:opacity-80"
-        >
-          {/* Tool Icon */}
-          <View
-            className="w-10 h-10 rounded-2xl items-center justify-center"
+        <Pressable onPress={onPress} className="active:opacity-80">
+          <LiquidGlass
+            tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
+            isInteractive
+            borderRadius={24}
+            borderWidth={0.5}
+            borderColor={isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)'}
             style={{
-              backgroundColor: isDark ? 'rgba(113, 113, 122, 0.2)' : 'rgba(113, 113, 122, 0.1)',
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              padding: 8,
             }}
           >
-            {isStreaming ? (
-              <LottieView
-                source={require('@/components/animations/loading.json')}
-                style={{ width: 24, height: 24 }}
-                autoPlay
-                loop
-                speed={1.2}
-                colorFilters={[
-                  {
-                    keypath: '*',
-                    color: isDark ? '#a1a1aa' : '#71717a',
-                  },
-                ]}
-              />
-            ) : (
-              <Icon as={ToolIcon} size={20} className="text-muted-foreground" />
-            )}
-          </View>
-
-          {/* Tool Info */}
-          <View className="flex-1 min-w-0">
-            <Text
-              className="text-sm font-roobert-medium text-foreground"
-              numberOfLines={1}
-            >
-              {displayName}
-            </Text>
-          </View>
-
-          {/* Status Badge */}
-          <View
-            className="flex-row items-center gap-1.5 px-2 py-1 rounded-full"
-            style={{ backgroundColor: statusBgColor }}
-          >
-            <View
-              key={isStreaming ? 'streaming' : 'static'}
-              className={`w-1.5 h-1.5 rounded-full ${isStreaming ? 'animate-pulse' : ''}`}
-              style={{ backgroundColor: statusDotColor }}
-            />
-            <Text
-              className="text-xs font-roobert-medium"
-              style={{ color: statusTextColor }}
-              numberOfLines={1}
-            >
-              {statusText}
-            </Text>
-          </View>
-
-          {/* Expand Icon */}
-          <View className="pr-1">
-            <Icon as={Maximize2} size={16} className="text-muted-foreground" />
-          </View>
+            {toolContent}
+          </LiquidGlass>
         </Pressable>
       </Animated.View>
     </GestureDetector>

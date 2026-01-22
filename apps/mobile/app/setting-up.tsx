@@ -41,7 +41,7 @@ export default function SettingUpScreen() {
   React.useEffect(() => {
     if (!onboardingLoading && hasCompletedOnboarding) {
       log.log('✅ User already completed onboarding, skipping setup screen → /home');
-      router.replace('/home');
+      router.replace('/(app)');
     }
   }, [onboardingLoading, hasCompletedOnboarding, router]);
 

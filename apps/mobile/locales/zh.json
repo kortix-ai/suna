@@ -100,6 +100,7 @@
     "passwordsDontMatch": "密码不匹配",
     "passwordTooShort": "密码至少需要8个字符",
     "welcomeTitle": "雇用 Kortix 来",
+    "welcomeSubtitle": "用 Kortix 做任何事",
     "rotatingPhrases": {
       "presentations": "做演示",
       "writing": "写作",
@@ -736,10 +737,12 @@
     "openMenu": "打开菜单",
     "enterTitle": "输入标题",
     "threadActions": "会话操作",
+    "newChat": "新对话",
     "untitled": "无标题"
   },
   "threadActions": {
     "title": "会话操作",
+    "editTitle": "编辑标题",
     "upgradeRequired": "需要升级",
     "upgradeRequiredMessage": "分享会话仅在付费计划中可用。升级以解锁此功能。",
     "upgrade": "升级",

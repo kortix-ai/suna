@@ -95,7 +95,12 @@ export function SelectableListItem({
   return (
     <BottomSheetTouchable
       onPress={handlePress}
-      style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
+      style={{ 
+        flexDirection: 'row', 
+        alignItems: 'center', 
+        justifyContent: 'space-between',
+        backgroundColor: 'transparent',
+      }}
       accessibilityRole="button"
       accessibilityLabel={accessibilityLabel || `Select ${title}`}>
       {/* Left: Avatar + Text */}

@@ -1,20 +1,13 @@
 import * as React from 'react';
-import { Pressable, View, ScrollView } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring
-} from 'react-native-reanimated';
+import { View, ScrollView, Platform, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
-import { SettingsHeader } from './SettingsHeader';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { getDrawerBackgroundColor } from '@agentpress/shared';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 type ThemePreference = 'light' | 'dark' | 'system';
@@ -22,9 +15,10 @@ type ThemePreference = 'light' | 'dark' | 'system';
 interface ThemePageProps {
   visible: boolean;
   onClose: () => void;
+  isDrawer?: boolean;
 }
 
-export function ThemePage({ visible, onClose }: ThemePageProps) {
+export function ThemePage({ visible, onClose, isDrawer = false }: ThemePageProps) {
   const { colorScheme, setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   
@@ -96,77 +90,65 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   
   if (!visible) return null;
 
+  const backgroundColor = getDrawerBackgroundColor(Platform.OS, colorScheme);
+
   if (themePreference === null) {
     return (
-      <View className="absolute inset-0 z-50">
-        <Pressable
-          onPress={handleClose}
-          className="absolute inset-0 bg-black/50"
-        />
-        <View className="absolute top-0 left-0 right-0 bottom-0 bg-background items-center justify-center">
-          <Text className="text-muted-foreground">Loading...</Text>
-        </View>
+      <View style={{ flex: 1, backgroundColor, alignItems: 'center', justifyContent: 'center' }}>
+        <Text className="text-muted-foreground">Loading...</Text>
       </View>
     );
   }
   
+  const isIOS = Platform.OS === 'ios';
+  
+  const groupedBackgroundStyle = isIOS 
+    ? { borderRadius: 20, overflow: 'hidden' }
+    : { 
+        backgroundColor: colorScheme === 'dark' ? '#1E1E1E' : '#FFFFFF',
+        borderRadius: 12,
+      };
+
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-      
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
-          className="flex-1" 
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
+    <View style={{ flex: 1, backgroundColor, width: '100%', overflow: 'hidden' }}>
+      <ScrollView 
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ padding: 16, width: '100%' }}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+      >
+        <View 
+          style={groupedBackgroundStyle as ViewStyle}
+          className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
         >
-          <SettingsHeader
-            title={t('theme.title')}
-            onClose={handleClose}
+          <ThemeOption
+            icon={Sun}
+            label={t('theme.light')}
+            isSelected={themePreference === 'light'}
+            onPress={() => handleThemeSelect('light')}
+            disabled={isTransitioning}
+            isFirst={true}
+          />
+          
+          <ThemeOption
+            icon={Moon}
+            label={t('theme.dark')}
+            isSelected={themePreference === 'dark'}
+            onPress={() => handleThemeSelect('dark')}
+            disabled={isTransitioning}
           />
 
-          <View className="px-6 pb-8">
-            <View className="mb-3">
-              <Text className="mb-3 text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                {t('theme.themeOptions')}
-              </Text>
-            </View>
-
-            <View className="gap-3">
-              <ThemeOption
-                icon={Sun}
-                label={t('theme.light')}
-                description={t('theme.lightDescription')}
-                isSelected={themePreference === 'light'}
-                onPress={() => handleThemeSelect('light')}
-                disabled={isTransitioning}
-              />
-              
-              <ThemeOption
-                icon={Moon}
-                label={t('theme.dark')}
-                description={t('theme.darkDescription')}
-                isSelected={themePreference === 'dark'}
-                onPress={() => handleThemeSelect('dark')}
-                disabled={isTransitioning}
-              />
-
-              <ThemeOption
-                icon={Monitor}
-                label={t('theme.system')}
-                description={t('theme.systemDescription')}
-                isSelected={themePreference === 'system'}
-                onPress={() => handleThemeSelect('system')}
-                disabled={isTransitioning}
-              />
-            </View>
-          </View>
-          <View className="h-20" />
-        </ScrollView>
-      </View>
+          <ThemeOption
+            icon={Monitor}
+            label={t('theme.system')}
+            isSelected={themePreference === 'system'}
+            onPress={() => handleThemeSelect('system')}
+            disabled={isTransitioning}
+            isLast={true}
+          />
+        </View>
+        <View style={{ height: 80 }} />
+      </ScrollView>
     </View>
   );
 }
@@ -174,73 +156,71 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
 interface ThemeOptionProps {
   icon: typeof Sun;
   label: string;
-  description: string;
   isSelected: boolean;
   onPress: () => void;
   disabled?: boolean;
+  isFirst?: boolean;
+  isLast?: boolean;
 }
 
-function ThemeOption({ icon, label, description, isSelected, onPress, disabled }: ThemeOptionProps) {
-  const scale = useSharedValue(1);
+function ThemeOption({ icon, label, isSelected, onPress, disabled, isFirst, isLast }: ThemeOptionProps) {
+  const { colorScheme } = useColorScheme();
+  const isIOS = Platform.OS === 'ios';
   
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-  
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
+  // Match SettingsPage colors exactly
+  const separatorColor = colorScheme === 'dark' ? '#38383A' : '#C6C6C8';
   
   return (
-    <AnimatedPressable
-      onPress={disabled ? undefined : onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`bg-primary/5 rounded-3xl p-4 ${
-        disabled ? 'opacity-60' : 'active:opacity-80'
-      }`}
-    >
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center gap-3 flex-1">
-          <View className={`h-10 w-10 rounded-full items-center justify-center ${
-            isSelected ? 'bg-primary' : 'bg-primary/10'
-          }`}>
-            <Icon 
-              as={icon} 
-              size={18} 
-              className={isSelected ? 'text-primary-foreground' : 'text-primary'} 
-              strokeWidth={2.5} 
-            />
-          </View>
-          <View className="flex-1">
-            <Text className="text-sm font-roobert-semibold text-foreground mb-0.5">
-              {label}
-            </Text>
-            <Text className="text-xs font-roobert text-muted-foreground">
-              {description}
-            </Text>
-          </View>
+    <>
+      {!isFirst && (
+        <View
+          style={{
+            height: StyleSheet.hairlineWidth,
+            backgroundColor: separatorColor,
+            marginLeft: isIOS ? 52 : 16,
+          }}
+        />
+      )}
+      <TouchableOpacity
+        onPress={disabled ? undefined : onPress}
+        disabled={disabled}
+        activeOpacity={isIOS ? 0.6 : 0.7}
+        style={{
+          paddingHorizontal: 16,
+          paddingVertical: isIOS ? 11 : 14,
+          minHeight: isIOS ? 44 : 56,
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+        }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: isIOS ? 12 : 16, flex: 1 }}>
+          <Icon 
+            as={icon} 
+            size={isIOS ? 20 : 24} 
+            className="text-foreground"
+            strokeWidth={2} 
+          />
+          <Text 
+            style={{ 
+              fontSize: isIOS ? 17 : 16,
+              fontWeight: isIOS ? '400' : '500',
+              flex: 1,
+            }}
+            className="text-foreground"
+          >
+            {label}
+          </Text>
         </View>
         
         {isSelected && (
-          <View className="ml-2 h-5 w-5 items-center justify-center rounded-full bg-primary">
-            <Icon 
-              as={Check} 
-              size={12} 
-              className="text-primary-foreground" 
-              strokeWidth={3} 
-            />
-          </View>
+          <Icon 
+            as={Check} 
+            size={isIOS ? 20 : 24}
+            color={colorScheme === 'dark' ? '#0A84FF' : '#007AFF'}
+            strokeWidth={2.5} 
+          />
         )}
-      </View>
-    </AnimatedPressable>
+      </TouchableOpacity>
+    </>
   );
 }

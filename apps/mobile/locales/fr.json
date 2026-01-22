@@ -100,6 +100,7 @@
     "passwordsDontMatch": "Les mots de passe ne correspondent pas",
     "passwordTooShort": "Le mot de passe doit contenir au moins 8 caractères",
     "welcomeTitle": "Engager Kortix pour",
+    "welcomeSubtitle": "Faites n'importe quoi avec Kortix",
     "rotatingPhrases": {
       "presentations": "présentations",
       "writing": "écriture",
@@ -750,10 +751,12 @@
     "openMenu": "Ouvrir le menu",
     "enterTitle": "Entrer le titre",
     "threadActions": "Actions du fil",
+    "newChat": "Nouvelle conversation",
     "untitled": "Sans titre"
   },
   "threadActions": {
     "title": "Actions du Fil",
+    "editTitle": "Modifier le Titre",
     "upgradeRequired": "Mise à Niveau Requise",
     "upgradeRequiredMessage": "Le partage de fils est disponible avec les plans payants. Mettez à niveau pour débloquer cette fonctionnalité.",
     "upgrade": "Mettre à niveau",

@@ -1,22 +1,23 @@
 import * as React from 'react';
-import { Pressable, View, Switch, ScrollView, Linking } from 'react-native';
+import { View, Switch, ScrollView, Linking, Platform, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { useAdvancedFeatures } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Layers, Globe, ExternalLink, AlertCircle, Rocket, Sparkles } from 'lucide-react-native';
-import { SettingsHeader } from './SettingsHeader';
+import { AlertCircle, Rocket, Info } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
 import { log } from '@/lib/logger';
+import { getDrawerBackgroundColor } from '@agentpress/shared';
 
 interface BetaPageProps {
   visible: boolean;
   onClose: () => void;
+  isDrawer?: boolean;
 }
 
-export function BetaPage({ visible, onClose }: BetaPageProps) {
+export function BetaPage({ visible, onClose, isDrawer = false }: BetaPageProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { isEnabled: advancedFeaturesEnabled, toggle: toggleAdvancedFeatures } = useAdvancedFeatures();
@@ -40,133 +41,189 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
 
   if (!visible) return null;
 
+  const backgroundColor = getDrawerBackgroundColor(Platform.OS, colorScheme);
+  const isIOS = Platform.OS === 'ios';
+  
+  const groupedBackgroundStyle = isIOS 
+    ? { borderRadius: 20, overflow: 'hidden' }
+    : { 
+        backgroundColor: colorScheme === 'dark' ? '#1E1E1E' : '#FFFFFF',
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      };
+
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
+    <View style={{ flex: 1, backgroundColor, width: '100%', overflow: 'hidden' }}>
+      <ScrollView
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ padding: 16, width: '100%' }}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+      >
+        {/* Advanced Features Toggle */}
+        <View 
+          style={groupedBackgroundStyle as ViewStyle}
+          className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
         >
-          <SettingsHeader
-            title={t('beta.title')}
-            onClose={handleClose}
-          />
-
-          <View className="px-6 pb-8 pt-2">
-            {/* OTA Update Test Banner */}
-            <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
-              <View className="flex-row items-center gap-3 mb-2">
-                <View className="h-10 w-10 rounded-full bg-purple-500/30 items-center justify-center">
-                  <Icon as={Rocket} size={20} className="text-purple-600 dark:text-purple-400" strokeWidth={2.5} />
-                </View>
-                <View className="flex-1">
-                  <View className="flex-row items-center gap-2">
-                    <Text className="text-lg font-roobert-bold text-purple-900 dark:text-purple-100">
-                      OTA Update Test v2.0
-                    </Text>
-                    <Icon as={Sparkles} size={16} className="text-purple-600 dark:text-purple-400" strokeWidth={2.5} />
-                  </View>
-                </View>
-              </View>
-              <Text className="text-sm font-roobert text-purple-800 dark:text-purple-200 leading-5">
-                If you see this banner with "v2.0", the Over-The-Air update system is working! 🎉
-              </Text>
-              <View className="mt-3 pt-3 border-t border-purple-500/30">
-                <Text className="text-xs font-roobert-medium text-purple-700 dark:text-purple-300">
-                  App Version: {Constants.expoConfig?.version || 'N/A'} • 
-                  Update ID: {Constants.expoConfig?.extra?.eas?.projectId?.slice(0, 8) || 'Local'}
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: isIOS ? 11 : 14,
+              minHeight: isIOS ? 44 : 56,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: isIOS ? 12 : 16, flex: 1 }}>
+              <Icon 
+                as={Rocket} 
+                size={isIOS ? 20 : 24} 
+                className="text-foreground"
+                strokeWidth={2} 
+              />
+              <View style={{ flex: 1 }}>
+                <Text 
+                  style={{ 
+                    fontSize: isIOS ? 17 : 16,
+                    fontWeight: isIOS ? '400' : '500',
+                  }}
+                  className="text-foreground"
+                >
+                  {t('beta.advancedFeatures')}
+                </Text>
+                <Text 
+                  style={{ 
+                    fontSize: 13, 
+                    marginTop: 2,
+                  }}
+                  className="text-muted-foreground"
+                >
+                  {t('beta.mobileBeta')}
                 </Text>
               </View>
             </View>
+            <Switch
+              value={advancedFeaturesEnabled}
+              onValueChange={handleToggle}
+              trackColor={{
+                false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
+                true: '#34C759'
+              }}
+              thumbColor="#FFFFFF"
+              ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
+            />
+          </View>
+        </View>
 
-            {/* Web Support - Prominent */}
-            <View className="mb-6">
-              <Pressable
-                onPress={handleVisitWeb}
-                className="bg-primary/10 border border-primary/30 rounded-3xl p-5 active:opacity-80"
+        {/* App Version Info */}
+        <View 
+          style={[
+            groupedBackgroundStyle as ViewStyle,
+            { marginTop: isIOS ? 20 : 16 }
+          ]}
+          className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
+        >
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: isIOS ? 11 : 14,
+              minHeight: isIOS ? 44 : 56,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: isIOS ? 12 : 16,
+            }}>
+            <Icon 
+              as={Info} 
+              size={isIOS ? 20 : 24} 
+              className="text-foreground"
+              strokeWidth={2} 
+            />
+            <View style={{ flex: 1 }}>
+              <Text 
+                style={{ 
+                  fontSize: isIOS ? 17 : 16,
+                  fontWeight: isIOS ? '400' : '500',
+                }}
+                className="text-foreground"
               >
-                <View className="flex-row items-center gap-4 mb-3">
-                  <View className="h-12 w-12 rounded-2xl bg-primary/20 items-center justify-center">
-                    <Icon as={Globe} size={22} className="text-primary" strokeWidth={2.5} />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-base font-roobert-semibold text-foreground mb-1">
-                      {t('beta.webSupportTitle')}
-                    </Text>
-                    <Text className="text-sm font-roobert text-muted-foreground leading-5">
-                      {t('beta.webSupportDescription')}
-                    </Text>
-                  </View>
-                  <Icon as={ExternalLink} size={18} className="text-primary" strokeWidth={2.5} />
-                </View>
-              </Pressable>
-            </View>
-
-            {/* Mobile Beta Toggle */}
-            <View className="mb-5">
-              <View className={`bg-card border rounded-3xl p-5 ${
-                advancedFeaturesEnabled ? 'border-border/50' : 'border-border/30'
-              }`}>
-                <View className="flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-4 flex-1">
-                    <View className={`h-12 w-12 rounded-2xl items-center justify-center ${
-                      advancedFeaturesEnabled 
-                        ? 'bg-primary' 
-                        : 'bg-muted/50 border border-border/50'
-                    }`}>
-                      <Icon
-                        as={Layers}
-                        size={22}
-                        className={advancedFeaturesEnabled ? 'text-primary-foreground' : 'text-foreground/50'}
-                        strokeWidth={2.5}
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <Text className={`text-base font-roobert-semibold mb-1 ${
-                        advancedFeaturesEnabled ? 'text-foreground' : 'text-foreground/70'
-                      }`}>
-                        {t('beta.advancedFeatures')}
-                      </Text>
-                      <Text className="text-xs font-roobert text-muted-foreground">
-                        {t('beta.mobileBeta')}
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Switch
-                    value={advancedFeaturesEnabled}
-                    onValueChange={handleToggle}
-                    trackColor={{
-                      false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
-                      true: colorScheme === 'dark' ? '#34C759' : '#34C759'
-                    }}
-                    thumbColor="#FFFFFF"
-                    ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
-                  />
-                </View>
-              </View>
-            </View>
-
-            {/* Warning - Subtle */}
-            <View className="bg-muted/30 border border-border/30 rounded-2xl p-4">
-              <View className="flex-row items-start gap-3">
-                <Icon as={AlertCircle} size={16} className="text-muted-foreground mt-0.5" strokeWidth={2} />
-                <Text className="text-xs font-roobert text-muted-foreground leading-5 flex-1">
-                  {t('beta.mobileWarning')}
-                </Text>
-              </View>
+                {t('beta.appVersion', 'App Version')}
+              </Text>
             </View>
           </View>
+          
+          <View
+            style={{
+              height: StyleSheet.hairlineWidth,
+              backgroundColor: colorScheme === 'dark' ? '#38383A' : '#C6C6C8',
+              marginLeft: isIOS ? 52 : 16,
+            }}
+          />
+          
+          <View style={{ paddingHorizontal: 16, paddingBottom: isIOS ? 11 : 14, paddingTop: 8 }}>
+            <Text 
+              style={{ 
+                fontSize: 15,
+                lineHeight: 20,
+              }}
+              className="text-foreground"
+            >
+              {t('beta.version', 'Version')}: {Constants.expoConfig?.version || 'N/A'}
+            </Text>
+            {Constants.expoConfig?.extra?.eas?.projectId && (
+              <Text 
+                style={{ 
+                  fontSize: 13, 
+                  marginTop: 4,
+                }}
+                className="text-muted-foreground"
+              >
+                {t('beta.buildId', 'Build ID')}: {Constants.expoConfig.extra.eas.projectId.slice(0, 8)}
+              </Text>
+            )}
+          </View>
+        </View>
 
-          <View className="h-20" />
-        </ScrollView>
-      </View>
+        {/* Warning Banner */}
+        <View style={{
+          backgroundColor: colorScheme === 'dark' ? 'rgba(255, 204, 0, 0.1)' : 'rgba(255, 149, 0, 0.1)',
+          borderRadius: isIOS ? 20 : 12,
+          padding: 16,
+          marginTop: isIOS ? 20 : 16,
+          ...(isIOS ? {} : {
+            elevation: 1,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 2,
+          }),
+        }}>
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+            <Icon 
+              as={AlertCircle} 
+              size={20} 
+              color={colorScheme === 'dark' ? '#FFD60A' : '#FF9500'} 
+              strokeWidth={2} 
+              style={{ marginTop: 2 }}
+            />
+            <Text 
+              style={{ 
+                fontSize: 15,
+                lineHeight: 20,
+                flex: 1,
+              }}
+              className="text-foreground"
+            >
+              {t('beta.mobileWarning')}
+            </Text>
+          </View>
+        </View>
+
+        <View style={{ height: 80 }} />
+      </ScrollView>
     </View>
   );
 }

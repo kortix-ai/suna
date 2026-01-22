@@ -100,6 +100,7 @@
     "passwordsDontMatch": "Las contraseñas no coinciden",
     "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
     "welcomeTitle": "Contrata Kortix para",
+    "welcomeSubtitle": "Haz cualquier cosa con Kortix",
     "rotatingPhrases": {
       "presentations": "presentaciones",
       "writing": "redacción",
@@ -750,10 +751,12 @@
     "openMenu": "Abrir menú",
     "enterTitle": "Ingresa título",
     "threadActions": "Acciones del hilo",
+    "newChat": "Nueva conversación",
     "untitled": "Sin título"
   },
   "threadActions": {
     "title": "Acciones del Hilo",
+    "editTitle": "Editar Título",
     "upgradeRequired": "Se Requiere Upgrade",
     "upgradeRequiredMessage": "Compartir hilos está disponible en planes pagos. Actualiza para desbloquear esta función.",
     "upgrade": "Actualizar",

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, TextInput, Alert, Keyboard, ScrollView } from 'react-native';
+import { Pressable, View, TextInput, Alert, Keyboard, ScrollView, Platform } from 'react-native';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -10,12 +10,14 @@ import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Save, Mail, AlertTriangle } from 'lucide-react-native';
-import { SettingsHeader } from './SettingsHeader';
 import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/ui';
 import { ProfilePicture } from './ProfilePicture';
 import { log } from '@/lib/logger';
+import { getDrawerBackgroundColor, getPadding } from '@agentpress/shared';
+import { LiquidGlass } from '@/components/ui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
   
@@ -24,6 +26,7 @@ interface NameEditPageProps {
   currentName: string;
   onClose: () => void;
   onNameUpdated?: (newName: string) => void;
+  isDrawer?: boolean;
 }
 
 export function NameEditPage({ 
@@ -31,16 +34,19 @@ export function NameEditPage({
   currentName, 
   onClose,
   onNameUpdated,
+  isDrawer = false,
 }: NameEditPageProps) {
   const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
   
   const [name, setName] = React.useState(currentName);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const inputRef = React.useRef<TextInput>(null);
   
+  const hasChanges = name.trim() !== currentName && name.trim().length > 0;
 
   React.useEffect(() => {
     if (visible) {
@@ -146,31 +152,17 @@ export function NameEditPage({
       setIsLoading(false);
     }
   };
-  
+
   if (!visible) return null;
 
-  const hasChanges = name.trim() !== currentName && name.trim().length > 0;
-  
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable
-        onPress={handleClose}
-        className="absolute inset-0 bg-black/50"
-      />
-      
-      <View className="absolute top-0 left-0 right-0 bottom-0 bg-background">
-        <ScrollView 
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}
-          keyboardShouldPersistTaps="handled"
-        >
-          <SettingsHeader
-            title={t('nameEdit.title')}
-            onClose={handleClose}
-            disabled={isLoading}
-          />
-          
+    <View style={{ flex: 1, backgroundColor: getDrawerBackgroundColor(Platform.OS, colorScheme) }}>
+      <ScrollView 
+        style={{ flex: 1 }}
+        showsVerticalScrollIndicator={false}
+        removeClippedSubviews={true}
+        keyboardShouldPersistTaps="handled"
+      >
           <View className="px-6 pb-8">
             <View className="mb-8 items-center pt-8">
               <ProfilePicture 
@@ -230,85 +222,58 @@ export function NameEditPage({
                 </View>
               </View>
             </View>
-
-            <SaveButton
-              onPress={handleSave}
-              disabled={!hasChanges || isLoading}
-              isLoading={isLoading}
-              hasChanges={hasChanges}
-            />
           </View>
-          <View className="h-20" />
+          <View style={{ height: 80 }} />
+          {hasChanges && (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: insets.bottom + 24,
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+              paddingHorizontal: getPadding(Platform.OS, 'lg'),
+              pointerEvents: 'box-none',
+            }}
+          >
+            <Pressable
+              onPress={handleSave}
+              disabled={isLoading}
+            >
+              <LiquidGlass
+                variant="primary"
+                borderRadius={28}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 24,
+                  paddingVertical: 14,
+                  minWidth: '100%',
+                  gap: 8,
+                  shadowColor: '#007AFF',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 8,
+                }}
+              >
+                <Icon as={Save} size={20} className='text-white' strokeWidth={2.5} style={{ zIndex: 2000 }} />
+                <Text
+                  style={{
+                    fontSize: 17,
+                    fontWeight: '600',
+                    color: 'white',
+                    zIndex: 2000,
+                  }}
+                >
+                  {t('common.save', 'Save')}
+                </Text>
+              </LiquidGlass>
+            </Pressable>
+          </View>
+        )}
         </ScrollView>
-      </View>
     </View>
-  );
-}
-
-interface SaveButtonProps {
-  onPress: () => void;
-  disabled?: boolean;
-  isLoading?: boolean;
-  hasChanges?: boolean;
-}
-
-function SaveButton({ onPress, disabled, isLoading, hasChanges }: SaveButtonProps) {
-  const { colorScheme } = useColorScheme();
-  const { t } = useLanguage();
-  const scale = useSharedValue(1);
-  
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }],
-  }));
-  
-  const handlePressIn = () => {
-    if (!disabled) {
-      scale.value = withSpring(0.98, { damping: 15, stiffness: 400 });
-    }
-  };
-  
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-  
-  if (!hasChanges && !isLoading) {
-    return null;
-  }
-  
-  return (
-    <AnimatedPressable
-      onPress={onPress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={animatedStyle}
-      disabled={disabled}
-      className={`rounded-full items-center justify-center flex-row gap-2 px-6 py-4 ${
-        disabled ? 'bg-muted/50' : 'bg-primary'
-      }`}
-    >
-      {isLoading ? (
-        <>
-          <KortixLoader 
-            size="small" 
-            forceTheme={colorScheme === 'dark' ? 'dark' : 'light'}
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saving')}
-          </Text>
-        </>
-      ) : (
-        <>
-          <Icon 
-            as={Save} 
-            size={16} 
-            className="text-primary-foreground" 
-            strokeWidth={2.5} 
-          />
-          <Text className="text-primary-foreground text-sm font-roobert-medium">
-            {t('nameEdit.saveChanges')}
-          </Text>
-        </>
-      )}
-    </AnimatedPressable>
   );
 }

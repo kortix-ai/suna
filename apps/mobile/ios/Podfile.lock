@@ -233,6 +233,8 @@ PODS:
     - ExpoModulesCore
   - ExpoFont (14.0.10):
     - ExpoModulesCore
+  - ExpoGlassEffect (0.1.8):
+    - ExpoModulesCore
   - ExpoHaptics (15.0.8):
     - ExpoModulesCore
   - ExpoHead (6.0.21):
@@ -276,6 +278,8 @@ PODS:
   - ExpoSystemUI (6.0.9):
     - ExpoModulesCore
   - ExpoTrackingTransparency (6.0.8):
+    - ExpoModulesCore
+  - ExpoUI (0.2.0-beta.9):
     - ExpoModulesCore
   - ExpoWebBrowser (15.0.10):
     - ExpoModulesCore
@@ -2404,6 +2408,28 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - RNTrueSheet (3.7.3):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNVectorIcons (10.3.0):
     - hermes-engine
     - RCTRequired
@@ -2523,6 +2549,7 @@ DEPENDENCIES:
   - "ExpoDocumentPicker (from `../../../node_modules/.pnpm/expo-document-picker@14.0.8_expo@54.0.31/node_modules/expo-document-picker/ios`)"
   - "ExpoFileSystem (from `../../../node_modules/.pnpm/expo-file-system@19.0.21_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0_/node_modules/expo-file-system/ios`)"
   - "ExpoFont (from `../../../node_modules/.pnpm/expo-font@14.0.10_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/expo-font/ios`)"
+  - "ExpoGlassEffect (from `../../../node_modules/.pnpm/expo-glass-effect@0.1.8_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+reac_bba564f4e77afb662c3447313159cd53/node_modules/expo-glass-effect/ios`)"
   - "ExpoHaptics (from `../../../node_modules/.pnpm/expo-haptics@15.0.8_expo@54.0.31/node_modules/expo-haptics/ios`)"
   - "ExpoHead (from `../../../node_modules/.pnpm/expo-router@6.0.21_2cad1d5168873919d2fe2a2a22066aae/node_modules/expo-router/ios`)"
   - "ExpoImagePicker (from `../../../node_modules/.pnpm/expo-image-picker@17.0.10_expo@54.0.31/node_modules/expo-image-picker/ios`)"
@@ -2534,6 +2561,7 @@ DEPENDENCIES:
   - "ExpoSplashScreen (from `../../../node_modules/.pnpm/expo-splash-screen@31.0.13_expo@54.0.31/node_modules/expo-splash-screen/ios`)"
   - "ExpoSystemUI (from `../../../node_modules/.pnpm/expo-system-ui@6.0.9_expo@54.0.31_react-native-web@0.21.2_encoding@0.1.13_react-dom@19._d1d0ee13c8cb15315a284bec30d46447/node_modules/expo-system-ui/ios`)"
   - "ExpoTrackingTransparency (from `../../../node_modules/.pnpm/expo-tracking-transparency@6.0.8_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0_/node_modules/expo-tracking-transparency/ios`)"
+  - "ExpoUI (from `../../../node_modules/.pnpm/@expo+ui@0.2.0-beta.9_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/@expo/ui/ios`)"
   - "ExpoWebBrowser (from `../../../node_modules/.pnpm/expo-web-browser@15.0.10_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0_/node_modules/expo-web-browser/ios`)"
   - "EXStructuredHeaders (from `../../../node_modules/.pnpm/expo-structured-headers@5.0.0/node_modules/expo-structured-headers/ios`)"
   - "ExtensionStorage (from `../../../node_modules/.pnpm/@bacons+apple-targets@3.0.6/node_modules/@bacons/apple-targets/ios`)"
@@ -2622,6 +2650,7 @@ DEPENDENCIES:
   - "RNScreens (from `../../../node_modules/.pnpm/react-native-screens@4.16.0_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/react-native-screens`)"
   - "RNSoundLevel (from `../../../node_modules/.pnpm/react-native-sound-level@1.3.0/node_modules/react-native-sound-level`)"
   - "RNSVG (from `../../../node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/react-native-svg`)"
+  - "RNTrueSheet (from `../../../node_modules/.pnpm/@lodev09+react-native-true-sheet@3.7.3_1816239eefd0ed47cbcb7751d61252e7/node_modules/@lodev09/react-native-true-sheet`)"
   - "RNVectorIcons (from `../../../node_modules/.pnpm/react-native-vector-icons@10.3.0/node_modules/react-native-vector-icons`)"
   - "RNWorklets (from `../../../node_modules/.pnpm/react-native-worklets@0.6.0_@babel+core@7.28.5_react-native@0.81.5_@babel+core@7.28.5_@_57b45479df13a72303441df0617f51be/node_modules/react-native-worklets`)"
   - "Yoga (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0/node_modules/react-native/ReactCommon/yoga`)"
@@ -2682,6 +2711,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-file-system@19.0.21_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0_/node_modules/expo-file-system/ios"
   ExpoFont:
     :path: "../../../node_modules/.pnpm/expo-font@14.0.10_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/expo-font/ios"
+  ExpoGlassEffect:
+    :path: "../../../node_modules/.pnpm/expo-glass-effect@0.1.8_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+reac_bba564f4e77afb662c3447313159cd53/node_modules/expo-glass-effect/ios"
   ExpoHaptics:
     :path: "../../../node_modules/.pnpm/expo-haptics@15.0.8_expo@54.0.31/node_modules/expo-haptics/ios"
   ExpoHead:
@@ -2704,6 +2735,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/expo-system-ui@6.0.9_expo@54.0.31_react-native-web@0.21.2_encoding@0.1.13_react-dom@19._d1d0ee13c8cb15315a284bec30d46447/node_modules/expo-system-ui/ios"
   ExpoTrackingTransparency:
     :path: "../../../node_modules/.pnpm/expo-tracking-transparency@6.0.8_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0_/node_modules/expo-tracking-transparency/ios"
+  ExpoUI:
+    :path: "../../../node_modules/.pnpm/@expo+ui@0.2.0-beta.9_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/@expo/ui/ios"
   ExpoWebBrowser:
     :path: "../../../node_modules/.pnpm/expo-web-browser@15.0.10_expo@54.0.31_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0_/node_modules/expo-web-browser/ios"
   EXStructuredHeaders:
@@ -2879,6 +2912,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native-sound-level@1.3.0/node_modules/react-native-sound-level"
   RNSVG:
     :path: "../../../node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/react-native-svg"
+  RNTrueSheet:
+    :path: "../../../node_modules/.pnpm/@lodev09+react-native-true-sheet@3.7.3_1816239eefd0ed47cbcb7751d61252e7/node_modules/@lodev09/react-native-true-sheet"
   RNVectorIcons:
     :path: "../../../node_modules/.pnpm/react-native-vector-icons@10.3.0/node_modules/react-native-vector-icons"
   RNWorklets:
@@ -2910,6 +2945,7 @@ SPEC CHECKSUMS:
   ExpoDocumentPicker: 7cd9e71a0f66fb19eb0a586d6f26eee1284692e0
   ExpoFileSystem: 858a44267a3e6e9057e0888ad7c7cfbf55d52063
   ExpoFont: 35ac6191ed86bbf56b3ebd2d9154eda9fad5b509
+  ExpoGlassEffect: 8ce45eca31f12e949e23a4ee13e2bfb59e9b0785
   ExpoHaptics: d3a6375d8dcc3a1083d003bc2298ff654fafb536
   ExpoHead: 9719a74953454fac328e90f34eea55ebbb3bbbf9
   ExpoImagePicker: 1af3e4e31512d2f34c95c2a3018a3edc40aee748
@@ -2921,6 +2957,7 @@ SPEC CHECKSUMS:
   ExpoSplashScreen: bc3cffefca2716e5f22350ca109badd7e50ec14d
   ExpoSystemUI: 2ad325f361a2fcd96a464e8574e19935c461c9cc
   ExpoTrackingTransparency: 4f823a38ff7c0efea4cac722ecbc0589278ff548
+  ExpoUI: b75e5ed95b5966b273f1305346f4b5fd911360be
   ExpoWebBrowser: 17b064c621789e41d4816c95c93f429b84971f52
   EXStructuredHeaders: c951e77f2d936f88637421e9588c976da5827368
   ExtensionStorage: 5796de20bf181317c376d693fedb64c6781a33ba
@@ -3014,6 +3051,7 @@ SPEC CHECKSUMS:
   RNScreens: 33bbd1d0f86ed957557620dc94054b71db0a94ee
   RNSoundLevel: a48da8668fbde4f792c0bea948e27ab793bee7e1
   RNSVG: ac3047fdd9c0ebac9d0b731a352bddf216af6242
+  RNTrueSheet: 5ca9552645db34eac94beb0309317a2b7f1dc66e
   RNVectorIcons: 1db72384402bc567e995855056b8c5d7a9888780
   RNWorklets: 9b01d26d8bd321ad9d7a6478559c96ce35098144
   Yoga: 65431d43277b661ebc7289c6c5d82f64ce42cfe0

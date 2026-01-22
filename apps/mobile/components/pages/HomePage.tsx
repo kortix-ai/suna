@@ -12,18 +12,20 @@ import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
 import { log } from '@/lib/logger';
+import { getBackgroundColor } from '@agentpress/shared';
+import { Platform } from 'react-native';
+import { useColorScheme } from 'nativewind';
 
 const SWIPE_THRESHOLD = 50;
 
 interface HomePageProps {
-  onMenuPress?: () => void;
   chat: UseChatReturn;
   isAuthenticated: boolean;
   onOpenWorkerConfig?: (
     workerId: string,
     view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
   ) => void;
-  showThreadListView?: boolean; // Flag to show ModeThreadListView instead of BackgroundLogo
+  showThreadListView?: boolean;
 }
 
 export interface HomePageRef {
@@ -31,9 +33,15 @@ export interface HomePageRef {
 }
 
 export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
-  ({ onMenuPress, chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig, showThreadListView = false }, ref) => {
+  ({ chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig, showThreadListView = false }, ref) => {
     const router = useRouter();
+    const { colorScheme } = useColorScheme();
     const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
+
+    const handleMenuPress = React.useCallback(() => {
+      log.log('📂 Opening menu');
+      router.push('/menu');
+    }, [router]);
 
     const { creditsExhausted } = usePricingModalStore();
     const [isUsageDrawerOpen, setIsUsageDrawerOpen] = React.useState(false);
@@ -46,13 +54,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
     const chatInputRef = React.useRef<ChatInputSectionRef>(null);
     const lastSwipeIndex = React.useRef(-1);
 
-    // Find current selected index for swipe gestures
     const selectedIndex = React.useMemo(() => {
       const index = QUICK_ACTIONS.findIndex((a) => a.id === chat.selectedQuickAction);
       return index >= 0 ? index : 0;
     }, [chat.selectedQuickAction]);
 
-    // Switch to a specific mode index
     const switchToMode = React.useCallback(
       (newIndex: number) => {
         const clampedIndex = Math.max(0, Math.min(newIndex, QUICK_ACTIONS.length - 1));
@@ -65,12 +71,10 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
       [chat]
     );
 
-    // Update last swipe index when selection changes
     React.useEffect(() => {
       lastSwipeIndex.current = selectedIndex;
     }, [selectedIndex]);
 
-    // Pan gesture for swiping on the main content
     const panGesture = Gesture.Pan()
       .activeOffsetX([-25, 25])
       .failOffsetY([-20, 20])
@@ -78,10 +82,8 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
         const currentIndex = selectedIndex;
 
         if (event.translationX < -SWIPE_THRESHOLD || event.velocityX < -500) {
-          // Swipe left - next mode
           runOnJS(switchToMode)(currentIndex + 1);
         } else if (event.translationX > SWIPE_THRESHOLD || event.velocityX > 500) {
-          // Swipe right - previous mode
           runOnJS(switchToMode)(currentIndex - 1);
         }
       });
@@ -121,13 +123,13 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleThreadPressFromUsage = React.useCallback(
       (threadId: string, _projectId: string | null) => {
-        log.log('🎯 Loading thread from UsageDrawer:', threadId);
-        chat.loadThread(threadId);
+        log.log('🎯 Navigating to thread from UsageDrawer:', threadId);
+        setIsUsageDrawerOpen(false);
+        router.push(`/thread/${threadId}`);
       },
-      [chat]
+      [router]
     );
 
-    // Memoized handlers for ChatInputSection to prevent re-renders
     const handleSendMessage = React.useCallback(
       (content: string, agentId: string, agentName: string) => {
         chat.sendMessage(content, agentId, agentName);
@@ -135,8 +137,17 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
       [chat]
     );
 
+    const handleQuickActionPress = React.useCallback(
+      (actionId: string) => {
+        log.log('🎯 Quick action pressed:', actionId);
+        chat.handleQuickAction(actionId);
+      },
+      [chat]
+    );
+
     const handleQuickActionSelectOption = React.useCallback(
       (optionId: string) => {
+        log.log('🎯 Quick action option selected:', optionId);
         chat.setSelectedQuickActionOption(optionId);
       },
       [chat]
@@ -144,6 +155,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleQuickActionSelectPrompt = React.useCallback(
       (prompt: string) => {
+        log.log('🎯 Quick action prompt selected:', prompt);
         chat.setInputValue(prompt);
         chatInputRef.current?.focusInput();
       },
@@ -152,13 +164,12 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleQuickActionThreadPress = React.useCallback(
       (threadId: string) => {
-        log.log('🎯 Loading thread from mode history:', threadId);
-        chat.showModeThread(threadId);
+        log.log('🎯 Navigating to thread from mode history:', threadId);
+        router.push(`/thread/${threadId}`);
       },
-      [chat]
+      [router]
     );
 
-    // Ref to store pending worker config (to handle race condition)
     const pendingWorkerConfigRef = React.useRef<{
       workerId: string;
       view?: 'instructions' | 'tools' | 'integrations' | 'triggers';
@@ -173,14 +184,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
     const handleOpenWorkerConfig = React.useCallback(
       (workerId: string, view?: 'instructions' | 'tools' | 'integrations' | 'triggers') => {
         log.log('🔧 [HomePage] Opening worker config:', workerId, view);
-        // If external handler is provided, use it to redirect to MenuPage
         if (externalOpenWorkerConfig) {
           externalOpenWorkerConfig(workerId, view);
           return;
         }
-        // Fallback: Store the pending config and open locally
         pendingWorkerConfigRef.current = { workerId, view };
-        // Close the agent drawer - we'll open worker config in the dismiss callback
         agentManager.closeDrawer();
       },
       [agentManager, externalOpenWorkerConfig]
@@ -188,7 +196,6 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const handleAgentDrawerDismiss = React.useCallback(() => {
       log.log('🎭 [HomePage] AgentDrawer dismissed');
-      // Check if there's a pending worker config to open
       if (pendingWorkerConfigRef.current) {
         const { workerId, view } = pendingWorkerConfigRef.current;
         pendingWorkerConfigRef.current = null;
@@ -199,18 +206,22 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
       }
     }, []);
 
+    const backgroundColor = React.useMemo(() => {
+      const color = getBackgroundColor(Platform.OS, colorScheme);
+      log.log('[HomePage] Background color:', { platform: Platform.OS, colorScheme, color });
+      return color;
+    }, [colorScheme]);
+
     return (
-      <View className="flex-1 bg-background">
-        {/* Main content container - keyboard handling is done in ChatInputSection */}
+      <View className="flex-1" style={{ backgroundColor }}>
         <View className="relative flex-1">
           <TopNav
-            onMenuPress={onMenuPress}
+            onMenuPress={handleMenuPress}
             onUpgradePress={handleUpgradePress}
             onCreditsPress={handleCreditsPress}
+            colorScheme={colorScheme}
           />
 
-          {/* Content Area - Show either thread list or background logo */}
-          {/* Tapping outside chat input dismisses keyboard */}
           <Pressable className="flex-1" onPress={Keyboard.dismiss}>
             <GestureDetector gesture={panGesture}>
               <View className="flex-1">
@@ -220,13 +231,14 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
                     onThreadPress={handleQuickActionThreadPress}
                   />
                 ) : (
-                  <BackgroundLogo />
+                  <View className="opacity-70">
+                    <BackgroundLogo minimal={false} />
+                  </View>
                 )}
               </View>
             </GestureDetector>
           </Pressable>
 
-          {/* Chat Input Section - handles its own keyboard avoidance */}
           <ChatInputSection
             ref={chatInputRef}
             value={chat.inputValue}
@@ -234,7 +246,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             onSendMessage={handleSendMessage}
             onSendAudio={audioHandlers.handleSendAudio}
             onAttachPress={chat.openAttachmentDrawer}
+            onTakePicture={chat.handleTakePicture}
+            onChooseImages={chat.handleChooseImages}
+            onChooseFiles={chat.handleChooseFiles}
             onAgentPress={agentManager.openDrawer}
+            onIntegrationsPress={agentManager.openDrawerToIntegrations}
             onAudioRecord={audioHandlers.handleStartRecording}
             onCancelRecording={audioHandlers.handleCancelRecording}
             onStopAgentRun={chat.stopAgent}
@@ -249,7 +265,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             selectedQuickAction={chat.selectedQuickAction}
             selectedQuickActionOption={chat.selectedQuickActionOption}
             onClearQuickAction={chat.clearQuickAction}
-            onQuickActionPress={chat.handleQuickAction}
+            onQuickActionPress={handleQuickActionPress}
             onQuickActionSelectOption={handleQuickActionSelectOption}
             onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
             onQuickActionThreadPress={handleQuickActionThreadPress}
@@ -261,10 +277,10 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
           />
         </View>
 
-        {/* Drawers - rendered outside the main content flow */}
         <ChatDrawers
           isAgentDrawerVisible={agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
+          initialAgentDrawerView={agentManager.initialDrawerView}
           onOpenWorkerConfig={handleOpenWorkerConfig}
           onAgentDrawerDismiss={handleAgentDrawerDismiss}
           isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}

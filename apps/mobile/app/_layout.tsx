@@ -8,6 +8,7 @@ import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, Advance
 import { PresenceProvider } from '@/contexts/PresenceContext';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import { ReanimatedTrueSheetProvider } from '@lodev09/react-native-true-sheet/reanimated';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { ToastProvider } from '@/components/ui/toast-provider';
@@ -524,7 +525,8 @@ export default function RootLayout() {
                       <PresenceProvider>
                         <ToastProvider>
                           <BottomSheetModalProvider>
-                            <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                            <ReanimatedTrueSheetProvider>
+                              <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                               <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
                               <AuthProtection>
                                 <Stack
@@ -537,9 +539,11 @@ export default function RootLayout() {
                                   <Stack.Screen name="setting-up" />
                                   <Stack.Screen name="onboarding" />
                                   <Stack.Screen
-                                    name="home"
+                                    name="(app)"
                                     options={{
+                                      headerShown: false,
                                       gestureEnabled: false,
+                                      animation: 'fade',
                                     }}
                                   />
                                   <Stack.Screen
@@ -549,8 +553,6 @@ export default function RootLayout() {
                                       animation: 'fade',
                                     }}
                                   />
-                                  <Stack.Screen name="trigger-detail" />
-                                  <Stack.Screen name="worker-config" />
                                   <Stack.Screen
                                     name="share/[threadId]"
                                     options={{
@@ -558,10 +560,19 @@ export default function RootLayout() {
                                       gestureEnabled: true,
                                     }}
                                   />
+                                  <Stack.Screen
+                                    name="(settings)"
+                                    options={{
+                                      presentation: 'modal',
+                                      animation: 'slide_from_bottom',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
                                 </Stack>
                               </AuthProtection>
                               <PortalHost />
                             </ThemeProvider>
+                          </ReanimatedTrueSheetProvider>
                           </BottomSheetModalProvider>
                         </ToastProvider>
                       </PresenceProvider>
@@ -609,8 +620,8 @@ function AuthProtection({ children }: { children: React.ReactNode }) {
     // RULE 2: Authenticated users should NEVER see auth screens
     // This prevents back navigation/gestures from showing auth to logged-in users
     if (isAuthenticated && inAuthGroup) {
-      log.log('🚫 Authenticated user on auth screen, redirecting to /home');
-      router.replace('/home');
+      log.log('🚫 Authenticated user on auth screen, redirecting to /(app)');
+      router.replace('/(app)');
       return;
     }
   }, [isAuthenticated, authLoading, segments, router]);

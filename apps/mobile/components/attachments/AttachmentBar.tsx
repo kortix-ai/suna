@@ -25,7 +25,6 @@ interface AttachmentBarProps {
 export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
   const { colorScheme } = useColorScheme();
   if (attachments.length === 0) return null;
-  const uploadingCount = attachments.filter(a => a.status === 'uploading' || a.isUploading).length;
   
   const MAX_VISIBLE = 3;
   const visibleAttachments = attachments.slice(0, MAX_VISIBLE);
@@ -35,22 +34,12 @@ export function AttachmentBar({ attachments, onRemove }: AttachmentBarProps) {
     <AnimatedView
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(150)}
-      className="px-3 pb-2"
     >
-      {uploadingCount > 0 && (
-        <View className="flex-row items-center mb-1.5 px-1">
-          <View className="w-1 h-1 rounded-full bg-primary mr-1.5" />
-          <Text className="text-[11px] font-roobert text-muted-foreground">
-            Uploading {uploadingCount}...
-          </Text>
-        </View>
-      )}
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ gap: 6 }}
+        contentContainerStyle={{ gap: 8 }}
         className="flex-row"
-        style={{ overflow: 'visible' }}
       >
         {visibleAttachments.map((attachment, index) => (
           <AttachmentItem
@@ -170,10 +159,10 @@ function AttachmentItem({
         }}
       >
         {(attachment.type === 'image' || attachment.type === 'video') && (
-          <View className="relative w-full h-full">
+          <View className="relative w-full h-full overf.placelow-hidden">
             <Image
               source={{ uri: attachment.uri }}
-              style={{ width: '100%', height: '100%' }}
+              style={{ width: 80, height: 80 }}
               resizeMode="cover"
             />
             {attachment.type === 'video' && !isUploading && !hasError && (
