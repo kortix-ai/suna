@@ -160,7 +160,7 @@ export function useChat(): UseChatReturn {
     initialIndex: number;
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
-  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
+  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('general');
   const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [modeViewState, setModeViewState] = useState<'thread-list' | 'thread'>('thread-list');
@@ -759,9 +759,13 @@ export function useChat(): UseChatReturn {
     
     // Sync the selected mode with the thread's mode metadata
     const thread = threadsData.find((t: any) => t.thread_id === threadId);
-    if (thread?.metadata?.mode) {
+    if (thread?.metadata?.mode && thread.metadata.mode !== 'general') {
       log.log('[useChat] Syncing mode from thread metadata:', thread.metadata.mode);
       setSelectedQuickAction(thread.metadata.mode);
+      setSelectedQuickActionOption(null);
+    } else if (!thread?.metadata?.mode) {
+      // Thread has no mode, default to general
+      setSelectedQuickAction('general');
       setSelectedQuickActionOption(null);
     }
     
@@ -878,7 +882,10 @@ export function useChat(): UseChatReturn {
               created_at: optimisticTimestamp,
               updated_at: optimisticTimestamp,
               is_public: false,
-              metadata: { mode: selectedQuickAction, isOptimistic: true },
+              metadata: { 
+                ...(selectedQuickAction && selectedQuickAction !== 'general' ? { mode: selectedQuickAction } : {}),
+                isOptimistic: true 
+              },
             };
             log.log('✨ [useChat] Adding optimistic thread to side menu:', optimisticThreadId);
             return [optimisticThread, ...(oldThreads || [])];
@@ -973,9 +980,9 @@ export function useChat(): UseChatReturn {
             setSelectedQuickActionOption(null); // Clear any selected option when switching modes
           }
           
-          // Build thread metadata with the effective mode
+          // Build thread metadata with the effective mode (skip "general")
           const threadMetadata: Record<string, any> = {};
-          if (effectiveMode) {
+          if (effectiveMode && effectiveMode !== 'general') {
             threadMetadata.mode = effectiveMode;
             log.log('[useChat] Setting thread mode:', effectiveMode, 
               detectedMode ? '(auto-detected from content)' : '(from selected tab)');
@@ -1610,7 +1617,8 @@ export function useChat(): UseChatReturn {
     }
     
     // Save current mode's FULL state before switching (like saving a browser tab)
-    if (selectedQuickAction) {
+    // Skip saving state for "general" mode
+    if (selectedQuickAction && selectedQuickAction !== 'general') {
       log.log('[useChat] 💾 Saving full state for mode:', selectedQuickAction, {
         threadId: activeThreadId,
         messagesCount: messages.length,
@@ -1634,6 +1642,21 @@ export function useChat(): UseChatReturn {
     
     // Switch to the new mode
     setSelectedQuickAction(actionId);
+    
+    // For "general" mode, clear mode-specific state and show fresh view
+    if (actionId === 'general') {
+      log.log('[useChat] 📋 Switching to general mode - clearing mode state');
+      stopStreaming();
+      setAgentRunId(null);
+      setActiveThreadId(undefined);
+      setMessages([]);
+      setSelectedToolData(null);
+      setInputValue('');
+      setAttachments([]);
+      setSelectedQuickActionOption(null);
+      setModeViewState('thread-list');
+      return;
+    }
     
     // Check if the target mode has saved state (instant restore like browser tab)
     const savedState = modeStates[actionId];

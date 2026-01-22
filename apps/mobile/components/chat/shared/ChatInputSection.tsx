@@ -1,19 +1,17 @@
 import * as React from 'react';
 import { View, Platform, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
-import Animated, { useAnimatedStyle, interpolate } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, interpolate, useSharedValue, withTiming } from 'react-native-reanimated';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { ToolSnack, type ToolSnackData } from '../ToolSnack';
 import { AttachmentBar } from '@/components/attachments';
-import { QuickActionBar } from '@/components/quick-actions';
+import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/components/quick-actions';
 import { useLanguage } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
 import { log } from '@/lib/logger';
-import { BlurFooter } from '@/components/ui';
 import { getBackgroundColor } from '@agentpress/shared';
 
 export interface ChatInputSectionProps {
@@ -43,7 +41,14 @@ export interface ChatInputSectionProps {
   audioLevel: number;
   audioLevels: number[];
 
-  onQuickActionSelectMode?: (modeId: string, prompt: string) => void;
+  // Quick actions
+  selectedQuickAction: string | null;
+  selectedQuickActionOption?: string | null;
+  onClearQuickAction: () => void;
+  onQuickActionPress?: (actionId: string) => void;
+  onQuickActionSelectOption?: (optionId: string) => void;
+  onQuickActionSelectPrompt?: (prompt: string) => void;
+  onQuickActionThreadPress?: (threadId: string) => void;
 
   isAgentRunning: boolean;
   onStopAgentRun: () => void;
@@ -68,21 +73,13 @@ export interface ChatInputSectionRef {
 const DARK_BACKGROUND = '#121215';
 const LIGHT_BACKGROUND = '#F8F8F8';
 
-const DARK_GRADIENT_COLORS = ['rgba(18, 18, 21, 0)', 'rgba(18, 18, 21, 0.8)', 'rgba(18, 18, 21, 1)'] as const;
-const LIGHT_GRADIENT_COLORS = ['rgba(248, 248, 248, 0)', 'rgba(248, 248, 248, 0.8)', 'rgba(248, 248, 248, 1)'] as const;
-const GRADIENT_LOCATIONS = [0, 0.4, 1] as const;
-
-const GRADIENT_HEIGHT = 60;
-
 export const CHAT_INPUT_SECTION_HEIGHT = {
-  GRADIENT: GRADIENT_HEIGHT,
   INPUT: 140,
   QUICK_ACTIONS_BAR: 80,
   ATTACHMENT_BAR: 80,
-  THREAD_PAGE: GRADIENT_HEIGHT + 140 + 20,
-  HOME_PAGE: GRADIENT_HEIGHT + 140 + 80 + 40,
+  THREAD_PAGE: 140 + 20,
+  HOME_PAGE: 140 + 80 + 40,
 };
-
 
 export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef, ChatInputSectionProps>(({
   value,
@@ -105,14 +102,20 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   recordingDuration,
   audioLevel,
   audioLevels,
-  onQuickActionSelectMode,
+  selectedQuickAction,
+  selectedQuickActionOption,
+  onClearQuickAction,
+  onQuickActionPress,
+  onQuickActionSelectOption,
+  onQuickActionSelectPrompt,
+  onQuickActionThreadPress,
   isAgentRunning,
   onStopAgentRun,
   style,
   isAuthenticated,
   isSendingMessage,
   isTranscribing,
-  containerClassName = "mx-3",
+  containerClassName = "mx-3 mb-4",
   showQuickActions = false,
   activeToolData,
   agentName,
@@ -141,8 +144,18 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
 
   const { progress } = useReanimatedKeyboardAnimation();
 
-  const nonQuickActionsPaddingClosed = 24;
+  const quickActionsPaddingClosed = Math.max(insets.bottom, 24) + 16;
+  const quickActionsPaddingOpened = 8;
+  const nonQuickActionsPaddingClosed = Math.max(insets.bottom, 8);
   const nonQuickActionsPaddingOpened = 8;
+
+  const quickActionsAnimatedStyle = useAnimatedStyle(() => ({
+    paddingBottom: interpolate(
+      progress.value,
+      [0, 1],
+      [quickActionsPaddingClosed, quickActionsPaddingOpened]
+    ),
+  }), [quickActionsPaddingClosed]);
 
   const bottomSpacingAnimatedStyle = useAnimatedStyle(() => ({
     height: interpolate(
@@ -151,6 +164,37 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
       [nonQuickActionsPaddingClosed, nonQuickActionsPaddingOpened]
     ),
   }), [nonQuickActionsPaddingClosed]);
+
+  const selectedAction = React.useMemo(() => {
+    if (!selectedQuickAction) return null;
+    return QUICK_ACTIONS.find(a => a.id === selectedQuickAction) || null;
+  }, [selectedQuickAction]);
+
+  const selectedActionLabel = React.useMemo(() => {
+    if (!selectedAction) return '';
+    return t(`quickActions.${selectedAction.id}`, { defaultValue: selectedAction.label });
+  }, [selectedAction, t]);
+
+  const shouldShowExpandedView = showQuickActions && selectedQuickAction && selectedQuickAction !== 'general' && selectedAction;
+  const [renderExpandedView, setRenderExpandedView] = React.useState(shouldShowExpandedView);
+  
+  const expandedViewOpacity = useSharedValue(shouldShowExpandedView ? 1 : 0);
+  
+  React.useEffect(() => {
+    if (shouldShowExpandedView) {
+      setRenderExpandedView(true);
+      expandedViewOpacity.value = withTiming(1, { duration: 200 });
+    } else {
+      expandedViewOpacity.value = withTiming(0, { duration: 200 }, () => {
+        setRenderExpandedView(false);
+      });
+    }
+  }, [shouldShowExpandedView, expandedViewOpacity]);
+
+  const expandedViewStyle = useAnimatedStyle(() => ({
+    opacity: expandedViewOpacity.value,
+    pointerEvents: expandedViewOpacity.value > 0 ? 'auto' : 'none',
+  }), []);
 
 
   React.useImperativeHandle(ref, () => ({
@@ -177,9 +221,21 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         Platform.OS === 'android' ? { elevation: 10 } : undefined,
       ]}
     >
-
-
-      {!showQuickActions && (
+      <View style={{ 
+        backgroundColor: Platform.OS === 'ios' 
+          ? 'transparent' 
+          : getBackgroundColor(Platform.OS, colorScheme),
+        overflow: 'hidden',
+      }}>
+        <AttachmentBar
+          attachments={attachments}
+          onRemove={onRemoveAttachment}
+        />
+        {(() => {
+          log.log('[ChatInputSection] ToolSnack check - showQuickActions:', showQuickActions, 'activeToolData:', activeToolData?.toolName || 'null');
+          return null;
+        })()}
+        {!showQuickActions && (
           <ToolSnack
             toolData={activeToolData || null}
             isAgentRunning={isAgentRunning}
@@ -188,28 +244,23 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             onDismiss={onToolSnackDismiss}
           />
         )}
-
-      <BlurFooter height={GRADIENT_HEIGHT + 40} intensity={100} />
-
-      <View style={{ 
-        backgroundColor: Platform.OS === 'ios' 
-          ? 'transparent' 
-          : getBackgroundColor(Platform.OS, colorScheme),
-        overflow: 'hidden',
-      }}>
-        {(() => {
-          log.log('[ChatInputSection] ToolSnack check - showQuickActions:', showQuickActions, 'activeToolData:', activeToolData?.toolName || 'null');
-          return null;
-        })()}
-        
-        <View className={showQuickActions ? "mx-3 mb-6 -mt-1" : containerClassName} style={{ overflow: 'hidden' }}>
-          {showQuickActions && (
-            <View className="px-3 mb-6" style={{ zIndex: 9999 }}>
-              <QuickActionBar
-                onSelectMode={onQuickActionSelectMode}
-              />
-            </View>
-          )}
+        {renderExpandedView && (
+          <Animated.View 
+            className="mb-3" 
+            collapsable={false}
+            style={expandedViewStyle}
+          >
+            <QuickActionExpandedView
+              actionId={selectedQuickAction!}
+              actionLabel={selectedActionLabel}
+              onSelectOption={(optionId) => onQuickActionSelectOption?.(optionId)}
+              selectedOptionId={selectedQuickActionOption}
+              onSelectPrompt={onQuickActionSelectPrompt}
+              onThreadPress={onQuickActionThreadPress}
+            />
+          </Animated.View>
+        )}
+        <View className={containerClassName}>
           <ChatInput
             ref={chatInputRef}
             value={value}
@@ -238,8 +289,21 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             isSendingMessage={isSendingMessage}
             isTranscribing={isTranscribing}
           />
-
         </View>
+
+        {showQuickActions && onQuickActionPress && (
+          <Animated.View 
+            style={quickActionsAnimatedStyle}
+            pointerEvents="box-none" 
+            collapsable={false}
+          >
+            <QuickActionBar
+              onActionPress={onQuickActionPress}
+              selectedActionId={selectedQuickAction}
+            />
+          </Animated.View>
+        )}
+
         {!showQuickActions && (
           <Animated.View style={bottomSpacingAnimatedStyle} />
         )}

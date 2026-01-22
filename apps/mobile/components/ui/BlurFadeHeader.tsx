@@ -5,6 +5,7 @@ import React from 'react';
 import { Platform, StyleSheet, View, ViewStyle } from 'react-native';
 import { easeGradient } from 'react-native-easing-gradient';
 import { useColorScheme } from 'nativewind';
+import { getBackgroundColor } from '@agentpress/shared';
 
 interface BlurFadeHeaderProps {
   height?: number;
@@ -21,6 +22,7 @@ export function BlurFadeHeader({
 }: BlurFadeHeaderProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const isIOS = Platform.OS === 'ios';
 
   const { colors, locations } = easeGradient({
     colorStops: {
@@ -35,18 +37,9 @@ export function BlurFadeHeader({
     },
   });
 
-  if (Platform.OS !== 'ios') {
+  if (!isIOS) {
     return (
-      <View style={[styles.container, { height }, style]}>
-        <LinearGradient
-          colors={
-            isDark
-              ? ['rgba(18, 18, 21, 0.98)', 'rgba(18, 18, 21, 0.85)', 'rgba(18, 18, 21, 0.3)', 'rgba(18, 18, 21, 0)']
-              : ['rgba(248, 248, 248, 0.98)', 'rgba(248, 248, 248, 0.85)', 'rgba(248, 248, 248, 0.3)', 'rgba(248, 248, 248, 0)']
-          }
-          locations={[0, 0.6, 0.85, 1]}
-          style={StyleSheet.absoluteFill}
-        />
+      <View style={[styles.container, { backgroundColor: getBackgroundColor(Platform.OS, colorScheme), height }, style]}>
         {children}
       </View>
     );

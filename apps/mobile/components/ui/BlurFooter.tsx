@@ -21,6 +21,7 @@ export function BlurFooter({
 }: BlurFooterProps) {
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
+  const isIOS = Platform.OS === 'ios';
   
   const bgColor = React.useMemo(
     () => getBackgroundColor(Platform.OS, colorScheme),
@@ -47,19 +48,10 @@ export function BlurFooter({
     },
   });
 
-  if (Platform.OS !== 'ios') {
+  if (!isIOS) {
     return (
       <View style={[styles.container, { height }, style]}>
-        <LinearGradient
-          colors={[
-            getRGBA(bgColor, 0),
-            getRGBA(bgColor, 0.4),
-            getRGBA(bgColor, 0.9),
-            getRGBA(bgColor, 1),
-          ] as const}
-          locations={[0, 0.1, 0.2, 1] as const}
-          style={StyleSheet.absoluteFill}
-        />
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: getBackgroundColor(Platform.OS, colorScheme) }]} />
         {children}
       </View>
     );

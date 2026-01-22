@@ -193,7 +193,7 @@ export function LiquidGlassButton({
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      style={{ opacity: disabled ? 0.5 : 1 }}
+      style={{ opacity: disabled ? 0.5 : 1, }}
     >
       <LiquidGlass {...glassProps}>
         {children}

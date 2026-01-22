@@ -137,9 +137,25 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
       [chat]
     );
 
-    const handleQuickActionSelectMode = React.useCallback(
-      (modeId: string, prompt: string) => {
-        log.log('🎯 Mode selected:', modeId, 'with prompt:', prompt);
+    const handleQuickActionPress = React.useCallback(
+      (actionId: string) => {
+        log.log('🎯 Quick action pressed:', actionId);
+        chat.handleQuickAction(actionId);
+      },
+      [chat]
+    );
+
+    const handleQuickActionSelectOption = React.useCallback(
+      (optionId: string) => {
+        log.log('🎯 Quick action option selected:', optionId);
+        chat.setSelectedQuickActionOption(optionId);
+      },
+      [chat]
+    );
+
+    const handleQuickActionSelectPrompt = React.useCallback(
+      (prompt: string) => {
+        log.log('🎯 Quick action prompt selected:', prompt);
         chat.setInputValue(prompt);
         chatInputRef.current?.focusInput();
       },
@@ -246,7 +262,13 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             audioLevels={audioRecorder.audioLevels}
             attachments={chat.attachments}
             onRemoveAttachment={chat.removeAttachment}
-            onQuickActionSelectMode={handleQuickActionSelectMode}
+            selectedQuickAction={chat.selectedQuickAction}
+            selectedQuickActionOption={chat.selectedQuickActionOption}
+            onClearQuickAction={chat.clearQuickAction}
+            onQuickActionPress={handleQuickActionPress}
+            onQuickActionSelectOption={handleQuickActionSelectOption}
+            onQuickActionSelectPrompt={handleQuickActionSelectPrompt}
+            onQuickActionThreadPress={handleQuickActionThreadPress}
             isAuthenticated={isAuthenticated}
             isAgentRunning={chat.isAgentRunning}
             isSendingMessage={chat.isSendingMessage}
