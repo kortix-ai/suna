@@ -21,7 +21,7 @@ import {
   extractToolFromStreamingMessage,
   type ToolSnackData,
 } from '@/components/chat';
-import { parseToolMessage } from '@agentpress/shared';
+import { getBackgroundColor, parseToolMessage } from '@agentpress/shared';
 import { ThreadHeader } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
@@ -790,7 +790,7 @@ export function ThreadPage({
   }, [chat.activeThread?.id, messages.length, isLoading, chat.isStreaming, chat.refreshMessages]);
 
   return (
-    <View className="flex-1 bg-background">
+    <View className="flex-1" style={{ backgroundColor: getBackgroundColor(Platform.OS, colorScheme) }}>
       <View className="flex-1" style={{ zIndex: 1 }}>
         {isLoading ? (
           <View className="flex-1 items-center justify-center">

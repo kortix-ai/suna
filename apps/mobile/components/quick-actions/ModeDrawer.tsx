@@ -10,6 +10,10 @@ import { X } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import type { QuickAction } from '.';
 import { getQuickActionOptions, type QuickActionOption } from './quickActionViews';
+import { getBorderRadius } from '@agentpress/shared';
+import { ReanimatedTrueSheet } from '@lodev09/react-native-true-sheet/reanimated';
+import type { TrueSheet } from '@lodev09/react-native-true-sheet';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { 
   useAnimatedStyle, 
   useSharedValue, 
@@ -32,9 +36,17 @@ interface ModeDrawerProps {
 
 export function ModeDrawer({ visible, mode, onClose, onSelectOption }: ModeDrawerProps) {
   const { colorScheme } = useColorScheme();
+  const insets = useSafeAreaInsets();
+  
+  // TrueSheet for iOS with liquid glass
+  const trueSheetRef = React.useRef<TrueSheet>(null);
+  
+  // BottomSheetModal fallback for Android
   const bottomSheetRef = React.useRef<BottomSheetModal>(null);
-  const snapPoints = React.useMemo(() => ['80%'], []);
-  const maxSnapPoints = React.useMemo(() => ['80%'], []); // Prevent expanding beyond 80%
+  const wasOpenRef = React.useRef(false);
+  
+  // Get border radius from app-styles
+  const cornerRadius = getBorderRadius(Platform.OS, '3xl'); // iOS: 38pt, Android: 28dp
   
   // Scroll position for gradient effect
   const scrollY = useSharedValue(0);
@@ -47,12 +59,24 @@ export function ModeDrawer({ visible, mode, onClose, onSelectOption }: ModeDrawe
 
   // Handle opening/closing the modal when visible prop changes
   React.useEffect(() => {
-    if (visible && mode) {
+    const wasOpen = wasOpenRef.current;
+    wasOpenRef.current = visible && !!mode;
+
+    if (visible && mode && !wasOpen) {
       console.log('📂 Opening drawer for:', mode.id);
-      bottomSheetRef.current?.present();
-    } else {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      if (Platform.OS === 'ios') {
+        trueSheetRef.current?.present();
+      } else {
+        bottomSheetRef.current?.present();
+      }
+    } else if ((!visible || !mode) && wasOpen) {
       console.log('📥 Closing drawer');
-      bottomSheetRef.current?.dismiss();
+      if (Platform.OS === 'ios') {
+        trueSheetRef.current?.dismiss();
+      } else {
+        bottomSheetRef.current?.dismiss();
+      }
     }
   }, [visible, mode]);
 
@@ -62,12 +86,9 @@ export function ModeDrawer({ visible, mode, onClose, onSelectOption }: ModeDrawe
     onClose();
   }, [onClose]);
 
-  const handleSheetChanges = React.useCallback((index: number) => {
-    console.log('📊 Sheet index changed to:', index);
-    if (index === -1) {
-      handleClose();
-    }
-  }, [handleClose]);
+  const handleDismiss = React.useCallback(() => {
+    onClose();
+  }, [onClose]);
 
   const handleSelectOption = React.useCallback(
     (optionId: string) => {
@@ -105,100 +126,122 @@ export function ModeDrawer({ visible, mode, onClose, onSelectOption }: ModeDrawe
         appearsOnIndex={0}
         opacity={0.5}
         pressBehavior="close"
-        onPress={handleClose}
+        onPress={handleDismiss}
       />
     ),
-    [handleClose]
+    [handleDismiss]
   );
 
   if (!mode) return null;
 
   console.log('🎨 Rendering ModeDrawer for:', mode.id);
 
+  const drawerContent = (
+    <View style={{ flex: 1, paddingBottom: Math.max(insets.bottom, 20) + 20 }}>
+      <View className="flex-row items-center justify-between px-6 pt-6 pb-4">
+        <View className="flex-row items-center gap-3">
+          <View>
+            <Text className="font-roobert-semibold text-xl text-foreground">{mode.label}</Text>
+            <Text className="font-roobert text-sm text-muted-foreground">
+              Choose a template to get started
+            </Text>
+          </View>
+        </View>
+        {isLiquidGlassAvailable() ? (
+          <Pressable onPress={handleDismiss}>
+            <GlassView
+              glassEffectStyle="regular"
+              tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+              isInteractive
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderWidth: 1,
+                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+              }}>
+              <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2} />
+            </GlassView>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={handleDismiss}
+            className="h-9 w-9 items-center justify-center rounded-full"
+            style={{
+              backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
+            }}>
+            <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2} />
+          </Pressable>
+        )}
+      </View>
+
+      {/* Scrollable Content */}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        bounces={true}
+        scrollEventThrottle={16}
+        contentContainerStyle={{ 
+          paddingBottom: 60, 
+          paddingHorizontal: 16,
+          paddingTop: 8,
+          flexGrow: 1,
+        }}>
+        <View 
+          style={{ 
+            flexDirection: 'row', 
+            flexWrap: 'wrap',
+            gap: 12,
+          }}
+        >
+          {options.map((option) => (
+            <OptionCard
+              key={option.id}
+              option={option}
+              modeId={mode.id}
+              onSelect={() => handleSelectOption(option.id)}
+            />
+          ))}
+        </View>
+      </ScrollView>
+    </View>
+  );
+
+  if (Platform.OS === 'ios') {
+    return (
+      <ReanimatedTrueSheet
+        key={`mode-drawer-${mode.id}`}
+        ref={trueSheetRef}
+        detents={[0.1, 0.8, 1]}
+        onDidDismiss={handleDismiss}
+        cornerRadius={cornerRadius}
+        initialDetentIndex={0}
+      >
+        {drawerContent}
+      </ReanimatedTrueSheet>
+    );
+  }
+
+  // Android fallback
   return (
     <BottomSheetModal
       key={`mode-drawer-${mode.id}`}
       ref={bottomSheetRef}
       index={0}
-      snapPoints={snapPoints}
+      snapPoints={['80%']}
       enablePanDownToClose={true}
       enableDynamicSizing={false}
-      onChange={handleSheetChanges}
+      onDismiss={handleDismiss}
       backdropComponent={renderBackdrop}
       handleComponent={null}
       backgroundStyle={{
         backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF',
-        borderTopLeftRadius: 36,
-        borderTopRightRadius: 36,
+        borderTopLeftRadius: cornerRadius,
+        borderTopRightRadius: cornerRadius,
       }}>
       <BottomSheetView style={{ flex: 1 }}>
-        <View className="flex-row items-center justify-between px-6 pt-6 pb-4">
-          <View className="flex-row items-center gap-3">
-            <View>
-              <Text className="font-roobert-semibold text-xl text-foreground">{mode.label}</Text>
-              <Text className="font-roobert text-sm text-muted-foreground">
-                Choose a template to get started
-              </Text>
-            </View>
-          </View>
-          {isLiquidGlassAvailable() ? (
-            <Pressable onPress={handleClose}>
-              <GlassView
-                glassEffectStyle="regular"
-                tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                isInteractive
-                style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: 18,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderWidth: 1,
-                  borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-                }}>
-                <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2} />
-              </GlassView>
-            </Pressable>
-          ) : (
-            <Pressable
-              onPress={handleClose}
-              className="h-9 w-9 items-center justify-center rounded-full"
-              style={{
-                backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-              }}>
-              <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2} />
-            </Pressable>
-          )}
-        </View>
-
-        {/* Scrollable Content */}
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          bounces={true}
-          scrollEventThrottle={16}
-          contentContainerStyle={{ 
-            paddingBottom: 60, 
-            paddingHorizontal: 16,
-            paddingTop: 8,
-            flexGrow: 1,
-          }}>
-          <View 
-            style={{ 
-              flexDirection: 'row', 
-              flexWrap: 'wrap',
-              gap: 12,
-            }}
-          >
-            {options.map((option) => (
-              <OptionCard
-                key={option.id}
-                option={option}
-                modeId={mode.id}
-                onSelect={() => handleSelectOption(option.id)}
-              />
-            ))}
-          </View>
-        </ScrollView>
+        {drawerContent}
       </BottomSheetView>
     </BottomSheetModal>
   );

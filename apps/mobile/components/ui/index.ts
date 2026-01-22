@@ -1,6 +1,7 @@
 export { Avatar } from './Avatar';
 export { Badge } from './badge';
 export { BlurFadeHeader } from './BlurFadeHeader';
+export { BlurFooter } from './BlurFooter';
 export { Button } from './button';
 export { Icon } from './icon';
 export { Input } from './input';
@@ -10,3 +11,4 @@ export { NativeOnlyAnimatedView } from './native-only-animated-view';
 export { KortixLoader } from './kortix-loader';
 export { ToastProvider, useToast } from './toast-provider';
 export type { Toast, ToastType } from './toast';
+export { Tabs, TabsList, TabsTrigger, TabsContent } from './tabs';

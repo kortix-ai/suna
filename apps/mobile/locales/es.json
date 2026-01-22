@@ -100,6 +100,7 @@
     "passwordsDontMatch": "Las contraseñas no coinciden",
     "passwordTooShort": "La contraseña debe tener al menos 8 caracteres",
     "welcomeTitle": "Contrata Kortix para",
+    "welcomeSubtitle": "Haz cualquier cosa con Kortix",
     "rotatingPhrases": {
       "presentations": "presentaciones",
       "writing": "redacción",

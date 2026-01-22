@@ -1,22 +1,23 @@
 import * as React from 'react';
-import { Pressable, View, Switch, ScrollView, Linking, Platform, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Switch, ScrollView, Linking, Platform, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { useAdvancedFeatures } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Layers, Globe, ExternalLink, AlertCircle, Rocket, Sparkles } from 'lucide-react-native';
-import { NativeHeader } from './NativeHeader';
+import { AlertCircle, Rocket, Info } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
 import { log } from '@/lib/logger';
+import { getDrawerBackgroundColor } from '@agentpress/shared';
 
 interface BetaPageProps {
   visible: boolean;
   onClose: () => void;
+  isDrawer?: boolean;
 }
 
-export function BetaPage({ visible, onClose }: BetaPageProps) {
+export function BetaPage({ visible, onClose, isDrawer = false }: BetaPageProps) {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { isEnabled: advancedFeaturesEnabled, toggle: toggleAdvancedFeatures } = useAdvancedFeatures();
@@ -40,105 +41,187 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
 
   if (!visible) return null;
 
-  const backgroundColor = Platform.OS === 'ios'
-    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
-    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
+  const backgroundColor = getDrawerBackgroundColor(Platform.OS, colorScheme);
+  const isIOS = Platform.OS === 'ios';
+  
+  const groupedBackgroundStyle = isIOS 
+    ? { borderRadius: 20, overflow: 'hidden' }
+    : { 
+        backgroundColor: colorScheme === 'dark' ? '#1E1E1E' : '#FFFFFF',
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      };
 
   return (
-    <View style={{ flex: 1, backgroundColor }}>
-      <NativeHeader
-        title={t('beta.title')}
-        onBack={handleClose}
-      />
+    <View style={{ flex: 1, backgroundColor, width: '100%', overflow: 'hidden' }}>
       <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16 }}
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ padding: 16, width: '100%' }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
       >
-        <View style={{ gap: 16 }}>
-          <View style={{
-            backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF',
-            borderRadius: 20,
-            overflow: 'hidden',
-          }}>
-            <View
-              style={{
-                paddingHorizontal: 16,
-                paddingVertical: 12,
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-              }}>
+        {/* Advanced Features Toggle */}
+        <View 
+          style={groupedBackgroundStyle as ViewStyle}
+          className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
+        >
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: isIOS ? 11 : 14,
+              minHeight: isIOS ? 44 : 56,
+              flexDirection: 'row',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: isIOS ? 12 : 16, flex: 1 }}>
+              <Icon 
+                as={Rocket} 
+                size={isIOS ? 20 : 24} 
+                className="text-foreground"
+                strokeWidth={2} 
+              />
               <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 17, color: colorScheme === 'dark' ? '#FFFFFF' : '#000000' }}>
+                <Text 
+                  style={{ 
+                    fontSize: isIOS ? 17 : 16,
+                    fontWeight: isIOS ? '400' : '500',
+                  }}
+                  className="text-foreground"
+                >
                   {t('beta.advancedFeatures')}
                 </Text>
-                <Text style={{ fontSize: 13, color: colorScheme === 'dark' ? '#8E8E93' : '#6E6E73', marginTop: 2 }}>
+                <Text 
+                  style={{ 
+                    fontSize: 13, 
+                    marginTop: 2,
+                  }}
+                  className="text-muted-foreground"
+                >
                   {t('beta.mobileBeta')}
                 </Text>
               </View>
-              <Switch
-                value={advancedFeaturesEnabled}
-                onValueChange={handleToggle}
-                trackColor={{
-                  false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
-                  true: '#34C759'
+            </View>
+            <Switch
+              value={advancedFeaturesEnabled}
+              onValueChange={handleToggle}
+              trackColor={{
+                false: colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7',
+                true: '#34C759'
+              }}
+              thumbColor="#FFFFFF"
+              ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
+            />
+          </View>
+        </View>
+
+        {/* App Version Info */}
+        <View 
+          style={[
+            groupedBackgroundStyle as ViewStyle,
+            { marginTop: isIOS ? 20 : 16 }
+          ]}
+          className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
+        >
+          <View
+            style={{
+              paddingHorizontal: 16,
+              paddingVertical: isIOS ? 11 : 14,
+              minHeight: isIOS ? 44 : 56,
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: isIOS ? 12 : 16,
+            }}>
+            <Icon 
+              as={Info} 
+              size={isIOS ? 20 : 24} 
+              className="text-foreground"
+              strokeWidth={2} 
+            />
+            <View style={{ flex: 1 }}>
+              <Text 
+                style={{ 
+                  fontSize: isIOS ? 17 : 16,
+                  fontWeight: isIOS ? '400' : '500',
                 }}
-                thumbColor="#FFFFFF"
-                ios_backgroundColor={colorScheme === 'dark' ? '#3A3A3C' : '#E5E5E7'}
-              />
+                className="text-foreground"
+              >
+                {t('beta.appVersion', 'App Version')}
+              </Text>
             </View>
           </View>
-          <View style={{
-            backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF',
-            borderRadius: 20,
-            padding: 16,
-          }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-              <View style={{
-                height: 40,
-                width: 40,
-                borderRadius: 20,
-                backgroundColor: colorScheme === 'dark' ? '#6366F1' : '#6366F1',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}>
-                <Icon as={Rocket} size={20} color="#FFFFFF" strokeWidth={2.5} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 17, fontWeight: '600', color: colorScheme === 'dark' ? '#FFFFFF' : '#000000' }}>
-                  App Version
-                </Text>
-              </View>
-            </View>
-            <Text style={{ fontSize: 15, color: colorScheme === 'dark' ? '#8E8E93' : '#6E6E73', lineHeight: 20 }}>
-              Version: {Constants.expoConfig?.version || 'N/A'}
+          
+          <View
+            style={{
+              height: StyleSheet.hairlineWidth,
+              backgroundColor: colorScheme === 'dark' ? '#38383A' : '#C6C6C8',
+              marginLeft: isIOS ? 52 : 16,
+            }}
+          />
+          
+          <View style={{ paddingHorizontal: 16, paddingBottom: isIOS ? 11 : 14, paddingTop: 8 }}>
+            <Text 
+              style={{ 
+                fontSize: 15,
+                lineHeight: 20,
+              }}
+              className="text-foreground"
+            >
+              {t('beta.version', 'Version')}: {Constants.expoConfig?.version || 'N/A'}
             </Text>
             {Constants.expoConfig?.extra?.eas?.projectId && (
-              <Text style={{ fontSize: 13, color: colorScheme === 'dark' ? '#8E8E93' : '#6E6E73', marginTop: 4 }}>
-                Build ID: {Constants.expoConfig.extra.eas.projectId.slice(0, 8)}
+              <Text 
+                style={{ 
+                  fontSize: 13, 
+                  marginTop: 4,
+                }}
+                className="text-muted-foreground"
+              >
+                {t('beta.buildId', 'Build ID')}: {Constants.expoConfig.extra.eas.projectId.slice(0, 8)}
               </Text>
             )}
           </View>
-          <View style={{
-            backgroundColor: colorScheme === 'dark' ? 'rgba(255, 204, 0, 0.1)' : 'rgba(255, 149, 0, 0.1)',
-            borderRadius: 16,
-            padding: 12,
-          }}>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              <Icon as={AlertCircle} size={16} color={colorScheme === 'dark' ? '#FFD60A' : '#FF9500'} strokeWidth={2} />
-              <Text style={{ 
-                fontSize: 13, 
-                color: colorScheme === 'dark' ? '#FFD60A' : '#FF9500',
+        </View>
+
+        {/* Warning Banner */}
+        <View style={{
+          backgroundColor: colorScheme === 'dark' ? 'rgba(255, 204, 0, 0.1)' : 'rgba(255, 149, 0, 0.1)',
+          borderRadius: isIOS ? 20 : 12,
+          padding: 16,
+          marginTop: isIOS ? 20 : 16,
+          ...(isIOS ? {} : {
+            elevation: 1,
+            shadowColor: '#000',
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 2,
+          }),
+        }}>
+          <View style={{ flexDirection: 'row', gap: 12, alignItems: 'flex-start' }}>
+            <Icon 
+              as={AlertCircle} 
+              size={20} 
+              color={colorScheme === 'dark' ? '#FFD60A' : '#FF9500'} 
+              strokeWidth={2} 
+              style={{ marginTop: 2 }}
+            />
+            <Text 
+              style={{ 
+                fontSize: 15,
+                lineHeight: 20,
                 flex: 1,
-                lineHeight: 18,
-              }}>
-                {t('beta.mobileWarning')}
-              </Text>
-            </View>
+              }}
+              className="text-foreground"
+            >
+              {t('beta.mobileWarning')}
+            </Text>
           </View>
         </View>
+
         <View style={{ height: 80 }} />
       </ScrollView>
     </View>

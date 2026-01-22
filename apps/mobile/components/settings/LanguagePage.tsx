@@ -9,7 +9,6 @@ import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Check } from 'lucide-react-native';
-import { NativeHeader } from './NativeHeader';
 import * as Haptics from 'expo-haptics';
 import { log } from '@/lib/logger';
 import { useColorScheme } from 'nativewind';
@@ -30,9 +29,10 @@ const LANGUAGE_FLAGS: Record<string, string> = {
 interface LanguagePageProps {
   visible: boolean;
   onClose: () => void;
+  isDrawer?: boolean;
 }
 
-export function LanguagePage({ visible, onClose }: LanguagePageProps) {
+export function LanguagePage({ visible, onClose, isDrawer = false }: LanguagePageProps) {
   const { currentLanguage, availableLanguages, setLanguage, t } = useLanguage();
   const { colorScheme } = useColorScheme();
 
@@ -56,24 +56,14 @@ export function LanguagePage({ visible, onClose }: LanguagePageProps) {
     : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
 
   return (
-    <View style={{ flex: 1, backgroundColor }}>
+    <View style={{ flex: 1, backgroundColor, width: '100%', overflow: 'hidden' }}>
       <ScrollView
-        style={{ flex: 1 }}
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ width: '100%' }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
       >
-        <NativeHeader
-          title={t('language.title')}
-          onBack={handleClose}
-        />
-
-          <View className="px-6 pb-8">
-            <View className="mb-3">
-              <Text className="text-xs font-roobert-medium text-muted-foreground uppercase tracking-wider">
-                {t('language.selectLanguage')}
-              </Text>
-            </View>
-
+          <View className="px-6 pb-8 pt-2">
             <View className="gap-3">
               {availableLanguages.map((language) => (
                 <LanguageItem

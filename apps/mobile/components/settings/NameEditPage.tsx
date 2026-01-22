@@ -10,12 +10,14 @@ import { useAuthContext, useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Save, Mail, AlertTriangle } from 'lucide-react-native';
-import { NativeHeader } from './NativeHeader';
 import { supabase } from '@/api/supabase';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/ui';
 import { ProfilePicture } from './ProfilePicture';
 import { log } from '@/lib/logger';
+import { getDrawerBackgroundColor, getPadding } from '@agentpress/shared';
+import { isLiquidGlassAvailable, GlassView } from 'expo-glass-effect';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
   
@@ -24,6 +26,7 @@ interface NameEditPageProps {
   currentName: string;
   onClose: () => void;
   onNameUpdated?: (newName: string) => void;
+  isDrawer?: boolean;
 }
 
 export function NameEditPage({ 
@@ -31,16 +34,19 @@ export function NameEditPage({
   currentName, 
   onClose,
   onNameUpdated,
+  isDrawer = false,
 }: NameEditPageProps) {
   const { colorScheme } = useColorScheme();
   const { user } = useAuthContext();
   const { t } = useLanguage();
+  const insets = useSafeAreaInsets();
   
   const [name, setName] = React.useState(currentName);
   const [isLoading, setIsLoading] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const inputRef = React.useRef<TextInput>(null);
   
+  const hasChanges = name.trim() !== currentName && name.trim().length > 0;
 
   React.useEffect(() => {
     if (visible) {
@@ -146,31 +152,17 @@ export function NameEditPage({
       setIsLoading(false);
     }
   };
-  
+
   if (!visible) return null;
 
-  const hasChanges = name.trim() !== currentName && name.trim().length > 0;
-  const backgroundColor = Platform.OS === 'ios'
-    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
-    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
-  
   return (
-    <View style={{ flex: 1, backgroundColor }}>
+    <View style={{ flex: 1, backgroundColor: getDrawerBackgroundColor(Platform.OS, colorScheme) }}>
       <ScrollView 
         style={{ flex: 1 }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
         keyboardShouldPersistTaps="handled"
       >
-        <NativeHeader
-          title={t('nameEdit.title')}
-          onBack={handleClose}
-          onSave={hasChanges ? handleSave : undefined}
-          saveLabel={t('common.save', 'Save')}
-          saveDisabled={isLoading || !hasChanges}
-          loading={isLoading}
-        />
-          
           <View className="px-6 pb-8">
             <View className="mb-8 items-center pt-8">
               <ProfilePicture 
@@ -232,6 +224,83 @@ export function NameEditPage({
             </View>
           </View>
           <View style={{ height: 80 }} />
+          {hasChanges && (
+          <View
+            style={{
+              position: 'absolute',
+              bottom: insets.bottom + 24,
+              left: 0,
+              right: 0,
+              alignItems: 'center',
+              paddingHorizontal: getPadding(Platform.OS, 'lg'),
+              pointerEvents: 'box-none',
+            }}
+          >
+            <Pressable
+              onPress={handleSave}
+              disabled={isLoading}
+            >
+              {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
+                <GlassView
+                  glassEffectStyle="regular"
+                  tintColor="rgba(0, 122, 255, 0.9)"
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 28,
+                    paddingHorizontal: 24,
+                    paddingVertical: 14,
+                    minWidth: '100%',
+                    gap: 8,
+                  }}
+                >
+                  <Icon as={Save} size={20} className='text-white' strokeWidth={2.5} style={{ zIndex: 2000 }} />
+                  <Text
+                    style={{
+                      fontSize: 17,
+                      fontWeight: '600',
+                      color: 'white',
+                      zIndex: 2000,
+                    }}
+                  >
+                    {t('common.save', 'Save')}
+                  </Text>
+                </GlassView>
+              ) : (
+                <View
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: '#007AFF',
+                    borderRadius: 28,
+                    paddingHorizontal: 24,
+                    paddingVertical: 14,
+                    minWidth: 120,
+                    gap: 8,
+                    shadowColor: '#007AFF',
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 8,
+                  }}
+                >
+                  <Icon as={Save} size={20} color="#FFFFFF" strokeWidth={2.5} />
+                  <Text
+                    style={{
+                      fontSize: 17,
+                      fontWeight: '600',
+                      color: '#FFFFFF',
+                    }}
+                  >
+                    {t('common.save', 'Save')}
+                  </Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
+        )}
         </ScrollView>
     </View>
   );

@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { View, Platform, BackHandler } from 'react-native';
+import { View, Platform, BackHandler, TouchableOpacity, Pressable } from 'react-native';
 import { useRouter, Stack, useFocusEffect } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,12 +7,13 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Button } from '@/components/ui/button';
 import { KortixLoader } from '@/components/ui';
-import { Mail } from 'lucide-react-native';
+import { Mail, TextAlignStart } from 'lucide-react-native';
 import { FontAwesome5 } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
 import { useAuth } from '@/hooks/useAuth';
 import { useLanguage, useAuthContext } from '@/contexts';
 import * as Haptics from 'expo-haptics';
+import * as WebBrowser from 'expo-web-browser';
 import Animated, { 
   FadeIn,
   FadeInDown,
@@ -25,17 +26,13 @@ import Animated, {
 import { Dimensions, Animated as RNAnimated } from 'react-native';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { EmailAuthDrawer, type EmailAuthDrawerRef } from '@/components/auth';
-import KortixSymbolBlack from '@/assets/brand/kortix-symbol-scale-effect-black.svg';
-import KortixSymbolWhite from '@/assets/brand/kortix-symbol-scale-effect-white.svg';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { ProgressiveBlur } from '@/components/ui/progressive-blur';
 import { log } from '@/lib/logger';
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 const AnimatedText = Animated.createAnimatedComponent(Text);
 const SCREEN_WIDTH = Dimensions.get('window').width;
-
-// ============================================================================
-// Constants
-// ============================================================================
 
 const SPACING = {
   // Screen padding
@@ -49,10 +46,6 @@ const SPACING = {
   contentToButtons: 40,
   betweenButtons: 12,
 } as const;
-
-// ============================================================================
-// Rotating Text Animation
-// ============================================================================
 
 function getRotatingPhrases(t: (key: string) => string) {
   return [
@@ -81,8 +74,8 @@ function RotatingText() {
   const chars = phrases[currentIndex].split('');
 
   return (
-    <View style={{ height: 44, overflow: 'hidden' }}>
-      <View className="flex-row flex-wrap">
+    <View style={{ height: 24, overflow: 'hidden', zIndex: 20 }}>
+      <View className="flex-row flex-wrap" style={{ zIndex: 20 }}>
         {chars.map((char, index) => (
           <AnimatedChar 
             key={`${currentIndex}-${index}`} 
@@ -104,13 +97,13 @@ function AnimatedChar({ char, index }: { char: string; index: number }) {
     opacity.value = 0;
 
     rotateX.value = withDelay(
-      index * 35,
-      withTiming(0, { duration: 500, easing: Easing.out(Easing.cubic) })
+      index * 20,
+      withTiming(0, { duration: 400, easing: Easing.out(Easing.cubic) })
     );
 
     opacity.value = withDelay(
-      index * 35,
-      withTiming(1, { duration: 350, easing: Easing.out(Easing.cubic) })
+      index * 20,
+      withTiming(1, { duration: 300, easing: Easing.out(Easing.cubic) })
     );
   }, [index]);
 
@@ -127,57 +120,20 @@ function AnimatedChar({ char, index }: { char: string; index: number }) {
       style={[
         animatedStyle, 
         { 
-          fontFamily: 'Roobert-SemiBold', 
-          fontSize: 36, 
-          lineHeight: 44,
-          letterSpacing: -0.5,
+          fontFamily: 'Roobert-Medium', 
+          fontSize: 18, 
+          lineHeight: 24,
+          letterSpacing: 0,
+          color: 'rgba(255, 255, 255, 0.7)',
+          zIndex: 20,
         },
       ]}
-      className="text-foreground"
     >
       {char}
     </AnimatedText>
   );
 }
 
-// ============================================================================
-// Background Logo
-// ============================================================================
-
-function AuthBackgroundLogo() {
-  const { colorScheme } = useColorScheme();
-  const fadeAnim = React.useRef(new RNAnimated.Value(0)).current;
-
-  React.useEffect(() => {
-    RNAnimated.timing(fadeAnim, {
-      toValue: 1.0,
-      duration: 3000, 
-      useNativeDriver: true,
-    }).start();
-  }, []);
-
-  const leftOffset = (SCREEN_WIDTH - 393) / 2;
-  const SymbolComponent = colorScheme === 'dark' ? KortixSymbolWhite : KortixSymbolBlack;
-
-  return (
-    <RNAnimated.View
-      style={{
-        position: 'absolute',
-        top: 20,
-        left: -80 + leftOffset,
-        width: 554,
-        height: 462,
-        opacity: fadeAnim,
-      }}
-    >
-      <SymbolComponent width={554} height={462} />
-    </RNAnimated.View>
-  );
-}
-
-// ============================================================================
-// Google Logo
-// ============================================================================
 
 function GoogleLogo() {
   return (
@@ -190,17 +146,12 @@ function GoogleLogo() {
   );
 }
 
-// ============================================================================
-// Auth Screen
-// ============================================================================
-
 export default function AuthScreen() {
   const router = useRouter();
   const { signInWithOAuth } = useAuth();
   const { isAuthenticated, isLoading: authLoading } = useAuthContext();
   const emailDrawerRef = React.useRef<EmailAuthDrawerRef>(null);
 
-  // Prevent back navigation if authenticated
   useFocusEffect(
     React.useCallback(() => {
       if (Platform.OS === 'android') {
@@ -229,7 +180,9 @@ export default function AuthScreen() {
   const handleOAuth = React.useCallback(async (provider: 'apple' | 'google') => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     const result = await signInWithOAuth(provider);
-    if (result.success) router.replace('/');
+    if (result && typeof result === 'object' && 'success' in result && result.success) {
+      router.replace('/');
+    }
   }, [signInWithOAuth, router]);
 
   const handleEmail = React.useCallback(() => {
@@ -237,9 +190,6 @@ export default function AuthScreen() {
     emailDrawerRef.current?.open();
   }, []);
 
-  // CRITICAL: If user is already authenticated, show loader instead of auth UI
-  // This prevents any flash of auth content while redirect is happening
-  // AuthProtection in _layout.tsx will handle the redirect
   if (isAuthenticated && !authLoading) {
     return (
       <>
@@ -254,20 +204,16 @@ export default function AuthScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false, gestureEnabled: false }} />
-      <View className="flex-1 bg-background">
-        <View className="absolute inset-0" pointerEvents="none">
-          <AuthBackgroundLogo />
+      <View style={{ flex: 1 }}>
+        <ProgressiveBlur />
+        <View className="flex-1" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, zIndex: 10 }}>
+          <WelcomeContent onOAuth={handleOAuth} onEmail={handleEmail} />
+          <EmailAuthDrawer ref={emailDrawerRef} />
         </View>
-        <WelcomeContent onOAuth={handleOAuth} onEmail={handleEmail} />
-        <EmailAuthDrawer ref={emailDrawerRef} />
       </View>
     </>
   );
 }
-
-// ============================================================================
-// Welcome Content
-// ============================================================================
 
 interface WelcomeContentProps {
   onOAuth: (provider: 'apple' | 'google') => void;
@@ -283,95 +229,144 @@ function WelcomeContent({ onOAuth, onEmail }: WelcomeContentProps) {
   const paddingBottom = Math.max(insets.bottom + 16, SPACING.bottomMin);
   const paddingTop = Math.max(insets.top, SPACING.topMin);
 
+  const renderButton = (
+    onPress: () => void,
+    icon: React.ReactNode,
+    label: string,
+    isPrimary = false
+  ) => {
+    const buttonContent = (
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 12,
+          height: 56,
+        }}
+      >
+        {icon}
+        <Text
+          style={{
+            fontSize: 16,
+            fontFamily: 'Roobert-Medium',
+            color: '#FFFFFF',
+          }}
+        >
+          {label}
+        </Text>
+      </View>
+    );
+
+    if (isLiquidGlassAvailable() && Platform.OS === 'ios') {
+      return (
+        <TouchableOpacity
+          onPress={onPress}
+          activeOpacity={0.8}
+          style={{ zIndex: 30 }}
+        >
+          <GlassView
+            glassEffectStyle="regular"
+            tintColor="rgba(255, 255, 255, 0.08)"
+            style={{
+              borderRadius: 28,
+              borderWidth: 0.5,
+              borderColor: 'rgba(255, 255, 255, 0.2)',
+              overflow: 'hidden',
+              zIndex: 30,
+            }}
+          >
+            {buttonContent}
+          </GlassView>
+        </TouchableOpacity>
+      );
+    }
+
+    return (
+      <TouchableOpacity
+        onPress={onPress}
+        activeOpacity={0.8}
+        style={{
+          borderRadius: 28,
+          backgroundColor: 'rgba(255, 255, 255, 0.1)',
+          borderWidth: 0.5,
+          borderColor: 'rgba(255, 255, 255, 0.2)',
+          overflow: 'hidden',
+          zIndex: 30,
+        }}
+      >
+        {buttonContent}
+      </TouchableOpacity>
+    );
+  };
+
+
   return (
     <View 
-      className="flex-1 justify-end"
+      className="flex-1 justify-between"
       style={{
         paddingTop,
         paddingBottom,
         paddingHorizontal: SPACING.horizontal,
       }}
     >
-      {/* Branding Section */}
-      <AnimatedView 
-        entering={FadeIn.duration(600)}
-        style={{ marginBottom: SPACING.contentToButtons }}
-    >
-        {/* Logo */}
-        <View style={{ marginBottom: SPACING.logoToTitle }}>
-          <KortixLogo variant="logomark" size={24} color={isDark ? 'dark' : 'light'} />
-        </View>
-        
-        {/* Title */}
-        <Text 
-          className="text-foreground tracking-tight"
-          style={{ 
-            fontFamily: 'Roobert-SemiBold',
-            fontSize: 36,
-            lineHeight: 44,
-            letterSpacing: -0.5,
-            marginBottom: SPACING.titleToSubtitle,
-          }}
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <AnimatedView 
+          entering={FadeIn.duration(600)}
+          style={{ marginBottom: SPACING.contentToButtons, zIndex: 20 }}
         >
-            {t('auth.welcomeTitle')}
+          <View style={{ marginBottom: 12 }}  >
+            <KortixLogo variant="logomark" size={24} color="dark" />
+          </View>
+          <Text 
+            style={{ 
+              fontFamily: 'Roobert-Regular',
+              fontSize: 18,
+              lineHeight: 26,
+              letterSpacing: 0.1,
+              marginBottom: 0,
+              color: 'rgba(255, 255, 255, 0.85)',
+              zIndex: 20,
+            }}
+          >
+            {t('auth.welcomeSubtitle')}
           </Text>
-        
-        {/* Rotating Subtitle */}
-          <RotatingText />
-      </AnimatedView>
+        </AnimatedView>
 
-      {/* Auth Buttons */}
-      <AnimatedView 
-        entering={FadeInDown.duration(500).delay(200)}
-        style={{ gap: SPACING.betweenButtons }}
-      >
-        {Platform.OS === 'ios' && (
-          <Button
-            variant="default"
-            size="lg"
-            onPress={() => {
+        {/* Auth Buttons */}
+        <AnimatedView 
+          entering={FadeInDown.duration(500).delay(200)}
+          style={{ gap: SPACING.betweenButtons, zIndex: 20 }}
+        >
+          {Platform.OS === 'ios' && renderButton(
+            () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
               onOAuth('apple');
-            }}
-            className="bg-[#000000]"
-          >
-            <FontAwesome5 name="apple" size={20} color="white" />
-            <Text className="text-[16px] font-roobert-medium text-white">
-              {t('auth.continueWithApple')}
-            </Text>
-          </Button>
-        )}
+            },
+            <FontAwesome5 name="apple" size={20} color="#FFFFFF" />,
+            t('auth.continueWithApple'),
+            true
+          )}
 
-        <Button
-          variant="outline"
-          size="lg"
-            onPress={() => {
+          {renderButton(
+            () => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onOAuth('google');
-            }}
-          className="border border-[#dadce0]"
-          style={{ backgroundColor: '#ffffff' }}
-          >
-            <GoogleLogo />
-          <Text className="text-[16px] font-roobert-medium" style={{ color: '#1f1f1f' }}>
-              {t('auth.continueWithGoogle')}
-            </Text>
-        </Button>
+              onOAuth('google');
+            },
+            <GoogleLogo />,
+            t('auth.continueWithGoogle')
+          )}
 
-        <Button
-          variant="outline"
-          size="lg"
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            onEmail();
-          }}
-        >
-            <Icon as={Mail} size={20} className="text-foreground" />
-          <Text className="text-[16px] font-roobert-medium text-foreground">
-              {t('auth.continueWithEmail')}
-            </Text>
-        </Button>
-      </AnimatedView>
+          {renderButton(
+            () => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              onEmail();
+            },
+            <Icon as={Mail} size={20} className="text-white" />,
+            t('auth.continueWithEmail')
+          )}
+        </AnimatedView>
       </View>
+    </View>
   );
 }

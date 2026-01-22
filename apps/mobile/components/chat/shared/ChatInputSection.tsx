@@ -13,6 +13,8 @@ import { useLanguage } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
 import { log } from '@/lib/logger';
+import { BlurFooter } from '@/components/ui';
+import { getBackgroundColor } from '@agentpress/shared';
 
 export interface ChatInputSectionProps {
   // Chat input props
@@ -257,17 +259,20 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
       ]}
     >
       {/* Gradient fade at top - creates smooth transition from content to input area */}
-      <LinearGradient
-        colors={[...gradientColors]}
-        locations={[...GRADIENT_LOCATIONS]}
-        style={{
-          height: GRADIENT_HEIGHT,
-        }}
-        pointerEvents="none"
-      />
+      
 
+      {!showQuickActions && (
+          <ToolSnack
+            toolData={activeToolData || null}
+            isAgentRunning={isAgentRunning}
+            agentName={agentName}
+            onPress={onToolSnackPress}
+            onDismiss={onToolSnackDismiss}
+          />
+        )}
+      <BlurFooter height={GRADIENT_HEIGHT} intensity={80} />
       {/* Solid background container - ensures input is always on top of content */}
-      <View style={{ backgroundColor }}>
+      <View style={{ backgroundColor: getBackgroundColor(Platform.OS, colorScheme) }}>
         {/* Attachment Bar */}
         <AttachmentBar
           attachments={attachments}
@@ -279,26 +284,18 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
           log.log('[ChatInputSection] ToolSnack check - showQuickActions:', showQuickActions, 'activeToolData:', activeToolData?.toolName || 'null');
           return null;
         })()}
-        {!showQuickActions && (
-          <ToolSnack
-            toolData={activeToolData || null}
-            isAgentRunning={isAgentRunning}
-            agentName={agentName}
-            onPress={onToolSnackPress}
-            onDismiss={onToolSnackDismiss}
-          />
-        )}
+        
                 {/* Quick Action Bar - Above input (mode selector, only on home) */}
-        {showQuickActions && (
-          <View className="px-3 mb-1">
-            <QuickActionBar
-              onSelectMode={onQuickActionSelectMode}
-            />
-          </View>
-        )}
-
+        
         {/* Chat Input */}
         <View className={showQuickActions ? "mx-3 mb-8 -mt-1" : containerClassName}>
+          {showQuickActions && (
+            <View className="px-3 mb-6" style={{ zIndex: 9999 }}>
+              <QuickActionBar
+                onSelectMode={onQuickActionSelectMode}
+              />
+            </View>
+          )}
           <ChatInput
             ref={chatInputRef}
             value={value}
@@ -323,6 +320,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             isSendingMessage={isSendingMessage}
             isTranscribing={isTranscribing}
           />
+
         </View>
         {/* Safe area bottom padding - animates smoothly with keyboard */}
         {/* When keyboard is open, it covers the bottom safe area so less padding is needed */}

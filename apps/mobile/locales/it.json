@@ -94,6 +94,7 @@
     "passwordsDontMatch": "Le password non corrispondono",
     "passwordTooShort": "La password deve avere almeno 8 caratteri",
     "welcomeTitle": "Assumi Kortix per",
+    "welcomeSubtitle": "Crea qualsiasi cosa con Kortix",
     "rotatingPhrases": {
       "presentations": "presentazioni",
       "writing": "scrittura",

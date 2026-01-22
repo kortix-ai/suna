@@ -6,11 +6,12 @@ import { useAuthContext } from '@/contexts';
 import { Stack, useRouter } from 'expo-router';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { StatusBar as RNStatusBar, View } from 'react-native';
+import { StatusBar as RNStatusBar, View, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { FeedbackDrawer } from '@/components/chat/tool-views/complete-tool/FeedbackDrawer';
 import { useFeedbackDrawerStore } from '@/stores/feedback-drawer-store';
 import { MaintenanceBanner, TechnicalIssueBanner, MaintenancePage } from '@/components/status';
+import { getBackgroundColor } from '@agentpress/shared';
 import { log } from '@/lib/logger';
 
 export default function HomeScreen() {
@@ -54,12 +55,17 @@ export default function HomeScreen() {
     return now < start;
   }, [systemStatus?.maintenanceNotice]);
 
+  const backgroundColor = React.useMemo(
+    () => getBackgroundColor(Platform.OS, colorScheme),
+    [colorScheme]
+  );
+
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <RNStatusBar barStyle={colorScheme === 'dark' ? 'light-content' : 'dark-content'} />
 
-      <View className="flex-1 bg-background">
+      <View className="flex-1" style={{ backgroundColor }}>
         {isMaintenanceActive ? (
           <MaintenancePage 
             onRefresh={() => refetchSystemStatus()}

@@ -8,6 +8,7 @@ import { AuthProvider, LanguageProvider, AgentProvider, BillingProvider, Advance
 import { PresenceProvider } from '@/contexts/PresenceContext';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
 import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
+import { ReanimatedTrueSheetProvider } from '@lodev09/react-native-true-sheet/reanimated';
 import { ThemeProvider } from '@react-navigation/native';
 import { PortalHost } from '@rn-primitives/portal';
 import { ToastProvider } from '@/components/ui/toast-provider';
@@ -524,7 +525,8 @@ export default function RootLayout() {
                       <PresenceProvider>
                         <ToastProvider>
                           <BottomSheetModalProvider>
-                            <ThemeProvider value={NAV_THEME[activeColorScheme]}>
+                            <ReanimatedTrueSheetProvider>
+                              <ThemeProvider value={NAV_THEME[activeColorScheme]}>
                               <StatusBar style={activeColorScheme === 'dark' ? 'light' : 'dark'} />
                               <AuthProtection>
                                 <Stack
@@ -558,10 +560,19 @@ export default function RootLayout() {
                                       gestureEnabled: true,
                                     }}
                                   />
+                                  <Stack.Screen
+                                    name="(settings)"
+                                    options={{
+                                      presentation: 'modal',
+                                      animation: 'slide_from_bottom',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
                                 </Stack>
                               </AuthProtection>
                               <PortalHost />
                             </ThemeProvider>
+                          </ReanimatedTrueSheetProvider>
                           </BottomSheetModalProvider>
                         </ToastProvider>
                       </PresenceProvider>

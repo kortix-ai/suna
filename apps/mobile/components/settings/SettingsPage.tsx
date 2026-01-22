@@ -37,6 +37,7 @@ import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
 import { cn } from '@/lib';
 import { ProfilePicture } from './ProfilePicture';
+import { getBackgroundColor, getDrawerBackgroundColor, getPadding } from '@agentpress/shared';
 
 type PageType = 'main' | 'name' | 'language' | 'theme' | 'beta' | 'account-deletion';
 
@@ -152,7 +153,7 @@ export function SettingsPage({ visible, profile, onClose, isDrawer = false, onNa
   }, [onNavigate]);
 
   const handleSignOut = React.useCallback(async () => {
-    if (isSigningOut) return; // Prevent multiple sign out attempts
+    if (isSigningOut) return;
 
     log.log('🎯 Sign Out pressed');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -192,11 +193,9 @@ export function SettingsPage({ visible, profile, onClose, isDrawer = false, onNa
   const settingsContent = (
     <View style={{ 
       flex: 1, 
-      backgroundColor: Platform.OS === 'ios' 
-        ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
-        : (colorScheme === 'dark' ? '#121212' : '#F5F5F5'),
-      paddingHorizontal: Platform.OS === 'ios' ? 16 : 0, 
-      paddingTop: Platform.OS === 'ios' ? 8 : 0 ,
+      backgroundColor: getDrawerBackgroundColor(Platform.OS, colorScheme),
+      paddingHorizontal: getPadding(Platform.OS, 'md'),
+      paddingTop: getPadding(Platform.OS, 'sm'),
       paddingBottom: 100,
     }}>
       <TouchableOpacity 
@@ -207,7 +206,7 @@ export function SettingsPage({ visible, profile, onClose, isDrawer = false, onNa
           paddingHorizontal: 16,
           marginBottom: 8,
         }}
-        className="flex-row items-center justify-between bg-muted rounded-3xl">
+        className="flex-row items-center justify-between bg-muted-foreground/10 rounded-3xl">
         <View className="flex-row items-center gap-3 flex-1">
           <ProfilePicture size={12} imageUrl={user?.user_metadata?.avatar_url} fallbackText={userName} />
           <View className="flex-1">

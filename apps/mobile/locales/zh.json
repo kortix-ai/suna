@@ -100,6 +100,7 @@
     "passwordsDontMatch": "密码不匹配",
     "passwordTooShort": "密码至少需要8个字符",
     "welcomeTitle": "雇用 Kortix 来",
+    "welcomeSubtitle": "用 Kortix 做任何事",
     "rotatingPhrases": {
       "presentations": "做演示",
       "writing": "写作",

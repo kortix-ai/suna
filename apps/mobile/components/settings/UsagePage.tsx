@@ -1,6 +1,5 @@
 import * as React from 'react';
-import { Pressable, View, ScrollView } from 'react-native';
-import { SettingsHeader } from './SettingsHeader';
+import { View, ScrollView, Platform, Pressable } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { UsageContent } from './UsageContent';
 import { PlanPage } from './PlanPage';
@@ -9,6 +8,12 @@ import { useChat } from '@/hooks';
 import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import { useUpgradePaywall } from '@/hooks/useUpgradePaywall';
 import { log } from '@/lib/logger';
+import { getBackgroundColor } from '@agentpress/shared';
+import { useColorScheme } from 'nativewind';
+import { Icon } from '@/components/ui/icon';
+import { ChevronLeft } from 'lucide-react-native';
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface UsagePageProps {
   visible: boolean;
@@ -57,30 +62,86 @@ export function UsagePage({ visible, onClose }: UsagePageProps) {
 
   if (!visible) return null;
 
+  const { colorScheme } = useColorScheme();
+  const insets = useSafeAreaInsets();
+  const backgroundColor = getBackgroundColor(Platform.OS, colorScheme);
+  const topOffset = Math.max(insets.top, 16) + 8;
+
   return (
-    <View className="absolute inset-0 z-50">
-      <Pressable onPress={handleClose} className="absolute inset-0 bg-black/50" />
+    <>
+      <View style={{ flex: 1, backgroundColor, width: '100%', overflow: 'hidden' }}>
+        <Pressable
+          onPress={handleClose}
+          style={{
+            position: 'absolute',
+            left: 16,
+            top: topOffset,
+            width: 44,
+            height: 44,
+            borderRadius: 22,
+            zIndex: 100,
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Go back"
+          accessibilityHint="Closes the usage page"
+        >
+          {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
+            <GlassView
+              glassEffectStyle="regular"
+              tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
+              isInteractive
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                borderRadius: 22,
+                height: 44,
+                width: 44,
+                borderWidth: 0.5,
+                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
+              }}
+            >
+              <Icon as={ChevronLeft} size={22} className="text-foreground" strokeWidth={2} />
+            </GlassView>
+          ) : (
+            <View
+              style={{
+                flex: 1,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
+                borderRadius: 22,
+                borderWidth: 0.5,
+                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
+                ...(Platform.OS === 'android' ? {
+                  elevation: 2,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 4,
+                } : {}),
+              }}
+            >
+              <Icon as={ChevronLeft} size={22} className="text-foreground" strokeWidth={2} />
+            </View>
+          )}
+        </Pressable>
 
-      <View className="absolute bottom-0 left-0 right-0 top-0 bg-background">
         <ScrollView
-          className="flex-1"
+          style={{ flex: 1, width: '100%', paddingTop: 120 }}
+          contentContainerStyle={{ width: '100%' }}
           showsVerticalScrollIndicator={false}
-          removeClippedSubviews={true}>
-          <SettingsHeader title={t('usage.title')} onClose={handleClose} />
-
+          removeClippedSubviews={true}
+        >
           <UsageContent onThreadPress={handleThreadPress} onUpgradePress={handleUpgradePress} />
-
-          <View className="h-20" />
         </ScrollView>
       </View>
-
-      {/* Plan Page */}
       <AnimatedPageWrapper
         visible={isPlanPageVisible}
         onClose={() => setIsPlanPageVisible(false)}
         disableGesture>
         <PlanPage visible onClose={() => setIsPlanPageVisible(false)} />
       </AnimatedPageWrapper>
-    </View>
+    </>
   );
 }

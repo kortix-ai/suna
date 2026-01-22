@@ -2408,6 +2408,28 @@ PODS:
     - ReactCommon/turbomodule/core
     - ReactNativeDependencies
     - Yoga
+  - RNTrueSheet (3.7.3):
+    - hermes-engine
+    - RCTRequired
+    - RCTTypeSafety
+    - React-Core
+    - React-Core-prebuilt
+    - React-debug
+    - React-Fabric
+    - React-featureflags
+    - React-graphics
+    - React-ImageManager
+    - React-jsi
+    - React-NativeModulesApple
+    - React-RCTFabric
+    - React-renderercss
+    - React-rendererdebug
+    - React-utils
+    - ReactCodegen
+    - ReactCommon/turbomodule/bridging
+    - ReactCommon/turbomodule/core
+    - ReactNativeDependencies
+    - Yoga
   - RNVectorIcons (10.3.0):
     - hermes-engine
     - RCTRequired
@@ -2628,6 +2650,7 @@ DEPENDENCIES:
   - "RNScreens (from `../../../node_modules/.pnpm/react-native-screens@4.16.0_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/react-native-screens`)"
   - "RNSoundLevel (from `../../../node_modules/.pnpm/react-native-sound-level@1.3.0/node_modules/react-native-sound-level`)"
   - "RNSVG (from `../../../node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/react-native-svg`)"
+  - "RNTrueSheet (from `../../../node_modules/.pnpm/@lodev09+react-native-true-sheet@3.7.3_1816239eefd0ed47cbcb7751d61252e7/node_modules/@lodev09/react-native-true-sheet`)"
   - "RNVectorIcons (from `../../../node_modules/.pnpm/react-native-vector-icons@10.3.0/node_modules/react-native-vector-icons`)"
   - "RNWorklets (from `../../../node_modules/.pnpm/react-native-worklets@0.6.0_@babel+core@7.28.5_react-native@0.81.5_@babel+core@7.28.5_@_57b45479df13a72303441df0617f51be/node_modules/react-native-worklets`)"
   - "Yoga (from `../../../node_modules/.pnpm/react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0/node_modules/react-native/ReactCommon/yoga`)"
@@ -2889,6 +2912,8 @@ EXTERNAL SOURCES:
     :path: "../../../node_modules/.pnpm/react-native-sound-level@1.3.0/node_modules/react-native-sound-level"
   RNSVG:
     :path: "../../../node_modules/.pnpm/react-native-svg@15.12.1_react-native@0.81.5_@babel+core@7.28.5_@types+react@19.2.7_react@19.1.0__react@19.1.0/node_modules/react-native-svg"
+  RNTrueSheet:
+    :path: "../../../node_modules/.pnpm/@lodev09+react-native-true-sheet@3.7.3_1816239eefd0ed47cbcb7751d61252e7/node_modules/@lodev09/react-native-true-sheet"
   RNVectorIcons:
     :path: "../../../node_modules/.pnpm/react-native-vector-icons@10.3.0/node_modules/react-native-vector-icons"
   RNWorklets:
@@ -3026,6 +3051,7 @@ SPEC CHECKSUMS:
   RNScreens: 33bbd1d0f86ed957557620dc94054b71db0a94ee
   RNSoundLevel: a48da8668fbde4f792c0bea948e27ab793bee7e1
   RNSVG: ac3047fdd9c0ebac9d0b731a352bddf216af6242
+  RNTrueSheet: 5ca9552645db34eac94beb0309317a2b7f1dc66e
   RNVectorIcons: 1db72384402bc567e995855056b8c5d7a9888780
   RNWorklets: 9b01d26d8bd321ad9d7a6478559c96ce35098144
   Yoga: 65431d43277b661ebc7289c6c5d82f64ce42cfe0

@@ -1,133 +1,49 @@
 import * as React from 'react';
-import { View, Dimensions, Pressable, Platform, ScrollView } from 'react-native';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { View } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { useColorScheme } from 'nativewind';
-import { Text } from '@/components/ui/text';
-import { Icon } from '@/components/ui/icon';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui';
 import { QUICK_ACTIONS } from './quickActions';
 import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
-import { log } from '@/lib/logger';
-import { ModeDrawer } from './ModeDrawer';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const ITEM_SPACING = 8;
-const CONTAINER_PADDING = 0;
-
-const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 12, bottom: 12, left: 12, right: 12 } : undefined;
+import { MorphingModesSheet } from './MorphingModesSheet';
 
 interface QuickActionBarProps {
   actions?: QuickAction[];
   onSelectMode?: (modeId: string, prompt: string) => void;
 }
 
-interface ModeItemProps {
-  action: QuickAction;
-  onPress: () => void;
-  isLast: boolean;
-}
-
-const ModeItem = React.memo(({ action, onPress, isLast }: ModeItemProps) => {
-  const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
-  const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
-
-  const itemContent = (
-    <>
-      <Icon 
-        as={action.icon} 
-        size={18} 
-        className="text-foreground"
-        strokeWidth={2}
-        style={{ marginRight: 6 }}
-      />
-      <Text className="font-roobert-medium text-foreground">
-        {translatedLabel}
-      </Text>
-    </>
-  );
-
-  return (
-    <Pressable 
-      onPress={onPress} 
-      hitSlop={ANDROID_HIT_SLOP}
-      style={{
-        marginRight: isLast ? 0 : ITEM_SPACING,
-      }}
-    >
-      <View 
-          className="flex-row items-center rounded-full px-6 py-3 bg-muted"
-        >
-          {itemContent}
-        </View>
-    </Pressable>
-  );
-});
-
-ModeItem.displayName = 'ModeItem';
-
 export function QuickActionBar({ 
   actions = QUICK_ACTIONS,
   onSelectMode,
 }: QuickActionBarProps) {
-  const [drawerVisible, setDrawerVisible] = React.useState(false);
-  const [selectedMode, setSelectedMode] = React.useState<QuickAction | null>(null);
+  const [currentTab, setCurrentTab] = React.useState<string>('general');
+  const { t } = useLanguage();
 
-  const handleModePress = React.useCallback((action: QuickAction) => {
-    log.log('🎯 Mode pressed:', action.id);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedMode(action);
-    setDrawerVisible(true);
+  const handleTabChange = React.useCallback((value: string) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setCurrentTab(value);
   }, []);
-
-  const handleCloseDrawer = React.useCallback(() => {
-    setDrawerVisible(false);
-    setTimeout(() => setSelectedMode(null), 300);
-  }, []);
-
-  const handleSelectOption = React.useCallback(
-    (optionId: string) => {
-      log.log('🎯 Mode option selected:', selectedMode?.id, optionId);
-      if (selectedMode) {
-        // Generate prompt based on mode and option
-        const prompt = `${selectedMode.label}: ${optionId}`;
-        onSelectMode?.(selectedMode.id, prompt);
-      }
-    },
-    [selectedMode, onSelectMode]
-  );
 
   return (
-    <>
-      <View className="w-full overflow-hidden mb-3">
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{
-            paddingHorizontal: CONTAINER_PADDING,
-            flexDirection: 'row',
-            alignItems: 'center',
-          }}
-          decelerationRate="fast"
+    <View className="w-full -mb-2">
+      <View className="flex-row justify-center items-center gap-2 mt-3">
+        <Tabs 
+          value={currentTab} 
+          onValueChange={handleTabChange}
+          className="web:inline-flex"
         >
-          {actions.map((action, index) => (
-            <ModeItem
-              key={action.id}
-              action={action}
-              onPress={() => handleModePress(action)}
-              isLast={index === actions.length - 1}
-            />
-          ))}
-        </ScrollView>
+          <TabsList>
+            <TabsTrigger value="general">
+              General
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+        
+        <MorphingModesSheet
+          isActive={currentTab === 'modes'}
+          onSelectMode={onSelectMode}
+        />
       </View>
-
-      <ModeDrawer
-        visible={drawerVisible}
-        mode={selectedMode}
-        onClose={handleCloseDrawer}
-        onSelectOption={handleSelectOption}
-      />
-    </>
+    </View>
   );
 }

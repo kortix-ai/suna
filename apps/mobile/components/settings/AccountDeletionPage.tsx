@@ -1,16 +1,10 @@
 import * as React from 'react';
-import { Pressable, View, Alert, ScrollView, TextInput, Platform, StyleSheet, TouchableOpacity } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring 
-} from 'react-native-reanimated';
+import { View, Alert, ScrollView, TextInput, Platform, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Trash2, Calendar, XCircle, AlertTriangle, CheckCircle } from 'lucide-react-native';
-import { NativeHeader } from './NativeHeader';
+import { Trash2, Calendar, AlertTriangle, CheckCircle } from 'lucide-react-native';
 import * as Haptics from 'expo-haptics';
 import { KortixLoader } from '@/components/ui';
 import { 
@@ -18,15 +12,15 @@ import {
   useRequestAccountDeletion, 
   useCancelAccountDeletion 
 } from '@/hooks/useAccountDeletion';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { getDrawerBackgroundColor } from '@agentpress/shared';
 
 interface AccountDeletionPageProps {
   visible: boolean;
   onClose: () => void;
+  isDrawer?: boolean;
 }
 
-export function AccountDeletionPage({ visible, onClose }: AccountDeletionPageProps) {
+export function AccountDeletionPage({ visible, onClose, isDrawer = false }: AccountDeletionPageProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const { data: deletionStatus, isLoading: isCheckingStatus } = useAccountDeletionStatus();
@@ -118,20 +112,26 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
   const hasPendingDeletion = deletionStatus?.has_pending_deletion;
   const isLoading = requestDeletion.isPending || cancelDeletion.isPending || isCheckingStatus;
   
-  const backgroundColor = Platform.OS === 'ios'
-    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
-    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
+  const backgroundColor = getDrawerBackgroundColor(Platform.OS, colorScheme);
+  const isIOS = Platform.OS === 'ios';
+  
+  const groupedBackgroundStyle = isIOS 
+    ? { borderRadius: 20, overflow: 'hidden' }
+    : { 
+        backgroundColor: colorScheme === 'dark' ? '#1E1E1E' : '#FFFFFF',
+        borderRadius: 12,
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      };
 
   return (
-    <View style={{ flex: 1, backgroundColor }}>
-      <NativeHeader
-        title={t('accountDeletion.title')}
-        onBack={handleClose}
-      />
-      
+    <View style={{ flex: 1, backgroundColor, width: '100%', overflow: 'hidden' }}>
       <ScrollView 
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16 }}
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ padding: 16, width: '100%' }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
         keyboardShouldPersistTaps="handled"
@@ -151,24 +151,59 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                   </Text>
                 </View>
 
-                <View className="mb-6">
-                  <View className="bg-destructive/5 border border-destructive/20 rounded-3xl p-5">
-                    <View className="flex-row items-center gap-3 mb-4">
-                      <View className="h-11 w-11 rounded-full bg-destructive/10 items-center justify-center">
-                        <Icon as={Calendar} size={20} className="text-destructive" strokeWidth={2.5} />
+                <View 
+                  style={[
+                    groupedBackgroundStyle as ViewStyle,
+                    { marginBottom: isIOS ? 20 : 16 }
+                  ]}
+                  className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
+                >
+                  <View style={{ padding: 16 }}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 16 }}>
+                      <View style={{
+                        height: 44,
+                        width: 44,
+                        borderRadius: 22,
+                        backgroundColor: colorScheme === 'dark' ? 'rgba(255, 59, 48, 0.15)' : 'rgba(255, 59, 48, 0.1)',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                      }}>
+                        <Icon as={Calendar} size={20} color="#FF3B30" strokeWidth={2.5} />
                       </View>
-                      <View className="flex-1">
-                        <Text className="text-xs font-roobert-medium text-muted-foreground mb-1">
+                      <View style={{ flex: 1 }}>
+                        <Text 
+                          style={{ 
+                            fontSize: 13,
+                            marginBottom: 4,
+                          }}
+                          className="text-muted-foreground"
+                        >
                           {t('accountDeletion.scheduledFor')}
                         </Text>
-                        <Text className="text-sm font-roobert-semibold text-foreground">
+                        <Text 
+                          style={{ 
+                            fontSize: 17,
+                            fontWeight: '600',
+                          }}
+                          className="text-foreground"
+                        >
                           {formatDate(deletionStatus?.deletion_scheduled_for)}
                         </Text>
                       </View>
                     </View>
                     
-                    <View className="pt-3 border-t border-destructive/20">
-                      <Text className="text-sm font-roobert text-muted-foreground leading-5">
+                    <View style={{
+                      paddingTop: 16,
+      borderTopWidth: StyleSheet.hairlineWidth,
+      borderTopColor: colorScheme === 'dark' ? '#38383A' : '#C6C6C8',
+                    }}>
+                      <Text 
+                        style={{ 
+                          fontSize: 15,
+                          lineHeight: 20,
+                        }}
+                        className="text-muted-foreground"
+                      >
                         {t('accountDeletion.cancelRequestDescription')}
                       </Text>
                     </View>
@@ -213,36 +248,89 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
                   </View>
                 </View>
 
-                <View className="mb-6 bg-primary/5 rounded-2xl p-5">
-                  <View className="flex-row items-start gap-3">
-                    <View className="h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                      <Icon as={AlertTriangle} size={18} className="text-primary" strokeWidth={2.5} />
+                <View style={{
+                  backgroundColor: colorScheme === 'dark' ? 'rgba(0, 122, 255, 0.1)' : 'rgba(0, 122, 255, 0.05)',
+                  borderRadius: isIOS ? 20 : 12,
+                  padding: 16,
+                  marginBottom: isIOS ? 20 : 16,
+                  ...(isIOS ? {} : {
+                    elevation: 1,
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.05,
+                    shadowRadius: 2,
+                  }),
+                }}>
+                  <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+                    <View style={{
+                      height: 40,
+                      width: 40,
+                      borderRadius: 20,
+                      backgroundColor: colorScheme === 'dark' ? 'rgba(0, 122, 255, 0.2)' : 'rgba(0, 122, 255, 0.1)',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      <Icon as={AlertTriangle} size={18} color={colorScheme === 'dark' ? '#0A84FF' : '#007AFF'} strokeWidth={2.5} />
                     </View>
-                    <View className="flex-1">
-                      <Text className="text-sm font-roobert-semibold text-foreground mb-1">
+                    <View style={{ flex: 1 }}>
+                      <Text 
+                        style={{ 
+                          fontSize: 15,
+                          fontWeight: '600',
+                          marginBottom: 4,
+                        }}
+                        className="text-foreground"
+                      >
                         {t('accountDeletion.gracePeriod')}
                       </Text>
-                      <Text className="text-sm font-roobert text-muted-foreground leading-5">
+                      <Text 
+                        style={{ 
+                          fontSize: 15,
+                          lineHeight: 20,
+                        }}
+                        className="text-muted-foreground"
+                      >
                         {t('accountDeletion.gracePeriodDescription')}
                       </Text>
                     </View>
                   </View>
                 </View>
 
-                <View className="mb-6">
-                  <Text className="mb-3 text-sm font-roobert-medium text-foreground">
+                <View style={{ marginBottom: isIOS ? 20 : 16 }}>
+                  <Text 
+                    style={{ 
+                      fontSize: isIOS ? 17 : 16,
+                      fontWeight: isIOS ? '400' : '500',
+                      marginBottom: 12,
+                    }}
+                    className="text-foreground"
+                  >
                     {t('accountDeletion.typeDeleteToConfirm', { text: t('accountDeletion.deletePlaceholder') })}
                   </Text>
-                  <TextInput
-                    value={confirmText}
-                    onChangeText={(text) => setConfirmText(text.toUpperCase())}
-                    placeholder={t('accountDeletion.deletePlaceholder')}
-                    placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
-                    className="bg-card border border-border/40 rounded-2xl p-4 text-foreground font-roobert-semibold text-base tracking-wide"
-                    autoCapitalize="characters"
-                    autoCorrect={false}
-                    returnKeyType="done"
-                  />
+                  <View
+                    style={[
+                      groupedBackgroundStyle as ViewStyle,
+                      { padding: 0 }
+                    ]}
+                    className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
+                  >
+                    <TextInput
+                      value={confirmText}
+                      onChangeText={(text) => setConfirmText(text.toUpperCase())}
+                      placeholder={t('accountDeletion.deletePlaceholder')}
+                      placeholderTextColor={colorScheme === 'dark' ? '#71717A' : '#A1A1AA'}
+                      style={{
+                        padding: 16,
+                        fontSize: isIOS ? 17 : 16,
+                        fontWeight: '600',
+                        letterSpacing: 1,
+                        color: colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+                      }}
+                      autoCapitalize="characters"
+                      autoCorrect={false}
+                      returnKeyType="done"
+                    />
+                  </View>
                 </View>
 
                 <ActionButton
@@ -264,10 +352,25 @@ export function AccountDeletionPage({ visible, onClose }: AccountDeletionPagePro
 }
 
 function DataItem({ text }: { text: string }) {
+  const { colorScheme } = useColorScheme();
+  
   return (
-    <View className="flex-row items-start gap-3">
-      <View className="w-1.5 h-1.5 rounded-full bg-muted-foreground mt-2" />
-      <Text className="text-sm font-roobert text-foreground flex-1 leading-5">
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 12 }}>
+      <View style={{
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: colorScheme === 'dark' ? '#8E8E93' : '#6E6E73',
+        marginTop: 7,
+      }} />
+      <Text 
+        style={{ 
+          fontSize: 15,
+          lineHeight: 20,
+          flex: 1,
+        }}
+        className="text-foreground"
+      >
         {text}
       </Text>
     </View>
@@ -286,6 +389,7 @@ interface ActionButtonProps {
 function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label, variant }: ActionButtonProps) {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
+  const isIOS = Platform.OS === 'ios';
 
   const backgroundColor = disabled
     ? (colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED')
@@ -320,7 +424,11 @@ function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label
             size="small" 
             customSize={16}
           />
-          <Text style={{ color: textColor, fontSize: 17, fontWeight: '600' }}>
+          <Text style={{ 
+            color: textColor, 
+            fontSize: isIOS ? 17 : 16, 
+            fontWeight: '600' 
+          }}>
             {t('accountDeletion.processing')}
           </Text>
         </>
@@ -328,11 +436,15 @@ function ActionButton({ onPress, disabled, isLoading, icon: IconComponent, label
         <>
           <Icon 
             as={IconComponent} 
-            size={18} 
+            size={isIOS ? 18 : 20} 
             color={textColor}
             strokeWidth={2.5} 
           />
-          <Text style={{ color: textColor, fontSize: 17, fontWeight: '600' }}>
+          <Text style={{ 
+            color: textColor, 
+            fontSize: isIOS ? 17 : 16, 
+            fontWeight: '600' 
+          }}>
             {label}
           </Text>
         </>

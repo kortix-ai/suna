@@ -10,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SearchBar } from '@/components/ui/SearchBar';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader, BlurFooter } from '@/components/ui';
 import {
   Search,
   Plus,
@@ -26,7 +26,6 @@ import {
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
-import { SettingsDrawer } from '@/components/settings/SettingsDrawer';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
@@ -50,6 +49,7 @@ import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
 import { cn } from '@/lib/utils';
 import { log } from '@/lib/logger';
+import { getBackgroundColor } from '@agentpress/shared';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
 
@@ -209,17 +209,12 @@ export function MenuPage({
   const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
   const insets = useSafeAreaInsets();
   const plusButtonScale = useSharedValue(1);
-  const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
   const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
 
   const handleOpenSettings = React.useCallback(() => {
-    setIsSettingsVisible(true);
-  }, []);
-
-  const handleCloseSettings = React.useCallback(() => {
-    setIsSettingsVisible(false);
-  }, []);
+    router.push('/(settings)');
+  }, [router]);
 
   // Debug trigger drawer visibility
   React.useEffect(() => {
@@ -354,7 +349,7 @@ export function MenuPage({
   };
 
   return (
-    <View className="flex-1 overflow-hidden bg-background">
+    <View className="flex-1 overflow-hidden" style={{ backgroundColor: getBackgroundColor(Platform.OS, colorScheme) }}>
         <SafeAreaView edges={['top']} className="flex-1">
         <View className="flex-1 px-6 pt-2">
           <View className="mb-4 flex-row items-center gap-3">
@@ -647,37 +642,13 @@ export function MenuPage({
                 </>
               )}
             </ScrollView>
-
-            <View
-              className="pointer-events-none absolute bottom-0 left-0 right-0"
-              style={{ height: 70 }}>
-              <LinearGradient
-                colors={
-                  colorScheme === 'dark'
-                    ? [
-                        'rgba(18, 18, 21, 0)',
-                        'rgba(18, 18, 21, 0.2)',
-                        'rgba(18, 18, 21, 0.5)',
-                        'rgba(18, 18, 21, 0.8)',
-                        'rgba(18, 18, 21, 0.95)',
-                        '#121215',
-                      ]
-                    : [
-                        'rgba(248, 248, 248, 0)',
-                        'rgba(248, 248, 248, 0.2)',
-                        'rgba(248, 248, 248, 0.5)',
-                        'rgba(248, 248, 248, 0.8)',
-                        'rgba(248, 248, 248, 0.95)',
-                        '#F8F8F8',
-                      ]
-                }
-                locations={[0, 0.2, 0.4, 0.6, 0.8, 1]}
-                style={{ flex: 1 }}
-              />
-            </View>
           </View>
         </View>
 
+        {/* Blur gradient behind footer - positioned absolutely */}
+        <BlurFooter height={140} intensity={80} />
+
+        {/* Footer section with search and actions */}
         <View className="gap-4 px-6" style={{ paddingBottom: Math.max(insets.bottom, 16) + 16}}>
           <View className="flex-row items-center gap-3">
             <View className="flex-1">
@@ -792,12 +763,6 @@ export function MenuPage({
           onClose={onCloseWorkerConfigDrawer || (() => {})}
         />
       )}
-
-      <SettingsDrawer
-        visible={isSettingsVisible}
-        onClose={handleCloseSettings}
-        profile={profile}
-      />
     </View>
   );
 }

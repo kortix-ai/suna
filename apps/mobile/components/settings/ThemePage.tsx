@@ -1,20 +1,13 @@
 import * as React from 'react';
-import { Pressable, View, ScrollView, Platform, StyleSheet, TouchableOpacity } from 'react-native';
-import Animated, { 
-  useAnimatedStyle, 
-  useSharedValue, 
-  withSpring
-} from 'react-native-reanimated';
+import { View, ScrollView, Platform, StyleSheet, TouchableOpacity, ViewStyle } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Sun, Moon, Check, Monitor } from 'lucide-react-native';
-import { NativeHeader } from './NativeHeader';
 import * as Haptics from 'expo-haptics';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+import { getDrawerBackgroundColor } from '@agentpress/shared';
 
 const THEME_PREFERENCE_KEY = '@theme_preference';
 type ThemePreference = 'light' | 'dark' | 'system';
@@ -22,9 +15,10 @@ type ThemePreference = 'light' | 'dark' | 'system';
 interface ThemePageProps {
   visible: boolean;
   onClose: () => void;
+  isDrawer?: boolean;
 }
 
-export function ThemePage({ visible, onClose }: ThemePageProps) {
+export function ThemePage({ visible, onClose, isDrawer = false }: ThemePageProps) {
   const { colorScheme, setColorScheme } = useColorScheme();
   const { t } = useLanguage();
   
@@ -96,9 +90,7 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
   
   if (!visible) return null;
 
-  const backgroundColor = Platform.OS === 'ios'
-    ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
-    : (colorScheme === 'dark' ? '#121212' : '#F5F5F5');
+  const backgroundColor = getDrawerBackgroundColor(Platform.OS, colorScheme);
 
   if (themePreference === null) {
     return (
@@ -108,29 +100,30 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
     );
   }
   
+  const isIOS = Platform.OS === 'ios';
+  
+  const groupedBackgroundStyle = isIOS 
+    ? { borderRadius: 20, overflow: 'hidden' }
+    : { 
+        backgroundColor: colorScheme === 'dark' ? '#1E1E1E' : '#FFFFFF',
+        borderRadius: 12,
+      };
+
   return (
-    <View style={{ flex: 1, backgroundColor }}>
-      <NativeHeader
-        title={t('theme.title')}
-        onBack={handleClose}
-      />
-      
+    <View style={{ flex: 1, backgroundColor, width: '100%', overflow: 'hidden' }}>
       <ScrollView 
-        style={{ flex: 1 }}
-        contentContainerStyle={{ padding: 16 }}
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ padding: 16, width: '100%' }}
         showsVerticalScrollIndicator={false}
         removeClippedSubviews={true}
       >
-        <View style={{ 
-          backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF',
-          borderRadius: 20,
-          overflow: 'hidden',
-          marginBottom: 16,
-        }}>
+        <View 
+          style={groupedBackgroundStyle as ViewStyle}
+          className={isIOS ? 'bg-muted-foreground/10 rounded-2xl' : ''}
+        >
           <ThemeOption
             icon={Sun}
             label={t('theme.light')}
-            description={t('theme.lightDescription')}
             isSelected={themePreference === 'light'}
             onPress={() => handleThemeSelect('light')}
             disabled={isTransitioning}
@@ -140,7 +133,6 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
           <ThemeOption
             icon={Moon}
             label={t('theme.dark')}
-            description={t('theme.darkDescription')}
             isSelected={themePreference === 'dark'}
             onPress={() => handleThemeSelect('dark')}
             disabled={isTransitioning}
@@ -149,7 +141,6 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
           <ThemeOption
             icon={Monitor}
             label={t('theme.system')}
-            description={t('theme.systemDescription')}
             isSelected={themePreference === 'system'}
             onPress={() => handleThemeSelect('system')}
             disabled={isTransitioning}
@@ -165,7 +156,6 @@ export function ThemePage({ visible, onClose }: ThemePageProps) {
 interface ThemeOptionProps {
   icon: typeof Sun;
   label: string;
-  description: string;
   isSelected: boolean;
   onPress: () => void;
   disabled?: boolean;
@@ -173,8 +163,12 @@ interface ThemeOptionProps {
   isLast?: boolean;
 }
 
-function ThemeOption({ icon, label, description, isSelected, onPress, disabled, isFirst, isLast }: ThemeOptionProps) {
+function ThemeOption({ icon, label, isSelected, onPress, disabled, isFirst, isLast }: ThemeOptionProps) {
   const { colorScheme } = useColorScheme();
+  const isIOS = Platform.OS === 'ios';
+  
+  // Match SettingsPage colors exactly
+  const separatorColor = colorScheme === 'dark' ? '#38383A' : '#C6C6C8';
   
   return (
     <>
@@ -182,41 +176,46 @@ function ThemeOption({ icon, label, description, isSelected, onPress, disabled, 
         <View
           style={{
             height: StyleSheet.hairlineWidth,
-            backgroundColor: colorScheme === 'dark' ? '#38383A' : '#C6C6C8',
-            marginLeft: 16,
+            backgroundColor: separatorColor,
+            marginLeft: isIOS ? 52 : 16,
           }}
         />
       )}
       <TouchableOpacity
         onPress={disabled ? undefined : onPress}
         disabled={disabled}
-        activeOpacity={0.6}
+        activeOpacity={isIOS ? 0.6 : 0.7}
         style={{
           paddingHorizontal: 16,
-          paddingVertical: 12,
-          minHeight: 56,
+          paddingVertical: isIOS ? 11 : 14,
+          minHeight: isIOS ? 44 : 56,
           flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'space-between',
         }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: isIOS ? 12 : 16, flex: 1 }}>
           <Icon 
             as={icon} 
-            size={24} 
+            size={isIOS ? 20 : 24} 
             className="text-foreground"
             strokeWidth={2} 
           />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 17, color: colorScheme === 'dark' ? '#FFFFFF' : '#000000' }}>
-              {label}
-            </Text>
-          </View>
+          <Text 
+            style={{ 
+              fontSize: isIOS ? 17 : 16,
+              fontWeight: isIOS ? '400' : '500',
+              flex: 1,
+            }}
+            className="text-foreground"
+          >
+            {label}
+          </Text>
         </View>
         
         {isSelected && (
           <Icon 
             as={Check} 
-            size={24}
+            size={isIOS ? 20 : 24}
             color={colorScheme === 'dark' ? '#0A84FF' : '#007AFF'}
             strokeWidth={2.5} 
           />

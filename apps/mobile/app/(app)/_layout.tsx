@@ -1,9 +1,16 @@
 import { Stack } from 'expo-router';
+import { Platform } from 'react-native';
 import { useColorScheme } from 'nativewind';
+import { getBackgroundColor } from '@agentpress/shared';
+import * as React from 'react';
 
 export default function AppLayout() {
   const { colorScheme } = useColorScheme();
-  const isDark = colorScheme === 'dark';
+  
+  const backgroundColor = React.useMemo(
+    () => getBackgroundColor(Platform.OS, colorScheme),
+    [colorScheme]
+  );
 
   return (
     <Stack
@@ -15,7 +22,7 @@ export default function AppLayout() {
         fullScreenGestureEnabled: true,
         animationDuration: 300,
         contentStyle: {
-          backgroundColor: isDark ? '#000000' : '#FFFFFF',
+          backgroundColor,
         },
       }}
     >

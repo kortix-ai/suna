@@ -1,7 +1,9 @@
 import * as React from 'react';
-import { type ViewProps } from 'react-native';
+import { Platform, type ViewProps } from 'react-native';
 import { Avatar } from '@/components/ui/Avatar';
 import type { LucideIcon } from 'lucide-react-native';
+import { getDrawerBackgroundColor } from '@agentpress/shared';
+import { colorScheme, useColorScheme } from 'nativewind';
 
 interface ThreadAvatarProps extends ViewProps {
   title?: string;
@@ -29,13 +31,14 @@ export function ThreadAvatar({
   style, 
   ...props 
 }: ThreadAvatarProps) {
+  const { colorScheme } = useColorScheme();
   return (
     <Avatar
       variant="thread"
       size={size}
       icon={icon}
       backgroundColor={backgroundColor}
-      iconColor={iconColor}
+      iconColor={iconColor || getDrawerBackgroundColor(Platform.OS, colorScheme)}
       fallbackText={title}
       style={style}
       {...props}

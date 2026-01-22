@@ -1,14 +1,16 @@
 import * as React from 'react';
-import { View, Platform, Dimensions } from 'react-native';
+import { View, Platform, ScrollView, TouchableOpacity } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import * as Haptics from 'expo-haptics';
 import { useLanguage, useAuthContext } from '@/contexts';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView, TouchableOpacity as BottomSheetTouchable } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { ReanimatedTrueSheet } from '@lodev09/react-native-true-sheet/reanimated';
+import type { TrueSheet } from '@lodev09/react-native-true-sheet';
 import { useColorScheme } from 'nativewind';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { SettingsIcon, X } from 'lucide-react-native';
+import { X, ChevronLeft } from 'lucide-react-native';
 import { log } from '@/lib/logger';
 import { SettingsPage } from './SettingsPage';
 import { NameEditPage } from './NameEditPage';
@@ -18,9 +20,7 @@ import { BetaPage } from './BetaPage';
 import { AccountDeletionPage } from './AccountDeletionPage';
 import type { UserProfile } from '../menu/types';
 import { isLiquidGlassAvailable, GlassView } from 'expo-glass-effect';
-import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+import { getBorderRadius, getDrawerBackgroundColor } from '@agentpress/shared';
 
 interface SettingsDrawerProps {
   visible: boolean;
@@ -31,7 +31,8 @@ interface SettingsDrawerProps {
 type PageType = 'main' | 'name' | 'language' | 'theme' | 'beta' | 'account-deletion';
 
 export function SettingsDrawer({ visible, onClose, profile }: SettingsDrawerProps) {
-  const bottomSheetRef = React.useRef<BottomSheet>(null);
+  const trueSheetRef = React.useRef<TrueSheet>(null);
+  const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const isOpeningRef = React.useRef(false);
   const timeoutRef = React.useRef<NodeJS.Timeout | null>(null);
   const snapPoints = React.useMemo(() => ['95%'], []);
@@ -39,9 +40,10 @@ export function SettingsDrawer({ visible, onClose, profile }: SettingsDrawerProp
   const insets = useSafeAreaInsets();
   const { t } = useLanguage();
   const { user } = useAuthContext();
-  
+
   const [currentPage, setCurrentPage] = React.useState<PageType>('main');
-  const translateX = useSharedValue(0);
+
+  const cornerRadius = getBorderRadius(Platform.OS, '2xl');
 
   React.useEffect(() => {
     if (visible && !isOpeningRef.current) {
@@ -49,21 +51,30 @@ export function SettingsDrawer({ visible, onClose, profile }: SettingsDrawerProp
 
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       timeoutRef?.current && setTimeout(() => {
-        log.log('📳 [SettingsDrawer] Fallback timeout - resetting guard');
         isOpeningRef.current = false;
       }, 500);
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      log.log('📳 Haptic Feedback: Settings Drawer Opened');
-      bottomSheetRef.current?.snapToIndex(0);
+
+      if (Platform.OS === 'ios') {
+        trueSheetRef.current?.present();
+      } else {
+        bottomSheetRef.current?.present();
+      }
     } else if (!visible) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      bottomSheetRef.current?.close();
+
+      setCurrentPage('main');
+
+      if (Platform.OS === 'ios') {
+        trueSheetRef.current?.dismiss();
+      } else {
+        bottomSheetRef.current?.dismiss();
+      }
     }
   }, [visible]);
 
   const handleClose = React.useCallback(() => {
-    log.log('🎯 Settings drawer closing');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     onClose();
   }, [onClose]);
@@ -81,172 +92,218 @@ export function SettingsDrawer({ visible, onClose, profile }: SettingsDrawerProp
     []
   );
 
-  const handleSheetChange = React.useCallback((index: number) => {
-    log.log('📳 [SettingsDrawer] Sheet index changed:', index);
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    if (index === -1) {
-      isOpeningRef.current = false;
-      setCurrentPage('main');
-      translateX.value = 0;
-      onClose();
-    } else if (index >= 0) {
-      isOpeningRef.current = false;
-    }
+  const handleSheetChange = React.useCallback(
+    (index: number) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      if (index === -1) {
+        isOpeningRef.current = false;
+        setCurrentPage('main');
+        onClose();
+      } else if (index >= 0) {
+        isOpeningRef.current = false;
+      }
+    },
+    [onClose]
+  );
+
+  const handleDismiss = React.useCallback(() => {
+    isOpeningRef.current = false;
+    setCurrentPage('main');
+    onClose();
   }, [onClose]);
 
   const handleNavigate = React.useCallback((page: PageType) => {
     setCurrentPage(page);
-    translateX.value = withTiming(SCREEN_WIDTH, {
-      duration: 300,
-      easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-    });
   }, []);
 
   const handleBack = React.useCallback(() => {
-    translateX.value = withTiming(0, {
-      duration: 300,
-      easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-    });
-    setTimeout(() => setCurrentPage('main'), 300);
+    setCurrentPage('main');
   }, []);
 
-  React.useEffect(() => {
-    const targetValue = currentPage === 'main' ? 0 : SCREEN_WIDTH;
-    if (Math.abs(translateX.value - targetValue) > 10) {
-      translateX.value = withTiming(targetValue, {
-        duration: 300,
-        easing: Easing.bezier(0.25, 0.1, 0.25, 1),
-      });
+  const getPageTitle = () => {
+    switch (currentPage) {
+      case 'name':
+        return t('nameEdit.title');
+      case 'language':
+        return t('language.title');
+      case 'theme':
+        return t('theme.title');
+      case 'beta':
+        return t('beta.title');
+      case 'account-deletion':
+        return t('accountDeletion.title');
+      default:
+        return t('settings.title', 'Settings');
     }
-  }, [currentPage]);
+  };
 
-  const mainPageStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: -translateX.value * 0.3 }],
-    opacity: 1 - (translateX.value / SCREEN_WIDTH) * 0.3,
-  }));
+  const renderHeader = () => (
+    <View className="relative flex-row items-center justify-center px-6 py-3">
+      {currentPage !== 'main' && (
+        <TouchableOpacity
+          onPress={handleBack}
+          activeOpacity={0.6}
+          style={{ position: 'absolute', left: 24 }}
+        >
+          {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
+            <GlassView
+              glassEffectStyle="regular"
+              tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+              style={{
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderRadius: 22,
+                height: 44,
+                width: 44,
+              }}
+            >
+              <Icon as={ChevronLeft} size={22} className="text-foreground" strokeWidth={2} />
+            </GlassView>
+          ) : (
+            <View
+              style={{
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED',
+                borderRadius: 22,
+                height: 44,
+                width: 44,
+              }}
+            >
+              <Icon as={ChevronLeft} size={22} className="text-foreground" strokeWidth={2} />
+            </View>
+          )}
+        </TouchableOpacity>
+      )}
+      <Text className="font-roobert-bold text-lg text-foreground">{getPageTitle()}</Text>
+      <TouchableOpacity
+        onPress={handleClose}
+        activeOpacity={0.6}
+        style={{ position: 'absolute', right: 24 }}
+      >
+        {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
+          <GlassView
+            glassEffectStyle="regular"
+            tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+            style={{
+              justifyContent: 'center',
+              alignItems: 'center',
+              borderRadius: 22,
+              height: 44,
+              width: 44,
+            }}
+          >
+            <Icon as={X} size={22} className="text-foreground" strokeWidth={2} />
+          </GlassView>
+        ) : (
+          <View
+            style={{
+              justifyContent: 'center',
+              alignItems: 'center',
+              backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED',
+              borderRadius: 22,
+              height: 44,
+              width: 44,
+            }}
+          >
+            <Icon as={X} size={22} className="text-foreground" strokeWidth={2} />
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
 
-  const subPageStyle = useAnimatedStyle(() => ({
-    transform: [{ translateX: SCREEN_WIDTH - translateX.value }],
-  }));
+  const renderContent = () => {
+    const ScrollComponent = Platform.OS === 'ios' ? ScrollView : BottomSheetScrollView;
 
+    return (
+      <ScrollComponent
+        style={{ flex: 1, width: '100%' }}
+        contentContainerStyle={{ paddingBottom: insets.bottom, width: '100%' }}
+        showsVerticalScrollIndicator={false}
+      >
+        {currentPage === 'main' && (
+          <SettingsPage
+            visible={visible}
+            profile={profile}
+            onClose={handleClose}
+            isDrawer={true}
+            onNavigate={handleNavigate}
+          />
+        )}
+        {currentPage === 'name' && (
+          <NameEditPage
+            visible={true}
+            currentName={user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
+            onClose={handleBack}
+            isDrawer={true}
+          />
+        )}
+        {currentPage === 'language' && (
+          <LanguagePage visible={true} onClose={handleBack} isDrawer={true} />
+        )}
+        {currentPage === 'theme' && <ThemePage visible={true} onClose={handleBack} isDrawer={true} />}
+        {currentPage === 'beta' && <BetaPage visible={true} onClose={handleBack} isDrawer={true} />}
+        {currentPage === 'account-deletion' && (
+          <AccountDeletionPage visible={true} onClose={handleBack} isDrawer={true} />
+        )}
+      </ScrollComponent>
+    );
+  };
 
-  return (
-    <BottomSheet
-      ref={bottomSheetRef}
-      index={-1}
-      snapPoints={snapPoints}
-      onChange={handleSheetChange}
-      backdropComponent={renderBackdrop}
-      handleIndicatorStyle={{ display: 'none' }}
-      backgroundStyle={{
-        backgroundColor: Platform.OS === 'ios'
-          ? (colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF')
-          : (colorScheme === 'dark' ? '#121212' : '#F5F5F5'),
-        borderTopLeftRadius: Platform.OS === 'ios' ? 36 : 24,
-        borderTopRightRadius: Platform.OS === 'ios' ? 36 : 24,
+  const sheetContent = (
+    <View
+      style={{
+        flex: 1,
         overflow: 'hidden',
+        width: '100%',
+        backgroundColor: getDrawerBackgroundColor(Platform.OS, colorScheme),
       }}
     >
-      <View style={{ flex: 1, overflow: 'hidden' }}>
-        <View 
-          pointerEvents={currentPage === 'main' ? 'auto' : 'none'}
-          className="relative flex-row items-center justify-center px-6 py-3">
-            <Text className="font-roobert-bold text-lg text-foreground">
-              {t('settings.title', 'Settings')}
-            </Text>
-            <BottomSheetTouchable onPress={handleClose} activeOpacity={0.6} style={{ position: 'absolute', right: 24 }}>
-              {isLiquidGlassAvailable() ? (
-                <GlassView
-                    glassEffectStyle="regular"
-                    tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                    style={{
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      borderRadius: 22,
-                      height: 44,
-                      width: 44,
-                    }}>
-                    <Icon as={X} size={22} className="text-foreground" strokeWidth={2} />
-                  </GlassView>
-                ) : (
-                  <View
-                    style={{
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED',
-                      borderRadius: 22,
-                      height: 44,
-                      width: 44,
-                    }}>
-                    <Icon as={X} size={22} className="text-foreground" strokeWidth={2} />
-                  </View>
-              )}
-          </BottomSheetTouchable>
-        </View>
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 60,
-              left: 0,
-              right: 0,
-              bottom: 0,
-            },
-            mainPageStyle,
-          ]}
-          pointerEvents={currentPage === 'main' ? 'auto' : 'none'}
+      {renderHeader()}
+      {renderContent()}
+    </View>
+  );
+
+  return (
+    <>
+      {Platform.OS === 'ios' && (
+        <ReanimatedTrueSheet
+          ref={trueSheetRef}
+          detents={[0.95]}
+          onDidDismiss={handleDismiss}
+          cornerRadius={cornerRadius}
+          initialDetentIndex={0}
         >
-          <BottomSheetScrollView
-            style={{ flex: 1 }}
-            contentContainerStyle={{ paddingBottom: insets.bottom }}
-            showsVerticalScrollIndicator={false}
-          >
-            <SettingsPage 
-              visible={visible} 
-              profile={profile} 
-              onClose={handleClose} 
-              isDrawer={true}
-              onNavigate={handleNavigate}
-            />
-          </BottomSheetScrollView>
-        </Animated.View>
-        <Animated.View
-          style={[
-            {
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-            },
-            subPageStyle,
-          ]}
-          pointerEvents={currentPage !== 'main' ? 'auto' : 'none'}
+          {sheetContent}
+        </ReanimatedTrueSheet>
+      )}
+
+      {Platform.OS === 'android' && (
+        <BottomSheetModal
+          ref={bottomSheetRef}
+          index={0}
+          snapPoints={snapPoints}
+          onChange={handleSheetChange}
+          backdropComponent={renderBackdrop}
+          handleIndicatorStyle={{ display: 'none' }}
+          backgroundStyle={{
+            backgroundColor: getDrawerBackgroundColor(Platform.OS, colorScheme),
+            borderTopLeftRadius: getBorderRadius(Platform.OS, '2xl'),
+            borderTopRightRadius: getBorderRadius(Platform.OS, '2xl'),
+            overflow: 'hidden',
+            width: '100%',
+          }}
+          style={{
+            width: '100%',
+          }}
         >
-          {currentPage === 'name' && (
-            <NameEditPage
-              visible={true}
-              currentName={user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User'}
-              onClose={handleBack}
-            />
-          )}
-          {currentPage === 'language' && (
-            <LanguagePage visible={true} onClose={handleBack} />
-          )}
-          {currentPage === 'theme' && (
-            <ThemePage visible={true} onClose={handleBack} />
-          )}
-          {currentPage === 'beta' && (
-            <BetaPage visible={true} onClose={handleBack} />
-          )}
-          {currentPage === 'account-deletion' && (
-            <AccountDeletionPage visible={true} onClose={handleBack} />
-          )}
-        </Animated.View>
-      </View>
-    </BottomSheet>
+          <BottomSheetView style={{ flex: 1, width: '100%' }}>{sheetContent}</BottomSheetView>
+        </BottomSheetModal>
+      )}
+    </>
   );
 }

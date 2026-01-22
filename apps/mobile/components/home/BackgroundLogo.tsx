@@ -30,7 +30,7 @@ export function BackgroundLogo({ minimal = false }: BackgroundLogoProps) {
 
   if(minimal) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
+      <View className="flex-1 items-center justify-center">
         <View className='mb-20 opacity-30'>
           <KortixLogo size={50} />
         </View>

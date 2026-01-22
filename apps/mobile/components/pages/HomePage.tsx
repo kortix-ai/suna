@@ -12,6 +12,9 @@ import { useChatCommons } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
 import { log } from '@/lib/logger';
+import { getBackgroundColor } from '@agentpress/shared';
+import { Platform } from 'react-native';
+import { useColorScheme } from 'nativewind';
 
 const SWIPE_THRESHOLD = 50;
 
@@ -32,6 +35,7 @@ export interface HomePageRef {
 export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
   ({ chat, isAuthenticated, onOpenWorkerConfig: externalOpenWorkerConfig, showThreadListView = false }, ref) => {
     const router = useRouter();
+    const { colorScheme } = useColorScheme();
     const { agentManager, audioRecorder, audioHandlers, isTranscribing } = useChatCommons(chat);
 
     const handleMenuPress = React.useCallback(() => {
@@ -186,8 +190,14 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
       }
     }, []);
 
+    const backgroundColor = React.useMemo(() => {
+      const color = getBackgroundColor(Platform.OS, colorScheme);
+      log.log('[HomePage] Background color:', { platform: Platform.OS, colorScheme, color });
+      return color;
+    }, [colorScheme]);
+
     return (
-      <View className="flex-1 bg-background">
+      <View className="flex-1" style={{ backgroundColor }}>
         <View className="relative flex-1">
           <TopNav
             onMenuPress={handleMenuPress}
@@ -204,7 +214,9 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
                     onThreadPress={handleQuickActionThreadPress}
                   />
                 ) : (
-                  <BackgroundLogo minimal={true} />
+                  <View className="opacity-70">
+                    <BackgroundLogo minimal={false} />
+                  </View>
                 )}
               </View>
             </GestureDetector>

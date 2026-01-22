@@ -1,17 +1,19 @@
 import * as React from 'react';
-import { View } from 'react-native';
+import { Platform, View } from 'react-native';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ThreadPage } from '@/components/pages';
-import { useChat, useAgentManager } from '@/hooks';
+import { useChat } from '@/hooks';
 import { useAuthContext } from '@/contexts';
 import { log } from '@/lib/logger';
+import { getBackgroundColor } from '@agentpress/shared';
+import { useColorScheme } from 'nativewind';
 
 export default function ThreadScreen() {
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { isAuthenticated } = useAuthContext();
   const chat = useChat();
-  const agentManager = useAgentManager();
+  const { colorScheme } = useColorScheme();
 
   React.useEffect(() => {
     if (id && id !== chat.activeThread?.id) {
@@ -47,7 +49,7 @@ export default function ThreadScreen() {
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
-      <View className="flex-1 bg-background">
+      <View className="flex-1" style={{ backgroundColor: getBackgroundColor(Platform.OS, colorScheme) }}>
         <ThreadPage
           onMenuPress={handleBackPress}
           onNewChat={handleNewChat}
