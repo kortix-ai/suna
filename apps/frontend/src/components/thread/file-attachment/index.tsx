@@ -374,6 +374,18 @@ function isUrl(str: string): boolean {
     return str.startsWith('http://') || str.startsWith('https://');
 }
 
+// Helper function to check if a URL points to an image
+function isImageUrl(url: string): boolean {
+    try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname.toLowerCase();
+        const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.ico', '.heic', '.heif'];
+        return imageExtensions.some(ext => pathname.endsWith(ext));
+    } catch {
+        return false;
+    }
+}
+
 export function FileAttachmentGrid({
     attachments,
     onFileClick,
@@ -425,6 +437,45 @@ export function FileAttachmentGrid({
             {urls.length > 0 && (
                 <div className="space-y-3">
                     {urls.map((url, index) => {
+                        // Check if this URL is an image
+                        if (isImageUrl(url)) {
+                            // Extract filename from URL for caption
+                            let imageName = '';
+                            try {
+                                const urlObj = new URL(url);
+                                const pathname = urlObj.pathname;
+                                imageName = pathname.split('/').pop() || '';
+                                // Decode URI and clean up the name
+                                imageName = decodeURIComponent(imageName).replace(/[_-]/g, ' ');
+                            } catch {
+                                // Keep empty if parsing fails
+                            }
+
+                            return (
+                                <span
+                                    key={`url-${index}`}
+                                    className="block my-5"
+                                >
+                                    <img
+                                        src={url}
+                                        alt={imageName}
+                                        className={cn(
+                                            "max-w-full h-auto rounded-xl",
+                                            "border border-border/40",
+                                            "shadow-sm"
+                                        )}
+                                        loading="lazy"
+                                    />
+                                    {imageName && (
+                                        <span className="block mt-2 text-center text-sm text-muted-foreground">
+                                            {imageName}
+                                        </span>
+                                    )}
+                                </span>
+                            );
+                        }
+
+                        // Non-image URLs: render with iframe preview
                         let domain = url;
                         try {
                             const urlObj = new URL(url);
@@ -432,7 +483,7 @@ export function FileAttachmentGrid({
                         } catch {
                             // Keep original URL if parsing fails
                         }
-                        
+
                         return (
                             <div
                                 key={`url-${index}`}
