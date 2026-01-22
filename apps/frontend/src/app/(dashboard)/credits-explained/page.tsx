@@ -13,13 +13,13 @@ export default function CreditsPage() {
   const t = useTranslations('billing.creditsExplainedPage');
 
   return (
-    <div className="container mx-auto max-w-4xl px-4 py-8 md:py-12">
+    <div className="container mx-auto max-w-4xl px-3 sm:px-4 py-4 sm:py-8 md:py-12">
       {/* Header Section */}
-      <div className="space-y-3 mb-10">
-        <h1 className="text-3xl md:text-4xl font-medium tracking-tight text-foreground">
+      <div className="space-y-2 sm:space-y-3 mb-6 sm:mb-10">
+        <h1 className="text-2xl sm:text-3xl md:text-4xl font-medium tracking-tight text-foreground">
           {t('title')}
         </h1>
-        <p className="text-lg text-muted-foreground">
+        <p className="text-base sm:text-lg text-muted-foreground">
           {t('subtitle')}
         </p>
       </div>

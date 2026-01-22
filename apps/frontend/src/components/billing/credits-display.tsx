@@ -26,8 +26,8 @@ export function CreditsDisplay() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center gap-2 border-[1.5px] border-border/60 dark:border-border rounded-full px-3.5 py-2 h-[41px] bg-background">
-        <Skeleton className="h-4 w-24 bg-muted/50 dark:bg-muted" />
+      <div className="flex items-center gap-1.5 sm:gap-2 border-[1.5px] border-border/60 dark:border-border rounded-full px-2 sm:px-3 h-9 bg-background">
+        <Skeleton className="h-4 w-16 sm:w-24 bg-muted/50 dark:bg-muted" />
       </div>
     );
   }
@@ -54,11 +54,11 @@ export function CreditsDisplay() {
       <button
         onClick={handleClick}
         className={cn(
-          "group flex items-center gap-2.5 border-[1.5px] rounded-full pl-2 pr-2 py-2 h-[41px]",
+          "group flex items-center gap-1.5 sm:gap-2 border-[1.5px] rounded-full px-1.5 sm:px-2 h-9",
           "bg-background dark:bg-background",
           "border-border/60 dark:border-border",
           "hover:bg-accent/30 dark:hover:bg-accent/20 hover:border-border dark:hover:border-border/80",
-          "transition-all duration-200 cursor-pointer",
+          "transition-all duration-200 cursor-pointer touch-manipulation",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         )}
       >
@@ -68,16 +68,16 @@ export function CreditsDisplay() {
           size="md" 
           isLocal={isLocal} 
         />
-        <div className="flex items-baseline gap-1.5 min-w-0 flex-shrink-0">
-          <span className="text-[15px] font-medium text-foreground dark:text-foreground leading-none tabular-nums">
+        <div className="flex items-baseline gap-1 sm:gap-1.5 min-w-0 flex-shrink-0">
+          <span className="text-sm sm:text-[15px] font-medium text-foreground dark:text-foreground leading-none tabular-nums">
             {formattedCredits}
           </span>
-          <span className="text-[13px] font-medium text-muted-foreground dark:text-muted-foreground/60 leading-none whitespace-nowrap">
+          <span className="hidden sm:inline text-[13px] font-medium text-muted-foreground dark:text-muted-foreground/60 leading-none whitespace-nowrap">
             Credits
           </span>
         </div>
-        <div className="flex items-center justify-center h-[24px] w-[24px] rounded-full bg-black dark:bg-white group-hover:bg-black/90 dark:group-hover:bg-white/90 transition-colors flex-shrink-0">
-          <Plus className="h-3 w-3 text-white dark:text-black font-bold stroke-[2.5]" />
+        <div className="flex items-center justify-center h-5 w-5 sm:h-6 sm:w-6 rounded-full bg-black dark:bg-white group-hover:bg-black/90 dark:group-hover:bg-white/90 transition-colors flex-shrink-0">
+          <Plus className="h-2.5 w-2.5 sm:h-3 sm:w-3 text-white dark:text-black font-bold stroke-[2.5]" />
         </div>
       </button>
       <PlanSelectionModal

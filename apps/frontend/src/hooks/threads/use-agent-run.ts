@@ -39,14 +39,14 @@ export const useStartAgentMutation = () => {
       options?: {
         model_name?: string;
         agent_id?: string;
-        file_ids?: string[];
+        files?: File[];
       };
     }) => unifiedAgentStart({
       threadId,
       prompt,
       model_name: options?.model_name && options.model_name.trim() ? options.model_name.trim() : undefined,
       agent_id: options?.agent_id,
-      file_ids: options?.file_ids,
+      files: options?.files,
     }),
     onSuccess: () => {
       // Invalidate active agent runs to update the sidebar status indicators

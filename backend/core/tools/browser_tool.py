@@ -12,53 +12,82 @@ from PIL import Image
 from core.utils.config import config
 
 @tool_metadata(
-    display_name="Web Browser",
-    description="Browse websites, click buttons, fill forms, and extract information from web pages",
+    display_name="Browser",
+    description="Interact with web pages using mouse and keyboard, take screenshots, and extract content",
     icon="Globe",
     color="bg-cyan-100 dark:bg-cyan-800/50",
     weight=60,
     visible=True,
     usage_guide="""
-### BROWSER AUTOMATION CAPABILITIES
+## Browser - Web page interaction and automation
 
-**CORE BROWSER FUNCTIONS:**
-- browser_navigate_to with url parameter - Navigate to any URL
-- browser_act with action, variables, iframes, filePath parameters - Perform ANY browser action using natural language
-  * Examples: "click the login button", "fill in email with user@example.com", "scroll down", "select option from dropdown"
-  * Supports variables for secure data entry (not shared with LLM providers)
-  * Handles iframes when needed
-  * CRITICAL: Include filePath parameter for ANY action involving file uploads to prevent accidental file dialog triggers
-- browser_extract_content with instruction and iframes parameters - Extract structured content from pages
-  * Example: "extract all product prices", "get apartment listings with address and price"
-- browser_screenshot with name parameter - Take screenshots of the current page
+Use a mouse and keyboard to interact with a web browser, and take screenshots. Full browser automation using natural language actions in a sandboxed environment.
 
-**WHAT YOU CAN DO:**
-- Navigate to any URL and browse websites
-- Click buttons, links, and any interactive elements
-- Fill out forms with text, numbers, emails, etc.
-- Select options from dropdowns and menus
-- Scroll pages (up, down, to specific elements)
-- Handle dynamic content and JavaScript-heavy sites
-- Extract structured data from pages
-- Take screenshots at any point
-- Press keyboard keys (Enter, Escape, Tab, etc.)
-- Handle iframes and embedded content
-- Upload files (use filePath parameter in browser_act)
-- Navigate browser history (go back, forward)
-- Wait for content to load
-- The browser is in a sandboxed environment, so nothing to worry about
+### Available Tools
+- **browser_navigate_to**: Navigate to any URL
+- **browser_act**: Perform ANY action using natural language (click, type, scroll, etc.)
+- **browser_extract_content**: Extract structured data from pages
+- **browser_screenshot**: Capture current page state
 
-**CRITICAL BROWSER VALIDATION WORKFLOW:**
-- Every browser action automatically provides a screenshot - ALWAYS review it carefully
-- When entering values (phone numbers, emails, text), explicitly verify the screenshot shows the exact values you intended
-- Only report success when visual confirmation shows the exact intended values are present
-- For any data entry action, your response should include: "Verified: [field] shows [actual value]" or "Error: Expected [intended] but field shows [actual]"
-- The screenshot is automatically included with every browser action - use it to verify results
-- Never assume form submissions worked correctly without reviewing the provided screenshot
+### When to Use
+- Interacting with websites that require clicks, forms, logins
+- Extracting data from dynamic pages that require JavaScript
+- Filling out forms or completing multi-step web flows
+- Verifying website state or visual elements
+- Any task requiring visual inspection of web content
 
-**SCREENSHOT SHARING:**
-- To share browser screenshots permanently, use `upload_file` tool
-- Capture & Upload Workflow: Browser action → Screenshot generated → Upload to cloud → Share URL for documentation
+### When NOT to Use
+- Simple static content extraction → use scrape_webpage first (faster)
+- API-based data retrieval → use appropriate API tools
+- For GitHub URLs → prefer using the gh CLI via Bash instead
+
+### browser_act - Natural Language Actions
+
+Describe what you want to do in natural language:
+- "click the login button"
+- "fill in email with user@example.com"
+- "scroll down"
+- "select 'Option A' from the dropdown"
+- "press Enter"
+
+**Supports:**
+- Clicking any element (buttons, links, images)
+- Form filling (text, numbers, emails, passwords)
+- Dropdown selection
+- Scrolling (up, down, to element)
+- Keyboard input (Enter, Tab, Escape)
+- File uploads (use filePath parameter)
+- iframes (use iframes parameter)
+
+### Screenshot Validation
+
+**IMPORTANT:** Every browser action returns a screenshot.
+- Whenever you intend to click on an element, consult the screenshot to determine coordinates
+- If a click failed to load, try adjusting your click location so the cursor tip falls on the element
+- Make sure to click buttons, links, icons with the cursor tip in the center of the element
+- Review screenshots after each action to verify expected results
+
+### Usage Pattern
+
+```
+# Navigate to site
+browser_navigate_to(url="https://example.com")
+
+# Perform actions
+browser_act(action="click the Sign In button")
+browser_act(action="fill in username with john@email.com")
+browser_act(action="fill in password with ***", variables={"password": "actual_pass"})
+browser_act(action="click Submit")
+
+# Extract data
+browser_extract_content(instruction="get all product names and prices")
+```
+
+### Important Notes
+- Screenshots auto-included with every action - use them to verify
+- Use variables parameter for sensitive data (not logged to LLM providers)
+- Include filePath for any file upload actions
+- Browser is sandboxed - safe for any site
 """
 )
 class BrowserTool(SandboxToolsBase):

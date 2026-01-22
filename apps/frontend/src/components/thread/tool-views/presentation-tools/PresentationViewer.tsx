@@ -105,25 +105,82 @@ export function PresentationViewer({
     return name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
   };
 
-  // Extract presentation info from toolCall.arguments (available during streaming)
-  const streamingSlideNumber = toolCall?.arguments?.slide_number as number | undefined;
-  const streamingPresentationName = toolCall?.arguments?.presentation_name as string | undefined;
-  const streamingSlideTitle = toolCall?.arguments?.slide_title as string | undefined;
-  // Extract the HTML content being streamed for real-time preview
-  const streamingContent = toolCall?.arguments?.content as string | undefined;
-
-  // Default number of skeleton slides to show (typical presentation length)
-  const DEFAULT_SKELETON_SLIDES = 8;
-  
-  // Track the expected total slides based on the highest slide number we see
-  const [expectedTotalSlides, setExpectedTotalSlides] = useState(DEFAULT_SKELETON_SLIDES);
-  
-  // Update expected total when we see a higher slide number during streaming
-  useEffect(() => {
-    if (streamingSlideNumber && streamingSlideNumber > expectedTotalSlides) {
-      setExpectedTotalSlides(streamingSlideNumber);
+  // Parse streaming arguments - handle both string (streaming) and object (completed) cases
+  const parsedStreamingArgs = useMemo(() => {
+    const args = toolCall?.arguments;
+    if (!args) return {};
+    if (typeof args === 'object' && args !== null) return args as Record<string, unknown>;
+    if (typeof args !== 'string') return {};
+    
+    // args is now typed as string
+    const argsStr: string = args;
+    
+    // Try to parse string arguments
+    try {
+      return JSON.parse(argsStr);
+    } catch {
+      // Try to extract from partial/streaming JSON using regex
+      const presentationMatch = argsStr.match(/"presentation_name"\s*:\s*"([^"]+)"/);
+      const slideMatch = argsStr.match(/"slide_number"\s*:\s*(\d+)/);
+      const titleMatch = argsStr.match(/"slide_title"\s*:\s*"([^"]+)"/);
+      // Extract content - this is trickier due to HTML/special chars
+      let contentValue: string | undefined;
+      const contentStart = argsStr.indexOf('"content"');
+      if (contentStart !== -1) {
+        // Find the start of the content value
+        const colonPos = argsStr.indexOf(':', contentStart);
+        if (colonPos !== -1) {
+          const quoteStart = argsStr.indexOf('"', colonPos);
+          if (quoteStart !== -1) {
+            // Extract from the opening quote, handling escapes
+            let i = quoteStart + 1;
+            let value = '';
+            let escaped = false;
+            while (i < argsStr.length) {
+              const char = argsStr[i];
+              if (escaped) {
+                switch (char) {
+                  case 'n': value += '\n'; break;
+                  case 't': value += '\t'; break;
+                  case 'r': value += '\r'; break;
+                  case '"': value += '"'; break;
+                  case '\\': value += '\\'; break;
+                  default: value += char;
+                }
+                escaped = false;
+              } else if (char === '\\') {
+                escaped = true;
+              } else if (char === '"') {
+                // End of string
+                contentValue = value;
+                break;
+              } else {
+                value += char;
+              }
+              i++;
+            }
+            // If no closing quote, still use partial value
+            if (contentValue === undefined && value.length > 0) {
+              contentValue = value;
+            }
+          }
+        }
+      }
+      return {
+        presentation_name: presentationMatch?.[1],
+        slide_number: slideMatch ? parseInt(slideMatch[1]) : undefined,
+        slide_title: titleMatch?.[1],
+        content: contentValue,
+      };
     }
-  }, [streamingSlideNumber, expectedTotalSlides]);
+  }, [toolCall?.arguments]);
+
+  // Extract presentation info from parsed streaming arguments
+  const streamingSlideNumber = parsedStreamingArgs.slide_number as number | undefined;
+  const streamingPresentationName = parsedStreamingArgs.presentation_name as string | undefined;
+  const streamingSlideTitle = parsedStreamingArgs.slide_title as string | undefined;
+  // Extract the HTML content being streamed for real-time preview
+  const streamingContent = parsedStreamingArgs.content as string | undefined;
 
   // Extract presentation info from toolResult.output (from metadata)
   let extractedPresentationName: string | undefined;
@@ -627,14 +684,17 @@ export function PresentationViewer({
 
     setIsDownloading(true);
     try{
+      // Use sanitized name for the path (matching backend directory structure)
+      const sanitizedName = sanitizeFilename(extractedPresentationName);
+      
       if (format === DownloadFormat.GOOGLE_SLIDES){
-        const result = await handleGoogleSlidesUpload(project!.sandbox!.sandbox_url, `/workspace/presentations/${extractedPresentationName}`);
+        const result = await handleGoogleSlidesUpload(project!.sandbox!.sandbox_url, `/workspace/presentations/${sanitizedName}`);
         // If redirected to auth, don't show error
         if (result?.redirected_to_auth) {
           return; // Don't set loading false, user is being redirected
         }
       } else{
-        await downloadPresentation(format, project.sandbox.sandbox_url, `/workspace/presentations/${extractedPresentationName}`, extractedPresentationName);
+        await downloadPresentation(format, project.sandbox.sandbox_url, `/workspace/presentations/${sanitizedName}`, extractedPresentationName);
       }
     } catch (error) {
       console.error('Error downloading PDF:', error);
@@ -737,47 +797,49 @@ export function PresentationViewer({
 
 
       <CardContent className="p-0 h-full flex-1 overflow-hidden relative">
-        {/* Show skeleton slides during streaming for immediate visual feedback */}
-        {isStreaming && (streamingPresentationName || extractedPresentationName) ? (
+        {/* Show slides during streaming - real slides + currently generating slide */}
+        {isStreaming ? (
           <ScrollArea className="h-full">
             <div className="space-y-4 p-4">
-              {/* Show skeleton slides immediately when streaming starts */}
-              {Array.from({ length: expectedTotalSlides }, (_, i) => i + 1).map((slideNum) => {
-                // Check if we have real slide data for this slot
-                const realSlide = slides.find(s => s.number === slideNum);
-                const isCurrentlyGenerating = slideNum === streamingSlideNumber;
-                
-                if (realSlide) {
-                  // Show real slide if already created
-                  return (
-                    <div key={slideNum} id={`slide-${slideNum}`}>
-                      <PresentationSlideCard
-                        slide={realSlide}
-                        project={project}
-                        onFullScreenClick={(slideNumber) => {
-                          if (openPresentation && project?.sandbox?.sandbox_url && (extractedPresentationName || streamingPresentationName)) {
-                            openPresentation(extractedPresentationName || streamingPresentationName!, project.sandbox.sandbox_url, slideNumber);
-                          }
-                        }}
-                        className={currentSlideNumber === realSlide.number ? 'ring-2 ring-blue-500/20 shadow-md' : ''}
-                        refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
-                      />
-                    </div>
-                  );
-                }
-                
-                // Show empty slide frame (with streaming content if generating)
-                return (
-                  <div key={slideNum} id={`slide-${slideNum}`}>
-                    <PresentationSlideSkeleton
-                      slideNumber={slideNum}
-                      isGenerating={isCurrentlyGenerating}
-                      slideTitle={isCurrentlyGenerating ? streamingSlideTitle : undefined}
-                      streamingContent={isCurrentlyGenerating ? streamingContent : undefined}
-                    />
-                  </div>
-                );
-              })}
+              {/* Show real slides from metadata */}
+              {slides.map((slide) => (
+                <div key={slide.number} id={`slide-${slide.number}`}>
+                  <PresentationSlideCard
+                    slide={slide}
+                    project={project}
+                    onFullScreenClick={(slideNumber) => {
+                      if (openPresentation && project?.sandbox?.sandbox_url && (extractedPresentationName || streamingPresentationName)) {
+                        openPresentation(extractedPresentationName || streamingPresentationName!, project.sandbox.sandbox_url, slideNumber);
+                      }
+                    }}
+                    className={currentSlideNumber === slide.number ? 'ring-2 ring-blue-500/20 shadow-md' : ''}
+                    refreshTimestamp={metadata?.updated_at ? new Date(metadata.updated_at).getTime() : undefined}
+                  />
+                </div>
+              ))}
+              
+              {/* Show skeleton for the slide currently being generated (if it's not in metadata yet) */}
+              {streamingSlideNumber && !slides.find(s => s.number === streamingSlideNumber) && (
+                <div key={streamingSlideNumber} id={`slide-${streamingSlideNumber}`}>
+                  <PresentationSlideSkeleton
+                    slideNumber={streamingSlideNumber}
+                    isGenerating={true}
+                    slideTitle={streamingSlideTitle}
+                    streamingContent={streamingContent}
+                  />
+                </div>
+              )}
+              
+              {/* If no slides and no streaming slide number, show a single generating placeholder */}
+              {slides.length === 0 && !streamingSlideNumber && (
+                <div key="generating" id="slide-generating">
+                  <PresentationSlideSkeleton
+                    slideNumber={1}
+                    isGenerating={true}
+                    slideTitle={streamingSlideTitle}
+                  />
+                </div>
+              )}
             </div>
           </ScrollArea>
         ) : toolExecutionError ? (
@@ -799,7 +861,24 @@ export function PresentationViewer({
               />
             </div>
           </div>
+        ) : isLoadingMetadata || (extractedPresentationName && !metadata && !toolExecutionError) || (!toolResult && !isStreaming) ? (
+          // Loading state - show skeleton slides while:
+          // 1. Fetching metadata, OR
+          // 2. Have presentation name but no metadata yet, OR
+          // 3. Tool result hasn't arrived yet from stream (waiting for data)
+          <ScrollArea className="h-full">
+            <div className="space-y-4 p-4">
+              {Array.from({ length: 3 }, (_, i) => (
+                <PresentationSlideSkeleton
+                  key={i + 1}
+                  slideNumber={i + 1}
+                  isGenerating={false}
+                />
+              ))}
+            </div>
+          </ScrollArea>
         ) : slides.length === 0 ? (
+          // Empty state - only show after loading is complete and we have no slides
           <div className="flex flex-col items-center justify-center h-full py-12 px-6 bg-gradient-to-b from-white to-zinc-50 dark:from-zinc-950 dark:to-zinc-900">
             <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6 bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60">
               <Presentation className="h-10 w-10 text-zinc-500 dark:text-zinc-400" />
@@ -837,7 +916,10 @@ export function PresentationViewer({
       <div className="px-4 py-2 h-9 bg-muted/20 border-t border-border/40 flex justify-between items-center">
         <div className="text-xs text-muted-foreground font-mono">
           {isStreaming ? (
-            <span>{slides.length}/{expectedTotalSlides}</span>
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block h-2 w-2 rounded-full border border-blue-300 border-t-blue-500 animate-spin" />
+              {streamingSlideNumber ? `Slide ${streamingSlideNumber}` : 'Generating...'}
+            </span>
           ) : slides.length > 0 && visibleSlide ? (
             <span>{visibleSlide}/{slides.length}</span>
           ) : null}

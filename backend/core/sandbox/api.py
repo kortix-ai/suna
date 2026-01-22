@@ -380,11 +380,12 @@ async def list_files(
         except Exception as list_err:
             error_msg = str(list_err)
             logger.error(f"Error listing files {path} in sandbox {sandbox_id}: {error_msg}")
-            # Check if it's a file not found error
-            if 'not found' in error_msg.lower() or '404' in error_msg.lower():
+            error_lower = error_msg.lower()
+            # Check if it's a file/directory not found error
+            if any(phrase in error_lower for phrase in ['not found', 'no such file', 'no such directory', 'does not exist', 'enoent']):
                 raise HTTPException(status_code=404, detail=f"Directory not found: {path}")
             # Check if it's a permission error
-            if 'permission' in error_msg.lower() or '403' in error_msg.lower():
+            if 'permission' in error_lower or '403' in error_lower or 'eacces' in error_lower:
                 raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
             # For other errors, return 500
             raise HTTPException(status_code=500, detail=f"Failed to list files: {error_msg}")
@@ -980,8 +981,9 @@ async def start_project_sandbox(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     """
-    Explicitly start a project's sandbox.
+    Start or create a project's sandbox.
 
+    If no sandbox exists, creates one first.
     Returns immediately with STARTING status - poll /status for updates.
     If sandbox is already started, returns success immediately.
     """
@@ -1004,12 +1006,38 @@ async def start_project_sandbox(
 
     try:
         from core.resources import ResourceService
+        from core.sandbox.resolver import resolve_sandbox
 
         resource_service = ResourceService(client)
         sandbox_resource = await resource_service.get_project_sandbox_resource(project_id)
 
         if not sandbox_resource:
-            raise HTTPException(status_code=404, detail="No sandbox found for this project")
+            # No sandbox exists - create one using resolve_sandbox
+            logger.info(f"No sandbox found for project {project_id}, creating one...")
+            
+            # Start sandbox creation in background (non-blocking)
+            async def create_sandbox_background():
+                try:
+                    sandbox_info = await resolve_sandbox(
+                        project_id=project_id,
+                        account_id=account_id,
+                        db_client=client,
+                        require_started=True
+                    )
+                    if sandbox_info:
+                        logger.info(f"Successfully created sandbox {sandbox_info.sandbox_id} for project {project_id}")
+                    else:
+                        logger.error(f"Failed to create sandbox for project {project_id}")
+                except Exception as e:
+                    logger.error(f"Error creating sandbox for project {project_id}: {str(e)}")
+            
+            asyncio.create_task(create_sandbox_background())
+            
+            return {
+                "status": "creating",
+                "sandbox_id": None,
+                "message": "Sandbox creation initiated. Poll /status for updates."
+            }
 
         sandbox_id = sandbox_resource.get('external_id')
 

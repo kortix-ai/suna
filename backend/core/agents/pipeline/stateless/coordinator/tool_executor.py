@@ -30,12 +30,8 @@ class ToolExecutor:
         self._state = state
         self._tool_registry = tool_registry
         self._message_builder = message_builder
-        self._available_functions: Optional[Dict] = None
-    
     def _get_available_functions(self) -> Dict:
-        if self._available_functions is None:
-            self._available_functions = self._tool_registry.get_available_functions()
-        return self._available_functions
+        return self._tool_registry.get_available_functions()
     
     def start_tool_execution(
         self,
@@ -271,13 +267,24 @@ class ToolExecutor:
         try:
             parsed = json.loads(args) if isinstance(args, str) else args
             tool_fn = available_functions.get(name)
+            
+            if name == "create_slide":
+                debug_args = {k: (v[:100] + '...' if isinstance(v, str) and len(v) > 100 else v) for k, v in parsed.items()} if isinstance(parsed, dict) else parsed
+                logger.info(f"[ToolExecutor] Executing {name} with parsed args: {debug_args}")
+                logger.info(f"[ToolExecutor] DEBUG: tool_fn={tool_fn}, module={getattr(tool_fn, '__module__', 'unknown')}, qualname={getattr(tool_fn, '__qualname__', 'unknown')}")
 
             if tool_fn:
+                if name == "create_slide":
+                    logger.info(f"[ToolExecutor] About to call create_slide...")
                 result = await tool_fn(**parsed)
+                if name == "create_slide":
+                    logger.info(f"[ToolExecutor] create_slide returned: success={getattr(result, 'success', 'N/A')}, output={str(getattr(result, 'output', 'N/A'))[:200]}")
                 if hasattr(result, 'success') and hasattr(result, 'output'):
                     success = result.success
                     output = result.output
                     error = None if success else str(result.output)
+                    if not success:
+                        logger.error(f"[ToolExecutor] Tool {name} returned success=False, output: {str(output)[:500]}")
                 else:
                     success = True
                     output = result
@@ -287,7 +294,7 @@ class ToolExecutor:
 
         except Exception as e:
             output, success, error = None, False, str(e)
-            logger.warning(f"[ToolExecutor] Tool {name} failed: {e}")
+            logger.warning(f"[ToolExecutor] Tool {name} failed with exception: {e}")
 
         return output, success, error
 

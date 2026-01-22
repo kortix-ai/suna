@@ -75,6 +75,8 @@ export interface ActiveAgentRun {
 export interface UnifiedAgentStartResponse {
   thread_id: string;
   agent_run_id: string;
+  project_id?: string;
+  sandbox_id?: string;  // Always None - sandbox created lazily
   status: string;
 }
 
@@ -536,8 +538,7 @@ export interface SendMessageInput {
   message: string;
   modelName?: string;
   agentId?: string;
-  files?: UploadedFile[];
-  fileIds?: string[];
+  files?: Array<{ uri: string; name: string; type: string }>;
 }
 
 export interface FileUploadInput {

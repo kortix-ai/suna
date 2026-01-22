@@ -1259,7 +1259,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       >
         <div
           ref={contentRef}
-          className="mx-auto max-w-3xl min-w-0 w-full pl-6 pr-6"
+          className="mx-auto max-w-3xl min-w-0 w-full px-3 sm:px-6"
         >
           <div className="space-y-6 min-w-0">
             {groupedMessages.map((group, index) =>

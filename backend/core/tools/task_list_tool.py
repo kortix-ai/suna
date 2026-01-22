@@ -23,242 +23,83 @@ class Task(BaseModel):
     section_id: str
 
 @tool_metadata(
-    display_name="Task Management",
-    description="Create and track your action plan with organized to-do lists",
+    display_name="TodoWrite",
+    description="Create and manage a structured task list for your current session",
     icon="CheckSquare",
     color="bg-amber-100 dark:bg-amber-800/50",
     is_core=True,
     usage_guide="""
-# AUTONOMOUS TASK EXECUTION MODE
+## TodoWrite - Structured task list management
 
-The Task List is your ABSOLUTE SOURCE OF TRUTH for complex work. When operating in Autonomous Task Execution mode, the task list governs ALL your actions.
+Use this tool to create and manage a structured task list for your current session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user. It also helps the user understand the progress of the task and overall progress of their requests.
 
-## WHEN TO ENTER AUTONOMOUS MODE
+### Available Tools
+- **create_tasks**: Create task list with sections and tasks
+- **view_tasks**: View current state and progress
+- **update_tasks**: Mark tasks completed or update content
+- **delete_tasks**: Remove tasks or sections
+- **clear_all**: Reset task list to empty state
 
-**USE TASK LIST FOR:**
-- Multi-step projects (3+ distinct steps)
-- Research involving multiple items (companies, countries, topics, products)
-- Content creation (presentations, reports, multi-file projects)
-- Data gathering and analysis
-- Software development projects
-- Any work requiring sustained execution over multiple turns
+### When to Use This Tool
+Use this tool proactively in these scenarios:
 
-**SKIP TASK LIST FOR:**
-- Simple questions answerable in one response
-- Quick factual lookups
-- Conversational exchanges
-- Single-step operations
+1. **Complex multi-step tasks** - When a task requires 3 or more distinct steps or actions
+2. **Non-trivial and complex tasks** - Tasks that require careful planning or multiple operations
+3. **User explicitly requests todo list** - When the user directly asks you to use the todo list
+4. **User provides multiple tasks** - When users provide a list of things to be done (numbered or comma-separated)
+5. **After receiving new instructions** - Immediately capture user requirements as todos
+6. **When you start working on a task** - Mark it as in_progress BEFORE beginning work. Ideally you should only have one todo as in_progress at a time
+7. **After completing a task** - Mark it as completed and add any new follow-up tasks discovered during implementation
 
-## THE TASK LIST CONTRACT
+### When NOT to Use This Tool
+Skip using this tool when:
+1. There is only a single, straightforward task
+2. The task is trivial and tracking it provides no organizational benefit
+3. The task can be completed in less than 3 trivial steps
+4. The task is purely conversational or informational
 
-When a task list exists, you are bound by these rules:
+NOTE: Do not use this tool if there is only one trivial task to do. Just do the task directly.
 
-### 1. SEQUENTIAL EXECUTION - NO EXCEPTIONS
-- Execute tasks in EXACT order they appear
-- NEVER skip tasks or work out of order
-- NEVER start task N+1 before completing task N
-- The sequence is sacred - it represents your plan of attack
+### Task States and Management
 
-### 2. IMMEDIATE STATUS UPDATES
-- Mark tasks `completed` THE MOMENT you finish them
-- Don't batch updates at the end - update as you go
-- This creates a real-time progress trail
-- Use `view_tasks` after every 2-3 completions to verify state
+**Task States:** Use these states to track progress:
+- pending: Task not yet started
+- in_progress: Currently working on (limit to ONE task at a time)
+- completed: Task finished successfully
 
-### 3. UNINTERRUPTED EXECUTION
-- Once started, execute ALL tasks to completion
-- NEVER ask "should I continue?" between tasks
-- NEVER pause for confirmation mid-execution
-- The user approved by initiating - no further permission needed
-- Only stop if genuinely blocked by missing information
+**IMPORTANT:** Task descriptions must have two forms:
+- content: The imperative form describing what needs to be done (e.g., "Run tests", "Build the project")
+- activeForm: The present continuous form shown during execution (e.g., "Running tests", "Building the project")
 
-### 4. LIVING DOCUMENT MANAGEMENT
-- ADD tasks when you discover additional work needed
-- REMOVE tasks that become unnecessary
-- UPDATE task content if scope changes
-- The task list evolves with your understanding
+### Task Management Rules
 
-## TASK BREAKDOWN PRINCIPLES
+1. Update task status in real-time as you work
+2. Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
+3. Exactly ONE task must be in_progress at any time (not less, not more)
+4. Complete current tasks before starting new ones
+5. Remove tasks that are no longer relevant from the list entirely
 
-### Granularity - One Unit of Work Per Task
-Each task should represent ONE distinct operation:
-- ❌ BAD: "Research 5 companies and create comparison"
-- ✅ GOOD: 5 tasks (one per company) + 1 synthesis task
+### Task Completion Requirements
 
-### Specificity - Clear Completion Criteria
-Each task should have obvious "done" state:
-- ❌ BAD: "Look into market trends"
-- ✅ GOOD: "Research Company A: strategy, funding, market position, recent news"
+- ONLY mark a task as completed when you have FULLY accomplished it
+- If you encounter errors, blockers, or cannot finish, keep the task as in_progress
+- When blocked, create a new task describing what needs to be resolved
+- Never mark a task as completed if:
+  - Tests are failing
+  - Implementation is partial
+  - You encountered unresolved errors
+  - You couldn't find necessary files or dependencies
 
-### Depth - Comprehensive Research Per Task
-Each research task requires:
-- Multiple search queries (use batch mode)
-- Cross-reference 2-3+ sources
-- Verify from authoritative sources
-- Document findings with citations
+### Task Breakdown
 
-## TASK LIST STRUCTURE
+- Create specific, actionable items
+- Break complex tasks into smaller, manageable steps
+- Use clear, descriptive task names
+- Always provide both forms:
+  - content: "Fix authentication bug"
+  - activeForm: "Fixing authentication bug"
 
-Organize into logical phases:
-
-```
-Section: "Research Phase"
-- Task: "Research Item A: [specific aspects]"
-- Task: "Research Item B: [specific aspects]"
-...
-
-Section: "Analysis Phase"  
-- Task: "Cross-reference findings, verify accuracy"
-- Task: "Identify patterns and insights"
-
-Section: "Output Phase"
-- Task: "Create deliverable (report/presentation/dashboard)"
-- Task: "Document sources and methodology"
-```
-
-## EXECUTION WORKFLOW
-
-### Phase 1: Planning
-1. Analyze the request - identify all discrete work items
-2. Create comprehensive task list with granular tasks
-3. Organize into logical sections/phases
-4. Initialize any needed JIT tools
-
-### Phase 2: Execution Loop
-```
-WHILE pending tasks exist:
-    1. view_tasks → identify next pending task
-    2. Execute task thoroughly (multiple queries, sources)
-    3. update_tasks → mark completed IMMEDIATELY
-    4. IF discovered new work → create_tasks to add
-    5. IF task unnecessary → delete_tasks to remove
-```
-
-### Phase 3: Completion
-1. view_tasks → verify ALL tasks completed
-2. Compile final deliverables
-3. Call `complete` with all attachments
-
-## RESEARCH QUALITY STANDARDS
-
-For each research item:
-- **Breadth**: Search for current state, future plans, funding, official sources
-- **Depth**: Don't accept first result - dig deeper
-- **Verification**: Cross-reference 2-3+ authoritative sources
-- **Documentation**: Record sources for citation
-
-Use batch search mode for efficiency:
-```
-web_search(queries=[
-    "Company X market strategy 2024",
-    "Company X recent funding",
-    "Company X competitive positioning",
-    "Company X official announcements"
-])
-```
-
-## AUTO-EXTRACTION PATTERN
-
-After each web_search:
-1. Identify high-quality sources in results
-2. Use `scrape_webpage` to extract full content from promising URLs
-3. For academic sources, use `get_paper_details`
-4. Read extracted content thoroughly - never rely on snippets alone
-
-## EXAMPLE: Multi-Company Research
-
-**Request:** "Compare market strategies of 5 tech companies"
-
-**Task List:**
-```
-Section: "Individual Company Research"
-- Research Apple: market strategy, recent initiatives, target segments, competitive moves
-- Research Google: market strategy, recent initiatives, target segments, competitive moves  
-- Research Microsoft: market strategy, recent initiatives, target segments, competitive moves
-- Research Amazon: market strategy, recent initiatives, target segments, competitive moves
-- Research Meta: market strategy, recent initiatives, target segments, competitive moves
-
-Section: "Verification & Analysis"
-- Cross-reference findings across sources, verify accuracy
-- Identify common patterns and unique differentiators
-
-Section: "Deliverables"
-- Create comparison table (CSV + formatted report)
-- Create executive summary with key insights
-```
-
-**Execution:**
-1. Create task list ✓
-2. Research Apple (4+ queries, 3+ sources) → mark complete
-3. Research Google (4+ queries, 3+ sources) → mark complete
-4. ... continue for each company
-5. Cross-reference and verify → mark complete
-6. Create deliverables → mark complete
-7. Call `complete` with all files attached
-
-## CONTEXT MANAGEMENT FOR LONG SESSIONS
-
-You operate as a long-running agent. Over extended sessions:
-
-### Maintain State Awareness
-- Regularly `view_tasks` to anchor yourself
-- The task list IS your memory of what's been done
-- Reference completed tasks to avoid redundant work
-
-### Handle Context Limits
-- Task list persists even if conversation context shifts
-- Always check task list state at session start
-- Completed tasks represent verified progress
-
-### Progress Tracking
-- Task completion creates audit trail
-- Users can see progress in real-time
-- Status updates communicate without interrupting
-
-## MULTI-STEP TASK EXECUTION RULES
-
-Once a multi-phase task begins:
-
-1. **NO INTERRUPTIONS** - Execute all steps to completion
-2. **NO PERMISSION SEEKING** - User approved by starting
-3. **NO SCOPE CREEP** - Stick to the plan
-4. **CONTINUOUS UPDATES** - Mark progress as you go
-5. **QUALITY OVER SPEED** - Thorough research per task
-
-## VISUALIZATION & OUTPUT STANDARDS
-
-When creating data outputs:
-- Export data as CSV/JSON (single source of truth)
-- Create interactive dashboards that LOAD from data files
-- Never hardcode data in visualization code
-- Both data file and dashboard are deliverables
-
-## TOOL INITIALIZATION PATTERN
-
-Before execution, initialize needed tools:
-1. Assess which JIT tools are needed
-2. Call `initialize_tools` for each
-3. Then begin task execution
-4. Never pause mid-execution to initialize
-
-## SUMMARY: AUTONOMOUS MODE CHECKLIST
-
-Before starting:
-- [ ] Is this complex enough for a task list? (3+ steps, multiple items)
-- [ ] Have I created granular, specific tasks?
-- [ ] Are tasks in correct execution order?
-- [ ] Have I initialized all needed tools?
-
-During execution:
-- [ ] Am I executing tasks in order?
-- [ ] Am I marking complete IMMEDIATELY after each?
-- [ ] Am I using `view_tasks` regularly?
-- [ ] Am I researching deeply (multiple queries, sources)?
-
-After completion:
-- [ ] Are ALL tasks marked complete?
-- [ ] Have I attached all deliverables?
-- [ ] Did I include follow_up_prompts?
+When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully.
 """,
     weight=5,
     visible=True

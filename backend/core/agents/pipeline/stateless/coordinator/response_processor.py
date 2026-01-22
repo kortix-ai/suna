@@ -148,7 +148,6 @@ class ResponseProcessor:
                             logger.debug(f"[ResponseProcessor] Started async execution for {tc_buf.get('function', {}).get('name')}")
             
             if execute_on_stream and pending_executions:
-                # Use defer_message=True to ensure tool results are added after assistant message
                 async for msg in self._process_completed_executions(
                     pending_executions, stream_start, defer_message=True
                 ):
@@ -186,6 +185,8 @@ class ResponseProcessor:
                         
                         committed_count = self._state.commit_deferred_tool_results()
                         logger.debug(f"[ResponseProcessor] Finalized assistant message with {len(complete_tool_calls)} tool calls: {finalized_id}, committed {committed_count} tool results")
+                        
+                        self._state.trigger_flush()
                         
                         complete_msg = self._message_builder.build_assistant_complete(
                             finalized_id, accumulated_content, complete_tool_calls, stream_start
@@ -417,6 +418,8 @@ class ResponseProcessor:
         async for r in self._tool_executor.execute_tools(stream_start, assistant_message_id):
             yield r
 
+        self._state.trigger_flush()
+
         complete_msg = self._message_builder.build_assistant_complete(
             assistant_message_id, accumulated_content, tool_calls, stream_start
         )
@@ -447,6 +450,9 @@ class ResponseProcessor:
             tool_calls if tool_calls else None, 
             thread_run_id
         )
+        
+        self._state.trigger_flush()
+        
         complete_msg = self._message_builder.build_assistant_complete(
             assistant_message_id, accumulated_content, tool_calls if tool_calls else None, stream_start
         )

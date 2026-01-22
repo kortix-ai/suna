@@ -460,14 +460,6 @@ class RunState:
         }, metadata)
 
     def commit_deferred_tool_results(self) -> int:
-        """Commit all deferred tool results to messages.
-        
-        Call this AFTER finalize_assistant_message() to ensure proper message ordering
-        (assistant message with tool_calls, followed by tool result messages).
-        
-        Returns:
-            Number of tool results committed
-        """
         count = 0
         for result, assistant_message_id in self._deferred_tool_results:
             self._add_tool_result_message(result, assistant_message_id)
@@ -475,6 +467,12 @@ class RunState:
         
         self._deferred_tool_results.clear()
         return count
+
+    def trigger_flush(self) -> None:
+        if self._pending_writes:
+            task = asyncio.create_task(self.flush())
+            self._flush_tasks.add(task)
+            task.add_done_callback(lambda t: self._flush_tasks.discard(t))
 
     def get_tool_result(self, tool_call_id: str) -> Optional[ToolResult]:
         return self._tool_results.get(tool_call_id)

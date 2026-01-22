@@ -149,12 +149,10 @@ async def lifespan(app: FastAPI):
         from core.sandbox.pool_background import start_pool_service
         asyncio.create_task(start_pool_service())
         
-        # Initialize stateless pipeline (if enabled)
-        from core.agents.runner.executor import USE_STATELESS_PIPELINE
-        if USE_STATELESS_PIPELINE:
-            from core.agents.pipeline.stateless import lifecycle
-            await lifecycle.initialize()
-            logger.info("[STARTUP] Stateless pipeline initialized")
+        # Initialize stateless pipeline
+        from core.agents.pipeline.stateless import lifecycle
+        await lifecycle.initialize()
+        logger.info("[STARTUP] Stateless pipeline initialized")
         
         yield
 
@@ -207,12 +205,10 @@ async def lifespan(app: FastAPI):
         else:
             logger.info("No active agent runs to stop on shutdown")
         
-        # Shutdown stateless pipeline (if enabled)
-        from core.agents.runner.executor import USE_STATELESS_PIPELINE
-        if USE_STATELESS_PIPELINE:
-            from core.agents.pipeline.stateless import lifecycle
-            await lifecycle.shutdown()
-            logger.info("[SHUTDOWN] Stateless pipeline shutdown complete")
+        # Shutdown stateless pipeline
+        from core.agents.pipeline.stateless import lifecycle
+        await lifecycle.shutdown()
+        logger.info("[SHUTDOWN] Stateless pipeline shutdown complete")
         
         logger.debug("Cleaning up resources")
         
@@ -401,8 +397,6 @@ from core.test_harness.api import router as test_harness_router, e2e_router
 api_router.include_router(test_harness_router)
 api_router.include_router(e2e_router)
 
-from core.files import staged_files_router
-api_router.include_router(staged_files_router, prefix="/files")
 
 from core.sandbox.canvas_ai_api import router as canvas_ai_router
 api_router.include_router(canvas_ai_router)

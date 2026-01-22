@@ -13,54 +13,66 @@ import re
 from typing import Optional
 
 @tool_metadata(
-    display_name="Files & Folders",
-    description="Create, edit, read, and organize files in your workspace",
+    display_name="Write & Edit",
+    description="Write and edit files in the workspace. Create new files or modify existing ones",
     icon="FolderOpen",
     color="bg-blue-100 dark:bg-blue-800/50",
     is_core=True,
     weight=10,
     visible=True,
     usage_guide="""
-### FILE OPERATIONS
+## Write & Edit - File system operations in the workspace
 
-**CORE CAPABILITIES:**
-- Creating, reading, modifying, and deleting files
-- Organizing files into directories/folders
-- Converting between file formats
-- Searching through file contents
-- Batch processing multiple files
-- AI-powered intelligent file editing with natural language instructions using `edit_file` tool exclusively
+Provides file system operations relative to /workspace directory.
 
-**MANDATORY FILE EDITING TOOL:**
-- **MUST use edit_file for ALL file modifications**
-- This is a powerful AI tool that handles everything from simple replacements to complex refactoring
-- NEVER use echo or sed to modify files - always use edit_file
-- Provide clear natural language instructions and the code changes
+### Available Tools
+- **create_file** (Write): Create new files with content
+- **edit_file**: Performs exact string replacements in files (PREFERRED for modifications)
+- **str_replace**: Exact string replacement (alternative to edit_file)
+- **full_file_rewrite**: Complete file replacement (use sparingly)
+- **delete_file**: Delete files
 
-**FILE MANAGEMENT BEST PRACTICES:**
-- Use file tools for reading, writing, appending, and editing
-- Actively save intermediate results
-- Create organized file structures with clear naming conventions
-- Store different types of data in appropriate formats
+### Usage Guidelines
 
-**ONE FILE PER REQUEST RULE:**
-- For a single user request, create ONE file and edit it throughout the process
-- Treat the file as a living document that you continuously update
-- Edit existing files rather than creating multiple new files
-- Build one comprehensive file that contains all related content
+**Write (create_file):**
+- This tool will overwrite the existing file if there is one at the provided path
+- If this is an existing file, you MUST use read_file first to read the file's contents
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required
+- NEVER proactively create documentation files (*.md) or README files unless explicitly requested
 
-**CSS & STYLE GUIDELINES:**
-- **KORTIX BRAND COLORS:** Always use Kortix on-brand black/white color scheme
-- **NO GRADIENTS WHATSOEVER:** Absolutely forbidden - use solid colors only (black, white, or shades of gray)
-- **NO PURPLE COLORS:** Purple is absolutely forbidden in any form - no purple backgrounds, no purple text, no purple accents, no purple anything
-- **NO GENERIC AI/TECH GRADIENTS:** Explicitly forbidden: purple-to-blue gradients, blue-to-purple gradients, any purple/blue/teal gradient combinations, or any other generic "AI tech" gradient schemes
-- **SOLID COLORS ONLY:** Use only solid black, white, or shades of gray - no gradients, no color transitions, no fancy effects, NO PURPLE
+**Edit (edit_file):**
+- You MUST use read_file at least once before editing a file
+- When editing text from read_file output, preserve the exact indentation (tabs/spaces)
+- ALWAYS prefer editing existing files. NEVER write new files unless explicitly required
+- The edit will FAIL if `old_string` is not unique in the file. Provide more context or use `replace_all`
+- Use `replace_all` for replacing and renaming strings across the file (e.g., renaming variables)
 
-**🚨 FILE DELETION SAFETY:**
-- NEVER delete files without explicit user confirmation
-- Before calling `delete_file`, MUST use `ask` tool to request permission
-- Example: "Can I delete [filename]? This cannot be undone."
-- Only proceed with deletion after user explicitly approves
+### File Editing Strategy
+1. **Always read before editing**: Use read_file first to understand current content
+2. **Use edit_file for modifications**: Handles complex refactoring with context
+3. **Use str_replace for precise changes**: When you need exact string replacement
+4. **Use full_file_rewrite sparingly**: Only when complete replacement is necessary
+
+### edit_file Format
+When using edit_file, specify changes with the `// ... existing code ...` pattern:
+```
+// ... existing code ...
+FIRST_EDIT
+// ... existing code ...
+SECOND_EDIT
+// ... existing code ...
+```
+- Include 3-5 lines of context around each change
+- DO NOT omit code without using the marker
+- Make ALL edits to a file in a SINGLE edit_file call
+
+### Important Rules
+- All paths are relative to /workspace (e.g., "src/main.py")
+- NEVER create files unless absolutely necessary - prefer editing existing files
+- NEVER use echo/heredoc/cat via Bash to create files - use create_file instead
+- NEVER use sed/awk via Bash to edit files - use edit_file instead
+- One comprehensive file is better than multiple fragmented files
+- Only use emojis if the user explicitly requests it
 """
 )
 class SandboxFilesTool(SandboxToolsBase):
@@ -136,21 +148,28 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "create_file",
-            "description": "Create a new file with the provided contents at a given path in the workspace. The path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `file_contents` (REQUIRED), `permissions` (optional).",
+            "description": """Writes a file to the workspace.
+
+Usage:
+- This tool will overwrite the existing file if there is one at the provided path.
+- If this is an existing file, you MUST use read_file first to read the file's contents. This tool will fail if you did not read the file first.
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+- Only use emojis if the user explicitly requests it. Avoid writing emojis to files unless asked.""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "**REQUIRED** - Path to the file to be created, relative to /workspace. Example: 'src/main.py' creates /workspace/src/main.py. Use forward slashes for path separators."
+                        "description": "**REQUIRED** - Path to the file to write, relative to /workspace. Example: 'src/main.py' creates /workspace/src/main.py."
                     },
                     "file_contents": {
                         "type": "string",
-                        "description": "**REQUIRED** - The content to write to the file. Can be plain text, code, JSON, HTML, etc. If passing a dictionary/object, it will be automatically converted to JSON."
+                        "description": "**REQUIRED** - The content to write to the file."
                     },
                     "permissions": {
                         "type": "string",
-                        "description": "**OPTIONAL** - File permissions in octal format. Default: '644'. Example: '755' for executable files, '644' for regular files.",
+                        "description": "**OPTIONAL** - File permissions in octal format. Default: '644'. Example: '755' for executable files.",
                         "default": "644"
                     }
                 },
@@ -203,21 +222,34 @@ class SandboxFilesTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "str_replace",
-            "description": "Replace specific text in a file. The file path must be relative to /workspace (e.g., 'src/main.py' for /workspace/src/main.py). IMPORTANT: Prefer using edit_file for faster, shorter edits to avoid repetition. Only use this tool when you need to replace a unique string that appears exactly once in the file and edit_file is not suitable. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (REQUIRED), `old_str` (REQUIRED), `new_str` (REQUIRED).",
+            "description": """Performs exact string replacements in files.
+
+Usage:
+- You must use read_file at least once in the conversation before editing. This tool will error if you attempt an edit without reading the file.
+- When editing text from read_file output, ensure you preserve the exact indentation (tabs/spaces).
+- ALWAYS prefer editing existing files in the codebase. NEVER write new files unless explicitly required.
+- Only use emojis if the user explicitly requests it.
+- The edit will FAIL if `old_str` is not unique in the file. Either provide a larger string with more surrounding context to make it unique or use `replace_all` to change every instance.
+- Use `replace_all` for replacing and renaming strings across the file (useful for renaming variables).""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "**REQUIRED** - Path to the target file, relative to /workspace. Example: 'src/main.py' for /workspace/src/main.py"
+                        "description": "**REQUIRED** - The path to the file to modify, relative to /workspace."
                     },
                     "old_str": {
                         "type": "string",
-                        "description": "**REQUIRED** - The exact string to be replaced. Must match exactly (including whitespace and newlines). Must appear exactly once in the file."
+                        "description": "**REQUIRED** - The text to replace. Must be unique in the file unless using replace_all."
                     },
                     "new_str": {
                         "type": "string",
-                        "description": "**REQUIRED** - Replacement text that will replace old_str."
+                        "description": "**REQUIRED** - The text to replace it with (must be different from old_str)."
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "**OPTIONAL** - Replace all occurrences of old_str (default false).",
+                        "default": False
                     }
                 },
                 "required": ["file_path", "old_str", "new_str"],
@@ -225,26 +257,26 @@ class SandboxFilesTool(SandboxToolsBase):
             }
         }
     })
-    async def str_replace(self, file_path: str, old_str: str, new_str: str) -> ToolResult:
+    async def str_replace(self, file_path: str, old_str: str, new_str: str, replace_all: bool = False) -> ToolResult:
         try:
             # Ensure sandbox is initialized
             await self._ensure_sandbox()
-            
+
             full_path = self._get_full_path(file_path)
             if not await self._file_exists(full_path):
                 return self.fail_response(f"File '{file_path}' does not exist")
-            
+
             content = (await self.sandbox.fs.download_file(full_path)).decode()
             old_str = old_str.expandtabs()
             new_str = new_str.expandtabs()
-            
+
             occurrences = content.count(old_str)
             if occurrences == 0:
                 return self.fail_response(f"String '{old_str}' not found in file")
-            if occurrences > 1:
+            if occurrences > 1 and not replace_all:
                 lines = [i+1 for i, line in enumerate(content.split('\n')) if old_str in line]
-                return self.fail_response(f"Multiple occurrences found in lines {lines}. Please ensure string is unique")
-            
+                return self.fail_response(f"Multiple occurrences found in lines {lines}. Use replace_all=true or provide more context to make it unique")
+
             new_content = content.replace(old_str, new_str)
             await self.sandbox.fs.upload_file(new_content.encode(), full_path)
             

@@ -204,33 +204,33 @@ export default function APIKeysPage() {
 
 
   return (
-    <div className="container mx-auto max-w-6xl px-6 py-6">
-      <div className="space-y-6">
-        <div className="space-y-2">
+    <div className="container mx-auto max-w-6xl px-3 sm:px-6 py-4 sm:py-6">
+      <div className="space-y-4 sm:space-y-6">
+        <div className="space-y-1 sm:space-y-2">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-medium">API Keys</h1>
+            <h1 className="text-xl sm:text-2xl font-medium">API Keys</h1>
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-sm sm:text-base text-muted-foreground">
             Manage your API keys for programmatic access to Kortix
           </p>
         </div>
 
         {/* SDK Beta Notice */}
         <Card className="border-blue-200/60 bg-gradient-to-br from-blue-50/80 to-indigo-50/40 dark:from-blue-950/20 dark:to-indigo-950/10 dark:border-blue-800/30">
-          <CardContent className="">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-500/20">
-                <KortixLogo size={22} variant="symbol" className="[filter:invert(37%)_sepia(93%)_saturate(1352%)_hue-rotate(207deg)_brightness(97%)_contrast(95%)] dark:[filter:invert(68%)_sepia(44%)_saturate(913%)_hue-rotate(186deg)_brightness(101%)_contrast(96%)]" />
+          <CardContent className="p-3 sm:p-6">
+            <div className="flex flex-col sm:flex-row items-start gap-3 sm:gap-4">
+              <div className="flex h-10 w-10 sm:h-12 sm:w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-indigo-600/10 border border-blue-500/20 flex-shrink-0">
+                <KortixLogo size={18} variant="symbol" className="sm:[width:22px] sm:[height:22px] [filter:invert(37%)_sepia(93%)_saturate(1352%)_hue-rotate(207deg)_brightness(97%)_contrast(95%)] dark:[filter:invert(68%)_sepia(44%)_saturate(913%)_hue-rotate(186deg)_brightness(101%)_contrast(96%)]" />
               </div>
-              <div className="flex-1 space-y-3">
+              <div className="flex-1 space-y-2 sm:space-y-3">
                 <div>
-                  <h3 className="text-base font-semibold text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-semibold text-blue-900 dark:text-blue-100 mb-1 flex items-center gap-2">
                     Kortix API
                     <Badge variant="secondary" className="h-5 px-1.5 text-xs bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/30 dark:text-blue-300 dark:border-blue-700">
                       Beta
                     </Badge>
                   </h3>
-                  <p className="text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
+                  <p className="text-xs sm:text-sm text-blue-700 dark:text-blue-300 leading-relaxed">
                     Our API is currently in beta. Use these API keys to integrate with our
                     programmatic interface for building custom applications and automations.
                   </p>
@@ -240,10 +240,10 @@ export default function APIKeysPage() {
                     href="https://api.kortix.com/docs"
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                    className="inline-flex items-center gap-2 text-xs sm:text-sm font-medium text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
                   >
                     <span>View API Documentation</span>
-                    <ExternalLink className="w-4 h-4" />
+                    <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                   </a>
                 </div>
               </div>
@@ -252,10 +252,10 @@ export default function APIKeysPage() {
         </Card>
 
         {/* Header Actions */}
-        <div className="flex justify-between items-center">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Shield className="w-4 h-4" />
-            <span>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+            <Shield className="w-4 h-4 flex-shrink-0" />
+            <span className="leading-relaxed">
               API keys use a public/secret key pair for secure authentication
             </span>
           </div>
@@ -408,46 +408,46 @@ export default function APIKeysPage() {
                   isKeyExpired(apiKey.expires_at) ? 'border-yellow-200' : ''
                 }
               >
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{apiKey.title}</CardTitle>
+                <CardHeader className="px-3 sm:px-6 py-3 sm:py-6">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base sm:text-lg truncate">{apiKey.title}</CardTitle>
                       {apiKey.description && (
-                        <CardDescription className="mt-1">
+                        <CardDescription className="mt-0.5 sm:mt-1 text-xs sm:text-sm line-clamp-2">
                           {apiKey.description}
                         </CardDescription>
                       )}
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       {getStatusBadge(apiKey.status)}
                     </div>
                   </div>
                 </CardHeader>
-                <CardContent className="pt-0">
-                  <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                <CardContent className="pt-0 px-3 sm:px-6 pb-3 sm:pb-6">
+                  <div className="space-y-3 sm:space-y-4">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4 text-xs sm:text-sm">
                       <div>
-                        <p className="text-muted-foreground mb-1">Created</p>
-                        <p className="font-medium">
+                        <p className="text-muted-foreground mb-0.5 sm:mb-1">Created</p>
+                        <p className="font-medium truncate">
                           {formatDate(apiKey.created_at)}
                         </p>
                       </div>
                       {apiKey.expires_at && (
                         <div>
-                          <p className="text-muted-foreground mb-1">Expires</p>
+                          <p className="text-muted-foreground mb-0.5 sm:mb-1">Expires</p>
                           <p
-                            className={`font-medium ${isKeyExpired(apiKey.expires_at) ? 'text-yellow-600' : ''}`}
+                            className={`font-medium truncate ${isKeyExpired(apiKey.expires_at) ? 'text-yellow-600' : ''}`}
                           >
                             {formatDate(apiKey.expires_at)}
                           </p>
                         </div>
                       )}
                       {apiKey.last_used_at && (
-                        <div>
-                          <p className="text-muted-foreground mb-1">
+                        <div className="col-span-2 sm:col-span-1">
+                          <p className="text-muted-foreground mb-0.5 sm:mb-1">
                             Last Used
                           </p>
-                          <p className="font-medium">
+                          <p className="font-medium truncate">
                             {formatDate(apiKey.last_used_at)}
                           </p>
                         </div>

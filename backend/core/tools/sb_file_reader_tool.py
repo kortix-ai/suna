@@ -9,50 +9,67 @@ from core.agentpress.thread_manager import ThreadManager
 from core.utils.config import config
 from core.utils.logger import logger
 
-MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_OUTPUT_CHARS = 50000
 MAX_BATCH_SIZE = 20
 KB_VERSION = "0.1.2"
 
 @tool_metadata(
-    display_name="File Reader",
-    description="Read and search content from documents, PDFs, and text files",
+    display_name="Read",
+    description="Read files from the workspace. Access any file directly including code, documents, PDFs, and images",
     icon="FileText",
     color="bg-emerald-100 dark:bg-emerald-800/50",
     is_core=True,
     weight=35,
     visible=True,
     usage_guide="""
-### FILE READING & SEARCH - USE search_file BY DEFAULT!
+## Read - Read files from the workspace
 
-**DEFAULT: Always use search_file first!**
-- use search_file with file_path "uploads/document.pdf" and query "what is this about"
-- Returns relevant chunks without flooding context!
+Reads files from the workspace. You can access any file directly by using this tool.
 
-**SUPPORTED FILE TYPES:**
-- PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx)
-- Excel (.xls, .xlsx), CSV, JSON, XML
-- Code files (py, js, ts, java, etc.)
-- Text files (txt, md, log, etc.)
+### Key Capabilities
+- Reads any file using absolute or relative paths to /workspace
+- By default reads up to 2000 lines starting from the beginning
+- Supports optional line offset and limit for long files
+- Lines longer than 2000 characters will be truncated
+- Results are returned with line numbers starting at 1
 
-**SCANNED/IMAGE-ONLY PDFs:**
-- If extraction returns empty, use CLI: `pdftoppm -png -r 300 file.pdf /tmp/page` then `tesseract /tmp/page-1.png stdout -l eng`
+### File Type Support
+- **Images** (PNG, JPG, etc): Contents are presented visually
+- **PDF files**: Processed page by page, extracting text and visual content
+- **Jupyter notebooks** (.ipynb): Returns all cells with outputs
+- **Documents**: PDF, Word (.doc, .docx), PowerPoint (.ppt, .pptx)
+- **Data**: Excel (.xls, .xlsx), CSV, JSON, XML
+- **Code**: py, js, ts, java, c, cpp, go, rs, etc.
+- **Text**: txt, md, log, yaml, toml, ini
 
-**Only use read_file for:**
-- Tiny config files (<2KB)
-- When you need EXACT full content
+### When to Use read_file
+- Reading specific files when you know the path
+- Small to medium files where you need full content
+- Code files where you need complete context
+- Config files, scripts, source code
 
-**EXAMPLES:**
-- PDF: use search_file with file_path "uploads/report.pdf" and query "key findings"
-- Excel: use search_file with file_path "uploads/data.xlsx" and query "sales summary"
-- PowerPoint: use search_file with file_path "uploads/deck.pptx" and query "main slides"
-- Word: use search_file with file_path "uploads/doc.docx" and query "contract terms"
-- Config: use read_file with file_path "uploads/config.json" (tiny files only!)
+### When to Use search_file
+- Large documents where you need specific information
+- PDFs, Word docs, Excel files with lots of content
+- When searching for specific terms or concepts
 
-**CRITICAL:**
-- 95% of files → use search_file
-- Images → use load_image
-- ❌ NEVER use read_file on large files!
+### Usage Notes
+- The file_path parameter should be relative to /workspace
+- Can read multiple files in parallel within a single response
+- Use this tool when provided screenshot paths - it works with temporary file paths
+- Returns system warning for empty files that exist
+
+### Batch Mode
+Both tools support reading/searching multiple files concurrently:
+```
+read_file(file_paths=["src/main.py", "src/utils.py"])
+search_file(file_paths=["docs/report.pdf", "docs/summary.pdf"], query="findings")
+```
+
+### Important Notes
+- NEVER use cat/head/tail via Bash to read files - use this tool instead
+- Multiple files can be read in parallel for efficiency
+- For images (jpg, png, gif, webp, svg) → use load_image for visual analysis
 """
 )
 class SandboxFileReaderTool(SandboxToolsBase):
@@ -156,12 +173,6 @@ class SandboxFileReaderTool(SandboxToolsBase):
                     "error": f"File not found: '{cleaned_path}'"
                 }
 
-            if file_info.size > MAX_FILE_SIZE:
-                return {
-                    "file_path": cleaned_path,
-                    "success": False,
-                    "error": f"File too large ({file_info.size / (1024*1024):.2f}MB). Max: {MAX_FILE_SIZE / (1024*1024)}MB."
-                }
 
             file_type = self._get_file_type(cleaned_path)
             escaped_path = shlex.quote(full_path)
@@ -360,26 +371,35 @@ class SandboxFileReaderTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": """Read and extract text content from files in the workspace. Supports batch reading of multiple files concurrently.
+            "description": """Reads a file from the workspace. You can access any file directly by using this tool.
 
-Supports PDFs (extracts text), Word docs, and all text-based files (txt, csv, json, code files, etc.).
-For images (jpg, png, gif, webp, svg), use load_image instead.
-
-Single file: use read_file with file_path "uploads/document.pdf"
-Batch mode: use read_file with file_paths parameter containing multiple file paths
-
-Batch mode reads up to 20 files concurrently - much faster for multiple files! **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `file_path` (optional, single file), `file_paths` (optional, batch mode). Use ONE of these, not both.""",
+Usage:
+- The file_path parameter should be a path relative to /workspace (e.g., 'src/main.py')
+- By default, it reads up to 2000 lines starting from the beginning of the file
+- You can optionally specify a line offset and limit for long files
+- Any lines longer than 2000 characters will be truncated
+- Results are returned with line numbers starting at 1
+- This tool can read images (PNG, JPG), PDFs, Jupyter notebooks (.ipynb), and all text-based files
+- Can read multiple files in parallel for efficiency""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "file_path": {
                         "type": "string",
-                        "description": "**OPTIONAL** - Single file path within /workspace. Example: 'uploads/document.pdf'. Use this OR file_paths, not both."
+                        "description": "**OPTIONAL** - Single file path within /workspace. Example: 'src/main.py'. Use this OR file_paths, not both."
                     },
                     "file_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "**OPTIONAL** - Array of file paths to read concurrently. Example: ['uploads/doc1.pdf', 'uploads/doc2.csv']. Max 20 files per batch. Use this OR file_path, not both."
+                        "description": "**OPTIONAL** - Array of file paths to read concurrently. Example: ['src/main.py', 'src/utils.py']. Max 20 files per batch. Use this OR file_path, not both."
+                    },
+                    "offset": {
+                        "type": "integer",
+                        "description": "**OPTIONAL** - The line number to start reading from (1-indexed). Only provide if the file is too large to read at once."
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "**OPTIONAL** - The number of lines to read. Only provide if the file is too large to read at once."
                     }
                 },
                 "additionalProperties": False
@@ -387,9 +407,11 @@ Batch mode reads up to 20 files concurrently - much faster for multiple files! *
         }
     })
     async def read_file(
-        self, 
-        file_path: Optional[str] = None, 
-        file_paths: Optional[List[str]] = None
+        self,
+        file_path: Optional[str] = None,
+        file_paths: Optional[List[str]] = None,
+        offset: Optional[int] = None,
+        limit: Optional[int] = None
     ) -> ToolResult:
         try:
             await self._ensure_sandbox()
@@ -435,35 +457,42 @@ Batch mode reads up to 20 files concurrently - much faster for multiple files! *
         "type": "function",
         "function": {
             "name": "search_file",
-            "description": """Semantic search within files - returns only relevant chunks instead of full content. MUCH better for large files!
+            "description": """A powerful semantic search tool for finding content within files.
 
-Use this instead of read_file for:
-- Large PDFs and documents
-- When looking for specific information
-- Multiple files where you need to find something
+Usage:
+- ALWAYS use search_file for large documents. NEVER use grep or rg as a Bash command.
+- This tool has been optimized for correct permissions and access.
+- Returns relevant chunks instead of full content - prevents context flooding.
+- Supports semantic search with natural language queries.
+
+When to use:
+- Large PDFs and documents where you need specific information
+- Finding specific terms, concepts, or patterns in files
+- Multiple files where you need to search for something
+- When read_file would return too much content
 
 Examples:
-- Use search_file with file_path "uploads/contract.pdf" and query "termination clause"
-- Use search_file with file_paths containing multiple file paths and query "payment terms"
-""",
+- search_file(file_path="docs/contract.pdf", query="termination clause")
+- search_file(file_paths=["doc1.pdf", "doc2.pdf"], query="payment terms")""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Natural language query to search for (e.g., 'What are the payment terms?', 'termination clause')"
+                        "description": "**REQUIRED** - The search query. Can be natural language ('What are the payment terms?') or specific terms ('termination clause')."
                     },
                     "file_path": {
                         "type": "string",
-                        "description": "Single file path to search within (e.g., 'uploads/contract.pdf')"
+                        "description": "**OPTIONAL** - Single file path to search within. Example: 'docs/contract.pdf'"
                     },
                     "file_paths": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Multiple file paths to search across"
+                        "description": "**OPTIONAL** - Multiple file paths to search across. Example: ['docs/report1.pdf', 'docs/report2.pdf']"
                     }
                 },
-                "required": ["query"]
+                "required": ["query"],
+                "additionalProperties": False
             }
         }
     })

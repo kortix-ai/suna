@@ -70,7 +70,7 @@ import { useKortixComputerStore, useSetIsSidePanelOpen } from '@/stores/kortix-c
 import { useToolStreamStore } from '@/stores/tool-stream-store';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { useProcessStreamOperation } from '@/stores/spreadsheet-store';
-import { uploadPendingFilesToProject } from '@/components/thread/chat-input/file-upload-handler';
+import { uploadPendingFilesToProject, uploadFiles } from '@/components/thread/chat-input/file-upload-handler';
 import { useClearNavigation } from '@/stores/thread-navigation-store';
 import { useModeViewerInit } from '@/hooks/threads/use-mode-viewer-init';
 import { getStreamPreconnectService } from '@/lib/streaming/stream-preconnect';
@@ -539,7 +539,6 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         thread_id: pendingIntent.threadId,
         project_id: pendingIntent.projectId,
         prompt: pendingIntent.prompt,
-        file_ids: pendingIntent.fileIds,
         model_name: pendingIntent.modelName,
         agent_id: pendingIntent.agentId,
         mode: pendingIntent.mode,
@@ -1180,7 +1179,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const handleSubmitMessage = useCallback(
     async (
       message: string,
-      options?: { model_name?: string; file_ids?: string[] },
+      options?: { model_name?: string },
     ) => {
       if (!message.trim() || isShared || !startAgentMutation) return;
 
@@ -1201,6 +1200,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       setIsSending(true);
       pendingMessageRef.current = message;
 
+      // Get pending files before sending (they'll be uploaded directly with agent start)
+      const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
+      const uploadedFiles = chatInputRef.current?.getUploadedFiles() || [];
+
       try {
         const result = await startAgentMutation.mutateAsync({
           threadId,
@@ -1208,7 +1211,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           options: {
             ...options,
             agent_id: selectedAgentId,
-            file_ids: options?.file_ids,
+            files: pendingFiles.length > 0 ? pendingFiles : undefined,
           },
         });
 
@@ -1217,6 +1220,12 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           setAgentRunId(result.agent_run_id);
           setAgentStatus('running');
         }
+        
+        // Files are uploaded as part of agent start - no separate upload needed
+        if (pendingFiles.length > 0 && result.sandbox_id) {
+          console.log(`✅ Files uploaded to sandbox ${result.sandbox_id} during agent start`);
+        }
+
         if (modeStarter) {
           console.log('[ThreadComponent] Closing mode starter on first message');
           setModeStarter(null);
@@ -1268,6 +1277,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
       queueMessage,
       queuedMessages,
       modeStarter,
+      queryClient,
     ],
   );
 
