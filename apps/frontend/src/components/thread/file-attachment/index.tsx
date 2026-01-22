@@ -207,13 +207,20 @@ export function FileAttachment({
         }
 
         // Otherwise show compact FileCard
+        // Don't show loading state for files that are already uploaded (ready) or when there's no sandbox to load from
+        const shouldShowLoading = shouldShowPreview && 
+            retryCount < 15 && 
+            !isKanvax && 
+            uploadStatus !== 'ready' && 
+            (sandboxId || localPreviewUrl);
+        
         return (
             <FileCard
                 filepath={filepath}
                 onClick={handleClick}
                 className={className}
                 uploadStatus={uploadStatus}
-                isLoading={shouldShowPreview && retryCount < 15 && !isKanvax}
+                isLoading={shouldShowLoading}
                 hasError={hasError}
                 isSandboxDeleted={isSandboxDeleted}
                 alignRight={alignRight}
@@ -228,13 +235,15 @@ export function FileAttachment({
     // Kanvax, images, and DOCX handle their own loading state internally, so skip content check for them
     const needsContentCheck = !isKanvax && !isImage && !isDocx;
     if (!canShowPreview || waitingForSandbox || hasError || isSandboxDeleted || (needsContentCheck && !hasContent && !localPreviewUrl)) {
+        // Don't show loading state for files that are already uploaded (ready) or when there's no sandbox
+        const shouldShowLoading = isLoading && !isKanvax && uploadStatus !== 'ready' && (sandboxId || localPreviewUrl);
         return (
             <FileCard
                 filepath={filepath}
                 onClick={handleClick}
                 className={className}
                 uploadStatus={uploadStatus}
-                isLoading={isLoading && !isKanvax}
+                isLoading={shouldShowLoading}
                 hasError={hasError}
                 isSandboxDeleted={isSandboxDeleted}
                 alignRight={alignRight}

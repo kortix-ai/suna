@@ -100,13 +100,14 @@ const SLIDE_CREATION_TOOLS = new Set([
 ]);
 
 /**
- * Slide preview component for streaming - loads actual slide when available
+ * Slide preview component for streaming - shows shimmer during generation, loads actual slide when complete
  */
 const SlideStreamPreview: React.FC<{
     toolCall?: any;
     project?: Project;
     onClick?: () => void;
-}> = ({ toolCall, project, onClick }) => {
+    isStreaming?: boolean;
+}> = ({ toolCall, project, onClick, isStreaming = false }) => {
     const [slideUrl, setSlideUrl] = useState<string | null>(null);
     const [iframeLoaded, setIframeLoaded] = useState(false);
     const [isLoadingMetadata, setIsLoadingMetadata] = useState(true);
@@ -114,6 +115,12 @@ const SlideStreamPreview: React.FC<{
     const retryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const isEnsuringSandboxRef = useRef(false);
     const queryClient = useQueryClient();
+
+    // Check if tool is completed
+    const isCompleted = toolCall?.completed === true || 
+                       (toolCall?.tool_result !== undefined && 
+                        toolCall?.tool_result !== null &&
+                        (typeof toolCall.tool_result === 'object' || Boolean(toolCall.tool_result)));
 
     // Extract presentation info from tool call arguments (handle both string and object)
     const parsedArgs = useMemo(() => {
@@ -135,7 +142,8 @@ const SlideStreamPreview: React.FC<{
     }, [toolCall?.arguments]);
 
     const presentationName = parsedArgs.presentation_name;
-    const slideNumber = parsedArgs.slide_number || 1;
+    const slideNumber = parsedArgs.slide_number;
+    const slideTitle = parsedArgs.slide_title;
 
     // Ensure sandbox is active when we have sandbox ID but no URL
     const ensureSandboxActive = useCallback(async () => {
@@ -196,9 +204,15 @@ const SlideStreamPreview: React.FC<{
         };
     }, [project?.id, project?.sandbox?.sandbox_url, presentationName, queryClient]);
 
-    // Fetch metadata and load slide URL
+    // Fetch metadata and load slide URL - only when tool is completed
     useEffect(() => {
-        if (!project?.sandbox?.sandbox_url || !presentationName) {
+        // Don't fetch during streaming - show shimmer instead
+        if (!isCompleted || isStreaming) {
+            setIsLoadingMetadata(false);
+            return;
+        }
+
+        if (!project?.sandbox?.sandbox_url || !presentationName || !slideNumber) {
             return; // Don't set loading to false - wait for data
         }
 
@@ -259,9 +273,11 @@ const SlideStreamPreview: React.FC<{
                 clearTimeout(retryTimeoutRef.current);
             }
         };
-    }, [project?.sandbox?.sandbox_url, presentationName, slideNumber]);
+    }, [project?.sandbox?.sandbox_url, presentationName, slideNumber, isCompleted, isStreaming]);
 
-    const showShimmer = isLoadingMetadata || !slideUrl || !iframeLoaded;
+    // During streaming, always show shimmer with generating state
+    const isGenerating = !isCompleted || isStreaming;
+    const showShimmer = isGenerating || isLoadingMetadata || !slideUrl || !iframeLoaded;
     const width = 480;
     const height = 270;
     const scale = width / 1920;
@@ -283,6 +299,22 @@ const SlideStreamPreview: React.FC<{
                             animation: 'slideShimmerStream 1.5s infinite',
                         }}
                     />
+                    {/* Show slide info overlay during generation */}
+                    {isGenerating && (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
+                            <div className="flex items-center gap-2 mb-2">
+                                <span className="inline-block h-3 w-3 rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground animate-spin" />
+                                <span className="text-sm font-medium">
+                                    {slideNumber ? `Generating Slide ${slideNumber}` : 'Generating Slide...'}
+                                </span>
+                            </div>
+                            {slideTitle && (
+                                <span className="text-xs text-muted-foreground/70 max-w-[80%] truncate">
+                                    {slideTitle}
+                                </span>
+                            )}
+                        </div>
+                    )}
                     <style>{`
                         @keyframes slideShimmerStream {
                             0% { background-position: 200% 0; }
@@ -291,7 +323,7 @@ const SlideStreamPreview: React.FC<{
                     `}</style>
                 </>
             )}
-            {slideUrl && (
+            {slideUrl && !isGenerating && (
                 <div style={{ width: `${width}px`, height: `${height}px`, position: 'relative', overflow: 'hidden' }}>
                     <iframe
                         src={slideUrl}
@@ -844,6 +876,7 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
                 <SlideStreamPreview
                     toolCall={effectiveToolCall}
                     project={project}
+                    isStreaming={!isCompleted}
                     onClick={() => onToolClick?.(messageId ?? null, toolName, effectiveToolCall?.tool_call_id)}
                 />
             </div>
