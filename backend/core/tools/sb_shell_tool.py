@@ -9,39 +9,57 @@ from core.utils.tool_output_streaming import stream_tool_output, get_tool_output
 from core.utils.logger import logger
 
 @tool_metadata(
-    display_name="Terminal & Commands",
-    description="Run commands, install packages, and execute scripts in your workspace",
+    display_name="Bash",
+    description="Execute bash commands in the workspace with optional timeout",
     icon="Terminal",
     color="bg-gray-100 dark:bg-gray-800/50",
     is_core=True,
     weight=20,
     visible=True,
     usage_guide="""
-## Shell - Execute terminal commands in the workspace
+## Bash - Execute bash commands in the workspace
 
-Executes shell commands in the workspace directory with real-time output streaming.
+Executes bash commands in the workspace directory with real-time output streaming. Working directory persists between commands.
+
+IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
+
+### Before Executing Commands
+
+1. **Directory Verification:**
+   - If the command will create new directories or files, first use `ls` to verify the parent directory exists
+   - Example: before running "mkdir foo/bar", first use `ls foo` to check that "foo" exists
+
+2. **Command Execution:**
+   - Always quote file paths that contain spaces with double quotes
+   - Example: cd "/workspace/my folder" (correct) vs cd /workspace/my folder (incorrect)
 
 ### When to Use
 - Installing packages (pip install, npm install, apt-get)
 - Running build commands and scripts
-- Git operations
-- System administration tasks
+- Git operations (status, diff, log, add, commit)
 - Running tests or linters
+- System administration tasks
 - Any task requiring shell execution
 
 ### When NOT to Use
-- DO NOT use cat/head/tail to read files - use read_file or search_file instead
+- DO NOT use cat/head/tail to read files - use read_file instead
 - DO NOT use sed/awk to edit files - use edit_file or str_replace instead
 - DO NOT use echo/heredoc to create files - use create_file instead
-- DO NOT use find/grep for searching - use search_file or the dedicated search tools
+- DO NOT use find for file search - use Glob patterns instead
+- DO NOT use grep for content search - use search_file instead
 
 ### Important Notes
-- Commands run synchronously with a default 300s (5 minutes) timeout
-- Output is streamed in real-time
+- Commands timeout after 300 seconds (5 minutes) by default
+- Output is truncated if it exceeds 50000 characters
 - Working directory is /workspace by default
 - Use ABSOLUTE paths in commands (e.g., /workspace/src/main.py)
 - Always use non-interactive flags (-y, --yes, -f) to avoid prompts
-- Chain commands with && for sequential execution
+
+### Multiple Commands
+- If commands are independent and can run in parallel, make multiple tool calls
+- If commands depend on each other, chain with && (e.g., `git add . && git commit -m "message"`)
+- Use `;` only when you need to run commands sequentially but don't care if earlier commands fail
+- Try to maintain your current working directory by using absolute paths and avoiding `cd`
 
 ### Long-Running Processes
 For background processes (servers, watches), use tmux:
@@ -56,14 +74,14 @@ tmux capture-pane -t myserver -p
 tmux kill-session -t myserver
 ```
 
-### Port 8080
-Port 8080 is AUTO-EXPOSED and publicly accessible. DO NOT start web servers manually - files served from /workspace are automatically available via preview URLs.
+### Git Operations
+- NEVER use git commands with -i flag (interactive mode not supported)
+- NEVER use --amend unless explicitly requested
+- NEVER force push to main/master
+- When committing, use HEREDOC for multiline messages
 
-### Best Practices
-- Prefer CLI tools over Python scripts for file ops, text processing
-- Chain multiple commands with && to minimize tool calls
-- For large outputs, redirect to files: `cmd > output.txt`
-- Use `bc` for simple math, Python for complex calculations
+### Port 8080
+Port 8080 is AUTO-EXPOSED and publicly accessible. Files served from /workspace are automatically available via preview URLs.
 """
 )
 class SandboxShellTool(SandboxToolsBase):
@@ -78,13 +96,30 @@ class SandboxShellTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "execute_command",
-            "description": "Execute a shell command in the workspace directory. Commands run synchronously and wait for completion with real-time output streaming. For long-running processes (servers, watches), use tmux directly in your command: e.g., `tmux new-session -d -s myserver 'npm run dev'`",
+            "description": """Execute a bash command in the workspace directory with optional timeout.
+
+IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.
+
+Before executing the command:
+1. If the command creates new directories/files, first verify the parent directory exists using `ls`
+2. Always quote file paths that contain spaces with double quotes
+
+Usage notes:
+- Commands timeout after 300 seconds by default (max 600 seconds / 10 minutes)
+- Output is truncated if it exceeds 50000 characters
+- For long-running processes, use tmux: `tmux new-session -d -s name 'command'`
+- Chain dependent commands with && (e.g., `git add . && git commit -m "message"`)
+- Avoid using cat, head, tail, sed, awk, echo, find, grep - use dedicated tools instead""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "command": {
                         "type": "string",
-                        "description": "**REQUIRED** - The shell command to execute. Commands run synchronously. For background processes, wrap with tmux: `tmux new-session -d -s name 'command'`"
+                        "description": "**REQUIRED** - The bash command to execute. Commands run synchronously and wait for completion."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "**OPTIONAL** - Clear, concise description of what this command does. For simple commands (git, npm), keep it brief (5-10 words). For complex commands (piped commands, obscure flags), add enough context to clarify what it does."
                     },
                     "folder": {
                         "type": "string",
@@ -92,7 +127,7 @@ class SandboxShellTool(SandboxToolsBase):
                     },
                     "timeout": {
                         "type": "integer",
-                        "description": "**OPTIONAL** - Timeout in seconds. Default: 300 (5 minutes). Increase for longer operations.",
+                        "description": "**OPTIONAL** - Timeout in seconds (max 600). Default: 300 (5 minutes). Increase for longer operations.",
                         "default": 300
                     }
                 },
@@ -102,8 +137,9 @@ class SandboxShellTool(SandboxToolsBase):
         }
     })
     async def execute_command(
-        self, 
-        command: str, 
+        self,
+        command: str,
+        description: Optional[str] = None,
         folder: Optional[str] = None,
         timeout: int = 300
     ) -> ToolResult:

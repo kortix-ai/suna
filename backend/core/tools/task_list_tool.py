@@ -23,15 +23,15 @@ class Task(BaseModel):
     section_id: str
 
 @tool_metadata(
-    display_name="Task Management",
-    description="Create and track your action plan with organized to-do lists",
+    display_name="TodoWrite",
+    description="Create and manage a structured task list for your current session",
     icon="CheckSquare",
     color="bg-amber-100 dark:bg-amber-800/50",
     is_core=True,
     usage_guide="""
-## Task Management - Structured task tracking for complex work
+## TodoWrite - Structured task list management
 
-The Task List is your ABSOLUTE SOURCE OF TRUTH for autonomous task execution. Use it to track progress, organize complex tasks, and demonstrate thoroughness.
+Use this tool to create and manage a structured task list for your current session. This helps you track progress, organize complex tasks, and demonstrate thoroughness to the user. It also helps the user understand the progress of the task and overall progress of their requests.
 
 ### Available Tools
 - **create_tasks**: Create task list with sections and tasks
@@ -40,86 +40,66 @@ The Task List is your ABSOLUTE SOURCE OF TRUTH for autonomous task execution. Us
 - **delete_tasks**: Remove tasks or sections
 - **clear_all**: Reset task list to empty state
 
-### When to Use Task List
-Use PROACTIVELY for:
-- Complex multi-step tasks (3+ distinct steps)
-- Research involving multiple items (companies, topics, products)
-- Deliverable creation (presentations, reports, dashboards)
-- Multi-file projects (apps, features, codebases)
-- Any work requiring sustained execution
+### When to Use This Tool
+Use this tool proactively in these scenarios:
 
-### When NOT to Use
-Skip task list for:
-- Simple questions answerable in one response
-- Quick factual lookups
-- Single-step operations
-- Conversational exchanges
+1. **Complex multi-step tasks** - When a task requires 3 or more distinct steps or actions
+2. **Non-trivial and complex tasks** - Tasks that require careful planning or multiple operations
+3. **User explicitly requests todo list** - When the user directly asks you to use the todo list
+4. **User provides multiple tasks** - When users provide a list of things to be done (numbered or comma-separated)
+5. **After receiving new instructions** - Immediately capture user requirements as todos
+6. **When you start working on a task** - Mark it as in_progress BEFORE beginning work. Ideally you should only have one todo as in_progress at a time
+7. **After completing a task** - Mark it as completed and add any new follow-up tasks discovered during implementation
 
-### Task List Contract
+### When NOT to Use This Tool
+Skip using this tool when:
+1. There is only a single, straightforward task
+2. The task is trivial and tracking it provides no organizational benefit
+3. The task can be completed in less than 3 trivial steps
+4. The task is purely conversational or informational
 
-**1. Sequential Execution - No Exceptions**
-- Execute tasks in EXACT order they appear
-- NEVER skip tasks or work out of order
-- NEVER start task N+1 before completing task N
+NOTE: Do not use this tool if there is only one trivial task to do. Just do the task directly.
 
-**2. Immediate Status Updates**
-- Mark tasks `completed` THE MOMENT you finish them
-- Don't batch updates at the end - update as you go
-- Use `view_tasks` after every 2-3 completions
+### Task States and Management
 
-**3. Uninterrupted Execution**
-- Once started, execute ALL tasks to completion
-- NEVER ask "should I continue?" between tasks
-- NEVER pause for confirmation mid-execution
-- Only stop if genuinely blocked by missing information
+**Task States:** Use these states to track progress:
+- pending: Task not yet started
+- in_progress: Currently working on (limit to ONE task at a time)
+- completed: Task finished successfully
 
-**4. Living Document**
-- ADD tasks when you discover additional work
-- REMOVE tasks that become unnecessary
-- UPDATE task content if scope changes
+**IMPORTANT:** Task descriptions must have two forms:
+- content: The imperative form describing what needs to be done (e.g., "Run tests", "Build the project")
+- activeForm: The present continuous form shown during execution (e.g., "Running tests", "Building the project")
 
-### Task Breakdown Principles
+### Task Management Rules
 
-**Granularity - One Unit Per Task:**
-- ❌ BAD: "Research 5 companies and create comparison"
-- ✅ GOOD: 5 tasks (one per company) + 1 synthesis task
+1. Update task status in real-time as you work
+2. Mark tasks complete IMMEDIATELY after finishing (don't batch completions)
+3. Exactly ONE task must be in_progress at any time (not less, not more)
+4. Complete current tasks before starting new ones
+5. Remove tasks that are no longer relevant from the list entirely
 
-**Specificity - Clear Completion Criteria:**
-- ❌ BAD: "Look into market trends"
-- ✅ GOOD: "Research Company A: strategy, funding, market position"
+### Task Completion Requirements
 
-### Execution Workflow
+- ONLY mark a task as completed when you have FULLY accomplished it
+- If you encounter errors, blockers, or cannot finish, keep the task as in_progress
+- When blocked, create a new task describing what needs to be resolved
+- Never mark a task as completed if:
+  - Tests are failing
+  - Implementation is partial
+  - You encountered unresolved errors
+  - You couldn't find necessary files or dependencies
 
-```
-WHILE pending tasks exist:
-    1. view_tasks → identify next pending task
-    2. Execute task thoroughly
-    3. update_tasks → mark completed IMMEDIATELY
-    4. IF discovered new work → create_tasks to add
-    5. IF task unnecessary → delete_tasks to remove
-```
+### Task Breakdown
 
-### Structure Pattern
+- Create specific, actionable items
+- Break complex tasks into smaller, manageable steps
+- Use clear, descriptive task names
+- Always provide both forms:
+  - content: "Fix authentication bug"
+  - activeForm: "Fixing authentication bug"
 
-```
-Section: "Research Phase"
-- Research Item A: [specific aspects]
-- Research Item B: [specific aspects]
-
-Section: "Analysis Phase"
-- Cross-reference findings, verify accuracy
-- Identify patterns and insights
-
-Section: "Output Phase"
-- Create deliverable (report/presentation)
-- Document sources and methodology
-```
-
-### Important Notes
-- Task list persists across context - it IS your memory
-- Completed tasks represent verified progress
-- Users can see progress in real-time
-- After ALL tasks complete, call `complete` with attachments
+When in doubt, use this tool. Being proactive with task management demonstrates attentiveness and ensures you complete all requirements successfully.
 """,
     weight=5,
     visible=True

@@ -12,33 +12,34 @@ from PIL import Image
 from core.utils.config import config
 
 @tool_metadata(
-    display_name="Web Browser",
-    description="Browse websites, click buttons, fill forms, and extract information from web pages",
+    display_name="Browser",
+    description="Interact with web pages using mouse and keyboard, take screenshots, and extract content",
     icon="Globe",
     color="bg-cyan-100 dark:bg-cyan-800/50",
     weight=60,
     visible=True,
     usage_guide="""
-## Browser - Automated web browsing and interaction
+## Browser - Web page interaction and automation
 
-Full browser automation using natural language actions. The browser runs in a sandboxed environment.
+Use a mouse and keyboard to interact with a web browser, and take screenshots. Full browser automation using natural language actions in a sandboxed environment.
 
 ### Available Tools
 - **browser_navigate_to**: Navigate to any URL
-- **browser_act**: Perform ANY action using natural language
+- **browser_act**: Perform ANY action using natural language (click, type, scroll, etc.)
 - **browser_extract_content**: Extract structured data from pages
-- **browser_screenshot**: Capture current page
+- **browser_screenshot**: Capture current page state
 
 ### When to Use
 - Interacting with websites that require clicks, forms, logins
-- Extracting data from pages that scrape_webpage can't handle
+- Extracting data from dynamic pages that require JavaScript
 - Filling out forms or completing multi-step web flows
 - Verifying website state or visual elements
+- Any task requiring visual inspection of web content
 
 ### When NOT to Use
-- Simple content extraction → use scrape_webpage first (faster)
-- Static pages → use scrape_webpage
-- If scrape_webpage works for your needs
+- Simple static content extraction → use scrape_webpage first (faster)
+- API-based data retrieval → use appropriate API tools
+- For GitHub URLs → prefer using the gh CLI via Bash instead
 
 ### browser_act - Natural Language Actions
 
@@ -48,7 +49,6 @@ Describe what you want to do in natural language:
 - "scroll down"
 - "select 'Option A' from the dropdown"
 - "press Enter"
-- "upload file" (include filePath parameter)
 
 **Supports:**
 - Clicking any element (buttons, links, images)
@@ -59,14 +59,13 @@ Describe what you want to do in natural language:
 - File uploads (use filePath parameter)
 - iframes (use iframes parameter)
 
-### Validation Workflow
+### Screenshot Validation
 
-**CRITICAL:** Every browser action returns a screenshot.
-1. Review the screenshot after each action
-2. Verify the expected result is visible
-3. For data entry: confirm the field shows the exact value
-4. Report: "Verified: [field] shows [value]" or "Error: Expected [X] but got [Y]"
-5. Never assume success without visual confirmation
+**IMPORTANT:** Every browser action returns a screenshot.
+- Whenever you intend to click on an element, consult the screenshot to determine coordinates
+- If a click failed to load, try adjusting your click location so the cursor tip falls on the element
+- Make sure to click buttons, links, icons with the cursor tip in the center of the element
+- Review screenshots after each action to verify expected results
 
 ### Usage Pattern
 
@@ -86,10 +85,9 @@ browser_extract_content(instruction="get all product names and prices")
 
 ### Important Notes
 - Screenshots auto-included with every action - use them to verify
-- Use variables parameter for sensitive data (not logged)
+- Use variables parameter for sensitive data (not logged to LLM providers)
 - Include filePath for any file upload actions
 - Browser is sandboxed - safe for any site
-- Use upload_file to permanently share screenshots
 """
 )
 class BrowserTool(SandboxToolsBase):
