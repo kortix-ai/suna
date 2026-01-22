@@ -85,9 +85,10 @@ export function FileViewer({
   const previewType = file ? getFilePreviewType(file.name) : FilePreviewType.OTHER;
   const isImage = previewType === FilePreviewType.IMAGE;
   // Binary file types that should be fetched as blob, not text
-  const isBinaryFile = previewType === FilePreviewType.IMAGE || 
+  const isBinaryFile = previewType === FilePreviewType.IMAGE ||
                        previewType === FilePreviewType.PDF ||
                        previewType === FilePreviewType.XLSX ||
+                       previewType === FilePreviewType.DOCX ||
                        previewType === FilePreviewType.BINARY;
   const shouldFetchText = file && !isBinaryFile;
   const shouldFetchBlob = file && isBinaryFile;
