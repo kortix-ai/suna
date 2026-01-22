@@ -54,7 +54,7 @@ class ManagerInitializer:
             except Exception as e:
                 logger.warning(f"⚠️ [STATELESS MCP] MCP init failed (non-fatal): {e}")
 
-        return thread_manager, tool_registry
+        return thread_manager, tool_registry, trace
 
     @staticmethod
     async def load_prompt_and_tools(ctx: PipelineContext, state, tool_registry, thread_manager):

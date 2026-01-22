@@ -126,17 +126,24 @@ const SlideStreamPreview: React.FC<{
     const parsedArgs = useMemo(() => {
         const args = toolCall?.arguments;
         if (!args) return {};
-        if (typeof args === 'object') return args;
+        if (typeof args === 'object' && args !== null) return args as Record<string, unknown>;
+        if (typeof args !== 'string') return {};
+        
+        // args is now typed as string
+        const argsStr: string = args;
+        
         // Try to parse string arguments
         try {
-            return JSON.parse(args);
+            return JSON.parse(argsStr);
         } catch {
-            // Try to extract from partial JSON
-            const presentationMatch = args.match(/"presentation_name"\s*:\s*"([^"]+)"/);
-            const slideMatch = args.match(/"slide_number"\s*:\s*(\d+)/);
+            // Try to extract from partial/streaming JSON using regex
+            const presentationMatch = argsStr.match(/"presentation_name"\s*:\s*"([^"]+)"/);
+            const slideMatch = argsStr.match(/"slide_number"\s*:\s*(\d+)/);
+            const titleMatch = argsStr.match(/"slide_title"\s*:\s*"([^"]+)"/);
             return {
                 presentation_name: presentationMatch?.[1],
-                slide_number: slideMatch ? parseInt(slideMatch[1]) : undefined
+                slide_number: slideMatch ? parseInt(slideMatch[1]) : undefined,
+                slide_title: titleMatch?.[1],
             };
         }
     }, [toolCall?.arguments]);

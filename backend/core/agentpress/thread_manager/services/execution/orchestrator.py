@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from langfuse.client import StatefulGenerationClient
 
 from core.utils.logger import logger
-from core.agentpress.response_processor import ProcessorConfig
+from core.agentpress.processor_config import ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
 
 from core.agentpress.thread_manager.services.messages.preparer import MessagePreparer

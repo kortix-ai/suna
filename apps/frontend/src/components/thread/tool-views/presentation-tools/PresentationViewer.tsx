@@ -105,12 +105,82 @@ export function PresentationViewer({
     return name.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
   };
 
-  // Extract presentation info from toolCall.arguments (available during streaming)
-  const streamingSlideNumber = toolCall?.arguments?.slide_number as number | undefined;
-  const streamingPresentationName = toolCall?.arguments?.presentation_name as string | undefined;
-  const streamingSlideTitle = toolCall?.arguments?.slide_title as string | undefined;
+  // Parse streaming arguments - handle both string (streaming) and object (completed) cases
+  const parsedStreamingArgs = useMemo(() => {
+    const args = toolCall?.arguments;
+    if (!args) return {};
+    if (typeof args === 'object' && args !== null) return args as Record<string, unknown>;
+    if (typeof args !== 'string') return {};
+    
+    // args is now typed as string
+    const argsStr: string = args;
+    
+    // Try to parse string arguments
+    try {
+      return JSON.parse(argsStr);
+    } catch {
+      // Try to extract from partial/streaming JSON using regex
+      const presentationMatch = argsStr.match(/"presentation_name"\s*:\s*"([^"]+)"/);
+      const slideMatch = argsStr.match(/"slide_number"\s*:\s*(\d+)/);
+      const titleMatch = argsStr.match(/"slide_title"\s*:\s*"([^"]+)"/);
+      // Extract content - this is trickier due to HTML/special chars
+      let contentValue: string | undefined;
+      const contentStart = argsStr.indexOf('"content"');
+      if (contentStart !== -1) {
+        // Find the start of the content value
+        const colonPos = argsStr.indexOf(':', contentStart);
+        if (colonPos !== -1) {
+          const quoteStart = argsStr.indexOf('"', colonPos);
+          if (quoteStart !== -1) {
+            // Extract from the opening quote, handling escapes
+            let i = quoteStart + 1;
+            let value = '';
+            let escaped = false;
+            while (i < argsStr.length) {
+              const char = argsStr[i];
+              if (escaped) {
+                switch (char) {
+                  case 'n': value += '\n'; break;
+                  case 't': value += '\t'; break;
+                  case 'r': value += '\r'; break;
+                  case '"': value += '"'; break;
+                  case '\\': value += '\\'; break;
+                  default: value += char;
+                }
+                escaped = false;
+              } else if (char === '\\') {
+                escaped = true;
+              } else if (char === '"') {
+                // End of string
+                contentValue = value;
+                break;
+              } else {
+                value += char;
+              }
+              i++;
+            }
+            // If no closing quote, still use partial value
+            if (contentValue === undefined && value.length > 0) {
+              contentValue = value;
+            }
+          }
+        }
+      }
+      return {
+        presentation_name: presentationMatch?.[1],
+        slide_number: slideMatch ? parseInt(slideMatch[1]) : undefined,
+        slide_title: titleMatch?.[1],
+        content: contentValue,
+      };
+    }
+  }, [toolCall?.arguments]);
+
+  // Extract presentation info from parsed streaming arguments
+  const streamingSlideNumber = parsedStreamingArgs.slide_number as number | undefined;
+  const streamingPresentationName = parsedStreamingArgs.presentation_name as string | undefined;
+  const streamingSlideTitle = parsedStreamingArgs.slide_title as string | undefined;
   // Extract the HTML content being streamed for real-time preview
-  const streamingContent = toolCall?.arguments?.content as string | undefined;
+  const streamingContent = parsedStreamingArgs.content as string | undefined;
 
   // Extract presentation info from toolResult.output (from metadata)
   let extractedPresentationName: string | undefined;
@@ -791,8 +861,11 @@ export function PresentationViewer({
               />
             </div>
           </div>
-        ) : isLoadingMetadata || (extractedPresentationName && !metadata && !toolExecutionError) ? (
-          // Loading state - show skeleton slides while fetching metadata
+        ) : isLoadingMetadata || (extractedPresentationName && !metadata && !toolExecutionError) || (!toolResult && !isStreaming) ? (
+          // Loading state - show skeleton slides while:
+          // 1. Fetching metadata, OR
+          // 2. Have presentation name but no metadata yet, OR
+          // 3. Tool result hasn't arrived yet from stream (waiting for data)
           <ScrollArea className="h-full">
             <div className="space-y-4 p-4">
               {Array.from({ length: 3 }, (_, i) => (

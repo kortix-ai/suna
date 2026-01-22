@@ -77,6 +77,7 @@ class RunState:
         self._cancelled: bool = False
         self._terminated: bool = False
         self._termination_reason: Optional[str] = None
+        self._cancellation_event: Optional[asyncio.Event] = None
 
         if agent_config:
             self.agent_id = agent_config.get('agent_id')
@@ -153,7 +154,12 @@ class RunState:
 
     @property
     def is_active(self) -> bool:
-        return not self._cancelled and not self._terminated
+        # Check explicit cancel/terminate flags AND the cancellation event
+        if self._cancelled or self._terminated:
+            return False
+        if self._cancellation_event and self._cancellation_event.is_set():
+            return False
+        return True
 
     @property
     def termination_reason(self) -> Optional[str]:
@@ -178,6 +184,10 @@ class RunState:
 
     def should_continue(self) -> bool:
         if self._cancelled or self._terminated:
+            return False
+        
+        # Also check cancellation event for stop signal
+        if self._cancellation_event and self._cancellation_event.is_set():
             return False
 
         if self.duration_seconds > self.MAX_DURATION_SECONDS:
@@ -216,12 +226,16 @@ class RunState:
             self._accumulated_content += content
         self._last_activity = time.time()
 
-    def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
+    def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None, pre_assigned_message_id: Optional[str] = None) -> str:
         self._message_counter += 1
-        message_id = str(uuid.uuid4())
+        # Use pre-assigned ID if provided (for linking streaming tool results), otherwise generate new
+        message_id = pre_assigned_message_id or str(uuid.uuid4())
         
         msg_with_id = msg.copy()
         msg_with_id["message_id"] = message_id
+        # Store metadata on the message for in-memory lookups (e.g., finding placeholders)
+        if metadata:
+            msg_with_id["metadata"] = metadata
 
         self._messages.append(msg_with_id)
         self._last_activity = time.time()
@@ -243,14 +257,24 @@ class RunState:
         self._check_flush_threshold()
         return message_id
 
-    def finalize_assistant_message(self, tool_calls: Optional[List[Dict[str, Any]]] = None, thread_run_id: Optional[str] = None) -> str:
-        msg = {"role": "assistant", "content": self._accumulated_content or None}
+    def finalize_assistant_message(
+        self, 
+        tool_calls: Optional[List[Dict[str, Any]]] = None, 
+        thread_run_id: Optional[str] = None, 
+        is_placeholder: bool = False,
+        pre_assigned_message_id: Optional[str] = None
+    ) -> str:
+        # Use empty string instead of None to avoid null content messages
+        msg = {"role": "assistant", "content": self._accumulated_content or ""}
         if tool_calls:
             msg["tool_calls"] = tool_calls
 
         metadata = {}
         if thread_run_id:
             metadata["thread_run_id"] = thread_run_id
+        if is_placeholder:
+            metadata["is_placeholder"] = True
+            metadata["stream_status"] = "tool_call_chunk"
         if tool_calls:
             unified_tool_calls = []
             for tc in tool_calls:
@@ -269,9 +293,127 @@ class RunState:
                 unified_tool_calls.append(unified_tc)
             metadata["tool_calls"] = unified_tool_calls
 
-        message_id = self.add_message(msg, metadata if metadata else None)
-        self._accumulated_content = ""
+        # Use pre-assigned message_id if provided (for linking streaming tool results)
+        message_id = self.add_message(msg, metadata if metadata else None, pre_assigned_message_id=pre_assigned_message_id)
+        if not is_placeholder:
+            self._accumulated_content = ""
         return message_id
+    
+    def update_assistant_message_tool_calls(self, message_id: str, tool_calls: List[Dict[str, Any]], thread_run_id: Optional[str] = None) -> Optional[str]:
+        """Update an existing assistant message with final tool calls (used after execute-on-stream)."""
+        # Find and update the message in our local state
+        for msg in self._messages:
+            msg_meta = msg.get("metadata", {})
+            if isinstance(msg_meta, str):
+                try:
+                    msg_meta = json.loads(msg_meta)
+                except:
+                    msg_meta = {}
+            
+            # Check if this is our placeholder message (by checking if it has is_placeholder flag)
+            if msg_meta.get("is_placeholder"):
+                # Update with final tool calls
+                if tool_calls:
+                    msg["tool_calls"] = tool_calls
+                    unified_tool_calls = []
+                    for tc in tool_calls:
+                        args_str = tc.get("function", {}).get("arguments", "{}")
+                        try:
+                            args_parsed = json.loads(args_str) if isinstance(args_str, str) else args_str
+                        except (json.JSONDecodeError, TypeError):
+                            args_parsed = args_str
+                        unified_tc = {
+                            "tool_call_id": tc.get("id"),
+                            "function_name": tc.get("function", {}).get("name"),
+                            "arguments": args_parsed,
+                            "source": "native"
+                        }
+                        unified_tool_calls.append(unified_tc)
+                    msg_meta["tool_calls"] = unified_tool_calls
+                
+                # Remove placeholder flag
+                msg_meta.pop("is_placeholder", None)
+                msg_meta.pop("stream_status", None)
+                msg["metadata"] = msg_meta
+                
+                self._accumulated_content = ""
+                logger.debug(f"[RunState] Updated placeholder assistant message with {len(tool_calls)} tool calls")
+                return message_id
+        
+        logger.warning(f"[RunState] Could not find placeholder message to update, creating new one")
+        return self.finalize_assistant_message(tool_calls, thread_run_id)
+
+    def update_assistant_message_filter_tool_calls(
+        self, 
+        message_id: str, 
+        keep_tool_call_ids: set
+    ) -> None:
+        """Update an assistant message to only keep specified tool_calls (used when stop happens mid-execution).
+        
+        Args:
+            message_id: The assistant message ID to update
+            keep_tool_call_ids: Set of tool_call IDs to keep (all others will be removed)
+        """
+        for msg in self._messages:
+            if msg.get('message_id') == message_id:
+                # Get current tool_calls
+                tool_calls = msg.get('tool_calls', [])
+                if not tool_calls:
+                    logger.warning(f"[RunState] No tool_calls found in message {message_id} to filter")
+                    return
+                
+                # Filter to only keep specified tool_call IDs
+                filtered_tool_calls = [
+                    tc for tc in tool_calls 
+                    if isinstance(tc, dict) and tc.get('id') in keep_tool_call_ids
+                ]
+                
+                logger.info(f"[RunState] Filtering tool_calls: {len(tool_calls)} -> {len(filtered_tool_calls)} (keeping IDs: {keep_tool_call_ids})")
+                
+                # Update message
+                msg['tool_calls'] = filtered_tool_calls
+                
+                # Update metadata tool_calls (unified format)
+                msg_meta = msg.get("metadata", {})
+                if isinstance(msg_meta, str):
+                    try:
+                        msg_meta = json.loads(msg_meta)
+                    except:
+                        msg_meta = {}
+                
+                filtered_unified = []
+                if msg_meta.get("tool_calls"):
+                    unified_tool_calls = msg_meta["tool_calls"]
+                    filtered_unified = [
+                        utc for utc in unified_tool_calls
+                        if isinstance(utc, dict) and utc.get("tool_call_id") in keep_tool_call_ids
+                    ]
+                    msg_meta["tool_calls"] = filtered_unified
+                    msg["metadata"] = msg_meta
+                
+                # Update pending write if exists
+                for pw in self._pending_writes:
+                    if pw.data.get('message_id') == message_id:
+                        # Update the content in pending write
+                        content = pw.data.get('content', {})
+                        if isinstance(content, dict):
+                            if 'tool_calls' in content:
+                                content['tool_calls'] = filtered_tool_calls
+                            pw.data['content'] = content
+                        
+                        # Update metadata in pending write
+                        metadata = pw.data.get('metadata', {})
+                        if isinstance(metadata, dict) and 'tool_calls' in metadata:
+                            metadata['tool_calls'] = filtered_unified
+                            pw.data['metadata'] = metadata
+                        
+                        logger.debug(f"[RunState] Updated pending write for message {message_id}")
+                        break
+                
+                logger.info(f"[RunState] Successfully filtered assistant message {message_id} to {len(filtered_tool_calls)} tool_calls")
+                return
+        
+        logger.warning(f"[RunState] Could not find message {message_id} to filter tool_calls")
 
     def queue_tool_call(self, tool_call: Dict[str, Any]) -> None:
         self._pending_tool_calls.append(tool_call)
@@ -483,15 +625,23 @@ class RunState:
                     task.cancel()
             self._flush_tasks.clear()
 
+        flush_succeeded = False
         try:
             await self.flush()
+            flush_succeeded = True
+            logger.debug(f"[RunState] Final flush succeeded for run {self.run_id}")
         except Exception as e:
-            logger.warning(f"[RunState] Final flush in cleanup failed: {e}")
+            logger.error(f"[RunState] CRITICAL: Final flush in cleanup failed: {e}")
+            # DO NOT clean up WAL if flush failed - data would be lost!
 
-        try:
-            await wal.cleanup_run(self.run_id)
-        except Exception as e:
-            logger.warning(f"[RunState] WAL cleanup failed: {e}")
+        # Only cleanup WAL if flush succeeded, otherwise we'd lose pending writes
+        if flush_succeeded:
+            try:
+                await wal.cleanup_run(self.run_id)
+            except Exception as e:
+                logger.warning(f"[RunState] WAL cleanup failed: {e}")
+        else:
+            logger.warning(f"[RunState] Skipping WAL cleanup because flush failed - data preserved in WAL for recovery")
 
         self._messages.clear()
         self._tool_results.clear()

@@ -22,7 +22,7 @@ export const StreamingLoader = memo(function StreamingLoader({
   }, []);
 
   return (
-    <div className={`flex items-center justify-center h-full w-full ${className || ''}`}>
+    <div className={`flex items-center justify-center h-full w-full min-h-[300px] ${className || ''}`}>
       <div className="flex flex-col items-center gap-4">
         <KortixLoader customSize={32} speed={1} />
         <span className="text-sm text-muted-foreground">

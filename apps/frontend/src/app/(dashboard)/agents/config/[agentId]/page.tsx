@@ -34,7 +34,7 @@ export default function AgentConfigPage() {
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-[100dvh]">
         <KortixLoader size="large" />
       </div>
     );
@@ -42,7 +42,7 @@ export default function AgentConfigPage() {
 
   if (!agent) {
     return (
-      <div className="flex items-center justify-center h-screen">
+      <div className="flex items-center justify-center h-[100dvh]">
         <p className="text-muted-foreground">Worker not found</p>
       </div>
     );
@@ -80,9 +80,9 @@ export default function AgentConfigPage() {
   ];
 
   return (
-    <div className="h-screen flex flex-col md:flex-row overflow-hidden bg-background md:px-7 md:pt-7">
+    <div className="h-[100dvh] flex flex-col md:flex-row overflow-hidden bg-background px-3 sm:px-4 md:px-7 pt-4 md:pt-7">
       {/* Left Sidebar Menu */}
-      <div className="bg-background flex w-full md:w-48 md:flex-col md:pr-4 px-4 pt-20 md:px-0 md:pt-0 gap-2">
+      <div className="bg-background flex w-full md:w-48 md:flex-col md:pr-4 pt-14 sm:pt-16 md:pt-0 gap-2">
         {/* Back button - desktop only */}
         <Button
           variant="ghost"
@@ -158,34 +158,35 @@ export default function AgentConfigPage() {
       </div>
 
       {/* Right Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden w-full md:w-0 md:pl-1 md:pr-1 md:min-w-0 px-4 md:px-0">
+      <div className="flex-1 flex flex-col overflow-hidden w-full md:w-0 md:pl-1 md:pr-1 md:min-w-0 md:px-0">
         {/* Agent Header */}
-        <div className="flex items-center justify-between pt-12 pb-6 w-full">
+        <div className="flex items-center justify-between pt-6 sm:pt-8 md:pt-12 pb-4 sm:pb-6 w-full gap-3">
           <div
-            className="flex items-center gap-3 cursor-pointer group/header"
+            className="flex items-center gap-2 sm:gap-3 cursor-pointer group/header min-w-0 flex-1"
             onClick={() => setIsEditorOpen(true)}
           >
-            <div className="relative">
+            <div className="relative flex-shrink-0">
               <AgentAvatar
                 agent={agent}
-                size={48}
-                className="border-[1.5px] transition-all group-hover/header:ring-2 group-hover/header:ring-primary/20"
+                size={40}
+                className="border-[1.5px] transition-all group-hover/header:ring-2 group-hover/header:ring-primary/20 sm:!w-12 sm:!h-12"
               />
 
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <h1 className="text-xl font-semibold text-foreground">{agent?.name}</h1>
-                <Pencil className="h-4 w-4 text-muted-foreground opacity-0 group-hover/header:opacity-100 transition-opacity" />
+                <h1 className="text-base sm:text-lg md:text-xl font-semibold text-foreground truncate">{agent?.name}</h1>
+                <Pencil className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground opacity-0 group-hover/header:opacity-100 transition-opacity flex-shrink-0" />
               </div>
             </div>
           </div>
           <Button
             onClick={() => router.push(`/dashboard?agent_id=${agentId}`)}
-            className="gap-2"
+            className="gap-1.5 sm:gap-2 text-sm h-9 sm:h-10 px-3 sm:px-4 flex-shrink-0"
           >
             <MessageCircle className="h-4 w-4" />
-            Start Chat
+            <span className="hidden sm:inline">Start Chat</span>
+            <span className="sm:hidden">Chat</span>
           </Button>
         </div>
 

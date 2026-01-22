@@ -150,9 +150,9 @@ function ActionFilesSwitcher({ currentView, onViewChange, size = 'md' }: ActionF
   const isAction = currentView === 'tools';
   const isFiles = currentView === 'files';
 
-  // Size variants
+  // Size variants - sm is more compact for mobile
   const config = size === 'sm'
-    ? { height: 32, padding: 3, btnWidth: 72, iconSize: 12, fontSize: 11 }
+    ? { height: 30, padding: 2, btnWidth: 64, iconSize: 12, fontSize: 11 }
     : { height: 36, padding: 3, btnWidth: 80, iconSize: 14, fontSize: 12 };
 
   const totalWidth = config.btnWidth * 2 + config.padding * 2;
@@ -239,27 +239,30 @@ export const PanelHeader = memo(function PanelHeader({
 }: PanelHeaderProps) {
   if (variant === 'drawer') {
     return (
-      <div className="h-14 flex-shrink-0 px-4 flex items-center justify-between border-b border-border">
-        <div className="flex items-center">
+      <div className="h-12 flex-shrink-0 px-3 flex items-center justify-between border-b border-border bg-background/95 backdrop-blur-sm">
+        {/* Left: Logo - compact for mobile */}
+        <div className="flex items-center min-w-0">
           <Image
             src="/kortix-computer-white.svg"
             alt="Kortix Computer"
-            width={140}
-            height={16}
+            width={120}
+            height={14}
             className="hidden dark:block"
             priority
           />
           <Image
             src="/kortix-computer-black.svg"
             alt="Kortix Computer"
-            width={140}
-            height={16}
+            width={120}
+            height={14}
             className="block dark:hidden"
             priority
           />
           <DrawerTitle className="sr-only">Kortix Computer</DrawerTitle>
         </div>
-        <div className="flex items-center gap-2">
+        
+        {/* Right: Switcher + Close - tighter spacing */}
+        <div className="flex items-center gap-1.5">
           <ActionFilesSwitcher
             currentView={currentView}
             onViewChange={onViewChange}
@@ -269,7 +272,7 @@ export const PanelHeader = memo(function PanelHeader({
             variant="ghost"
             size="icon"
             onClick={onClose}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 text-muted-foreground hover:text-foreground touch-manipulation"
             title="Minimize"
           >
             <Minimize2 className="h-4 w-4" />

@@ -41,18 +41,16 @@ class StatelessCoordinator(BaseCoordinator):
                 return
 
             self._state = await RunState.create(ctx)
-            await self._init_managers(ctx)
+            # Set cancellation event so state can check for stop signal during streaming
+            self._state._cancellation_event = ctx.cancellation_event
+            self._thread_manager, self._tool_registry, self._trace = await self._init_managers(ctx)
             await self._determine_effective_model(ctx)
             await self._load_prompt_and_tools(ctx)
             
+            # NOTE: User message is already persisted to DB by API layer and loaded by RunState._load_messages()
+            # Do NOT add it again here - that would cause duplicates
             if ctx.user_message:
-                user_msg = {
-                    "role": "user",
-                    "content": ctx.user_message,
-                    "message_id": str(uuid.uuid4())
-                }
-                self._state._messages.append(user_msg)
-                logger.info(f"[Coordinator] Added user message to state: {len(ctx.user_message)} chars")
+                logger.debug(f"[Coordinator] User message already in DB, not re-adding: {len(ctx.user_message)} chars")
 
             write_buffer.register(self._state)
             
@@ -63,7 +61,7 @@ class StatelessCoordinator(BaseCoordinator):
                 get_agent_id=lambda: getattr(self._state, 'agent_id', None)
             )
             
-            tool_executor = ToolExecutor(self._state, self._tool_registry, message_builder)
+            tool_executor = ToolExecutor(self._state, self._tool_registry, message_builder, trace=self._trace)
             response_processor = ResponseProcessor(self._state, message_builder, tool_executor)
             execution_engine = ExecutionEngine(self._state, response_processor)
             
@@ -173,8 +171,8 @@ class StatelessCoordinator(BaseCoordinator):
                 self._state._terminate("max_auto_continues")
                 break
 
-    async def _init_managers(self, ctx: PipelineContext) -> None:
-        self._thread_manager, self._tool_registry = await ManagerInitializer.init_managers(ctx)
+    async def _init_managers(self, ctx: PipelineContext):
+        return await ManagerInitializer.init_managers(ctx)
 
     async def _determine_effective_model(self, ctx: PipelineContext) -> None:
         from core.ai_models import model_manager

@@ -22,7 +22,7 @@ import { QuickLaunch } from './QuickLaunch';
 import { DesktopIcons } from './DesktopIcons';
 import { SSHTerminal } from './SSHTerminal';
 import { FileViewerView } from '../FileViewerView';
-import { EnhancedFileBrowser } from './EnhancedFileBrowser';
+import { FileBrowserView } from '../FileBrowserView';
 import { getFileIconByName } from './Icons';
 import { SystemInfoContent } from './SystemInfoContent';
 import { FileInfoContent, FileInfo } from './FileInfoContent';
@@ -70,9 +70,6 @@ interface FolderWindowProps {
   onFocus: () => void;
   onClose: () => void;
   onMinimize: () => void;
-  onOpenFile: (path: string, isDir: boolean) => void;
-  onGetFileInfo: (fileInfo: FileInfo) => void;
-  onFileDownload: (path: string) => void;
 }
 
 const FolderWindow = memo(function FolderWindow({
@@ -82,27 +79,8 @@ const FolderWindow = memo(function FolderWindow({
   onFocus,
   onClose,
   onMinimize,
-  onOpenFile,
-  onGetFileInfo,
-  onFileDownload,
 }: FolderWindowProps) {
-  const [currentPath, setCurrentPath] = useState(window.filePath || '/workspace');
-  const { data: files = [] } = useDirectoryQuery(sandboxId, currentPath, { enabled: !!sandboxId });
-
-  const folderFiles = files.map(f => ({
-    name: f.name,
-    path: f.path || `${currentPath}/${f.name}`,
-    is_dir: f.is_dir,
-    size: f.size || 0,
-    mod_time: f.mod_time || '',
-  }));
-
-  const pathSegments = currentPath.split('/').filter(Boolean);
-  const parentPath = pathSegments.length > 1 
-    ? '/' + pathSegments.slice(0, -1).join('/') 
-    : '/workspace';
-
-  const folderName = currentPath.split('/').pop() || 'Folder';
+  const folderName = (window.filePath || '/workspace').split('/').pop() || 'Files';
 
   return (
     <AppWindow
@@ -122,26 +100,9 @@ const FolderWindow = memo(function FolderWindow({
       onMinimize={onMinimize}
       zIndex={window.zIndex}
     >
-      <EnhancedFileBrowser
-        files={folderFiles}
-        currentPath={currentPath}
-        onNavigate={setCurrentPath}
-        onFileOpen={(path) => {
-          const file = folderFiles.find(f => f.path === path);
-          if (file) {
-            onOpenFile(path, file.is_dir);
-          }
-        }}
-        onFileDownload={onFileDownload}
-        onGetFileInfo={(file) => onGetFileInfo({
-          name: file.name,
-          path: file.path,
-          isDirectory: file.is_dir,
-          size: file.size,
-          modTime: file.mod_time,
-        })}
-        onBack={() => setCurrentPath(parentPath)}
+      <FileBrowserView
         sandboxId={sandboxId}
+        variant="default"
       />
     </AppWindow>
   );
@@ -890,9 +851,6 @@ export const SandboxDesktop = memo(function SandboxDesktop({
                     onFocus={() => focusWindow(window.id)}
                     onClose={() => closeWindow(window.id)}
                     onMinimize={() => minimizeWindow(window.id)}
-                    onOpenFile={(path, isDir) => openFileWindow(path, isDir)}
-                    onGetFileInfo={(fileInfo) => openFileInfoWindow(fileInfo)}
-                    onFileDownload={handleFileDownload}
                   />
                 );
               }

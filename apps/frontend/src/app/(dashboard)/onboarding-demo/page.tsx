@@ -37,22 +37,22 @@ export default function OnboardingDemoPage() {
   };
 
   return (
-    <div className="container mx-auto max-w-7xl px-4 py-8">
-      <div className="space-y-8">
+    <div className="container mx-auto max-w-7xl px-3 sm:px-4 py-4 sm:py-8">
+      <div className="space-y-4 sm:space-y-8">
         <PageHeader icon={Sparkles}>
           <span className="text-primary">Onboarding Demo</span>
         </PageHeader>
 
-        <div className="grid gap-6">
+        <div className="grid gap-4 sm:gap-6">
         <Card>
-          <CardHeader>
-            <CardTitle>Current Onboarding State</CardTitle>
-            <CardDescription>
+          <CardHeader className="px-3 sm:px-6 py-3 sm:py-6">
+            <CardTitle className="text-base sm:text-lg">Current Onboarding State</CardTitle>
+            <CardDescription className="text-xs sm:text-sm">
               View the current state of the onboarding system
             </CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <CardContent className="space-y-4 px-3 sm:px-6 pb-3 sm:pb-6">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
               <div className="p-4 rounded-lg border">
                 <div className="text-sm font-medium text-muted-foreground">Onboarding Open</div>
                 <div className="text-lg font-semibold">

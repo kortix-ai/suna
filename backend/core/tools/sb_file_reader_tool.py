@@ -9,7 +9,6 @@ from core.agentpress.thread_manager import ThreadManager
 from core.utils.config import config
 from core.utils.logger import logger
 
-MAX_FILE_SIZE = 10 * 1024 * 1024
 MAX_OUTPUT_CHARS = 50000
 MAX_BATCH_SIZE = 20
 KB_VERSION = "0.1.2"
@@ -174,12 +173,6 @@ class SandboxFileReaderTool(SandboxToolsBase):
                     "error": f"File not found: '{cleaned_path}'"
                 }
 
-            if file_info.size > MAX_FILE_SIZE:
-                return {
-                    "file_path": cleaned_path,
-                    "success": False,
-                    "error": f"File too large ({file_info.size / (1024*1024):.2f}MB). Max: {MAX_FILE_SIZE / (1024*1024)}MB."
-                }
 
             file_type = self._get_file_type(cleaned_path)
             escaped_path = shlex.quote(full_path)
