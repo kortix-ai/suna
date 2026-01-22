@@ -46,6 +46,15 @@ const ECS_CLUSTER_NAME = "suna-ecs";
 const ALB_DNS_NAME = "suna-alb-3975a7d-1271164322.us-west-2.elb.amazonaws.com";
 
 // ============================================================================
+// SECRETS MANAGER (Reference to existing secret)
+// ============================================================================
+
+// IMPORTANT: If this secret is recreated, update the ARN here AND in:
+// 1. IAM policy: suna-ecs-task-exec-role -> suna-ecs-task-exec-secrets
+// 2. ECS task definition: suna-api (secrets.SUNA_ENV_JSON.valueFrom)
+const SECRETS_MANAGER_ENV_ARN = "arn:aws:secretsmanager:us-west-2:935064898258:secret:suna-env-prod-2ikWXj";
+
+// ============================================================================
 // EXPORTS
 // ============================================================================
 
@@ -59,6 +68,7 @@ export const tunnelCname = `${EXISTING_TUNNEL_ID}.cfargotunnel.com`;
 
 export const ecsClusterName = ECS_CLUSTER_NAME;
 export const albDnsName = ALB_DNS_NAME;
+export const secretsManagerEnvArn = SECRETS_MANAGER_ENV_ARN;
 
 export const apiEndpoints = {
   primary: "api.kortix.com",

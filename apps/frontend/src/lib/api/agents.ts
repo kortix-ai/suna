@@ -1,7 +1,19 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from '../error-handler';
 import { backendApi } from '../api-client';
-import { BillingError, AgentRunLimitError, ProjectLimitError, ThreadLimitError, NoAccessTokenAvailableError, RequestTooLargeError, parseTierRestrictionError } from './errors';
+import { 
+  BillingError, 
+  AgentRunLimitError, 
+  ProjectLimitError, 
+  ThreadLimitError, 
+  AgentCountLimitError,
+  TriggerLimitError,
+  ModelAccessDeniedError,
+  CustomWorkerLimitError,
+  NoAccessTokenAvailableError, 
+  RequestTooLargeError, 
+  parseTierRestrictionError 
+} from './errors';
 import { nonRunningAgentRuns, activeStreams, cleanupEventSource } from './streaming';
 import { Message } from './threads';
 
@@ -439,11 +451,36 @@ export const optimisticAgentStart = async (options: {
       }
       
       if (status === 402) {
-        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
+        // The api-client already calls parseTierRestrictionError, so response.error should be a typed error
+        // Check if it's already a typed error first
+        if (response.error instanceof ThreadLimitError || 
+            response.error instanceof ProjectLimitError || 
+            response.error instanceof AgentRunLimitError ||
+            response.error instanceof AgentCountLimitError ||
+            response.error instanceof TriggerLimitError ||
+            response.error instanceof ModelAccessDeniedError ||
+            response.error instanceof CustomWorkerLimitError ||
+            response.error instanceof BillingError) {
+          throw response.error;
+        }
+        
+        // If it's not a typed error yet, parse it
+        // The error from api-client has: detail, details, code properties
+        const errorDetail = (response.error as any).detail || response.error.details?.detail || { 
+          message: response.error.message || 'Payment required',
+          error_code: response.error.code || (response.error as any).detail?.error_code
+        };
+        
         const parsedError = parseTierRestrictionError({
           status,
           detail: errorDetail,
-          response: { data: { detail: errorDetail } },
+          code: errorDetail.error_code || response.error.code,
+          response: { 
+            data: { 
+              detail: errorDetail 
+            },
+            status: status
+          },
         });
         throw parsedError;
       }
@@ -496,7 +533,17 @@ export const optimisticAgentStart = async (options: {
       throw error;
     }
 
-    console.error('[API] Failed to start agent optimistically:', error);
+    // Log error with more detail for debugging
+    console.error('[API] Failed to start agent optimistically:', {
+      error,
+      errorName: error?.name,
+      errorMessage: error?.message,
+      errorStatus: error?.status,
+      errorDetail: error?.detail,
+      errorCode: error?.code || error?.detail?.error_code,
+      isThreadLimitError: error instanceof ThreadLimitError,
+      isBillingError: error instanceof BillingError,
+    });
     
     if (
       error instanceof TypeError &&

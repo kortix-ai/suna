@@ -16,7 +16,7 @@ import { ToolViewIconTitle } from '../shared/ToolViewIconTitle';
 import { ToolViewFooter } from '../shared/ToolViewFooter';
 import { extractCommandData } from './_utils';
 import { useToolStreamStore } from '@/stores/tool-stream-store';
-import { useSmoothToolField, useSmoothText } from '@/hooks/messages';
+import { useSmoothToolField } from '@/hooks/messages';
 
 export function CommandToolView({
   toolCall,
@@ -58,17 +58,14 @@ export function CommandToolView({
   const smoothCommand = (smoothFields as any).command || (typeof rawArguments === 'object' ? rawArguments?.command : '') || '';
   const isCommandAnimating = isStreaming && !toolResult;
 
-  // Apply smooth text streaming for output (use useSmoothText since output is a plain string)
-  const smoothOutput = useSmoothText(
-    streamingOutput || output || '',
-    { speed: 120 }
-  );
+  // For terminal output, skip smooth animation - terminal output should feel instant/real-time
+  // Just show the raw streaming output directly without artificial delays
   const isOutputAnimating = isStreaming && isOutputStreaming && !toolResult;
   
-  // Use smooth streaming output when available, otherwise use regular streaming output or result output
-  const displayOutput = isStreaming && isOutputStreaming && smoothOutput 
-    ? smoothOutput 
-    : (isStreaming && streamingOutput ? streamingOutput : output);
+  // Use streaming output directly when available (no smoothing for terminal output - it's supposed to be real-time)
+  const displayOutput = isStreaming && streamingOutput 
+    ? streamingOutput 
+    : output;
   
   // Use smooth command when streaming
   const displayCommand = isStreaming && smoothCommand ? smoothCommand : command;
@@ -187,13 +184,23 @@ export function CommandToolView({
         </div>
       </CardHeader>
 
-      <CardContent className="flex-1 min-h-0 p-0 overflow-hidden">
+      <CardContent className="flex-1 min-h-0 p-0 overflow-hidden flex flex-col">
         {isStreaming ? (
-          <div className="flex flex-col h-full overflow-hidden">
-            {/* Scrollable content area */}
+          !displayCommand && !streamingOutput ? (
+            // Loading state - LoadingState handles its own centering
+            <LoadingState
+              icon={Terminal}
+              iconColor="text-zinc-500 dark:text-zinc-400"
+              bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
+              title={name === 'check-command-output' ? 'Checking command output' : 'Executing command'}
+              filePath={displayText || 'Processing command...'}
+              showProgress={true}
+            />
+          ) : (
+            // Scrollable content area - only renders when there's content
             <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden">
               <div className="p-4 space-y-4">
-                {command && (
+                {displayCommand && (
                   <div className="bg-card border border-border rounded-lg overflow-hidden">
                     <div className="flex-shrink-0 px-4 py-2.5 border-b border-border">
                       <Badge variant="outline" className="text-xs px-2.5 py-0.5 h-5 font-normal">
@@ -238,20 +245,7 @@ export function CommandToolView({
                 )}
               </div>
             </div>
-            
-            {!command && !streamingOutput && (
-              <div className="flex-1 min-h-0 flex items-center justify-center">
-                <LoadingState
-                  icon={Terminal}
-                  iconColor="text-zinc-500 dark:text-zinc-400"
-                  bgColor="bg-gradient-to-b from-zinc-100 to-zinc-50 shadow-inner dark:from-zinc-800/40 dark:to-zinc-900/60"
-                  title={name === 'check-command-output' ? 'Checking command output' : 'Executing command'}
-                  filePath={displayText || 'Processing command...'}
-                  showProgress={true}
-                />
-              </div>
-            )}
-          </div>
+          )
         ) : displayText ? (
           <div className="flex flex-col h-full overflow-hidden">
             {/* Scrollable content area */}

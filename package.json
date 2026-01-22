@@ -13,6 +13,7 @@
     }
   },
   "dependencies": {
+    "@babel/types": "^7.28.6",
     "next": "^16.1.4"
   }
 }

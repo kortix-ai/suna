@@ -27,7 +27,6 @@ interface CheckCommandOutputData {
 }
 
 import { ToolCallData, ToolResultData } from '../types';
-import { useSmoothText } from '@/hooks/messages';
 
 function extractCheckCommandOutputData(
     toolCall: ToolCallData,
@@ -239,15 +238,11 @@ export function CheckCommandOutputToolView({
     const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
     const toolTitle = getToolTitle(name);
 
-    // Apply smooth text streaming for output
-    const smoothOutput = useSmoothText(
-        output || '',
-        { speed: 120 }
-    );
+    // For terminal output, skip smooth animation - terminal output should feel instant/real-time
     const isOutputAnimating = isStreaming && !toolResult;
 
-    // Use smooth output when streaming, otherwise use regular output
-    const displayOutput = isStreaming && smoothOutput ? smoothOutput : output;
+    // Use raw output directly for real-time terminal feel
+    const displayOutput = output;
 
     const formattedOutput = React.useMemo(() => {
         if (!displayOutput) return [];

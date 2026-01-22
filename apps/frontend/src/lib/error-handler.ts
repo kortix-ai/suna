@@ -7,7 +7,9 @@ import {
   ModelAccessDeniedError,
   CustomWorkerLimitError,
   ThreadLimitError,
-  AgentCountLimitError
+  AgentCountLimitError,
+  formatTierErrorForUI,
+  isTierRestrictionError
 } from './api/errors';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 
@@ -166,82 +168,13 @@ export const handleApiError = (error: any, context?: ErrorContext): void => {
   const rawMessage = extractErrorMessage(error);
   const formattedMessage = formatErrorMessage(rawMessage, context);
 
-  if (error instanceof AgentRunLimitError) {
-    // Note: Translations should be handled in components that use this handler
-    // This is a fallback for non-component contexts
-    const upgradeMessage = `You've reached your limits. Worker Run Limit (${error.detail.running_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
-    return;
-  }
-
-  if (error instanceof ProjectLimitError) {
-    // Note: Translations should be handled in components that use this handler
-    // This is a fallback for non-component contexts
-    const upgradeMessage = `You've reached your limits. Project Limit (${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
-    return;
-  }
-
-  if (error instanceof ThreadLimitError) {
-    const upgradeMessage = `You've reached your limits. Thread Limit (${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
-    return;
-  }
-
-  if (error instanceof AgentCountLimitError) {
-    const upgradeMessage = `You've reached your limits. Worker Limit (${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
-    return;
-  }
-
-  if (error instanceof TriggerLimitError) {
-    const upgradeMessage = `You've reached your limits. Trigger Limit (${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
-    return;
-  }
-
-  if (error instanceof ModelAccessDeniedError) {
-    const upgradeMessage = 'Upgrade to access premium AI models';
-    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
-    return;
-  }
-
-  if (error instanceof CustomWorkerLimitError) {
-    const upgradeMessage = `You've reached your limits. Worker Limit (${error.detail.current_count}/${error.detail.limit})`;
-    usePricingModalStore.getState().openPricingModal({ isAlert: true, alertTitle: upgradeMessage });
-    return;
-  }
-
-  if (error instanceof BillingError) {
-    // Extract billing error message and determine if credits are exhausted
-    const message = error.detail?.message?.toLowerCase() || '';
-    const originalMessage = error.detail?.message || '';
-    const isCreditsExhausted = 
-      message.includes('credit') ||
-      message.includes('balance') ||
-      message.includes('insufficient') ||
-      message.includes('out of credits') ||
-      message.includes('no credits');
-    
-    // Try to extract balance from message (e.g., "Your balance is -284 credits")
-    const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
-    const balance = balanceMatch ? balanceMatch[1] : null;
-    
-    // Open pricing modal with appropriate alert title and subtitle
-    const alertTitle = isCreditsExhausted 
-      ? 'You ran out of credits'
-      : 'Billing check failed';
-    
-    const alertSubtitle = balance 
-      ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
-      : isCreditsExhausted 
-        ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
-        : 'Please upgrade to continue.';
-    
+  // Handle tier restriction errors using shared formatting function
+  const errorUI = formatTierErrorForUI(error);
+  if (errorUI) {
     usePricingModalStore.getState().openPricingModal({ 
       isAlert: true, 
-      alertTitle,
-      alertSubtitle
+      alertTitle: errorUI.alertTitle,
+      alertSubtitle: errorUI.alertSubtitle
     });
     return;
   }
@@ -308,20 +241,10 @@ export const handleApiInfo = (message: string, description?: string): void => {
 };
 
 /**
- * Check if an error is a billing/limit error that should open the pricing modal
+ * Check if an error is a billing/limit error that should open the pricing modal.
+ * This is an alias for isTierRestrictionError from shared package for backwards compatibility.
  */
-export const isBillingError = (error: any): boolean => {
-  return (
-    error instanceof BillingError ||
-    error instanceof AgentRunLimitError ||
-    error instanceof ProjectLimitError ||
-    error instanceof ThreadLimitError ||
-    error instanceof AgentCountLimitError ||
-    error instanceof TriggerLimitError ||
-    error instanceof ModelAccessDeniedError ||
-    error instanceof CustomWorkerLimitError
-  );
-};
+export const isBillingError = isTierRestrictionError;
 
 /**
  * Handle billing errors by opening the pricing modal with appropriate message.
@@ -329,7 +252,7 @@ export const isBillingError = (error: any): boolean => {
  * Use this in mutation onError callbacks.
  */
 export const handleBillingError = (error: any): boolean => {
-  if (!isBillingError(error)) {
+  if (!isTierRestrictionError(error)) {
     return false;
   }
   

@@ -6,14 +6,15 @@
  */
 
 import React from 'react';
-import { View, Pressable, Linking } from 'react-native';
+import { View, Pressable, Linking, ScrollView } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { X, ExternalLink } from 'lucide-react-native';
+import { X, ExternalLink, AlertCircle } from 'lucide-react-native';
 import { useLanguage } from '@/contexts';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Animated, { FadeIn } from 'react-native-reanimated';
+import { usePricingModalStore } from '@/stores/billing-modal-store';
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 
@@ -26,6 +27,7 @@ interface PlanPageProps {
 export function PlanPage({ visible = true, onClose }: PlanPageProps) {
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
+  const { alertTitle, alertSubtitle } = usePricingModalStore();
 
   const handleOpenWeb = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -56,8 +58,37 @@ export function PlanPage({ visible = true, onClose }: PlanPageProps) {
       </AnimatedView>
 
       {/* Content */}
-      <View className="flex-1 items-center justify-center px-8">
-        <AnimatedView entering={FadeIn.duration(600).delay(200)} className="items-center">
+      <ScrollView 
+        className="flex-1" 
+        contentContainerClassName="flex-grow items-center justify-center px-8 py-8"
+        showsVerticalScrollIndicator={false}>
+        <AnimatedView entering={FadeIn.duration(600).delay(200)} className="items-center w-full max-w-md">
+          {/* Alert Message */}
+          {alertTitle && (
+            <AnimatedView 
+              entering={FadeIn.duration(400).delay(100)}
+              className="w-full mb-6 p-4 rounded-xl bg-warning/10 dark:bg-warning/20 border border-warning/30">
+              <View className="flex-row items-start gap-3">
+                <Icon 
+                  as={AlertCircle} 
+                  size={20} 
+                  className="text-warning mt-0.5 flex-shrink-0" 
+                  strokeWidth={2} 
+                />
+                <View className="flex-1 gap-1">
+                  <Text className="font-roobert-semibold text-base text-foreground">
+                    {alertTitle}
+                  </Text>
+                  {alertSubtitle && (
+                    <Text className="text-sm leading-5 text-muted-foreground">
+                      {alertSubtitle}
+                    </Text>
+                  )}
+                </View>
+              </View>
+            </AnimatedView>
+          )}
+
           <Text className="mb-4 text-center font-roobert-semibold text-xl text-foreground">
             {t('billing.checkoutUnavailable', 'Mobile checkout not available')}
           </Text>
@@ -77,7 +108,7 @@ export function PlanPage({ visible = true, onClose }: PlanPageProps) {
             <Icon as={ExternalLink} size={18} className="text-primary-foreground" strokeWidth={2} />
           </Pressable>
         </AnimatedView>
-      </View>
+      </ScrollView>
     </View>
   );
 }

@@ -38,9 +38,10 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { 
   extractTierLimitErrorState, 
   parseTierRestrictionError, 
-  getTierLimitErrorTitle,
-  getTierLimitErrorAction,
+  formatTierLimitErrorForUI,
+  type TierLimitErrorState,
 } from '@agentpress/shared/errors';
+import { usePricingModalStore } from '@/stores/billing-modal-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -145,6 +146,7 @@ export function useChat(): UseChatReturn {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { selectedModelId, selectedAgentId } = useAgent();
+  const { openPricingModal } = usePricingModalStore();
   const { data: modelsData, isLoading: modelsLoading, error: modelsError } = useAvailableModels();
   const { hasActiveSubscription } = useBillingContext();
 
@@ -1051,23 +1053,18 @@ export function useChat(): UseChatReturn {
           
           if (tierError) {
             log.log('⚠️ [useChat] Tier limit error detected:', tierError.type, tierError.message);
-            // Show native alert dialog for tier limit errors
-            const title = getTierLimitErrorTitle(tierError);
-            const actionText = getTierLimitErrorAction(tierError);
+            // Format error messages for pricing modal using shared function
+            const { alertTitle, alertSubtitle } = formatTierLimitErrorForUI(tierError);
             
-            Alert.alert(
-              title,
-              tierError.message,
-              [
-                { text: 'Dismiss', style: 'cancel' },
-                { 
-                  text: actionText, 
-                  onPress: () => router.push('/plans'),
-                  style: 'default',
-                },
-              ],
-              { cancelable: true }
-            );
+            // Open pricing modal with clear error messages
+            openPricingModal({
+              alertTitle,
+              alertSubtitle,
+              creditsExhausted: tierError.type === 'INSUFFICIENT_CREDITS',
+            });
+            
+            // Navigate to plans page
+            router.push('/plans');
             return;
           }
           
@@ -1229,23 +1226,18 @@ export function useChat(): UseChatReturn {
           
           if (tierError) {
             log.log('⚠️ [useChat] Tier limit error detected:', tierError.type, tierError.message);
-            // Show native alert dialog for tier limit errors
-            const title = getTierLimitErrorTitle(tierError);
-            const actionText = getTierLimitErrorAction(tierError);
+            // Format error messages for pricing modal using shared function
+            const { alertTitle, alertSubtitle } = formatTierLimitErrorForUI(tierError);
             
-            Alert.alert(
-              title,
-              tierError.message,
-              [
-                { text: 'Dismiss', style: 'cancel' },
-                { 
-                  text: actionText, 
-                  onPress: () => router.push('/plans'),
-                  style: 'default',
-                },
-              ],
-              { cancelable: true }
-            );
+            // Open pricing modal with clear error messages
+            openPricingModal({
+              alertTitle,
+              alertSubtitle,
+              creditsExhausted: tierError.type === 'INSUFFICIENT_CREDITS',
+            });
+            
+            // Navigate to plans page
+            router.push('/plans');
             return;
           }
           

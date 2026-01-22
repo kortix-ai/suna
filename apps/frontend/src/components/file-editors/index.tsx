@@ -11,6 +11,7 @@ import { ImageRenderer } from '@/components/file-renderers/image-renderer';
 import { VideoRenderer } from '@/components/file-renderers/video-renderer';
 import { BinaryRenderer } from '@/components/file-renderers/binary-renderer';
 import { PptxRenderer } from '@/components/file-renderers/pptx-renderer';
+import { DocxRenderer } from '@/components/file-renderers/docx-renderer';
 import { HtmlRenderer } from '@/components/file-renderers/html-renderer';
 import { CanvasRenderer } from '@/components/file-renderers/canvas-renderer';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
@@ -33,6 +34,7 @@ export type EditableFileType =
   | 'binary'
   | 'csv'
   | 'xlsx'
+  | 'docx'
   | 'pptx'
   | 'canvas';
 
@@ -92,6 +94,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
   const pdfExtensions = ['pdf'];
   const csvExtensions = ['csv', 'tsv'];
   const xlsxExtensions = ['xlsx', 'xls'];
+  const docxExtensions = ['docx'];
   const pptxExtensions = ['pptx', 'ppt'];
   const canvasExtensions = ['kanvax'];
 
@@ -118,6 +121,7 @@ export function getEditableFileType(fileName: string): EditableFileType {
   if (pdfExtensions.includes(extension)) return 'pdf';
   if (csvExtensions.includes(extension)) return 'csv';
   if (xlsxExtensions.includes(extension)) return 'xlsx';
+  if (docxExtensions.includes(extension)) return 'docx';
   if (pptxExtensions.includes(extension)) return 'pptx';
   
   return 'binary';
@@ -215,6 +219,11 @@ export function EditableFileRenderer({
           sandboxId={project?.sandbox?.id}
           project={project}
           allowEditing={!readOnly}
+        />
+      ) : fileType === 'docx' && binaryUrl ? (
+        <DocxRenderer
+          url={binaryUrl}
+          className="h-full w-full"
         />
       ) : fileType === 'pptx' ? (
         <PptxRenderer

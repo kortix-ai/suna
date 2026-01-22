@@ -10,6 +10,7 @@ export const PREVIEWABLE_EXTENSIONS = [
   'json',
   'csv', 'tsv',
   'txt',
+  'docx',
 ] as const;
 
 // Document extensions (files that should use DocumentAttachment)
@@ -73,5 +74,9 @@ export function isHtmlExtension(ext: string): boolean {
 export function isCsvExtension(ext: string): boolean {
   const e = ext.toLowerCase();
   return e === 'csv' || e === 'tsv';
+}
+
+export function isDocxExtension(ext: string): boolean {
+  return ext.toLowerCase() === 'docx';
 }
 

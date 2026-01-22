@@ -149,6 +149,7 @@ export function FileViewerView({
   const isBinaryFile = previewType === FilePreviewType.IMAGE ||
                        previewType === FilePreviewType.PDF ||
                        previewType === FilePreviewType.XLSX ||
+                       previewType === FilePreviewType.DOCX ||
                        previewType === FilePreviewType.BINARY;
   const shouldFetchText = !isBinaryFile && !selectedVersion && isSandboxReady;
   const shouldFetchBlob = isBinaryFile && !selectedVersion && isSandboxReady;
