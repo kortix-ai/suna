@@ -26,25 +26,27 @@ import {
 } from './tool-accumulator';
 
 export interface ProcessedMessage {
-  type: 'text_chunk' | 
-        'reasoning_chunk' | 
-        'tool_call_chunk' | 
-        'tool_result' | 
-        'message_complete' | 
-        'status' | 
-        'error' | 
-        'billing_error' | 
-        'ping' | 
-        'tool_output_stream' | 
-        'ux_ack' | 
-        'ux_estimate' | 
-        'ux_prep_stage' | 
-        'ux_degradation' | 
-        'ux_thinking' | 
-        'ux_error' | 
-        'context_usage' | 
+  type: 'text_chunk' |
+        'reasoning_chunk' |
+        'text_with_reasoning' |
+        'tool_call_chunk' |
+        'tool_result' |
+        'message_complete' |
+        'status' |
+        'error' |
+        'billing_error' |
+        'ping' |
+        'tool_output_stream' |
+        'ux_ack' |
+        'ux_estimate' |
+        'ux_prep_stage' |
+        'ux_degradation' |
+        'ux_thinking' |
+        'ux_error' |
+        'context_usage' |
         'ignore';
   content?: string;
+  reasoningContent?: string;
   message?: StreamMessage;
   toolCalls?: ReconstructedToolCall[];
   status?: string;

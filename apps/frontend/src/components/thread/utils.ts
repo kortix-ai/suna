@@ -149,3 +149,52 @@ export const extractPrimaryParam = (
 
   return null;
 };
+
+/**
+ * Extract the actual text content from a user message.
+ * User message content can be:
+ * 1. A JSON string like '{"content": "Hello"}'
+ * 2. A plain string like "Hello"
+ * 3. An object (if already parsed) like {content: "Hello"}
+ *
+ * This function handles all cases and returns the actual user text.
+ */
+export const extractUserMessageText = (content: unknown): string => {
+  if (!content) return '';
+
+  // If it's already a string
+  if (typeof content === 'string') {
+    // Try to parse as JSON
+    try {
+      const parsed = JSON.parse(content);
+      // If parsed successfully, extract the content field
+      if (parsed && typeof parsed === 'object') {
+        const text = parsed.content;
+        if (typeof text === 'string') return text;
+        if (text && typeof text === 'object') return JSON.stringify(text);
+        return String(text || '');
+      }
+      // If parsed to a primitive, use it directly
+      return String(parsed);
+    } catch {
+      // Not valid JSON, use the string directly
+      return content;
+    }
+  }
+
+  // If it's an object (already parsed)
+  if (typeof content === 'object' && content !== null) {
+    const obj = content as Record<string, unknown>;
+    if ('content' in obj) {
+      const text = obj.content;
+      if (typeof text === 'string') return text;
+      if (text && typeof text === 'object') return JSON.stringify(text);
+      return String(text || '');
+    }
+    // Fallback: stringify the object
+    return JSON.stringify(content);
+  }
+
+  // Fallback for other types
+  return String(content);
+};

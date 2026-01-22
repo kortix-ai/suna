@@ -75,9 +75,10 @@ export function ReasoningSection({
   return (
     <motion.div
       className={cn("w-full", className)}
-      initial={{ opacity: 0, y: -10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, ease: "easeOut" }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.15, ease: "easeOut" }}
     >
       {/* Header row: Full Kortix logo + Toggle button */}
       <div className="flex items-center gap-3">
@@ -133,27 +134,27 @@ export function ReasoningSection({
             {/* Content container with left border indentation */}
             <div className="mt-1.5 ml-2.5 pl-4 border-l-2 border-muted-foreground/20">
               {hasContent ? (
-                <div className="text-sm break-words italic text-muted-foreground">
+                <div className="text-sm break-words text-muted-foreground">
                   <Streamdown
                     isAnimating={isCurrentlyStreaming}
                     components={{
                       p: ({ children }) => (
-                        <p className="text-sm text-muted-foreground leading-relaxed my-2 first:mt-0 last:mb-0 italic">
+                        <p className="text-sm text-muted-foreground leading-relaxed my-2 first:mt-0 last:mb-0">
                           {children}
                         </p>
                       ),
                       h1: ({ children }) => (
-                        <h1 className="text-base font-semibold text-muted-foreground mt-4 mb-2 first:mt-0 italic">
+                        <h1 className="text-base font-semibold text-muted-foreground mt-4 mb-2 first:mt-0">
                           {children}
                         </h1>
                       ),
                       h2: ({ children }) => (
-                        <h2 className="text-sm font-semibold text-muted-foreground mt-3 mb-2 first:mt-0 italic">
+                        <h2 className="text-sm font-semibold text-muted-foreground mt-3 mb-2 first:mt-0">
                           {children}
                         </h2>
                       ),
                       h3: ({ children }) => (
-                        <h3 className="text-sm font-medium text-muted-foreground mt-2 mb-1 first:mt-0 italic">
+                        <h3 className="text-sm font-medium text-muted-foreground mt-2 mb-1 first:mt-0">
                           {children}
                         </h3>
                       ),
@@ -168,7 +169,7 @@ export function ReasoningSection({
                         </ol>
                       ),
                       li: ({ children }) => (
-                        <li className="text-sm text-muted-foreground leading-relaxed italic">
+                        <li className="text-sm text-muted-foreground leading-relaxed">
                           {children}
                         </li>
                       ),
@@ -196,12 +197,12 @@ export function ReasoningSection({
                         </pre>
                       ),
                       blockquote: ({ children }) => (
-                        <blockquote className="my-2 pl-3 py-1 text-sm border-l-2 border-border text-muted-foreground italic">
+                        <blockquote className="my-2 pl-3 py-1 text-sm border-l-2 border-border text-muted-foreground">
                           {children}
                         </blockquote>
                       ),
                       strong: ({ children }) => (
-                        <strong className="font-semibold text-foreground not-italic">
+                        <strong className="font-semibold text-foreground">
                           {children}
                         </strong>
                       ),
@@ -215,7 +216,7 @@ export function ReasoningSection({
                           href={href}
                           target={href?.startsWith('http') ? '_blank' : undefined}
                           rel={href?.startsWith('http') ? 'noopener noreferrer' : undefined}
-                          className="text-muted-foreground underline decoration-muted-foreground/30 underline-offset-2 hover:decoration-muted-foreground/60 transition-colors italic"
+                          className="text-muted-foreground underline decoration-muted-foreground/30 underline-offset-2 hover:decoration-muted-foreground/60 transition-colors"
                         >
                           {children}
                         </a>
@@ -226,7 +227,7 @@ export function ReasoningSection({
                   </Streamdown>
                 </div>
               ) : (
-                <div className="text-sm text-muted-foreground italic">
+                <div className="text-sm text-muted-foreground">
                   Waiting for reasoning content...
                 </div>
               )}

@@ -14,6 +14,7 @@ import { Project } from "@/lib/api/threads";
 import {
   safeJsonParse,
   HIDE_STREAMING_XML_TAGS,
+  extractUserMessageText,
 } from "@/components/thread/utils";
 import { KortixLogo } from "@/components/sidebar/kortix-logo";
 import { AgentLoader } from "./loader";
@@ -224,6 +225,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   // Refs always have the latest value without causing re-renders
   const lastTextContentRef = useRef<string>("");
   const lastReasoningContentRef = useRef<string>("");
+  const lastAskCompleteTextRef = useRef<string>("");
 
   // Always keep refs updated with latest content
   useEffect(() => {
@@ -249,6 +251,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     if (!wasActive && isNowActive && isLastGroup) {
       lastTextContentRef.current = "";
       lastReasoningContentRef.current = "";
+      lastAskCompleteTextRef.current = "";
     }
   }, [isAgentActive, isLastGroup]);
 
@@ -272,17 +275,21 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   }, [streamingReasoningContent]);
 
   const askCompleteText = useMemo(() => {
-    if (!streamingToolCall) return "";
-    
+    if (!streamingToolCall) {
+      // No tool call - return cached value to prevent flash during transitions
+      return lastAskCompleteTextRef.current;
+    }
+
     const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const parsedContent = safeJsonParse<any>(streamingToolCall.content, {});
-    
+
+    let extractedText = "";
+
     if (parsedMetadata.function_name) {
       const toolName = parsedMetadata.function_name.replace(/_/g, "-").toLowerCase();
       if (toolName === "ask" || toolName === "complete") {
         const toolArgs = parsedContent.arguments;
         if (toolArgs) {
-          let extractedText = "";
           if (typeof toolArgs === "string") {
             try {
               const parsed = JSON.parse(toolArgs);
@@ -293,11 +300,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
           } else if (typeof toolArgs === "object" && toolArgs !== null) {
             extractedText = toolArgs?.text || "";
           }
-          if (extractedText) return extractedText;
+          if (extractedText) {
+            lastAskCompleteTextRef.current = extractedText;
+            return extractedText;
+          }
         }
       }
     }
-    
+
     // Fall back to raw streaming format
     // Structure: metadata.tool_calls[].arguments_delta
     const toolCalls = parsedMetadata.tool_calls || [];
@@ -305,17 +315,22 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
       return toolName === "ask" || toolName === "complete";
     });
-    if (!askOrCompleteTool) return "";
-    
+    if (!askOrCompleteTool) {
+      // No ask/complete tool found - return cached value
+      return lastAskCompleteTextRef.current;
+    }
+
     // Try arguments first (accumulated), then arguments_delta (streaming)
     let toolArgs: any = askOrCompleteTool.arguments;
     if (!toolArgs || (typeof toolArgs === "object" && Object.keys(toolArgs).length === 0)) {
       toolArgs = askOrCompleteTool.arguments_delta;
     }
-    
-    if (!toolArgs) return "";
-    
-    let extractedText = "";
+
+    if (!toolArgs) {
+      // No args yet - return cached value
+      return lastAskCompleteTextRef.current;
+    }
+
     if (typeof toolArgs === "string") {
       try {
         const parsed = JSON.parse(toolArgs);
@@ -327,8 +342,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     } else if (typeof toolArgs === "object" && toolArgs !== null) {
       extractedText = toolArgs?.text || "";
     }
-    
-    return extractedText;
+
+    // Cache the extracted text for smooth transitions
+    if (extractedText) {
+      lastAskCompleteTextRef.current = extractedText;
+    }
+
+    return extractedText || lastAskCompleteTextRef.current;
   }, [streamingToolCall]);
 
   // No animation - display ask/complete text immediately
@@ -456,6 +476,31 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       return null;
     }
 
+    // EARLY CHECK: If agent is idle and there's a persisted ask/complete tool,
+    // the ask/complete tool will render its own text via renderAskToolCall/renderCompleteToolCall.
+    // We should NOT show streaming content in this case to avoid duplication.
+    if (!isStreaming && !isAgentRunning) {
+      const hasPersistedAskComplete = group.messages.some(m => {
+        if (m.message_id === "streamingTextContent" || m.message_id === "playbackStreamingText") return false;
+        if (m.type === "tool") {
+          const toolContent = safeJsonParse<{ name?: string }>(m.content, {});
+          return toolContent.name === "ask" || toolContent.name === "complete";
+        }
+        if (m.type === "assistant") {
+          const meta = safeJsonParse<ParsedMetadata>(m.metadata, {});
+          const toolCalls = meta.tool_calls || [];
+          return toolCalls.some(tc => {
+            const toolName = tc.function_name?.replace(/_/g, '-').toLowerCase();
+            return toolName === "ask" || toolName === "complete";
+          });
+        }
+        return false;
+      });
+      if (hasPersistedAskComplete) {
+        return null;
+      }
+    }
+
     // Check if we have ANY real persisted messages (not fake streaming messages)
     // This includes: assistant messages (with or without text) and tool messages
     const hasRealPersistedMessage = group.messages.some(m => {
@@ -491,33 +536,9 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     }
 
     // If agent is idle and persisted messages exist but have NO text content,
-    // check if there's an ask/complete tool that will render the text
+    // check if there's non-ask/complete tools (ask/complete already handled above)
     if (!isStreaming && !isAgentRunning && hasRealPersistedMessage && !persistedAssistantWithContent) {
       const streamingTextLength = displayStreamingText.trim().length;
-
-      // Check if there's an ask or complete tool message - these tools render their own text
-      // via renderAskToolCall/renderCompleteToolCall, so we don't need streaming content
-      const hasAskOrCompleteTool = group.messages.some(m => {
-        if (m.type === "tool") {
-          const toolContent = safeJsonParse<{ name?: string }>(m.content, {});
-          return toolContent.name === "ask" || toolContent.name === "complete";
-        }
-        // Also check assistant messages for ask/complete tool calls
-        if (m.type === "assistant" && m.message_id !== "streamingTextContent" && m.message_id !== "playbackStreamingText") {
-          const meta = safeJsonParse<ParsedMetadata>(m.metadata, {});
-          const toolCalls = meta.tool_calls || [];
-          return toolCalls.some(tc => {
-            const toolName = tc.function_name?.replace(/_/g, '-').toLowerCase();
-            return toolName === "ask" || toolName === "complete";
-          });
-        }
-        return false;
-      });
-
-      if (hasAskOrCompleteTool) {
-        // The ask/complete tool will render the text, no need for streaming content
-        return null;
-      }
 
       if (streamingTextLength <= 5) {
         // Minimal streaming text (probably just tool call) - safe to hide
@@ -742,11 +763,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   const streamingToolCallContent = useMemo(() => {
     // Don't show streaming tool call if not streaming or agent is not running
     if (!isLastGroup || readOnly || !streamingToolCall) return null;
-    
-    // Don't show if agent is not in a streaming state (unless animation is still playing)
+
+    // Don't show if agent is not in a streaming state (unless we have ask/complete text to show)
+    // This prevents flash during transition - keep showing content until persisted messages take over
     const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
-    if (!isActivelyStreaming && !isAgentRunning && !isAskCompleteAnimating) return null;
+    const hasAskCompleteContent = askCompleteText && askCompleteText.trim().length > 0;
+    if (!isActivelyStreaming && !isAgentRunning && !hasAskCompleteContent) return null;
 
     const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const toolCalls = parsedMetadata.tool_calls || [];
@@ -764,13 +787,30 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     if (isAccumulatedAskComplete || askOrCompleteTool) {
       const currentGroupAssistantMessages = group.messages.filter(
-        (m) => m.type === "assistant",
+        (m) => m.type === "assistant" && m.message_id !== "streamingTextContent" && m.message_id !== "playbackStreamingText",
       );
+
+      // Check if ANY persisted assistant message has an ask/complete tool call
+      // If so, and the agent is not actively streaming, the persisted message will handle rendering
+      const hasPersistedAskComplete = currentGroupAssistantMessages.some((msg) => {
+        const msgMeta = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+        const msgToolCalls = msgMeta.tool_calls || [];
+        return msgToolCalls.some((tc: any) => {
+          const tn = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
+          return tn === "ask" || tn === "complete";
+        });
+      });
+
+      // If agent is not actively streaming AND there's a persisted ask/complete message,
+      // let the persisted message handle rendering (via renderedMessages)
+      if (!isActivelyStreaming && !isAgentRunning && hasPersistedAskComplete) {
+        return null;
+      }
+
+      // Also check the original condition for stream_status=complete
       const lastAssistantMessage =
         currentGroupAssistantMessages.length > 0
-          ? currentGroupAssistantMessages[
-              currentGroupAssistantMessages.length - 1
-            ]
+          ? currentGroupAssistantMessages[currentGroupAssistantMessages.length - 1]
           : null;
       if (lastAssistantMessage) {
         const lastMsgMetadata = safeJsonParse<ParsedMetadata>(
@@ -1181,22 +1221,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       let assistantGroupCounter = 0;
       // Track processed message IDs to prevent duplicate bubbles
       const processedMessageIds = new Set<string>();
-      // Track user message content to detect duplicates from same turn (regardless of temp/server status)
-      const processedUserContents = new Set<string>();
-      // Track user message content+timestamp to detect near-duplicates
-      const recentUserMessages = new Map<string, number>(); // content -> timestamp
+      // Track temp user message content to detect duplicate temp messages (race conditions)
+      const processedTempUserContents = new Set<string>();
 
-      // First pass: collect content from server-confirmed user messages (non-temp IDs)
-      // This allows us to filter out temp messages that have been confirmed by server
-      const serverUserContents = new Set<string>();
-      displayMessages.forEach((msg) => {
-        if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
-          const contentKey = String(msg.content || '').trim();
-          if (contentKey) serverUserContents.add(contentKey);
-        }
-      });
-
-      // Second pass: build message groups
+      // Build message groups
       displayMessages.forEach((message, index) => {
         const messageType = message.type;
         const key = message.message_id || `msg-${index}`;
@@ -1206,37 +1234,36 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           return;
         }
 
-        // For user messages, perform content-based deduplication
+        // For user messages, perform content-based deduplication ONLY for temp messages
+        // Server-confirmed messages (with real UUIDs) are NEVER deduplicated - they represent
+        // intentional user actions and should always be displayed
         if (messageType === 'user') {
-          const contentKey = String(message.content || '').trim();
+          const isTemp = message.message_id?.startsWith('temp-');
 
-          // For temp user messages, skip if server already confirmed a message with same content
-          // This handles the race where both temp and server versions appear
-          if (message.message_id?.startsWith('temp-')) {
-            if (contentKey && serverUserContents.has(contentKey)) {
-              return;
+          // Only deduplicate temp messages - server-confirmed messages are always kept
+          if (isTemp) {
+            const contentKey = extractUserMessageText(message.content).trim().toLowerCase();
+
+            if (contentKey) {
+              const tempCreatedAt = message.created_at ? new Date(message.created_at).getTime() : Date.now();
+
+              // Skip temp message if server already confirmed a message with same content
+              // Uses timestamp-aware deduplication: only skip if server message was created within 30 seconds
+              const hasMatchingServerVersion = displayMessages.some((existing) => {
+                if (existing.type !== 'user') return false;
+                if (existing.message_id?.startsWith('temp-')) return false;
+                if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+                const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
+              });
+
+              if (hasMatchingServerVersion) return;
+
+              // Also skip if we already have another temp message with same content (race condition)
+              if (processedTempUserContents.has(contentKey)) return;
+              processedTempUserContents.add(contentKey);
             }
-          }
-
-          // For all user messages: skip if we already processed a message with exact same content
-          // in this render pass (prevents duplicates from race conditions)
-          if (contentKey && processedUserContents.has(contentKey)) {
-            // Check if within time window (30 seconds) to allow intentional duplicate messages later
-            const msgTime = message.created_at ? new Date(message.created_at).getTime() : 0;
-            const existingTime = recentUserMessages.get(contentKey);
-            if (existingTime !== undefined) {
-              const timeDiff = Math.abs(msgTime - existingTime);
-              if (timeDiff < 30000) {
-                return;
-              }
-            }
-          }
-
-          // Track this message content and time
-          if (contentKey) {
-            processedUserContents.add(contentKey);
-            const msgTime = message.created_at ? new Date(message.created_at).getTime() : 0;
-            recentUserMessages.set(contentKey, msgTime);
           }
         }
 
@@ -1574,9 +1601,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
                     <ReasoningSection
                       key="reasoning-section"
                       content={streamingReasoningContent}
-                      isStreaming={true}
-                      isReasoningActive={true}
-                      isReasoningComplete={false}
+                      isStreaming={streamHookStatus === 'streaming' || streamHookStatus === 'connecting'}
+                      isReasoningActive={agentStatus === 'running' || agentStatus === 'connecting'}
+                      isReasoningComplete={isReasoningComplete}
                       isPersistedContent={false}
                       isExpanded={newGroupReasoningExpanded}
                       onExpandedChange={setNewGroupReasoningExpanded}
@@ -1588,17 +1615,19 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
                       animate={{ opacity: 1 }}
                       exit={{ opacity: 0 }}
                       transition={{ duration: 0.15, ease: "easeOut" }}
+                      className="w-full"
                     >
-                      <div className="flex items-center">
+                      {/* Match ReasoningSection header layout for smooth transition */}
+                      <div className="flex items-center gap-3">
                         <img
                           src="/kortix-logomark-white.svg"
                           alt="Kortix"
-                          className="dark:invert-0 invert flex-shrink-0"
-                          style={{ height: '12px', width: 'auto' }}
+                          className="dark:invert-0 invert flex-shrink-0 animate-pulse"
+                          style={{ height: '14px', width: 'auto' }}
                         />
-                      </div>
-                      <div className="mt-1.5">
-                        <AgentLoader />
+                        <div className="flex items-center gap-1.5 py-1">
+                          <AgentLoader />
+                        </div>
                       </div>
                     </motion.div>
                   )}

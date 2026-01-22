@@ -86,6 +86,8 @@ export interface UseChatReturn {
   
   messages: UnifiedMessage[];
   streamingContent: string;
+  streamingReasoningContent: string;
+  isReasoningComplete: boolean;
   streamingToolCall: UnifiedMessage | null;
   isStreaming: boolean;
   isReconnecting: boolean;
@@ -449,6 +451,8 @@ export function useChat(): UseChatReturn {
   const {
     status: streamHookStatus,
     textContent: streamingTextContent,
+    reasoningContent: streamingReasoningContent,
+    isReasoningComplete,
     toolCall: streamingToolCall,
     error: streamError,
     agentRunId: currentHookRunId,
@@ -1835,6 +1839,8 @@ export function useChat(): UseChatReturn {
     
     messages,
     streamingContent: streamingTextContent,
+    streamingReasoningContent,
+    isReasoningComplete,
     streamingToolCall,
     isStreaming,
     isReconnecting,

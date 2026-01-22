@@ -132,6 +132,7 @@ export interface UseAgentStreamResult {
   status: AgentStatus;
   textContent: string;
   reasoningContent: string;
+  isReasoningComplete: boolean;
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;
