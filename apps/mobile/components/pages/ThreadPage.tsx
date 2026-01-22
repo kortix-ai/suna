@@ -34,6 +34,7 @@ import { MessageCircle, ArrowDown, AlertCircle, RefreshCw } from 'lucide-react-n
 import { useRouter } from 'expo-router';
 import { AgentLoader } from '../chat/AgentLoader';
 import { log } from '@/lib/logger';
+import { LiquidGlass } from '../ui/liquid-glass';
 
 interface ThreadPageProps {
   onMenuPress?: () => void;
@@ -918,7 +919,6 @@ export function ThreadPage({
             {
               position: 'absolute',
               right: 10,
-              // When snack is visible (tool or voice), keep position higher; when no snack, move down 40px
               bottom: baseBottomPadding - 0 + (activeToolData || isVoiceActive ? 0 : -40),
               zIndex: 150,
             },
@@ -928,9 +928,34 @@ export function ThreadPage({
         >
           <Pressable
             onPress={scrollToBottom}
-            className="h-12 w-12 items-center justify-center rounded-full border border-border bg-card active:opacity-80"
           >
-            <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
+            <LiquidGlass
+              variant="card"
+              isInteractive
+              borderRadius={22}
+              elevation={Platform.OS === 'android' ? 3 : 0}
+              shadow={{
+                color: colorScheme === 'dark' ? '#000000' : '#000000',
+                offset: { width: 0, height: 2 },
+                opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                radius: 4,
+              }}
+              style={{
+                flex: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderWidth: 0.5,
+                height: 44,
+                width: 44,
+                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                shadowRadius: 4,
+              }}
+            >
+              <Icon as={ArrowDown} size={20} className="text-foreground" strokeWidth={2} />
+            </LiquidGlass>
           </Pressable>
         </Animated.View>
       )}
@@ -983,7 +1008,11 @@ export function ThreadPage({
         }}
         onSendAudio={audioHandlers.handleSendAudio}
         onAttachPress={chat.openAttachmentDrawer}
+        onTakePicture={chat.handleTakePicture}
+        onChooseImages={chat.handleChooseImages}
+        onChooseFiles={chat.handleChooseFiles}
         onAgentPress={agentManager.openDrawer}
+        onIntegrationsPress={agentManager.openDrawerToIntegrations}
         onAudioRecord={audioHandlers.handleStartRecording}
         onCancelRecording={audioHandlers.handleCancelRecording}
         onStopAgentRun={chat.stopAgent}
@@ -1124,6 +1153,7 @@ export function ThreadPage({
       <ChatDrawers
         isAgentDrawerVisible={agentManager.isDrawerVisible}
         onCloseAgentDrawer={agentManager.closeDrawer}
+        initialAgentDrawerView={agentManager.initialDrawerView}
         onOpenWorkerConfig={(workerId, view) => {
           log.log('🔧 [ThreadPage] Opening worker config:', {
             workerId,

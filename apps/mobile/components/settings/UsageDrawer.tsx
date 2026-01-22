@@ -36,7 +36,8 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
       timeoutRef.current = setTimeout(() => {
         log.log('📳 [UsageDrawer] Fallback timeout - resetting guard');
         isOpeningRef.current = false;
-      }, 500);
+      }, 500) as unknown as NodeJS.Timeout;
+
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       log.log('📳 Haptic Feedback: Usage Drawer Opened');
@@ -103,7 +104,6 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
         width: 36,
         height: 5,
         borderRadius: 3,
-        marginTop: 8,
         marginBottom: 0
       }}
       enableDynamicSizing={false}
@@ -119,7 +119,7 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
         className="flex-1"
         showsVerticalScrollIndicator={false}
       >
-        <View className="px-6 pt-4 pb-6 flex-row items-center gap-3">
+        <View className="px-6 pb-6 flex-row items-center gap-3">
           <BottomSheetTouchable
             onPress={handleClose}
             style={{ width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16 }}
@@ -132,7 +132,7 @@ export function UsageDrawer({ visible, onClose, onUpgradePress, onThreadPress }:
             />
           </BottomSheetTouchable>
 
-          <Text className="text-xl font-roobert-medium text-foreground tracking-tight">
+          <Text className="text-md font-roobert-semibold text-foreground tracking-tight">
             {t('usage.title')}
           </Text>
         </View>

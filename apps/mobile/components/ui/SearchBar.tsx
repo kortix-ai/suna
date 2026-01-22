@@ -1,9 +1,9 @@
 import * as React from 'react';
-import { Pressable, View, Keyboard } from 'react-native';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { Pressable, Keyboard, Platform } from 'react-native';
 import { Search, X } from 'lucide-react-native';
 import { Icon } from './icon';
 import { Input } from './input';
+import { LiquidGlass } from './liquid-glass';
 import { log } from '@/lib/logger';
 import { useColorScheme } from 'nativewind';
 
@@ -13,36 +13,49 @@ interface SearchBarProps {
   placeholder: string;
   onClear?: () => void;
   className?: string;
+  colorScheme: any;
 }
 
-/**
- * SearchBar Component - Reusable search input with clear functionality
- * 
- * Features:
- * - Compact design with search icon
- * - Clear button appears when text is entered
- * - Proper keyboard handling
- * - Theme-aware styling
- * - Accessibility support
- * - Customizable placeholder and styling
- */
 export function SearchBar({
   value,
   onChangeText,
   placeholder,
   onClear,
+  colorScheme,
   className = ""
 }: SearchBarProps) {
-  const { colorScheme } = useColorScheme();
-  
   const handleClear = () => {
     log.log('🎯 Clear search');
     onClear?.();
     Keyboard.dismiss();
   };
 
-  const content = (
-    <>
+  return (
+    <LiquidGlass
+      variant="subtle"
+      isInteractive
+      borderRadius={24}
+      elevation={Platform.OS === 'android' ? 3 : 0}
+      shadow={{
+        color: colorScheme === 'dark' ? '#000000' : '#000000',
+        offset: { width: 0, height: 2 },
+        opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+        radius: 4,
+      }}
+      style={{
+        height: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        borderWidth: 0.5,
+        borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+        shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+        shadowRadius: 4,
+      }}
+      className={`bg-primary/5 ${className}`}
+    >
       <Icon
         as={Search}
         size={18}
@@ -76,34 +89,6 @@ export function SearchBar({
           />
         </Pressable>
       )}
-    </>
-  );
-
-  return isLiquidGlassAvailable() ? (
-    <GlassView
-      glassEffectStyle="regular"
-      tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
-      isInteractive
-      style={{
-        height: 44,
-        borderRadius: 24,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 12,
-        borderWidth: 0.5,
-        borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
-      }}
-      className={className}>
-      {content}
-    </GlassView>
-  ) : (
-    <View
-      className={`bg-primary/5 rounded-3xl flex-row items-center px-3 h-12 ${className}`}
-      style={{
-        borderWidth: 0.5,
-        borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-      }}>
-      {content}
-    </View>
+    </LiquidGlass>
   );
 }

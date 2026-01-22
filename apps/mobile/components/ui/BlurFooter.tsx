@@ -13,21 +13,6 @@ interface BlurFooterProps {
   style?: ViewStyle;
   children?: React.ReactNode;
 }
-
-/**
- * BlurFooter - A reusable footer component with progressive blur fade effect
- * 
- * REVERSED gradient: transparent (top) → solid (bottom)
- * Opposite of BlurFadeHeader
- * 
- * iOS: Uses MaskedView + BlurView for native blur with gradient fade
- * Android: Uses LinearGradient fallback (BlurView doesn't work well on Android)
- * 
- * @param height - Height of the footer (default: 100)
- * @param intensity - Blur intensity for iOS (default: 80)
- * @param style - Additional styles to apply to the container
- * @param children - Content to render inside the footer
- */
 export function BlurFooter({
   height = 100,
   intensity = 80,
@@ -37,13 +22,11 @@ export function BlurFooter({
   const { colorScheme } = useColorScheme();
   const isDark = colorScheme === 'dark';
   
-  // Get platform-specific background color
   const bgColor = React.useMemo(
     () => getBackgroundColor(Platform.OS, colorScheme),
     [colorScheme]
   );
 
-  // Extract RGB values from hex color for gradient
   const getRGBA = (hex: string, alpha: number) => {
     const r = parseInt(hex.slice(1, 3), 16);
     const g = parseInt(hex.slice(3, 5), 16);
@@ -51,32 +34,30 @@ export function BlurFooter({
     return `rgba(${r}, ${g}, ${b}, ${alpha})`;
   };
 
-  // REVERSED gradient: transparent at top (0) → solid at bottom (1)
   const { colors, locations } = easeGradient({
     colorStops: {
-      0: { color: 'transparent' },           // Top: transparent
-      0.02: { color: getRGBA(bgColor, 0.15) },
-      0.05: { color: getRGBA(bgColor, 0.3) },
-      0.08: { color: getRGBA(bgColor, 0.5) },
-      0.12: { color: getRGBA(bgColor, 0.7) },
-      0.18: { color: getRGBA(bgColor, 0.9) },
-      0.25: { color: getRGBA(bgColor, 1) },  // Solid starts here
-      1: { color: getRGBA(bgColor, 1) },     // Bottom: solid
+      0: { color: 'transparent' },
+      0.01: { color: getRGBA(bgColor, 0.2) },
+      0.03: { color: getRGBA(bgColor, 0.4) },
+      0.06: { color: getRGBA(bgColor, 0.65) },
+      0.1: { color: getRGBA(bgColor, 0.85) },
+      0.15: { color: getRGBA(bgColor, 0.95) },
+      0.2: { color: getRGBA(bgColor, 1) },
+      1: { color: getRGBA(bgColor, 1) },
     },
   });
 
   if (Platform.OS !== 'ios') {
-    // Android fallback with reversed gradient using platform colors
     return (
       <View style={[styles.container, { height }, style]}>
         <LinearGradient
           colors={[
             getRGBA(bgColor, 0),
-            getRGBA(bgColor, 0.3),
-            getRGBA(bgColor, 0.85),
-            getRGBA(bgColor, 0.98),
-          ]}
-          locations={[0, 0.15, 0.4, 1]}
+            getRGBA(bgColor, 0.4),
+            getRGBA(bgColor, 0.9),
+            getRGBA(bgColor, 1),
+          ] as const}
+          locations={[0, 0.1, 0.2, 1] as const}
           style={StyleSheet.absoluteFill}
         />
         {children}
@@ -84,14 +65,13 @@ export function BlurFooter({
     );
   }
 
-  // iOS with MaskedView + BlurView
   return (
     <View style={[styles.container, { height }, style]}>
       <MaskedView
         maskElement={
           <LinearGradient
-            locations={locations as number[]}
-            colors={colors as string[]}
+            locations={locations as unknown as [number, number, number]}
+            colors={colors as [string, string, string]}
             style={StyleSheet.absoluteFill}
           />
         }
@@ -117,7 +97,7 @@ export function BlurFooter({
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 0,  // Position at bottom instead of top
+    bottom: 0,
     left: 0,
     right: 0,
     overflow: 'hidden',

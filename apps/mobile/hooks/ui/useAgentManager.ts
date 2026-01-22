@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { Keyboard } from 'react-native';
 import { useAgent } from '@/contexts/AgentContext';
 import { log } from '@/lib/logger';
+
+export type DrawerInitialView = 'main' | 'integrations';
 
 /**
  * Custom hook for managing agent selection and operations
@@ -17,15 +19,17 @@ export function useAgentManager() {
   } = useAgent();
   
   const [isDrawerVisible, setIsDrawerVisible] = useState(false);
+  const [initialDrawerView, setInitialDrawerView] = useState<DrawerInitialView>('main');
 
-  const openDrawer = () => {
-    log.log('🔽 [useAgentManager] Agent Selector Pressed');
+  const openDrawer = useCallback((initialView: DrawerInitialView = 'main') => {
+    log.log('🔽 [useAgentManager] Agent Selector Pressed', { initialView });
     log.log('📊 [useAgentManager] Current Agent:', { 
       id: selectedAgentId, 
       name: getCurrentAgent()?.name 
     });
-    log.log('⏰ [useAgentManager] Timestamp:', new Date().toISOString());
-    log.log('👁️ [useAgentManager] Current state:', isDrawerVisible);
+    
+    // Set the initial view before opening
+    setInitialDrawerView(initialView);
     
     // If already visible, force a re-render by toggling
     if (isDrawerVisible) {
@@ -46,12 +50,18 @@ export function useAgentManager() {
     setTimeout(() => {
       setIsDrawerVisible(true);
     }, 150);
-  };
+  }, [isDrawerVisible, selectedAgentId, getCurrentAgent]);
 
-  const closeDrawer = () => {
+  const openDrawerToIntegrations = useCallback(() => {
+    openDrawer('integrations');
+  }, [openDrawer]);
+
+  const closeDrawer = useCallback(() => {
     log.log('🔽 [useAgentManager] Closing drawer');
     setIsDrawerVisible(false);
-  };
+    // Reset initial view to main when closing
+    setInitialDrawerView('main');
+  }, []);
 
   const selectAgentHandler = async (agentId: string) => {
     log.log('✅ Agent Changed:', {
@@ -71,9 +81,11 @@ export function useAgentManager() {
   return {
     selectedAgent: getCurrentAgent(),
     isDrawerVisible,
+    initialDrawerView,
     agents,
     isLoading,
-    openDrawer,
+    openDrawer: () => openDrawer('main'),
+    openDrawerToIntegrations,
     closeDrawer,
     selectAgent: selectAgentHandler,
     openAgentSettings

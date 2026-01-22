@@ -1,6 +1,6 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
-import { KortixLoader } from '@/components/ui';
+import { KortixLoader, LiquidGlass } from '@/components/ui';
 import { BlurFadeHeader } from '@/components/ui/BlurFadeHeader';
 import { useLanguage } from '@/contexts';
 import * as React from 'react';
@@ -20,7 +20,6 @@ import Animated, {
   withSpring,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { ThreadActionsDrawer } from './ThreadActionsDrawer';
 import { log } from '@/lib/logger';
 import { router } from 'expo-router';
@@ -178,45 +177,38 @@ export function ThreadHeader({
             accessibilityRole="button"
             accessibilityLabel={t('threadHeader.goBack')}
           >
-            {isLiquidGlassAvailable() ? (
-              <GlassView
-                glassEffectStyle="regular"
-                tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                isInteractive
-                style={{
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  borderRadius: 22,
-                  height: 44,
-                  width: 44,
-                }}
-              >
-                <Icon
-                  as={ChevronLeft}
-                  size={24}
-                  className="text-foreground"
-                  strokeWidth={2}
-                />
-              </GlassView>
-            ) : (
-              <View
-                style={{
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  backgroundColor: isDark ? '#2C2C2E' : '#E8E8ED',
-                  borderRadius: 22,
-                  height: 44,
-                  width: 44,
-                }}
-              >
-                <Icon
-                  as={ChevronLeft}
-                  size={24}
-                  className="text-foreground"
-                  strokeWidth={2}
-                />
-              </View>
-            )}
+            <LiquidGlass
+              variant="card"
+              isInteractive
+              borderRadius={22}
+              elevation={Platform.OS === 'android' ? 3 : 0}
+              shadow={{
+                color: colorScheme === 'dark' ? '#000000' : '#000000',
+                offset: { width: 0, height: 2 },
+                opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                radius: 4,
+              }}
+              style={{
+                flex: 1,
+                justifyContent: 'center',
+                alignItems: 'center',
+                borderWidth: 0.5,
+                height: 44,
+                width: 44,
+                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                shadowRadius: 4,
+              }}
+            >
+              <Icon
+                as={ChevronLeft}
+                size={24}
+                className="text-foreground"
+                strokeWidth={2}
+              />
+            </LiquidGlass>
           </Pressable>
           <View 
             className="absolute left-0 right-0 items-center justify-center"
@@ -249,34 +241,32 @@ export function ThreadHeader({
                   onPress={handleTitleBlur}
                   hitSlop={8}
                 >
-                  {isLiquidGlassAvailable() ? (
-                    <GlassView
-                      glassEffectStyle="regular"
-                      tintColor={isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)'}
-                      style={{
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        borderRadius: 16,
-                        height: 32,
-                        width: 32,
-                      }}
-                    >
-                      <Icon as={Check} size={14} className="text-primary" strokeWidth={3} />
-                    </GlassView>
-                  ) : (
-                    <View
-                      style={{
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-                        borderRadius: 16,
-                        height: 32,
-                        width: 32,
-                      }}
-                    >
-                      <Icon as={Check} size={14} className="text-primary" strokeWidth={3} />
-                    </View>
-                  )}
+                  <LiquidGlass
+                    variant="subtle"
+                    borderRadius={16}
+                    elevation={Platform.OS === 'android' ? 3 : 0}
+                    shadow={{
+                      color: colorScheme === 'dark' ? '#000000' : '#000000',
+                      offset: { width: 0, height: 2 },
+                      opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                      radius: 4,
+                    }}
+                    style={{
+                      flex: 1,
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      borderWidth: 0.5,
+                      height: 44,
+                      width: 44,
+                      borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                      shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                      shadowRadius: 4,
+                    }}
+                  >
+                    <Icon as={Check} size={14} className="text-primary" strokeWidth={3} />
+                  </LiquidGlass>
                 </Pressable>
               </View>
             ) : (
@@ -294,84 +284,64 @@ export function ThreadHeader({
               </View>
             )}
           </View>
-          {!isEditingTitle && isLiquidGlassAvailable() ? (
-            <View className="flex-row gap-2">
-              <GlassView
-                glassEffectStyle="regular"
-                tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  borderRadius: 20,
-                  height: 40,
-                  paddingHorizontal: 2,
-                  gap: 2,
-                }}
+          {!isEditingTitle ? (
+            <LiquidGlass
+              variant="card"
+              borderRadius={20}
+              elevation={Platform.OS === 'android' ? 3 : 0}
+              shadow={{
+                color: colorScheme === 'dark' ? '#000000' : '#000000',
+                offset: { width: 0, height: 2 },
+                opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                radius: 4,
+              }}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                height: 40,
+                paddingHorizontal: 2,
+                gap: 2,
+                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                shadowRadius: 4,
+              }}
+            >
+              <Pressable
+                onPress={handleNewChatPress}
+                hitSlop={8}
+                accessibilityRole="button"
+                accessibilityLabel={t('threadHeader.newChat')}
               >
-                <Pressable
-                  onPress={handleNewChatPress}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel={t('threadHeader.newChat')}
+                <View
+                  style={{
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    width: 36,
+                    height: 36,
+                  }}
                 >
-                  <View
-                    style={{
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      width: 36,
-                      height: 36,
-                    }}
-                  >
-                    <Icon
-                      as={PenBox}
-                      size={20}
-                      className="text-foreground"
-                      strokeWidth={2}
-                    />
-                  </View>
-                </Pressable>
-                
-                {Platform.OS === 'ios' && ContextMenu ? (
-                  <ContextMenu
-                    actions={[
-                      { title: t('threadActions.editTitle'), systemIcon: 'pencil' },
-                      { title: t('threadActions.share'), systemIcon: 'square.and.arrow.up' },
-                      { title: t('threadActions.files'), systemIcon: 'folder' },
-                      { title: t('threadActions.delete'), systemIcon: 'trash', destructive: true },
-                    ]}
-                    onPress={handleContextMenuPress}
-                    dropdownMenuMode={true}
-                  >
-                    <AnimatedPressable
-                      onPressIn={() => {
-                        moreScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-                      }}
-                      onPressOut={() => {
-                        moreScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                      }}
-                      style={moreAnimatedStyle}
-                      hitSlop={8}
-                      accessibilityRole="button"
-                      accessibilityLabel={t('threadHeader.threadActions')}
-                    >
-                      <View
-                        style={{
-                          justifyContent: 'center',
-                          alignItems: 'center',
-                          width: 44,
-                          height: 44,
-                        }}
-                      >
-                        <Icon
-                          as={MoreHorizontal}
-                          size={20}
-                          className="text-foreground"
-                          strokeWidth={2}
-                        />
-                      </View>
-                    </AnimatedPressable>
-                  </ContextMenu>
-                ) : (
+                  <Icon
+                    as={PenBox}
+                    size={20}
+                    className="text-foreground"
+                    strokeWidth={2}
+                  />
+                </View>
+              </Pressable>
+              
+              {Platform.OS === 'ios' && ContextMenu ? (
+                <ContextMenu
+                  actions={[
+                    { title: t('threadActions.editTitle'), systemIcon: 'pencil' },
+                    { title: t('threadActions.share'), systemIcon: 'square.and.arrow.up' },
+                    { title: t('threadActions.files'), systemIcon: 'folder' },
+                    { title: t('threadActions.delete'), systemIcon: 'trash', destructive: true },
+                  ]}
+                  onPress={handleContextMenuPress}
+                  dropdownMenuMode={true}
+                >
                   <AnimatedPressable
                     onPressIn={() => {
                       moreScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
@@ -379,7 +349,6 @@ export function ThreadHeader({
                     onPressOut={() => {
                       moreScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                     }}
-                    onPress={handleMorePress}
                     style={moreAnimatedStyle}
                     hitSlop={8}
                     accessibilityRole="button"
@@ -401,68 +370,39 @@ export function ThreadHeader({
                       />
                     </View>
                   </AnimatedPressable>
-                )}
-              </GlassView>
-            </View>
-          ) : !isEditingTitle ? (
-            <View className="flex-row gap-2">
-              <Pressable
-                onPress={handleNewChatPress}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={t('threadHeader.newChat')}
-              >
-                <View
-                  style={{
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: isDark ? '#2C2C2E' : '#E8E8ED',
-                    borderRadius: 20,
-                    height: 40,
-                    width: 40,
+                </ContextMenu>
+              ) : (
+                <AnimatedPressable
+                  onPressIn={() => {
+                    moreScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
                   }}
-                >
-                  <Icon
-                    as={Plus}
-                    size={20}
-                    className="text-foreground"
-                    strokeWidth={2}
-                  />
-                </View>
-              </Pressable>
-
-              <AnimatedPressable
-                onPressIn={() => {
-                  moreScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-                }}
-                onPressOut={() => {
-                  moreScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-                }}
-                onPress={handleMorePress}
-                style={moreAnimatedStyle}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel={t('threadHeader.threadActions')}
-              >
-                <View
-                  style={{
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: isDark ? '#2C2C2E' : '#E8E8ED',
-                    borderRadius: 20,
-                    height: 40,
-                    width: 40,
+                  onPressOut={() => {
+                    moreScale.value = withSpring(1, { damping: 15, stiffness: 400 });
                   }}
+                  onPress={handleMorePress}
+                  style={moreAnimatedStyle}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('threadHeader.threadActions')}
                 >
-                  <Icon
-                    as={MoreHorizontal}
-                    size={20}
-                    className="text-foreground"
-                    strokeWidth={2}
-                  />
-                </View>
-              </AnimatedPressable>
-            </View>
+                  <View
+                    style={{
+                      justifyContent: 'center',
+                      alignItems: 'center',
+                      width: 44,
+                      height: 44,
+                    }}
+                  >
+                    <Icon
+                      as={MoreHorizontal}
+                      size={20}
+                      className="text-foreground"
+                      strokeWidth={2}
+                    />
+                  </View>
+                </AnimatedPressable>
+              )}
+            </LiquidGlass>
           ) : null}
           {isEditingTitle && (
             <View style={{ width: 88, height: 40 }} />

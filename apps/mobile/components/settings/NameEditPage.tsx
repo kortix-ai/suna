@@ -16,7 +16,7 @@ import { KortixLoader } from '@/components/ui';
 import { ProfilePicture } from './ProfilePicture';
 import { log } from '@/lib/logger';
 import { getDrawerBackgroundColor, getPadding } from '@agentpress/shared';
-import { isLiquidGlassAvailable, GlassView } from 'expo-glass-effect';
+import { LiquidGlass } from '@/components/ui';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -240,64 +240,36 @@ export function NameEditPage({
               onPress={handleSave}
               disabled={isLoading}
             >
-              {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
-                <GlassView
-                  glassEffectStyle="regular"
-                  tintColor="rgba(0, 122, 255, 0.9)"
+              <LiquidGlass
+                variant="primary"
+                borderRadius={28}
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  paddingHorizontal: 24,
+                  paddingVertical: 14,
+                  minWidth: '100%',
+                  gap: 8,
+                  shadowColor: '#007AFF',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 8,
+                  elevation: 8,
+                }}
+              >
+                <Icon as={Save} size={20} className='text-white' strokeWidth={2.5} style={{ zIndex: 2000 }} />
+                <Text
                   style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderRadius: 28,
-                    paddingHorizontal: 24,
-                    paddingVertical: 14,
-                    minWidth: '100%',
-                    gap: 8,
+                    fontSize: 17,
+                    fontWeight: '600',
+                    color: 'white',
+                    zIndex: 2000,
                   }}
                 >
-                  <Icon as={Save} size={20} className='text-white' strokeWidth={2.5} style={{ zIndex: 2000 }} />
-                  <Text
-                    style={{
-                      fontSize: 17,
-                      fontWeight: '600',
-                      color: 'white',
-                      zIndex: 2000,
-                    }}
-                  >
-                    {t('common.save', 'Save')}
-                  </Text>
-                </GlassView>
-              ) : (
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: '#007AFF',
-                    borderRadius: 28,
-                    paddingHorizontal: 24,
-                    paddingVertical: 14,
-                    minWidth: 120,
-                    gap: 8,
-                    shadowColor: '#007AFF',
-                    shadowOffset: { width: 0, height: 4 },
-                    shadowOpacity: 0.3,
-                    shadowRadius: 8,
-                    elevation: 8,
-                  }}
-                >
-                  <Icon as={Save} size={20} color="#FFFFFF" strokeWidth={2.5} />
-                  <Text
-                    style={{
-                      fontSize: 17,
-                      fontWeight: '600',
-                      color: '#FFFFFF',
-                    }}
-                  >
-                    {t('common.save', 'Save')}
-                  </Text>
-                </View>
-              )}
+                  {t('common.save', 'Save')}
+                </Text>
+              </LiquidGlass>
             </Pressable>
           </View>
         )}

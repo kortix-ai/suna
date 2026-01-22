@@ -6,7 +6,7 @@ import { Maximize2, Volume2, Play, Pause, X, RotateCcw } from 'lucide-react-nati
 import { getToolIcon } from '@/lib/icons/tool-icons';
 import { getUserFriendlyToolName, parseToolMessage, type ParsedToolData } from '@agentpress/shared';
 import { useColorScheme } from 'nativewind';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { LiquidGlass } from '@/components/ui';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -344,28 +344,21 @@ export const ToolSnack = React.memo(function ToolSnack({
     return (
       <GestureDetector gesture={panGesture}>
         <Animated.View style={animatedStyle} className="mx-3 mb-2">
-          {isLiquidGlassAvailable() ? (
-            <GlassView
-              glassEffectStyle="regular"
-              tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
-              isInteractive
-              style={{
-                borderRadius: 24,
-                borderWidth: 0.5,
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                padding: 8,
-              }}
-            >
-              {voiceContent}
-            </GlassView>
-          ) : (
-            <View className="flex-row items-center gap-3 rounded-3xl p-2 border border-border bg-card">
-              {voiceContent}
-            </View>
-          )}
+          <LiquidGlass
+            tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
+            isInteractive
+            borderRadius={24}
+            borderWidth={0.5}
+            borderColor={isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)'}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              padding: 8,
+            }}
+          >
+            {voiceContent}
+          </LiquidGlass>
         </Animated.View>
       </GestureDetector>
     );
@@ -463,33 +456,23 @@ export const ToolSnack = React.memo(function ToolSnack({
   return (
     <GestureDetector gesture={panGesture}>
       <Animated.View style={animatedStyle} className="mx-3 mb-2">
-        {isLiquidGlassAvailable() ? (
-          <Pressable onPress={onPress} className="active:opacity-80">
-            <GlassView
-              glassEffectStyle="regular"
-              tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
-              isInteractive
-              style={{
-                borderRadius: 24,
-                borderWidth: 0.5,
-                borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 12,
-                padding: 8,
-              }}
-            >
-              {toolContent}
-            </GlassView>
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={onPress}
-            className="flex-row items-center gap-3 rounded-3xl p-2 border border-border bg-card active:opacity-80"
+        <Pressable onPress={onPress} className="active:opacity-80">
+          <LiquidGlass
+            tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
+            isInteractive
+            borderRadius={24}
+            borderWidth={0.5}
+            borderColor={isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)'}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 12,
+              padding: 8,
+            }}
           >
             {toolContent}
-          </Pressable>
-        )}
+          </LiquidGlass>
+        </Pressable>
       </Animated.View>
     </GestureDetector>
   );

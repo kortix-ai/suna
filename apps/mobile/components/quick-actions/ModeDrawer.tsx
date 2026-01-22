@@ -1,7 +1,7 @@
 import * as React from 'react';
 import { View, ScrollView, Pressable, Platform, Image, Dimensions } from 'react-native';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetView } from '@gorhom/bottom-sheet';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { LiquidGlass } from '@/components/ui';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -147,37 +147,24 @@ export function ModeDrawer({ visible, mode, onClose, onSelectOption }: ModeDrawe
             </Text>
           </View>
         </View>
-        {isLiquidGlassAvailable() ? (
-          <Pressable onPress={handleDismiss}>
-            <GlassView
-              glassEffectStyle="regular"
-              tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-              isInteractive
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                alignItems: 'center',
-                justifyContent: 'center',
-                borderWidth: 1,
-                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-              }}>
-              <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2} />
-            </GlassView>
-          </Pressable>
-        ) : (
-          <Pressable
-            onPress={handleDismiss}
-            className="h-9 w-9 items-center justify-center rounded-full"
+        <Pressable onPress={handleDismiss}>
+          <LiquidGlass
+            tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+            isInteractive
+            borderRadius={18}
+            borderWidth={1}
+            borderColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'}
             style={{
-              backgroundColor: colorScheme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.04)',
-            }}>
+              width: 36,
+              height: 36,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
             <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2} />
-          </Pressable>
-        )}
+          </LiquidGlass>
+        </Pressable>
       </View>
-
-      {/* Scrollable Content */}
       <ScrollView
         showsVerticalScrollIndicator={false}
         bounces={true}

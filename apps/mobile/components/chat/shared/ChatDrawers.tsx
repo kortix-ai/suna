@@ -2,11 +2,13 @@ import * as React from 'react';
 import { AgentDrawer } from '@/components/agents';
 import { AttachmentDrawer } from '@/components/attachments';
 import { WorkerConfigDrawer } from '@/components/workers/WorkerConfigDrawer';
+import type { DrawerInitialView } from '@/hooks/ui/useAgentManager';
 
 export interface ChatDrawersProps {
   // Agent drawer
   isAgentDrawerVisible: boolean;
   onCloseAgentDrawer: () => void;
+  initialAgentDrawerView?: DrawerInitialView;
   onOpenWorkerConfig?: (
     workerId: string,
     view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
@@ -41,6 +43,7 @@ export interface ChatDrawersProps {
 export function ChatDrawers({
   isAgentDrawerVisible,
   onCloseAgentDrawer,
+  initialAgentDrawerView,
   onOpenWorkerConfig,
   onAgentDrawerDismiss,
   isWorkerConfigDrawerVisible,
@@ -63,6 +66,7 @@ export function ChatDrawers({
           onClose={onCloseAgentDrawer}
           onOpenWorkerConfig={onOpenWorkerConfig}
           onDismiss={onAgentDrawerDismiss}
+          initialView={initialAgentDrawerView}
         />
       )}
 

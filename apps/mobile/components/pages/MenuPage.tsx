@@ -2,7 +2,6 @@ import * as React from 'react';
 import { Platform, Pressable, ScrollView, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming, Easing } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
@@ -10,7 +9,7 @@ import * as Haptics from 'expo-haptics';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { SearchBar } from '@/components/ui/SearchBar';
-import { KortixLoader, BlurFooter } from '@/components/ui';
+import { KortixLoader, BlurFooter, LiquidGlass } from '@/components/ui';
 import {
   Search,
   Plus,
@@ -383,33 +382,31 @@ export function MenuPage({
                   height: 44,
                   borderRadius: 22,
                 }}>
-                {isLiquidGlassAvailable() ? (
-                  <GlassView
-                    glassEffectStyle="regular"
-                    tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                    isInteractive
-                    style={{
-                      flex: 1,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      borderRadius: 22,
-                    }}>
-                    <Icon as={SettingsIcon} size={22} className="text-foreground" strokeWidth={2} />
-                  </GlassView>
-                ) : (
-                  <View
-                    style={{
-                      flex: 1,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7',
-                      borderRadius: 22,
-                      borderWidth: 0.5,
-                      borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-                    }}>
-                    <Icon as={SettingsIcon} size={22} className="text-foreground" strokeWidth={2} />
-                  </View>
-                )}
+                <LiquidGlass
+                  variant="card"
+                  isInteractive
+                  borderRadius={22}
+                  elevation={Platform.OS === 'android' ? 3 : 0}
+                  shadow={{
+                    color: colorScheme === 'dark' ? '#000000' : '#000000',
+                    offset: { width: 0, height: 2 },
+                    opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                    radius: 4,
+                  }}
+                  style={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 0.5,
+                    borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                    shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                    shadowRadius: 4,
+                  }}
+                >
+                  <Icon as={SettingsIcon} size={22} className="text-foreground" strokeWidth={2} />
+                </LiquidGlass>
               </Pressable>
               <Pressable
                 onPress={() => {
@@ -421,33 +418,31 @@ export function MenuPage({
                   height: 44,
                   borderRadius: 22,
                 }}>
-                {isLiquidGlassAvailable() ? (
-                  <GlassView
-                    glassEffectStyle="regular"
-                    tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                    isInteractive
-                    style={{
-                      flex: 1,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      borderRadius: 22,
-                    }}>
-                    <Icon as={ArrowRightIcon} size={22} className="text-foreground" strokeWidth={2} />
-                  </GlassView>
-                ) : (
-                  <View
-                    style={{
-                      flex: 1,
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7',
-                      borderRadius: 22,
-                      borderWidth: 0.5,
-                      borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-                    }}>
-                    <Icon as={ArrowRightIcon} size={22} className="text-foreground" strokeWidth={2} />
-                  </View>
-                )}
+                <LiquidGlass
+                  variant="card"
+                  isInteractive
+                  borderRadius={22}
+                  elevation={Platform.OS === 'android' ? 3 : 0}
+                  shadow={{
+                    color: colorScheme === 'dark' ? '#000000' : '#000000',
+                    offset: { width: 0, height: 2 },
+                    opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                    radius: 4,
+                  }}
+                  style={{
+                    flex: 1,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    borderWidth: 0.5,
+                    borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                    shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                    shadowRadius: 4,
+                  }}
+                >
+                  <Icon as={ArrowRightIcon} size={22} className="text-foreground" strokeWidth={2} />
+                </LiquidGlass>
               </Pressable>
             </View>
           </View>
@@ -658,6 +653,7 @@ export function MenuPage({
                   onChangeText={chatsSearch.updateQuery}
                   placeholder={t('menu.searchConversations') || 'Search chats...'}
                   onClear={chatsSearch.clearSearch}
+                  colorScheme={colorScheme}
                 />
               )}
               {activeTab === 'workers' && (
@@ -666,6 +662,7 @@ export function MenuPage({
                   onChangeText={workersSearch.updateQuery}
                   placeholder={t('placeholders.searchWorkers') || 'Search workers...'}
                   onClear={workersSearch.clearSearch}
+                  colorScheme={colorScheme}
                 />
               )}
               {activeTab === 'triggers' && (
@@ -674,6 +671,7 @@ export function MenuPage({
                   onChangeText={triggersSearch.updateQuery}
                   placeholder={t('placeholders.searchTriggers') || 'Search triggers...'}
                   onClear={triggersSearch.clearSearch}
+                  colorScheme={colorScheme}
                 />
               )}
             </View>
@@ -698,33 +696,31 @@ export function MenuPage({
                   borderRadius: 22,
                 },
               ]}>
-              {isLiquidGlassAvailable() ? (
-                <GlassView
-                  glassEffectStyle="regular"
-                  tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                  isInteractive
-                  style={{
-                    flex: 1,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    borderRadius: 22,
-                  }}>
-                  <Icon as={PenBox} size={20} className="text-foreground" strokeWidth={2.5} />
-                </GlassView>
-              ) : (
-                <View
-                  style={{
-                    flex: 1,
-                    justifyContent: 'center',
-                    alignItems: 'center',
-                    backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7',
-                    borderRadius: 22,
-                    borderWidth: 0.5,
-                    borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-                  }}>
-                  <Icon as={PenBox} size={20} className="text-foreground" strokeWidth={2.5} />
-                </View>
-              )}
+              <LiquidGlass
+                variant="card"
+                isInteractive
+                borderRadius={22}
+                elevation={Platform.OS === 'android' ? 3 : 0}
+                shadow={{
+                  color: colorScheme === 'dark' ? '#000000' : '#000000',
+                  offset: { width: 0, height: 2 },
+                  opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                  radius: 4,
+                }}
+                style={{
+                  flex: 1,
+                  justifyContent: 'center',
+                  alignItems: 'center',
+                  borderWidth: 0.5,
+                  borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+                  shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+                  shadowRadius: 4,
+                }}
+              >
+                <Icon as={PenBox} size={20} className="text-foreground" strokeWidth={2.5} />
+              </LiquidGlass>
             </AnimatedPressable>
           </View>
           {advancedFeaturesEnabled && (

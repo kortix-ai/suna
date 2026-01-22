@@ -203,6 +203,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             onMenuPress={handleMenuPress}
             onUpgradePress={handleUpgradePress}
             onCreditsPress={handleCreditsPress}
+            colorScheme={colorScheme}
           />
 
           <Pressable className="flex-1" onPress={Keyboard.dismiss}>
@@ -229,7 +230,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             onSendMessage={handleSendMessage}
             onSendAudio={audioHandlers.handleSendAudio}
             onAttachPress={chat.openAttachmentDrawer}
+            onTakePicture={chat.handleTakePicture}
+            onChooseImages={chat.handleChooseImages}
+            onChooseFiles={chat.handleChooseFiles}
             onAgentPress={agentManager.openDrawer}
+            onIntegrationsPress={agentManager.openDrawerToIntegrations}
             onAudioRecord={audioHandlers.handleStartRecording}
             onCancelRecording={audioHandlers.handleCancelRecording}
             onStopAgentRun={chat.stopAgent}
@@ -253,6 +258,7 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
         <ChatDrawers
           isAgentDrawerVisible={agentManager.isDrawerVisible}
           onCloseAgentDrawer={agentManager.closeDrawer}
+          initialAgentDrawerView={agentManager.initialDrawerView}
           onOpenWorkerConfig={handleOpenWorkerConfig}
           onAgentDrawerDismiss={handleAgentDrawerDismiss}
           isWorkerConfigDrawerVisible={isWorkerConfigDrawerVisible}

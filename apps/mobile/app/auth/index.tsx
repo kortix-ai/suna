@@ -26,7 +26,7 @@ import Animated, {
 import { Dimensions, Animated as RNAnimated } from 'react-native';
 import { KortixLogo } from '@/components/ui/KortixLogo';
 import { EmailAuthDrawer, type EmailAuthDrawerRef } from '@/components/auth';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { LiquidGlass } from '@/components/ui';
 import { ProgressiveBlur } from '@/components/ui/progressive-blur';
 import { log } from '@/lib/logger';
 
@@ -258,44 +258,24 @@ function WelcomeContent({ onOAuth, onEmail }: WelcomeContentProps) {
       </View>
     );
 
-    if (isLiquidGlassAvailable() && Platform.OS === 'ios') {
-      return (
-        <TouchableOpacity
-          onPress={onPress}
-          activeOpacity={0.8}
-          style={{ zIndex: 30 }}
-        >
-          <GlassView
-            glassEffectStyle="regular"
-            tintColor="rgba(255, 255, 255, 0.08)"
-            style={{
-              borderRadius: 28,
-              borderWidth: 0.5,
-              borderColor: 'rgba(255, 255, 255, 0.2)',
-              overflow: 'hidden',
-              zIndex: 30,
-            }}
-          >
-            {buttonContent}
-          </GlassView>
-        </TouchableOpacity>
-      );
-    }
-
     return (
       <TouchableOpacity
         onPress={onPress}
         activeOpacity={0.8}
-        style={{
-          borderRadius: 28,
-          backgroundColor: 'rgba(255, 255, 255, 0.1)',
-          borderWidth: 0.5,
-          borderColor: 'rgba(255, 255, 255, 0.2)',
-          overflow: 'hidden',
-          zIndex: 30,
-        }}
+        style={{ zIndex: 30 }}
       >
-        {buttonContent}
+        <LiquidGlass
+          tintColor="rgba(255, 255, 255, 0.08)"
+          borderRadius={28}
+          borderWidth={0.5}
+          borderColor="rgba(255, 255, 255, 0.2)"
+          style={{
+            overflow: 'hidden',
+            zIndex: 30,
+          }}
+        >
+          {buttonContent}
+        </LiquidGlass>
       </TouchableOpacity>
     );
   };

@@ -13,17 +13,6 @@ interface BlurFadeHeaderProps {
   children?: React.ReactNode;
 }
 
-/**
- * BlurFadeHeader - A reusable header component with progressive blur fade effect
- * 
- * iOS: Uses MaskedView + BlurView for native blur with gradient fade
- * Android: Uses LinearGradient fallback (BlurView doesn't work well on Android)
- * 
- * @param height - Height of the header (default: 120)
- * @param intensity - Blur intensity for iOS (default: 15)
- * @param style - Additional styles to apply to the container
- * @param children - Content to render inside the header
- */
 export function BlurFadeHeader({
   height = 120,
   intensity = 80,
@@ -68,8 +57,8 @@ export function BlurFadeHeader({
       <MaskedView
         maskElement={
           <LinearGradient
-            locations={locations as number[]}
-            colors={colors as string[]}
+            locations={locations as unknown as [number, number, number]}
+            colors={colors as [string, string, string]}
             style={StyleSheet.absoluteFill}
           />
         }

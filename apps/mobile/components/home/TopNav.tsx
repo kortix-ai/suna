@@ -1,13 +1,12 @@
 import { Icon } from '@/components/ui/icon';
 import { Text } from '@/components/ui/text';
+import { LiquidGlass } from '@/components/ui/liquid-glass';
 import * as React from 'react';
 import { Pressable, View, Platform } from 'react-native';
 import { Coins, Sparkles, TextAlignStart } from 'lucide-react-native';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useCreditBalance } from '@/lib/billing';
-import { useColorScheme } from 'nativewind';
 import { formatCredits } from '@agentpress/shared';
 import { useLanguage } from '@/contexts';
 import { log } from '@/lib/logger';
@@ -19,6 +18,7 @@ interface TopNavProps {
   onUpgradePress?: () => void;
   onCreditsPress?: () => void;
   visible?: boolean;
+  colorScheme: any;
 }
 
 export function TopNav({
@@ -26,8 +26,8 @@ export function TopNav({
   onUpgradePress,
   onCreditsPress,
   visible = true,
+  colorScheme
 }: TopNavProps) {
-  const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const { data: creditBalance, refetch: refetchCredits } = useCreditBalance();
   const creditsScale = useSharedValue(1);
@@ -78,36 +78,32 @@ export function TopNav({
         accessibilityRole="button"
         accessibilityLabel="Open menu"
         accessibilityHint="Opens the navigation drawer">
-        {isLiquidGlassAvailable() ? (
-          <GlassView
-            glassEffectStyle="regular"
-            tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
-            isInteractive
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 22,
-              height: 44,
-              width: 44,
-              borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
-            }}>
-            <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
-          </GlassView>
-        ) : (
-          <View
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              backgroundColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)',
-              borderRadius: 20,
-            }}>
-            <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
-          </View>
-        )}
+        <LiquidGlass
+          variant="default"
+          isInteractive
+          borderRadius={22}
+          elevation={Platform.OS === 'android' ? 3 : 0}
+          shadow={{
+            color: colorScheme === 'dark' ? '#000000' : '#000000',
+            offset: { width: 0, height: 2 },
+            opacity: colorScheme === 'dark' ? 0.3 : 0.1,
+            radius: 4,
+          }}
+          style={{
+            flex: 1,
+            justifyContent: 'center',
+            alignItems: 'center',
+            borderWidth: 0.5,
+            borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
+            shadowColor: colorScheme === 'dark' ? '#000000' : '#000000',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: colorScheme === 'dark' ? 0.3 : 0.1,
+            shadowRadius: 4,
+          }}
+        >
+          <Icon as={TextAlignStart} size={20} className="text-foreground" strokeWidth={2} />
+        </LiquidGlass>
       </Pressable>
-
       <View className="absolute right-6 top-2 flex-row items-center gap-2">
         <AnimatedPressable
           onPressIn={() => {
@@ -139,7 +135,6 @@ export function TopNav({
             </Text>
           </View>
         </AnimatedPressable>
-
         <AnimatedPressable
           onPressIn={() => {
             creditsScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
@@ -155,43 +150,24 @@ export function TopNav({
           accessibilityRole="button"
           accessibilityLabel="View usage"
           accessibilityHint="Opens usage details">
-          {isLiquidGlassAvailable() ? (
-            <GlassView
-              glassEffectStyle="regular"
-              tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.04)' : 'rgba(0, 0, 0, 0.02)'}
-              isInteractive
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                borderRadius: 18,
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderWidth: 0.5,
-                borderColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)',
-              }}>
-              <Icon as={Coins} size={16} className="text-primary" strokeWidth={2.5} />
-              <Text className="font-roobert-semibold text-sm text-primary">
-                {formatCredits(creditBalance?.balance || 0)}
-              </Text>
-            </GlassView>
-          ) : (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 8,
-                borderRadius: 18,
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-              }}
-              className="bg-primary/5">
-              <Icon as={Coins} size={16} className="text-primary" strokeWidth={2.5} />
-              <Text className="font-roobert-semibold text-sm text-primary">
-                {formatCredits(creditBalance?.balance || 0)}
-              </Text>
-            </View>
-          )}
+          <LiquidGlass
+            variant="subtle"
+            isInteractive
+            borderRadius={18}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+            className="bg-primary/5"
+          >
+            <Icon as={Coins} size={16} className="text-primary" strokeWidth={2.5} />
+            <Text className="font-roobert-semibold text-sm text-primary">
+              {formatCredits(creditBalance?.balance || 0)}
+            </Text>
+          </LiquidGlass>
         </AnimatedPressable>
       </View>
     </View>

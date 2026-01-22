@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { View, Pressable, Platform, ScrollView, Image, Dimensions, StyleSheet } from 'react-native';
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { LiquidGlass } from '@/components/ui';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
 import { Text } from '@/components/ui/text';
@@ -28,6 +28,11 @@ import { QUICK_ACTIONS } from './quickActions';
 import { QuickAction } from '.';
 import { useLanguage } from '@/contexts';
 import { getQuickActionOptions } from './quickActionViews';
+import { DocPreviewCard } from './DocPreviewCard';
+import { ResearchPreviewCard } from './ResearchPreviewCard';
+import { DataPreviewCard } from './DataPreviewCard';
+import { PeoplePreviewCard } from './PeoplePreviewCard';
+import { shouldUseVisualPreview } from './previewConfig';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -63,98 +68,49 @@ const ModeCard = React.memo(function ModeCard({
     transform: [{ scale: scale.value }],
   }));
 
-  if (isLiquidGlassAvailable() && Platform.OS === 'ios') {
-    return (
-      <GestureDetector gesture={Gesture.Tap()
-        .onBegin(() => {
-          scale.value = withSpring(0.95, SPRING_BOUNCY);
-        })
-        .onEnd(() => {
-          scale.value = withSpring(1, SPRING_BOUNCY);
-          runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
-          runOnJS(onPress)();
-        })
-        .onFinalize(() => {
-          scale.value = withSpring(1, SPRING_BOUNCY);
-        })
-      }>
-        <Animated.View style={[animatedStyle, { width: cardWidth }]}>
-          <GlassView
-            glassEffectStyle="regular"
-            tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
-            isInteractive
-            style={{
-              borderRadius: 20,
-              borderWidth: 1,
-              borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-              paddingVertical: 18,
-              paddingHorizontal: 12,
-              alignItems: 'center',
-              gap: 12,
-            }}
-          >
-            <View
-              style={{
-                width: 52,
-                height: 52,
-                borderRadius: 22,
-                alignItems: 'center',
-                justifyContent: 'center',
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
-              }}
-            >
-              <Icon as={action.icon} size={24} className="text-foreground" strokeWidth={2} />
-            </View>
-            <Text className="font-roobert-semibold text-sm text-foreground text-center" numberOfLines={1}>
-              {translatedLabel}
-            </Text>
-          </GlassView>
-        </Animated.View>
-      </GestureDetector>
-    );
-  }
-
   return (
-    <AnimatedPressable
-      onPressIn={() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    <GestureDetector gesture={Gesture.Tap()
+      .onBegin(() => {
         scale.value = withSpring(0.95, SPRING_BOUNCY);
-      }}
-      onPressOut={() => {
+      })
+      .onEnd(() => {
         scale.value = withSpring(1, SPRING_BOUNCY);
-      }}
-      onPress={onPress}
-      style={[animatedStyle, { width: cardWidth }]}
-    >
-      <View
-        style={{
-          backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-          borderRadius: 20,
-          borderWidth: 1,
-          borderColor: isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.08)',
-          paddingVertical: 18,
-          paddingHorizontal: 12,
-          alignItems: 'center',
-          gap: 12,
-        }}
-      >
-        <View
+        runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Medium);
+        runOnJS(onPress)();
+      })
+      .onFinalize(() => {
+        scale.value = withSpring(1, SPRING_BOUNCY);
+      })
+    }>
+      <Animated.View style={[animatedStyle, { width: cardWidth }]}>
+        <LiquidGlass
+          isInteractive
+          borderRadius={20}
           style={{
-            width: 52,
-            height: 52,
-            borderRadius: 22,
+            paddingVertical: 18,
+            paddingHorizontal: 12,
             alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
+            gap: 12,
           }}
         >
-          <Icon as={action.icon} size={24} className="text-foreground" strokeWidth={2} />
-        </View>
-        <Text className="font-roobert-semibold text-sm text-foreground text-center" numberOfLines={1}>
-          {translatedLabel}
-        </Text>
-      </View>
-    </AnimatedPressable>
+          <View
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 22,
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.06)',
+            }}
+          >
+            <Icon as={action.icon} size={24} className="text-foreground" strokeWidth={2} />
+          </View>
+          <Text className="font-roobert-semibold text-sm text-foreground text-center" numberOfLines={1}>
+            {translatedLabel}
+          </Text>
+        </LiquidGlass>
+      </Animated.View>
+    </GestureDetector>
   );
 });
 
@@ -163,6 +119,10 @@ interface OptionCardProps {
   cardWidth: number;
   cardHeight: number;
   isSlideMode: boolean;
+  isDocsMode: boolean;
+  isResearchMode: boolean;
+  isDataMode: boolean;
+  isPeopleMode: boolean;
   onSelect: () => void;
 }
 
@@ -171,12 +131,22 @@ const OptionCard = React.memo(function OptionCard({
   cardWidth,
   cardHeight,
   isSlideMode,
+  isDocsMode,
+  isResearchMode,
+  isDataMode,
+  isPeopleMode,
   onSelect,
 }: OptionCardProps) {
   const scale = useSharedValue(1);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
+
+  // Check if we should use visual previews (respects config toggle)
+  const useDocsVisual = isDocsMode && shouldUseVisualPreview('docs');
+  const useResearchVisual = isResearchMode && shouldUseVisualPreview('research');
+  const useDataVisual = isDataMode && shouldUseVisualPreview('data');
+  const usePeopleVisual = isPeopleMode && shouldUseVisualPreview('people');
 
   return (
     <AnimatedPressable
@@ -202,6 +172,38 @@ const OptionCard = React.memo(function OptionCard({
               source={option.imageUrl}
               style={{ width: '100%', height: '100%' }}
               resizeMode={isSlideMode ? 'contain' : 'cover'}
+            />
+          </View>
+        ) : useDocsVisual ? (
+          <View style={{ marginBottom: 6 }}>
+            <DocPreviewCard
+              docType={option.id}
+              width={cardWidth}
+              height={cardHeight}
+            />
+          </View>
+        ) : useResearchVisual ? (
+          <View style={{ marginBottom: 6 }}>
+            <ResearchPreviewCard
+              researchType={option.id}
+              width={cardWidth}
+              height={cardHeight}
+            />
+          </View>
+        ) : useDataVisual ? (
+          <View style={{ marginBottom: 6 }}>
+            <DataPreviewCard
+              dataType={option.id}
+              width={cardWidth}
+              height={cardHeight}
+            />
+          </View>
+        ) : usePeopleVisual ? (
+          <View style={{ marginBottom: 6 }}>
+            <PeoplePreviewCard
+              peopleType={option.id}
+              width={cardWidth}
+              height={cardHeight}
             />
           </View>
         ) : option.icon ? (
@@ -358,40 +360,23 @@ export function MorphingModesSheet({ isActive, onSelectMode }: MorphingModesShee
                 Pick from presets to get started
               </Text>
             </View>
-            {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
-              <Pressable onPress={closeSheet}>
-                <GlassView
-                  glassEffectStyle="regular"
-                  tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                  isInteractive
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderWidth: 1,
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-                  }}
-                >
-                  <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2.5} />
-                </GlassView>
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={closeSheet}
+            <Pressable onPress={closeSheet}>
+              <LiquidGlass
+                tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+                isInteractive
+                borderRadius={18}
+                borderWidth={1}
+                borderColor={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'}
                 style={{
                   width: 36,
                   height: 36,
-                  borderRadius: 18,
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
                 <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2.5} />
-              </Pressable>
-            )}
+              </LiquidGlass>
+            </Pressable>
           </View>
         </View>
 
@@ -417,56 +402,61 @@ export function MorphingModesSheet({ isActive, onSelectMode }: MorphingModesShee
     );
   };
 
-  // Render mode options
   const renderOptionsContent = () => {
     if (!selectedMode) return null;
 
     const ScrollComponent = Platform.OS === 'ios' ? ScrollView : BottomSheetScrollView;
     const isSlideMode = selectedMode.id === 'slides';
-    const optionCardWidth = isSlideMode
-      ? (SCREEN_WIDTH - 48) / 2
-      : (SCREEN_WIDTH - 52) / 3;
-    const optionCardHeight = isSlideMode ? optionCardWidth * 0.5625 : optionCardWidth;
+    const isDocsMode = selectedMode.id === 'docs';
+    const isResearchMode = selectedMode.id === 'research';
+    const isDataMode = selectedMode.id === 'data';
+    const isPeopleMode = selectedMode.id === 'people';
+    
+    let optionCardWidth: number;
+    let optionCardHeight: number;
+    
+    if (isSlideMode) {
+      optionCardWidth = (SCREEN_WIDTH - 44) / 2;
+      optionCardHeight = optionCardWidth * 0.5625;
+    } else if (isDocsMode && shouldUseVisualPreview('docs')) {
+      optionCardWidth = (SCREEN_WIDTH - 44) / 2;
+      optionCardHeight = optionCardWidth * 1.2;
+    } else if (isResearchMode && shouldUseVisualPreview('research')) {
+      optionCardWidth = (SCREEN_WIDTH - 44) / 2;
+      optionCardHeight = optionCardWidth;
+    } else if (isDataMode && shouldUseVisualPreview('data')) {
+      optionCardWidth = (SCREEN_WIDTH - 44) / 2;
+      optionCardHeight = optionCardWidth;
+    } else if (isPeopleMode && shouldUseVisualPreview('people')) {
+      optionCardWidth = (SCREEN_WIDTH - 44) / 2;
+      optionCardHeight = optionCardWidth;
+    } else {
+      optionCardWidth = (SCREEN_WIDTH - 56) / 3;
+      optionCardHeight = optionCardWidth;
+    }
 
     return (
       <View style={{ flex: 1 }}>
         <View style={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 16 }}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
-                <Pressable onPress={handleBack}>
-                  <GlassView
-                    glassEffectStyle="regular"
-                    tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                    isInteractive
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 18,
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      borderWidth: 1,
-                      borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-                    }}
-                  >
-                    <Icon as={ChevronLeft} size={20} className="text-foreground" strokeWidth={2.5} />
-                  </GlassView>
-                </Pressable>
-              ) : (
-                <Pressable
-                  onPress={handleBack}
+              <Pressable onPress={handleBack}>
+                <LiquidGlass
+                  tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+                  isInteractive
+                  borderRadius={18}
+                  borderWidth={1}
+                  borderColor={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'}
                   style={{
                     width: 36,
                     height: 36,
-                    borderRadius: 18,
-                    backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
                   <Icon as={ChevronLeft} size={20} className="text-foreground" strokeWidth={2.5} />
-                </Pressable>
-              )}
+                </LiquidGlass>
+              </Pressable>
               <View>
                 <Text className="font-roobert-bold text-2xl text-foreground">
                   {selectedMode.label}
@@ -476,40 +466,23 @@ export function MorphingModesSheet({ isActive, onSelectMode }: MorphingModesShee
                 </Text>
               </View>
             </View>
-            {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
-              <Pressable onPress={closeSheet}>
-                <GlassView
-                  glassEffectStyle="regular"
-                  tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-                  isInteractive
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 18,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    borderWidth: 1,
-                    borderColor: isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)',
-                  }}
-                >
-                  <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2.5} />
-                </GlassView>
-              </Pressable>
-            ) : (
-              <Pressable
-                onPress={closeSheet}
+            <Pressable onPress={closeSheet}>
+              <LiquidGlass
+                tintColor={isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+                isInteractive
+                borderRadius={18}
+                borderWidth={1}
+                borderColor={isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.1)'}
                 style={{
                   width: 36,
                   height: 36,
-                  borderRadius: 18,
-                  backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.05)',
                   alignItems: 'center',
                   justifyContent: 'center',
                 }}
               >
                 <Icon as={X} size={18} className="text-muted-foreground" strokeWidth={2.5} />
-              </Pressable>
-            )}
+              </LiquidGlass>
+            </Pressable>
           </View>
         </View>
 
@@ -528,6 +501,10 @@ export function MorphingModesSheet({ isActive, onSelectMode }: MorphingModesShee
                 cardWidth={optionCardWidth}
                 cardHeight={optionCardHeight}
                 isSlideMode={isSlideMode}
+                isDocsMode={isDocsMode}
+                isResearchMode={isResearchMode}
+                isDataMode={isDataMode}
+                isPeopleMode={isPeopleMode}
                 onSelect={() => handleSelectOption(option.id)}
               />
             ))}
@@ -550,38 +527,20 @@ export function MorphingModesSheet({ isActive, onSelectMode }: MorphingModesShee
       {/* Button */}
       <GestureDetector gesture={buttonGesture}>
         <Animated.View style={buttonAnimatedStyle}>
-          {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
-            <GlassView
-              glassEffectStyle="regular"
-              tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 12,
-                borderWidth: 0.5,
-                borderColor: isActive
-                  ? (isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)')
-                  : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)'),
-              }}
-            >
-              {textContent}
-            </GlassView>
-          ) : (
-            <View
-              style={{
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 12,
-                backgroundColor: isDark ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.05)',
-                borderWidth: 0.5,
-                borderColor: isActive
-                  ? (isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)')
-                  : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)'),
-              }}
-            >
-              {textContent}
-            </View>
-          )}
+          <LiquidGlass
+            tintColor={isDark ? 'rgba(255, 255, 255, 0.05)' : 'rgba(0, 0, 0, 0.03)'}
+            borderRadius={12}
+            borderWidth={0.5}
+            borderColor={isActive
+              ? (isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.15)')
+              : (isDark ? 'rgba(255, 255, 255, 0.12)' : 'rgba(0, 0, 0, 0.05)')}
+            style={{
+              paddingHorizontal: 12,
+              paddingVertical: 6,
+            }}
+          >
+            {textContent}
+          </LiquidGlass>
         </Animated.View>
       </GestureDetector>
 

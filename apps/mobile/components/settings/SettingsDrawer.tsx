@@ -19,7 +19,7 @@ import { ThemePage } from './ThemePage';
 import { BetaPage } from './BetaPage';
 import { AccountDeletionPage } from './AccountDeletionPage';
 import type { UserProfile } from '../menu/types';
-import { isLiquidGlassAvailable, GlassView } from 'expo-glass-effect';
+import { LiquidGlass } from '@/components/ui';
 import { getBorderRadius, getDrawerBackgroundColor } from '@agentpress/shared';
 
 interface SettingsDrawerProps {
@@ -148,34 +148,19 @@ export function SettingsDrawer({ visible, onClose, profile }: SettingsDrawerProp
           activeOpacity={0.6}
           style={{ position: 'absolute', left: 24 }}
         >
-          {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
-            <GlassView
-              glassEffectStyle="regular"
-              tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-              style={{
-                justifyContent: 'center',
-                alignItems: 'center',
-                borderRadius: 22,
-                height: 44,
-                width: 44,
-              }}
-            >
-              <Icon as={ChevronLeft} size={22} className="text-foreground" strokeWidth={2} />
-            </GlassView>
-          ) : (
-            <View
-              style={{
-                justifyContent: 'center',
-                alignItems: 'center',
-                backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED',
-                borderRadius: 22,
-                height: 44,
-                width: 44,
-              }}
-            >
-              <Icon as={ChevronLeft} size={22} className="text-foreground" strokeWidth={2} />
-            </View>
-          )}
+          <LiquidGlass
+            tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+            borderRadius={22}
+            backgroundColor={colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED'}
+            style={{
+              justifyContent: 'center',
+              alignItems: 'center',
+              height: 44,
+              width: 44,
+            }}
+          >
+            <Icon as={ChevronLeft} size={22} className="text-foreground" strokeWidth={2} />
+          </LiquidGlass>
         </TouchableOpacity>
       )}
       <Text className="font-roobert-bold text-lg text-foreground">{getPageTitle()}</Text>
@@ -184,34 +169,19 @@ export function SettingsDrawer({ visible, onClose, profile }: SettingsDrawerProp
         activeOpacity={0.6}
         style={{ position: 'absolute', right: 24 }}
       >
-        {isLiquidGlassAvailable() && Platform.OS === 'ios' ? (
-          <GlassView
-            glassEffectStyle="regular"
-            tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
-            style={{
-              justifyContent: 'center',
-              alignItems: 'center',
-              borderRadius: 22,
-              height: 44,
-              width: 44,
-            }}
-          >
-            <Icon as={X} size={22} className="text-foreground" strokeWidth={2} />
-          </GlassView>
-        ) : (
-          <View
-            style={{
-              justifyContent: 'center',
-              alignItems: 'center',
-              backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED',
-              borderRadius: 22,
-              height: 44,
-              width: 44,
-            }}
-          >
-            <Icon as={X} size={22} className="text-foreground" strokeWidth={2} />
-          </View>
-        )}
+        <LiquidGlass
+          tintColor={colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'rgba(0, 0, 0, 0.04)'}
+          borderRadius={22}
+          backgroundColor={colorScheme === 'dark' ? '#2C2C2E' : '#E8E8ED'}
+          style={{
+            justifyContent: 'center',
+            alignItems: 'center',
+            height: 44,
+            width: 44,
+          }}
+        >
+          <Icon as={X} size={22} className="text-foreground" strokeWidth={2} />
+        </LiquidGlass>
       </TouchableOpacity>
     </View>
   );

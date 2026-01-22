@@ -65,6 +65,7 @@ interface AgentDrawerProps {
     view?: 'instructions' | 'tools' | 'integrations' | 'triggers'
   ) => void;
   onDismiss?: () => void;
+  initialView?: 'main' | 'integrations';
 }
 
 type ViewState =
@@ -93,6 +94,7 @@ export function AgentDrawer({
   onCreateAgent,
   onOpenWorkerConfig,
   onDismiss,
+  initialView = 'main',
 }: AgentDrawerProps) {
   const bottomSheetRef = React.useRef<BottomSheetModal>(null);
   const { colorScheme } = useColorScheme();
@@ -213,13 +215,13 @@ export function AgentDrawer({
       loadAgents();
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       bottomSheetRef.current?.present();
-      setCurrentView('main');
+      setCurrentView(initialView);
     } else if (!visible) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
       bottomSheetRef.current?.dismiss();
       clearAgentSearch();
     }
-  }, [visible, clearAgentSearch, loadAgents]);
+  }, [visible, clearAgentSearch, loadAgents, initialView]);
 
   const navigateToView = React.useCallback((view: ViewState) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -472,6 +474,7 @@ export function AgentDrawer({
           onChangeText={updateAgentQuery}
           placeholder={t('agents.searchAgents', 'Search workers...')}
           onClear={clearAgentSearch}
+          colorScheme={colorScheme}
         />
       </View>
 
