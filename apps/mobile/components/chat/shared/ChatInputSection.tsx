@@ -3,7 +3,7 @@ import { View, Platform, ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from 'nativewind';
 import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native-keyboard-controller';
-import Animated, { useAnimatedStyle, interpolate, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, interpolate, useSharedValue, withTiming, runOnJS } from 'react-native-reanimated';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { ToolSnack, type ToolSnackData } from '../ToolSnack';
 import { AttachmentBar } from '@/components/attachments';
@@ -185,8 +185,10 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
       setRenderExpandedView(true);
       expandedViewOpacity.value = withTiming(1, { duration: 200 });
     } else {
-      expandedViewOpacity.value = withTiming(0, { duration: 200 }, () => {
-        setRenderExpandedView(false);
+      expandedViewOpacity.value = withTiming(0, { duration: 200 }, (finished) => {
+        if (finished) {
+          runOnJS(setRenderExpandedView)(false);
+        }
       });
     }
   }, [shouldShowExpandedView, expandedViewOpacity]);
