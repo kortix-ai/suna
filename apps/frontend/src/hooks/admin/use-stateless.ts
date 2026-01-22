@@ -28,6 +28,7 @@ export interface StatelessHealth {
 
 export interface StatelessDashboard {
   active_runs: number;
+  active_runs_metric?: number;
   owned_runs: number;
   pending_writes: number;
   stuck_count: number;
@@ -59,6 +60,7 @@ export interface StatelessDashboard {
 
 export interface StuckRun {
   run_id: string;
+  thread_id: string | null;
   owner: string | null;
   status: string | null;
   heartbeat: number | null;
@@ -261,6 +263,7 @@ export const useStatelessRateLimiters = () => {
 
 export interface RunInfo {
   run_id: string;
+  thread_id: string | null;
   owner: string | null;
   status: string | null;
   heartbeat: number | null;
