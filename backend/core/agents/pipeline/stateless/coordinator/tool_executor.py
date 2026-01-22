@@ -1,8 +1,10 @@
+import asyncio
 import json
 import time
 import uuid
-from typing import Dict, Any, Optional, AsyncGenerator, List
+from typing import Dict, Any, Optional, AsyncGenerator, List, Tuple
 from datetime import datetime, timezone
+from dataclasses import dataclass, field
 
 from core.utils.logger import logger
 from core.agents.pipeline.stateless.state import ToolResult
@@ -10,11 +12,172 @@ from .message_builder import _transform_mcp_tool_call
 
 TERMINATING_TOOLS = {"ask", "complete"}
 
+@dataclass
+class PendingToolExecution:
+    task: asyncio.Task
+    tool_call: Dict[str, Any]
+    tool_index: int
+    tool_call_id: str
+    function_name: str
+    display_name: str
+    arguments: str
+    start_time: float = field(default_factory=time.time)
+    saved: bool = False
+    assistant_message_id: Optional[str] = None
+
 class ToolExecutor:
     def __init__(self, state, tool_registry, message_builder):
         self._state = state
         self._tool_registry = tool_registry
         self._message_builder = message_builder
+        self._available_functions: Optional[Dict] = None
+    
+    def _get_available_functions(self) -> Dict:
+        if self._available_functions is None:
+            self._available_functions = self._tool_registry.get_available_functions()
+        return self._available_functions
+    
+    def start_tool_execution(
+        self,
+        tool_call: Dict[str, Any],
+        tool_index: int,
+        assistant_message_id: Optional[str] = None
+    ) -> PendingToolExecution:
+        tc_id = tool_call.get("id", str(uuid.uuid4()))
+        func = tool_call.get("function", {})
+        name = func.get("name", "unknown")
+        args = func.get("arguments", "{}")
+        display_name, _ = _transform_mcp_tool_call(name, args)
+        
+        available_functions = self._get_available_functions()
+        
+        task = asyncio.create_task(
+            self._execute_single_tool(name, args, available_functions)
+        )
+        
+        return PendingToolExecution(
+            task=task,
+            tool_call=tool_call,
+            tool_index=tool_index,
+            tool_call_id=tc_id,
+            function_name=name,
+            display_name=display_name,
+            arguments=args,
+            assistant_message_id=assistant_message_id
+        )
+    
+    async def process_completed_execution(
+        self,
+        execution: PendingToolExecution,
+        stream_start: str,
+        defer_message: bool = False
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Process a completed tool execution.
+        
+        Args:
+            execution: The completed PendingToolExecution
+            stream_start: ISO timestamp of stream start
+            defer_message: If True, defer adding the tool result message to state.
+                          Used for execute_on_stream to ensure proper ordering.
+        """
+        if execution.saved:
+            return
+        
+        try:
+            output, success, error = execution.task.result()
+        except Exception as e:
+            output, success, error = None, False, str(e)
+            logger.error(f"[ToolExecutor] Task exception for {execution.function_name}: {e}")
+        
+        exec_time = (time.time() - execution.start_time) * 1000
+        execution.saved = True
+        
+        logger.debug(f"[ToolExecutor] Tool {execution.function_name} completed in {exec_time:.1f}ms, success={success}")
+        
+        self._state.record_tool_result(
+            ToolResult(
+                tool_call_id=execution.tool_call_id,
+                tool_name=execution.function_name,
+                success=success,
+                output=output,
+                error=error,
+                execution_time_ms=exec_time,
+            ),
+            execution.assistant_message_id,
+            defer_message=defer_message
+        )
+        
+        tool_result_msg = self._message_builder.build_tool_result(
+            execution.tool_call_id,
+            execution.display_name,
+            output,
+            success,
+            error,
+            execution.tool_index,
+            stream_start,
+            execution.assistant_message_id
+        )
+        tool_result_message_id = tool_result_msg.get("message_id")
+        logger.debug(f"[ToolExecutor] Yielding tool result: {execution.tool_call_id}, message_id={tool_result_message_id}")
+        yield tool_result_msg
+        
+        thread_run_id = self._message_builder._get_thread_run_id()
+        status_type = "tool_completed" if success else "tool_failed"
+        status_content = {
+            "tool_index": execution.tool_index,
+            "status_type": status_type,
+            "tool_call_id": execution.tool_call_id,
+            "function_name": execution.display_name
+        }
+        status_metadata = {"thread_run_id": thread_run_id}
+        if tool_result_message_id:
+            status_metadata["linked_tool_result_message_id"] = tool_result_message_id
+        
+        self._state.add_status_message(status_content, status_metadata)
+        
+        is_terminating = execution.function_name in TERMINATING_TOOLS
+        yield self._message_builder.build_tool_completed(
+            execution.tool_call_id,
+            execution.display_name,
+            success,
+            execution.tool_index,
+            stream_start,
+            tool_result_message_id,
+            is_terminating
+        )
+        
+        if success and output:
+            async for msg in self._handle_deferred_image_context(output, stream_start):
+                yield msg
+        
+        if is_terminating and success:
+            async for msg in self._handle_terminating_tool(execution.tool_call_id, execution.function_name):
+                yield msg
+
+    def yield_tool_started(
+        self,
+        tool_call: Dict[str, Any],
+        tool_index: int,
+        stream_start: str
+    ) -> Dict[str, Any]:
+        tc_id = tool_call.get("id", "")
+        func = tool_call.get("function", {})
+        name = func.get("name", "unknown")
+        args = func.get("arguments", "{}")
+        display_name, _ = _transform_mcp_tool_call(name, args)
+        thread_run_id = self._message_builder._get_thread_run_id()
+        
+        self._state.add_status_message(
+            {
+                "tool_index": tool_index,
+                "status_type": "tool_started",
+                "tool_call_id": tc_id,
+                "function_name": display_name
+            },
+            {"thread_run_id": thread_run_id}
+        )
+        
+        return self._message_builder.build_tool_started(tc_id, display_name, tool_index, stream_start, args)
 
     async def execute_tools(
         self, 
@@ -22,10 +185,10 @@ class ToolExecutor:
         assistant_message_id: Optional[str] = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         pending = self._state.take_pending_tools()
-        available_functions = self._tool_registry.get_available_functions()
+        available_functions = self._get_available_functions()
         thread_run_id = self._message_builder._get_thread_run_id()
         
-        logger.debug(f"[ToolExecutor] Executing {len(pending)} tools, assistant_message_id={assistant_message_id}")
+        logger.debug(f"[ToolExecutor] Executing {len(pending)} tools sequentially, assistant_message_id={assistant_message_id}")
 
         for tool_index, tc in enumerate(pending):
             tc_id = tc.get("id", "")
@@ -39,7 +202,6 @@ class ToolExecutor:
 
             is_terminating = name in TERMINATING_TOOLS
             
-            # Persist and yield tool_started status
             self._state.add_status_message(
                 {
                     "tool_index": tool_index,
