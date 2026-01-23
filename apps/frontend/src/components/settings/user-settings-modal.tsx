@@ -229,7 +229,7 @@ export function UserSettingsModal({
                                 {activeTab === 'usage' && <UsageTab />}
                                 {activeTab === 'memory' && <MemorySettings />}
                                 {activeTab === 'knowledge-base' && <KnowledgeBaseSettings />}
-                                {activeTab === 'referrals' && <ReferralsTab />}
+                                {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />}
                                 {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                             </div>
                         </div>
@@ -283,7 +283,7 @@ export function UserSettingsModal({
                             {activeTab === 'usage' && <UsageTab />}
                             {activeTab === 'memory' && <MemorySettings />}
                             {activeTab === 'knowledge-base' && <KnowledgeBaseSettings />}
-                            {activeTab === 'referrals' && <ReferralsTab />}
+                            {activeTab === 'referrals' && <ReferralsTab isActive={open && activeTab === 'referrals'} />}
                             {activeTab === 'env-manager' && isLocal && <EnvManagerTab />}
                         </div>
                     </div>

@@ -17,87 +17,80 @@ import httpx
 # TODO: add subpages, etc... in filters as sometimes its necessary 
 
 @tool_metadata(
-    display_name="Web Search",
-    description="Search the internet for information, news, and research",
+    display_name="WebSearch",
+    description="Search the web and use the results to inform responses with up-to-date information",
     icon="Search",
     color="bg-green-100 dark:bg-green-800/50",
     weight=30,
     visible=True,
     usage_guide="""
-### WEB SEARCH & CONTENT EXTRACTION
+## WebSearch - Search the web for current information
 
-**🚨 CRITICAL: USE BATCH MODE - ONE CALL, MULTIPLE QUERIES**
-- **NEVER** make multiple separate web_search calls
-- **ALWAYS** pass ALL your queries as an array in a SINGLE call
-- This is FASTER (parallel execution) and costs FEWER TOKENS
-- ❌ WRONG: 3 separate calls for "Tesla news", "Tesla stock", "Tesla products"
-- ✅ CORRECT: ONE call with query=["Tesla news", "Tesla stock", "Tesla products"]
+Allows searching the web and using the results to inform responses. Provides up-to-date information for current events and recent data.
 
-**WEB SEARCH CAPABILITIES:**
-- Search the web for up-to-date information with direct question answering
-- **BATCH SEARCHING:** Execute multiple queries concurrently in ONE call for faster research
-- Retrieve relevant images related to search queries
-- Get comprehensive search results with titles, URLs, and snippets
-- Find recent news, articles, and information beyond training data
-- Scrape webpage content for detailed information extraction when needed
+### Available Tools
+- **web_search**: Search the web with single or BATCH queries
+- **scrape_webpage** (WebFetch): Extract full content from web pages
 
-**RESEARCH BEST PRACTICES:**
-1. **Collect ALL queries first, then make ONE batch call:**
-   - Think about all the information you need
-   - Combine all queries into a single array
-   - Make ONE web_search call with all queries
-   - Example: web_search(query=["topic overview", "use cases", "pricing", "competitors"], num_results=5)
+### When to Use
+- Accessing information beyond the knowledge cutoff
+- Finding current information, news, recent events
+- Researching topics that require up-to-date data
+- Gathering information from multiple sources
+- Fact-checking or verifying claims
 
-2. **Research Workflow with Automatic Content Extraction:**
-   - **MANDATORY**: Collect all search needs → ONE web_search call with array of queries
-   - **CORRECT FORMAT**: web_search(query=["query1", "query2", "query3"], num_results=5)
-   - **WRONG FORMAT**: Never make 3 separate web_search calls!
-   - **AUTOMATIC CONTENT EXTRACTION**: After web_search, automatically identify qualitative sources:
-     * Academic papers (arxiv.org, pubmed, Semantic Scholar, etc.) → Use get_paper_details for papers with paper IDs
-     * Long-form articles, research reports, detailed content → Use scrape-webpage to extract full content
-     * Collect multiple qualitative URLs and scrape them in batch for efficiency
-   - **MANDATORY**: Never rely solely on search snippets - always extract and read full content from qualitative sources
-   - Only if scrape-webpage fails or interaction required: use browser automation tools
+### When NOT to Use
+- For information already in the conversation context
+- When the user provides all necessary information
+- For simple calculations or logic that doesn't need external data
 
-**BATCH MODE EXAMPLE:**
-- Single call: web_search(query=["AI trends 2025", "machine learning applications", "GPT competitors"], num_results=5)
-- All 3 queries execute in parallel - much faster than 3 separate calls!
-- Returns batch_results with all query results in one response
+### CRITICAL REQUIREMENT - Sources
 
-**WEB SEARCH BEST PRACTICES:**
-- **🚨 ALWAYS BATCH YOUR QUERIES** - never make multiple web_search calls when one batch call works
-- **FORMAT**: query=["query1", "query2", "query3"] (native array, NOT JSON string)
-- **num_results**: Must be an integer (5), NOT a string ("5")
-- Use specific, targeted questions to get direct answers
-- Include key terms and contextual information in search queries
-- Filter search results by date when freshness is important
-- Review the direct answer, images, and search results
-- Analyze multiple search results to cross-validate information
+After answering the user's question, you MUST include a "Sources:" section at the end of your response listing all relevant URLs from the search results as markdown hyperlinks.
 
-**CONTENT EXTRACTION DECISION TREE:**
-1. ALWAYS start with ONE web_search call using BATCH MODE (array of all queries)
-2. **AUTOMATICALLY identify qualitative sources** from search results:
-   - Academic papers (arxiv.org, pubmed, Semantic Scholar, IEEE, ACM, Nature, Science, etc.)
-   - Long-form articles, research reports, detailed blog posts
-   - Documentation pages, guides, whitepapers
-   - Any source with substantial qualitative content
-3. **AUTOMATICALLY extract content** from identified qualitative sources:
-   - For Semantic Scholar papers: Use get_paper_details with paper_id (extract from URL or search result)
-   - For other papers/articles: Use scrape-webpage to get full content
-   - Batch scrape multiple URLs together for efficiency
-4. **MANDATORY**: Read extracted content thoroughly - don't rely on search snippets alone
-5. Only skip scraping if web-search already provides complete answers AND no qualitative sources are present
-6. Only use browser tools if scrape-webpage fails or interaction is required
+Example format:
+```
+[Your answer here]
 
-**DATA FRESHNESS:**
-- Always check publication dates of search results
-- Prioritize recent sources for time-sensitive information
-- Use date filters to ensure information relevance
-- Provide timestamp context when sharing web search information
-- Specify date ranges when searching for time-sensitive topics
+Sources:
+- [Source Title 1](https://example.com/1)
+- [Source Title 2](https://example.com/2)
+```
 
-**TIME CONTEXT FOR RESEARCH:**
-- CRITICAL: When searching for latest news or time-sensitive information, ALWAYS use the current date/time values provided at runtime as reference points
+### Batch Mode
+
+**ALWAYS batch multiple queries into ONE call for efficiency:**
+- ❌ WRONG: 3 separate web_search calls
+- ✅ CORRECT: ONE call with query=["topic 1", "topic 2", "topic 3"]
+
+### Usage Pattern
+
+```
+# Correct - batch all queries
+web_search(query=["Tesla news 2025", "Tesla stock", "Tesla products"], num_results=5)
+
+# Wrong - never do this
+web_search(query="Tesla news")
+web_search(query="Tesla stock")  # Wasteful!
+```
+
+### Search Query Best Practice
+
+IMPORTANT: Use the correct year in search queries. When searching for recent information, documentation, or current events, use the current year (2025+) rather than previous years.
+
+### Content Extraction (WebFetch)
+
+Use scrape_webpage to fetch and analyze web content:
+- Fetches URL content and converts HTML to markdown
+- Use a prompt to describe what information you want to extract
+- For GitHub URLs, prefer using the gh CLI via Bash instead
+
+### Important Notes
+- query parameter: native array ["q1", "q2"], NOT JSON string
+- num_results: integer (5), NOT string ("5")
+- Check publication dates for time-sensitive info
+- Cross-validate information across multiple sources
+- Domain filtering is supported to include or block specific websites
 """
 )
 class SandboxWebSearchTool(SandboxToolsBase):
@@ -124,7 +117,18 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "web_search",
-            "description": "Search the web for up-to-date information using the Tavily API. IMPORTANT: For batch searches, pass query as a native array of strings, NOT as a JSON string. For num_results, pass an integer, NOT a string. This tool supports both single and batch queries for efficient research. You can search for multiple topics simultaneously by providing multiple queries as an array, which executes searches concurrently for faster results. Use batch mode when researching multiple related topics, gathering comprehensive information, or performing parallel searches. Results include titles, URLs, publication dates, direct answers, and images. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `query` (REQUIRED), `num_results` (optional).",
+            "description": """Search the web for up-to-date information.
+
+Allows searching the web and using the results to inform responses. Provides up-to-date information for current events and recent data. Returns search results including titles, URLs, publication dates, direct answers, and images.
+
+CRITICAL REQUIREMENT - After answering the user's question, you MUST include a "Sources:" section listing all relevant URLs from the search results as markdown hyperlinks: [Title](URL)
+
+Usage notes:
+- Supports both single queries and batch queries (array) for concurrent execution
+- Domain filtering is supported to include or block specific websites
+- IMPORTANT: Use the current year in search queries when searching for recent information
+
+IMPORTANT: For batch searches, pass query as a native array of strings, NOT as a JSON string.""",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -132,21 +136,21 @@ class SandboxWebSearchTool(SandboxToolsBase):
                         "oneOf": [
                             {
                                 "type": "string",
-                                "description": "**REQUIRED** - A single search query to find relevant web pages. Be specific and include key terms to improve search accuracy. For best results, use natural language questions or keyword combinations that precisely describe what you're looking for. Example: \"Tesla latest news 2025\""
+                                "description": "A single search query to find relevant web pages."
                             },
                             {
                                 "type": "array",
                                 "items": {
                                     "type": "string"
                                 },
-                                "description": "**REQUIRED** - Multiple search queries to execute concurrently. CRITICAL: Pass as a native array of strings, NOT as a JSON string. Use this for batch searching when you need to research multiple related topics simultaneously. Each query will be processed in parallel for faster results. Example: [\"Tesla news\", \"Tesla stock price\", \"Tesla products\"]"
+                                "description": "Multiple search queries to execute concurrently. Pass as a native array of strings, NOT as a JSON string."
                             }
                         ],
-                        "description": "**REQUIRED** - Either a single search query (string) or multiple queries (NATIVE array of strings, NOT JSON string) to execute concurrently. For batch mode, provide multiple queries as an array, NOT as a JSON string."
+                        "description": "**REQUIRED** - The search query to use. Either a single query (string) or multiple queries (array) to execute concurrently."
                     },
                     "num_results": {
                         "type": "integer",
-                        "description": "**OPTIONAL** - The number of search results to return per query (1-50). MUST be a native integer like 5, NOT a string like \"5\". Increase for more comprehensive research or decrease for focused, high-relevance results. Applies to each query when using batch mode. Default: 5.",
+                        "description": "**OPTIONAL** - Number of search results to return per query (1-50). Default: 5.",
                         "default": 5
                     }
                 },
@@ -507,17 +511,29 @@ class SandboxWebSearchTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "scrape_webpage",
-            "description": "Extract full text content from multiple webpages in a single operation. IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency. This tool saves time by processing multiple pages simultaneously rather than one at a time. The extracted text includes the main content of each page without HTML markup by default, but can optionally include full HTML if needed for structure analysis. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `urls` (REQUIRED), `include_html` (optional).",
+            "description": """Fetches content from specified URLs and processes it.
+
+Takes URLs as input, fetches the URL content, converts HTML to markdown, and returns the processed content. Use this tool when you need to retrieve and analyze web content.
+
+Usage notes:
+- IMPORTANT: If an MCP-provided web fetch tool is available, prefer using that tool instead.
+- The URLs must be fully-formed valid URLs.
+- HTTP URLs will be automatically upgraded to HTTPS.
+- Results may be summarized if the content is very large.
+- For GitHub URLs, prefer using the gh CLI via Bash instead (e.g., gh pr view, gh issue view).
+- Batch multiple URLs in a single call for efficiency.
+
+IMPORTANT: You should ALWAYS collect multiple relevant URLs from web-search results and scrape them all in a single call for efficiency.""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "urls": {
                         "type": "string",
-                        "description": "**REQUIRED** - Multiple URLs to scrape, separated by commas. You should ALWAYS include several URLs when possible for efficiency. Example: 'https://example.com/page1,https://example.com/page2,https://example.com/page3'"
+                        "description": "**REQUIRED** - URLs to scrape, separated by commas. Example: 'https://example.com/page1,https://example.com/page2'"
                     },
                     "include_html": {
                         "type": "boolean",
-                        "description": "**OPTIONAL** - Whether to include the full raw HTML content alongside the extracted text. Set to true when you need to analyze page structure, extract specific HTML elements, or work with complex layouts. Default: false.",
+                        "description": "**OPTIONAL** - Whether to include the full raw HTML content alongside the extracted markdown. Default: false.",
                         "default": False
                     }
                 },

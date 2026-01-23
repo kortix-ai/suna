@@ -121,7 +121,7 @@ class StreamHub:
                                 try:
                                     queue.put_nowait((msg_id, fields))
                                     self.messages_delivered += 1
-                                    logger.info(f"[HUB] Delivered msg {msg_id} to queue for {stream_key}")
+                                    # logger.info(f"[HUB] Delivered msg {msg_id} to queue for {stream_key}")
                                 except asyncio.QueueFull:
                                     self.messages_dropped += 1
                 except (ConnectionError, RedisConnectionError, OSError) as e:

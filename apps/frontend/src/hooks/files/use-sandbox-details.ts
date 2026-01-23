@@ -126,14 +126,14 @@ export function useSandboxStatus(projectId: string | undefined, options?: { enab
 }
 
 /**
- * Mutation hook to start a sandbox
+ * Mutation hook to start (or create) a sandbox
  */
 export function useStartSandbox() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (projectId: string) => {
-      const response = await backendApi.post<{ status: string; sandbox_id: string; message: string }>(
+      const response = await backendApi.post<{ status: string; sandbox_id: string | null; message: string }>(
         `/project/${projectId}/sandbox/start`
       );
 
@@ -144,7 +144,7 @@ export function useStartSandbox() {
       return response.data;
     },
     onSuccess: (_, projectId) => {
-      // Invalidate status query to trigger refetch
+      // Invalidate status query to trigger refetch with faster polling
       queryClient.invalidateQueries({ queryKey: sandboxKeys.status(projectId) });
     },
   });

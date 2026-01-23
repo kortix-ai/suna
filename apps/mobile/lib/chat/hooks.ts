@@ -230,15 +230,15 @@ export function useAddMessage(
 
 export function useUnifiedAgentStart(
   options?: UseMutationOptions<
-    { thread_id: string; agent_run_id: string; status: string },
+    { thread_id: string; agent_run_id: string; project_id?: string; sandbox_id?: string; status: string },
     Error,
-    { threadId?: string; prompt?: string; files?: any[]; fileIds?: string[]; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
+    { threadId?: string; prompt?: string; files?: Array<{ uri: string; name: string; type: string }>; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
   >
 ) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ threadId, prompt, files, fileIds, modelName, agentId, threadMetadata }) => {
+    mutationFn: async ({ threadId, prompt, files, modelName, agentId, threadMetadata }) => {
       const formData = new FormData();
       
       if (threadId) formData.append('thread_id', threadId);
@@ -247,14 +247,15 @@ export function useUnifiedAgentStart(
       if (agentId) formData.append('agent_id', agentId);
       if (threadMetadata) formData.append('thread_metadata', JSON.stringify(threadMetadata));
       
-      // New approach: pass staged file IDs (matching web)
-      if (fileIds?.length) {
-        // Append each file ID individually - FormData arrays work differently than web
-        fileIds.forEach(fileId => formData.append('file_ids', fileId));
-      }
-      // Legacy: raw files (for backward compatibility during transition)
-      else if (files?.length) {
-        files.forEach((file) => formData.append('files', file as any));
+      // Append files if present (uploaded directly with agent start)
+      if (files && files.length > 0) {
+        for (const file of files) {
+          formData.append('files', {
+            uri: file.uri,
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+          } as any);
+        }
       }
 
       const authHeaders = await getAuthHeaders();
@@ -366,7 +367,7 @@ export function useSendMessage(
         threadId: input.threadId,
         modelName: input.modelName,
         agentId: input.agentId,
-        fileIds: input.fileIds,
+        files: input.files,
       });
 
       log.log('✅ [useSendMessage] Step 2 complete: Agent started', agentRun);

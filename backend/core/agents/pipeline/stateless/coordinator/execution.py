@@ -3,7 +3,7 @@ from typing import Dict, Any, AsyncGenerator, List, Tuple
 
 from core.utils.config import config
 from core.utils.logger import logger
-from core.agentpress.response_processor import ProcessorConfig
+from core.agentpress.processor_config import ProcessorConfig
 from core.agentpress.thread_manager.services.execution.llm_executor import LLMExecutor
 from core.agentpress.prompt_caching import add_cache_control
 from core.agents.pipeline.ux_streaming import stream_context_usage, stream_summarizing
@@ -172,6 +172,9 @@ class ExecutionEngine:
             execute_on_stream=config.AGENT_EXECUTE_ON_STREAM,
             tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
         )
+        
+        # Pass config to response processor
+        self._response_processor._config = processor_config
 
         logger.info(f"📤 [ExecutionEngine] Sending {len(prepared)} messages, {tokens} tokens to {self._state.model_name}")
         

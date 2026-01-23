@@ -875,9 +875,13 @@ class SandboxPresentationTool(SandboxToolsBase):
         slide_title: str = None,
         content: str = None,
         presentation_title: str = "Presentation",
-        **kwargs  # Catch any unexpected arguments (like file_path)
+        **kwargs
     ) -> ToolResult:
-        """Create or update a single slide in a presentation"""
+        print(f"[create_slide] ENTERED FUNCTION - presentation_name={repr(presentation_name)}, slide_number={repr(slide_number)}")
+        logger.info(f"[create_slide] Received params: presentation_name={repr(presentation_name)}, "
+                    f"slide_number={repr(slide_number)}, slide_title={repr(slide_title)[:50] if slide_title else repr(slide_title)}, "
+                    f"content_length={len(content) if content else 0}, kwargs={list(kwargs.keys())}")
+        
         try:
             await self._ensure_sandbox()
             await self._ensure_presentations_dir()

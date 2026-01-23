@@ -151,12 +151,8 @@ async def start_pool_service() -> None:
     config = get_pool_config()
     
     if not config.enabled:
-        logger.info("[SANDBOX_POOL] Pool service is disabled via configuration")
+        logger.info("[SANDBOX_POOL] Pool service is disabled via SANDBOX_POOL_ENABLED=false")
         return
-    
-
-    logger.warning("[SANDBOX_POOL] Pool service DISABLED - sandbox creation paused due to high usage")
-    return
     
     service = get_pool_service()
     

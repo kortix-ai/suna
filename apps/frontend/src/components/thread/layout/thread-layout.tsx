@@ -226,31 +226,30 @@ export const ThreadLayout = memo(function ThreadLayout({
   // Use ResizablePanelGroup for desktop, regular flex for mobile
   if (isActuallyMobile) {
     return (
-      <div className="flex h-screen">
-        <div className="flex flex-col flex-1 overflow-hidden relative">
-          <SiteHeader
-            threadId={threadId}
-            projectName={projectName}
-            projectId={projectId}
-            onViewFiles={handleFileClick}
-            onToggleSidePanel={onToggleSidePanel}
-            isSidePanelOpen={isSidePanelOpen}
-            onProjectRenamed={onProjectRenamed}
-            isMobileView={isMobile}
-            variant={variant}
-          />
+      <div className="flex flex-col h-[100dvh] w-full overflow-hidden">
+        <SiteHeader
+          threadId={threadId}
+          projectName={projectName}
+          projectId={projectId}
+          onViewFiles={handleFileClick}
+          onToggleSidePanel={onToggleSidePanel}
+          isSidePanelOpen={isSidePanelOpen}
+          onProjectRenamed={onProjectRenamed}
+          isMobileView={isMobile}
+          variant={variant}
+        />
 
-          <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
-            {children}
-          </div>
-
-          {/* ChatInput - positioned at bottom for mobile */}
-          {chatInput && (
-            <div className="flex-shrink-0 relative bg-background px-4">
-              {chatInput}
-            </div>
-          )}
+        {/* Main content area - takes remaining space */}
+        <div className="flex-1 overflow-hidden min-h-0 flex flex-col">
+          {children}
         </div>
+
+        {/* ChatInput - fixed at bottom with safe area padding for iOS */}
+        {chatInput && (
+          <div className="flex-shrink-0 bg-background px-3 pb-[env(safe-area-inset-bottom,0px)]">
+            {chatInput}
+          </div>
+        )}
 
         <KortixComputer
           isOpen={isSidePanelOpen && initialLoadCompleted}

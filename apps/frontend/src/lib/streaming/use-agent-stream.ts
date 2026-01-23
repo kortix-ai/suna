@@ -338,6 +338,12 @@ export function useAgentStream(
         break;
       
       case 'tool_result':
+        // Update tool call state with reconstructed tool calls (now including tool_result)
+        if (processed.toolCalls && processed.message) {
+          const updatedMessage = createMessageWithToolCalls(processed.message, processed.toolCalls);
+          // Use the callback to update tool view state (for immediate display)
+          callbacksRef.current.onToolCallChunk?.(updatedMessage);
+        }
         if (processed.message?.message_id) {
           callbacksRef.current.onMessage(streamMessageToUnifiedMessage(processed.message));
         }

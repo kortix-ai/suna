@@ -69,6 +69,9 @@ export function FullScreenPresentationViewer({
   const [isDownloadingPPTX, setIsDownloadingPPTX] = useState(false);
   const [isDownloadingGoogleSlides, setIsDownloadingGoogleSlides] = useState(false);
   
+  // Track the previous isOpen state to detect when modal opens
+  const wasOpenRef = useRef(false);
+  
   // Download restriction for free tier users
   const { isRestricted: isDownloadRestricted, openUpgradeModal } = useDownloadRestriction({
     featureName: 'presentations',
@@ -159,8 +162,15 @@ export function FullScreenPresentationViewer({
     }
   }, [presentationName, sandboxUrl]);
 
+  // Sync currentSlide with initialSlide when modal opens (not on every initialSlide change)
   useEffect(() => {
-    if (isOpen) {
+    const justOpened = isOpen && !wasOpenRef.current;
+    wasOpenRef.current = isOpen;
+    
+    if (justOpened) {
+      // Modal just opened - set the slide to the requested initial slide
+      setCurrentSlide(initialSlide);
+      
       // Reset loaded flag when opening (so we can reload if needed)
       hasLoadedRef.current = false;
       
@@ -176,15 +186,14 @@ export function FullScreenPresentationViewer({
       } else {
         setIsLoading(false);
       }
-      setCurrentSlide(initialSlide);
-    } else {
+    } else if (!isOpen) {
       // Clear retry timeout when closing
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
         retryTimeoutRef.current = null;
       }
     }
-  }, [isOpen, presentationName, sandboxUrl, initialSlide]);
+  }, [isOpen, presentationName, sandboxUrl, initialSlide, loadMetadata]);
 
   // Cleanup retry timeout on unmount
   useEffect(() => {
@@ -291,6 +300,9 @@ export function FullScreenPresentationViewer({
     }
     if (!sandboxUrl || !presentationName) return;
 
+    // Use sanitized name for the path (matching backend directory structure)
+    const sanitizedName = sanitizeFilename(presentationName);
+
     const setDownloadState = format === DownloadFormat.PDF ? setIsDownloadingPDF : 
                            format === DownloadFormat.PPTX ? setIsDownloadingPPTX : 
                            setIsDownloadingGoogleSlides;
@@ -298,13 +310,13 @@ export function FullScreenPresentationViewer({
     setDownloadState(true);
     try {
       if (format === DownloadFormat.GOOGLE_SLIDES) {
-        const result = await handleGoogleSlidesUpload(sandboxUrl, `/workspace/presentations/${presentationName}`);
+        const result = await handleGoogleSlidesUpload(sandboxUrl, `/workspace/presentations/${sanitizedName}`);
         // If redirected to auth, don't show error
         if (result?.redirected_to_auth) {
           return; // Don't set loading false, user is being redirected
         }
       } else {
-        await downloadPresentation(format, sandboxUrl, `/workspace/presentations/${presentationName}`, presentationName);
+        await downloadPresentation(format, sandboxUrl, `/workspace/presentations/${sanitizedName}`, presentationName);
       }
     } catch (error) {
       console.error(`Error downloading ${format}:`, error);

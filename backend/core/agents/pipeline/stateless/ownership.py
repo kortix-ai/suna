@@ -458,6 +458,7 @@ class RunOwnership:
     async def get_info(self, run_id: str) -> Optional[Dict[str, Any]]:
         try:
             from core.services import redis
+            from core.agents import repo as agents_repo
 
             def decode(v):
                 return v.decode() if isinstance(v, bytes) else v
@@ -467,8 +468,17 @@ class RunOwnership:
             hb = decode(await redis.get(f"run:{run_id}:heartbeat"))
             start = decode(await redis.get(f"run:{run_id}:start"))
 
+            thread_id = None
+            try:
+                agent_run = await agents_repo.get_agent_run_with_thread(run_id)
+                if agent_run:
+                    thread_id = str(agent_run.get("thread_id")) if agent_run.get("thread_id") else None
+            except Exception as e:
+                logger.warning(f"[Ownership] Failed to get thread_id for {run_id}: {e}")
+
             return {
                 "run_id": run_id,
+                "thread_id": thread_id,
                 "owner": owner,
                 "status": status,
                 "heartbeat": float(hb) if hb else None,
@@ -486,6 +496,7 @@ class RunOwnership:
 
         try:
             from core.services import redis
+            from core.agents import repo as agents_repo
 
             client = await redis.get_client()
             pipeline = client.pipeline()
@@ -497,6 +508,12 @@ class RunOwnership:
                 pipeline.get(f"run:{run_id}:start")
 
             results = await pipeline.execute()
+
+            thread_ids_map = {}
+            try:
+                thread_ids_map = await agents_repo.get_thread_ids_for_runs(run_ids)
+            except Exception as e:
+                logger.warning(f"[Ownership] Failed to batch get thread_ids: {e}")
 
             infos = {}
             for i, run_id in enumerate(run_ids):
@@ -512,6 +529,7 @@ class RunOwnership:
 
                 infos[run_id] = {
                     "run_id": run_id,
+                    "thread_id": thread_ids_map.get(run_id),
                     "owner": owner,
                     "status": status,
                     "heartbeat": float(hb) if hb else None,

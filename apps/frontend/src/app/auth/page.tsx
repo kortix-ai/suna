@@ -624,68 +624,69 @@ function LoginContent() {
   }
 
   return (
-    <div className="min-h-screen bg-background relative">
-      <div className="absolute top-6 left-6 z-10">
+    <div className="min-h-[100dvh] bg-background relative">
+      <div className="absolute top-4 sm:top-6 left-4 sm:left-6 z-10">
         <Link href="/" className="flex items-center space-x-2">
-          <KortixLogo size={28} />
+          <KortixLogo size={24} className="sm:w-7 sm:h-7" />
         </Link>
       </div>
-      <div className="flex min-h-screen">
-        <div className="relative flex-1 flex items-center justify-center p-4 lg:p-8">
+      <div className="flex min-h-[100dvh]">
+        <div className="relative flex-1 flex items-center justify-center px-4 py-16 sm:p-8">
           <div className="w-full max-w-sm">
-            <div className="mb-4 flex items-center flex-col gap-3 sm:gap-4 justify-center">
-              <h1 className="text-xl sm:text-2xl font-semibold text-foreground text-center leading-tight">
+            <div className="mb-4 sm:mb-6 flex items-center flex-col gap-2 sm:gap-4 justify-center">
+              <h1 className="text-lg sm:text-xl md:text-2xl font-semibold text-foreground text-center leading-tight">
                 {t('signInOrCreateAccount')}
               </h1>
             </div>
             <div className="space-y-3 mb-4">
-              <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
+              <Suspense fallback={<div className="h-10 sm:h-11 bg-muted/20 rounded-full animate-pulse" />}>
                 <GoogleSignIn returnUrl={returnUrl || undefined} referralCode={referralCode} />
               </Suspense>
               {/* GitHub auth commented out
-              <Suspense fallback={<div className="h-11 bg-muted/20 rounded-full animate-pulse" />}>
+              <Suspense fallback={<div className="h-10 sm:h-11 bg-muted/20 rounded-full animate-pulse" />}>
                 <GitHubSignIn returnUrl={returnUrl || undefined} referralCode={referralCode} />
               </Suspense>
               */}
             </div>
-            <div className="relative my-4">
+            <div className="relative my-3 sm:my-4">
               <div className="absolute inset-0 flex items-center">
                 <div className="w-full border-t border-border"></div>
               </div>
-              <div className="relative flex justify-center text-sm">
+              <div className="relative flex justify-center text-xs sm:text-sm">
                 <span className="px-2 bg-background text-muted-foreground">
                   {t('orEmail')}
                 </span>
               </div>
             </div>
-            <form className="space-y-4">
+            <form className="space-y-3 sm:space-y-4">
               <Input
                 id="email"
                 name="email"
                 type="email"
                 placeholder={t('emailAddress')}
                 required
+                className="h-10 sm:h-11 text-[16px] sm:text-sm"
               />
 
               {referralCodeParam && (
-                <div className="bg-card border rounded-xl p-3">
-                  <p className="text-xs text-muted-foreground mb-1">{t('referralCode')}</p>
+                <div className="bg-card border rounded-xl p-2.5 sm:p-3">
+                  <p className="text-xs text-muted-foreground mb-0.5 sm:mb-1">{t('referralCode')}</p>
                   <p className="text-sm font-semibold">{referralCode}</p>
                 </div>
               )}
 
               {!referralCodeParam && <input type="hidden" name="referralCode" value={referralCode} />}
-              <div className="flex items-center gap-2">
+              <div className="flex items-start gap-2">
                 <Checkbox
                   id="gdprConsent"
                   checked={acceptedTerms}
                   onCheckedChange={(checked) => setAcceptedTerms(checked === true)}
                   required
-                  className="h-5 w-5"
+                  className="h-5 w-5 mt-0.5"
                 />
                 <label
                   htmlFor="gdprConsent"
-                  className="text-xs text-muted-foreground leading-relaxed cursor-pointer select-none flex-1"
+                  className="text-[11px] sm:text-xs text-muted-foreground leading-relaxed cursor-pointer select-none flex-1"
                 >
                   {t.rich('acceptPrivacyTerms', {
                     privacyPolicy: (chunks) => {
@@ -721,7 +722,7 @@ function LoginContent() {
               <div className="relative">
                 <SubmitButton
                   formAction={handleAuth}
-                  className="w-full h-10"
+                  className="w-full h-10 sm:h-11 text-sm sm:text-base"
                   pendingText={t('sending')}
                   disabled={!acceptedTerms}
                 >
@@ -735,7 +736,7 @@ function LoginContent() {
               </div>
 
               {/* Magic Link Explanation */}
-              <p className="text-xs text-muted-foreground text-center">
+              <p className="text-[11px] sm:text-xs text-muted-foreground text-center leading-relaxed">
                 {t('magicLinkExplanation')}
               </p>
 
@@ -744,7 +745,7 @@ function LoginContent() {
                 <button
                   type="button"
                   onClick={() => setShowReferralDialog(true)}
-                  className="text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-center mt-1"
+                  className="text-[11px] sm:text-xs text-muted-foreground hover:text-foreground transition-colors w-full text-center mt-1 touch-manipulation"
                 >
                   Have a referral code?
                 </button>

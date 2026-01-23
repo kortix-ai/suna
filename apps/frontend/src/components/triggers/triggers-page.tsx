@@ -264,11 +264,11 @@ export function TriggersPage() {
   }
 
   return (
-    <div className="min-h-screen">
-      <div className="container mx-auto max-w-7xl px-4 py-8">
+    <div className="min-h-[100dvh]">
+      <div className="container mx-auto max-w-7xl px-3 sm:px-4 py-4 sm:py-8">
         <TriggersPageHeader />
       </div>
-      <div className="h-screen 2xl:flex overflow-hidden">
+      <div className="h-[100dvh] 2xl:flex overflow-hidden">
         {/* Backdrop overlay - shows when sidebar is open on screens < 2xl (1536px) */}
         {selectedTrigger && (
           <div
@@ -280,16 +280,16 @@ export function TriggersPage() {
         {/* Main Content - Lower z-index so sidebar overlays it */}
         <div className="h-full flex flex-col overflow-hidden 2xl:flex-1 relative z-0">
           {/* Search Bar and Create Button */}
-          <div className="container mx-auto max-w-7xl px-4">
-            <div className="flex items-center justify-between pb-4 pt-3">
-              <div className="max-w-md w-md">
+          <div className="container mx-auto max-w-7xl px-3 sm:px-4">
+            <div className="flex items-center justify-between gap-2 sm:gap-4 pb-3 sm:pb-4 pt-2 sm:pt-3">
+              <div className="flex-1 max-w-md">
                 <div className="relative">
                   <input
                     type="text"
                     placeholder="Search"
-                    className="h-10 w-full rounded-xl border border-input bg-background px-10 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    className="h-9 sm:h-10 w-full rounded-xl border border-input bg-background px-8 sm:px-10 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                   />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
+                  <div className="absolute left-2.5 sm:left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
                     <Search className="h-4 w-4" />
                   </div>
                 </div>
@@ -299,10 +299,11 @@ export function TriggersPage() {
                   <Button
                     variant="default"
                     size="sm"
-                    className="h-10 px-4 rounded-xl gap-2"
+                    className="h-9 sm:h-10 px-3 sm:px-4 rounded-xl gap-1.5 sm:gap-2 text-sm"
                   >
                     <Plus className="h-4 w-4" />
-                    Create new
+                    <span className="hidden xs:inline">Create new</span>
+                    <span className="xs:hidden">New</span>
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-72">
@@ -330,7 +331,7 @@ export function TriggersPage() {
           </div>
 
           <div className="flex-1 overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-300 dark:scrollbar-thumb-zinc-700 scrollbar-track-transparent">
-            <div className="container mx-auto max-w-7xl px-4 pb-8">
+            <div className="container mx-auto max-w-7xl px-3 sm:px-4 pb-6 sm:pb-8">
               {isLoading ? (
                 <LoadingSkeleton />
               ) : sortedTriggers.length === 0 ? (

@@ -29,57 +29,6 @@ const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || '';
 
 const ALLOWED_EXTENSIONS_STRING = ALLOWED_EXTENSIONS.join(',');
 
-interface StageFileResponse {
-  file_id: string;
-  filename: string;
-  storage_path: string;
-  mime_type: string;
-  file_size: number;
-  status: string;
-}
-
-const stageFileToS3 = async (
-  file: File,
-  fileId: string,
-  setUploadedFiles: React.Dispatch<React.SetStateAction<UploadedFile[]>>,
-): Promise<void> => {
-  const normalizedName = normalizeFilenameToNFC(file.name);
-  
-  try {
-    const formData = new FormData();
-    formData.append('file', file, normalizedName);
-    formData.append('file_id', fileId);
-    
-    const response = await backendApi.upload<StageFileResponse>(
-      '/files/stage',
-      formData,
-      { showErrors: false }
-    );
-    
-    if (response.error) {
-      throw new Error(response.error.message || 'Upload failed');
-    }
-    
-    setUploadedFiles((prev) => 
-      prev.map((f) => 
-        f.fileId === fileId 
-          ? { ...f, status: 'ready' as const }
-          : f
-      )
-    );
-    
-  } catch (error) {
-    console.error(`Failed to stage file ${normalizedName}:`, error);
-    setUploadedFiles((prev) => 
-      prev.map((f) => 
-        f.fileId === fileId 
-          ? { ...f, status: 'error' as const }
-          : f
-      )
-    );
-    toast.error(`Failed to upload: ${normalizedName}`);
-  }
-};
 
 const handleLocalFilesOptimistic = async (
   files: File[],
@@ -480,34 +429,23 @@ const handleFiles = async (
   
   if (processedFiles.length === 0) return;
 
-  setIsUploading(true);
-
-  // Always stage files via /files/stage API (simplified flow)
+  // Just store files locally - no upload yet (will upload after agent start returns sandbox_id)
   for (const file of processedFiles) {
     const normalizedName = normalizeFilenameToNFC(file.name);
-    const fileId = crypto.randomUUID();
 
-    // Add to uploaded files with pending status and local preview
+    // Add to uploaded files with ready status and local preview
     setUploadedFiles((prev) => [...prev, {
       name: normalizedName,
       path: `/workspace/uploads/${normalizedName}`,
       size: file.size,
       type: file.type || 'application/octet-stream',
       localUrl: URL.createObjectURL(file),
-      fileId,
-      status: 'uploading' as const,
+      status: 'ready' as const,
     }]);
-
-    // Stage file to backend
-    try {
-      await stageFileToS3(file, fileId, setUploadedFiles);
-    } catch (error) {
-      console.error(`Failed to stage file ${normalizedName}:`, error);
-      // Error handling is done in stageFileToS3
-    }
   }
 
-  setIsUploading(false);
+  // Store files in pendingFiles for later upload
+  setPendingFiles((prevFiles) => [...prevFiles, ...processedFiles]);
 };
 
 interface FileUploadHandlerProps {

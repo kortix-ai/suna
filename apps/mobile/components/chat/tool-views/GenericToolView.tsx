@@ -8,7 +8,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { View, ScrollView, Pressable } from 'react-native';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Clock, Wrench } from 'lucide-react-native';
+import { Clock, Wrench, AlertCircle, XCircle, CheckCircle } from 'lucide-react-native';
 import type { ToolViewProps } from './types';
 import { ToolViewCard, StatusBadge, LoadingState } from './shared';
 import { getToolMetadata } from './tool-metadata';
@@ -59,6 +59,32 @@ export function GenericToolView({
   const toolMetadata = getToolMetadata(name, toolCall.arguments);
   const actualIsSuccess = toolResult?.success !== undefined ? toolResult.success : isSuccess;
 
+  // Determine if the tool execution failed
+  const isError = useMemo(() => {
+    if (toolResult?.success === false) return true;
+    if (toolResult?.error) return true;
+    
+    // Check for error patterns in output
+    if (typeof toolResult?.output === 'string') {
+      const output = toolResult.output.toLowerCase();
+      if (output.startsWith('error:') || output.includes('failed') || output.includes('exception')) {
+        return true;
+      }
+    }
+    
+    return !actualIsSuccess;
+  }, [toolResult, actualIsSuccess]);
+
+  // Extract error message
+  const errorMessage = useMemo(() => {
+    if (!isError) return null;
+    
+    if (toolResult?.error) return String(toolResult.error);
+    if (typeof toolResult?.output === 'string') return toolResult.output;
+    
+    return 'Tool execution failed';
+  }, [isError, toolResult]);
+
   const hasInput = toolCall?.arguments && Object.keys(toolCall.arguments).length > 0;
   const hasOutput = toolResult?.output !== undefined && toolResult?.output !== null;
 
@@ -70,17 +96,17 @@ export function GenericToolView({
   return (
     <ToolViewCard
       header={{
-        icon: toolMetadata.icon,
-        iconColor: toolMetadata.iconColor,
-        iconBgColor: toolMetadata.iconBgColor,
+        icon: isError ? AlertCircle : toolMetadata.icon,
+        iconColor: isError ? 'text-rose-500' : toolMetadata.iconColor,
+        iconBgColor: isError ? 'bg-rose-100 dark:bg-rose-900/30' : toolMetadata.iconBgColor,
         subtitle: '',
-        title: toolMetadata.title,
-        isSuccess: actualIsSuccess,
+        title: isError ? `${toolMetadata.title} - Failed` : toolMetadata.title,
+        isSuccess: !isError,
         isStreaming: isStreaming,
         rightContent: (
           <View className="flex-row items-center gap-2">
             {!isStreaming && (
-              <StatusBadge variant={actualIsSuccess ? 'success' : 'error'} iconOnly={true} />
+              <StatusBadge variant={isError ? 'error' : 'success'} iconOnly={true} />
             )}
             {isStreaming && <StatusBadge variant="streaming" iconOnly={true} />}
           </View>
@@ -89,11 +115,18 @@ export function GenericToolView({
       footer={
         <View className="w-full flex-row items-center justify-between">
           <View className="min-w-0 flex-1 flex-row items-center gap-2">
-            {!isStreaming && (hasInput || hasOutput) && (
-              <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2 py-0.5">
-                <Icon as={Wrench} size={12} className="text-primary" />
-                <Text className="font-roobert-medium text-xs text-primary">Tool</Text>
-              </View>
+            {!isStreaming && (hasInput || hasOutput || isError) && (
+              isError ? (
+                <View className="flex-row items-center gap-1.5 rounded-full border border-rose-300 dark:border-rose-700 bg-rose-100 dark:bg-rose-900/30 px-2 py-0.5">
+                  <Icon as={AlertCircle} size={12} className="text-rose-600 dark:text-rose-400" />
+                  <Text className="font-roobert-medium text-xs text-rose-600 dark:text-rose-400">Failed</Text>
+                </View>
+              ) : (
+                <View className="flex-row items-center gap-1.5 rounded-full border border-border px-2 py-0.5">
+                  <Icon as={CheckCircle} size={12} className="text-emerald-600 dark:text-emerald-400" />
+                  <Text className="font-roobert-medium text-xs text-primary">Completed</Text>
+                </View>
+              )
             )}
           </View>
           <View className="flex-row items-center gap-2">
@@ -119,6 +152,59 @@ export function GenericToolView({
             showProgress={true}
           />
         </View>
+      ) : isError ? (
+        <ScrollView
+          className="w-full flex-1"
+          showsVerticalScrollIndicator={true}
+          nestedScrollEnabled={true}>
+          {/* Error Banner */}
+          <View className="bg-rose-50 dark:bg-rose-900/20 border-b border-rose-200 dark:border-rose-700/50 px-4 py-3">
+            <View className="flex-row items-start gap-2">
+              <Icon as={AlertCircle} size={18} className="text-rose-500 dark:text-rose-400 mt-0.5" />
+              <View className="flex-1">
+                <Text className="font-roobert-medium text-sm text-rose-800 dark:text-rose-200">
+                  Tool Execution Failed
+                </Text>
+                {errorMessage && (
+                  <Text className="text-xs text-rose-600 dark:text-rose-400 mt-1" numberOfLines={3}>
+                    {errorMessage.substring(0, 200)}{errorMessage.length > 200 ? '...' : ''}
+                  </Text>
+                )}
+              </View>
+            </View>
+          </View>
+          
+          <View className="gap-4 p-4">
+            {hasInput && (
+              <View className="gap-2">
+                <Text className="px-1 font-roobert-medium text-xs uppercase tracking-wider text-primary opacity-60">
+                  Input
+                </Text>
+                <View className="rounded-xl border border-border bg-card p-4">
+                  <Text className="font-roobert-mono text-xs leading-5 text-primary" selectable>
+                    {formatContent(toolCall.arguments)}
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {hasOutput && (
+              <View className="gap-2">
+                <View className="flex-row items-center gap-1.5 px-1">
+                  <Icon as={XCircle} size={14} className="text-rose-600 dark:text-rose-400" />
+                  <Text className="font-roobert-medium text-xs uppercase tracking-wider text-rose-600 dark:text-rose-400">
+                    Error Output
+                  </Text>
+                </View>
+                <View className="rounded-xl border border-rose-200 dark:border-rose-700/50 bg-rose-50/50 dark:bg-rose-900/10 p-4">
+                  <Text className="font-roobert-mono text-xs leading-5 text-rose-700 dark:text-rose-300" selectable>
+                    {formatContent(toolResult?.output)}
+                  </Text>
+                </View>
+              </View>
+            )}
+          </View>
+        </ScrollView>
       ) : hasInput || hasOutput ? (
         <ScrollView
           className="w-full flex-1"

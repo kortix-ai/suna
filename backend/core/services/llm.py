@@ -10,9 +10,8 @@ import litellm
 from litellm.files.main import ModelResponse
 from core.utils.logger import logger
 from core.utils.config import config
+from core.utils.llm_debugger import llm_debug
 from core.agentpress.error_processor import ErrorProcessor
-from pathlib import Path
-from datetime import datetime, timezone
 
 litellm.modify_params = True
 litellm.drop_params = True
@@ -115,25 +114,19 @@ def _configure_openai_compatible(model_name: str, api_key: Optional[str], api_ba
         raise LLMError("OPENAI_COMPATIBLE_API_KEY and OPENAI_COMPATIBLE_API_BASE required for openai-compatible models")
 
 
-def _save_debug_input(params: Dict[str, Any]) -> None:
-    if not (config and getattr(config, 'DEBUG_SAVE_LLM_IO', False)):
-        return
-    
-    try:
-        debug_dir = Path("debug_streams")
-        debug_dir.mkdir(exist_ok=True)
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-        debug_file = debug_dir / f"input_{timestamp}.json"
-        
-        debug_data = {k: params.get(k) for k in 
-            ["model", "messages", "temperature", "max_tokens", "stop", "stream", "tools", "tool_choice", "frequency_penalty"]}
-        debug_data["timestamp"] = timestamp
-        
-        with open(debug_file, 'w', encoding='utf-8') as f:
-            json.dump(debug_data, f, indent=2, ensure_ascii=False)
-        logger.debug(f"[LLM] Saved input to: {debug_file}")
-    except Exception as e:
-        logger.warning(f"[LLM] Error saving debug input: {e}")
+def _save_debug_input(params: Dict[str, Any]) -> Optional[str]:
+    """Save LLM input for debugging. Returns correlation_id for tracking."""
+    return llm_debug.log_input(
+        model=params.get("model", "unknown"),
+        messages=params.get("messages", []),
+        temperature=params.get("temperature"),
+        max_tokens=params.get("max_tokens"),
+        stop=params.get("stop"),
+        stream=params.get("stream"),
+        tools=params.get("tools"),
+        tool_choice=params.get("tool_choice"),
+        frequency_penalty=params.get("frequency_penalty"),
+    )
 
 
 _INTERNAL_MESSAGE_PROPERTIES = {"message_id"}
@@ -229,7 +222,8 @@ async def make_llm_api_call(
     call_start = time_module.monotonic()
     
     try:
-        _save_debug_input(params)
+        # Save debug input and get correlation_id for tracking
+        correlation_id = _save_debug_input(params)
         
         if stream:
             response = await litellm.acompletion(**params)
@@ -243,7 +237,7 @@ async def make_llm_api_call(
                 logger.info(f"[LLM] TTFT={ttft:.2f}s {model_name}")
             
             if hasattr(response, '__aiter__'):
-                return _wrap_streaming_response(response, call_start, model_name, ttft_seconds=ttft)
+                return _wrap_streaming_response(response, call_start, model_name, ttft_seconds=ttft, correlation_id=correlation_id)
             return response
         else:
             response = await litellm.acompletion(**params)
@@ -259,10 +253,17 @@ async def make_llm_api_call(
         raise LLMError(processed_error.message)
 
 
-async def _wrap_streaming_response(response, start_time: float, model_name: str, ttft_seconds: float = None) -> AsyncGenerator:
+async def _wrap_streaming_response(response, start_time: float, model_name: str, ttft_seconds: float = None, correlation_id: str = None) -> AsyncGenerator:
     import time as time_module
     chunk_count = 0
     last_chunk_time = time_module.monotonic()
+    
+    # Debug output collection
+    debug_chunks = [] if (config and getattr(config, 'DEBUG_SAVE_LLM_IO', False)) else None
+    accumulated_content = ""
+    accumulated_tool_calls = []
+    finish_reason = None
+    
     try:
         if ttft_seconds is not None:
             yield {"__llm_ttft_seconds__": ttft_seconds, "model": model_name}
@@ -276,6 +277,35 @@ async def _wrap_streaming_response(response, start_time: float, model_name: str,
                 logger.warning(f"[LLM] ⚠️ Chunk #{chunk_count} gap: {gap_ms:.0f}ms (model={model_name})")
             
             last_chunk_time = current_time
+            
+            # Capture debug info
+            if debug_chunks is not None:
+                try:
+                    if hasattr(chunk, 'choices') and chunk.choices:
+                        choice = chunk.choices[0]
+                        delta = getattr(choice, 'delta', None)
+                        if delta:
+                            if hasattr(delta, 'content') and delta.content:
+                                accumulated_content += delta.content
+                            if hasattr(delta, 'tool_calls') and delta.tool_calls:
+                                for tc in delta.tool_calls:
+                                    tc_dict = {
+                                        "index": getattr(tc, 'index', 0),
+                                        "id": getattr(tc, 'id', None),
+                                        "type": getattr(tc, 'type', None),
+                                    }
+                                    if hasattr(tc, 'function') and tc.function:
+                                        tc_dict["function"] = {
+                                            "name": getattr(tc.function, 'name', None),
+                                            "arguments": getattr(tc.function, 'arguments', None),
+                                        }
+                                    debug_chunks.append({"chunk": chunk_count, "tool_call_delta": tc_dict})
+                        fr = getattr(choice, 'finish_reason', None)
+                        if fr:
+                            finish_reason = fr
+                except Exception:
+                    pass
+            
             yield chunk
     except Exception as e:
         processed_error = ErrorProcessor.process_llm_error(e)
@@ -285,6 +315,34 @@ async def _wrap_streaming_response(response, start_time: float, model_name: str,
         duration = time_module.monotonic() - start_time if start_time else 0.0
         if duration > 0:
             logger.info(f"[LLM] {duration:.2f}s total, {chunk_count} chunks - {model_name}")
+        
+        # Save debug output with correlation_id
+        if debug_chunks is not None:
+            _save_debug_output(model_name, accumulated_content, accumulated_tool_calls, debug_chunks, finish_reason, chunk_count, duration, correlation_id)
+
+
+def _save_debug_output(
+    model_name: str, 
+    content: str, 
+    tool_calls: list, 
+    chunks: list, 
+    finish_reason: str, 
+    chunk_count: int, 
+    duration: float,
+    correlation_id: Optional[str] = None
+) -> None:
+    """Save LLM output stream for debugging."""
+    llm_debug.log_output(
+        model=model_name,
+        content=content,
+        tool_calls=tool_calls if tool_calls else None,
+        finish_reason=finish_reason,
+        chunk_count=chunk_count,
+        duration_seconds=duration,
+        correlation_id=correlation_id,
+        tool_call_deltas_sample=chunks[-50:] if len(chunks) > 50 else chunks,
+        total_tool_call_deltas=len(chunks),
+    )
 
 
 setup_api_keys()

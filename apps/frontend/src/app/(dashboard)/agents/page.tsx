@@ -573,8 +573,8 @@ export default function AgentsPage() {
   };
 
   return (
-    <div className="min-h-screen">
-      <div className="container mx-auto max-w-7xl px-4 py-8">
+    <div className="min-h-[100dvh]">
+      <div className="container mx-auto max-w-7xl px-3 sm:px-4 py-4 sm:py-8">
         <AgentsPageHeader />
       </div>
       <div className="sticky top-0 z-50">
@@ -583,13 +583,13 @@ export default function AgentsPage() {
           WebkitMaskImage: 'linear-gradient(to bottom, black 0%, black 60%, transparent 100%)'
         }}></div>
         <div className="relative bg-gradient-to-b from-background/95 via-background/70 to-transparent">
-          <div className="container mx-auto max-w-7xl px-4 py-4">
+          <div className="container mx-auto max-w-7xl px-3 sm:px-4 py-3 sm:py-4">
             <TabsNavigation activeTab={activeTab} onTabChange={handleTabChange} onCreateAgent={handleCreateNewAgent} />
           </div>
         </div>
       </div>
-      <div className="container mx-auto max-w-7xl px-4 py-2">
-        <div className="w-full min-h-[calc(100vh-300px)]">
+      <div className="container mx-auto max-w-7xl px-3 sm:px-4 py-2">
+        <div className="w-full min-h-[calc(100dvh-300px)]">
           {activeTab === "my-agents" && (
             <MyAgentsTab
               agentsSearchQuery={agentsSearchQuery}

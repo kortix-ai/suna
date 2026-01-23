@@ -145,13 +145,13 @@ class SandboxResolver:
         account_id: str,
         db_client
     ) -> Optional[SandboxInfo]:
-        import os
+        from core.sandbox.pool_config import get_pool_config
         from core.sandbox.pool_service import claim_sandbox_from_pool
 
-        # Check if pool is enabled (read directly from env to avoid cached config)
-        pool_enabled = os.getenv("SANDBOX_POOL_ENABLED", "true").lower() in ("true", "1", "yes")
+        # Check if pool is enabled via config
+        pool_config = get_pool_config()
 
-        if pool_enabled:
+        if pool_config.enabled:
             try:
                 claimed = await claim_sandbox_from_pool(account_id, project_id)
                 if claimed:
@@ -170,7 +170,7 @@ class SandboxResolver:
             except Exception as e:
                 logger.warning(f"[RESOLVER] Pool claim failed: {e}")
         else:
-            logger.info(f"[RESOLVER] Pool disabled, creating new sandbox for {project_id}")
+            logger.debug(f"[RESOLVER] Pool disabled (SANDBOX_POOL_ENABLED=false), creating new sandbox for {project_id}")
 
         return await self._create_new(project_id, account_id, db_client)
     

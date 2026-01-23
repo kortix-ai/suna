@@ -126,13 +126,13 @@ export const ModeIndicator = memo(function ModeIndicator() {
       <DropdownMenuTrigger asChild>
         <button
           className={cn(
-            'flex items-center gap-2 px-3 py-2 rounded-lg transition-all duration-150 cursor-pointer',
-            'hover:bg-accent/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+            'flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 h-9 rounded-lg transition-all duration-150 cursor-pointer touch-manipulation',
+            'hover:bg-accent/50 active:bg-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
           )}
         >
-          <ModeLogo mode={isPowerSelected ? 'advanced' : 'basic'} height={14} />
+          <ModeLogo mode={isPowerSelected ? 'advanced' : 'basic'} height={13} />
           <ChevronDown className={cn(
-            "h-4 w-4 text-muted-foreground transition-transform duration-200",
+            "h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground transition-transform duration-200",
             isOpen && "rotate-180"
           )} strokeWidth={2} />
         </button>
@@ -140,8 +140,8 @@ export const ModeIndicator = memo(function ModeIndicator() {
 
       <DropdownMenuContent 
         align="start" 
-        className="w-[320px] p-2 rounded-xl border border-border/50 shadow-lg"
-        sideOffset={8}
+        className="w-[280px] sm:w-[320px] p-1.5 sm:p-2 rounded-xl border border-border/50 shadow-lg"
+        sideOffset={6}
       >
         {/* Basic Mode */}
         <div
