@@ -212,7 +212,7 @@ export function FileAttachment({
             retryCount < 15 && 
             !isKanvax && 
             uploadStatus !== 'ready' && 
-            (sandboxId || localPreviewUrl);
+            !!(sandboxId || localPreviewUrl);
         
         return (
             <FileCard
@@ -236,7 +236,7 @@ export function FileAttachment({
     const needsContentCheck = !isKanvax && !isImage && !isDocx;
     if (!canShowPreview || waitingForSandbox || hasError || isSandboxDeleted || (needsContentCheck && !hasContent && !localPreviewUrl)) {
         // Don't show loading state for files that are already uploaded (ready) or when there's no sandbox
-        const shouldShowLoading = isLoading && !isKanvax && uploadStatus !== 'ready' && (sandboxId || localPreviewUrl);
+        const shouldShowLoading = isLoading && !isKanvax && uploadStatus !== 'ready' && !!(sandboxId || localPreviewUrl);
         return (
             <FileCard
                 filepath={filepath}
