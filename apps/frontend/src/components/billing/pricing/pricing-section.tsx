@@ -16,6 +16,7 @@ import {
   Copy,
   Gift,
   Timer,
+  AlertTriangle,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -1257,23 +1258,49 @@ export function PricingSection({
       className={cn("scale-90 flex flex-col items-center justify-center w-full relative", noPadding ? "pb-0" : "pb-12")}
     >
       <div className="w-full mx-auto px-4 sm:px-6 flex flex-col">
+        {/* Alert Banner - Shown when limit is reached */}
+        {isAlert && (alertTitle || alertSubtitle) && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="w-full max-w-6xl mx-auto mb-4 sm:mb-6"
+          >
+            <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-amber-500/10 dark:from-amber-500/15 dark:via-orange-500/10 dark:to-amber-500/15 p-4 sm:p-5">
+              {/* Subtle animated glow */}
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-amber-500/5 to-transparent animate-pulse" style={{ animationDuration: '3s' }} />
+
+              <div className="relative flex items-start gap-3 sm:gap-4">
+                {/* Icon */}
+                <div className="flex-shrink-0 flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-amber-500/20 dark:bg-amber-500/25 border border-amber-500/30">
+                  <AlertTriangle className="w-5 h-5 sm:w-6 sm:h-6 text-amber-600 dark:text-amber-400" />
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 min-w-0">
+                  <h3 className="text-base sm:text-lg font-semibold text-amber-900 dark:text-amber-100 mb-1">
+                    {alertTitle}
+                  </h3>
+                  {alertSubtitle && (
+                    <p className="text-sm sm:text-base text-amber-800/80 dark:text-amber-200/70 leading-relaxed">
+                      {alertSubtitle}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Bottom accent line */}
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent" />
+            </div>
+          </motion.div>
+        )}
+
         {/* Compact Header for Mobile */}
         <div className="w-full max-w-6xl mx-auto mb-3 sm:mb-6">
           {/* Title Row */}
           <div className="flex items-center justify-between gap-2 mb-2 sm:mb-4">
             <div className="flex-shrink-0">
-              {isAlert ? (
-                <div className="flex flex-col gap-1">
-                  <h2 className="text-lg sm:text-2xl lg:text-3xl font-medium tracking-tight text-foreground">
-                    {alertTitle || t('pickPlan')}
-                  </h2>
-                  {alertSubtitle && (
-                    <p className="text-sm sm:text-base text-muted-foreground">
-                      {alertSubtitle}
-                    </p>
-                  )}
-                </div>
-              ) : showTitleAndTabs ? (
+              {showTitleAndTabs ? (
                 <h2 className="text-lg sm:text-2xl lg:text-3xl font-medium tracking-tight">
                   {customTitle || t('pickPlan')}
                 </h2>

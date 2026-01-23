@@ -1,7 +1,7 @@
 import asyncio
 from core.agentpress.thread_manager import ThreadManager
 from core.agentpress.tool import Tool, ToolResult, openapi_schema
-from core.agentpress.response_processor import ProcessorConfig
+from core.agentpress.processor_config import ProcessorConfig
 
 class CalculatorTool(Tool):
     @openapi_schema({

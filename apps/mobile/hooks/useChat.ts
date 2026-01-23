@@ -21,12 +21,14 @@ import {
 } from '@/lib/chat';
 import {
   useUploadMultipleFiles,
+  useStageFiles,
   convertAttachmentsToFormDataFiles,
   generateFileReferences,
   validateFileSize,
 } from '@/lib/files';
 import { transcribeAudio, validateAudioFile } from '@/lib/chat/transcription';
 import { detectModeFromContent } from '@/lib/chat/modeDetection';
+import { generateUUID, generateOptimisticId } from '@/lib/utils';
 import { useAgentStream } from './useAgentStream';
 import { useAgent } from '@/contexts/AgentContext';
 import { useAvailableModels } from '@/lib/models';
@@ -36,9 +38,10 @@ import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { 
   extractTierLimitErrorState, 
   parseTierRestrictionError, 
-  getTierLimitErrorTitle,
-  getTierLimitErrorAction,
+  formatTierLimitErrorForUI,
+  type TierLimitErrorState,
 } from '@agentpress/shared/errors';
+import { usePricingModalStore } from '@/stores/billing-modal-store';
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -46,6 +49,8 @@ export interface Attachment {
   name?: string;
   size?: number;
   mimeType?: string;
+  fileId?: string;
+  status?: 'pending' | 'uploading' | 'ready' | 'error';
   isUploading?: boolean;
   uploadProgress?: number;
   uploadError?: string;
@@ -141,6 +146,7 @@ export function useChat(): UseChatReturn {
   const queryClient = useQueryClient();
   const router = useRouter();
   const { selectedModelId, selectedAgentId } = useAgent();
+  const { openPricingModal } = usePricingModalStore();
   const { data: modelsData, isLoading: modelsLoading, error: modelsError } = useAvailableModels();
   const { hasActiveSubscription } = useBillingContext();
 
@@ -154,7 +160,7 @@ export function useChat(): UseChatReturn {
     initialIndex: number;
   } | null>(null);
   const [isAttachmentDrawerVisible, setIsAttachmentDrawerVisible] = useState(false);
-  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>('slides');
+  const [selectedQuickAction, setSelectedQuickAction] = useState<string | null>(null);
   const [selectedQuickActionOption, setSelectedQuickActionOption] = useState<string | null>(null);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [modeViewState, setModeViewState] = useState<'thread-list' | 'thread'>('thread-list');
@@ -169,6 +175,7 @@ export function useChat(): UseChatReturn {
     agentId: string;
     agentName: string;
   } | null>(null);
+  
   
   // Per-mode full state: keeps entire mode state in memory for instant switching (like browser tabs)
   const [modeStates, setModeStates] = useState<Record<string, ModeState>>({});;
@@ -331,6 +338,7 @@ export function useChat(): UseChatReturn {
   const stopAgentRunMutation = useStopAgentRunMutation();
   const updateThreadMutation = useUpdateThread();
   const uploadFilesMutation = useUploadMultipleFiles();
+  const stageFilesMutation = useStageFiles();
 
   const lastStreamStartedRef = useRef<string | null>(null);
   const lastCompletedRunIdRef = useRef<string | null>(null);
@@ -854,7 +862,7 @@ export function useChat(): UseChatReturn {
         }
 
         // Generate optimistic thread ID for instant side menu display
-        const optimisticThreadId = 'optimistic-thread-' + Date.now();
+        const optimisticThreadId = generateOptimisticId();
         const optimisticTimestamp = new Date().toISOString();
 
         // Create optimistic thread title from first ~50 chars of content
@@ -878,16 +886,19 @@ export function useChat(): UseChatReturn {
         );
 
         const optimisticUserMessage: UnifiedMessage = {
-          message_id: 'optimistic-user-' + Date.now(),
+          message_id: generateOptimisticId(),
           thread_id: optimisticThreadId,
           type: 'user',
           content: JSON.stringify({ content: optimisticContent }),
           metadata: JSON.stringify({
+            // Include all attachments in pending state
+            // Show loading spinner only for files still uploading
             pendingAttachments: pendingAttachments.map(a => ({
               uri: a.uri,
               name: a.name,
               type: a.type,
               size: a.size,
+              status: a.status, // Include status so UI knows which ones are ready
             }))
           }),
           is_llm_message: false,
@@ -910,13 +921,6 @@ export function useChat(): UseChatReturn {
         // Clear input and attachments immediately for instant feedback
         setInputValue('');
         setAttachments([]);
-        
-        // Convert attachments for upload (we need the data)
-        const formDataFiles = pendingAttachments.length > 0
-          ? await convertAttachmentsToFormDataFiles(pendingAttachments)
-          : [];
-        
-        log.log('[useChat] Converted', formDataFiles.length, 'attachments for FormData');
         
         // Append hidden context for selected quick action options
         let messageWithContext = content;
@@ -970,15 +974,30 @@ export function useChat(): UseChatReturn {
               detectedMode ? '(auto-detected from content)' : '(from selected tab)');
           }
           
+          // Convert attachments to files format for upload
+          const filesToUpload = pendingAttachments.length > 0
+            ? pendingAttachments.map(a => ({
+                uri: a.uri,
+                name: a.name || 'file',
+                type: a.mimeType || a.type || 'application/octet-stream',
+              }))
+            : undefined;
+
           const createResult = await unifiedAgentStartMutation.mutateAsync({
             prompt: messageWithContext,
             agentId: agentId,
             modelName: currentModel,
-            files: formDataFiles as any,
+            files: filesToUpload,
             threadMetadata: Object.keys(threadMetadata).length > 0 ? threadMetadata : undefined,
           });
 
-          currentThreadId = createResult.thread_id;
+          const newThreadId = createResult.thread_id;
+          if (!newThreadId) {
+            log.error('[useChat] No thread_id returned from agent start');
+            return;
+          }
+
+          currentThreadId = newThreadId;
 
           // Replace optimistic thread with real thread in cache
           queryClient.setQueryData(
@@ -987,7 +1006,7 @@ export function useChat(): UseChatReturn {
               if (!oldThreads) return oldThreads;
               // Remove the optimistic thread, real thread will be added via invalidation
               const filtered = oldThreads.filter((t: any) => t.thread_id !== optimisticThreadId);
-              log.log('✅ [useChat] Replaced optimistic thread with real thread:', currentThreadId);
+              log.log('✅ [useChat] Replaced optimistic thread with real thread:', newThreadId);
               return filtered;
             }
           );
@@ -996,19 +1015,19 @@ export function useChat(): UseChatReturn {
           setMessages((prev) =>
             prev.map((m) =>
               m.thread_id === optimisticThreadId
-                ? { ...m, thread_id: currentThreadId }
+                ? { ...m, thread_id: newThreadId }
                 : m
             )
           );
 
-          setActiveThreadId(currentThreadId);
+          setActiveThreadId(newThreadId);
 
           // Invalidate to fetch real thread data (includes title generated by server)
           queryClient.invalidateQueries({
             queryKey: chatKeys.threads(),
           });
           queryClient.refetchQueries({
-            queryKey: chatKeys.thread(currentThreadId),
+            queryKey: chatKeys.thread(newThreadId),
           });
 
           if (createResult.agent_run_id) {
@@ -1016,6 +1035,11 @@ export function useChat(): UseChatReturn {
             setUserInitiatedRun(true);
             setAgentRunId(createResult.agent_run_id);
             lastErrorRunIdRef.current = null; // Clear any previous error state
+          }
+          
+          // Files are uploaded as part of agent start - no separate upload needed
+          if (pendingAttachments.length > 0 && createResult.sandbox_id) {
+            log.log(`✅ [useChat] Files uploaded to sandbox ${createResult.sandbox_id} during agent start`);
           }
         } catch (agentStartError: any) {
           log.error('[useChat] Error starting agent for new thread:', agentStartError);
@@ -1042,23 +1066,18 @@ export function useChat(): UseChatReturn {
           
           if (tierError) {
             log.log('⚠️ [useChat] Tier limit error detected:', tierError.type, tierError.message);
-            // Show native alert dialog for tier limit errors
-            const title = getTierLimitErrorTitle(tierError);
-            const actionText = getTierLimitErrorAction(tierError);
+            // Format error messages for pricing modal using shared function
+            const { alertTitle, alertSubtitle } = formatTierLimitErrorForUI(tierError);
             
-            Alert.alert(
-              title,
-              tierError.message,
-              [
-                { text: 'Dismiss', style: 'cancel' },
-                { 
-                  text: actionText, 
-                  onPress: () => router.push('/plans'),
-                  style: 'default',
-                },
-              ],
-              { cancelable: true }
-            );
+            // Open pricing modal with clear error messages
+            openPricingModal({
+              alertTitle,
+              alertSubtitle,
+              creditsExhausted: tierError.type === 'INSUFFICIENT_CREDITS',
+            });
+            
+            // Navigate to plans page
+            router.push('/plans');
             return;
           }
           
@@ -1080,16 +1099,19 @@ export function useChat(): UseChatReturn {
         }
         
         const optimisticUserMessage: UnifiedMessage = {
-          message_id: 'optimistic-user-' + Date.now(),
+          message_id: generateOptimisticId(),
           thread_id: currentThreadId,
           type: 'user',
           content: JSON.stringify({ content: optimisticContent }),
           metadata: JSON.stringify({ 
+            // Include all attachments in pending state
+            // Show loading spinner only for files still uploading
             pendingAttachments: pendingAttachments.map(a => ({
               uri: a.uri,
               name: a.name,
               type: a.type,
               size: a.size,
+              status: a.status, // Include status so UI knows which ones are ready
             }))
           }),
           is_llm_message: false,
@@ -1120,52 +1142,14 @@ export function useChat(): UseChatReturn {
           log.log('[useChat] Appended image style context:', selectedQuickActionOption);
         }
         
-        if (pendingAttachments.length > 0) {
-          const sandboxId = activeSandboxId;
-          
-          if (!sandboxId) {
-            log.error('[useChat] No sandbox ID available for file upload');
-            Alert.alert(
-              t('common.error'),
-              'Cannot upload files: sandbox not available'
-            );
-            return;
-          }
-          
-          log.log('[useChat] Uploading', pendingAttachments.length, 'files to sandbox:', sandboxId);
-          
-          try {
-            const filesToUpload = await convertAttachmentsToFormDataFiles(pendingAttachments);
-            
-            const uploadResults = await uploadFilesMutation.mutateAsync({
-              sandboxId,
-              files: filesToUpload.map(f => ({
-                uri: f.uri,
-                name: f.name,
-                type: f.type,
-              })),
-            });
-            
-            log.log('[useChat] Files uploaded successfully:', uploadResults.length);
-            
-            const filePaths = uploadResults.map(result => result.path);
-            const fileReferences = generateFileReferences(filePaths);
-            
-            messageContent = messageContent
-              ? `${messageContent}\n\n${fileReferences}`
-              : fileReferences;
-              
-            log.log('[useChat] Message with file references prepared');
-          } catch (uploadError) {
-            log.error('[useChat] File upload failed:', uploadError);
-            
-            Alert.alert(
-              t('common.error'),
-              t('attachments.uploadFailed') || 'Failed to upload files'
-            );
-            return;
-          }
-        }
+        // Convert attachments to files format for upload
+        const filesToUpload = pendingAttachments.length > 0
+          ? pendingAttachments.map(a => ({
+              uri: a.uri,
+              name: a.name || 'file',
+              type: a.mimeType || a.type || 'application/octet-stream',
+            }))
+          : undefined;
         
         if (!currentModel) {
           log.error('❌ [useChat] No model available for sending message! Details:', {
@@ -1189,6 +1173,7 @@ export function useChat(): UseChatReturn {
             threadId: currentThreadId,
             message: messageContent,
             modelName: currentModel,
+            files: filesToUpload,
           });
           
           log.log('[useChat] Message sent, agent run started:', result.agentRunId);
@@ -1244,6 +1229,11 @@ export function useChat(): UseChatReturn {
             lastErrorRunIdRef.current = null; // Clear any previous error state
           }
           
+          // Files are uploaded as part of agent start - no separate upload needed
+          if (pendingAttachments.length > 0) {
+            log.log(`✅ [useChat] Files uploaded during agent start for existing thread`);
+          }
+          
           setIsNewThreadOptimistic(false);
         } catch (sendMessageError: any) {
           log.error('[useChat] Error sending message to existing thread:', sendMessageError);
@@ -1254,23 +1244,18 @@ export function useChat(): UseChatReturn {
           
           if (tierError) {
             log.log('⚠️ [useChat] Tier limit error detected:', tierError.type, tierError.message);
-            // Show native alert dialog for tier limit errors
-            const title = getTierLimitErrorTitle(tierError);
-            const actionText = getTierLimitErrorAction(tierError);
+            // Format error messages for pricing modal using shared function
+            const { alertTitle, alertSubtitle } = formatTierLimitErrorForUI(tierError);
             
-            Alert.alert(
-              title,
-              tierError.message,
-              [
-                { text: 'Dismiss', style: 'cancel' },
-                { 
-                  text: actionText, 
-                  onPress: () => router.push('/plans'),
-                  style: 'default',
-                },
-              ],
-              { cancelable: true }
-            );
+            // Open pricing modal with clear error messages
+            openPricingModal({
+              alertTitle,
+              alertSubtitle,
+              creditsExhausted: tierError.type === 'INSUFFICIENT_CREDITS',
+            });
+            
+            // Navigate to plans page
+            router.push('/plans');
             return;
           }
           
@@ -1287,6 +1272,7 @@ export function useChat(): UseChatReturn {
     sendMessageMutation,
     unifiedAgentStartMutation,
     uploadFilesMutation,
+    threadData,
     activeSandboxId,
     selectedQuickAction,
     selectedQuickActionOption,
@@ -1467,9 +1453,79 @@ export function useChat(): UseChatReturn {
     setIsRetrying(false);
   }, [isRetrying, messages, currentHookRunId, agentRunId, clearStreamError, setStreamError, startStreaming, activeThreadId, refetchMessages, refetchActiveRuns, queryClient, sendMessage]);
 
-  const addAttachment = useCallback((attachment: Attachment) => {
-    setAttachments(prev => [...prev, attachment]);
-  }, []);
+  const addAttachment = useCallback(async (attachment: Attachment) => {
+    const fileId = generateUUID();
+    
+    const mimeType = attachment.mimeType || attachment.type || 'application/octet-stream';
+    if (mimeType === 'image/heic' || mimeType === 'image/heif') {
+      Alert.alert(
+        t('common.error'),
+        'HEIC images are not supported. Please use JPEG or PNG format.'
+      );
+      return;
+    }
+    
+    // Add attachment with uploading status
+    const attachmentWithId = {
+      ...attachment,
+      fileId,
+      status: 'uploading' as const,
+      isUploading: true,
+    };
+    
+    setAttachments(prev => [...prev, attachmentWithId]);
+    
+    // Immediately stage the file
+    try {
+      await stageFilesMutation.mutateAsync({
+        files: [{
+          uri: attachment.uri,
+          name: attachment.name || 'file',
+          type: mimeType,
+          fileId,
+        }],
+      });
+      
+      // Update status to ready
+      setAttachments(prev => 
+        prev.map(a => 
+          a.fileId === fileId 
+            ? { ...a, status: 'ready' as const, isUploading: false }
+            : a
+        )
+      );
+    } catch (error) {
+      log.error('[useChat] File staging failed:', error);
+      
+      // Check for HEIC error from backend
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const isHeicError = errorMessage.toLowerCase().includes('heic') || errorMessage.toLowerCase().includes('heif');
+      
+      // Update status to error
+      setAttachments(prev => 
+        prev.map(a => 
+          a.fileId === fileId 
+            ? { 
+                ...a, 
+                status: 'error' as const, 
+                isUploading: false, 
+                uploadError: isHeicError 
+                  ? 'HEIC format not supported' 
+                  : 'Failed to upload file' 
+              }
+            : a
+        )
+      );
+      
+      // Show user-friendly error
+      if (isHeicError) {
+        Alert.alert(
+          t('common.error'),
+          'HEIC images are not supported. Please use JPEG or PNG format.'
+        );
+      }
+    }
+  }, [stageFilesMutation, t]);
 
   const removeAttachment = useCallback((index: number) => {
     setAttachments(prev => prev.filter((_, i) => i !== index));
@@ -1490,6 +1546,7 @@ export function useChat(): UseChatReturn {
       mediaTypes: ['images'],
       allowsEditing: false,
       quality: 0.8,
+      exif: false, // Reduces file size, outputs JPEG
     });
 
     if (!result.canceled && result.assets[0]) {
@@ -1520,6 +1577,7 @@ export function useChat(): UseChatReturn {
       mediaTypes: ['images'],
       allowsMultipleSelection: true,
       quality: 0.8,
+      exif: false, // Reduces file size, outputs JPEG
     });
 
     if (!result.canceled) {

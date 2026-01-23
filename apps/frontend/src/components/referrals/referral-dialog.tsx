@@ -26,8 +26,9 @@ export function ReferralDialog({ open: controlledOpen, onOpenChange: controlledO
   const open = controlledOpen ?? storeState.isOpen;
   const onOpenChange = controlledOnOpenChange ?? ((isOpen: boolean) => isOpen ? storeState.openDialog() : storeState.closeDialog());
   
-  const { data: referralCode, isLoading: codeLoading } = useReferralCode();
-  const { data: stats, isLoading: statsLoading } = useReferralStats();
+  // Only fetch data when dialog is open to avoid unnecessary API calls
+  const { data: referralCode, isLoading: codeLoading } = useReferralCode({ enabled: open });
+  const { data: stats, isLoading: statsLoading } = useReferralStats({ enabled: open });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

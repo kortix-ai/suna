@@ -3,162 +3,80 @@ from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.utils.logger import logger
 
 @tool_metadata(
-    display_name="Chat & Messages",
-    description="Talk with users, ask questions, and share updates about your work",
+    display_name="AskUser",
+    description="Ask questions and communicate with users during execution",
     icon="MessageSquare",
     color="bg-purple-100 dark:bg-purple-800/50",
     is_core=True,
     weight=310,
     visible=True,
     usage_guide="""
-# MESSAGE TOOL - USER COMMUNICATION
+## AskUser - User communication and question interface
 
-This tool is your PRIMARY interface for all user communication. Every response MUST use either `ask` or `complete`.
+Use this tool when you need to ask the user questions during execution. This allows you to:
+1. Gather user preferences or requirements
+2. Clarify ambiguous instructions
+3. Get decisions on implementation choices as you work
+4. Offer choices to the user about what direction to take
 
-## 🚨 CRITICAL: COMMUNICATION PROTOCOL
+### Available Tools
+- **ask**: Ask questions, share information, request user input
+- **complete**: Signal that ALL work is finished
+- **wait**: Pause execution for a specified duration
 
-ALL responses to users MUST use these tools - never send raw text:
-- Use `ask` for questions, sharing info, or anything needing user response
-- Use `complete` ONLY when all tasks are 100% done
-- Raw text responses will NOT display to users - always use these tools
+### When to Use `ask`
+- Answering questions or providing explanations
+- Sharing research results or information
+- Asking for clarification when genuinely needed
+- Presenting intermediate results during complex work
+- Any response that expects or allows further user input
 
-**DUPLICATE CONTENT PREVENTION - ABSOLUTE RULE:**
-- NEVER output raw text AND use ask/complete with the SAME content
-- Put ALL content INSIDE the tool's text parameter ONLY
-- DO NOT write the same message before/after the tool call
-
-## QUICK CHAT MODE - WHEN TO USE `ask`
-
-The `ask` tool is your workhorse for QUICK CHAT MODE - fast, conversational responses to simple requests.
-
-### Perfect for Quick Chat:
-- Simple questions ("What is X?", "How do I Y?")
-- Quick factual lookups
-- Conversational exchanges
-- Single-step requests
-- Sharing intermediate results
-- Clarifying ambiguous requests
-
-### Quick Chat Behavior:
-1. Assess the request - can it be answered directly?
-2. If yes, respond conversationally via `ask`
-3. Include follow_up_answers with actionable suggestions
-4. Attach any relevant files or outputs
-
-### Examples of Quick Chat:
-- "What's a REST API?" → Direct explanation via ask
-- "How do I center a div?" → Code snippet via ask
-- "Summarize this article" → Quick summary via ask
-- "What's 2+2?" → Direct answer via ask
-
-## COMMUNICATION STYLE - NON-TECHNICAL USER FOCUS
-
-**The user is NON-TECHNICAL. Keep language friendly and hide complexity.**
-
-### Core Rules:
-1. **Talk about OUTCOMES, not IMPLEMENTATION**
-2. **Use natural, conversational language**
-3. **Hide technical details** - No tool names, libraries, commands, APIs
-4. **Make it feel effortless**
-
-### Good vs Bad Communication:
-
-✅ **GOOD - Focus on outcomes:**
-- "I'll create that spreadsheet for you!"
-- "Here's your budget with automatic calculations"
-- "I've researched the companies you mentioned"
-- "Your presentation is ready with 10 slides"
-
-❌ **BAD - Technical jargon:**
-- "I'll use openpyxl to create an Excel file"
-- "I'm executing a Python script via execute_command"
-- "I'll call the web_search_tool API"
-- "I'm running browser_navigate_to to scrape the page"
-
-## ATTACHMENT PROTOCOL - MANDATORY
-
-**ALL results, deliverables, and outputs MUST be attached.**
-
-When sharing:
-- HTML files, PDFs, markdown
-- Images, charts, dashboards
-- CSV, JSON, code files
-- Presentations, spreadsheets
-- ANY work product
-
-→ You MUST attach them via the `attachments` parameter.
-
-**NEVER describe results without attaching the actual files.**
-
-## FOLLOW-UP ANSWERS - ALWAYS REQUIRED
-
-Every `ask` call MUST include `follow_up_answers` with 2-4 actionable options.
-
-**For clarification questions:**
-- Specific options the user can click
-- Keep them concise (1-2 lines max)
-
-**For informational responses:**
-- Suggest what they can do NEXT with the information
-- Examples: "Create a presentation about this", "Build a webpage", "Track this in a spreadsheet"
-
-## DUPLICATE CONTENT PREVENTION - CRITICAL
-
-🚨 **NEVER output raw text AND use the tool with the same content.**
-
-- Put ALL your message INSIDE the tool's `text` parameter
-- DO NOT write explanations before/after the tool call
-- Users see both, causing annoying duplication
-
-**WRONG:**
-```
-Here's what I found about React...
-[calls ask with "Here's what I found about React..."]
-```
-
-**CORRECT:**
-```
-[calls ask with "Here's what I found about React..."]
-```
-
-## WHEN TO USE `complete`
-
-Use `complete` ONLY when:
-1. ALL work is finished (no pending tasks)
-2. All deliverables have been created
+### When to Use `complete`
+ONLY when ALL of these are true:
+1. ALL tasks are 100% finished (no pending work)
+2. All deliverables have been created and attached
 3. No further user input is needed
 
-**Always include:**
-- Summary of what was accomplished
-- All deliverables attached
-- 3-4 follow_up_prompts for next steps
+### Usage Notes
+- Users will always be able to select "Other" to provide custom text input
+- Use follow_up_answers to provide 2-4 actionable options users can click
+- If you recommend a specific option, make that the first option in the list
 
-## USER-UPLOADED FILES - HANDLING GUIDE
+### Critical Rules
 
-When users upload files (in `uploads/` directory):
+**Duplicate Content Prevention:**
+- NEVER output raw text AND use ask/complete with the same content
+- Put ALL content INSIDE the tool's `text` parameter ONLY
+- Raw text before/after tool calls causes duplication for users
 
-### IMAGE FILES (jpg, jpeg, png, gif, webp, svg):
-→ Use `load_image` to view and analyze
+**Correct Usage:**
+```
+[calls ask with "Here's what I found..."]
+```
 
-### ALL OTHER FILES (PDF, Word, Excel, CSV, JSON, code):
-→ Use `search_file` FIRST - it's smarter and prevents context flooding
+**Incorrect Usage:**
+```
+Here's what I found...
+[calls ask with "Here's what I found..."]
+```
 
-**Examples:**
-- PDF: `search_file("uploads/report.pdf", "key findings")`
-- Excel: `search_file("uploads/data.xlsx", "sales figures")`
-- Word: `search_file("uploads/contract.docx", "payment terms")`
+**Attachment Protocol:**
+- ALL results, deliverables, outputs MUST be attached via `attachments` parameter
+- NEVER describe results without attaching the actual files
+- HTML files, PDFs, images, charts, spreadsheets → ALWAYS attach
 
-**Only use `read_file` for tiny config files (<2KB) when you need exact full content.**
+**Follow-up Answers:**
+- Every `ask` call SHOULD include `follow_up_answers` with 2-4 actionable options
+- For clarifications: specific clickable options
+- For information: suggest what user can do NEXT with the information
 
-## SUMMARY
-
-| Scenario | Tool | Notes |
-|----------|------|-------|
-| Simple question | `ask` | Quick, conversational |
-| Share results | `ask` + attachments | MUST attach files |
-| Need clarification | `ask` + follow_up_answers | Clickable options |
-| Work complete | `complete` + attachments | All deliverables attached |
-| Complex work | Use TASK LIST first | Then communicate via ask/complete |
+### Communication Style
+- Focus on OUTCOMES, not implementation details
+- Use natural, conversational language
+- Hide technical complexity (no tool names, libraries, APIs)
+- Be direct - avoid filler phrases ("Certainly!", "Of course!")
+- Keep responses concise and actionable
+- Only use emojis if the user explicitly requests it
 """
 )
 class MessageTool(Tool):
@@ -169,25 +87,36 @@ class MessageTool(Tool):
         "type": "function",
         "function": {
             "name": "ask",
-            "description": "Communicate with the user. Use for: questions, sharing information, presenting results, requesting input. This is your PRIMARY communication tool. ALWAYS include follow_up_answers with actionable suggestions. ALWAYS attach files when sharing results. CRITICAL: Put ALL content in the text parameter - never duplicate as raw text.",
+            "description": """Use this tool when you need to ask the user questions during execution. This allows you to:
+1. Gather user preferences or requirements
+2. Clarify ambiguous instructions
+3. Get decisions on implementation choices as you work
+4. Offer choices to the user about what direction to take
+
+Usage notes:
+- Users will always be able to select "Other" to provide custom text input
+- Use follow_up_answers to allow multiple answer options to be selected for a question
+- If you recommend a specific option, make that the first option in the list and add "(Recommended)" at the end
+
+CRITICAL: Put ALL content in the text parameter - never duplicate as raw text outside the tool call.""",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "text": {
                         "type": "string",
-                        "description": "**REQUIRED** - Your message to the user. Be conversational and focus on outcomes, not technical details."
+                        "description": "**REQUIRED** - Your message to the user. Be clear, specific, and conversational. Focus on outcomes, not technical details."
                     },
                     "attachments": {
                         "anyOf": [
                             {"type": "string"},
                             {"items": {"type": "string"}, "type": "array"}
                         ],
-                        "description": "**REQUIRED when sharing results** - Files or URLs to attach. MANDATORY for any deliverables, outputs, or work products. Use relative paths to /workspace."
+                        "description": "**OPTIONAL** - Files or URLs to attach. Use for any deliverables, outputs, or work products. Use relative paths to /workspace."
                     },
                     "follow_up_answers": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "**MANDATORY** - 2-4 actionable suggestions the user can click. For questions: specific options. For information: suggest what they can do next (create presentation, build webpage, etc.)."
+                        "description": "**OPTIONAL** - 2-4 actionable suggestions the user can click. For questions: specific options. For information: suggest what they can do next."
                     }
                 },
                 "required": ["text"],

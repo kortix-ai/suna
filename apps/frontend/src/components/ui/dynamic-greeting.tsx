@@ -16,6 +16,9 @@ interface DynamicGreetingProps {
  * Dynamic greeting with letter-by-letter hover effect.
  * Uses stable random indices so greeting type stays consistent,
  * but text updates immediately when language changes.
+ * 
+ * Returns null during SSR to avoid flash of placeholder text.
+ * The parent's fade-in animation makes this transition seamless.
  */
 export function DynamicGreeting({ className }: DynamicGreetingProps) {
   const t = useTranslations('dashboard');
@@ -28,6 +31,9 @@ export function DynamicGreeting({ className }: DynamicGreetingProps) {
 
   // Compute greeting - recalculates when t changes (i.e., when language changes)
   const greeting = useMemo(() => {
+    // Only compute after mount to avoid hydration mismatch
+    if (!mounted) return '';
+    
     const hour = new Date().getHours();
     
     // 40% chance time-based, 60% random
@@ -75,7 +81,7 @@ export function DynamicGreeting({ className }: DynamicGreetingProps) {
       t('greetings.random.14'),
     ];
     return greetings[Math.floor(greetingIndexRandom * greetings.length)];
-  }, [t]);
+  }, [t, mounted]);
 
   // Calculate lift amount based on distance from hovered letter
   const getLiftAmount = (index: number): number => {
@@ -91,9 +97,10 @@ export function DynamicGreeting({ className }: DynamicGreetingProps) {
     return 0;
   };
 
-  // Show visible static text during SSR so it can be the LCP element
+  // Return empty container during SSR to avoid flash of different text.
+  // The parent's fade-in animation makes this seamless.
   if (!mounted) {
-    return <p className={cn('tracking-tight', className)}>Let&apos;s build something awesome</p>;
+    return <p className={cn('tracking-tight opacity-0', className)}>&nbsp;</p>;
   }
 
   // Split by whitespace but keep whitespace tokens so the browser can wrap between words.

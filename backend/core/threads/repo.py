@@ -1,6 +1,17 @@
 from typing import Optional, List, Dict, Any, Tuple
 from core.services.db import execute, execute_one, serialize_row, serialize_rows
 from core.utils.logger import logger
+from core.utils.llm_debugger import llm_debug
+
+
+def _sanitize_null_bytes(value: Any) -> Any:
+    if isinstance(value, str):
+        return value.replace('\u0000', '')
+    elif isinstance(value, dict):
+        return {k: _sanitize_null_bytes(v) for k, v in value.items()}
+    elif isinstance(value, list):
+        return [_sanitize_null_bytes(item) for item in value]
+    return value
 
 async def list_user_threads(
     account_id: str,
@@ -22,10 +33,14 @@ async def list_user_threads(
         p.is_public AS project_is_public,
         p.created_at AS project_created_at,
         p.updated_at AS project_updated_at,
+        -- Sandbox fields (NULL if no sandbox)
+        r.external_id AS sandbox_id,
+        r.config AS sandbox_config,
         -- Total count without extra query
         COUNT(*) OVER() AS total_count
     FROM threads t
     LEFT JOIN projects p ON t.project_id = p.project_id
+    LEFT JOIN resources r ON p.sandbox_resource_id = r.id
     WHERE t.account_id = :account_id
     ORDER BY t.created_at DESC
     LIMIT :limit OFFSET :offset
@@ -47,13 +62,22 @@ async def list_user_threads(
     for row in rows:
         project_data = None
         if row["project_id"]:
+            # Build sandbox info if available
+            sandbox_info = None
+            if row.get("sandbox_id"):
+                sandbox_info = {
+                    "id": row["sandbox_id"],
+                    **(row.get("sandbox_config") or {})
+                }
+            
             project_data = {
                 "project_id": row["project_id"],
                 "name": row["project_name"] or "",
                 "icon_name": row["project_icon_name"],
                 "is_public": row["project_is_public"] or False,
                 "created_at": row["project_created_at"],
-                "updated_at": row["project_updated_at"]
+                "updated_at": row["project_updated_at"],
+                "sandbox": sandbox_info
             }
         
         threads.append({
@@ -258,7 +282,7 @@ async def create_message(
         "thread_id": thread_id,
         "type": message_type,
         "is_llm_message": is_llm_message,
-        "content": content,
+        "content": _sanitize_null_bytes(content),
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
@@ -639,8 +663,8 @@ async def create_message_full(
         "thread_id": thread_id,
         "type": message_type,
         "is_llm_message": is_llm_message,
-        "content": content,
-        "metadata": metadata,
+        "content": _sanitize_null_bytes(content),
+        "metadata": _sanitize_null_bytes(metadata),
         "created_at": datetime.now(timezone.utc)
     }, commit=True)
     
@@ -919,6 +943,15 @@ async def update_message_content(
             "content": content,
             "updated_at": datetime.now(timezone.utc)
         })
+    
+    # Log DB write for debugging
+    content_str = str(content) if content else ""
+    llm_debug.log_db_write(
+        operation="UPDATE",
+        table="messages",
+        record_id=message_id,
+        content_preview=content_str[:500] if content_str else None,
+    )
     
     return dict(result[0]) if result else None
 
@@ -1351,7 +1384,11 @@ async def insert_message(
         :message_id, :thread_id, :type, :content, :is_llm_message, 
         :metadata, :agent_id, :agent_version_id, :created_at
     )
-    ON CONFLICT (message_id) DO NOTHING
+    ON CONFLICT (message_id) DO UPDATE SET
+        content = EXCLUDED.content,
+        metadata = EXCLUDED.metadata,
+        agent_id = EXCLUDED.agent_id,
+        agent_version_id = EXCLUDED.agent_version_id
     RETURNING *
     """
     
@@ -1359,13 +1396,25 @@ async def insert_message(
         "message_id": message_id,
         "thread_id": thread_id,
         "type": message_type,
-        "content": content,
+        "content": _sanitize_null_bytes(content),
         "is_llm_message": is_llm_message,
-        "metadata": metadata or {},
+        "metadata": _sanitize_null_bytes(metadata or {}),
         "agent_id": agent_id,
         "agent_version_id": agent_version_id,
         "created_at": now
     }, commit=True)
+    
+    # Log DB write for debugging
+    content_str = str(content) if content else ""
+    llm_debug.log_db_write(
+        operation="INSERT",
+        table="messages",
+        record_id=message_id,
+        thread_id=thread_id,
+        message_type=message_type,
+        content_preview=content_str[:500] if content_str else None,
+        is_llm_message=is_llm_message,
+    )
     
     return dict(result) if result else {"message_id": message_id, "thread_id": thread_id}
 

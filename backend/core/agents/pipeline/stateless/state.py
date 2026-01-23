@@ -5,7 +5,7 @@ import uuid
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Dict, Any, List, Optional, Deque, ClassVar, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Deque, ClassVar, Tuple, TYPE_CHECKING
 
 from core.utils.logger import logger
 from core.agents.pipeline.stateless.config import config as stateless_config
@@ -63,10 +63,7 @@ class RunState:
         self._tool_results: OrderedDict[str, ToolResult] = OrderedDict()
         self._pending_tool_calls: List[Dict[str, Any]] = []
         self._accumulated_content: str = ""
-
-        self._credit_shadow: Decimal = Decimal("0")
-        self._initial_credits: Decimal = Decimal("0")
-        self._total_deducted: Decimal = Decimal("0")
+        self._deferred_tool_results: List[Tuple[ToolResult, Optional[str]]] = []
 
         self._step_counter: int = 0
         self._message_counter: int = 0
@@ -103,10 +100,10 @@ class RunState:
     async def _load_initial_state(self) -> None:
         await asyncio.gather(
             self._load_messages(),
-            self._load_credits(),
+            self._check_credits(),
             return_exceptions=True,
         )
-        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs, ${self._credit_shadow}")
+        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs, credits OK")
 
     async def _load_messages(self) -> None:
         try:
@@ -126,15 +123,30 @@ class RunState:
         except Exception as e:
             logger.warning(f"[RunState] Load messages failed: {e}")
 
-    async def _load_credits(self) -> None:
+    async def _check_credits(self) -> None:
         try:
-            from core.billing.credits.manager import credit_manager
-            balance = await credit_manager.get_balance(self.account_id, use_cache=True)
-            self._credit_shadow = Decimal(str(balance.get('total', 0) if isinstance(balance, dict) else balance or 0))
-            self._initial_credits = self._credit_shadow
+            from core.billing.credits.integration import billing_integration
+            from core.utils.config import config, EnvMode
+            from core.agents.pipeline.ux_streaming import stream_user_error
+            
+            if config.ENV_MODE == EnvMode.LOCAL:
+                logger.debug("[RunState] Skipping credit check in local mode")
+                return
+            
+            can_run, message, _ = await billing_integration.check_and_reserve_credits(
+                self.account_id, wait_for_cache_ms=3000
+            )
+            
+            if not can_run:
+                logger.error(f"[RunState] {message}")
+                self._terminate(f"insufficient_credits")
+                await stream_user_error(
+                    stream_key=self.stream_key,
+                    error=message,
+                    error_code="INSUFFICIENT_CREDITS"
+                )
         except Exception as e:
-            logger.warning(f"[RunState] Load credits failed: {e}")
-            self._credit_shadow = Decimal("999999")
+            logger.warning(f"[RunState] Credit check failed: {e}")
 
     @property
     def step(self) -> int:
@@ -148,9 +160,7 @@ class RunState:
     def termination_reason(self) -> Optional[str]:
         return self._termination_reason
 
-    @property
-    def credits_remaining(self) -> Decimal:
-        return self._credit_shadow
+    # NOTE: credits_remaining removed - no longer tracking shadow balance
 
     @property
     def total_deducted(self) -> Decimal:
@@ -178,11 +188,7 @@ class RunState:
         if self._step_counter >= self.MAX_STEPS:
             self._terminate("max_steps_exceeded")
             return False
-
-        if self._credit_shadow < Decimal("0.001"):
-            self._terminate("insufficient_credits")
-            return False
-
+            
         return True
 
     def next_step(self) -> int:
@@ -238,7 +244,15 @@ class RunState:
         self._check_flush_threshold()
         return message_id
 
-    def finalize_assistant_message(self, tool_calls: Optional[List[Dict[str, Any]]] = None, thread_run_id: Optional[str] = None) -> str:
+    def reserve_assistant_message_id(self) -> str:
+        return str(uuid.uuid4())
+    
+    def finalize_assistant_message(
+        self, 
+        tool_calls: Optional[List[Dict[str, Any]]] = None, 
+        thread_run_id: Optional[str] = None,
+        message_id: Optional[str] = None
+    ) -> str:
         msg = {"role": "assistant", "content": self._accumulated_content or None}
         if tool_calls:
             msg["tool_calls"] = tool_calls
@@ -264,9 +278,31 @@ class RunState:
                 unified_tool_calls.append(unified_tc)
             metadata["tool_calls"] = unified_tool_calls
 
-        message_id = self.add_message(msg, metadata if metadata else None)
+        actual_message_id = message_id if message_id else str(uuid.uuid4())
+        
+        msg_with_id = msg.copy()
+        msg_with_id["message_id"] = actual_message_id
+
+        self._messages.append(msg_with_id)
+        self._last_activity = time.time()
+
+        self._pending_writes.append(PendingWrite(
+            write_type="message",
+            data={
+                "message_id": actual_message_id,
+                "thread_id": self.thread_id,
+                "type": msg.get("role", "assistant"),
+                "content": msg,
+                "metadata": metadata or {},
+                "is_llm_message": True,
+                "agent_id": self.agent_id,
+                "agent_version_id": self.agent_version_id,
+            }
+        ))
+
+        self._check_flush_threshold()
         self._accumulated_content = ""
-        return message_id
+        return actual_message_id
 
     def queue_tool_call(self, tool_call: Dict[str, Any]) -> None:
         self._pending_tool_calls.append(tool_call)
@@ -369,13 +405,20 @@ class RunState:
         self._check_flush_threshold()
         return message_id
 
-    def record_tool_result(self, result: ToolResult, assistant_message_id: Optional[str] = None) -> None:
+    def record_tool_result(self, result: ToolResult, assistant_message_id: Optional[str] = None, defer_message: bool = False) -> None:
         while len(self._tool_results) >= self.MAX_TOOL_RESULTS:
             self._tool_results.popitem(last=False)
 
         self._tool_results[result.tool_call_id] = result
         self._last_activity = time.time()
 
+        if defer_message:
+            self._deferred_tool_results.append((result, assistant_message_id))
+            return
+
+        self._add_tool_result_message(result, assistant_message_id)
+
+    def _add_tool_result_message(self, result: ToolResult, assistant_message_id: Optional[str] = None) -> str:
         output_for_metadata = result.output
         if isinstance(result.output, str):
             content_value = result.output
@@ -409,42 +452,33 @@ class RunState:
         if assistant_message_id:
             metadata["assistant_message_id"] = assistant_message_id
 
-        self.add_message({
+        return self.add_message({
             "role": "tool",
             "tool_call_id": result.tool_call_id,
             "name": result.tool_name,
             "content": content_value,
         }, metadata)
 
+    def commit_deferred_tool_results(self) -> int:
+        count = 0
+        for result, assistant_message_id in self._deferred_tool_results:
+            self._add_tool_result_message(result, assistant_message_id)
+            count += 1
+        
+        self._deferred_tool_results.clear()
+        return count
+
+    def trigger_flush(self) -> None:
+        if self._pending_writes:
+            task = asyncio.create_task(self.flush())
+            self._flush_tasks.add(task)
+            task.add_done_callback(lambda t: self._flush_tasks.discard(t))
+
     def get_tool_result(self, tool_call_id: str) -> Optional[ToolResult]:
         return self._tool_results.get(tool_call_id)
 
     def has_credits(self, required: Decimal = Decimal("0.001")) -> bool:
         return self._credit_shadow >= required
-
-    def deduct_credits(self, amount: Decimal) -> bool:
-        if self._credit_shadow < amount:
-            return False
-
-        self._credit_shadow -= amount
-        self._total_deducted += amount
-        self._last_activity = time.time()
-
-        self._pending_writes.append(PendingWrite(
-            write_type="credit",
-            data={
-                "account_id": self.account_id,
-                "amount": float(amount),
-                "thread_id": self.thread_id,
-                "run_id": self.run_id,
-            }
-        ))
-
-        self._check_flush_threshold()
-        return True
-
-    def estimate_cost(self, prompt_tokens: int, completion_tokens: int) -> Decimal:
-        return Decimal(str((prompt_tokens + completion_tokens) / 1000 * 0.01))
 
     def _check_flush_threshold(self) -> None:
         if len(self._pending_writes) >= self.MAX_PENDING_WRITES:
@@ -516,6 +550,7 @@ class RunState:
         self._tool_results.clear()
         self._pending_tool_calls.clear()
         self._pending_writes.clear()
+        self._deferred_tool_results.clear()
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -524,8 +559,6 @@ class RunState:
             "step": self._step_counter,
             "messages": len(self._messages),
             "pending_writes": len(self._pending_writes),
-            "credits": float(self._credit_shadow),
-            "deducted": float(self._total_deducted),
             "duration": self.duration_seconds,
             "active": self.is_active,
         }

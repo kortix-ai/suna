@@ -31,9 +31,9 @@ import { EmptyState } from './components/EmptyState';
 import { LoadingState } from './components/LoadingState';
 import { AppDock } from './components/Dock';
 import { SandboxDesktop } from './components/Desktop';
-import { EnhancedFileBrowser } from './components/EnhancedFileBrowser';
-import { useDirectoryQuery } from '@/hooks/files';
 import { getToolNumber } from '@/hooks/messages/tool-tracking';
+import { useSandboxStatusWithAutoStart, isSandboxUsable } from '@/hooks/files/use-sandbox-details';
+import { SandboxStatusView } from './components/SandboxStatusView';
 
 export interface ToolCallInput {
   toolCall: ToolCallData;
@@ -132,12 +132,12 @@ export const KortixComputer = memo(function KortixComputer({
   const pendingToolNavIndex = useKortixComputerPendingToolNavIndex();
   const clearPendingToolNav = useKortixComputerClearPendingToolNav();
 
-  const effectiveSandboxIdForQuery = sandboxId || project?.sandbox?.id || '';
-  const { data: enhancedBrowserFiles = [] } = useDirectoryQuery(
-    effectiveSandboxIdForQuery, 
-    currentPath, 
-    { enabled: !!effectiveSandboxIdForQuery && isMaximized }
-  );
+  // Fetch unified sandbox status (combines Daytona state + service health)
+  // Auto-starts OFFLINE sandboxes when detected
+  const { data: sandboxStatus } = useSandboxStatusWithAutoStart(projectId);
+  
+  // Check if sandbox is usable (LIVE status)
+  const isSandboxLive = sandboxStatus ? isSandboxUsable(sandboxStatus.status) : false;
 
   const currentViewRef = useRef(activeView);
 
@@ -620,6 +620,11 @@ export const KortixComputer = memo(function KortixComputer({
   };
 
   const renderFilesView = () => {
+    // Show status view if sandbox is not LIVE
+    if (!isSandboxLive) {
+      return <SandboxStatusView projectId={projectId} />;
+    }
+
     if (filesSubView === 'viewer' && selectedFilePath) {
       return (
         <FileViewerView
@@ -642,6 +647,11 @@ export const KortixComputer = memo(function KortixComputer({
   };
 
   const renderFilesViewMaximized = () => {
+    // Show status view if sandbox is not LIVE
+    if (!isSandboxLive) {
+      return <SandboxStatusView projectId={projectId} />;
+    }
+
     if (filesSubView === 'viewer' && selectedFilePath) {
       return (
         <FileViewerView
@@ -653,26 +663,13 @@ export const KortixComputer = memo(function KortixComputer({
       );
     }
 
-    const pathSegments = currentPath.split('/').filter(Boolean);
-    const parentPath = pathSegments.length > 1 
-      ? '/' + pathSegments.slice(0, -1).join('/') 
-      : '/workspace';
-
+    // Use same FileBrowserView as inline view for consistency
     return (
-      <EnhancedFileBrowser
-        files={enhancedBrowserFiles.map(f => ({
-          name: f.name,
-          path: f.path || `${currentPath}/${f.name}`,
-          is_dir: f.is_dir,
-          size: f.size || 0,
-          mod_time: f.mod_time || '',
-        }))}
-        currentPath={currentPath}
-        onNavigate={navigateToPath}
-        onFileOpen={(path) => openFile(path)}
-        onFileEdit={(path) => openFile(path)}
-        onBack={() => navigateToPath(parentPath)}
+      <FileBrowserView
         sandboxId={effectiveSandboxId}
+        project={project}
+        projectId={projectId}
+        variant="library"
       />
     );
   };
@@ -731,6 +728,7 @@ export const KortixComputer = memo(function KortixComputer({
             showFilesTab={true}
             isMaximized={isMaximized}
             isSuiteMode={isSuiteMode}
+            sandboxStatus={sandboxStatus?.status}
             onToggleSuiteMode={() => {
               if (isSuiteMode) {
                 // Exit suite mode - restore previous size
@@ -779,7 +777,7 @@ export const KortixComputer = memo(function KortixComputer({
         dismissible={false}
       >
         <DrawerContent
-          className="h-[85vh] max-h-[85vh] overflow-hidden"
+          className="h-[90dvh] max-h-[90dvh] overflow-hidden flex flex-col"
           style={{ contain: 'strict' }}
           onKeyDown={handleDrawerKeyDown}
         >
@@ -790,29 +788,32 @@ export const KortixComputer = memo(function KortixComputer({
             currentView={activeView}
             onViewChange={setActiveView}
             showFilesTab={true}
+            sandboxStatus={sandboxStatus?.status}
           />
 
-          <div className="flex-1 flex flex-col overflow-hidden max-w-full max-h-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
+          <div className="flex-1 flex flex-col overflow-hidden max-w-full min-w-0 min-h-0" style={{ contain: 'strict' }}>
             {activeView === 'tools' && renderToolsView()}
             {activeView === 'files' && renderFilesView()}
             {!HIDE_BROWSER_TAB && activeView === 'browser' && renderBrowserView()}
           </div>
 
           {activeView === 'tools' && (displayTotalCalls > 1 || (isCurrentToolStreaming && totalCompletedCalls > 0)) && (
-            <NavigationControls
-              displayIndex={displayIndex}
-              displayTotalCalls={displayTotalCalls}
-              safeInternalIndex={safeInternalIndex}
-              latestIndex={latestIndex}
-              isLiveMode={isLiveMode}
-              agentStatus={agentStatus}
-              onPrevious={navigateToPrevious}
-              onNext={navigateToNext}
-              onSliderChange={handleSliderChange}
-              onJumpToLive={jumpToLive}
-              onJumpToLatest={jumpToLatest}
-              isMobile={true}
-            />
+            <div className="flex-shrink-0 pb-[env(safe-area-inset-bottom,0px)]">
+              <NavigationControls
+                displayIndex={displayIndex}
+                displayTotalCalls={displayTotalCalls}
+                safeInternalIndex={safeInternalIndex}
+                latestIndex={latestIndex}
+                isLiveMode={isLiveMode}
+                agentStatus={agentStatus}
+                onPrevious={navigateToPrevious}
+                onNext={navigateToNext}
+                onSliderChange={handleSliderChange}
+                onJumpToLive={jumpToLive}
+                onJumpToLatest={jumpToLatest}
+                isMobile={true}
+              />
+            </div>
           )}
         </DrawerContent>
       </Drawer>

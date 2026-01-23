@@ -163,6 +163,24 @@ async def get_agent_by_id(agent_id: str, account_id: Optional[str] = None) -> Op
     return serialize_row(dict(result)) if result else None
 
 
+async def get_agent_metadata(agent_id: str) -> Optional[Dict[str, Any]]:
+    sql = "SELECT metadata FROM agents WHERE agent_id = :agent_id"
+    result = await execute_one(sql, {"agent_id": agent_id})
+    if result:
+        metadata = result.get("metadata")
+        return metadata if isinstance(metadata, dict) else {}
+    return None
+
+
+async def get_user_agent_ids(user_id: str) -> List[str]:
+    sql = """
+    SELECT agent_id FROM agents 
+    WHERE account_id = :user_id AND current_version_id IS NOT NULL
+    """
+    rows = await execute(sql, {"user_id": user_id})
+    return [row["agent_id"] for row in rows] if rows else []
+
+
 async def get_agent_count(account_id: str) -> int:
     sql = "SELECT COUNT(*) as count FROM agents WHERE account_id = :account_id"
     result = await execute_one(sql, {"account_id": account_id})
@@ -375,6 +393,28 @@ async def get_agent_run_with_thread(agent_run_id: str) -> Optional[Dict[str, Any
     return serialize_row(dict(result)) if result else None
 
 
+async def get_thread_ids_for_runs(run_ids: List[str]) -> Dict[str, str]:
+    if not run_ids:
+        return {}
+    
+    placeholders = ",".join([f":run_id_{i}" for i in range(len(run_ids))])
+    params = {f"run_id_{i}": run_id for i, run_id in enumerate(run_ids)}
+    
+    sql = f"""
+    SELECT 
+        ar.id as run_id,
+        ar.thread_id
+    FROM agent_runs ar
+    WHERE ar.id IN ({placeholders})
+    """
+    
+    rows = await execute(sql, params)
+    if not rows:
+        return {}
+    
+    return {str(row["run_id"]): str(row["thread_id"]) for row in rows}
+
+
 async def get_agent_run_status(agent_run_id: str) -> Optional[Dict[str, Any]]:
     sql = "SELECT id, status, error FROM agent_runs WHERE id = :agent_run_id"
     result = await execute_one(sql, {"agent_run_id": agent_run_id})
@@ -400,7 +440,42 @@ async def get_running_thread_ids(account_id: str) -> List[str]:
     WHERE t.account_id = :account_id AND ar.status = 'running'
     """
     rows = await execute(sql, {"account_id": account_id})
-    return [row["thread_id"] for row in rows] if rows else []
+    return [str(row["thread_id"]) for row in rows] if rows else []
+
+
+async def get_active_thread_ids_count() -> int:
+    sql = """
+    SELECT COUNT(DISTINCT ar.thread_id) as count
+    FROM agent_runs ar
+    WHERE ar.status = 'running'
+    """
+    result = await execute_one(sql, {})
+    return result["count"] if result else 0
+
+
+async def get_active_thread_ids_with_runs() -> List[Dict[str, Any]]:
+    sql = """
+    SELECT 
+        ar.thread_id,
+        ARRAY_AGG(ar.id) as run_ids,
+        COUNT(*) as run_count
+    FROM agent_runs ar
+    WHERE ar.status = 'running'
+    GROUP BY ar.thread_id
+    ORDER BY ar.thread_id
+    """
+    rows = await execute(sql, {})
+    if not rows:
+        return []
+    
+    return [
+        {
+            "thread_id": str(row["thread_id"]),
+            "run_ids": [str(run_id) for run_id in row["run_ids"]] if row["run_ids"] else [],
+            "run_count": row["run_count"],
+        }
+        for row in rows
+    ]
 
 async def get_default_agent_id(account_id: str) -> Optional[str]:
     sql = """
@@ -410,13 +485,13 @@ async def get_default_agent_id(account_id: str) -> Optional[str]:
     LIMIT 1
     """
     result = await execute_one(sql, {"account_id": account_id})
-    return result["agent_id"] if result else None
+    return str(result["agent_id"]) if result else None
 
 
 async def get_any_agent_id(account_id: str) -> Optional[str]:
     sql = "SELECT agent_id FROM agents WHERE account_id = :account_id LIMIT 1"
     result = await execute_one(sql, {"account_id": account_id})
-    return result["agent_id"] if result else None
+    return str(result["agent_id"]) if result else None
 
 
 async def get_shared_suna_agent(admin_user_id: Optional[str] = None) -> Optional[Dict[str, Any]]:

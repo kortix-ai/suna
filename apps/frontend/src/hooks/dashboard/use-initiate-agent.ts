@@ -38,7 +38,6 @@ export const useInitiateAgentMutation = () => {
       const model_name_raw = formData.get('model_name') as string | undefined | null;
       const model_name = model_name_raw && model_name_raw.trim() ? model_name_raw.trim() : undefined;
       const agent_id = formData.get('agent_id') as string | undefined;
-      const file_ids = formData.getAll('file_ids') as string[];
       
       // Debug logging
       console.log('[useInitiateAgent] Extracted from FormData:', {
@@ -47,14 +46,12 @@ export const useInitiateAgentMutation = () => {
         promptIsEmptyString: prompt === '',
         model_name,
         agent_id,
-        fileIdsCount: file_ids.length,
       });
       
       return await unifiedAgentStart({
         prompt: prompt !== undefined ? prompt : undefined, // Send empty string if present, undefined if not in FormData
         model_name,
         agent_id,
-        file_ids: file_ids.length > 0 ? file_ids : undefined,
       });
     },
     onSuccess: (data) => {

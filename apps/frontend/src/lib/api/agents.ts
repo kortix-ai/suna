@@ -1,7 +1,19 @@
 import { createClient } from '@/lib/supabase/client';
 import { handleApiError } from '../error-handler';
 import { backendApi } from '../api-client';
-import { BillingError, AgentRunLimitError, ProjectLimitError, ThreadLimitError, NoAccessTokenAvailableError, RequestTooLargeError, parseTierRestrictionError } from './errors';
+import { 
+  BillingError, 
+  AgentRunLimitError, 
+  ProjectLimitError, 
+  ThreadLimitError, 
+  AgentCountLimitError,
+  TriggerLimitError,
+  ModelAccessDeniedError,
+  CustomWorkerLimitError,
+  NoAccessTokenAvailableError, 
+  RequestTooLargeError, 
+  parseTierRestrictionError 
+} from './errors';
 import { nonRunningAgentRuns, activeStreams, cleanupEventSource } from './streaming';
 import { Message } from './threads';
 
@@ -33,6 +45,7 @@ export interface OptimisticAgentStartResponse {
   thread_id: string;
   project_id: string;
   agent_run_id: string | null;  // Now synchronously created, so usually non-null
+  sandbox_id?: string | null;   // Only set if has_pending_files=true was passed
   status: 'pending' | 'running';
 }
 
@@ -70,10 +83,10 @@ export interface ActiveAgentRun {
 export const unifiedAgentStart = async (options: {
   threadId?: string;
   prompt?: string;
-  file_ids?: string[];
   model_name?: string;
   agent_id?: string;
-}): Promise<{ thread_id: string; agent_run_id: string; status: string }> => {
+  files?: File[];
+}): Promise<{ thread_id: string; agent_run_id: string; project_id?: string; sandbox_id?: string; status: string }> => {
   try {
     if (!API_URL) {
       throw new Error(
@@ -102,14 +115,14 @@ export const unifiedAgentStart = async (options: {
       formData.append('agent_id', options.agent_id);
     }
     
-    if (options.file_ids && options.file_ids.length > 0) {
-      options.file_ids.forEach((fileId) => {
-        formData.append('file_ids', fileId);
-      });
+    // Append files if present
+    if (options.files && options.files.length > 0) {
+      for (const file of options.files) {
+        formData.append('files', file);
+      }
     }
 
-
-    const response = await backendApi.upload<{ thread_id: string; agent_run_id: string; status: string }>(
+    const response = await backendApi.upload<{ thread_id: string; agent_run_id: string; project_id?: string; sandbox_id?: string; status: string }>(
       '/agent/start',
       formData,
       { showErrors: false, cache: 'no-store' }
@@ -174,14 +187,10 @@ export const unifiedAgentStart = async (options: {
       }
 
       // Handle HTTP 431 - Request Header Fields Too Large
-      // This happens when uploading many file_ids at once
       if (status === 431 || response.error instanceof RequestTooLargeError) {
-        const fileIdsCount = options.file_ids?.length || 0;
         throw new RequestTooLargeError(431, {
-          message: `Request is too large (${fileIdsCount} files attached)`,
-          suggestion: fileIdsCount > 1 
-            ? 'Try uploading files one at a time instead of all at once.'
-            : 'The request data is too large. Try a smaller file or simplify your message.',
+          message: 'Request is too large',
+          suggestion: 'The request data is too large. Try simplifying your message.',
         });
       }
 
@@ -380,11 +389,11 @@ export const optimisticAgentStart = async (options: {
   thread_id: string;
   project_id: string;
   prompt: string;
-  file_ids?: string[];
   model_name?: string;
   agent_id?: string;
   memory_enabled?: boolean;
   mode?: string;  // Mode: slides, sheets, docs, canvas, video, research
+  files?: File[];  // Files to upload with the agent start
 }): Promise<OptimisticAgentStartResponse> => {
   try {
     if (!API_URL) {
@@ -410,18 +419,19 @@ export const optimisticAgentStart = async (options: {
       formData.append('agent_id', options.agent_id);
     }
     
-    if (options.file_ids && options.file_ids.length > 0) {
-      options.file_ids.forEach((fileId) => {
-        formData.append('file_ids', fileId);
-      });
-    }
-    
     if (options.memory_enabled !== undefined) {
       formData.append('memory_enabled', String(options.memory_enabled));
     }
     
     if (options.mode) {
       formData.append('mode', options.mode);
+    }
+    
+    // Append files if present
+    if (options.files && options.files.length > 0) {
+      for (const file of options.files) {
+        formData.append('files', file);
+      }
     }
 
     const response = await backendApi.upload<OptimisticAgentStartResponse>(
@@ -439,11 +449,36 @@ export const optimisticAgentStart = async (options: {
       }
       
       if (status === 402) {
-        const errorDetail = response.error.details?.detail || { message: response.error.message || 'Payment required' };
+        // The api-client already calls parseTierRestrictionError, so response.error should be a typed error
+        // Check if it's already a typed error first
+        if (response.error instanceof ThreadLimitError || 
+            response.error instanceof ProjectLimitError || 
+            response.error instanceof AgentRunLimitError ||
+            response.error instanceof AgentCountLimitError ||
+            response.error instanceof TriggerLimitError ||
+            response.error instanceof ModelAccessDeniedError ||
+            response.error instanceof CustomWorkerLimitError ||
+            response.error instanceof BillingError) {
+          throw response.error;
+        }
+        
+        // If it's not a typed error yet, parse it
+        // The error from api-client has: detail, details, code properties
+        const errorDetail = (response.error as any).detail || response.error.details?.detail || { 
+          message: response.error.message || 'Payment required',
+          error_code: response.error.code || (response.error as any).detail?.error_code
+        };
+        
         const parsedError = parseTierRestrictionError({
           status,
           detail: errorDetail,
-          response: { data: { detail: errorDetail } },
+          code: errorDetail.error_code || response.error.code,
+          response: { 
+            data: { 
+              detail: errorDetail 
+            },
+            status: status
+          },
         });
         throw parsedError;
       }
@@ -458,12 +493,9 @@ export const optimisticAgentStart = async (options: {
       }
 
       if (status === 431 || response.error instanceof RequestTooLargeError) {
-        const fileIdsCount = options.file_ids?.length || 0;
         throw new RequestTooLargeError(431, {
-          message: `Request is too large (${fileIdsCount} files attached)`,
-          suggestion: fileIdsCount > 1 
-            ? 'Try uploading files one at a time instead of all at once.'
-            : 'The request data is too large. Try a smaller file or simplify your message.',
+          message: 'Request is too large',
+          suggestion: 'The request data is too large. Try simplifying your message.',
         });
       }
 
@@ -496,7 +528,17 @@ export const optimisticAgentStart = async (options: {
       throw error;
     }
 
-    console.error('[API] Failed to start agent optimistically:', error);
+    // Log error with more detail for debugging
+    console.error('[API] Failed to start agent optimistically:', {
+      error,
+      errorName: error?.name,
+      errorMessage: error?.message,
+      errorStatus: error?.status,
+      errorDetail: error?.detail,
+      errorCode: error?.code || error?.detail?.error_code,
+      isThreadLimitError: error instanceof ThreadLimitError,
+      isBillingError: error instanceof BillingError,
+    });
     
     if (
       error instanceof TypeError &&

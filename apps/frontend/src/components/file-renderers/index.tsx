@@ -12,9 +12,10 @@ export { XlsxRenderer } from './xlsx-renderer';
 export { PptxRenderer } from './pptx-renderer';
 export { HtmlRenderer } from './html-renderer';
 export { JsonRenderer } from './JsonRenderer';
+export { DocxRenderer } from './docx-renderer';
 
 // File type helpers
-export type BinaryFileType = 'pdf' | 'image' | 'video' | 'binary' | 'csv' | 'xlsx' | 'pptx';
+export type BinaryFileType = 'pdf' | 'image' | 'video' | 'binary' | 'csv' | 'xlsx' | 'pptx' | 'docx';
 
 export function isBinaryFileType(fileName: string): boolean {
   const extension = fileName.split('.').pop()?.toLowerCase() || '';

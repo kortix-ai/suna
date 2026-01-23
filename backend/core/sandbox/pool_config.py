@@ -11,20 +11,23 @@ _DEFAULTS = {
         "check_interval": 30,
         "parallel_create_limit": 3,
         "replenish_threshold": 0.3,
+        "batch_delay": 5,
     },
     EnvMode.STAGING: {
         "min_size": 50,
-        "max_size": 200,
+        "max_size": 100,
         "check_interval": 20,
         "parallel_create_limit": 5,
         "replenish_threshold": 0.5,
+        "batch_delay": 5,
     },
     EnvMode.PRODUCTION: {
         "min_size": 100, 
-        "max_size": 1000,
+        "max_size": 300,
         "check_interval": 15,
         "parallel_create_limit": 10,
         "replenish_threshold": 0.7,
+        "batch_delay": 10,
     },
 }
 
@@ -43,6 +46,7 @@ class SandboxPoolConfig:
     max_age: int = 3600
     enabled: bool = True
     parallel_create_limit: int = 3
+    batch_delay: int = 10  # seconds to wait between batches to avoid rate limits
     
     @classmethod
     def from_env(cls) -> "SandboxPoolConfig":
@@ -52,8 +56,9 @@ class SandboxPoolConfig:
             replenish_threshold=float(os.getenv("SANDBOX_POOL_REPLENISH_THRESHOLD", str(_get_default("replenish_threshold")))),
             check_interval=int(os.getenv("SANDBOX_POOL_CHECK_INTERVAL", str(_get_default("check_interval")))),
             max_age=int(os.getenv("SANDBOX_POOL_MAX_AGE", "3600")),
-            enabled=os.getenv("SANDBOX_POOL_ENABLED", "true").lower() in ("true", "1", "yes"),
+            enabled=os.getenv("SANDBOX_POOL_ENABLED", "false").lower() in ("true", "1", "yes"),
             parallel_create_limit=int(os.getenv("SANDBOX_POOL_PARALLEL_CREATE", str(_get_default("parallel_create_limit")))),
+            batch_delay=int(os.getenv("SANDBOX_POOL_BATCH_DELAY", str(_get_default("batch_delay")))),
         )
     
     @property

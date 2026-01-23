@@ -2,10 +2,9 @@
 
 import * as React from 'react';
 import Link from 'next/link';
-import { Library, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search, Users } from 'lucide-react';
+import { Library, Menu, Plus, Zap, MessageCircle, PanelLeftOpen, PanelLeftClose, Search, Users, FolderOpen } from 'lucide-react';
 
 import { NavAgents } from '@/components/sidebar/nav-agents';
-import { NavAgentsView } from '@/components/sidebar/nav-agents-view';
 import { NavWorkers } from '@/components/sidebar/nav-workers';
 import { NavGlobalConfig } from '@/components/sidebar/nav-global-config';
 import { NavTriggerRuns } from '@/components/sidebar/nav-trigger-runs';
@@ -39,7 +38,6 @@ import posthog from 'posthog-js';
 import { useDocumentModalStore } from '@/stores/use-document-modal-store';
 import { isLocalMode } from '@/lib/config';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
-import { useThreads } from '@/hooks/threads/use-threads';
 
 import { getPlanIcon } from '@/components/billing/plan-utils';
 import { Kbd } from '../ui/kbd';
@@ -68,31 +66,29 @@ function FloatingMobileMenuButton() {
   const isMobile = useIsMobile();
   const pathname = usePathname();
 
-  // Don't show floating button on dashboard - it has its own inline menu button
+  // Don't show floating button on pages that have their own inline menu button:
+  // - Dashboard page
+  // - Thread pages (projects/*/thread/*)
+  // - Agent thread pages (agents/*/[threadId])
   const isDashboard = pathname === '/dashboard';
+  const isThreadPage = pathname?.includes('/thread/') || pathname?.match(/^\/agents\/[^/]+\/[^/]+$/);
+  const hasInlineMenu = isDashboard || isThreadPage;
 
-  if (!isMobile || openMobile || isDashboard) return null;
+  if (!isMobile || openMobile || hasInlineMenu) return null;
 
   return (
-    <div className="fixed top-6 left-6 z-50">
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            onClick={() => {
-              setOpen(true);
-              setOpenMobile(true);
-            }}
-            size="icon"
-            className="h-10 w-10 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 transition-all duration-200 hover:scale-105 active:scale-95 touch-manipulation"
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          Open menu
-        </TooltipContent>
-      </Tooltip>
+    <div className="fixed top-3 left-3 z-50 safe-area-top">
+      <Button
+        onClick={() => {
+          setOpen(true);
+          setOpenMobile(true);
+        }}
+        size="icon"
+        className="h-9 w-9 rounded-full bg-background/80 backdrop-blur-sm text-foreground border border-border shadow-md hover:bg-background transition-all duration-200 active:scale-95 touch-manipulation"
+        aria-label="Open menu"
+      >
+        <Menu className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -105,7 +101,7 @@ export function SidebarLeft({
   const isMobile = useIsMobile();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
-  const [activeView, setActiveView] = useState<'chats' | 'library' | 'workers' | 'starred'>('chats');
+  const [activeView, setActiveView] = useState<'chats' | 'workers' | 'starred'>('chats');
   const [showEnterpriseCard, setShowEnterpriseCard] = useState(true);
   const [user, setUser] = useState<{
     name: string;
@@ -125,65 +121,36 @@ export function SidebarLeft({
   const [showSearchModal, setShowSearchModal] = useState(false);
   const { isOpen: isDocumentModalOpen } = useDocumentModalStore();
 
-  // Fetch threads for navigation between library and chat
-  const { data: threadsData } = useThreads({ page: 1, limit: 200 });
-
-  // Extract projectId and threadId from current pathname
-  const { currentProjectId, currentThreadId, isOnLibrary, isOnThread } = useMemo(() => {
-    if (!pathname) return { currentProjectId: null, currentThreadId: null, isOnLibrary: false, isOnThread: false };
+  // Extract pathname info
+  const { isOnLibrary, isOnThread } = useMemo(() => {
+    if (!pathname) return { isOnLibrary: false, isOnThread: false };
     
-    // Match /library/{projectId}
-    const libraryMatch = pathname.match(/^\/library\/([^\/]+)/);
-    if (libraryMatch) {
-      return { currentProjectId: libraryMatch[1], currentThreadId: null, isOnLibrary: true, isOnThread: false };
+    // Match /files page
+    if (pathname === '/files') {
+      return { isOnLibrary: true, isOnThread: false };
     }
     
     // Match /projects/{projectId}/thread/{threadId}
     const threadMatch = pathname.match(/^\/projects\/([^\/]+)\/thread\/([^\/]+)/);
     if (threadMatch) {
-      return { currentProjectId: threadMatch[1], currentThreadId: threadMatch[2], isOnLibrary: false, isOnThread: true };
+      return { isOnLibrary: false, isOnThread: true };
     }
     
-    return { currentProjectId: null, currentThreadId: null, isOnLibrary: false, isOnThread: false };
+    return { isOnLibrary: false, isOnThread: false };
   }, [pathname]);
 
-  // Find thread for current project (for navigating from library to chat)
-  const threadForCurrentProject = useMemo(() => {
-    if (!currentProjectId || !threadsData?.threads) return null;
-    return threadsData.threads.find(t => t.project_id === currentProjectId);
-  }, [currentProjectId, threadsData]);
-
-  // Update active view based on pathname
+  // Update active view based on pathname (Files is independent, not a view)
   useEffect(() => {
     if (pathname?.includes('/triggers') || pathname?.includes('/knowledge')) {
       setActiveView('starred');
-    } else if (isOnLibrary) {
-      setActiveView('library');
     } else if (isOnThread) {
       setActiveView('chats');
     }
-  }, [pathname, isOnLibrary, isOnThread]);
+    // Note: isOnLibrary (/files page) does NOT change activeView - it's independent
+  }, [pathname, isOnThread]);
 
-  // Track if we're doing a library<->chat switch (to prevent sidebar collapse)
-  const [isLibraryChatSwitch, setIsLibraryChatSwitch] = useState(false);
-
-  // Handle view switching with navigation
-  const handleViewChange = (view: 'chats' | 'library' | 'workers' | 'starred') => {
-    // If switching to library while on a thread, navigate to that project's library
-    if (view === 'library' && isOnThread && currentProjectId) {
-      setIsLibraryChatSwitch(true);
-      router.push(`/library/${currentProjectId}`);
-      return;
-    }
-    
-    // If switching to chats while on library, navigate to that project's thread
-    if (view === 'chats' && isOnLibrary && currentProjectId && threadForCurrentProject) {
-      setIsLibraryChatSwitch(true);
-      router.push(`/projects/${currentProjectId}/thread/${threadForCurrentProject.thread_id}`);
-      return;
-    }
-    
-    // Otherwise just switch the view
+  // Handle view switching (Files is independent - just a link, not part of this)
+  const handleViewChange = (view: 'chats' | 'workers' | 'starred') => {
     setActiveView(view);
   };
 
@@ -196,14 +163,9 @@ export function SidebarLeft({
 
   useEffect(() => {
     if (isMobile) {
-      // Don't collapse sidebar when switching between library and chat
-      if (isLibraryChatSwitch) {
-        setIsLibraryChatSwitch(false);
-        return;
-      }
       setOpenMobile(false);
     }
-  }, [pathname, searchParams, isMobile, setOpenMobile, isLibraryChatSwitch]);
+  }, [pathname, searchParams, isMobile, setOpenMobile]);
 
 
   // Use React Query hook for admin role instead of direct fetch
@@ -380,6 +342,26 @@ export function SidebarLeft({
                 <Plus className="h-4 w-4" />
               </Link>
             </Button>
+            
+            {/* Files button */}
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn(
+                "h-10 w-10 p-0",
+                isOnLibrary && "bg-card border-[1.5px] border-border"
+              )}
+              asChild
+            >
+              <Link
+                href="/files"
+                onClick={() => {
+                  if (isMobile) setOpenMobile(false);
+                }}
+              >
+                <FolderOpen className="h-4 w-4" />
+              </Link>
+            </Button>
           </div>
           <div className="w-full flex flex-col items-center space-y-3">
             {[
@@ -446,6 +428,33 @@ export function SidebarLeft({
               </Button>
             </div>
 
+            {/* Files link */}
+            <div className="w-full">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn(
+                  "w-full shadow-none justify-start h-10 px-3 hover:text-foreground",
+                  isOnLibrary 
+                    ? "bg-card border-[1.5px] border-border text-foreground" 
+                    : "text-muted-foreground"
+                )}
+                asChild
+              >
+                <Link
+                  href="/files"
+                  onClick={() => {
+                    if (isMobile) setOpenMobile(false);
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <FolderOpen className="h-4 w-4" />
+                    Files
+                  </div>
+                </Link>
+              </Button>
+            </div>
+
             {/* State buttons horizontally */}
             <div className="flex justify-between items-center gap-2">
               {[
@@ -475,7 +484,6 @@ export function SidebarLeft({
           {/* Content area */}
           <div className="px-6 flex-1 overflow-hidden">
             {activeView === 'chats' && <NavAgents />}
-            {activeView === 'library' && <NavAgentsView />}
             {activeView === 'workers' && <NavWorkers />}
             {activeView === 'starred' && (
               <>

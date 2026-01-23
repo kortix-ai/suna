@@ -230,9 +230,9 @@ export function useAddMessage(
 
 export function useUnifiedAgentStart(
   options?: UseMutationOptions<
-    { thread_id: string; agent_run_id: string; status: string },
+    { thread_id: string; agent_run_id: string; project_id?: string; sandbox_id?: string; status: string },
     Error,
-    { threadId?: string; prompt?: string; files?: any[]; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
+    { threadId?: string; prompt?: string; files?: Array<{ uri: string; name: string; type: string }>; modelName?: string; agentId?: string; threadMetadata?: Record<string, any> }
   >
 ) {
   const queryClient = useQueryClient();
@@ -247,8 +247,15 @@ export function useUnifiedAgentStart(
       if (agentId) formData.append('agent_id', agentId);
       if (threadMetadata) formData.append('thread_metadata', JSON.stringify(threadMetadata));
       
-      if (files?.length) {
-        files.forEach((file) => formData.append('files', file as any));
+      // Append files if present (uploaded directly with agent start)
+      if (files && files.length > 0) {
+        for (const file of files) {
+          formData.append('files', {
+            uri: file.uri,
+            name: file.name,
+            type: file.type || 'application/octet-stream',
+          } as any);
+        }
       }
 
       const authHeaders = await getAuthHeaders();
@@ -360,6 +367,7 @@ export function useSendMessage(
         threadId: input.threadId,
         modelName: input.modelName,
         agentId: input.agentId,
+        files: input.files,
       });
 
       log.log('✅ [useSendMessage] Step 2 complete: Agent started', agentRun);

@@ -212,7 +212,13 @@ export function useAgentStream(
   const invalidateQueries = useCallback(() => {
     const keys = optionsRef.current.queryKeys || [];
     keys.forEach((key) => {
-      queryClient.invalidateQueries({ queryKey: Array.isArray(key) ? key : [key] });
+      const queryKey = Array.isArray(key) ? key : [key];
+      // Use refetchType: 'all' for threads/projects to ensure sidebar updates
+      const isThreadsOrProjects = queryKey[0] === 'threads' || queryKey[0] === 'projects';
+      queryClient.invalidateQueries({ 
+        queryKey,
+        refetchType: isThreadsOrProjects ? 'all' : 'active',
+      });
     });
   }, [queryClient]);
   
@@ -332,6 +338,12 @@ export function useAgentStream(
         break;
       
       case 'tool_result':
+        // Update tool call state with reconstructed tool calls (now including tool_result)
+        if (processed.toolCalls && processed.message) {
+          const updatedMessage = createMessageWithToolCalls(processed.message, processed.toolCalls);
+          // Use the callback to update tool view state (for immediate display)
+          callbacksRef.current.onToolCallChunk?.(updatedMessage);
+        }
         if (processed.message?.message_id) {
           callbacksRef.current.onMessage(streamMessageToUnifiedMessage(processed.message));
         }

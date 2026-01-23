@@ -53,7 +53,7 @@ class PromptManager:
             logger.debug(f"⏱️ [PROMPT TIMING] No MCP config in agent_config: 0.0ms")
         
         t3 = time.time()
-        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, fresh_mcp_config)
+        system_content = await PromptManager._append_mcp_tools_info(system_content, agent_config, mcp_wrapper_instance, fresh_mcp_config, xml_tool_calling)
         logger.debug(f"⏱️ [PROMPT TIMING] _append_mcp_tools_info: {(time.time() - t3) * 1000:.1f}ms")
         
         t4 = time.time()
@@ -239,7 +239,7 @@ class PromptManager:
     
     @staticmethod
     async def _append_mcp_tools_info(system_content: str, agent_config: Optional[dict], mcp_wrapper_instance: Optional[MCPToolWrapper], 
-                                     fresh_mcp_config: Optional[dict] = None) -> str:
+                                     fresh_mcp_config: Optional[dict] = None, xml_tool_calling: bool = False) -> str:
         if fresh_mcp_config:
             logger.debug(f"🔄 [MCP PROMPT] Using fresh MCP config: {len(fresh_mcp_config.get('configured_mcps', []))} configured, {len(fresh_mcp_config.get('custom_mcp', []))} custom")
             agent_config = {
@@ -250,17 +250,24 @@ class PromptManager:
         if not (agent_config and (agent_config.get('configured_mcps') or agent_config.get('custom_mcps')) and mcp_wrapper_instance and mcp_wrapper_instance._initialized):
             return system_content
         
-        mcp_info = "\n\n--- MCP Tools Available ---\n"
-        mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n"
-        mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
-        mcp_info += '<function_calls>\n'
-        mcp_info += '<invoke name="{tool_name}">\n'
-        mcp_info += '<parameter name="param1">value1</parameter>\n'
-        mcp_info += '<parameter name="param2">value2</parameter>\n'
-        mcp_info += '</invoke>\n'
-        mcp_info += '</function_calls>\n\n'
+        mcp_info = "\n\n<mcp_tools>\n"
+        mcp_info += "You have access to external MCP (Model Context Protocol) server tools.\n\n"
         
-        mcp_info += "Available MCP tools:\n"
+        # Only add XML format instructions if xml_tool_calling is enabled
+        # When native tool calling is enabled, the tools are available via the API and
+        # adding XML instructions would confuse the model into producing hybrid output
+        if xml_tool_calling:
+            mcp_info += "MCP tools can be called directly using their native function names in the standard function calling format:\n"
+            mcp_info += '<function_calls>\n'
+            mcp_info += '<invoke name="{tool_name}">\n'
+            mcp_info += '<parameter name="param1">value1</parameter>\n'
+            mcp_info += '<parameter name="param2">value2</parameter>\n'
+            mcp_info += '</invoke>\n'
+            mcp_info += '</function_calls>\n\n'
+        else:
+            mcp_info += "MCP tools can be called directly using their native function names.\n\n"
+        
+        mcp_info += "<available_tools>\n"
         try:
             registered_schemas = mcp_wrapper_instance.get_schemas()
             for method_name, schema_list in registered_schemas.items():
@@ -279,18 +286,18 @@ class PromptManager:
             logger.error(f"Error listing MCP tools: {e}")
             mcp_info += "- Error loading MCP tool list\n"
         
-        mcp_info += "\n🚨 CRITICAL MCP TOOL RESULT INSTRUCTIONS 🚨\n"
-        mcp_info += "When you use ANY MCP (Model Context Protocol) tools:\n"
-        mcp_info += "1. ALWAYS read and use the EXACT results returned by the MCP tool\n"
-        mcp_info += "2. For search tools: ONLY cite URLs, sources, and information from the actual search results\n"
-        mcp_info += "3. For any tool: Base your response entirely on the tool's output - do NOT add external information\n"
-        mcp_info += "4. DO NOT fabricate, invent, hallucinate, or make up any sources, URLs, or data\n"
-        mcp_info += "5. If you need more information, call the MCP tool again with different parameters\n"
-        mcp_info += "6. When writing reports/summaries: Reference ONLY the data from MCP tool results\n"
-        mcp_info += "7. If the MCP tool doesn't return enough information, explicitly state this limitation\n"
-        mcp_info += "8. Always double-check that every fact, URL, and reference comes from the MCP tool output\n"
-        mcp_info += "\nIMPORTANT: MCP tool results are your PRIMARY and ONLY source of truth for external data!\n"
-        mcp_info += "NEVER supplement MCP results with your training data or make assumptions beyond what the tools provide.\n"
+        mcp_info += "</available_tools>\n\n"
+        mcp_info += "<mcp_usage_rules>\n"
+        mcp_info += "When using MCP tools:\n"
+        mcp_info += "1. ALWAYS use the EXACT results returned by the MCP tool\n"
+        mcp_info += "2. ONLY cite URLs, sources, and information from actual tool results\n"
+        mcp_info += "3. Base responses entirely on tool output - do NOT add external information\n"
+        mcp_info += "4. DO NOT fabricate, hallucinate, or make up any sources, URLs, or data\n"
+        mcp_info += "5. If more information needed, call the tool again with different parameters\n"
+        mcp_info += "6. If the tool doesn't return enough information, explicitly state this limitation\n"
+        mcp_info += "7. MCP tool results are your PRIMARY source of truth for external data\n"
+        mcp_info += "</mcp_usage_rules>\n"
+        mcp_info += "</mcp_tools>"
         
         return system_content + mcp_info
     
@@ -346,35 +353,36 @@ class PromptManager:
         
         total_tools = sum(len(tools) for tools in toolkit_tools.values())
         
-        mcp_jit_info = "\n\n--- EXTERNAL MCP TOOLS ---\n"
-        mcp_jit_info += f"🔥 You have {total_tools} external MCP tools from {len(toolkit_tools)} connected services.\n"
-        mcp_jit_info += "⚡ TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
-        mcp_jit_info += "🎯 DISCOVERY: use discover_mcp_tools with filter parameter \"TOOL1,TOOL2,TOOL3\"\n"
-        mcp_jit_info += "🎯 EXECUTION: use execute_mcp_tool with tool_name parameter and args parameter\n\n"
+        mcp_jit_info = "\n\n<external_mcp_tools>\n"
+        mcp_jit_info += f"You have {total_tools} external MCP tools from {len(toolkit_tools)} connected services.\n\n"
+        mcp_jit_info += "<workflow>\n"
+        mcp_jit_info += "TWO-STEP WORKFLOW: (1) discover_mcp_tools → (2) execute_mcp_tool\n"
+        mcp_jit_info += "- DISCOVERY: discover_mcp_tools with filter=\"TOOL1,TOOL2,TOOL3\"\n"
+        mcp_jit_info += "- EXECUTION: execute_mcp_tool with tool_name and args parameters\n"
+        mcp_jit_info += "</workflow>\n\n"
         
+        mcp_jit_info += "<available_services>\n"
         for toolkit, tools in toolkit_tools.items():
             display_name = toolkit.replace('_', ' ').title()
-            mcp_jit_info += f"**{display_name} Functions**: {', '.join(tools)}\n"
+            mcp_jit_info += f"**{display_name}**: {', '.join(tools)}\n"
+        mcp_jit_info += "</available_services>\n\n"
         
-        mcp_jit_info += "\n🎯 **SMART BATCH DISCOVERY:**\n\n"
-        mcp_jit_info += "**STEP 1: Check conversation history**\n"
-        mcp_jit_info += "- Are the tool schemas already in this conversation? → Skip to execution!\n"
-        mcp_jit_info += "- Not in history? → Discover ALL needed tools in ONE batch call\n\n"
-        mcp_jit_info += "**✅ CORRECT - Batch Discovery:**\n"
-        mcp_jit_info += "use discover_mcp_tools with filter parameter \"NOTION_CREATE_PAGE,NOTION_APPEND_BLOCK,NOTION_SEARCH\"\n"
-        mcp_jit_info += "→ Returns: All 3 schemas in ONE call\n"
-        mcp_jit_info += "→ Schemas cached in conversation forever\n"
-        mcp_jit_info += "→ NEVER discover these tools again!\n\n"
-        mcp_jit_info += "**❌ WRONG - Multiple Discoveries:**\n"
-        mcp_jit_info += "Never call discover 3 times for 3 tools - batch them!\n\n"
-        mcp_jit_info += "**STEP 2: Execute tools with schemas:**\n"
-        mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_CREATE_PAGE\" and args parameter\n"
-        mcp_jit_info += "use execute_mcp_tool with tool_name \"NOTION_APPEND_BLOCK\" and args parameter\n\n"
-        mcp_jit_info += "⛔ **CRITICAL RULES**:\n"
-        mcp_jit_info += "1. Analyze task → Identify ALL tools → Discover ALL in ONE call\n"
-        mcp_jit_info += "2. NEVER discover one-by-one (always batch!)\n"
+        mcp_jit_info += "<batch_discovery>\n"
+        mcp_jit_info += "SMART DISCOVERY - Always batch multiple tool discoveries:\n\n"
+        mcp_jit_info += "1. Check if tool schemas already in conversation → Skip to execution\n"
+        mcp_jit_info += "2. If not in history → Discover ALL needed tools in ONE batch call\n\n"
+        mcp_jit_info += "CORRECT: discover_mcp_tools(filter=\"TOOL1,TOOL2,TOOL3\") - ONE call for all\n"
+        mcp_jit_info += "WRONG: Three separate discover calls - never do this!\n\n"
+        mcp_jit_info += "After discovery, execute with: execute_mcp_tool(tool_name=\"TOOL1\", args={...})\n"
+        mcp_jit_info += "</batch_discovery>\n\n"
+        
+        mcp_jit_info += "<critical_rules>\n"
+        mcp_jit_info += "1. Analyze task → Identify ALL needed tools → Discover ALL in ONE call\n"
+        mcp_jit_info += "2. NEVER discover one-by-one (always batch)\n"
         mcp_jit_info += "3. NEVER re-discover tools already in conversation history\n"
-        mcp_jit_info += "4. Check history first - if schemas exist, skip directly to execute_mcp_tool!\n\n"
+        mcp_jit_info += "4. Check history first - if schemas exist, skip to execute_mcp_tool\n"
+        mcp_jit_info += "</critical_rules>\n"
+        mcp_jit_info += "</external_mcp_tools>"
         
         logger.info(f"⚡ [MCP PROMPT] Appended MCP info ({len(mcp_jit_info)} chars) for {len(toolkit_tools)} toolkits, {total_tools} total tools")
         return system_content + mcp_jit_info
@@ -393,14 +401,14 @@ class PromptManager:
         
         examples_content = f"""
 
-In this environment you have access to a set of tools you can use to answer the user's question.
+<xml_tool_calling>
+In this environment you have access to a set of tools you can use to complete the user's request.
 
-You can invoke functions by writing a <function_calls> block like the following as part of your reply to the user:
+You can invoke functions by writing a <function_calls> block as part of your reply:
 
 <function_calls>
 <invoke name="function_name">
 <parameter name="param_name">param_value</parameter>
-...
 </invoke>
 </function_calls>
 
@@ -412,48 +420,66 @@ Here are the functions available in JSON Schema format:
 {schemas_json}
 ```
 
-When using the tools:
-- Use the exact function names from the JSON schema above
-- Include all required parameters as specified in the schema
-- Format complex data (objects, arrays) as JSON strings within the parameter tags
-- Boolean values should be "true" or "false" (lowercase)
+<tool_call_rules>
+1. Follow the tool call schema exactly as specified
+2. Provide ALL required parameters - never guess or use placeholders
+3. Format complex data (objects, arrays) as JSON strings within parameter tags
+4. Boolean values: "true" or "false" (lowercase strings)
+5. If multiple independent tool calls are needed, include them ALL in ONE <function_calls> block for parallel execution
+</tool_call_rules>
 
-CRITICAL: STOP SEQUENCE
-After completing your tool calls, you MUST output the special stop token: |||STOP_AGENT|||
+<maximize_parallel_calls>
+When you need to perform multiple independent operations, invoke ALL relevant tools simultaneously rather than sequentially. This maximizes efficiency.
 
-This token tells the system you are done and ready for tool execution. The system will AUTOMATICALLY STOP generation when it sees this token.
+CORRECT - Parallel execution:
+<function_calls>
+<invoke name="read_file"><parameter name="file_path">file1.py</parameter></invoke>
+<invoke name="read_file"><parameter name="file_path">file2.py</parameter></invoke>
+<invoke name="read_file"><parameter name="file_path">file3.py</parameter></invoke>
+</function_calls>
 
-RULES FOR TOOL CALLING:
+WRONG - Sequential (wasteful):
+[calls read_file for file1]
+[waits for result]
+[calls read_file for file2]
+[waits for result]
+...
+</maximize_parallel_calls>
+
+<stop_sequence>
+CRITICAL: After completing your tool calls, you MUST output the stop token: |||STOP_AGENT|||
+
+This signals the system that you are ready for tool execution.
+
+RULES:
 1. Generate ONLY ONE <function_calls> block per response
-2. Each <function_calls> block can contain multiple <invoke> tags for parallel tool execution
-3. IMPORTANT: Tool execution ONLY happens when you output the |||STOP_AGENT||| stop sequence
-4. IMMEDIATELY after </function_calls>, output: |||STOP_AGENT|||
-5. NEVER write anything after |||STOP_AGENT|||
-6. Do NOT continue the conversation after this token
-7. Do NOT simulate tool results or user responses
+2. IMMEDIATELY after </function_calls>, output: |||STOP_AGENT|||
+3. NEVER write anything after |||STOP_AGENT|||
+4. Do NOT continue the conversation or simulate results after this token
+</stop_sequence>
 
-Example of correct tool call format (single block):
+<examples>
+Single tool call:
 <function_calls>
-<invoke name="example_tool">
-<parameter name="param1">value1</parameter>
+<invoke name="execute_command">
+<parameter name="command">ls -la</parameter>
 </invoke>
 </function_calls>
 |||STOP_AGENT|||
 
-[Generation stops here automatically - do not continue]
-
-Example of correct tool call format (multiple invokes in one block):
+Multiple parallel tool calls:
 <function_calls>
-<invoke name="tool1">
-<parameter name="param1">value1</parameter>
+<invoke name="web_search">
+<parameter name="query">["topic 1", "topic 2", "topic 3"]</parameter>
+<parameter name="num_results">5</parameter>
 </invoke>
-<invoke name="tool2">
-<parameter name="param2">value2</parameter>
+<invoke name="read_file">
+<parameter name="file_path">config.json</parameter>
 </invoke>
 </function_calls>
 |||STOP_AGENT|||
-
-[Generation stops here automatically - do not continue]
+</examples>
+</xml_tool_calling>
 """
         
         logger.debug("Appended XML tool examples to system prompt")
@@ -462,12 +488,14 @@ Example of correct tool call format (multiple invokes in one block):
     @staticmethod
     def _append_datetime_info(system_content: str) -> str:
         now = datetime.datetime.now(datetime.timezone.utc)
-        datetime_info = f"\n\n=== CURRENT DATE/TIME INFORMATION ===\n"
+        datetime_info = f"\n\n<current_datetime>\n"
         datetime_info += f"Today's date: {now.strftime('%A, %B %d, %Y')}\n"
         datetime_info += f"Current year: {now.strftime('%Y')}\n"
         datetime_info += f"Current month: {now.strftime('%B')}\n"
         datetime_info += f"Current day: {now.strftime('%A')}\n"
-        datetime_info += "Use this information for any time-sensitive tasks, research, or when current date/time context is needed.\n"
+        datetime_info += f"Current time (UTC): {now.strftime('%H:%M:%S')}\n"
+        datetime_info += "Use this for time-sensitive tasks, research, and when current date/time context is needed.\n"
+        datetime_info += "</current_datetime>"
         
         return system_content + datetime_info
     
@@ -525,9 +553,10 @@ Example of correct tool call format (multiple invokes in one block):
             logger.debug(f"Added locale context ({locale}) to system prompt for user {user_id}")
         
         if username:
-            username_info = f"\n\n=== USER INFORMATION ===\n"
+            username_info = f"\n\n<user_info>\n"
             username_info += f"The user's name is: {username}\n"
-            username_info += "Use this information to personalize your responses and address the user appropriately.\n"
+            username_info += "Use this to personalize responses and address the user appropriately.\n"
+            username_info += "</user_info>"
             context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
         

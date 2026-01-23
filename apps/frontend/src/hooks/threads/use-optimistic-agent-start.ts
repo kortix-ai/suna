@@ -11,8 +11,10 @@ import {
   BillingError, 
   AgentRunLimitError, 
   ProjectLimitError, 
-  ThreadLimitError 
+  ThreadLimitError,
+  formatTierErrorForUI
 } from '@/lib/api/errors';
+import { isTierRestrictionError } from '@agentpress/shared/errors';
 import { useOptimisticFilesStore } from '@/stores/optimistic-files-store';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { normalizeFilenameToNFC } from '@agentpress/shared';
@@ -23,13 +25,14 @@ import {
 
 export interface OptimisticAgentStartOptions {
   message: string;
-  fileIds?: string[];
   modelName?: string;
   agentId?: string;
   /** Mode starter to pass as query param (e.g., 'presentation') */
   modeStarter?: string;
   /** Mode for backend context (slides, sheets, docs, canvas, video, research) */
   mode?: string;
+  /** Files to upload with the agent start */
+  files?: File[];
 }
 
 export interface OptimisticAgentStartResult {
@@ -41,6 +44,13 @@ export interface OptimisticAgentStartResult {
 export interface AgentLimitInfo {
   runningCount: number;
   runningThreadIds: string[];
+}
+
+export interface UseOptimisticAgentStartOptions {
+  /** Path to redirect to on error (e.g., '/dashboard' or '/') */
+  redirectOnError?: string;
+  /** Callback when a background error occurs (e.g., billing limit) - useful for resetting parent loading states */
+  onBackgroundError?: () => void;
 }
 
 export interface UseOptimisticAgentStartReturn {
@@ -62,11 +72,16 @@ export interface UseOptimisticAgentStartReturn {
  * - Calling the backend API
  * - Handling errors uniformly (billing, limits, etc.)
  * 
- * @param redirectOnError - Path to redirect to on error (e.g., '/dashboard' or '/')
+ * @param options - Configuration options for the hook
  */
 export function useOptimisticAgentStart(
-  redirectOnError: string = '/dashboard'
+  options: UseOptimisticAgentStartOptions | string = {}
 ): UseOptimisticAgentStartReturn {
+  // Support legacy string argument for backwards compatibility
+  const normalizedOptions = typeof options === 'string'
+    ? { redirectOnError: options }
+    : options;
+  const { redirectOnError = '/dashboard', onBackgroundError } = normalizedOptions;
   const router = useRouter();
   const queryClient = useQueryClient();
   const tBilling = useTranslations('billing');
@@ -83,72 +98,43 @@ export function useOptimisticAgentStart(
     setShowAgentLimitBanner(false);
   }, []);
 
-  const handleBillingError = useCallback((error: BillingError) => {
-    const errorMessage = error.detail?.message?.toLowerCase() || error.message?.toLowerCase() || '';
-    const originalMessage = error.detail?.message || error.message || '';
-    const isCreditsExhausted = 
-      errorMessage.includes('credit') ||
-      errorMessage.includes('balance') ||
-      errorMessage.includes('insufficient') ||
-      errorMessage.includes('out of credits') ||
-      errorMessage.includes('no credits');
-    
-    const balanceMatch = originalMessage.match(/balance is (-?\d+)\s*credits/i);
-    const balance = balanceMatch ? balanceMatch[1] : null;
-    
-    const alertTitle = isCreditsExhausted 
-      ? 'You ran out of credits'
-      : 'Pick the plan that works for you';
-    
-    const alertSubtitle = balance 
-      ? `Your current balance is ${balance} credits. Upgrade your plan to continue.`
-      : isCreditsExhausted 
-        ? 'Upgrade your plan to get more credits and continue using the AI assistant.'
-        : undefined;
-    
-    router.replace(redirectOnError);
-    pricingModalStore.openPricingModal({ 
-      isAlert: true,
-      alertTitle,
-      alertSubtitle
-    });
-  }, [router, redirectOnError, pricingModalStore]);
+  // Unified handler for all tier restriction errors using shared formatting
+  const handleTierError = useCallback((error: any) => {
+    const errorUI = formatTierErrorForUI(error);
+    if (errorUI) {
+      router.replace(redirectOnError);
+      pricingModalStore.openPricingModal({
+        isAlert: true,
+        alertTitle: errorUI.alertTitle,
+        alertSubtitle: errorUI.alertSubtitle
+      });
+      // Notify parent to reset loading states
+      onBackgroundError?.();
+    }
+  }, [router, redirectOnError, pricingModalStore, onBackgroundError]);
 
+  // Special handler for AgentRunLimitError (needs banner, not just modal)
   const handleAgentRunLimitError = useCallback((error: AgentRunLimitError) => {
     console.log('[OptimisticAgentStart] Caught AgentRunLimitError');
     const { running_thread_ids, running_count } = error.detail;
+    // Notify parent to reset loading states
+    onBackgroundError?.();
     setAgentLimitData({
       runningCount: running_count,
       runningThreadIds: running_thread_ids,
     });
     setShowAgentLimitBanner(true);
     router.replace(redirectOnError);
-  }, [router, redirectOnError]);
-
-  const handleProjectLimitError = useCallback((error: ProjectLimitError) => {
-    router.replace(redirectOnError);
-    pricingModalStore.openPricingModal({ 
-      isAlert: true,
-      alertTitle: `${tBilling('reachedLimit')} ${tBilling('projectLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-    });
-  }, [router, redirectOnError, pricingModalStore, tBilling]);
-
-  const handleThreadLimitError = useCallback((error: ThreadLimitError) => {
-    router.replace(redirectOnError);
-    pricingModalStore.openPricingModal({ 
-      isAlert: true,
-      alertTitle: `${tBilling('reachedLimit')} ${tBilling('threadLimit', { current: error.detail.current_count, limit: error.detail.limit })}` 
-    });
-  }, [router, redirectOnError, pricingModalStore, tBilling]);
+  }, [router, redirectOnError, onBackgroundError]);
 
   const startAgent = useCallback(async (
     options: OptimisticAgentStartOptions
   ): Promise<OptimisticAgentStartResult | null> => {
-    const { message, fileIds = [], modelName, agentId, modeStarter, mode } = options;
+    const { message, modelName, agentId, modeStarter, mode, files } = options;
     
     const trimmedMessage = message.trim();
-    if (!trimmedMessage && fileIds.length === 0) {
-      toast.error('Please enter a message or attach files');
+    if (!trimmedMessage) {
+      toast.error('Please enter a message');
       return null;
     }
 
@@ -165,7 +151,6 @@ export function useOptimisticAgentStart(
         threadId,
         projectId,
         prompt: message,
-        fileIds: fileIds.length > 0 ? fileIds : undefined,
         modelName,
         agentId: agentId || undefined,
         mode,
@@ -181,7 +166,6 @@ export function useOptimisticAgentStart(
           model_name: modelName,
           promptLength: message.length,
           promptPreview: message.slice(0, 140),
-          fileIds: fileIds.length,
         });
       }
 
@@ -196,10 +180,10 @@ export function useOptimisticAgentStart(
         thread_id: threadId,
         project_id: projectId,
         prompt: message,
-        file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: modelName,
         agent_id: agentId || undefined,
         mode: mode,
+        files: files,
       }).then(async (response) => {
         console.log('[OptimisticAgentStart] API succeeded, response:', response);
         
@@ -233,14 +217,19 @@ export function useOptimisticAgentStart(
           sessionStorage.setItem('optimistic_agent_run_thread', threadId);
         }
         
-        // Invalidate all relevant queries so the thread page picks up the new data
-        queryClient.invalidateQueries({ queryKey: ['threads', 'list'] });
-        queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] });
-        // Also invalidate the thread-specific queries
-        queryClient.invalidateQueries({ queryKey: ['thread', threadId] });
-        queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'agent-runs'] });
-        queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'messages'] });
-        queryClient.invalidateQueries({ queryKey: ['project', projectId] });
+        // Invalidate all relevant queries so the sidebar and thread page pick up the new data
+        // Use 'threads' prefix to match ALL threads queries (lists, paginated, etc.)
+        // refetchType: 'all' ensures even inactive queries are refetched
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: ['threads'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['projects'], refetchType: 'all' }),
+          queryClient.invalidateQueries({ queryKey: ['active-agent-runs'] }),
+          // Also invalidate the thread-specific queries
+          queryClient.invalidateQueries({ queryKey: ['thread', threadId] }),
+          queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'agent-runs'] }),
+          queryClient.invalidateQueries({ queryKey: ['thread', threadId, 'messages'] }),
+          queryClient.invalidateQueries({ queryKey: ['project', projectId] }),
+        ]);
         // Reset starting state
         setIsStarting(false);
       }).catch((error) => {
@@ -249,34 +238,24 @@ export function useOptimisticAgentStart(
         
         // Clear pending intent on billing/limit errors (user action required)
         // Keep it for network errors so retry can happen
-        const isBillingOrLimitError = 
-          error instanceof BillingError || 
-          error?.status === 402 ||
-          error instanceof AgentRunLimitError ||
-          error instanceof ProjectLimitError ||
-          error instanceof ThreadLimitError ||
-          error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED';
-        
-        if (isBillingOrLimitError) {
+        if (isTierRestrictionError(error)) {
           localStorage.removeItem('pending_thread_intent');
         }
         
-        if (error instanceof BillingError || error?.status === 402) {
-          handleBillingError(error as BillingError);
-          return;
-        }
-        
+        // Handle AgentRunLimitError first (needs special banner handling)
         if (error instanceof AgentRunLimitError) {
           handleAgentRunLimitError(error);
           return;
         }
         
-        // Check for error code in case instanceof check fails
+        // Check for error code in case instanceof check fails (fallback for AgentRunLimitError)
         if (error?.detail?.error_code === 'AGENT_RUN_LIMIT_EXCEEDED' || 
             error?.code === 'AGENT_RUN_LIMIT_EXCEEDED' ||
             (error?.status === 402 && error?.detail?.running_count !== undefined)) {
           const running_thread_ids = error.detail?.running_thread_ids || [];
           const running_count = error.detail?.running_count || 0;
+          // Notify parent to reset loading states
+          onBackgroundError?.();
           setAgentLimitData({
             runningCount: running_count,
             runningThreadIds: running_thread_ids,
@@ -286,13 +265,9 @@ export function useOptimisticAgentStart(
           return;
         }
         
-        if (error instanceof ProjectLimitError) {
-          handleProjectLimitError(error);
-          return;
-        }
-        
-        if (error instanceof ThreadLimitError) {
-          handleThreadLimitError(error);
+        // Handle all other tier restriction errors using shared formatting
+        if (isTierRestrictionError(error)) {
+          handleTierError(error);
           return;
         }
         
@@ -309,14 +284,12 @@ export function useOptimisticAgentStart(
       sessionStorage.removeItem('optimistic_files');
       sessionStorage.removeItem('optimistic_file_previews');
       
-      if (error instanceof BillingError) {
-        handleBillingError(error);
-      } else if (error instanceof AgentRunLimitError) {
+      // Handle AgentRunLimitError first (needs special banner handling)
+      if (error instanceof AgentRunLimitError) {
         handleAgentRunLimitError(error);
-      } else if (error instanceof ProjectLimitError) {
-        handleProjectLimitError(error);
-      } else if (error instanceof ThreadLimitError) {
-        handleThreadLimitError(error);
+      } else if (isTierRestrictionError(error)) {
+        // Handle all other tier restriction errors using shared formatting
+        handleTierError(error);
       } else {
         toast.error(error.message || 'Failed to create Worker. Please try again.');
       }
@@ -328,10 +301,9 @@ export function useOptimisticAgentStart(
     router,
     queryClient,
     redirectOnError,
-    handleBillingError,
+    handleTierError,
     handleAgentRunLimitError,
-    handleProjectLimitError,
-    handleThreadLimitError,
+    onBackgroundError,
   ]);
 
   return {

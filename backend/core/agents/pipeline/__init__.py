@@ -1,4 +1,4 @@
-from core.agents.pipeline.coordinator import PipelineCoordinator
+from core.agents.pipeline.stateless import StatelessCoordinator
 from core.agents.pipeline.context import PipelineContext, PrepResult
 from core.agents.pipeline.task_registry import TaskRegistry
 from core.agents.pipeline.slot_manager import (
@@ -21,7 +21,7 @@ from core.agents.pipeline.time_estimator import TimeEstimator, time_estimator
 from core.agents.pipeline.error_mapping import ErrorMapper, error_mapper
 
 __all__ = [
-    'PipelineCoordinator',
+    'StatelessCoordinator',
     'PipelineContext',
     'PrepResult',
     'TaskRegistry',

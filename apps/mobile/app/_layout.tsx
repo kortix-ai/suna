@@ -263,11 +263,11 @@ export default function RootLayout() {
         scheme: parsedUrl.scheme,
       });
 
-      // Check for universal links (https://kortix.com/share/xxx or https://staging.suna.so/share/xxx)
+      // Check for universal links (https://kortix.com/share/xxx or https://staging.kortix.com/share/xxx)
       const isUniversalLink = parsedUrl.scheme === 'https' &&
         (parsedUrl.hostname === 'kortix.com' ||
           parsedUrl.hostname === 'www.kortix.com' ||
-          parsedUrl.hostname === 'staging.suna.so');
+          parsedUrl.hostname === 'staging.kortix.com');
 
       // Handle universal link share paths first
       if (isUniversalLink && parsedUrl.path?.startsWith('/share/')) {

@@ -104,7 +104,9 @@ class ConversionFunnel(BaseModel):
     visitors: int
     signups: int
     subscriptions: int
-    subscriber_emails: List[str]  # Emails of new paid subscribers for this date
+    # Breakdown by platform (clickable to see emails)
+    web_subscriber_emails: List[str] = []
+    app_subscriber_emails: List[str] = []
     visitor_to_signup_rate: float
     signup_to_subscription_rate: float
     overall_conversion_rate: float
@@ -1281,25 +1283,22 @@ async def get_conversion_funnel(
                 _fetch_revenuecat_revenue(client, range_start_utc, range_end_utc)
             )
 
-            # Collect unique paying customers
-            all_emails: List[str] = []
+            # Collect unique paying customers by platform
+            # Stripe (web): get emails from user_emails dict
+            stripe_emails_dict = stripe_data.get('user_emails', {})
+            web_emails = sorted(set([email for email in stripe_emails_dict.values() if email]))
 
-            # Stripe: get emails from user_emails dict
-            stripe_emails = stripe_data.get('user_emails', {})
-            all_emails.extend([email for email in stripe_emails.values() if email])
+            # RevenueCat (app): emails already fetched via RPC
+            rc_emails_list = rc_data.get('user_emails', [])
+            app_emails = sorted(set([email for email in rc_emails_list if email]))
 
-            # RevenueCat: emails already fetched via RPC
-            rc_emails = rc_data.get('user_emails', [])
-            all_emails.extend([email for email in rc_emails if email])
-
-            # Deduplicate and sort
-            unique_emails = sorted(set(all_emails))
+            # Combined (deduplicated)
+            all_emails = sorted(set(web_emails + app_emails))
 
             return {
-                'count': len(unique_emails),
-                'emails': unique_emails,
-                'web_count': stripe_data.get('payment_count', 0),
-                'app_count': rc_data.get('payment_count', 0),
+                'count': len(all_emails),
+                'web_emails': web_emails,
+                'app_emails': app_emails,
             }
 
         # Execute all queries in parallel
@@ -1311,7 +1310,8 @@ async def get_conversion_funnel(
 
         # Extract count and emails from subs_result
         subscriptions = subs_result['count']
-        subscriber_emails = subs_result['emails']
+        web_subscriber_emails = subs_result['web_emails']
+        app_subscriber_emails = subs_result['app_emails']
 
         # Calculate conversion rates
         visitor_to_signup = (signups / visitors * 100) if visitors > 0 else 0
@@ -1322,7 +1322,8 @@ async def get_conversion_funnel(
             visitors=visitors,
             signups=signups,
             subscriptions=subscriptions,
-            subscriber_emails=subscriber_emails,
+            web_subscriber_emails=web_subscriber_emails,
+            app_subscriber_emails=app_subscriber_emails,
             visitor_to_signup_rate=round(visitor_to_signup, 2),
             signup_to_subscription_rate=round(signup_to_sub, 2),
             overall_conversion_rate=round(overall, 2),
@@ -2313,6 +2314,7 @@ class TierProfitability(BaseModel):
     provider: str  # 'stripe' or 'revenuecat'
     payment_count: int  # Number of payments in the period
     unique_users: int  # Unique paying users
+    usage_users: int  # Users with LLM usage (from credit_ledger)
     total_revenue: float  # Actual revenue from payments
     total_cost: float  # Sum of LLM usage costs (what we charge users)
     total_actual_cost: float  # Actual LLM costs (before markup)
@@ -2352,6 +2354,10 @@ class ProfitabilitySummary(BaseModel):
     unique_active_users: int   # Users who had usage in this period (including free)
     paying_user_emails: List[str] = []  # Emails of paying users (clickable)
 
+    total_active_subscriptions: int = 0
+    stripe_active_subscriptions: int = 0
+    revenuecat_active_subscriptions: int = 0
+
     # Meta
     period_start: str
     period_end: str
@@ -2381,7 +2387,9 @@ class TaskPerformance(BaseModel):
     running_runs: int
     pending_runs: int  # Not started yet
     success_rate: float  # percentage: completed / (completed + failed + stopped)
-    avg_duration_seconds: Optional[float] = None
+    avg_duration_seconds: Optional[float] = None  # Excludes stuck tasks (> 1hr)
+    avg_duration_with_stuck_seconds: Optional[float] = None  # Includes all tasks
+    stuck_task_count: int = 0  # Tasks with duration > 1hr (likely stuck)
     runs_by_status: Dict[str, int]
 
 
@@ -2554,10 +2562,12 @@ async def get_engagement_summary(
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
 
-        range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        range_end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
-        week_start = end_date.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=6)
-        month_start = end_date.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=29)
+        # Use UTC for all queries to align with profitability/usage metrics
+        UTC = ZoneInfo('UTC')
+        range_start = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC)
+        range_end = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC)
+        week_start = datetime(end_date.year, end_date.month, end_date.day, 0, 0, 0, tzinfo=UTC) - timedelta(days=6)
+        month_start = datetime(end_date.year, end_date.month, end_date.day, 0, 0, 0, tzinfo=UTC) - timedelta(days=29)
 
         # Use RPC for efficient COUNT(DISTINCT) queries
         # Pass the range start/end for DAU calculation
@@ -2611,6 +2621,9 @@ async def get_task_performance(
 ) -> TaskPerformance:
     """
     Get task/agent run performance metrics for a date range.
+
+    Returns both avg_duration_seconds (excluding stuck tasks >1hr) and
+    avg_duration_with_stuck_seconds (including all) for frontend toggle.
     """
     try:
         db = DBConnection()
@@ -2619,8 +2632,10 @@ async def get_task_performance(
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
 
-        range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        range_end = end_date.replace(hour=23, minute=59, second=59, microsecond=999999)
+        # Use UTC for all queries to align with profitability/usage metrics
+        UTC = ZoneInfo('UTC')
+        range_start = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC)
+        range_end = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC)
 
         # Use RPC for aggregation - don't fetch rows in Python
         result = await client.rpc('get_task_performance', {
@@ -2637,10 +2652,14 @@ async def get_task_performance(
             running_runs = data.get('running_runs', 0) or 0
             pending_runs = data.get('pending_runs', 0) or 0
             avg_duration = data.get('avg_duration_seconds')
+            avg_duration_with_stuck = data.get('avg_duration_with_stuck_seconds')
+            stuck_task_count = data.get('stuck_task_count', 0) or 0
             runs_by_status = data.get('runs_by_status', {}) or {}
         else:
             total_runs = completed_runs = failed_runs = stopped_runs = running_runs = pending_runs = 0
             avg_duration = None
+            avg_duration_with_stuck = None
+            stuck_task_count = 0
             runs_by_status = {}
         
         # Success rate: completed / (completed + failed + stopped)
@@ -2656,6 +2675,8 @@ async def get_task_performance(
             pending_runs=pending_runs,
             success_rate=round(success_rate, 1),
             avg_duration_seconds=round(avg_duration, 1) if avg_duration else None,
+            avg_duration_with_stuck_seconds=round(avg_duration_with_stuck, 1) if avg_duration_with_stuck else None,
+            stuck_task_count=stuck_task_count,
             runs_by_status=runs_by_status,
         )
         
@@ -3080,6 +3101,45 @@ async def _fetch_stripe_revenue(start_ts: int, end_ts: int) -> Dict[str, Any]:
     return results
 
 
+async def _fetch_revenuecat_active_subscriptions() -> int:
+    """
+    Fetch active subscription count from RevenueCat API.
+    Returns the number of active subscriptions.
+    """
+    if not config.REVENUECAT_API_KEY or not config.REVENUECAT_PROJECT_ID:
+        logger.warning("RevenueCat API key or project ID not configured, returning 0")
+        return 0
+
+    url = f"https://api.revenuecat.com/v2/projects/{config.REVENUECAT_PROJECT_ID}/metrics/overview"
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                url,
+                headers={
+                    "Authorization": f"Bearer {config.REVENUECAT_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                timeout=10.0
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            # Find active_subscriptions metric
+            for metric in data.get('metrics', []):
+                if metric.get('id') == 'active_subscriptions':
+                    count = metric.get('value', 0)
+                    logger.info(f"RevenueCat active subscriptions: {count}")
+                    return int(count)
+
+            logger.warning("active_subscriptions metric not found in RevenueCat response")
+            return 0
+
+    except Exception as e:
+        logger.error(f"Failed to fetch RevenueCat active subscriptions: {e}")
+        return 0
+
+
 async def _fetch_revenuecat_revenue(client, range_start: datetime, range_end: datetime) -> Dict[str, Any]:
     """
     Fetch RevenueCat revenue from webhook_events using RPC.
@@ -3258,6 +3318,9 @@ async def get_profitability(
             # Determine primary provider for this tier entry
             provider = 'stripe' if stripe_rev >= rc_rev else 'revenuecat'
 
+            # Get usage users count from RPC data
+            usage_users_count = metrics.get('cost_only_users', 0)
+
             # Add separate entries for each provider if both have data
             if stripe_rev > 0:
                 by_tier.append(TierProfitability(
@@ -3266,6 +3329,7 @@ async def get_profitability(
                     provider='stripe',
                     payment_count=stripe_count,
                     unique_users=len(stripe_users),
+                    usage_users=usage_users_count,
                     total_revenue=round(stripe_rev, 2),
                     total_cost=round(cost_with_markup * (stripe_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
                     total_actual_cost=round(actual_cost * (stripe_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
@@ -3284,6 +3348,7 @@ async def get_profitability(
                     provider='revenuecat',
                     payment_count=rc_count,
                     unique_users=len(rc_users),
+                    usage_users=usage_users_count,
                     total_revenue=round(rc_rev, 2),
                     total_cost=round(cost_with_markup * (rc_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
                     total_actual_cost=round(actual_cost * (rc_rev / tier_revenue) if tier_revenue > 0 else 0, 2),
@@ -3304,6 +3369,7 @@ async def get_profitability(
                     provider='stripe',  # Default to stripe for free tier
                     payment_count=0,
                     unique_users=num_users,
+                    usage_users=num_users,
                     total_revenue=0,
                     total_cost=round(cost_with_markup, 2),
                     total_actual_cost=round(actual_cost, 2),
@@ -3345,9 +3411,9 @@ async def get_profitability(
         unique_paying_users = len(all_paying_users)
         unique_active_users = sum(t.get('user_count', 0) for t in usage_costs_by_tier.values())  # Users who had usage
 
-        # Industry standard metrics
+        # Per-paying-user metrics (consistent denominator for Revenue/Cost/Profit per user)
         avg_revenue_per_paid_user = total_revenue / unique_paying_users if unique_paying_users > 0 else 0.0
-        avg_cost_per_active_user = total_actual_cost / unique_active_users if unique_active_users > 0 else 0.0
+        avg_cost_per_active_user = total_actual_cost / unique_paying_users if unique_paying_users > 0 else 0.0
 
         # Collect emails from Stripe customers
         stripe_user_emails = stripe_revenue.get('user_emails', {})
@@ -3357,6 +3423,14 @@ async def get_profitability(
         ]
         # Sort by email for consistency
         paying_user_emails.sort()
+
+        active_subs_result, revenuecat_active_subs = await asyncio.gather(
+            client.rpc('get_active_subscription_counts').execute(),
+            _fetch_revenuecat_active_subscriptions()
+        )
+        active_subs_data = active_subs_result.data[0] if active_subs_result.data else {}
+        stripe_active_subs = active_subs_data.get('stripe_paid', 0) or 0
+        total_active_subs = stripe_active_subs + revenuecat_active_subs
 
         return ProfitabilitySummary(
             total_revenue=round(total_revenue, 2),
@@ -3379,6 +3453,9 @@ async def get_profitability(
             period_start=range_start.strftime('%Y-%m-%d'),
             period_end=range_end.strftime('%Y-%m-%d'),
             total_payments=total_payments,
+            total_active_subscriptions=total_active_subs,
+            stripe_active_subscriptions=stripe_active_subs,
+            revenuecat_active_subscriptions=revenuecat_active_subs,
         )
 
     except Exception as e:
