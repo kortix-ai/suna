@@ -88,6 +88,8 @@ class JITLoader:
             logger.info(f"⚡ [JIT] Activating '{tool_name}' with params: {list(kwargs.keys())}")
             thread_manager.add_tool(tool_class, **kwargs)
             
+            thread_manager.tool_registry.invalidate_function_cache()
+            
             elapsed_ms = (time.time() - start_time) * 1000
             logger.info(f"✅ [JIT] Tool '{tool_name}' activated successfully in {elapsed_ms:.1f}ms")
             

@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import Optional, List, Tuple, Dict, Any
@@ -121,72 +122,6 @@ async def upload_files_to_sandbox(
         logger.warning(f"[UPLOAD] Error for project {project_id}: {str(e)}")
 
 
-async def upload_staged_files_to_sandbox(
-    project_id: str,
-    thread_id: str,
-    staged_files: List[Dict[str, Any]],
-    account_id: str,
-):
-    if not staged_files:
-        return
-    
-    logger.info(f"[UPLOAD] Uploading staged files for project {project_id} ({len(staged_files)} files)")
-    
-    try:
-        from core.files import get_staged_file_content
-        
-        client = await db.client
-        
-        files_data = []
-        for sf in staged_files:
-            content_bytes = await get_staged_file_content(sf['file_id'], account_id)
-            if content_bytes:
-                files_data.append((
-                    sf['filename'],
-                    content_bytes,
-                    sf['mime_type'],
-                    sf.get('parsed_content')
-                ))
-            else:
-                logger.warning(f"[UPLOAD] Could not download staged file {sf['file_id']}")
-        
-        if not files_data:
-            logger.warning(f"[UPLOAD] No staged files could be downloaded")
-            return
-        
-        sandbox_info = await resolve_sandbox(
-            project_id=project_id,
-            account_id=account_id,
-            db_client=client,
-            require_started=True
-        )
-        
-        if not sandbox_info:
-            logger.info(f"[UPLOAD] No sandbox for project {project_id}")
-            return
-        
-        logger.info(f"[UPLOAD] Sandbox {sandbox_info.sandbox_id} ready, uploading {len(files_data)} staged files...")
-        uploads_dir = get_uploads_directory()
-        uploaded_count = 0
-        
-        for filename, content_bytes, mime_type, _ in files_data:
-            try:
-                unique_filename = await generate_unique_filename(sandbox_info.sandbox, uploads_dir, filename)
-                target_path = f"{uploads_dir}/{unique_filename}"
-                
-                if hasattr(sandbox_info.sandbox, 'fs') and hasattr(sandbox_info.sandbox.fs, 'upload_file'):
-                    await sandbox_info.sandbox.fs.upload_file(content_bytes, target_path)
-                    uploaded_count += 1
-                    logger.debug(f"[UPLOAD] Staged complete: {filename} -> {target_path}")
-            except Exception as e:
-                logger.warning(f"[UPLOAD] Staged failed for {filename}: {str(e)}")
-        
-        logger.info(f"[UPLOAD] Staged complete: {uploaded_count}/{len(files_data)} files to sandbox {sandbox_info.sandbox_id}")
-                
-    except Exception as e:
-        logger.warning(f"[UPLOAD] Staged error for project {project_id}: {str(e)}")
-
-
 async def get_cached_file_context(thread_id: str) -> Optional[List[Dict[str, Any]]]:
     try:
         cache_key = f"file_context:{thread_id}"
@@ -249,57 +184,6 @@ async def handle_file_uploads_fast(
             await upload_files_to_sandbox(project_id, tid, files_data, account_id)
     
     return message_content
-
-
-async def handle_staged_files_for_thread(
-    staged_files: List[Dict[str, Any]],
-    thread_id: str,
-    project_id: str,
-    prompt: str,
-    account_id: str,
-) -> Tuple[str, List[Dict[str, Any]]]:
-    file_refs = []
-    parsed_contents = []
-    image_contexts = []
-    
-    for sf in staged_files:
-        filename = sf['filename']
-        
-        if sf.get('image_url'):
-            image_contexts.append({
-                "filename": filename,
-                "url": sf['image_url'],
-                "mime_type": sf['mime_type']
-            })
-        
-        file_refs.append(f"[Uploaded File: uploads/{filename}]")
-        
-        if sf.get('parsed_content'):
-            parsed_contents.append({
-                "filename": filename,
-                "content": sf['parsed_content'],
-                "mime_type": sf['mime_type'],
-                "size": sf['file_size']
-            })
-    
-    message_content = prompt + "\n\n" + "\n".join(file_refs) if file_refs else prompt
-    
-    if parsed_contents:
-        try:
-            cache_key = f"file_context:{thread_id}"
-            await redis.set(cache_key, json.dumps(parsed_contents), ex=3600)
-            logger.info(f"[UPLOAD] Cached {len(parsed_contents)} staged files for thread {thread_id}")
-        except Exception as cache_error:
-            logger.warning(f"Failed to cache staged files: {cache_error}")
-    
-    await upload_staged_files_to_sandbox(
-        project_id=project_id,
-        thread_id=thread_id,
-        staged_files=staged_files,
-        account_id=account_id
-    )
-    
-    return message_content, image_contexts
 
 
 async def ensure_sandbox_for_thread(client, project_id: str, files: Optional[List[Any]] = None):

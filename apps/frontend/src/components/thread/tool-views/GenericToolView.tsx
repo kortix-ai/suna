@@ -4,10 +4,12 @@ import React from 'react';
 import {
   CheckCircle,
   AlertTriangle,
+  AlertCircle,
   Clock,
   Wrench,
   Copy,
   Check,
+  XCircle,
 } from 'lucide-react';
 import { ToolViewProps } from './types';
 import { formatTimestamp, getToolTitle } from './utils';
@@ -154,7 +156,29 @@ export function GenericToolView({
     setTimeout(() => setIsCopyingOutput(false), 500);
   }, [formattedToolContent, copyToClipboard]);
 
-  // Defensive check - handle cases where toolCall might be undefined or missing function_name
+  const isError = React.useMemo(() => {
+    if (toolResult?.success === false) return true;
+    if (toolResult?.error) return true;
+    
+    if (typeof toolResult?.output === 'string') {
+      const output = toolResult.output.toLowerCase();
+      if (output.startsWith('error:') || output.includes('failed') || output.includes('exception')) {
+        return true;
+      }
+    }
+    
+    return !isSuccess;
+  }, [toolResult, isSuccess]);
+
+  const errorMessage = React.useMemo(() => {
+    if (!isError) return null;
+    
+    if (toolResult?.error) return String(toolResult.error);
+    if (typeof toolResult?.output === 'string') return toolResult.output;
+    
+    return 'Tool execution failed';
+  }, [isError, toolResult]);
+
   if (!toolCall || !toolCall.function_name) {
     console.warn('GenericToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
     return (
@@ -203,6 +227,93 @@ export function GenericToolView({
             filePath={name}
             showProgress={true}
           />
+        ) : isError ? (
+          <div className="flex flex-col h-full">
+            {/* Error Banner */}
+            <div className="bg-red-50 dark:bg-red-950/30 border-b border-red-200 dark:border-red-800/50 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-5 w-5 text-red-500 dark:text-red-400 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-red-800 dark:text-red-200">
+                    Tool Execution Failed
+                  </p>
+                  {errorMessage && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-0.5 truncate">
+                      {errorMessage.substring(0, 200)}{errorMessage.length > 200 ? '...' : ''}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+            
+            {/* Content below error banner */}
+            {(formattedAssistantContent || formattedToolContent) && (
+              <ScrollArea className="flex-1 w-full">
+                <div className="p-4 space-y-4">
+                  {formattedAssistantContent && (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-zinc-700 dark:text-zinc-300 flex items-center justify-between">
+                        <div className="flex items-center">Input</div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyInput}
+                          disabled={isCopyingInput}
+                          className="h-6 w-6 p-0"
+                          title="Copy file content"
+                        >
+                          {isCopyingInput ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                      <div className="border-muted bg-muted/20 rounded-lg overflow-hidden border">
+                        <div className="p-4">
+                          {typeof parsedAssistantContent === 'object' && parsedAssistantContent !== null ? (
+                            <SmartJsonViewer data={parsedAssistantContent} />
+                          ) : (
+                            <pre className="text-xs text-zinc-700 dark:text-zinc-300 whitespace-pre-wrap break-words font-mono">
+                              {formattedAssistantContent}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {formattedToolContent && (
+                    <div className="space-y-2">
+                      <div className="text-sm font-medium text-red-700 dark:text-red-300 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <XCircle className="h-4 w-4" />
+                          Error Output
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={handleCopyOutput}
+                          disabled={isCopyingOutput}
+                          className="h-6 w-6 p-0"
+                          title="Copy error output"
+                        >
+                          {isCopyingOutput ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                        </Button>
+                      </div>
+                      <div className="border-red-200 dark:border-red-800/50 bg-red-50/50 dark:bg-red-950/20 rounded-lg overflow-hidden border">
+                        <div className="p-4">
+                          {typeof parsedToolContent === 'object' && parsedToolContent !== null ? (
+                            <SmartJsonViewer data={parsedToolContent} />
+                          ) : (
+                            <pre className="text-xs text-red-700 dark:text-red-300 whitespace-pre-wrap break-words font-mono">
+                              {formattedToolContent}
+                            </pre>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            )}
+          </div>
         ) : formattedAssistantContent || formattedToolContent ? (
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-4">
@@ -295,11 +406,18 @@ export function GenericToolView({
 
       <div className="px-4 py-2 h-10 bg-gradient-to-r from-zinc-50/90 to-zinc-100/90 dark:from-zinc-900/90 dark:to-zinc-800/90 backdrop-blur-sm border-t border-zinc-200 dark:border-zinc-800 flex justify-between items-center gap-4">
         <div className="h-full flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-          {!isStreaming && (formattedAssistantContent || formattedToolContent) && (
-            <Badge variant="outline" className="h-6 py-0.5 bg-zinc-50 dark:bg-zinc-900">
-              <Wrench className="h-3 w-3" />
-              Tool
-            </Badge>
+          {!isStreaming && (formattedAssistantContent || formattedToolContent || isError) && (
+            isError ? (
+              <Badge variant="outline" className="h-6 py-0.5 bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-300">
+                <AlertCircle className="h-3 w-3" />
+                Failed
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="h-6 py-0.5 bg-zinc-50 dark:bg-zinc-900">
+                <CheckCircle className="h-3 w-3 text-green-600 dark:text-green-400" />
+                Completed
+              </Badge>
+            )
           )}
         </div>
 

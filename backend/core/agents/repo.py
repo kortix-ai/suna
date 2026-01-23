@@ -393,6 +393,28 @@ async def get_agent_run_with_thread(agent_run_id: str) -> Optional[Dict[str, Any
     return serialize_row(dict(result)) if result else None
 
 
+async def get_thread_ids_for_runs(run_ids: List[str]) -> Dict[str, str]:
+    if not run_ids:
+        return {}
+    
+    placeholders = ",".join([f":run_id_{i}" for i in range(len(run_ids))])
+    params = {f"run_id_{i}": run_id for i, run_id in enumerate(run_ids)}
+    
+    sql = f"""
+    SELECT 
+        ar.id as run_id,
+        ar.thread_id
+    FROM agent_runs ar
+    WHERE ar.id IN ({placeholders})
+    """
+    
+    rows = await execute(sql, params)
+    if not rows:
+        return {}
+    
+    return {str(row["run_id"]): str(row["thread_id"]) for row in rows}
+
+
 async def get_agent_run_status(agent_run_id: str) -> Optional[Dict[str, Any]]:
     sql = "SELECT id, status, error FROM agent_runs WHERE id = :agent_run_id"
     result = await execute_one(sql, {"agent_run_id": agent_run_id})
@@ -419,6 +441,41 @@ async def get_running_thread_ids(account_id: str) -> List[str]:
     """
     rows = await execute(sql, {"account_id": account_id})
     return [str(row["thread_id"]) for row in rows] if rows else []
+
+
+async def get_active_thread_ids_count() -> int:
+    sql = """
+    SELECT COUNT(DISTINCT ar.thread_id) as count
+    FROM agent_runs ar
+    WHERE ar.status = 'running'
+    """
+    result = await execute_one(sql, {})
+    return result["count"] if result else 0
+
+
+async def get_active_thread_ids_with_runs() -> List[Dict[str, Any]]:
+    sql = """
+    SELECT 
+        ar.thread_id,
+        ARRAY_AGG(ar.id) as run_ids,
+        COUNT(*) as run_count
+    FROM agent_runs ar
+    WHERE ar.status = 'running'
+    GROUP BY ar.thread_id
+    ORDER BY ar.thread_id
+    """
+    rows = await execute(sql, {})
+    if not rows:
+        return []
+    
+    return [
+        {
+            "thread_id": str(row["thread_id"]),
+            "run_ids": [str(run_id) for run_id in row["run_ids"]] if row["run_ids"] else [],
+            "run_count": row["run_count"],
+        }
+        for row in rows
+    ]
 
 async def get_default_agent_id(account_id: str) -> Optional[str]:
     sql = """

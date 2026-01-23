@@ -333,11 +333,44 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
+    /* Ensure mobile scrolling works */
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   body {
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply bg-background text-foreground;
     font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
+    /* Ensure mobile scrolling works */
+    min-height: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
+  }
+
+  /* Mobile viewport fixes - prevent overscroll bounce and ensure fixed viewport */
+  @media (max-width: 767px) {
+    html {
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+    body {
+      height: 100%;
+      height: 100dvh;
+      overflow: hidden;
+      overscroll-behavior: none;
+      position: fixed;
+      inset: 0;
+      /* Ensure touch scrolling works in child containers */
+      -webkit-overflow-scrolling: touch;
+    }
+    /* Prevent pull-to-refresh on iOS */
+    body > * {
+      overscroll-behavior: contain;
+    }
   }
 
   /* Add font fallbacks for CJK characters */

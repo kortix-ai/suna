@@ -25,13 +25,14 @@ import {
 
 export interface OptimisticAgentStartOptions {
   message: string;
-  fileIds?: string[];
   modelName?: string;
   agentId?: string;
   /** Mode starter to pass as query param (e.g., 'presentation') */
   modeStarter?: string;
   /** Mode for backend context (slides, sheets, docs, canvas, video, research) */
   mode?: string;
+  /** Files to upload with the agent start */
+  files?: File[];
 }
 
 export interface OptimisticAgentStartResult {
@@ -129,11 +130,11 @@ export function useOptimisticAgentStart(
   const startAgent = useCallback(async (
     options: OptimisticAgentStartOptions
   ): Promise<OptimisticAgentStartResult | null> => {
-    const { message, fileIds = [], modelName, agentId, modeStarter, mode } = options;
+    const { message, modelName, agentId, modeStarter, mode, files } = options;
     
     const trimmedMessage = message.trim();
-    if (!trimmedMessage && fileIds.length === 0) {
-      toast.error('Please enter a message or attach files');
+    if (!trimmedMessage) {
+      toast.error('Please enter a message');
       return null;
     }
 
@@ -150,7 +151,6 @@ export function useOptimisticAgentStart(
         threadId,
         projectId,
         prompt: message,
-        fileIds: fileIds.length > 0 ? fileIds : undefined,
         modelName,
         agentId: agentId || undefined,
         mode,
@@ -166,7 +166,6 @@ export function useOptimisticAgentStart(
           model_name: modelName,
           promptLength: message.length,
           promptPreview: message.slice(0, 140),
-          fileIds: fileIds.length,
         });
       }
 
@@ -181,10 +180,10 @@ export function useOptimisticAgentStart(
         thread_id: threadId,
         project_id: projectId,
         prompt: message,
-        file_ids: fileIds.length > 0 ? fileIds : undefined,
         model_name: modelName,
         agent_id: agentId || undefined,
         mode: mode,
+        files: files,
       }).then(async (response) => {
         console.log('[OptimisticAgentStart] API succeeded, response:', response);
         

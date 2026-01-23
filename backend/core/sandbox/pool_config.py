@@ -56,7 +56,7 @@ class SandboxPoolConfig:
             replenish_threshold=float(os.getenv("SANDBOX_POOL_REPLENISH_THRESHOLD", str(_get_default("replenish_threshold")))),
             check_interval=int(os.getenv("SANDBOX_POOL_CHECK_INTERVAL", str(_get_default("check_interval")))),
             max_age=int(os.getenv("SANDBOX_POOL_MAX_AGE", "3600")),
-            enabled=os.getenv("SANDBOX_POOL_ENABLED", "true").lower() in ("true", "1", "yes"),
+            enabled=os.getenv("SANDBOX_POOL_ENABLED", "false").lower() in ("true", "1", "yes"),
             parallel_create_limit=int(os.getenv("SANDBOX_POOL_PARALLEL_CREATE", str(_get_default("parallel_create_limit")))),
             batch_delay=int(os.getenv("SANDBOX_POOL_BATCH_DELAY", str(_get_default("batch_delay")))),
         )

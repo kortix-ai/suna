@@ -112,7 +112,6 @@ const ThreadItemCard: React.FC<ThreadItemCardProps> = ({
     ? { href: thread.url, prefetch: true, onClick: handleCardClick }
     : { onClick: handleCardClick };
 
-  const libraryUrl = `/library/${thread.projectId}`;
   const threadUrl = thread.url;
 
   return (
@@ -522,7 +521,7 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
     }
 
     // Navigate to appropriate destination
-    const destination = mode === 'library' ? `/library/${thread.projectId}` : url;
+    const destination = mode === 'library' ? '/files' : url;
     startTransition(() => {
       router.push(destination);
     });
@@ -701,7 +700,8 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
   // Determine active state based on mode
   const isItemActive = (thread: ThreadWithProject) => {
     if (mode === 'library') {
-      return pathname?.includes(`/library/${thread.projectId}`) || false;
+      // In library mode, no threads should be highlighted - the Files link is separate
+      return false;
     }
     return pathname?.includes(thread.threadId) || false;
   };
@@ -922,7 +922,7 @@ export function SidebarThreadList({ mode }: SidebarThreadListProps) {
                                           key={`thread-${thread.threadId}`}
                                           href={
                                             mode === 'library'
-                                              ? `/library/${thread.projectId}`
+                                              ? '/files'
                                               : thread.url
                                           }
                                           onClick={(e) =>

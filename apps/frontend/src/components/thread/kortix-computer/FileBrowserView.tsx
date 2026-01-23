@@ -59,7 +59,6 @@ import JSZip from 'jszip';
 import { normalizeFilenameToNFC } from '@agentpress/shared';
 import { cn } from '@/lib/utils';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
-import { useFileViewerStore } from '@/stores/file-viewer-store';
 import { usePresentationViewerStore } from '@/stores/presentation-viewer-store';
 import { Badge } from '@/components/ui/badge';
 import { VersionBanner } from './VersionBanner';
@@ -646,6 +645,8 @@ interface FileBrowserViewProps {
   variant?: 'default' | 'library' | 'inline-library';
   /** Callback when user wants to navigate to thread (used in library view) */
   onNavigateToThread?: () => void;
+  /** Extra content to render in the header (e.g., project selector) */
+  headerExtra?: React.ReactNode;
 }
 
 export function FileBrowserView({
@@ -654,6 +655,7 @@ export function FileBrowserView({
   projectId,
   variant = 'default',
   onNavigateToThread,
+  headerExtra,
 }: FileBrowserViewProps) {
   const isLibraryView = variant === 'library';
   const isInlineLibrary = variant === 'inline-library';
@@ -671,9 +673,6 @@ export function FileBrowserView({
     clearSelectedVersion,
   } = useKortixComputerStore();
 
-  // File viewer store (for library view - opens fullscreen modal)
-  const openFileViewer = useFileViewerStore((state) => state.openFile);
-  
   // Presentation viewer store (for library view - opens fullscreen presentation)
   const openPresentation = usePresentationViewerStore((state) => state.openPresentation);
   
@@ -837,23 +836,12 @@ export function FileBrowserView({
           navigateToPath(file.path);
         }
       } else {
-        // In library view, open file in fullscreen viewer modal
-        if (isLibraryView && sandboxId && session?.access_token) {
-          const fileName = file.path.split('/').pop() || 'file';
-          openFileViewer({
-            sandboxId,
-            filePath: file.path,
-            fileName,
-            accessToken: session.access_token,
-          });
-        } else {
-          // In side panel view, use kortix computer store
-          // FileViewerView will detect selectedVersion from store
-          openFile(file.path);
-        }
+        // Open file using kortix computer store
+        // FileViewerView will detect selectedVersion from store
+        openFile(file.path);
       }
     },
-    [navigateToPath, openFile, isDirectChildOfPresentations, selectedVersion, isLibraryView, sandboxId, session?.access_token, openFileViewer, openPresentation, project?.sandbox?.sandbox_url],
+    [navigateToPath, openFile, isDirectChildOfPresentations, selectedVersion, openPresentation, project?.sandbox?.sandbox_url],
   );
 
   // Recursive function to discover all files from the current path
@@ -1770,6 +1758,7 @@ export function FileBrowserView({
             <div className="flex-1" />
 
             <div className="flex items-center gap-2">
+              {headerExtra}
               {filesHeaderActions}
             </div>
           </div>

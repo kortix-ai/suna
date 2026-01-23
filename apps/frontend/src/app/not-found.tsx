@@ -9,22 +9,22 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export default function NotFound() {
   return (
-    <div className="w-full relative overflow-hidden min-h-screen">
-      <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
+    <div className="w-full relative overflow-hidden min-h-[100dvh]">
+      <div className="relative flex flex-col items-center w-full px-3 sm:px-6 min-h-[100dvh] justify-center py-8">
         {/* Animated background - exactly like maintenance page */}
         <AnimatedBg variant="hero" />
 
-        <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
+        <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-5 sm:gap-8">
           {/* Logo - 32px height */}
-          <KortixLogo size={32} />
+          <KortixLogo size={28} className="sm:w-8 sm:h-8" />
 
-          {/* Title - 43px */}
-          <h1 className="text-[43px] font-normal tracking-tight text-foreground leading-none text-center">
+          {/* Title - responsive */}
+          <h1 className="text-3xl sm:text-[43px] font-normal tracking-tight text-foreground leading-tight text-center">
             Page not found
           </h1>
 
-          {/* Description - 16px */}
-          <p className="text-[16px] text-foreground/60 text-center leading-relaxed">
+          {/* Description - responsive */}
+          <p className="text-sm sm:text-[16px] text-foreground/60 text-center leading-relaxed px-2">
             The page you're looking for doesn't exist or has been moved.
           </p>
 

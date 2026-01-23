@@ -9,6 +9,7 @@ class UnifiedAgentStartResponse(BaseModel):
     thread_id: str
     agent_run_id: Optional[str] = None  # None in optimistic mode
     project_id: Optional[str] = None    # Returned in optimistic mode
+    sandbox_id: Optional[str] = None    # Sandbox ID for file uploads (new threads only)
     status: str = "running"  # "running" for regular, "pending" for optimistic
     # Optional timing breakdown for stress testing (only present when X-Emit-Timing header is set)
     timing_breakdown: Optional[Dict[str, float]] = None

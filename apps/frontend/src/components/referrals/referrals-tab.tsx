@@ -8,10 +8,15 @@ import { ReferralStatsCards } from './referral-stats-cards';
 import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { ReferralEmailInvitation } from './referral-email-invitation';
 
-export function ReferralsTab() {
+interface ReferralsTabProps {
+  isActive?: boolean;
+}
+
+export function ReferralsTab({ isActive = true }: ReferralsTabProps) {
   const t = useTranslations('settings.referrals');
-  const { data: referralCode, isLoading: codeLoading } = useReferralCode();
-  const { data: stats, isLoading: statsLoading } = useReferralStats();
+  // Only fetch when tab is actually visible to avoid unnecessary API calls
+  const { data: referralCode, isLoading: codeLoading } = useReferralCode({ enabled: isActive });
+  const { data: stats, isLoading: statsLoading } = useReferralStats({ enabled: isActive });
 
   return (
     <div className="p-4 sm:p-6 space-y-6 overflow-y-auto max-h-[85vh] sm:max-h-none">

@@ -9,22 +9,22 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 
 export default function CountryError() {
   return (
-    <div className="w-full relative overflow-hidden min-h-screen">
-      <div className="relative flex flex-col items-center w-full px-4 sm:px-6 min-h-screen justify-center">
+    <div className="w-full relative overflow-hidden min-h-[100dvh]">
+      <div className="relative flex flex-col items-center w-full px-3 sm:px-6 min-h-[100dvh] justify-center py-8">
         {/* Animated background */}
         <AnimatedBg variant="hero" />
 
-        <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-8">
+        <div className="relative z-10 w-full max-w-[456px] flex flex-col items-center gap-5 sm:gap-8">
           {/* Logo */}
-          <KortixLogo size={32} />
+          <KortixLogo size={28} className="sm:w-8 sm:h-8" />
 
           {/* Title */}
-          <h1 className="text-[43px] font-normal tracking-tight text-foreground leading-none text-center whitespace-nowrap">
+          <h1 className="text-2xl sm:text-3xl md:text-[43px] font-normal tracking-tight text-foreground leading-tight text-center">
             Not available in your country
           </h1>
 
           {/* Description */}
-          <p className="text-[16px] text-foreground/60 text-center leading-relaxed">
+          <p className="text-sm sm:text-[16px] text-foreground/60 text-center leading-relaxed px-2">
             We're sorry, Kortix is currently unavailable in your country. We're
             working to expand our availability and hope to serve you soon.
           </p>
