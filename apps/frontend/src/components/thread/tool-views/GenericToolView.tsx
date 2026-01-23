@@ -156,7 +156,29 @@ export function GenericToolView({
     setTimeout(() => setIsCopyingOutput(false), 500);
   }, [formattedToolContent, copyToClipboard]);
 
-  // Defensive check - handle cases where toolCall might be undefined or missing function_name
+  const isError = React.useMemo(() => {
+    if (toolResult?.success === false) return true;
+    if (toolResult?.error) return true;
+    
+    if (typeof toolResult?.output === 'string') {
+      const output = toolResult.output.toLowerCase();
+      if (output.startsWith('error:') || output.includes('failed') || output.includes('exception')) {
+        return true;
+      }
+    }
+    
+    return !isSuccess;
+  }, [toolResult, isSuccess]);
+
+  const errorMessage = React.useMemo(() => {
+    if (!isError) return null;
+    
+    if (toolResult?.error) return String(toolResult.error);
+    if (typeof toolResult?.output === 'string') return toolResult.output;
+    
+    return 'Tool execution failed';
+  }, [isError, toolResult]);
+
   if (!toolCall || !toolCall.function_name) {
     console.warn('GenericToolView: toolCall is undefined or missing function_name. Tool views should use structured props.');
     return (
@@ -177,32 +199,6 @@ export function GenericToolView({
 
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = (toolCall as any)._display_hint || getToolTitle(name);
-
-  // Determine if the tool execution failed
-  const isError = React.useMemo(() => {
-    if (toolResult?.success === false) return true;
-    if (toolResult?.error) return true;
-    
-    // Check for error patterns in output
-    if (typeof toolResult?.output === 'string') {
-      const output = toolResult.output.toLowerCase();
-      if (output.startsWith('error:') || output.includes('failed') || output.includes('exception')) {
-        return true;
-      }
-    }
-    
-    return !isSuccess;
-  }, [toolResult, isSuccess]);
-
-  // Extract error message
-  const errorMessage = React.useMemo(() => {
-    if (!isError) return null;
-    
-    if (toolResult?.error) return String(toolResult.error);
-    if (typeof toolResult?.output === 'string') return toolResult.output;
-    
-    return 'Tool execution failed';
-  }, [isError, toolResult]);
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">
