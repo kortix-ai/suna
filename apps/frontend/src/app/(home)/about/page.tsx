@@ -4,7 +4,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { SimpleFooter } from '@/components/home/simple-footer';
 import { motion, useScroll, useMotionValueEvent } from 'framer-motion';
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect } from 'react';
 
 type ParagraphItem = 
   | string 
@@ -148,30 +148,96 @@ function CharReveal({
 
 export default function AboutPage() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const isLockedRef = useRef(false);
   const [currentProgress, setCurrentProgress] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+  
+  // On desktop, use framer-motion's useScroll
   const { scrollYProgress } = useScroll({
     target: containerRef,
     offset: ["start 0.3", "end 0.5"]
   });
 
+  // On desktop, use framer-motion scroll tracking
   useMotionValueEvent(scrollYProgress, "change", (latest) => {
+    if (isMobile) return; // Skip on mobile, handled by manual scroll listener
+    
     // If already locked, don't update anything
-    if (isLocked) return;
+    if (isLockedRef.current) return;
     
     // Update current progress (allows reversing)
     setCurrentProgress(latest);
     
     // Lock when animation completes (reached 95% or more)
     if (latest >= 0.95) {
+      isLockedRef.current = true;
       setIsLocked(true);
       setCurrentProgress(1); // Ensure fully revealed
     }
   });
 
+  // On mobile, manually track scroll of main element
+  useEffect(() => {
+    if (!isMobile || !mainRef.current || !containerRef.current) return;
+    
+    const main = mainRef.current;
+    const container = containerRef.current;
+    
+    const handleScroll = () => {
+      // Check isLocked from ref
+      if (isLockedRef.current) return;
+      
+      const mainScrollTop = main.scrollTop;
+      const mainClientHeight = main.clientHeight;
+      const containerTop = container.offsetTop;
+      const containerHeight = container.offsetHeight;
+      
+      // Calculate when container enters viewport (start 0.3 means 30% from top)
+      const startOffset = mainClientHeight * 0.3;
+      const endOffset = mainClientHeight * 0.5;
+      
+      const containerStart = containerTop - startOffset;
+      const containerEnd = containerTop + containerHeight - endOffset;
+      const scrollRange = containerEnd - containerStart;
+      
+      // Calculate progress (0 to 1)
+      let progress = 0;
+      if (mainScrollTop >= containerStart) {
+        progress = Math.min(1, (mainScrollTop - containerStart) / scrollRange);
+      }
+      
+      setCurrentProgress(progress);
+      
+      // Lock when animation completes
+      if (progress >= 0.95) {
+        isLockedRef.current = true;
+        setIsLocked(true);
+        setCurrentProgress(1);
+      }
+    };
+    
+    main.addEventListener('scroll', handleScroll, { passive: true });
+    // Initial calculation
+    handleScroll();
+    
+    return () => {
+      main.removeEventListener('scroll', handleScroll);
+    };
+  }, [isMobile]);
+
   return (
-    <main className="min-h-screen bg-background">
+    <main ref={mainRef} className="min-h-screen bg-background md:min-h-screen overflow-y-auto overscroll-contain h-[100dvh] md:h-auto fixed md:relative inset-0 md:inset-auto touch-pan-y">
       <article className="max-w-4xl mx-auto px-6 md:px-10 pt-24 md:pt-28 pb-32">
         
         {/* Hero Image */}
