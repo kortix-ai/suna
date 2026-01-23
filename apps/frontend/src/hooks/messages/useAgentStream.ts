@@ -24,6 +24,7 @@ export interface UseAgentStreamResult {
   status: string;
   textContent: string;
   reasoningContent: string;
+  isReasoningComplete: boolean;
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;
@@ -150,6 +151,7 @@ export function useAgentStream(
     status: result.status,
     textContent: result.textContent,
     reasoningContent: result.reasoningContent,
+    isReasoningComplete: result.isReasoningComplete,
     toolCall: result.toolCall as UnifiedMessage | null,
     error: result.error,
     agentRunId: result.agentRunId,

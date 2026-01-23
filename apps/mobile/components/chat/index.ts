@@ -1,5 +1,6 @@
 export { ThreadContent } from './ThreadContent';
 export type { ToolMessagePair } from './ThreadContent';
+export { ReasoningSection } from './ReasoningSection';
 export { ChatInput } from './ChatInput';
 export { 
   FileAttachmentRenderer, 

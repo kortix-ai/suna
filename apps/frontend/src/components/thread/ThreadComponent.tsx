@@ -39,6 +39,7 @@ import {
   UnifiedMessage,
   ApiMessageType,
 } from '@/components/thread/types';
+import { extractUserMessageText } from '@/components/thread/utils';
 import {
   useThreadData,
   useThreadBilling,
@@ -925,29 +926,44 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   const handleNewMessageFromStream = useCallback(
     (message: UnifiedMessage) => {
       setMessages((prev) => {
-        const messageExists = prev.some(
+        // Check if exact message_id exists
+        const existingIndex = prev.findIndex(
           (m) => m.message_id === message.message_id,
         );
-        if (messageExists) {
-          return prev.map((m) =>
-            m.message_id === message.message_id ? message : m,
-          );
-        } else {
-          if (message.type === 'user') {
-            const optimisticIndex = prev.findIndex(
-              (m) =>
-                m.type === 'user' &&
-                m.message_id?.startsWith('temp-') &&
-                m.content === message.content,
-            );
-            if (optimisticIndex !== -1) {
-              return prev.map((m, index) =>
-                index === optimisticIndex ? message : m,
-              );
-            }
-          }
-          return [...prev, message];
+
+        if (existingIndex !== -1) {
+          // Update existing message with same ID
+          return prev.map((m, i) => i === existingIndex ? message : m);
         }
+
+        if (message.type === 'user') {
+          // Extract actual user text from message content (handles JSON and plain strings)
+          const contentKey = extractUserMessageText(message.content).trim().toLowerCase();
+
+          // First try to find a temp message with same content to replace
+          const tempIndex = prev.findIndex(
+            (m) =>
+              m.type === 'user' &&
+              m.message_id?.startsWith('temp-') &&
+              extractUserMessageText(m.content).trim().toLowerCase() === contentKey,
+          );
+          if (tempIndex !== -1) {
+            return prev.map((m, index) => index === tempIndex ? message : m);
+          }
+
+          // Only deduplicate temp messages - allow multiple server-confirmed messages with same content
+          // This preserves intentionally repeated messages while preventing optimistic UI duplicates
+          const tempDuplicateIndex = contentKey ? prev.findIndex(
+            (m) => m.type === 'user' &&
+              m.message_id?.startsWith('temp-') &&
+              extractUserMessageText(m.content).trim().toLowerCase() === contentKey,
+          ) : -1;
+          if (tempDuplicateIndex !== -1) {
+            return prev.map((m, index) => index === tempDuplicateIndex ? message : m);
+          }
+        }
+
+        return [...prev, message];
       });
 
       if (message.type === 'tool') {
@@ -1099,6 +1115,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     status: streamHookStatus,
     textContent: streamingTextContent,
     reasoningContent: streamingReasoningContent,
+    isReasoningComplete,
     toolCall: streamingToolCall,
     error: streamError,
     agentRunId: currentHookRunId,
@@ -1641,15 +1658,89 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
   }, [optimisticPrompt, threadId]);
 
   const displayMessages = useMemo(() => {
+    // Aggressive deduplication at render level - catches all duplicates regardless of timing
+    const deduplicateMessages = (msgs: UnifiedMessage[]): UnifiedMessage[] => {
+      const seenIds = new Set<string>();
+      const seenUserContent = new Set<string>(); // Track user message content separately
+      const result: UnifiedMessage[] = [];
+
+      for (const msg of msgs) {
+        // Skip if we've seen this exact message ID (except temp IDs which can be replaced)
+        if (msg.message_id && !msg.message_id.startsWith('temp-') && seenIds.has(msg.message_id)) {
+          continue;
+        }
+
+        // For USER messages: only deduplicate temp messages when server version exists
+        // This preserves intentionally repeated messages (different IDs = different messages)
+        if (msg.type === 'user') {
+          const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+          const isTemp = msg.message_id?.startsWith('temp-');
+
+          if (isTemp && contentKey) {
+            const tempCreatedAt = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
+
+            // Only skip if server message with same content exists AND was created within 30 seconds
+            // This allows intentionally repeated messages (different turns) while still deduping
+            // the temp message against its own server confirmation (same turn)
+            const hasMatchingServerVersion = result.some((existing) => {
+              if (existing.type !== 'user') return false;
+              if (existing.message_id?.startsWith('temp-')) return false;
+              if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+              const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+              const timeDiff = Math.abs(serverCreatedAt - tempCreatedAt);
+              return timeDiff < 30000; // 30 seconds window
+            });
+
+            if (hasMatchingServerVersion) continue;
+          }
+
+          // Track content for temp message deduplication only
+          if (isTemp && contentKey) {
+            if (seenUserContent.has(contentKey)) continue;
+            seenUserContent.add(contentKey);
+          }
+        }
+
+        // For assistant/tool messages: use looser fingerprint (type + first 200 chars)
+        // Don't use timestamp - it causes issues across second boundaries
+        if ((msg.type === 'assistant' || msg.type === 'tool') && msg.content) {
+          const fingerprint = `${msg.type}:${String(msg.content).substring(0, 200)}`;
+          // Check if we already have a message with very similar content
+          const isDuplicate = result.some(existing => {
+            if (existing.type !== msg.type) return false;
+            const existingFingerprint = `${existing.type}:${String(existing.content || '').substring(0, 200)}`;
+            return existingFingerprint === fingerprint;
+          });
+          if (isDuplicate) continue;
+        }
+
+        result.push(msg);
+        if (msg.message_id) seenIds.add(msg.message_id);
+      }
+
+      return result;
+    };
+
     const hasRealUserMessage = messages.some(m => m.type === 'user' && m.message_id !== 'optimistic-user');
     if (showOptimisticUI || (optimisticPrompt && !hasRealUserMessage)) {
-      const streamedNonUserMessages = messages.filter(m => 
-        m.type !== 'user' || m.message_id !== 'optimistic-user'
-      );
-      
-      return [...optimisticMessages, ...streamedNonUserMessages];
+      // When showing optimistic UI, filter out user messages that match the optimistic prompt content
+      // This prevents duplicate user bubbles when both temp and optimistic messages exist
+      const optimisticContent = optimisticPrompt?.trim();
+      const streamedNonUserMessages = messages.filter(m => {
+        // Keep all non-user messages
+        if (m.type !== 'user') return true;
+        // Filter out the optimistic-user placeholder
+        if (m.message_id === 'optimistic-user') return false;
+        // Filter out user messages with same content as optimistic prompt (temp or server-confirmed)
+        if (optimisticContent && String(m.content || '').trim() === optimisticContent) return false;
+        // Keep other user messages (from previous messages in conversation)
+        return true;
+      });
+
+      return deduplicateMessages([...optimisticMessages, ...streamedNonUserMessages]);
     }
-    return messages;
+    return deduplicateMessages(messages);
   }, [showOptimisticUI, optimisticMessages, messages, optimisticPrompt]);
 
   const displayAgentStatus = showOptimisticUI ? (agentStatus === 'idle' ? 'running' : agentStatus) : agentStatus;
@@ -1788,8 +1879,10 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
               <ThreadContent
                 messages={isShared ? playback.playbackState.visibleMessages : displayMessages}
                 streamingTextContent={isShared ? '' : displayStreamingText}
-                streamingToolCall={isShared ? playback.playbackState.currentToolCall : streamingToolCall}
+                streamingReasoningContent={isShared ? '' : streamingReasoningContent}
+                streamingToolCall={isShared ? playback.playbackState.currentToolCall : (showOptimisticUI ? undefined : streamingToolCall)}
                 agentStatus={displayAgentStatus}
+                isReasoningComplete={isShared ? true : isReasoningComplete}
                 handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
                 handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
                 readOnly={isShared}
@@ -1960,6 +2053,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           streamingReasoningContent={isShared ? '' : streamingReasoningContent}
           streamingToolCall={isShared ? playback.playbackState.currentToolCall : streamingToolCall}
           agentStatus={displayAgentStatus}
+          isReasoningComplete={isShared ? true : isReasoningComplete}
           handleToolClick={showOptimisticUI ? () => {} : handleToolClick}
           handleOpenFileViewer={showOptimisticUI ? () => {} : handleOpenFileViewer}
           readOnly={isShared}
