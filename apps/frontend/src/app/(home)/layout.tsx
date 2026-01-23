@@ -12,12 +12,14 @@ export default function HomeLayout({
   const isHomePage = pathname === '/';
 
   return (
-    <div className="w-full min-h-dvh relative">
+    <div className="w-full min-h-dvh relative flex flex-col overflow-x-hidden">
       {/* Navbar is absolute on home page to not take up space, sticky on other pages */}
-      <div className={isHomePage ? 'absolute top-0 left-0 right-0 z-50' : ''}>
+      <div className={isHomePage ? 'absolute top-0 left-0 right-0 z-50' : 'flex-shrink-0'}>
         <Navbar isAbsolute={isHomePage} />
       </div>
-      {children}
+      <div className="flex-1">
+        {children}
+      </div>
     </div>
   );
 }
