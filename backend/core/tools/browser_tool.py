@@ -36,6 +36,21 @@ Use a mouse and keyboard to interact with a web browser, and take screenshots. F
 - Verifying website state or visual elements
 - Any task requiring visual inspection of web content
 
+### ⚠️ DIRECT URL/WEBSITE RESEARCH (IMPORTANT!)
+When the user mentions a SPECIFIC website/URL to research (e.g. "create a slide deck for example.io"):
+1. **USE BROWSER FIRST** - Navigate to the URL directly with browser_navigate_to
+2. Browse through key pages (home, features, pricing, about) to understand the product
+3. Use browser_extract_content to capture the information you need
+4. THEN optionally use web_search for additional context, reviews, or news
+- **NEVER** do a generic web search when the user wants info about a SPECIFIC website - browse it directly!
+
+### ⚠️ INFORMATION REUSE (CRITICAL!)
+- Once you've extracted content from a website using browser_extract_content, that is your **PRIMARY SOURCE OF TRUTH**
+- DO NOT let web search results override or replace the information you extracted directly from the website
+- Web search is only for ADDITIONAL context (reviews, news, competitor comparisons) - NOT to replace first-hand data
+- When creating deliverables (presentations, reports, etc.), USE the content you extracted from the actual website
+- If you already have information from a previous browser action in this conversation, CHECK IT before browsing again
+
 ### When NOT to Use
 - Simple static content extraction → use scrape_webpage first (faster)
 - API-based data retrieval → use appropriate API tools

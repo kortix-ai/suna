@@ -44,6 +44,12 @@ Allows searching the web and using the results to inform responses. Provides up-
 - When the user provides all necessary information
 - For simple calculations or logic that doesn't need external data
 
+### ⚠️ DO NOT OVERRIDE BROWSER-EXTRACTED DATA
+- If you already visited a SPECIFIC website with browser_tool and extracted content from it, that extracted content is your **PRIMARY SOURCE**
+- Web search results should NOT override or replace information you extracted directly from the target website
+- Use web search only for ADDITIONAL context (reviews, news, competitor comparisons) - NOT to replace first-hand data
+- Example: If user asks "create slides for magicterms.com" and you already browsed/extracted from magicterms.com, USE that extracted data - don't do web searches that might return info about OTHER similar websites
+
 ### CRITICAL REQUIREMENT - Sources
 
 After answering the user's question, you MUST include a "Sources:" section at the end of your response listing all relevant URLs from the search results as markdown hyperlinks.
