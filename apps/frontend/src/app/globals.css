@@ -333,14 +333,20 @@
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
-    /* Prevent text size adjustment on orientation change */
-    -webkit-text-size-adjust: 100%;
-    text-size-adjust: 100%;
+    /* Ensure mobile scrolling works */
+    height: 100%;
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
   body {
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply bg-background text-foreground;
     font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
+    /* Ensure mobile scrolling works */
+    min-height: 100%;
+    overflow-x: hidden;
+    overscroll-behavior-y: none;
   }
 
   /* Mobile viewport fixes - prevent overscroll bounce and ensure fixed viewport */
