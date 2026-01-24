@@ -26,9 +26,9 @@ def check_dependencies():
         print("Missing required dependencies for setup:")
         print("  " + ", ".join(missing))
         print("\nPlease install them first:")
-        print(f"  pip install {' '.join(missing)}")
+        print(f"  uv pip install {' '.join(missing)}")
         print("\nOr install all setup requirements:")
-        print("  pip install -r setup/requirements.txt")
+        print("  uv pip install -r setup/requirements.txt")
         print("=" * 60 + "\n")
         return False
 

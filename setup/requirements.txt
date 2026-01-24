@@ -1,5 +1,5 @@
 # Requirements for Kortix Suna Setup Package
-# Install with: pip install -r setup/requirements.txt
+# Install with: uv pip install -r setup/requirements.txt
 
 # Required
 pydantic>=2.0.0
