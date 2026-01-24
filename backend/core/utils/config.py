@@ -53,6 +53,13 @@ class Configuration:
     # Model selection
     # Options: "bedrock", "anthropic", "minimax", "grok", "openai"
     MAIN_LLM: str = "bedrock"
+    # Optional: Override the default model for the selected provider
+    # If not set, uses the default model for the provider:
+    #   - anthropic: anthropic/claude-haiku-4-5-20251001
+    #   - grok: openrouter/x-ai/grok-4.1-fast
+    #   - openai: openrouter/openai/gpt-4o-mini
+    #   - minimax: openrouter/minimax/minimax-m2.1
+    MAIN_LLM_MODEL: Optional[str] = None
     # ============================================
     
     # ===== PRESENCE CONFIGURATION =====
