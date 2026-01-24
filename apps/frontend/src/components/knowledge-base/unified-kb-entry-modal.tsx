@@ -104,8 +104,19 @@ export function UnifiedKbEntryModal({
     const folderValidation = useNameValidation(newFolderName, 'folder', existingFolderNames);
     const filenameValidation = useNameValidation(filename, 'file');
 
-    // Check if we have a valid folder (selected or pending valid creation)
-    const hasValidFolder = selectedFolder || (isEditingNewFolder && newFolderName.trim() && folderValidation.isValid);
+    // Generate a unique "Untitled" folder name
+    const generateUntitledName = useCallback((): string => {
+        const base = 'Untitled';
+        if (!existingFolderNames.includes(base)) {
+            return base;
+        }
+        let counter = 2;
+        while (existingFolderNames.includes(`${base} (${counter})`)) {
+            counter++;
+        }
+        return `${base} (${counter})`;
+    }, [existingFolderNames]);
+
 
     // Helper: create folder and return its ID
     const createFolder = async (showToast = true): Promise<string | null> => {
@@ -153,16 +164,55 @@ export function UnifiedKbEntryModal({
         }
     };
 
-    // Get existing folder or auto-create pending one
+    // Get existing folder or auto-create one
     const getOrCreateFolder = async (): Promise<string | null> => {
         if (selectedFolder) return selectedFolder;
 
+        // If user is typing a new folder name, use that
         if (isEditingNewFolder && newFolderName.trim() && folderValidation.isValid) {
             return await createFolder(true);
         }
 
-        toast.error('Please select or create a folder');
-        return null;
+        // Auto-create an "Untitled" folder
+        const autoName = generateUntitledName();
+        setNewFolderName(autoName);
+
+        setIsCreatingFolder(true);
+        try {
+            const supabase = createClient();
+            const { data: { session } } = await supabase.auth.getSession();
+
+            if (!session?.access_token) {
+                throw new Error('No session found');
+            }
+
+            const response = await fetch(`${API_URL}/knowledge-base/folders`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ name: autoName })
+            });
+
+            if (response.ok) {
+                const newFolder = await response.json();
+                onUploadComplete(); // Refresh folders list
+                setSelectedFolder(newFolder.folder_id);
+                setNewFolderName('');
+                return newFolder.folder_id;
+            } else {
+                const errorData = await response.json().catch(() => null);
+                toast.error(errorData?.detail || 'Failed to create folder');
+                return null;
+            }
+        } catch (error) {
+            console.error('Error creating folder:', error);
+            toast.error('Failed to create folder');
+            return null;
+        } finally {
+            setIsCreatingFolder(false);
+        }
     };
 
     const handleFolderCreation = async () => {
@@ -495,7 +545,7 @@ export function UnifiedKbEntryModal({
                             <div className="flex gap-2">
                                 <Select value={selectedFolder} onValueChange={setSelectedFolder}>
                                     <SelectTrigger className="flex-1">
-                                        <SelectValue placeholder={folders.length === 0 ? "No folders" : "Select folder..."} />
+                                        <SelectValue placeholder="Select or auto-create folder" />
                                     </SelectTrigger>
                                     <SelectContent>
                                         {folders.map((folder) => (
@@ -666,7 +716,7 @@ export function UnifiedKbEntryModal({
                     {activeTab === 'upload' && (
                         <Button
                             onClick={handleFileUpload}
-                            disabled={!hasValidFolder || selectedFiles.length === 0 || isLoading}
+                            disabled={selectedFiles.length === 0 || isLoading}
                         >
                             {isUploading ? (
                                 <>
@@ -684,7 +734,7 @@ export function UnifiedKbEntryModal({
                     {activeTab === 'text' && (
                         <Button
                             onClick={handleTextCreate}
-                            disabled={!hasValidFolder || !filename.trim() || !content.trim() || !filenameValidation.isValid || isLoading}
+                            disabled={!filename.trim() || !content.trim() || !filenameValidation.isValid || isLoading}
                         >
                             {isCreatingText ? (
                                 <>
@@ -702,7 +752,7 @@ export function UnifiedKbEntryModal({
                     {activeTab === 'git' && (
                         <Button
                             onClick={handleGitClone}
-                            disabled={!hasValidFolder || !gitUrl.trim() || isLoading}
+                            disabled={!gitUrl.trim() || isLoading}
                         >
                             {isCloning ? (
                                 <>
