@@ -750,7 +750,15 @@ async def unified_agent_start(
         model_name = await model_manager.get_default_model_for_user(client, account_id)
     elif model_name != "mock-ai":
         model_name = model_manager.resolve_model_id(model_name)
-    
+
+    if model_name in ("kortix/basic", "kortix-basic") and config.ENV_MODE != EnvMode.LOCAL:
+        from core.billing.subscriptions import subscription_service
+        from core.cache.runtime_cache import get_cached_tier_info
+        tier_info = await get_cached_tier_info(account_id) or await subscription_service.get_user_subscription_tier(account_id)
+        if tier_info.get('name') in ('free', 'none'):
+            logger.info(f"⚡ [MODEL_OVERRIDE] Free tier user {account_id} - using mimo-v2-flash instead of basic")
+            model_name = "kortix/mimo-v2-flash"
+
     memory_enabled_bool = memory_enabled.lower() == 'true' if memory_enabled else None
     
     skip_limits = False
@@ -779,7 +787,19 @@ async def unified_agent_start(
             from core.files.upload_handler import fast_parse_files
             final_prompt, files_data = await fast_parse_files(files, final_prompt)
             logger.info(f"[AGENT_START] Received {len(files)} files, parsed {len(files_data)} for upload")
-        
+        if files_data and model_name == "kortix/mimo-v2-flash":
+            has_images = any(mime.startswith("image/") for _, _, mime, _ in files_data)
+            if has_images:
+                logger.info(f"⚡ [IMAGE_UPGRADE] Free tier user uploaded image - injecting upgrade prompt")
+                final_prompt = f"""[SYSTEM INSTRUCTION: The user uploaded an image but they are on the FREE tier which does not support image analysis. You MUST respond by:
+1. Acknowledge you see they uploaded an image
+2. Explain that image analysis requires an upgrade
+3. Promote Plus ($20/month) which includes: image analysis, unlimited threads, 4,000 credits/month, advanced AI models, and faster responses
+4. Be friendly and encouraging about upgrading
+DO NOT attempt to analyze or describe the image. Just deliver the upgrade message naturally.]
+
+{final_prompt}"""
+
         result = await start_agent_run(
             account_id=account_id,
             prompt=final_prompt,
