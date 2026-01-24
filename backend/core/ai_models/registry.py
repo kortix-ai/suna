@@ -76,6 +76,12 @@ class PricingPresets:
         cached_read_cost_per_million_tokens=0.08,
     )
 
+    DEEPSEEK_V3 = ModelPricing(
+        input_cost_per_million_tokens=0.14,
+        output_cost_per_million_tokens=0.28,
+        cached_read_cost_per_million_tokens=0.014,
+    )
+
 
 FREE_MODEL_ID = "kortix/kimi-k2"
 PREMIUM_MODEL_ID = "kortix/power"
@@ -484,6 +490,27 @@ class ModelFactory:
         )
 
     @staticmethod
+    def create_deepseek_v3() -> Model:
+        return Model(
+            id="kortix/deepseek-v3",
+            name="DeepSeek V3",
+            litellm_model_id="openrouter/deepseek/deepseek-chat-v3-0324",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["deepseek-v3", "deepseek", "deepseek/deepseek-chat-v3-0324"],
+            context_window=128_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.DEEPSEEK_V3,
+            tier_availability=["free", "paid"],
+            priority=90,
+            recommended=False,
+            enabled=True,
+        )
+
+    @staticmethod
     def create_haiku_3_5() -> Model:
         return Model(
             id="kortix/haiku-3.5",
@@ -560,6 +587,7 @@ class ModelRegistry:
         self.register(ModelFactory.create_kimi_k2())
         self.register(ModelFactory.create_minimax_m2())
         self.register(ModelFactory.create_haiku_3_5())
+        self.register(ModelFactory.create_deepseek_v3())
 
         if config.ENV_MODE != EnvMode.PRODUCTION:
             self.register(ModelFactory.create_test_model())
@@ -573,6 +601,7 @@ class ModelRegistry:
         self._litellm_id_to_pricing["openrouter/xiaomi/mimo-v2-flash"] = PricingPresets.MIMO_V2_FLASH
         self._litellm_id_to_pricing["openrouter/moonshotai/kimi-k2-thinking"] = PricingPresets.KIMI_K2
         self._litellm_id_to_pricing["bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"] = PricingPresets.HAIKU_3_5
+        self._litellm_id_to_pricing["openrouter/deepseek/deepseek-chat-v3-0324"] = PricingPresets.DEEPSEEK_V3
     
     def register(self, model: Model) -> None:
         self._models[model.id] = model
