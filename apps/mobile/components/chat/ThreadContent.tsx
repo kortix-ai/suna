@@ -709,18 +709,63 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       }
     }, [streamingReasoningContent]);
 
+    // Reasoning grace period: When agent starts, briefly delay showing text to allow reasoning to arrive first
+    // This prevents the jarring experience of text appearing before the reasoning section
+    const REASONING_GRACE_PERIOD_MS = 200;
+    const [isInReasoningGracePeriod, setIsInReasoningGracePeriod] = React.useState(false);
+    const gracePeriodTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
     // Reset ref when agent starts a new turn
     React.useEffect(() => {
       const wasActive = prevAgentActiveRef.current;
       const isNowActive = isAgentActive;
       prevAgentActiveRef.current = isNowActive;
 
-      // Agent just started - clear ref for fresh content
+      // Agent just started - clear ref for fresh content and start grace period
       if (!wasActive && isNowActive) {
         lastReasoningContentRef.current = '';
         setReasoningExpanded(false);
+
+        // Start reasoning grace period
+        setIsInReasoningGracePeriod(true);
+        if (gracePeriodTimeoutRef.current) {
+          clearTimeout(gracePeriodTimeoutRef.current);
+        }
+        gracePeriodTimeoutRef.current = setTimeout(() => {
+          setIsInReasoningGracePeriod(false);
+          gracePeriodTimeoutRef.current = null;
+        }, REASONING_GRACE_PERIOD_MS);
+      }
+
+      // Agent stopped - end grace period
+      if (wasActive && !isNowActive) {
+        setIsInReasoningGracePeriod(false);
+        if (gracePeriodTimeoutRef.current) {
+          clearTimeout(gracePeriodTimeoutRef.current);
+          gracePeriodTimeoutRef.current = null;
+        }
       }
     }, [isAgentActive]);
+
+    // End grace period immediately when reasoning content arrives
+    React.useEffect(() => {
+      if (streamingReasoningContent && streamingReasoningContent.trim().length > 0 && isInReasoningGracePeriod) {
+        setIsInReasoningGracePeriod(false);
+        if (gracePeriodTimeoutRef.current) {
+          clearTimeout(gracePeriodTimeoutRef.current);
+          gracePeriodTimeoutRef.current = null;
+        }
+      }
+    }, [streamingReasoningContent, isInReasoningGracePeriod]);
+
+    // Cleanup timeout on unmount
+    React.useEffect(() => {
+      return () => {
+        if (gracePeriodTimeoutRef.current) {
+          clearTimeout(gracePeriodTimeoutRef.current);
+        }
+      };
+    }, []);
 
     // Helper to render agent indicator based on agent type
     const renderAgentIndicator = useCallback((agentId: string | null | undefined) => {
@@ -1801,10 +1846,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           // Check if we have ACTUAL visible streaming content to show
           // This prevents the shift from AgentLoader to empty streaming container
           const hasVisibleStreamingText = (() => {
+            // During reasoning grace period, don't show text yet - allow reasoning to arrive first
+            if (isInReasoningGracePeriod) return false;
+
             if (!streamingTextContent && !isSmoothAnimating) return false;
             const rawContent = streamingTextContent || '';
             const displayContent = smoothStreamingText || '';
-            
+
             // Check for XML tags
             let detectedTag: string | null = null;
             let tagStartIndex = -1;
@@ -1823,22 +1871,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 }
               }
             }
-            
+
             // Has visible text before tag?
             const textBeforeTag = detectedTag && tagStartIndex >= 0
               ? displayContent.substring(0, Math.min(displayContent.length, tagStartIndex))
               : displayContent;
             const hasText = preprocessTextOnlyToolsLocal(textBeforeTag).trim().length > 0;
-            
+
             // Has visible tag (tool card)?
             const hasTag = detectedTag !== null;
-            
+
             return hasText || hasTag;
           })();
           
           // Brewing = agent is active but no VISIBLE content yet (including reasoning)
           // Keep showing AgentLoader until we have actual visible streaming content
-          const isBrewing = isAgentActive && !hasVisibleStreamingText && !streamingToolCall && !hasVisibleReasoning;
+          // During grace period, treat tool calls as not visible either
+          const hasVisibleToolCall = streamingToolCall && !isInReasoningGracePeriod;
+          const isBrewing = isAgentActive && !hasVisibleStreamingText && !hasVisibleToolCall && !hasVisibleReasoning;
 
           // Determine if we should show reasoning section
           const showReasoning = isStreaming && hasVisibleReasoning;
@@ -1928,7 +1978,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               )}
               
               {/* Streaming tool call - render HERE to prevent layout jump */}
-              {isStreaming && streamingToolCall && (() => {
+              {/* Hide during reasoning grace period to allow reasoning to appear first */}
+              {isStreaming && streamingToolCall && !isInReasoningGracePeriod && (() => {
                 const parsedMetadata = safeJsonParse<ParsedMetadata>(
                   streamingToolCall.metadata,
                   {}

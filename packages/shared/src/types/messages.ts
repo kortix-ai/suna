@@ -19,6 +19,7 @@ export interface UnifiedMessage {
     | 'tool'
     | 'system'
     | 'status'
+    | 'reasoning'
     | 'browser_state'
     | 'image_context'
     | 'llm_response_end'
@@ -74,6 +75,8 @@ export interface ParsedContent {
   is_error?: boolean;
   /** Error/status message text */
   message?: string;
+  /** Reasoning/thinking content from models with reasoning capabilities */
+  reasoning_content?: string;
   /** Usage stats for llm_response_end messages */
   usage?: {
     prompt_tokens?: number;
@@ -122,6 +125,8 @@ export interface ParsedMetadata {
   }>;
   /** Text content */
   text_content?: string;
+  /** Reasoning/thinking content from models with reasoning capabilities */
+  reasoning_content?: string;
   /** Function name - stored directly in metadata, not in result */
   function_name?: string;
   /** Tool result */

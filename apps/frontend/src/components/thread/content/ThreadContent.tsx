@@ -242,18 +242,64 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
   // Reset refs when agent starts a new turn
   const prevAgentActiveRef = useRef(isAgentActive);
+
+  // Reasoning grace period: When agent starts, briefly delay showing text to allow reasoning to arrive first
+  // This prevents the jarring experience of text appearing before the reasoning section
+  const REASONING_GRACE_PERIOD_MS = 200;
+  const [isInReasoningGracePeriod, setIsInReasoningGracePeriod] = useState(false);
+  const gracePeriodTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const wasActive = prevAgentActiveRef.current;
     const isNowActive = isAgentActive;
     prevAgentActiveRef.current = isNowActive;
 
-    // Agent just started - clear refs for fresh content
+    // Agent just started - clear refs for fresh content and start grace period
     if (!wasActive && isNowActive && isLastGroup) {
       lastTextContentRef.current = "";
       lastReasoningContentRef.current = "";
       lastAskCompleteTextRef.current = "";
+
+      // Start reasoning grace period
+      setIsInReasoningGracePeriod(true);
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+      }
+      gracePeriodTimeoutRef.current = setTimeout(() => {
+        setIsInReasoningGracePeriod(false);
+        gracePeriodTimeoutRef.current = null;
+      }, REASONING_GRACE_PERIOD_MS);
+    }
+
+    // Agent stopped - end grace period
+    if (wasActive && !isNowActive) {
+      setIsInReasoningGracePeriod(false);
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+        gracePeriodTimeoutRef.current = null;
+      }
     }
   }, [isAgentActive, isLastGroup]);
+
+  // End grace period immediately when reasoning content arrives
+  useEffect(() => {
+    if (streamingReasoningContent && streamingReasoningContent.trim().length > 0 && isInReasoningGracePeriod) {
+      setIsInReasoningGracePeriod(false);
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+        gracePeriodTimeoutRef.current = null;
+      }
+    }
+  }, [streamingReasoningContent, isInReasoningGracePeriod]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Determine the text content to display:
   // - If streaming content exists, use it (live)
@@ -476,6 +522,12 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       return null;
     }
 
+    // During reasoning grace period, don't show text content yet
+    // This allows reasoning to arrive first before showing any text
+    if (isInReasoningGracePeriod) {
+      return null;
+    }
+
     // EARLY CHECK: If agent is idle and there's a persisted ask/complete tool,
     // the ask/complete tool will render its own text via renderAskToolCall/renderCompleteToolCall.
     // We should NOT show streaming content in this case to avoid duplication.
@@ -672,6 +724,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     visibleMessages,
     handleToolClick,
     group.messages,
+    isInReasoningGracePeriod,
   ]);
 
   const playbackStreamingContent = useMemo(() => {
@@ -763,6 +816,10 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   const streamingToolCallContent = useMemo(() => {
     // Don't show streaming tool call if not streaming or agent is not running
     if (!isLastGroup || readOnly || !streamingToolCall) return null;
+
+    // During reasoning grace period, don't show tool calls yet (especially ask/complete)
+    // This allows reasoning to arrive first before showing any content
+    if (isInReasoningGracePeriod) return null;
 
     // Don't show if agent is not in a streaming state (unless we have ask/complete text to show)
     // This prevents flash during transition - keep showing content until persisted messages take over
@@ -933,11 +990,18 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     agentStatus,
     handleToolClick,
     askCompleteText,
+    isInReasoningGracePeriod,
   ]);
 
   const showLoader = useMemo(() => {
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
+
+    // During grace period, show loader while waiting for reasoning (unless reasoning already arrived)
+    if (isInReasoningGracePeriod && !(streamingReasoningContent && streamingReasoningContent.trim().length > 0)) {
+      return true;
+    }
+
     if (streamingTextContent || streamingToolCall) return false;
     // Don't show loader if we have reasoning content streaming
     if (streamingReasoningContent && streamingReasoningContent.trim().length > 0) return false;
@@ -970,6 +1034,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamHookStatus,
     group.messages,
     askCompleteText,
+    isInReasoningGracePeriod,
   ]);
 
   // Determine if reasoning is actively happening (agent running, before text response starts)

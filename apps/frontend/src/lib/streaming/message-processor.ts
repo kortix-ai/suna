@@ -222,25 +222,37 @@ function processTypedMessage(
 ): ProcessedMessage {
   const parsedContent = safeJsonParse<ParsedContent>(message.content || '', {});
   const parsedMetadata = safeJsonParse<ParsedMetadata>(message.metadata || '', {});
-  
+
   switch (message.type) {
     case 'assistant':
       return processAssistantMessage(message, parsedContent, parsedMetadata, accumulator);
-    
+
+    case 'reasoning':
+      // Handle dedicated reasoning stream events from backend
+      const reasoningContent = parsedContent.reasoning_content;
+      if (reasoningContent) {
+        return {
+          type: 'reasoning_chunk',
+          content: typeof reasoningContent === 'string' ? reasoningContent : String(reasoningContent),
+          message,
+        };
+      }
+      return { type: 'ignore' };
+
     case 'tool':
       return processToolMessage(message, parsedMetadata, accumulator);
-    
+
     case 'status':
       return processStatusMessage(parsedContent);
-    
+
     case 'llm_response_start':
     case 'llm_response_end':
       return { type: 'ignore' };
-    
+
     case 'user':
     case 'system':
       return { type: 'ignore', message };
-    
+
     default:
       return { type: 'ignore' };
   }

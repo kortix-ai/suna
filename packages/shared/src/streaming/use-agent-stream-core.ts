@@ -568,12 +568,24 @@ export function useAgentStreamCore(
       case 'llm_response_start':
         // Ignore metadata-only messages
         break;
-        
+
+      case 'reasoning':
+        // Handle dedicated reasoning stream events from backend
+        // This is sent as type: "reasoning" with content: {"reasoning_content": "..."}
+        const reasoningFromContent = parsedContent.reasoning_content;
+        if (reasoningFromContent) {
+          const reasoningText = typeof reasoningFromContent === 'string'
+            ? reasoningFromContent
+            : String(reasoningFromContent);
+          setReasoningContent((prev) => prev + reasoningText);
+        }
+        break;
+
       case 'user':
       case 'system':
         if (message.message_id) callbacksRef.current.onMessage(message);
         break;
-        
+
       default:
         console.warn('[useAgentStreamCore] Unhandled message type:', message.type);
     }
