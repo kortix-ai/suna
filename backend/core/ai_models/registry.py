@@ -58,8 +58,14 @@ class PricingPresets:
         cached_read_cost_per_million_tokens=0.075,
     )
 
+    MIMO_V2_FLASH = ModelPricing(
+        input_cost_per_million_tokens=0.10,
+        output_cost_per_million_tokens=0.30,
+        cached_read_cost_per_million_tokens=0.02,
+    )
 
-FREE_MODEL_ID = "kortix/basic"
+
+FREE_MODEL_ID = "kortix/mimo-v2-flash"
 PREMIUM_MODEL_ID = "kortix/power"
 IMAGE_MODEL_ID = "kortix/haiku"
 
@@ -444,6 +450,27 @@ class ModelFactory:
             enabled=True,
         )
 
+    @staticmethod
+    def create_mimo_v2_flash() -> Model:
+        return Model(
+            id="kortix/mimo-v2-flash",
+            name="MiMo Flash",
+            litellm_model_id="openrouter/xiaomi/mimo-v2-flash",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["mimo-v2-flash", "xiaomi/mimo-v2-flash", "mimo"],
+            context_window=262_144,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.MIMO_V2_FLASH,
+            tier_availability=["free", "paid"],
+            priority=103,  # Highest priority for free tier default
+            recommended=True,  # Recommended for all users
+            enabled=True,
+        )
+
 
 class ModelRegistry:
     
@@ -472,7 +499,8 @@ class ModelRegistry:
         self.register(ModelFactory.create_anthropic_haiku(use_bedrock))
         self.register(ModelFactory.create_grok_4_1_fast())
         self.register(ModelFactory.create_gpt4o_mini())
-        
+        self.register(ModelFactory.create_mimo_v2_flash())
+
         if config.ENV_MODE != EnvMode.PRODUCTION:
             self.register(ModelFactory.create_test_model())
     
@@ -482,6 +510,7 @@ class ModelRegistry:
         self._litellm_id_to_pricing["openrouter/minimax/minimax-m2.1"] = PricingPresets.MINIMAX_M2
         self._litellm_id_to_pricing["openrouter/x-ai/grok-4.1-fast"] = PricingPresets.GROK_4_1_FAST
         self._litellm_id_to_pricing["openrouter/openai/gpt-4o-mini"] = PricingPresets.GPT_4O_MINI
+        self._litellm_id_to_pricing["openrouter/xiaomi/mimo-v2-flash"] = PricingPresets.MIMO_V2_FLASH
     
     def register(self, model: Model) -> None:
         self._models[model.id] = model
