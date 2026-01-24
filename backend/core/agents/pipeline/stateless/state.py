@@ -63,6 +63,7 @@ class RunState:
         self._tool_results: OrderedDict[str, ToolResult] = OrderedDict()
         self._pending_tool_calls: List[Dict[str, Any]] = []
         self._accumulated_content: str = ""
+        self._accumulated_reasoning: str = ""
         self._deferred_tool_results: List[Tuple[ToolResult, Optional[str]]] = []
 
         self._step_counter: int = 0
@@ -217,6 +218,16 @@ class RunState:
             self._accumulated_content += content
         self._last_activity = time.time()
 
+    def append_reasoning(self, reasoning: str) -> None:
+        if len(self._accumulated_reasoning) + len(reasoning) > self.MAX_CONTENT_LENGTH:
+            logger.warning(f"[RunState] Reasoning length limit reached ({self.MAX_CONTENT_LENGTH}), truncating")
+            remaining = self.MAX_CONTENT_LENGTH - len(self._accumulated_reasoning)
+            if remaining > 0:
+                self._accumulated_reasoning += reasoning[:remaining]
+        else:
+            self._accumulated_reasoning += reasoning
+        self._last_activity = time.time()
+
     def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
         self._message_counter += 1
         message_id = str(uuid.uuid4())
@@ -248,8 +259,8 @@ class RunState:
         return str(uuid.uuid4())
     
     def finalize_assistant_message(
-        self, 
-        tool_calls: Optional[List[Dict[str, Any]]] = None, 
+        self,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
         thread_run_id: Optional[str] = None,
         message_id: Optional[str] = None
     ) -> str:
@@ -260,6 +271,8 @@ class RunState:
         metadata = {}
         if thread_run_id:
             metadata["thread_run_id"] = thread_run_id
+        if self._accumulated_reasoning:
+            metadata["reasoning_content"] = self._accumulated_reasoning
         if tool_calls:
             unified_tool_calls = []
             for tc in tool_calls:
@@ -302,6 +315,7 @@ class RunState:
 
         self._check_flush_threshold()
         self._accumulated_content = ""
+        self._accumulated_reasoning = ""
         return actual_message_id
 
     def queue_tool_call(self, tool_call: Dict[str, Any]) -> None:

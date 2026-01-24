@@ -91,12 +91,30 @@ class MessageBuilder:
             "updated_at": stream_start
         }
 
+    def build_reasoning_chunk(self, reasoning_content: str, stream_start: str) -> Dict[str, Any]:
+        seq = self._increment_sequence()
+        return {
+            "sequence": seq,
+            "message_id": None,
+            "thread_id": self._get_thread_id(),
+            "type": "reasoning",
+            "is_llm_message": True,
+            "content": json.dumps({"reasoning_content": reasoning_content}),
+            "metadata": json.dumps({
+                "stream_status": "reasoning_chunk",
+                "thread_run_id": self._get_thread_run_id()
+            }),
+            "created_at": stream_start,
+            "updated_at": stream_start
+        }
+
     def build_assistant_complete(
-        self, 
-        message_id: str, 
-        content: str, 
-        tool_calls: Optional[List[Dict[str, Any]]], 
-        stream_start: str
+        self,
+        message_id: str,
+        content: str,
+        tool_calls: Optional[List[Dict[str, Any]]],
+        stream_start: str,
+        reasoning_content: Optional[str] = None
     ) -> Dict[str, Any]:
         unified_tool_calls = []
         transformed_tool_calls = []
@@ -135,6 +153,8 @@ class MessageBuilder:
         }
         if unified_tool_calls:
             metadata["tool_calls"] = unified_tool_calls
+        if reasoning_content:
+            metadata["reasoning_content"] = reasoning_content
         
         inner_content = {"role": "assistant", "content": content or ""}
         if transformed_tool_calls:

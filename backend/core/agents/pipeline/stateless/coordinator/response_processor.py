@@ -95,10 +95,33 @@ class ResponseProcessor:
             delta = getattr(choice, 'delta', None)
             finish_reason = getattr(choice, 'finish_reason', None)
 
+            # Handle reasoning/thinking content (extended thinking, MiniMax reasoning, etc.)
+            if delta and hasattr(delta, 'reasoning_content') and delta.reasoning_content:
+                reasoning = delta.reasoning_content
+                self._state.append_reasoning(reasoning)
+                yield self._message_builder.build_reasoning_chunk(reasoning, stream_start)
+
             if delta and hasattr(delta, 'content') and delta.content:
-                content = self._extract_content(delta.content)
-                self._state.append_content(content)
-                yield self._message_builder.build_content_chunk(content, stream_start)
+                # Check if content is a list of content blocks (Anthropic extended thinking format)
+                if isinstance(delta.content, list):
+                    for block in delta.content:
+                        block_type = getattr(block, 'type', None) if hasattr(block, 'type') else block.get('type') if isinstance(block, dict) else None
+                        block_text = getattr(block, 'text', None) if hasattr(block, 'text') else block.get('text') if isinstance(block, dict) else None
+
+                        if block_type == 'thinking' and block_text:
+                            self._state.append_reasoning(block_text)
+                            yield self._message_builder.build_reasoning_chunk(block_text, stream_start)
+                        elif block_type == 'text' and block_text:
+                            self._state.append_content(block_text)
+                            yield self._message_builder.build_content_chunk(block_text, stream_start)
+                        elif block_text:
+                            # Default to content if type is unknown
+                            self._state.append_content(block_text)
+                            yield self._message_builder.build_content_chunk(block_text, stream_start)
+                else:
+                    content = self._extract_content(delta.content)
+                    self._state.append_content(content)
+                    yield self._message_builder.build_content_chunk(content, stream_start)
 
             if delta and hasattr(delta, 'tool_calls') and delta.tool_calls:
                 self._process_tool_call_deltas(delta.tool_calls, tool_call_buffer)
@@ -176,20 +199,22 @@ class ResponseProcessor:
                         complete_tool_calls = self._build_complete_tool_calls(tool_call_buffer)
 
                         accumulated_content = self._state._accumulated_content or ""
-                        
+                        accumulated_reasoning = self._state._accumulated_reasoning or ""
+
                         finalized_id = self._state.finalize_assistant_message(
                             tool_calls=complete_tool_calls,
                             thread_run_id=thread_run_id,
                             message_id=assistant_message_id
                         )
-                        
+
                         committed_count = self._state.commit_deferred_tool_results()
                         logger.debug(f"[ResponseProcessor] Finalized assistant message with {len(complete_tool_calls)} tool calls: {finalized_id}, committed {committed_count} tool results")
-                        
+
                         self._state.trigger_flush()
-                        
+
                         complete_msg = self._message_builder.build_assistant_complete(
-                            finalized_id, accumulated_content, complete_tool_calls, stream_start
+                            finalized_id, accumulated_content, complete_tool_calls, stream_start,
+                            reasoning_content=accumulated_reasoning if accumulated_reasoning else None
                         )
                         complete_msg["updated_at"] = datetime.now(timezone.utc).isoformat()
                         yield complete_msg
@@ -216,12 +241,14 @@ class ResponseProcessor:
         
         if self._state._accumulated_content and not self._state._terminated and assistant_message_id is None:
             accumulated_content = self._state._accumulated_content
+            accumulated_reasoning = self._state._accumulated_reasoning or ""
             assistant_message_id = self._state.finalize_assistant_message(
-                tool_calls if tool_calls else None, 
+                tool_calls if tool_calls else None,
                 self._message_builder._get_thread_run_id()
             )
             yield self._message_builder.build_assistant_complete(
-                assistant_message_id, accumulated_content, tool_calls if tool_calls else None, stream_start
+                assistant_message_id, accumulated_content, tool_calls if tool_calls else None, stream_start,
+                reasoning_content=accumulated_reasoning if accumulated_reasoning else None
             )
     
     async def _process_completed_executions(
@@ -410,18 +437,20 @@ class ResponseProcessor:
             self._state.queue_tool_call(tc)
 
         accumulated_content = self._state._accumulated_content or ""
+        accumulated_reasoning = self._state._accumulated_reasoning or ""
         assistant_message_id = self._state.finalize_assistant_message(
-            tool_calls, 
+            tool_calls,
             thread_run_id
         )
-        
+
         async for r in self._tool_executor.execute_tools(stream_start, assistant_message_id):
             yield r
 
         self._state.trigger_flush()
 
         complete_msg = self._message_builder.build_assistant_complete(
-            assistant_message_id, accumulated_content, tool_calls, stream_start
+            assistant_message_id, accumulated_content, tool_calls, stream_start,
+            reasoning_content=accumulated_reasoning if accumulated_reasoning else None
         )
         complete_msg["updated_at"] = datetime.now(timezone.utc).isoformat()
         logger.debug(
@@ -435,26 +464,28 @@ class ResponseProcessor:
             {"thread_run_id": thread_run_id}
         )
         yield self._message_builder.build_finish_message("tool_calls", tools_executed=True)
-        
+
     async def _handle_stop_finish(
-        self, 
-        tool_calls: list, 
+        self,
+        tool_calls: list,
         stream_start: str,
         llm_response_id: str,
         final_llm_response = None
     ) -> AsyncGenerator[Dict[str, Any], None]:
         thread_run_id = self._message_builder._get_thread_run_id()
-        
+
         accumulated_content = self._state._accumulated_content or ""
+        accumulated_reasoning = self._state._accumulated_reasoning or ""
         assistant_message_id = self._state.finalize_assistant_message(
-            tool_calls if tool_calls else None, 
+            tool_calls if tool_calls else None,
             thread_run_id
         )
-        
+
         self._state.trigger_flush()
-        
+
         complete_msg = self._message_builder.build_assistant_complete(
-            assistant_message_id, accumulated_content, tool_calls if tool_calls else None, stream_start
+            assistant_message_id, accumulated_content, tool_calls if tool_calls else None, stream_start,
+            reasoning_content=accumulated_reasoning if accumulated_reasoning else None
         )
         logger.debug(
             f"[ResponseProcessor] Yielding assistant_complete (stop): "
