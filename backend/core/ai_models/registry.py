@@ -400,7 +400,26 @@ class ModelFactory:
                 recommended=True,
                 enabled=True,
             )
-        else:  # minimax
+        elif main_llm == "openrouter":
+            # Generic OpenRouter - use custom model or fallback to minimax
+            return Model(
+                id="kortix/power",
+                name="Kortix Advanced Mode",
+                litellm_model_id=custom_model or default_models["minimax"],
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                ],
+                tier_availability=["paid"],
+                priority=101,
+                recommended=True,
+                enabled=True,
+            )
+        else:  # minimax or unknown
             return Model(
                 id="kortix/power",
                 name="Kortix Advanced Mode",

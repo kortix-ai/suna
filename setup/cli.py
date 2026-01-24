@@ -181,11 +181,9 @@ def main(args: Optional[List[str]] = None) -> int:
 
 def list_steps(console: "Console") -> int:
     """List all available setup steps."""
-    from setup.wizard import SetupWizard
-
     console.print("\nAvailable setup steps:\n")
 
-    # Get step info from wizard
+    # Step info (name, display_name, required)
     steps_info = [
         ("setup_method", "Choose Setup Method", True),
         ("requirements", "Check Requirements", True),
