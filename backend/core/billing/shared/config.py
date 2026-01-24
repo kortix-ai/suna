@@ -37,6 +37,7 @@ class Tier:
     memory_config: Optional[Dict] = None
     daily_credit_config: Optional[Dict] = None
     monthly_refill_enabled: Optional[bool] = True
+    disabled_tools: Optional[List[str]] = None
 
 TIERS: Dict[str, Tier] = {
     'none': Tier(
@@ -65,9 +66,9 @@ TIERS: Dict[str, Tier] = {
         display_name='Basic',
         can_purchase_credits=False,
         models=['haiku'],
-        project_limit=2,  # 2x thread_limit (safety buffer for orphan projects)
-        thread_limit=1,
-        concurrent_runs=1,
+        project_limit=20,
+        thread_limit=10,
+        concurrent_runs=4,
         custom_workers_limit=0,
         scheduled_triggers_limit=0,
         app_triggers_limit=0,
@@ -81,7 +82,7 @@ TIERS: Dict[str, Tier] = {
             'amount': Decimal('3.00'),
             'refresh_interval_hours': 168
         },
-        monthly_refill_enabled=False
+        monthly_refill_enabled=False,
     ),
     'tier_2_20': Tier(
         name='tier_2_20',
@@ -94,15 +95,11 @@ TIERS: Dict[str, Tier] = {
         display_name='Plus',
         can_purchase_credits=False,
         models=['all'],
-        # Frontend advertises "Unlimited Chats" on paid tiers.
-        # Threads are effectively "chats" and each thread creates a project, so both
-        # limits must be raised together to avoid mismatches and unexpected blocking.
-        project_limit=UNLIMITED_PROJECT_LIMIT,  # 2x thread_limit
+        project_limit=UNLIMITED_PROJECT_LIMIT,
         thread_limit=UNLIMITED_THREAD_LIMIT,
         concurrent_runs=3,
         custom_workers_limit=5,
         scheduled_triggers_limit=5,
-        # Matches frontend pricing copy: "25 app triggers"
         app_triggers_limit=25,
         memory_config={
             'enabled': True,
@@ -127,12 +124,11 @@ TIERS: Dict[str, Tier] = {
         display_name='Pro',
         can_purchase_credits=False,
         models=['all'],
-        project_limit=UNLIMITED_PROJECT_LIMIT,  # 2x thread_limit
+        project_limit=UNLIMITED_PROJECT_LIMIT,
         thread_limit=UNLIMITED_THREAD_LIMIT,
         concurrent_runs=5,
         custom_workers_limit=20,
         scheduled_triggers_limit=10,
-        # Matches frontend pricing copy: "50 app triggers"
         app_triggers_limit=50,
         memory_config={
             'enabled': True,
@@ -157,12 +153,11 @@ TIERS: Dict[str, Tier] = {
         display_name='Ultra',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=UNLIMITED_PROJECT_LIMIT,  # 2x thread_limit
+        project_limit=UNLIMITED_PROJECT_LIMIT,
         thread_limit=UNLIMITED_THREAD_LIMIT,
         concurrent_runs=20,
         custom_workers_limit=100,
         scheduled_triggers_limit=50,
-        # Matches frontend pricing copy: "200 app triggers"
         app_triggers_limit=200,
         memory_config={
             'enabled': True,
@@ -174,10 +169,9 @@ TIERS: Dict[str, Tier] = {
             'amount': Decimal('2.00'),
             'refresh_interval_hours': 24
         },
-        monthly_refill_enabled=True
+        monthly_refill_enabled=True,
     ),
     
-    # Legacy tiers - users may still be on these from previous pricing
     'tier_12_100': Tier(
         name='tier_12_100',
         price_ids=[],
@@ -185,7 +179,7 @@ TIERS: Dict[str, Tier] = {
         display_name='Legacy Pro',
         can_purchase_credits=True,
         models=['all'],
-        project_limit=2000,  # 2x thread_limit
+        project_limit=2000,
         thread_limit=1000,
         concurrent_runs=10,
         custom_workers_limit=20,
@@ -340,7 +334,6 @@ def can_purchase_credits(tier_name: str) -> bool:
 def is_model_allowed(tier_name: str, model: str) -> bool:
     tier = TIERS.get(tier_name, TIERS['none'])
     
-    # Tier has access to all models
     if 'all' in tier.models:
         return True
     
@@ -351,17 +344,12 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
     if not model_obj:
         return False
     
-    # Check the model's tier_availability from the registry
-    # This is the PRIMARY source of truth for model access - if set, it's definitive
     if model_obj.tier_availability:
         if tier_name in ['free', 'none']:
-            # Free tier can only access models with "free" in tier_availability
             return 'free' in model_obj.tier_availability
         else:
-            # Paid tiers can access models with "paid" in tier_availability
             return 'paid' in model_obj.tier_availability
     
-    # Fallback: only use pattern matching if tier_availability is not set (legacy models)
     for allowed_pattern in tier.models:
         if allowed_pattern.lower() in model_obj.name.lower():
             return True
@@ -375,7 +363,7 @@ def is_model_allowed(tier_name: str, model: str) -> bool:
 
 def get_project_limit(tier_name: str) -> int:
     tier = TIERS.get(tier_name)
-    return tier.project_limit if tier else 20  # Default to 2x free thread_limit
+    return tier.project_limit if tier else 20
 
 def is_commitment_price_id(price_id: str) -> bool:
     commitment_price_ids = [
@@ -461,3 +449,11 @@ def get_max_memories(tier_name: str) -> int:
 def get_memory_retrieval_limit(tier_name: str) -> int:
     config = get_memory_config(tier_name)
     return config.get('retrieval_limit', 0)
+
+def get_disabled_tools(tier_name: str) -> List[str]:
+    tier = TIERS.get(tier_name, TIERS['free'])
+    return tier.disabled_tools or []
+
+def is_tool_disabled(tier_name: str, tool_name: str) -> bool:
+    disabled = get_disabled_tools(tier_name)
+    return tool_name in disabled

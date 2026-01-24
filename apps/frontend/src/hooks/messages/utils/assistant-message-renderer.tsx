@@ -419,10 +419,32 @@ function renderSlideToolCall(
     return trMeta.tool_call_id === toolCall.tool_call_id;
   });
 
+  // Extract tool result data for error detection
+  let toolResultData: any = undefined;
+  let isError = false;
+  let errorMessage: string | undefined;
+
+  if (toolResult) {
+    const rawMeta = toolResult.metadata;
+    const metadata = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
+    toolResultData = metadata?.result;
+
+    if (metadata?.result?.success === false) {
+      isError = true;
+      errorMessage = metadata?.result?.error;
+    }
+  }
+
   const slideInfo = extractSlideInfo(toolResult);
   const isLoading = !toolResult || !slideInfo;
   const toolName = toolCall.function_name.replace(/_/g, '-');
   const IconComponent = getToolIcon(toolName);
+
+  // Build enhanced toolCall object with result data for error detection
+  const enhancedToolCall = {
+    ...toolCall,
+    tool_result: toolResultData
+  };
 
   return (
     <div key={`slide-${index}`} className="my-1.5">
@@ -430,19 +452,23 @@ function renderSlideToolCall(
       <ToolCard
         toolName={toolName}
         displayName={getCompletedToolName(toolName)}
-        toolCall={toolCall}
+        toolCall={enhancedToolCall}
         toolCallId={toolCall.tool_call_id}
         isStreaming={isLoading}
+        isError={isError}
+        errorMessage={errorMessage}
         fallbackIcon={IconComponent}
         onClick={() => onToolClick(message.message_id, 'create-slide', toolCall.tool_call_id)}
       />
-      {/* Slide preview below */}
-      <SlideInlineThumbnail
-        slideInfo={slideInfo}
-        project={project}
-        onClick={() => onToolClick(message.message_id, 'create-slide', toolCall.tool_call_id)}
-        isLoading={isLoading}
-      />
+      {/* Slide preview below - only show if not an error */}
+      {!isError && (
+        <SlideInlineThumbnail
+          slideInfo={slideInfo}
+          project={project}
+          onClick={() => onToolClick(message.message_id, 'create-slide', toolCall.tool_call_id)}
+          isLoading={isLoading}
+        />
+      )}
     </div>
   );
 }
@@ -455,61 +481,82 @@ function renderRegularToolCall(
 ): React.ReactNode {
   const { message, onToolClick, toolResults = [] } = props;
   const IconComponent = getToolIcon(toolName);
-  
+
   let websiteUrls: string[] | undefined;
   let imageUrls: string[] | undefined;
   let slideInfo: SlideInfo | undefined;
   let elapsedTime: number | undefined;
   let paramDisplay: string | null = null;
-  
-  const isWebSearch = toolName === 'web-search' || toolName === 'web_search' || 
+  let toolResultData: any = undefined;
+  let isError = false;
+  let errorMessage: string | undefined;
+
+  const isWebSearch = toolName === 'web-search' || toolName === 'web_search' ||
                       toolCall.function_name === 'web_search' || toolCall.function_name === 'web-search';
-  const isImageSearch = toolName === 'image-search' || toolName === 'image_search' || 
+  const isImageSearch = toolName === 'image-search' || toolName === 'image_search' ||
                         toolCall.function_name === 'image_search' || toolCall.function_name === 'image-search';
   const isSlideCreate = toolName === 'create-slide' || toolName === 'create_slide' ||
                         toolCall.function_name === 'create_slide' || toolCall.function_name === 'create-slide';
-  
+
+  // Always find the tool result for any tool (not just specific ones)
+  const toolResult = toolResults.find(tr => {
+    const rawMeta = tr.metadata;
+    const trMeta = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
+    return trMeta.tool_call_id === toolCall.tool_call_id;
+  });
+
+  // Extract tool result data for ToolCard (needed for upgrade CTA detection)
+  if (toolResult) {
+    const rawMeta = toolResult.metadata;
+    const metadata = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
+    toolResultData = metadata?.result;
+
+    // Check for error status
+    if (metadata?.result?.success === false) {
+      isError = true;
+      errorMessage = metadata?.result?.error;
+    }
+
+    elapsedTime = metadata?.result?.output?.response_time;
+  }
+
   if (isWebSearch || isImageSearch || isSlideCreate) {
-    const toolResult = toolResults.find(tr => {
-      const rawMeta = tr.metadata;
-      const trMeta = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
-      return trMeta.tool_call_id === toolCall.tool_call_id;
-    });
-    
     if (isWebSearch) {
       websiteUrls = extractWebSearchUrls(toolResult);
     }
-    
+
     if (isImageSearch) {
       imageUrls = extractImageSearchUrls(toolResult);
     }
-    
+
     if (isSlideCreate) {
       slideInfo = extractSlideInfo(toolResult);
-    }
-    
-    if (toolResult) {
-      const rawMeta = toolResult.metadata;
-      const metadata = typeof rawMeta === 'string' ? safeJsonParse<any>(rawMeta, {}) : rawMeta;
-      elapsedTime = metadata?.result?.output?.response_time;
     }
   } else {
     paramDisplay = getToolCallDisplayParam(toolCall);
   }
 
   const baseDisplayName = (toolCall as any)._display_hint || getCompletedToolName(toolName);
-  const displayName = elapsedTime !== undefined 
+  const displayName = elapsedTime !== undefined
     ? `${baseDisplayName} for ${formatElapsedTime(elapsedTime)}`
     : baseDisplayName;
+
+  // Build enhanced toolCall object with result data for error detection
+  const enhancedToolCall = {
+    ...toolCall,
+    tool_result: toolResultData
+  };
 
   return (
     <div key={`tool-${index}`} className="my-1.5">
       <ToolCard
         toolName={toolName}
         displayName={displayName}
-        toolCall={toolCall}
+        toolCall={enhancedToolCall}
         toolCallId={toolCall.tool_call_id}
         paramDisplay={paramDisplay}
+        isError={isError}
+        errorMessage={errorMessage}
         fallbackIcon={IconComponent}
         onClick={() => onToolClick(message.message_id, toolName, toolCall.tool_call_id)}
         websiteUrls={websiteUrls}

@@ -503,9 +503,9 @@ Multiple parallel tool calls:
     async def _fetch_user_context_data(user_id: Optional[str], client) -> Optional[str]:
         if not (user_id and client):
             return None
-        
+
         fetch_start = time.time()
-        
+
         # Check cache first
         from core.cache.runtime_cache import get_cached_user_context, set_cached_user_context
         cached = await get_cached_user_context(user_id)
@@ -513,8 +513,8 @@ Multiple parallel tool calls:
             elapsed = (time.time() - fetch_start) * 1000
             logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: hit)")
             return cached if cached else None
-        
-        # Fetch locale and username in parallel
+
+        # Fetch locale, username, and subscription tier in parallel
         async def fetch_locale():
             try:
                 from core.utils.user_locale import get_user_locale
@@ -522,14 +522,14 @@ Multiple parallel tool calls:
             except Exception as e:
                 logger.warning(f"Failed to fetch locale for user {user_id}: {e}")
                 return None
-        
+
         async def fetch_username():
             try:
                 user = await client.auth.admin.get_user_by_id(user_id)
                 if user and user.user:
                     user_metadata = user.user.user_metadata or {}
                     email = user.user.email
-                    
+
                     username = (
                         user_metadata.get('full_name') or
                         user_metadata.get('name') or
@@ -541,17 +541,31 @@ Multiple parallel tool calls:
             except Exception as e:
                 logger.warning(f"Failed to fetch username for user {user_id}: {e}")
                 return None
-        
-        locale, username = await asyncio.gather(fetch_locale(), fetch_username())
-        
+
+        async def fetch_subscription_tier():
+            try:
+                from core.cache.runtime_cache import get_cached_tier_info
+                tier_info = await get_cached_tier_info(user_id)
+                if not tier_info:
+                    logger.debug(f"[TIER] Cache miss for user {user_id}")
+                    return None
+                tier_name = tier_info.get('tier_name') or tier_info.get('name', 'free')
+                logger.debug(f"[TIER] Cache hit for user {user_id}: {tier_name}")
+                return tier_name
+            except Exception as e:
+                logger.warning(f"Failed to fetch subscription tier for user {user_id}: {e}")
+                return None
+
+        locale, username, tier_name = await asyncio.gather(fetch_locale(), fetch_username(), fetch_subscription_tier())
+
         context_parts = []
-        
+
         if locale:
             from core.utils.user_locale import get_locale_context_prompt
             locale_prompt = get_locale_context_prompt(locale)
             context_parts.append(f"\n\n{locale_prompt}\n")
             logger.debug(f"Added locale context ({locale}) to system prompt for user {user_id}")
-        
+
         if username:
             username_info = f"\n\n<user_info>\n"
             username_info += f"The user's name is: {username}\n"
@@ -559,6 +573,33 @@ Multiple parallel tool calls:
             username_info += "</user_info>"
             context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
+
+        if tier_name:
+            from core.billing.shared.config import get_tier_by_name
+            tier = get_tier_by_name(tier_name)
+            if tier:
+                tier_info = f"\n\n<user_subscription>\n"
+                tier_info += f"Current tier: {tier.display_name} ({tier.name})\n"
+
+                if tier.name in ('free', 'none'):
+                    tier_info += "Tier type: Free\n"
+                    tier_info += "Custom workers: Not available (upgrade to Plus or higher)\n"
+                    tier_info += "Scheduled triggers: Not available (upgrade to Plus or higher)\n"
+                    tier_info += "App triggers: Not available (upgrade to Plus or higher)\n"
+                    tier_info += "Credit purchases: Not available (upgrade to Ultra)\n"
+                else:
+                    tier_info += "Tier type: Paid\n"
+                    tier_info += f"Available models: {'All models' if 'all' in tier.models else ', '.join(tier.models)}\n"
+                    tier_info += f"Custom workers limit: {tier.custom_workers_limit}\n"
+                    tier_info += f"Scheduled triggers limit: {tier.scheduled_triggers_limit}\n"
+                    tier_info += f"App triggers limit: {tier.app_triggers_limit}\n"
+                    tier_info += f"Concurrent runs: {tier.concurrent_runs}\n"
+                    tier_info += f"Credit purchases: {'Available' if tier.can_purchase_credits else 'Not available (Ultra only)'}\n"
+
+                tier_info += "\nUse this information to guide the user about their available features and suggest upgrades when they hit limits.\n"
+                tier_info += "</user_subscription>"
+                context_parts.append(tier_info)
+                logger.debug(f"Added subscription tier ({tier.display_name}) to system prompt for user {user_id}")
         
         context = ''.join(context_parts) if context_parts else None
         context_str = context if context else ""

@@ -85,22 +85,22 @@ async def write_user_message_for_existing_thread(
 async def prewarm_user_context(account_id: str) -> None:
     try:
         from core.cache.runtime_cache import get_cached_user_context, set_cached_user_context
-        
+
         cached = await get_cached_user_context(account_id)
         if cached is not None:
             return
-        
+
         from core.services.supabase import DBConnection
         db = DBConnection()
         client = await db.client
-        
+
         async def fetch_locale():
             try:
                 from core.utils.user_locale import get_user_locale
                 return await get_user_locale(account_id, client)
             except Exception:
                 return None
-        
+
         async def fetch_username():
             try:
                 user = await client.auth.admin.get_user_by_id(account_id)
@@ -116,23 +116,72 @@ async def prewarm_user_context(account_id: str) -> None:
                 return None
             except Exception:
                 return None
-        
-        locale, username = await asyncio.gather(fetch_locale(), fetch_username())
-        
+
+        async def fetch_subscription_tier():
+            try:
+                from core.billing import subscription_service
+                from core.billing.shared.config import get_tier_limits, get_tier_by_name
+
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info.get('name', 'free')
+                tier = get_tier_by_name(tier_name)
+                limits = get_tier_limits(tier_name)
+
+                return {
+                    'tier_name': tier_name,
+                    'display_name': tier.display_name if tier else 'Basic',
+                    'can_purchase_credits': limits.get('can_purchase_credits', False),
+                    'models': limits.get('models', ['haiku']),
+                    'custom_workers_limit': limits.get('custom_workers_limit', 0),
+                    'scheduled_triggers_limit': limits.get('scheduled_triggers_limit', 0),
+                    'app_triggers_limit': limits.get('app_triggers_limit', 0),
+                    'concurrent_runs': limits.get('concurrent_runs', 1),
+                    'thread_limit': limits.get('thread_limit', 10),
+                }
+            except Exception:
+                return None
+
+        locale, username, subscription = await asyncio.gather(fetch_locale(), fetch_username(), fetch_subscription_tier())
+
         context_parts = []
         if locale:
             from core.utils.user_locale import get_locale_context_prompt
             locale_prompt = get_locale_context_prompt(locale)
             context_parts.append(f"\n\n{locale_prompt}\n")
         if username:
-            username_info = f"\n\n=== USER INFORMATION ===\n"
+            username_info = f"\n\n<user_info>\n"
             username_info += f"The user's name is: {username}\n"
-            username_info += "Use this information to personalize your responses and address the user appropriately.\n"
+            username_info += "Use this to personalize responses and address the user appropriately.\n"
+            username_info += "</user_info>"
             context_parts.append(username_info)
-        
+
+        if subscription:
+            tier_info = f"\n\n<user_subscription>\n"
+            tier_info += f"Current tier: {subscription['display_name']} ({subscription['tier_name']})\n"
+
+            if subscription['tier_name'] == 'free':
+                tier_info += "Tier type: Free\n"
+                tier_info += "Available models: Haiku only\n"
+                tier_info += "Custom workers: Not available (upgrade to Plus or higher)\n"
+                tier_info += "Scheduled triggers: Not available (upgrade to Plus or higher)\n"
+                tier_info += "App triggers: Not available (upgrade to Plus or higher)\n"
+                tier_info += "Credit purchases: Not available (upgrade to Ultra)\n"
+            else:
+                tier_info += "Tier type: Paid\n"
+                tier_info += f"Available models: {'All models' if 'all' in subscription['models'] else ', '.join(subscription['models'])}\n"
+                tier_info += f"Custom workers limit: {subscription['custom_workers_limit']}\n"
+                tier_info += f"Scheduled triggers limit: {subscription['scheduled_triggers_limit']}\n"
+                tier_info += f"App triggers limit: {subscription['app_triggers_limit']}\n"
+                tier_info += f"Concurrent runs: {subscription['concurrent_runs']}\n"
+                tier_info += f"Credit purchases: {'Available' if subscription['can_purchase_credits'] else 'Not available (Ultra only)'}\n"
+
+            tier_info += "\nUse this information to guide the user about their available features and suggest upgrades when they hit limits.\n"
+            tier_info += "</user_subscription>"
+            context_parts.append(tier_info)
+
         context_str = ''.join(context_parts) if context_parts else ""
         await set_cached_user_context(account_id, context_str)
-        logger.debug(f"⚡ Pre-warmed user context for {account_id}")
+        logger.debug(f"⚡ Pre-warmed user context for {account_id} (tier: {subscription['display_name'] if subscription else 'unknown'})")
     except Exception as e:
         logger.debug(f"⚠️ Failed to pre-warm user context: {e}")
 
