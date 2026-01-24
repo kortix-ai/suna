@@ -64,8 +64,20 @@ class PricingPresets:
         cached_read_cost_per_million_tokens=0.02,
     )
 
+    KIMI_K2 = ModelPricing(
+        input_cost_per_million_tokens=0.40,
+        output_cost_per_million_tokens=1.75,
+        cached_read_cost_per_million_tokens=0.15,
+    )
 
-FREE_MODEL_ID = "kortix/mimo-v2-flash"
+    HAIKU_3_5 = ModelPricing(
+        input_cost_per_million_tokens=0.80,
+        output_cost_per_million_tokens=4.00,
+        cached_read_cost_per_million_tokens=0.08,
+    )
+
+
+FREE_MODEL_ID = "kortix/kimi-k2"
 PREMIUM_MODEL_ID = "kortix/power"
 IMAGE_MODEL_ID = "kortix/haiku"
 
@@ -466,8 +478,53 @@ class ModelFactory:
             ],
             pricing=PricingPresets.MIMO_V2_FLASH,
             tier_availability=["free", "paid"],
-            priority=103,  # Highest priority for free tier default
-            recommended=True,  # Recommended for all users
+            priority=80,
+            recommended=False,
+            enabled=True,
+        )
+
+    @staticmethod
+    def create_haiku_3_5() -> Model:
+        return Model(
+            id="kortix/haiku-3.5",
+            name="Claude Haiku 3.5",
+            litellm_model_id="bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+            provider=ModelProvider.BEDROCK,
+            aliases=["haiku-3.5", "claude-3.5-haiku", "claude-3-5-haiku"],
+            context_window=200_000,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.HAIKU_3_5,
+            tier_availability=["paid"],
+            priority=70,
+            recommended=False,
+            enabled=True,
+            config=_create_anthropic_model_config(),
+        )
+
+    @staticmethod
+    def create_kimi_k2() -> Model:
+        return Model(
+            id="kortix/kimi-k2",
+            name="Kimi K2 Thinking",
+            litellm_model_id="openrouter/moonshotai/kimi-k2-thinking",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["kimi-k2", "kimi", "moonshotai/kimi-k2-thinking"],
+            context_window=262_144,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.THINKING,
+                ModelCapability.PROMPT_CACHING,
+            ],
+            pricing=PricingPresets.KIMI_K2,
+            tier_availability=["free", "paid"],
+            priority=104,
+            recommended=True,
             enabled=True,
         )
 
@@ -500,6 +557,9 @@ class ModelRegistry:
         self.register(ModelFactory.create_grok_4_1_fast())
         self.register(ModelFactory.create_gpt4o_mini())
         self.register(ModelFactory.create_mimo_v2_flash())
+        self.register(ModelFactory.create_kimi_k2())
+        self.register(ModelFactory.create_minimax_m2())
+        self.register(ModelFactory.create_haiku_3_5())
 
         if config.ENV_MODE != EnvMode.PRODUCTION:
             self.register(ModelFactory.create_test_model())
@@ -511,6 +571,8 @@ class ModelRegistry:
         self._litellm_id_to_pricing["openrouter/x-ai/grok-4.1-fast"] = PricingPresets.GROK_4_1_FAST
         self._litellm_id_to_pricing["openrouter/openai/gpt-4o-mini"] = PricingPresets.GPT_4O_MINI
         self._litellm_id_to_pricing["openrouter/xiaomi/mimo-v2-flash"] = PricingPresets.MIMO_V2_FLASH
+        self._litellm_id_to_pricing["openrouter/moonshotai/kimi-k2-thinking"] = PricingPresets.KIMI_K2
+        self._litellm_id_to_pricing["bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"] = PricingPresets.HAIKU_3_5
     
     def register(self, model: Model) -> None:
         self._models[model.id] = model
