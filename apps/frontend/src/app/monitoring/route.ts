@@ -1,5 +1,5 @@
 const SENTRY_URL = new URL(
-  process.env.NEXT_PUBLIC_SENTRY_DSN ?? 'https://example.com/abc',
+  process.env.NEXT_PUBLIC_SENTRY_DSN || 'https://example.com/abc',
 );
 const SENTRY_HOST = SENTRY_URL.hostname;
 const SENTRY_PROJECT_ID = SENTRY_URL.pathname.split('/').pop();

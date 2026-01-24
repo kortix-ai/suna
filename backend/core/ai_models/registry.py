@@ -106,6 +106,10 @@ def _should_use_bedrock() -> bool:
 def _get_main_llm() -> str:
     return getattr(config, 'MAIN_LLM', 'bedrock')
 
+
+def _get_main_llm_model() -> Optional[str]:
+    return getattr(config, 'MAIN_LLM_MODEL', None)
+
 class ModelFactory:
     
     @staticmethod
@@ -169,12 +173,21 @@ class ModelFactory:
         )
     
     @staticmethod
-    def create_basic_model(main_llm: str) -> Model:
+    def create_basic_model(main_llm: str, custom_model: Optional[str] = None) -> Model:
+        # Default models per provider
+        default_models = {
+            "bedrock": BedrockConfig.get_haiku_arn(),
+            "anthropic": "anthropic/claude-haiku-4-5-20251001",
+            "grok": "openrouter/x-ai/grok-4.1-fast",
+            "openai": "openrouter/openai/gpt-4o-mini",
+            "minimax": "openrouter/minimax/minimax-m2.1",
+        }
+
         if main_llm == "bedrock":
             return Model(
                 id="kortix/basic",
                 name="Kortix Basic",
-                litellm_model_id=BedrockConfig.get_haiku_arn(),
+                litellm_model_id=custom_model or default_models["bedrock"],
                 provider=ModelProvider.BEDROCK,
                 aliases=["kortix-basic", "Kortix Basic"],
                 context_window=200_000,
@@ -195,7 +208,7 @@ class ModelFactory:
             return Model(
                 id="kortix/basic",
                 name="Kortix Basic",
-                litellm_model_id="anthropic/claude-haiku-4-5-20251001",
+                litellm_model_id=custom_model or default_models["anthropic"],
                 provider=ModelProvider.ANTHROPIC,
                 aliases=["kortix-basic", "Kortix Basic"],
                 context_window=200_000,
@@ -216,7 +229,7 @@ class ModelFactory:
             return Model(
                 id="kortix/basic",
                 name="Kortix Basic",
-                litellm_model_id="openrouter/x-ai/grok-4.1-fast",
+                litellm_model_id=custom_model or default_models["grok"],
                 provider=ModelProvider.OPENROUTER,
                 aliases=["kortix-basic", "Kortix Basic"],
                 context_window=2_000_000,
@@ -236,7 +249,7 @@ class ModelFactory:
             return Model(
                 id="kortix/basic",
                 name="Kortix Basic",
-                litellm_model_id="openrouter/openai/gpt-4o-mini",
+                litellm_model_id=custom_model or default_models["openai"],
                 provider=ModelProvider.OPENROUTER,
                 aliases=["kortix-basic", "Kortix Basic"],
                 context_window=128_000,
@@ -251,11 +264,30 @@ class ModelFactory:
                 recommended=True,
                 enabled=True,
             )
-        else:  # minimax
+        elif main_llm == "openrouter":
+            # Generic OpenRouter - use custom model or fallback to minimax
             return Model(
                 id="kortix/basic",
                 name="Kortix Basic",
-                litellm_model_id="openrouter/minimax/minimax-m2.1",
+                litellm_model_id=custom_model or default_models["minimax"],
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-basic", "Kortix Basic"],
+                context_window=200_000,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                ],
+                tier_availability=["free", "paid"],
+                priority=102,
+                recommended=True,
+                enabled=True,
+            )
+        else:  # minimax or unknown
+            return Model(
+                id="kortix/basic",
+                name="Kortix Basic",
+                litellm_model_id=custom_model or default_models["minimax"],
                 provider=ModelProvider.OPENROUTER,
                 aliases=["kortix-basic", "Kortix Basic"],
                 context_window=200_000,
@@ -274,12 +306,21 @@ class ModelFactory:
             )
     
     @staticmethod
-    def create_power_model(main_llm: str) -> Model:
+    def create_power_model(main_llm: str, custom_model: Optional[str] = None) -> Model:
+        # Default models per provider (same as basic for now)
+        default_models = {
+            "bedrock": BedrockConfig.get_haiku_arn(),
+            "anthropic": "anthropic/claude-haiku-4-5-20251001",
+            "grok": "openrouter/x-ai/grok-4.1-fast",
+            "openai": "openrouter/openai/gpt-4o-mini",
+            "minimax": "openrouter/minimax/minimax-m2.1",
+        }
+
         if main_llm == "bedrock":
             return Model(
                 id="kortix/power",
                 name="Kortix Advanced Mode",
-                litellm_model_id=BedrockConfig.get_haiku_arn(),
+                litellm_model_id=custom_model or default_models["bedrock"],
                 provider=ModelProvider.BEDROCK,
                 aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
                 context_window=200_000,
@@ -301,7 +342,7 @@ class ModelFactory:
             return Model(
                 id="kortix/power",
                 name="Kortix Advanced Mode",
-                litellm_model_id="anthropic/claude-haiku-4-5-20251001",
+                litellm_model_id=custom_model or default_models["anthropic"],
                 provider=ModelProvider.ANTHROPIC,
                 aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
                 context_window=200_000,
@@ -323,7 +364,7 @@ class ModelFactory:
             return Model(
                 id="kortix/power",
                 name="Kortix Advanced Mode",
-                litellm_model_id="openrouter/x-ai/grok-4.1-fast",
+                litellm_model_id=custom_model or default_models["grok"],
                 provider=ModelProvider.OPENROUTER,
                 aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
                 context_window=2_000_000,
@@ -344,7 +385,7 @@ class ModelFactory:
             return Model(
                 id="kortix/power",
                 name="Kortix Advanced Mode",
-                litellm_model_id="openrouter/openai/gpt-4o-mini",
+                litellm_model_id=custom_model or default_models["openai"],
                 provider=ModelProvider.OPENROUTER,
                 aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
                 context_window=128_000,
@@ -363,7 +404,7 @@ class ModelFactory:
             return Model(
                 id="kortix/power",
                 name="Kortix Advanced Mode",
-                litellm_model_id="openrouter/minimax/minimax-m2.1",
+                litellm_model_id=custom_model or default_models["minimax"],
                 provider=ModelProvider.OPENROUTER,
                 aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
                 context_window=200_000,
@@ -574,12 +615,13 @@ class ModelRegistry:
     
     def _initialize_models(self):
         self._register_pricing_mappings()
-        
+
         main_llm = _get_main_llm()
+        custom_model = _get_main_llm_model()
         use_bedrock = _should_use_bedrock()
-        
-        self.register(ModelFactory.create_basic_model(main_llm))
-        self.register(ModelFactory.create_power_model(main_llm))
+
+        self.register(ModelFactory.create_basic_model(main_llm, custom_model))
+        self.register(ModelFactory.create_power_model(main_llm, custom_model))
         self.register(ModelFactory.create_anthropic_haiku(use_bedrock))
         self.register(ModelFactory.create_grok_4_1_fast())
         self.register(ModelFactory.create_gpt4o_mini())

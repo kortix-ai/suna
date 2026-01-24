@@ -157,18 +157,47 @@ cd suna
 ```bash
 python setup.py
 ```
-The wizard will guide you through 14 steps with progress saving, so you can resume if interrupted.
+The wizard will guide you through configuring all required services with progress saving, so you can resume if interrupted.
 
-**💡 Automatic Startup:** At the end of setup, you can choose to automatically start Kortix Super Worker. The setup wizard supports both:
-- **Docker mode**: Automatically starts all services via Docker Compose
-- **Manual mode**: Automatically starts services using `start.py` helper script
-
-If you choose automatic startup, your platform will be running immediately after setup completes!
-
-### 3️⃣ Start the Platform (if not started automatically)
+### 3️⃣ Manage the Platform
 ```bash
-python start.py
+python start.py          # Interactive start/stop
+python start.py start    # Start all services
+python start.py stop     # Stop all services
+python start.py status   # Show service status
+python start.py restart  # Restart all services
 ```
+
+The service manager automatically detects your setup method (Docker or Manual) and manages services accordingly.
+
+### 📋 Viewing Realtime Logs
+
+**Manual Setup (native processes):**
+```bash
+# View both backend and frontend logs
+tail -f backend.log frontend.log
+
+# View backend only
+tail -f backend.log
+
+# View frontend only
+tail -f frontend.log
+```
+
+**Docker Setup:**
+```bash
+# View all service logs
+docker compose logs -f
+
+# View specific service
+docker compose logs -f backend
+docker compose logs -f frontend
+```
+
+### 4️⃣ Add More API Keys (Optional)
+After initial setup, you can run `python setup.py` again to:
+- **Add/Update API Keys** - Configure additional LLM providers (Anthropic, OpenAI, Groq, etc.), search APIs (Tavily, Firecrawl, etc.), and other integrations
+- **Clear setup and start fresh** - Remove all configuration and start over
 
 That's it! Your Kortix platform will be running with Kortix Super Worker ready to assist you.
 
