@@ -262,7 +262,6 @@ class ToolExecutor:
             access_result = await check_tool_access_for_account(account_id, name)
             if not access_result.allowed:
                 logger.warning(f"[ToolExecutor] Tool '{name}' blocked for account {account_id}")
-                # Return structured error with upgrade CTA for frontend
                 error_response = {
                     "error": access_result.reason,
                     "error_code": access_result.error_code,

@@ -134,14 +134,12 @@ The user's current tier determines available features. When a user hits a limit 
 
 ## Basic (Free)
 - 300 credits per week (refreshes weekly)
-- Haiku model only (fast, lightweight)
 - 10 chat threads
-- 4 concurrent task runs
+- 1 concurrent task runs
 - No custom workers, scheduled triggers, or app triggers
 
 ## Plus ($20/month)
 - 4000 credits/month + 200 bonus credits daily
-- ALL AI models (Sonnet, Opus, GPT-4, etc.)
 - Unlimited chat threads
 - 3 concurrent task runs
 - 5 custom workers
@@ -150,7 +148,6 @@ The user's current tier determines available features. When a user hits a limit 
 
 ## Pro ($50/month)
 - 10000 credits/month + 200 bonus credits daily
-- ALL AI models
 - Unlimited chat threads
 - 5 concurrent task runs
 - 20 custom workers
@@ -160,7 +157,6 @@ The user's current tier determines available features. When a user hits a limit 
 ## Ultra ($200/month)
 - 40000 credits/month + 200 bonus credits daily
 - Can purchase additional credit packs
-- ALL AI models
 - Unlimited chat threads
 - 20 concurrent task runs
 - 100 custom workers
