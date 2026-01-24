@@ -36,50 +36,43 @@ def check_and_install_dependencies():
     print("=" * 60)
 
     # Try to auto-install
-    print("\nAttempting to install dependencies...")
+    print("\nInstalling dependencies...")
 
-    # Check if we're in a virtual environment or have uv available
-    try:
-        # Try using uv first (preferred for this project)
-        requirements_path = os.path.join(os.path.dirname(__file__), "setup", "requirements.txt")
-        result = subprocess.run(
-            ["uv", "pip", "install", "-r", requirements_path],
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode == 0:
-            print("Dependencies installed successfully with uv.")
-            return True
-        else:
-            # If uv fails, try pip as fallback
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-r", requirements_path],
-                capture_output=True,
-                text=True,
-            )
-            if result.returncode == 0:
-                print("Dependencies installed successfully with pip.")
-                return True
-    except FileNotFoundError:
-        # uv not found, try pip
+    requirements_path = os.path.join(os.path.dirname(__file__), "setup", "requirements.txt")
+
+    # Check if we're in a virtual environment
+    in_venv = sys.prefix != sys.base_prefix
+
+    install_commands = []
+
+    if in_venv:
+        # In a virtual environment - uv or pip will work
+        install_commands = [
+            (["uv", "pip", "install", "-r", requirements_path], "uv"),
+            ([sys.executable, "-m", "pip", "install", "-r", requirements_path], "pip"),
+        ]
+    else:
+        # Not in a venv - need --system flag for uv, or --user for pip
+        install_commands = [
+            (["uv", "pip", "install", "--system", "-r", requirements_path], "uv"),
+            ([sys.executable, "-m", "pip", "install", "--user", "-r", requirements_path], "pip"),
+            ([sys.executable, "-m", "pip", "install", "-r", requirements_path], "pip"),
+        ]
+
+    for cmd, name in install_commands:
         try:
-            requirements_path = os.path.join(os.path.dirname(__file__), "setup", "requirements.txt")
-            result = subprocess.run(
-                [sys.executable, "-m", "pip", "install", "-r", requirements_path],
-                capture_output=True,
-                text=True,
-            )
+            result = subprocess.run(cmd, capture_output=True, text=True)
             if result.returncode == 0:
-                print("Dependencies installed successfully with pip.")
+                print(f"Dependencies installed successfully with {name}.")
                 return True
+        except FileNotFoundError:
+            continue
         except Exception:
-            pass
+            continue
 
     # Auto-install failed, show manual instructions
     print("\nAutomatic installation failed. Please install manually:")
-    print("  uv pip install -r setup/requirements.txt")
-    print("\nOr:")
-    print(f"  pip install {' '.join(missing)}")
+    print("  pip install pydantic rich")
     print()
     return False
 
