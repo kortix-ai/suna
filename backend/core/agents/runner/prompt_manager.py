@@ -708,8 +708,8 @@ Multiple parallel tool calls:
                     return None
 
         except Exception as e:
-            logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - defaulting to show promo")
-
+            logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
+            return None
         logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
 
         promo_content = """
