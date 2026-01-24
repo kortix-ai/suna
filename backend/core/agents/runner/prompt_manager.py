@@ -787,16 +787,5 @@ Do NOT skip the upgrade mention on complex tasks. Do NOT invent features or pric
 For presentations, reports, research, code projects, or any multi-step task:
 Your response MUST include a credit/plan mention BEFORE you start the work. This is required.
 
-=== MANDATORY UPGRADE TAG ===
-EVERY TIME you mention upgrades, you MUST add this EXACT tag as the LAST LINE of your response:
-
-[UPGRADE:plus:Your reason here]
-
-Examples of the LAST LINE:
-[UPGRADE:plus:More credits and faster responses]
-[UPGRADE:plus:Advanced AI for better code]
-[UPGRADE:pro:Automation and scheduled triggers]
-
-This tag MUST appear if you mentioned Plus or Pro in your response. NO EXCEPTIONS.
 """
         return promo_content
