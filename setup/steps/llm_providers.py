@@ -2,12 +2,38 @@
 Step 5: LLM Provider API Keys
 """
 
-from typing import Dict, List, Tuple
+import os
+import re
+from typing import Dict, List, Tuple, Optional
 
 from setup.steps.base import BaseStep, StepResult
 from setup.config.schema import API_PROVIDER_INFO
 from setup.validators.api_keys import validate_api_key
 from setup.utils.secrets import mask_sensitive_value
+
+
+def _read_codebase_default_llm(root_dir: str) -> Tuple[str, Optional[str]]:
+    """
+    Read the default MAIN_LLM value from backend/core/utils/config.py.
+
+    Returns:
+        Tuple of (provider_id, model_name or None)
+    """
+    config_path = os.path.join(root_dir, "backend", "core", "utils", "config.py")
+
+    try:
+        with open(config_path, "r") as f:
+            content = f.read()
+
+        # Look for MAIN_LLM: str = "value"
+        match = re.search(r'MAIN_LLM:\s*str\s*=\s*["\']([^"\']+)["\']', content)
+        if match:
+            return match.group(1), None
+    except (FileNotFoundError, IOError):
+        pass
+
+    # Fallback to anthropic if we can't read the config
+    return "anthropic", None
 
 
 class LLMProvidersStep(BaseStep):
@@ -23,24 +49,30 @@ class LLMProvidersStep(BaseStep):
     # Format: (display_name, provider_id, required_api_key, default_model)
     MAIN_LLM_PROVIDERS: Dict[str, Tuple[str, str, str, str]] = {
         "1": (
-            "Anthropic (Recommended)",
+            "Anthropic",
             "anthropic",
             "ANTHROPIC_API_KEY",
             "anthropic/claude-haiku-4-5-20251001",
         ),
         "2": (
+            "AWS Bedrock",
+            "bedrock",
+            "AWS_BEARER_TOKEN_BEDROCK",
+            "bedrock/anthropic.claude-3-haiku-20240307-v1:0",
+        ),
+        "3": (
             "Grok via OpenRouter",
             "grok",
             "OPENROUTER_API_KEY",
             "openrouter/x-ai/grok-4.1-fast",
         ),
-        "3": (
+        "4": (
             "OpenAI via OpenRouter",
             "openai",
             "OPENROUTER_API_KEY",
             "openrouter/openai/gpt-4o-mini",
         ),
-        "4": (
+        "5": (
             "MiniMax via OpenRouter",
             "minimax",
             "OPENROUTER_API_KEY",
@@ -58,6 +90,11 @@ class LLMProvidersStep(BaseStep):
         "6": ("Google Gemini", "GEMINI_API_KEY"),
     }
 
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Read the default LLM from codebase
+        self._codebase_default_provider, _ = _read_codebase_default_llm(self.root_dir)
+
     def run(self) -> StepResult:
         # Step 1: Select main LLM provider (REQUIRED)
         self._configure_main_provider()
@@ -73,9 +110,14 @@ class LLMProvidersStep(BaseStep):
             {"llm": self.config.llm.model_dump()},
         )
 
-    # Default model used in codebase for local setup
-    DEFAULT_MODEL = "anthropic/claude-haiku-4-5-20251001"
-    DEFAULT_PROVIDER = "anthropic"
+    def _get_codebase_default(self) -> Tuple[str, str, str]:
+        """Get the codebase default provider info."""
+        provider_id = self._codebase_default_provider
+        for key, (name, pid, env_key, model) in self.MAIN_LLM_PROVIDERS.items():
+            if pid == provider_id:
+                return (provider_id, env_key, model)
+        # Fallback
+        return ("bedrock", "AWS_BEARER_TOKEN_BEDROCK", "bedrock/anthropic.claude-3-haiku-20240307-v1:0")
 
     def _configure_main_provider(self) -> None:
         """Configure the main LLM model (required for kortix/basic)."""
@@ -84,6 +126,10 @@ class LLMProvidersStep(BaseStep):
         self.console.print("=" * 60)
         self.info("Kortix Suna requires a main LLM to power 'kortix/basic' and 'kortix/power'.")
         self.console.print("")
+
+        # Get codebase default
+        default_provider, default_env_key, default_model = self._get_codebase_default()
+        default_provider_name = self._get_provider_name(default_provider)
 
         # Check if already configured
         current_main = self.config.llm.MAIN_LLM
@@ -100,46 +146,50 @@ class LLMProvidersStep(BaseStep):
                 return
 
         # First ask: use default or select another?
-        self.console.print(f"\nDefault model in codebase: [bold]{self.DEFAULT_MODEL}[/bold]")
-        self.console.print("  (Requires Anthropic API key)")
+        self.console.print(f"\nDefault model in codebase: [bold]{default_model}[/bold]")
+        self.console.print(f"  (Requires {default_provider_name} credentials)")
         self.console.print("")
 
         use_default = input("Use default model? (Y/n): ").strip().lower()
 
         if use_default not in ["n", "no"]:
-            # Use default Anthropic model
-            self.config.llm.MAIN_LLM = self.DEFAULT_PROVIDER
+            # Use codebase default
+            self.config.llm.MAIN_LLM = default_provider
             self.config.llm.MAIN_LLM_MODEL = ""
-            self.success(f"Using default: {self.DEFAULT_MODEL}")
-            self._collect_required_key("ANTHROPIC_API_KEY", "Anthropic")
+            self.success(f"Using default: {default_model}")
+            self._collect_required_key(default_env_key, default_provider_name)
             return
 
         # Show alternative model options
         self.console.print("\nSelect an alternative model:\n")
-        for key, (name, provider_id, env_key, default_model) in self.MAIN_LLM_PROVIDERS.items():
-            if provider_id == self.DEFAULT_PROVIDER:
+        alt_choices = []
+        for key, (name, provider_id, env_key, model) in self.MAIN_LLM_PROVIDERS.items():
+            if provider_id == default_provider:
                 continue  # Skip default, already offered above
-            self.console.print(f"  [{key}] {default_model}")
+            alt_choices.append(key)
+            self.console.print(f"  [{key}] {model}")
             self.console.print(f"      ({name})")
 
-        self.console.print(f"  [5] Custom model (specify your own)")
+        custom_key = str(len(self.MAIN_LLM_PROVIDERS) + 1)
+        self.console.print(f"  [{custom_key}] Custom model (specify your own)")
         self.console.print("")
 
+        valid_choices = alt_choices + [custom_key]
         while True:
-            choice = input("Select model (2-5): ").strip()
+            choice = input(f"Select model ({', '.join(valid_choices)}): ").strip()
 
-            if choice in ["2", "3", "4"]:
-                name, provider_id, env_key, default_model = self.MAIN_LLM_PROVIDERS[choice]
+            if choice in alt_choices:
+                name, provider_id, env_key, model = self.MAIN_LLM_PROVIDERS[choice]
                 self.config.llm.MAIN_LLM = provider_id
                 self.config.llm.MAIN_LLM_MODEL = ""
-                self.success(f"Selected: {default_model}")
+                self.success(f"Selected: {model}")
                 self._collect_required_key(env_key, name)
                 return
-            elif choice == "5":
+            elif choice == custom_key:
                 self._configure_custom_model()
                 return
             else:
-                self.error("Invalid choice. Please enter 2, 3, 4, or 5.")
+                self.error(f"Invalid choice. Please enter one of: {', '.join(valid_choices)}")
 
     def _configure_custom_model(self) -> None:
         """Configure a custom model."""
@@ -148,14 +198,17 @@ class LLMProvidersStep(BaseStep):
         self.console.print("  - anthropic/claude-sonnet-4-20250514")
         self.console.print("  - openrouter/google/gemini-2.0-flash")
         self.console.print("  - openrouter/anthropic/claude-3-opus")
+        self.console.print("  - bedrock/anthropic.claude-3-haiku-20240307-v1:0")
         self.console.print("")
 
         custom_model = input("Model name: ").strip()
         if not custom_model:
-            self.warning("No model entered. Using default.")
-            self.config.llm.MAIN_LLM = self.DEFAULT_PROVIDER
+            self.warning("No model entered. Using codebase default.")
+            default_provider, default_env_key, default_model = self._get_codebase_default()
+            default_provider_name = self._get_provider_name(default_provider)
+            self.config.llm.MAIN_LLM = default_provider
             self.config.llm.MAIN_LLM_MODEL = ""
-            self._collect_required_key("ANTHROPIC_API_KEY", "Anthropic")
+            self._collect_required_key(default_env_key, default_provider_name)
             return
 
         # Determine provider from model name
@@ -163,6 +216,10 @@ class LLMProvidersStep(BaseStep):
             provider_id = "anthropic"
             env_key = "ANTHROPIC_API_KEY"
             provider_name = "Anthropic"
+        elif custom_model.startswith("bedrock/"):
+            provider_id = "bedrock"
+            env_key = "AWS_BEARER_TOKEN_BEDROCK"
+            provider_name = "AWS Bedrock"
         elif custom_model.startswith("openrouter/"):
             provider_id = "openrouter"
             env_key = "OPENROUTER_API_KEY"
@@ -179,12 +236,21 @@ class LLMProvidersStep(BaseStep):
         self.success(f"Custom model set: {custom_model}")
         self._collect_required_key(env_key, provider_name)
 
+    def _get_provider_name(self, provider_id: str) -> str:
+        """Get the display name for a provider ID."""
+        for _, (name, pid, _, _) in self.MAIN_LLM_PROVIDERS.items():
+            if pid == provider_id:
+                return name
+        return provider_id.title()
+
     def _get_default_model(self, provider_id: str) -> str:
         """Get the default model for a provider."""
         for _, (_, pid, _, default_model) in self.MAIN_LLM_PROVIDERS.items():
             if pid == provider_id:
                 return default_model
-        return self.DEFAULT_MODEL
+        # Fallback to codebase default
+        _, _, model = self._get_codebase_default()
+        return model
 
     def _collect_required_key(self, env_key: str, provider_name: str) -> None:
         """Collect the required API key for the selected main provider."""
