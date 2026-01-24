@@ -26,8 +26,9 @@ import { ThreadHeader } from '@/components/threads';
 import { KortixComputer } from '@/components/kortix-computer';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { useVoicePlayerStore } from '@/stores/voice-player-store';
-import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread } from '@/hooks';
+import { useChatCommons, type UseChatReturn, useDeleteThread, useShareThread, useUpgradePaywall } from '@/hooks';
 import { useThread } from '@/lib/chat';
+import { useBillingContext } from '@/contexts/BillingContext';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { MessageCircle, ArrowDown, AlertCircle, RefreshCw } from 'lucide-react-native';
@@ -371,6 +372,17 @@ export function ThreadPage({
 
   // Track if user dismissed the snack (so we don't show it again for the same tool)
   const [dismissedToolCallId, setDismissedToolCallId] = React.useState<string | null>(null);
+
+  // Track if user dismissed the upgrade snack this session
+  const [isUpgradeDismissed, setIsUpgradeDismissed] = React.useState(false);
+  const { presentUpgradePaywall } = useUpgradePaywall();
+
+  // Billing context for upgrade snack visibility
+  const { hasFreeTier, subscriptionData, isLoading: billingLoading } = useBillingContext();
+
+  // Determine if upgrade snack is visible (same logic as ChatInputSection)
+  // Only visible when: no activeToolData, user has free tier, subscription loaded, not dismissed
+  const isUpgradeSnackVisible = !activeToolData && hasFreeTier && !!subscriptionData && !billingLoading && !isUpgradeDismissed;
 
   // Handle snack dismiss - user swiped to close
   const handleToolSnackDismiss = React.useCallback(() => {
@@ -916,8 +928,8 @@ export function ThreadPage({
             {
               position: 'absolute',
               right: 10,
-              // When snack is visible (tool or voice), keep position higher; when no snack, move down 40px
-              bottom: baseBottomPadding - 0 + (activeToolData || isVoiceActive ? 0 : -40),
+              // When any snack is visible (tool, voice, or upgrade), keep position higher; when no snack, move down 40px
+              bottom: baseBottomPadding - 0 + (activeToolData || isVoiceActive || isUpgradeSnackVisible ? 0 : -40),
               zIndex: 150,
             },
             scrollButtonAnimatedStyle,
@@ -1120,6 +1132,11 @@ export function ThreadPage({
           openPanel();
         }}
         onToolSnackDismiss={handleToolSnackDismiss}
+        onUpgradePress={async () => {
+          await presentUpgradePaywall();
+        }}
+        isUpgradeDismissed={isUpgradeDismissed}
+        onUpgradeDismiss={() => setIsUpgradeDismissed(true)}
       />
 
       <ChatDrawers

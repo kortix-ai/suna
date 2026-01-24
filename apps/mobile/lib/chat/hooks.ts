@@ -60,7 +60,8 @@ export function useThreads(
       const data = await res.json();
       return data.threads || [];
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000, // 30 seconds - threads should refresh frequently
+    refetchOnWindowFocus: true,
     ...options,
   });
 }

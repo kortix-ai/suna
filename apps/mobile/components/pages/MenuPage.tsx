@@ -34,7 +34,7 @@ import { AgentList } from '@/components/agents/AgentList';
 import { LibrarySection } from '@/components/agents/LibrarySection';
 import { useAgent } from '@/contexts/AgentContext';
 import { useSearch } from '@/lib/utils/search';
-import { useThreads } from '@/lib/chat';
+import { useThreads, useDeleteThread } from '@/lib/chat';
 import { useAllTriggers } from '@/lib/triggers';
 import { groupThreadsByMonth, groupAgentsByTimePeriod } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
@@ -408,7 +408,20 @@ export function MenuPage({
   const isGuest = !user;
 
   // Fetch real threads from backend
-  const { data: threads = [], isLoading: isLoadingThreads, error: threadsError } = useThreads();
+  const { data: threads = [], isLoading: isLoadingThreads, error: threadsError, refetch: refetchThreads } = useThreads();
+
+  // Refetch threads when drawer opens/gains focus
+  useFocusEffect(
+    React.useCallback(() => {
+      refetchThreads();
+    }, [refetchThreads])
+  );
+
+  // Delete thread mutation
+  const deleteThreadMutation = useDeleteThread();
+
+  // Track which conversation is being deleted
+  const [deletingConversationId, setDeletingConversationId] = React.useState<string | null>(null);
 
   // Transform threads to sections
   const sections = React.useMemo(() => {
@@ -484,6 +497,22 @@ export function MenuPage({
   React.useEffect(() => {
     refetchTriggers();
   }, [activeTab]);
+
+  /**
+   * Handle conversation delete
+   */
+  const handleConversationDelete = React.useCallback(async (conversation: Conversation) => {
+    log.log('🗑️ Deleting conversation:', conversation.id);
+    setDeletingConversationId(conversation.id);
+    try {
+      await deleteThreadMutation.mutateAsync(conversation.id);
+      log.log('✅ Conversation deleted successfully');
+    } catch (error) {
+      log.error('❌ Failed to delete conversation:', error);
+    } finally {
+      setDeletingConversationId(null);
+    }
+  }, [deleteThreadMutation]);
 
   /**
    * Handle scroll event to track scroll position
@@ -710,6 +739,8 @@ export function MenuPage({
                               conversations: filteredConversations,
                             }}
                             onConversationPress={onConversationPress}
+                            onConversationDelete={handleConversationDelete}
+                            deletingConversationId={deletingConversationId}
                           />
                         );
                       })}
