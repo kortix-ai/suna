@@ -55,7 +55,8 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 
 
 if sys.platform == "win32":
-    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    # Use SelectorEventLoop on Windows for psycopg async compatibility
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 db = DBConnection()
 # Use shared instance ID for distributed deployments
