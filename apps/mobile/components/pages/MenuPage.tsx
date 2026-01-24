@@ -50,7 +50,6 @@ import type {
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
-import { cn } from '@/lib/utils';
 import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -233,92 +232,6 @@ function NewChatButton({ onPress }: NewChatButtonProps) {
       className="h-14 w-full flex-row items-center justify-center gap-2 rounded-2xl bg-primary">
       <Icon as={Plus} size={20} strokeWidth={2} className="text-primary-foreground" />
       <Text className="font-roobert-medium text-primary-foreground">{t('menu.newChat')}</Text>
-    </AnimatedPressable>
-  );
-}
-
-interface FloatingActionButtonProps {
-  activeTab: 'chats' | 'workers' | 'triggers';
-  onChatPress?: () => void;
-  onWorkerPress?: () => void;
-  onTriggerPress?: () => void;
-}
-
-function FloatingActionButton({
-  activeTab,
-  onChatPress,
-  onWorkerPress,
-  onTriggerPress,
-}: FloatingActionButtonProps) {
-  const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
-  const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
-  const scale = useSharedValue(1);
-  const rotate = useSharedValue(0);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { rotate: `${rotate.value}deg` }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePress = () => {
-    const action =
-      activeTab === 'chats'
-        ? t('menu.newChat')
-        : activeTab === 'workers'
-          ? t('menu.newWorker')
-          : t('menu.newTrigger');
-    log.log('🎯 FAB pressed:', action);
-    log.log('⏰ Timestamp:', new Date().toISOString());
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    rotate.value = withSpring(rotate.value + 90, { damping: 15, stiffness: 400 });
-
-    if (activeTab === 'chats') onChatPress?.();
-    else if (activeTab === 'workers') onWorkerPress?.();
-    else if (activeTab === 'triggers') onTriggerPress?.();
-  };
-
-  const getAccessibilityLabel = () => {
-    const item = activeTab === 'chats' ? 'chat' : activeTab === 'workers' ? 'worker' : 'trigger';
-    return t('actions.createNew', { item });
-  };
-
-  const bgColor = colorScheme === 'dark' ? '#FFFFFF' : '#121215';
-  const iconColor = colorScheme === 'dark' ? '#121215' : '#FFFFFF';
-
-  return (
-    <AnimatedPressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={[
-        animatedStyle,
-        {
-          width: 60,
-          height: 60,
-          backgroundColor: bgColor,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.25,
-          shadowRadius: 12,
-          elevation: 10,
-        },
-      ]}
-      className={cn(
-        'absolute bottom-44 right-6 items-center justify-center rounded-full',
-        advancedFeaturesEnabled ? 'bottom-[230px]' : 'bottom-34'
-      )}
-      accessibilityRole="button"
-      accessibilityLabel={getAccessibilityLabel()}>
-      <Icon as={Plus} size={26} color={iconColor} strokeWidth={2.5} />
     </AnimatedPressable>
   );
 }
@@ -959,15 +872,6 @@ export function MenuPage({
         <SettingsPage visible={isSettingsVisible} profile={profile} onClose={handleCloseSettings} />
       </AnimatedPageWrapper>
 
-      {/* Floating Action Button */}
-      {advancedFeaturesEnabled && (
-        <FloatingActionButton
-          activeTab={activeTab}
-          onChatPress={onNewChat}
-          onWorkerPress={handleWorkerCreate}
-          onTriggerPress={handleTriggerCreate}
-        />
-      )}
 
       {isTriggerDrawerVisible && (
         <TriggerCreationDrawer
