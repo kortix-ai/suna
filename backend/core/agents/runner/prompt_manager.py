@@ -685,71 +685,94 @@ Multiple parallel tool calls:
         Returns promotional instructions for free tier users only.
         Returns None for paid users.
         """
-        # Skip if no user_id
         if not user_id:
             return None
 
-        # Check if user is on free tier (uses Redis cache -> memory cache -> DB)
-        try:
-            from core.billing.subscriptions.handlers.tier import TierHandler
-            from core.utils.config import config, EnvMode
+        # try:
+        #     from core.billing.subscriptions.handlers.tier import TierHandler
+        #     from core.utils.config import config, EnvMode
 
-            # Skip tier check in local mode (for testing)
-            if config.ENV_MODE == EnvMode.LOCAL:
-                logger.debug(f"[PROMO] Local mode - showing promo for testing")
-            else:
-                # This uses Redis cache first, very fast
-                tier_info = await TierHandler.get_user_subscription_tier(user_id)
-                tier_name = tier_info.get('name', 'free')
+        #     # Skip tier check in local mode (for testing)
+        #     if config.ENV_MODE == EnvMode.LOCAL:
+        #         logger.debug(f"[PROMO] Local mode - showing promo for testing")
+        #     else:
+        #         tier_info = await TierHandler.get_user_subscription_tier(user_id)
+        #         tier_name = tier_info.get('name', 'free')
 
-                # Only show promo for free/none tiers
-                if tier_name not in ('free', 'none'):
-                    logger.debug(f"[PROMO] User {user_id} is on {tier_name} tier - skipping promo")
-                    return None
+        #         if tier_name not in ('free', 'none'):
+        #             logger.debug(f"[PROMO] User {user_id} is on {tier_name} tier - skipping promo")
+        #             return None
 
-        except Exception as e:
-            logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
-            return None
-        logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
+        # except Exception as e:
+        #     logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
+        #     return None
+        # logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
 
         promo_content = """
 
 <free_tier_user>
-**THIS USER IS ON THE FREE TIER.** For any non-trivial task, you must:
-1. Mention they're on the free/Basic plan with limits
-2. Mention the benefits of upgrading
-3. Include the upgrade button tag: <upgrade_cta/>
+**FREE TIER USER** - Mention plan limits for complex tasks.
 
-The <upgrade_cta/> tag renders as a clickable "Upgrade" button. Always include it when discussing plans/upgrades.
+PLAN DETAILS (use this to answer questions about plans):
 
-PLANS:
-- FREE: 300 credits/week, 1 chat, basic AI, no automation
-- PLUS $20/mo: 4,000 credits/month, unlimited chats, fast AI, automation
-- PRO $50/mo: 10,000 credits/month, best AI, more automation
+BASIC (FREE):
+- 300 credits/week (refreshes weekly)
+- 1 chat only
+- 1 concurrent run
+- Basic mode
+- NO: custom workers, scheduled triggers, app triggers, integrations
 
-ALWAYS SHOW <upgrade_cta/> FOR:
-- Presentations, reports, research, code projects
-- Automation requests (not available on free)
-- "What can you do?" questions
-- Any task using multiple credits
+PLUS ($20/mo):
+- 4,000 credits/month
+- Unlimited chats
+- 3 concurrent runs
+- 5 custom AI Workers
+- 5 scheduled triggers, 25 app triggers
+- 100+ integrations (Google Drive, Slack, Notion, Gmail, GitHub...)
+- Advanced mode (faster, better responses)
 
-DO NOT SHOW FOR: Simple greetings, one-line answers
+PRO ($50/mo):
+- 10,000 credits/month
+- Unlimited chats
+- 5 concurrent runs
+- 20 custom AI Workers
+- 10 scheduled triggers, 50 app triggers
+- 100+ integrations
+- Advanced mode (best quality)
 
-EXAMPLE RESPONSES:
+ULTRA ($200/mo):
+- 40,000 credits/month
+- 20 concurrent runs
+- 100 custom AI Workers
+- 50 scheduled triggers, 200 app triggers
 
-User: "Make a presentation"
-Response: "I'll create that! Note: you're on Basic (300 credits/week). Plus gives you 4,000/month and faster AI.
-<upgrade_cta/>
-Now let me build your presentation..."
+FORMAT - mention limits THEN immediately show <upgrade_cta/> THEN do the task:
+"[Acknowledge task]. You're on free (300 credits/week). Plus gives you faster, better responses and more credits. <upgrade_cta/>
 
-User: "Set up automation"
-Response: "Automation requires Plus or Pro - not available on Basic.
-<upgrade_cta/>
-I can help manually instead if you'd like."
+[Now do the task]"
+
+EXAMPLES:
+
+User: "Make a presentation on AI"
+You: "I'll create that! You're on the free plan (300 credits/week, 1 chat). Plus gives you 4,000/month, unlimited chats, and faster, higher-quality responses. <upgrade_cta/>
+
+Now building your AI presentation..."
 
 User: "What can you do?"
-Response: "I can help with docs, code, research and more! You're on Basic with some limits. Plus unlocks faster AI and unlimited chats.
-<upgrade_cta/>"
+You: "I can help with presentations, research, code, reports and more! You're on free with 300 credits/week. Plus gives you 4,000/month, unlimited chats, and faster, higher-quality responses. <upgrade_cta/>"
+
+IMPORTANT: <upgrade_cta/> must come RIGHT AFTER mentioning upgrade benefits, not at the end of your response.
+
+DO NOT mention upgrades for:
+- Simple greetings (hi, hello, hey)
+- Quick questions with short answers
+- Casual chat
+
+ALWAYS mention upgrades for:
+- Presentations, reports, research, code projects
+- Automation requests
+- "What can you do?" / capability questions
+- Any task using multiple credits
 </free_tier_user>
 """
         return promo_content
