@@ -237,7 +237,7 @@ export default function AboutPage() {
   }, [isMobile]);
 
   return (
-    <main ref={mainRef} className="min-h-screen bg-background md:min-h-screen overflow-y-auto overscroll-contain h-[100dvh] md:h-auto fixed md:relative inset-0 md:inset-auto touch-pan-y">
+    <main ref={mainRef} className="min-h-screen bg-background">
       <article className="max-w-4xl mx-auto px-6 md:px-10 pt-24 md:pt-28 pb-32">
         
         {/* Hero Image */}
