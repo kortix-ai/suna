@@ -5,7 +5,7 @@ import { AudioLines, CornerDownLeft, Paperclip, X } from 'lucide-react-native';
 import { StopIcon } from '@/components/ui/StopIcon';
 import { useColorScheme } from 'nativewind';
 import * as React from 'react';
-import { Keyboard, Pressable, ScrollView, TextInput, View, ViewStyle, Platform, TouchableOpacity, LayoutAnimation, UIManager, type ViewProps, type NativeSyntheticEvent, type TextInputContentSizeChangeEventData, type TextInputSelectionChangeEventData } from 'react-native';
+import { Keyboard, Pressable, TextInput, View, Platform, TouchableOpacity, type ViewProps, type NativeSyntheticEvent, type TextInputSelectionChangeEventData } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -24,26 +24,12 @@ import { MarkdownToolbar, insertMarkdownFormat, type MarkdownFormat } from './Ma
 import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-const AnimatedView = Animated.createAnimatedComponent(View);
-
-// Enable LayoutAnimation for Android
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-  UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 // Threshold for swipe down to dismiss keyboard (in pixels)
 const SWIPE_DOWN_THRESHOLD = 30;
 
 // Spring config - defined once outside component
 const SPRING_CONFIG = { damping: 15, stiffness: 400 };
-
-// Native spring animation config for smooth transitions
-const NATIVE_SPRING_CONFIG = {
-  duration: 200,
-  create: { type: LayoutAnimation.Types.spring, property: LayoutAnimation.Properties.opacity, springDamping: 0.8 },
-  update: { type: LayoutAnimation.Types.spring, springDamping: 0.8 },
-  delete: { type: LayoutAnimation.Types.spring, property: LayoutAnimation.Properties.opacity, springDamping: 0.8 },
-};
 
 // Android hit slop for better touch targets
 const ANDROID_HIT_SLOP = Platform.OS === 'android' ? { top: 10, bottom: 10, left: 10, right: 10 } : undefined;
@@ -136,7 +122,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   const [isFocused, setIsFocused] = React.useState(false);
   const [selection, setSelection] = React.useState({ start: 0, end: 0 });
   const [isStopping, setIsStopping] = React.useState(false);
-  const [contentHeight, setContentHeight] = React.useState(0);
   // NO localHasText state in parent - NormalMode handles button state locally
 
   // Android: Clear input imperatively when value prop becomes empty
@@ -205,13 +190,9 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     [placeholder, t]
   );
 
-  // Simple dynamic height calculation - works on both platforms
-  const dynamicHeight = React.useMemo(() => {
-    const baseHeight = 120;
-    const maxHeight = 160;
-    const calculatedHeight = contentHeight + 80;
-    return Math.max(baseHeight, Math.min(calculatedHeight, maxHeight));
-  }, [contentHeight]);
+  // Simple native approach - no complex calculations
+  // TextInput grows naturally, we just clamp the max
+  const MAX_INPUT_HEIGHT = 72; // ~3-4 lines before scroll
 
   // Recording status text
   const recordingStatusText = isTranscribing ? 'Transcribing...' : formatDuration(recordingDuration);
@@ -225,7 +206,8 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   // Text input style - memoized
   const textInputStyle = React.useMemo(() => ({
     fontFamily: 'Roobert-Regular',
-    minHeight: 52,
+    fontSize: 16,
+    lineHeight: 22,
     opacity: isDisabled ? 0.5 : 1,
   }), [isDisabled]);
 
@@ -402,19 +384,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     onAudioRecord?.();
   }, [isAgentRunning, isRecording, getHasContent, hasAgent, isSendingMessage, isTranscribing, isStopping, isAuthenticated, hasUploadingFiles, onStopAgentRun, handleSendAudioMessage, handleSendMessage, onAudioRecord]);
 
-  // Content size change handler - iOS smooth, Android instant
-  const handleContentSizeChange = React.useCallback(
-    (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
-      const newHeight = e.nativeEvent.contentSize.height;
-      // iOS: smooth spring animation, Android: instant (no animation delay)
-      if (Platform.OS === 'ios') {
-        LayoutAnimation.configureNext(NATIVE_SPRING_CONFIG);
-      }
-      setContentHeight(newHeight);
-    },
-    []
-  );
-
   // Selection change handler to track cursor position
   const handleSelectionChange = React.useCallback(
     (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
@@ -464,15 +433,6 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     onChangeText?.(text);
   }, [onChangeText]);
 
-  // Container style with dynamic height
-  const containerStyle = React.useMemo(
-    () => ({
-      ...(style as ViewStyle),
-      height: dynamicHeight,
-    }),
-    [style, dynamicHeight]
-  );
-
   // Memoized attach button style
   const attachButtonStyle = React.useMemo(
     () => [attachAnimatedStyle, { opacity: isDisabled ? 0.4 : 1 }],
@@ -482,13 +442,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
   return (
     <GestureDetector gesture={swipeDownGesture}>
       <View
-        className="relative rounded-[30px] overflow-hidden bg-card border border-border"
-        style={containerStyle}
+        className="rounded-[30px] overflow-hidden bg-card border border-border"
+        style={style}
         collapsable={false}
         {...props}
       >
-        <View className="absolute inset-0" />
-        <View className="p-4 flex-1" collapsable={false}>
+        {/* Simple flex layout: text grows, buttons stay at bottom */}
+        <View className="p-4" collapsable={false}>
           {isRecording ? (
             <RecordingMode
               audioLevels={audioLevels}
@@ -511,7 +471,7 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
               placeholderTextColor={placeholderTextColor}
               isDisabled={isDisabled}
               textInputStyle={textInputStyle}
-              handleContentSizeChange={handleContentSizeChange}
+              maxInputHeight={MAX_INPUT_HEIGHT}
               onAttachPress={onAttachPress}
               onAgentPress={onAgentPress}
               onButtonPress={handleButtonPress}
@@ -604,7 +564,7 @@ interface NormalModeProps {
   placeholderTextColor: string;
   isDisabled: boolean;
   textInputStyle: any;
-  handleContentSizeChange: (e: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => void;
+  maxInputHeight: number;
   onAttachPress?: () => void;
   onAgentPress?: () => void;
   onButtonPress: () => void;
@@ -627,7 +587,7 @@ const NormalMode = ({
   placeholderTextColor,
   isDisabled,
   textInputStyle,
-  handleContentSizeChange,
+  maxInputHeight,
   onAttachPress,
   onAgentPress,
   onButtonPress,
@@ -669,38 +629,40 @@ const NormalMode = ({
 
   return (
     <>
-      <View className="flex-1 mb-12">
-        <ScrollView
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          nestedScrollEnabled={true}
-          style={{ maxHeight: 100 }} // Cap at ~4-5 lines
-        >
-          <TextInput
-            ref={textInputRef}
-            // iOS: controlled, Android: uncontrolled for speed
-            {...(Platform.OS === 'ios' ? { value } : { defaultValue: value })}
-            onChangeText={handleLocalTextChange}
-            onFocus={() => {
-              if (!isAuthenticated) {
-                textInputRef.current?.blur();
-              }
-            }}
-            placeholder={effectivePlaceholder}
-            placeholderTextColor={placeholderTextColor}
-            multiline
-            scrollEnabled={false}
-            editable={!isDisabled}
-            onContentSizeChange={handleContentSizeChange}
-            className="text-foreground text-base"
-            style={textInputStyle}
-            textAlignVertical="top"
-            underlineColorAndroid="transparent"
-          />
-        </ScrollView>
-      </View>
+      {/* TextInput - auto grows, maxHeight triggers scroll */}
+      <TextInput
+        ref={textInputRef}
+        // iOS: controlled, Android: uncontrolled for instant response
+        {...(Platform.OS === 'ios' ? { value } : { defaultValue: value })}
+        onChangeText={handleLocalTextChange}
+        onFocus={() => {
+          if (!isAuthenticated) {
+            textInputRef.current?.blur();
+          }
+        }}
+        placeholder={effectivePlaceholder}
+        placeholderTextColor={placeholderTextColor}
+        multiline
+        // numberOfLines helps Android pre-allocate layout space
+        numberOfLines={Platform.OS === 'android' ? 4 : undefined}
+        scrollEnabled={true}
+        editable={!isDisabled}
+        className="text-foreground text-base"
+        style={[textInputStyle, { maxHeight: maxInputHeight }]}
+        textAlignVertical="top"
+        underlineColorAndroid="transparent"
+        blurOnSubmit={false}
+        returnKeyType="default"
+        autoCorrect={Platform.OS === 'ios'}
+        spellCheck={Platform.OS === 'ios'}
+        autoCapitalize="sentences"
+        keyboardAppearance={Platform.OS === 'ios' ? 'default' : undefined}
+        // submitBehavior helps iOS handle enter key layout
+        submitBehavior="newline"
+      />
 
-      <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
+      {/* Bottom buttons row - mt-3 for spacing from text */}
+      <View className="flex-row items-center justify-between mt-3">
         <View className="flex-row items-center gap-2">
           {/* Use TouchableOpacity on Android - AnimatedPressable blocks touches */}
           <TouchableOpacity
