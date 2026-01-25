@@ -549,6 +549,34 @@ export default function RootLayout() {
                                       animation: 'fade',
                                     }}
                                   />
+                                  <Stack.Screen
+                                    name="(settings)"
+                                    options={{
+                                      animation: 'slide_from_right',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
+                                  <Stack.Screen
+                                    name="plans"
+                                    options={{
+                                      animation: 'slide_from_right',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
+                                  <Stack.Screen
+                                    name="billing"
+                                    options={{
+                                      animation: 'slide_from_right',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
+                                  <Stack.Screen
+                                    name="usage"
+                                    options={{
+                                      animation: 'slide_from_right',
+                                      gestureEnabled: true,
+                                    }}
+                                  />
                                   <Stack.Screen name="trigger-detail" />
                                   <Stack.Screen name="worker-config" />
                                   <Stack.Screen

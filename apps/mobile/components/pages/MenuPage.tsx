@@ -27,7 +27,6 @@ import {
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
-import { SettingsPage } from '@/components/settings/SettingsPage';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
@@ -41,7 +40,6 @@ import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
 import { WorkerCreationDrawer } from '@/components/workers/WorkerCreationDrawer';
 import { WorkerConfigDrawer } from '@/components/workers/WorkerConfigDrawer';
 import { useAdvancedFeatures } from '@/hooks';
-import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import type {
   Conversation,
   UserProfile,
@@ -309,7 +307,6 @@ export function MenuPage({
   const insets = useSafeAreaInsets();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
-  const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
   const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
 
@@ -441,12 +438,12 @@ export function MenuPage({
   }));
 
   /**
-   * Handle profile press - Opens settings drawer
+   * Handle profile press - Navigate to settings
    */
   const handleProfilePress = () => {
-    log.log('🎯 Opening settings drawer');
+    log.log('🎯 Navigating to settings');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsSettingsVisible(true);
+    router.push('/(settings)');
   };
 
   const handleProfilePressIn = () => {
@@ -455,14 +452,6 @@ export function MenuPage({
 
   const handleProfilePressOut = () => {
     profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  /**
-   * Handle settings drawer close
-   */
-  const handleCloseSettings = () => {
-    log.log('🎯 Closing settings drawer');
-    setIsSettingsVisible(false);
   };
 
   /**
@@ -866,12 +855,6 @@ export function MenuPage({
           )}
         </View>
       </SafeAreaView>
-
-      {/* Settings Page */}
-      <AnimatedPageWrapper visible={isSettingsVisible} onClose={handleCloseSettings}>
-        <SettingsPage visible={isSettingsVisible} profile={profile} onClose={handleCloseSettings} />
-      </AnimatedPageWrapper>
-
 
       {isTriggerDrawerVisible && (
         <TriggerCreationDrawer
