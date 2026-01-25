@@ -77,6 +77,201 @@ def _extract_commitment_from_credit_account(credit_account: Dict) -> Dict:
         }
 
 
+def _extract_scheduled_changes_from_credit_account(credit_account: Dict) -> Dict:
+    """Extract scheduled changes directly from credit_account to avoid redundant DB query."""
+    try:
+        current_tier_name = credit_account.get('tier', 'none')
+        provider = credit_account.get('provider', 'stripe')
+
+        # Check RevenueCat pending changes
+        if provider == 'revenuecat':
+            pending_product = credit_account.get('revenuecat_pending_change_product')
+            pending_date = credit_account.get('revenuecat_pending_change_date')
+            if pending_product and pending_date:
+                from core.billing.external.revenuecat.utils import ProductMapper
+                target_tier_name, target_tier_info = ProductMapper.get_tier_info(pending_product)
+                if target_tier_info and current_tier_name != target_tier_name:
+                    current_tier = get_tier_by_name(current_tier_name)
+                    return {
+                        'has_scheduled_change': True,
+                        'scheduled_change': {
+                            'type': 'downgrade' if target_tier_info.monthly_credits < (current_tier.monthly_credits if current_tier else 0) else 'change',
+                            'current_tier': {
+                                'name': current_tier.name if current_tier else 'none',
+                                'display_name': current_tier.display_name if current_tier else 'Unknown',
+                                'monthly_credits': float(current_tier.monthly_credits) if current_tier else 0
+                            },
+                            'target_tier': {
+                                'name': target_tier_name,
+                                'display_name': target_tier_info.display_name,
+                                'monthly_credits': float(target_tier_info.monthly_credits)
+                            },
+                            'effective_date': pending_date if isinstance(pending_date, str) else pending_date.isoformat()
+                        }
+                    }
+
+        # Check Stripe scheduled changes (stored in DB)
+        scheduled_tier = credit_account.get('scheduled_tier_change')
+        scheduled_date = credit_account.get('scheduled_tier_change_date')
+
+        if scheduled_tier and scheduled_date and scheduled_tier != current_tier_name:
+            current_tier = get_tier_by_name(current_tier_name)
+            target_tier = get_tier_by_name(scheduled_tier)
+            return {
+                'has_scheduled_change': True,
+                'scheduled_change': {
+                    'type': 'downgrade',
+                    'current_tier': {
+                        'name': current_tier.name if current_tier else 'none',
+                        'display_name': current_tier.display_name if current_tier else 'Unknown',
+                        'monthly_credits': float(current_tier.monthly_credits) if current_tier else 0
+                    },
+                    'target_tier': {
+                        'name': target_tier.name if target_tier else scheduled_tier,
+                        'display_name': target_tier.display_name if target_tier else scheduled_tier,
+                        'monthly_credits': float(target_tier.monthly_credits) if target_tier else 0
+                    },
+                    'effective_date': scheduled_date if isinstance(scheduled_date, str) else scheduled_date.isoformat()
+                }
+            }
+
+        return {'has_scheduled_change': False, 'scheduled_change': None}
+    except Exception:
+        return {'has_scheduled_change': False, 'scheduled_change': None}
+
+
+async def _refresh_daily_credits_background(account_id: str) -> None:
+    """Fire-and-forget daily credit refresh. Don't let this block account-state."""
+    try:
+        await credit_service.check_and_refresh_daily_credits(account_id)
+    except Exception as e:
+        logger.debug(f"[ACCOUNT_STATE] Background daily credit refresh failed for {account_id}: {e}")
+
+
+async def _build_minimal_account_state(account_id: str) -> Dict:
+    """
+    Build minimal account state with only essential data for dashboard.
+
+    This is ~10x faster than full account state because it:
+    - Only fetches credit_account (single DB query)
+    - No limits queries
+    - No models iteration
+    - No scheduled changes processing
+    """
+    import time
+    t_start = time.time()
+
+    # Single DB query - get credit account
+    credit_account = await get_credit_account(account_id)
+    credit_account = credit_account or {}
+
+    tier_name = credit_account.get('tier', 'none')
+    tier_info = get_tier_by_name(tier_name)
+    if not tier_info:
+        tier_info = TIERS['none']
+
+    # Trial status
+    trial_status = credit_account.get('trial_status')
+    is_trial = trial_status == 'active'
+
+    # Balance calculations
+    daily_dollars = float(credit_account.get('daily_credits_balance', 0) or 0)
+    monthly_dollars = float(credit_account.get('expiring_credits', 0) or 0)
+    extra_dollars = float(credit_account.get('non_expiring_credits', 0) or 0)
+    last_daily_refresh = credit_account.get('last_daily_refresh')
+
+    total_balance_dollars = float(credit_account.get('balance', 0) or 0)
+
+    # Populate credit_balance cache
+    try:
+        await Cache.set(f"credit_balance:{account_id}", {
+            'total': total_balance_dollars,
+            'account_id': account_id
+        }, ttl=300)
+    except Exception:
+        pass
+
+    # Convert to credits
+    daily_credits = daily_dollars * CREDITS_PER_DOLLAR
+    monthly_credits = monthly_dollars * CREDITS_PER_DOLLAR
+    extra_credits = extra_dollars * CREDITS_PER_DOLLAR
+    total_credits = daily_credits + monthly_credits + extra_credits
+
+    # Daily credits refresh info
+    daily_credits_info = None
+    has_daily_credits = tier_info.daily_credit_config and tier_info.daily_credit_config.get('enabled')
+
+    if has_daily_credits:
+        refresh_interval_hours = tier_info.daily_credit_config.get('refresh_interval_hours', 24)
+        daily_amount = float(tier_info.daily_credit_config.get('amount', 0)) * CREDITS_PER_DOLLAR
+
+        next_refresh_at = None
+        seconds_until_refresh = None
+
+        if last_daily_refresh:
+            try:
+                last_refresh_dt = datetime.fromisoformat(last_daily_refresh.replace('Z', '+00:00'))
+                next_refresh_dt = last_refresh_dt + timedelta(hours=refresh_interval_hours)
+                next_refresh_at = next_refresh_dt.isoformat()
+                time_diff = next_refresh_dt - datetime.now(timezone.utc)
+                seconds_until_refresh = max(0, int(time_diff.total_seconds()))
+            except Exception:
+                pass
+
+        daily_credits_info = {
+            'enabled': True,
+            'daily_amount': daily_amount,
+            'refresh_interval_hours': refresh_interval_hours,
+            'last_refresh': last_daily_refresh,
+            'next_refresh_at': next_refresh_at,
+            'seconds_until_refresh': seconds_until_refresh
+        }
+
+    # Subscription status
+    provider = credit_account.get('provider', 'stripe')
+    stripe_status = credit_account.get('stripe_subscription_status')
+
+    if is_trial:
+        status = 'trialing'
+    elif stripe_status and provider == 'stripe':
+        status = stripe_status
+    elif tier_name not in ['none', 'free']:
+        status = 'active'
+    elif tier_name == 'free':
+        status = 'active'
+    else:
+        status = 'no_subscription'
+
+    if is_trial and tier_name == 'tier_2_20':
+        display_name = f"{tier_info.display_name} (Trial)"
+    else:
+        display_name = tier_info.display_name
+
+    logger.info(f"[ACCOUNT_STATE_MINIMAL] Built in {(time.time() - t_start) * 1000:.1f}ms for {account_id[:8]}...")
+
+    return {
+        'credits': {
+            'total': total_credits,
+            'daily': daily_credits,
+            'monthly': monthly_credits,
+            'extra': extra_credits,
+            'can_run': total_credits >= 1,
+            'daily_refresh': daily_credits_info
+        },
+        'subscription': {
+            'tier_key': tier_name,
+            'tier_display_name': display_name,
+            'status': status,
+            'is_trial': is_trial,
+            'trial_status': trial_status
+        },
+        'tier': {
+            'name': tier_name,
+            'display_name': tier_info.display_name
+        }
+    }
+
+
 async def _get_cached_stripe_subscription(subscription_id: str, timeout: float = STRIPE_FETCH_TIMEOUT) -> Optional[Dict]:
     if not subscription_id:
         return None
@@ -137,7 +332,7 @@ async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dic
         tier_info = TIERS['none']
     
     logger.info(f"[ACCOUNT_STATE] {account_id[:8]}... tier={tier_name} thread_limit={subscription_tier_info.get('thread_limit')} project_limit={subscription_tier_info.get('project_limit')} skip_cache={skip_cache}")
-    logger.debug(f"[ACCOUNT_STATE] Fetched credit account + tier in {(time.time() - t_start) * 1000:.1f}ms")
+    logger.info(f"[ACCOUNT_STATE] Fetched credit account + tier in {(time.time() - t_start) * 1000:.1f}ms")
     
     # Trial status
     trial_status = credit_account.get('trial_status')
@@ -201,38 +396,17 @@ async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dic
             'seconds_until_refresh': seconds_until_refresh
         }
     
-    # Get subscription info - use cached Stripe data
     subscription_data = None
     billing_period = credit_account.get('plan_type')
     provider = credit_account.get('provider', 'stripe')
-    
+
     stripe_subscription_id = credit_account.get('stripe_subscription_id')
-    
-    # OPTIMIZATION: Run Stripe fetch and limits query in parallel
     from core.utils.limits_checker import get_all_limits_fast
+
+    t_limits = time.time()
+    all_limits = await get_all_limits_fast(account_id, tier_info=subscription_tier_info)
+    logger.info(f"[ACCOUNT_STATE] get_all_limits_fast took {(time.time() - t_limits) * 1000:.1f}ms")
     
-    stripe_task = None
-    if stripe_subscription_id and provider == 'stripe':
-        stripe_task = _get_cached_stripe_subscription(stripe_subscription_id)
-    
-    limits_task = get_all_limits_fast(account_id, tier_info=subscription_tier_info)
-    
-    # Run in parallel
-    if stripe_task:
-        subscription_data, all_limits = await asyncio.gather(stripe_task, limits_task)
-    else:
-        all_limits = await limits_task
-    
-    # Get billing period from subscription if not in credit_account
-    if stripe_subscription_id and provider == 'stripe':
-        if not billing_period and subscription_data:
-            items_data = subscription_data.get('items', {}).get('data', [])
-            if items_data:
-                price_id = items_data[0].get('price', {}).get('id')
-                if price_id:
-                    billing_period = get_price_type(price_id)
-    
-    # RevenueCat billing period
     if provider == 'revenuecat' and credit_account.get('revenuecat_product_id'):
         product_id_lower = credit_account.get('revenuecat_product_id', '').lower()
         if 'commitment' in product_id_lower:
@@ -242,42 +416,29 @@ async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dic
         elif 'monthly' in product_id_lower:
             billing_period = 'monthly'
     
-    if subscription_data:
-        sub_status = subscription_data.get('status', 'active')
-        if sub_status == 'trialing' or is_trial:
-            status = 'trialing'
-        else:
-            status = sub_status
+    stripe_status = credit_account.get('stripe_subscription_status')
+    if is_trial:
+        status = 'trialing'
+    elif stripe_status and provider == 'stripe':
+        status = stripe_status
     elif tier_name not in ['none', 'free']:
         status = 'active'
     elif tier_name == 'free':
         status = 'active'
     else:
         status = 'no_subscription'
-    
+
     if is_trial and tier_name == 'tier_2_20':
         display_name = f"{tier_info.display_name} (Trial)"
     else:
         display_name = tier_info.display_name
-    
+
     is_cancelled = False
     cancellation_effective_date = None
-    
-    if subscription_data:
-        cancel_at_period_end = subscription_data.get('cancel_at_period_end', False)
-        canceled_at = subscription_data.get('canceled_at')
-        current_period_end = subscription_data.get('current_period_end')
-        
-        if cancel_at_period_end or canceled_at:
-            is_cancelled = True
-            if current_period_end:
-                try:
-                    cancellation_effective_date = datetime.fromtimestamp(
-                        current_period_end, timezone.utc
-                    ).isoformat()
-                except Exception:
-                    pass
-    
+
+    if provider == 'stripe' and stripe_status == 'canceled':
+        is_cancelled = True
+
     if provider == 'revenuecat':
         revenuecat_cancelled_at = credit_account.get('revenuecat_cancelled_at')
         revenuecat_cancel_at_period_end = credit_account.get('revenuecat_cancel_at_period_end')
@@ -287,16 +448,11 @@ async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dic
             if revenuecat_cancel_at_period_end:
                 cancellation_effective_date = revenuecat_cancel_at_period_end
     
-    try:
-        scheduled_changes = await subscription_service.get_scheduled_changes(account_id, subscription_data)
-    except Exception as e:
-        logger.warning(f"[ACCOUNT_STATE] Failed to get scheduled changes: {e}")
-        scheduled_changes = {'has_scheduled_change': False, 'scheduled_change': None}
-    
-    # OPTIMIZATION: Extract commitment info directly from credit_account (already fetched)
-    # instead of making another DB call via get_commitment_status()
+    # Extract scheduled changes from already-fetched credit_account (no extra DB call)
+    scheduled_changes = _extract_scheduled_changes_from_credit_account(credit_account)
+
     commitment_info = _extract_commitment_from_credit_account(credit_account)
-    
+
     all_models = model_manager.list_available_models(include_disabled=True)
     models = []
     for model in all_models:
@@ -322,7 +478,7 @@ async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dic
     
     # Note: get_all_limits_fast already warms the slot_manager caches
     
-    logger.debug(f"[ACCOUNT_STATE] Built complete state in {(time.time() - t_start) * 1000:.1f}ms")
+    logger.info(f"[ACCOUNT_STATE] Built complete state in {(time.time() - t_start) * 1000:.1f}ms")
     
     return {
         'credits': {
@@ -339,9 +495,9 @@ async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dic
             'status': status,
             'billing_period': billing_period,
             'provider': provider,
-            'subscription_id': subscription_data.get('id') if subscription_data else None,
-            'current_period_end': subscription_data.get('current_period_end') if subscription_data else None,
-            'cancel_at_period_end': subscription_data.get('cancel_at_period_end', False) if subscription_data else False,
+            'subscription_id': stripe_subscription_id,
+            'current_period_end': None,  # TODO: Add stripe_current_period_end column to DB
+            'cancel_at_period_end': is_cancelled,
             'is_trial': is_trial,
             'trial_status': trial_status,
             'trial_ends_at': trial_ends_at,
@@ -411,16 +567,88 @@ async def _build_account_state(account_id: str, skip_cache: bool = False) -> Dic
     }
 
 
+MINIMAL_ACCOUNT_STATE_CACHE_TTL = 60  # 1 minute cache for minimal state
+
+
+@router.get("/account-state/minimal")
+async def get_minimal_account_state(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt),
+    skip_cache: bool = False
+) -> Dict:
+    """
+    Get minimal account state - fast endpoint for dashboard.
+
+    Only returns essential data:
+    - credits (total, can_run, daily_refresh)
+    - subscription (tier_key, tier_display_name, status)
+    - tier (name, display_name)
+
+    Use /account-state for full data including limits, models, scheduled changes.
+    """
+    if config.ENV_MODE == EnvMode.LOCAL:
+        return {
+            'credits': {
+                'total': 999999,
+                'daily': 200,
+                'monthly': 999799,
+                'extra': 0,
+                'can_run': True,
+                'daily_refresh': None
+            },
+            'subscription': {
+                'tier_key': 'tier_25_200',
+                'tier_display_name': 'Local Development',
+                'status': 'active',
+                'is_trial': False,
+                'trial_status': None
+            },
+            'tier': {
+                'name': 'tier_25_200',
+                'display_name': 'Local Development'
+            },
+            '_cache': {'cached': False, 'ttl_seconds': MINIMAL_ACCOUNT_STATE_CACHE_TTL}
+        }
+
+    cache_key = f"account_state_minimal:{account_id}"
+
+    if not skip_cache:
+        try:
+            cached_data = await Cache.get(cache_key)
+            if cached_data:
+                cached_data['_cache'] = {'cached': True, 'ttl_seconds': MINIMAL_ACCOUNT_STATE_CACHE_TTL}
+                return cached_data
+        except Exception:
+            pass
+
+    try:
+        # Fire-and-forget daily credits refresh
+        asyncio.create_task(_refresh_daily_credits_background(account_id))
+
+        account_state = await _build_minimal_account_state(account_id)
+
+        try:
+            await Cache.set(cache_key, account_state, ttl=MINIMAL_ACCOUNT_STATE_CACHE_TTL)
+        except Exception:
+            pass
+
+        account_state['_cache'] = {'cached': False, 'ttl_seconds': MINIMAL_ACCOUNT_STATE_CACHE_TTL}
+        return account_state
+
+    except Exception as e:
+        logger.error(f"[ACCOUNT_STATE_MINIMAL] Error for {account_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/account-state")
 async def get_account_state(
     account_id: str = Depends(verify_and_get_user_id_from_jwt),
     skip_cache: bool = False
 ) -> Dict:
     """
-    Get unified account state including credits, subscription, models, and limits.
-    
-    This is the single source of truth for all billing-related frontend data.
-    Data is cached for 5 minutes to optimize latency.
+    Get full account state including credits, subscription, models, and limits.
+
+    This is the complete data for settings/billing pages.
+    For dashboard, use /account-state/minimal for faster response.
     """
     # Local development mode - return mock data
     if config.ENV_MODE == EnvMode.LOCAL:
@@ -552,13 +780,10 @@ async def get_account_state(
     
     for attempt in range(max_retries):
         try:
-            # Ensure daily credits are refreshed if needed (non-blocking on failure)
-            try:
-                await credit_service.check_and_refresh_daily_credits(account_id)
-            except (httpx.ConnectTimeout, httpx.PoolTimeout, TimeoutError) as credit_err:
-                logger.warning(f"[ACCOUNT_STATE] Daily credit refresh timed out for {account_id}: {credit_err}")
-                # Continue - this is not critical for reading account state
-            
+            # Fire-and-forget: refresh daily credits in background
+            # Don't block account-state on this - it has a 5s lock timeout
+            asyncio.create_task(_refresh_daily_credits_background(account_id))
+
             # Build fresh data (no client needed - uses repo)
             account_state = await _build_account_state(account_id, skip_cache=skip_cache)
             

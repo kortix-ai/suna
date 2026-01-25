@@ -339,7 +339,7 @@ export const billingApi = {
    */
   async getAccountState(skipCache = false): Promise<AccountState> {
     const params = skipCache ? '?skip_cache=true' : '';
-    const response = await backendApi.get<AccountState>(`/billing/account-state${params}`, {
+    const response = await backendApi.get<AccountState>(`/billing/account-state${params}?skip_cache=true`, {
       showErrors: false,
     });
     if (response.error && response.error.status !== 401) {

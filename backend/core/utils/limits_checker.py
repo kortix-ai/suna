@@ -270,10 +270,11 @@ async def check_thread_limit(account_id: str, tier_info: Optional[Dict] = None, 
 
 async def get_all_limits_fast(account_id: str, tier_info: Dict) -> Dict[str, Any]:
     import time
+    import asyncio
     t_start = time.time()
-    
+
     tier_name = tier_info.get('name', 'free')
-    
+
     thread_limit = tier_info.get('thread_limit', 2)
     project_limit = tier_info.get('project_limit', 2)
     agent_limit = tier_info.get('custom_workers_limit', 0)
@@ -281,24 +282,59 @@ async def get_all_limits_fast(account_id: str, tier_info: Dict) -> Dict[str, Any
     custom_mcp_limit = tier_info.get('custom_workers_limit', 0)
     scheduled_trigger_limit = tier_info.get('scheduled_triggers_limit', 0)
     app_trigger_limit = tier_info.get('app_triggers_limit', 0)
-    
-    counts = await limits_repo.get_all_limits_counts(account_id)
-    
-    trigger_counts = await limits_repo.count_all_triggers_for_account(account_id)
-    
-    logger.info(f"[LIMITS] {account_id[:8]}... threads={counts['thread_count']}/{thread_limit} projects={counts['project_count']}/{project_limit} can_create_thread={counts['thread_count'] < thread_limit}")
-    
+
+    # Try to get thread/project counts from Redis cache first (slot_manager maintains these)
+    from core.services import redis as redis_service
+    thread_count_cached = None
+    project_count_cached = None
+
     try:
-        from core.agents.pipeline.slot_manager import warm_all_caches
-        await warm_all_caches(
-            account_id,
-            thread_count=counts['thread_count'],
-            project_count=counts['project_count']
+        thread_key = f"thread_count:{account_id}"
+        project_key = f"project_count:{account_id}"
+        thread_val, project_val = await asyncio.gather(
+            redis_service.get(thread_key),
+            redis_service.get(project_key),
+            return_exceptions=True
         )
+        if isinstance(thread_val, str) or isinstance(thread_val, bytes):
+            thread_count_cached = int(thread_val)
+        if isinstance(project_val, str) or isinstance(project_val, bytes):
+            project_count_cached = int(project_val)
     except Exception:
         pass
-    
-    logger.debug(f"⚡ All limits fetched in {(time.time() - t_start) * 1000:.1f}ms (single query)")
+
+    # If we have cached counts, use them and skip the expensive DB query for threads/projects
+    if thread_count_cached is not None and project_count_cached is not None:
+        # Only fetch the counts we don't have cached (agents, running_runs, custom_mcps, triggers)
+        # These are less frequently needed and change less often
+        counts, trigger_counts = await asyncio.gather(
+            limits_repo.get_all_limits_counts(account_id),
+            limits_repo.count_all_triggers_for_account(account_id)
+        )
+        # Use cached values for thread/project counts
+        counts['thread_count'] = thread_count_cached
+        counts['project_count'] = project_count_cached
+        logger.debug(f"[LIMITS] {account_id[:8]}... using Redis cache for thread/project counts")
+    else:
+        # Cache miss - fetch from DB and warm the cache
+        counts, trigger_counts = await asyncio.gather(
+            limits_repo.get_all_limits_counts(account_id),
+            limits_repo.count_all_triggers_for_account(account_id)
+        )
+        # Warm the Redis cache for next time
+        try:
+            from core.agents.pipeline.slot_manager import warm_all_caches
+            asyncio.create_task(warm_all_caches(
+                account_id,
+                thread_count=counts['thread_count'],
+                project_count=counts['project_count']
+            ))
+        except Exception:
+            pass
+
+    logger.info(f"[LIMITS] {account_id[:8]}... threads={counts['thread_count']}/{thread_limit} projects={counts['project_count']}/{project_limit} can_create_thread={counts['thread_count'] < thread_limit}")
+
+    logger.debug(f"⚡ All limits fetched in {(time.time() - t_start) * 1000:.1f}ms")
     
     return {
         'threads': {

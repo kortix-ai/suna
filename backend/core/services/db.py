@@ -191,7 +191,7 @@ def _get_dsn() -> str:
     
     # URL-encode password when constructing URL from components
     encoded_password = quote(password, safe='')
-    return f"postgresql+psycopg://postgres.{project_ref}:{encoded_password}@aws-0-us-east-1.pooler.supabase.com:6543/postgres"
+    return f"postgresql+psycopg://postgres.{project_ref}:{encoded_password}.supabase.com:6543/postgres"
 
 
 def _get_read_replica_dsn() -> Optional[str]:
