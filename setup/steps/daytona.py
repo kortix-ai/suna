@@ -78,8 +78,8 @@ class DaytonaStep(BaseStep):
         )
         self.info("Visit https://app.daytona.io/dashboard/snapshots to create a snapshot.")
         self.info("Create a snapshot with these exact settings:")
-        self.info("   - Name:          kortix/suna:0.1.3.28")
-        self.info("   - Snapshot name: kortix/suna:0.1.3.28")
+        self.info("   - Name:          kortix/suna:0.1.3.30")
+        self.info("   - Snapshot name: kortix/suna:0.1.3.30")
         self.info("   - Entrypoint:    /usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf")
 
         self.prompts.press_enter_to_continue(

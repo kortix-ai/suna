@@ -1074,6 +1074,7 @@ export function FileViewerView({
                   content={typeof rawContent === 'string' ? rawContent : ''}
                   fileName={fileName}
                   getHtmlContent={mdEditorControls?.getHtml ? () => mdEditorControls.getHtml() : undefined}
+                  sandboxUrl={project?.sandbox?.sandbox_url}
                 />
               </>
             </TooltipProvider>

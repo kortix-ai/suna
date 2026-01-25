@@ -19,6 +19,8 @@ interface FileDownloadButtonProps {
   disabled?: boolean;
   /** Custom class name for the button */
   className?: string;
+  /** Optional sandbox URL for high-quality PDF export via Playwright */
+  sandboxUrl?: string;
 }
 
 export type ExportFormat = 'pdf' | 'docx' | 'html' | 'markdown' | 'text';
@@ -40,14 +42,16 @@ export function FileDownloadButton({
   fileName,
   disabled = false,
   className,
+  sandboxUrl,
 }: FileDownloadButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
 
-  // Check if file is markdown
+  // Check if file is markdown or HTML
   const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
   const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+  const isHtml = fileExtension === 'html' || fileExtension === 'htm';
 
   // Export options for markdown files
   const exportOptions: ExportOption[] = [
@@ -74,6 +78,22 @@ export function FileDownloadButton({
       label: 'Markdown',
       icon: FileCode,
       description: 'Plain Text Markdown',
+    },
+  ];
+
+  // Export options for HTML files
+  const htmlExportOptions: ExportOption[] = [
+    {
+      format: 'pdf',
+      label: 'PDF',
+      icon: FileType,
+      description: 'Portable Document Format',
+    },
+    {
+      format: 'html',
+      label: 'HTML',
+      icon: FileCode,
+      description: 'Web Page',
     },
   ];
 
@@ -312,7 +332,7 @@ ${content}
     try {
       await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      const baseFileName = fileName.replace(/\.(md|markdown)$/i, '');
+      const baseFileName = fileName.replace(/\.(md|markdown|html|htm)$/i, '');
       let fileUri = '';
       let mimeType = 'application/octet-stream';
       let exportFileName = fileName;
@@ -328,9 +348,19 @@ ${content}
         }
 
         case 'html': {
-          // Convert markdown to HTML and export
-          const htmlContent = isMarkdown ? convertMarkdownToHtml(content) : content;
-          const fullHtml = createHtmlDocument(htmlContent, baseFileName);
+          // For HTML files, export as-is. For markdown, convert to HTML first.
+          let fullHtml: string;
+          if (isHtml) {
+            // HTML file - export raw content
+            fullHtml = content;
+          } else if (isMarkdown) {
+            // Markdown file - convert to HTML and wrap in document
+            const htmlContent = convertMarkdownToHtml(content);
+            fullHtml = createHtmlDocument(htmlContent, baseFileName);
+          } else {
+            // Other files - wrap in document
+            fullHtml = createHtmlDocument(content, baseFileName);
+          }
           exportFileName = `${baseFileName}.html`;
           fileUri = `${FileSystem.cacheDirectory}${exportFileName}`;
           await FileSystem.writeAsStringAsync(fileUri, fullHtml);
@@ -339,12 +369,58 @@ ${content}
         }
 
         case 'pdf': {
-          // Call API for PDF conversion
+          // Use sandbox Playwright for high-quality PDF if available
           const htmlContent = isMarkdown ? convertMarkdownToHtml(content) : content;
           log.log('[FileDownloadButton] PDF export - HTML length:', htmlContent.length);
-          log.log('[FileDownloadButton] PDF export - HTML preview:', htmlContent.substring(0, 200));
+          log.log('[FileDownloadButton] PDF export - Using sandbox:', !!sandboxUrl);
 
-          const convertedUri = await callExportAPI(htmlContent, baseFileName, 'pdf');
+          let convertedUri: string | null = null;
+
+          if (sandboxUrl) {
+            // Use sandbox endpoint for high-quality PDF
+            try {
+              const response = await fetch(`${sandboxUrl}/presentation/html-to-pdf`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  content: htmlContent,
+                  file_name: baseFileName,
+                }),
+              });
+
+              if (!response.ok) {
+                throw new Error(`Sandbox PDF export failed: ${response.status}`);
+              }
+
+              const blob = await response.blob();
+              const tempFileUri = `${FileSystem.cacheDirectory}${baseFileName}.pdf`;
+
+              // Convert blob to base64 and write to file
+              const reader = new FileReader();
+              convertedUri = await new Promise<string | null>((resolve, reject) => {
+                reader.onloadend = async () => {
+                  try {
+                    const base64data = (reader.result as string).split(',')[1];
+                    await FileSystem.writeAsStringAsync(tempFileUri, base64data, {
+                      encoding: FileSystem.EncodingType.Base64,
+                    });
+                    resolve(tempFileUri);
+                  } catch (err) {
+                    reject(err);
+                  }
+                };
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+            } catch (error) {
+              log.error('[FileDownloadButton] Sandbox PDF export failed, falling back to backend:', error);
+              // Fall back to backend API
+              convertedUri = await callExportAPI(htmlContent, baseFileName, 'pdf');
+            }
+          } else {
+            // Use backend API
+            convertedUri = await callExportAPI(htmlContent, baseFileName, 'pdf');
+          }
 
           if (!convertedUri) {
             setIsExporting(false);
@@ -440,8 +516,11 @@ ${content}
     }
   };
 
-  // For markdown files, show button that opens modal
-  if (isMarkdown) {
+  // Get the appropriate export options based on file type
+  const currentExportOptions = isHtml ? htmlExportOptions : exportOptions;
+
+  // For markdown or HTML files, show button that opens modal
+  if (isMarkdown || isHtml) {
     return (
       <>
         <Pressable
@@ -498,7 +577,7 @@ ${content}
 
               {/* Export Options */}
               <View className="p-2">
-                {exportOptions.map((option) => (
+                {currentExportOptions.map((option) => (
                   <Pressable
                     key={option.format}
                     onPress={() => handleExport(option.format)}

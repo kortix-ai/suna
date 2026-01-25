@@ -1082,6 +1082,7 @@ export function FileOperationToolView({
                           content={fileContent || ''}
                           fileName={fileName}
                           disabled={isStreaming || !fileContent}
+                          sandboxUrl={project?.sandbox?.sandbox_url}
                         />
                       </span>
                     </TooltipTrigger>

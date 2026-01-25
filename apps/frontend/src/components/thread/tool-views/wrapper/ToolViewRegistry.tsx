@@ -31,6 +31,7 @@ import { DeleteSlideToolView } from '../presentation-tools/DeleteSlideToolView';
 import { DeletePresentationToolView } from '../presentation-tools/DeletePresentationToolView';
 // import { PresentationStylesToolView } from '../presentation-tools/PresentationStylesToolView';
 import { ExportToolView } from '../presentation-tools/ExportToolView';
+import { PdfExportToolView } from '../file-operation/PdfExportToolView';
 import { GetProjectStructureView } from '../web-dev/GetProjectStructureView';
 import { ImageEditGenerateToolView } from '../image-edit-generate-tool/ImageEditGenerateToolView';
 import { DesignerToolView } from '../designer-tool/DesignerToolView';
@@ -216,9 +217,9 @@ const defaultRegistry: ToolViewRegistryType = {
   'export_presentation': ExportToolView,
   // Legacy support for old tool names (backward compatibility)
   'export-to-pptx': ExportToolView,
-  'export-to-pdf': ExportToolView,
+  'export-to-pdf': PdfExportToolView,
   'export_to_pptx': ExportToolView,
-  'export_to_pdf': ExportToolView,
+  'export_to_pdf': PdfExportToolView,
 
   'create-sheet': SheetsToolView,
   'update-sheet': SheetsToolView,
