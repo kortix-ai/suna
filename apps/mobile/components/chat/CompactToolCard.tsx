@@ -267,31 +267,20 @@ export const CompactToolCard = React.memo(function CompactToolCard({
       disabled={!onPress}
       className="w-full"
     >
-      <View className="flex-row items-center gap-1 rounded-full">
-        <View className="w-5 h-5 rounded-md items-center justify-center">
-          <Icon
-            as={isError ? AlertCircle : IconComponent}
-            size={16}
-            className={isError ? 'text-destructive' : 'text-muted-foreground'}
-          />
-        </View>
-
-        <Text className="text-sm font-roobert-medium text-muted-foreground flex-1" numberOfLines={1}>
-          {displayName}
-        </Text>
+      <View className="w-5 h-5 rounded-md items-center justify-center">
+        <Icon
+          as={isError ? AlertCircle : (isLoading ? IconComponent : CheckCircle2)}
+          size={16}
+          className={isError ? 'text-rose-500' : 'text-muted-foreground'}
+        />
       </View>
-      {/* Command preview for command tools */}
-      {commandPreview && (
-        <View className="mt-1 ml-6 px-2 py-1.5 rounded-lg bg-muted/50">
-          <Text
-            className="text-xs font-mono text-muted-foreground"
-            numberOfLines={2}
-            style={{ fontFamily: 'monospace' }}
-          >
-            $ {commandPreview}
-          </Text>
-        </View>
-      )}
+
+      <Text
+        className={`text-sm font-roobert-medium ${isError ? 'text-rose-500' : 'text-muted-foreground'}`}
+        numberOfLines={1}
+      >
+        {isError ? `${displayName} failed` : displayName}
+      </Text>
     </AnimatedPressable>
   );
 });
@@ -318,6 +307,35 @@ export const CompactStreamingToolCard = React.memo(function CompactStreamingTool
       toolCall?.tool_result !== null &&
       (typeof toolCall.tool_result === 'object' || Boolean(toolCall.tool_result)));
 
+  // Check if tool execution failed
+  const isError = useMemo(() => {
+    const toolResult = toolCall?.tool_result;
+    if (!toolResult || !isCompleted) return false;
+
+    // Check explicit success: false
+    if (typeof toolResult === 'object' && toolResult !== null) {
+      if (toolResult.success === false) return true;
+      if (toolResult.error) return true;
+      // Check for error strings in output
+      if (typeof toolResult.output === 'string') {
+        const output = toolResult.output.toLowerCase();
+        if (output.startsWith('error:') || output.includes('failed') || output.includes('exception')) {
+          return true;
+        }
+      }
+    }
+
+    // Check if string result indicates error
+    if (typeof toolResult === 'string') {
+      const result = toolResult.toLowerCase();
+      if (result.startsWith('error:') || result.includes('failed') || result.includes('exception')) {
+        return true;
+      }
+    }
+
+    return false;
+  }, [toolCall?.tool_result, isCompleted]);
+
   const resolvedToolName = toolName || toolCall?.function_name || (toolCall as any)?.name || '';
   const normalizedToolName = resolvedToolName.replace(/_/g, '-');
   const displayName = resolvedToolName ? getUserFriendlyToolName(resolvedToolName) : 'Running...';
@@ -328,40 +346,36 @@ export const CompactStreamingToolCard = React.memo(function CompactStreamingTool
   const commandPreview = isCommandTool ? extractCommandPreview(toolCall) : null;
 
   const cardContent = (
-    <View className="w-full">
-      <View className="flex-row items-center rounded-full">
-        {isCompleted ? (
+    <View className="w-full flex-row items-center rounded-full">
+      {isCompleted ? (
+        isError ? (
           <>
             <View className="w-5 h-5 rounded-md items-center justify-center">
-              <Icon as={IconComponent} size={16} className="text-muted-foreground" />
+              <Icon as={AlertCircle} size={16} className="text-rose-500" />
             </View>
-            <Text className="text-sm font-roobert-medium text-muted-foreground ml-1 flex-1" numberOfLines={1}>
-              {displayName}
+            <Text className="text-sm font-roobert-medium text-rose-500 ml-1" numberOfLines={1}>
+              {displayName} failed
             </Text>
-            <Icon as={CheckCircle2} size={12} className="text-emerald-500 ml-2" />
           </>
         ) : (
           <>
             <View className="w-5 h-5 rounded-md items-center justify-center">
-              <Icon as={IconComponent} size={16} className="text-muted-foreground" />
+              <Icon as={CheckCircle2} size={16} className="text-muted-foreground" />
             </View>
-            <View className="ml-1">
-              <ShimmerText text={displayName} />
-            </View>
+            <Text className="text-sm font-roobert-medium text-muted-foreground ml-1" numberOfLines={1}>
+              {displayName}
+            </Text>
           </>
-        )}
-      </View>
-      {/* Command preview for command tools */}
-      {commandPreview && (
-        <View className="mt-1 ml-6 px-2 py-1.5 rounded-lg bg-muted/50">
-          <Text
-            className="text-xs font-mono text-muted-foreground"
-            numberOfLines={2}
-            style={{ fontFamily: 'monospace' }}
-          >
-            $ {commandPreview}
-          </Text>
-        </View>
+        )
+      ) : (
+        <>
+          <View className="w-5 h-5 rounded-md items-center justify-center">
+            <Icon as={IconComponent} size={16} className="text-muted-foreground" />
+          </View>
+          <View className="ml-1">
+            <ShimmerText text={displayName} />
+          </View>
+        </>
       )}
     </View>
   );

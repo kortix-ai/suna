@@ -5,7 +5,7 @@ import uuid
 from collections import deque, OrderedDict
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import Dict, Any, List, Optional, Deque, ClassVar, TYPE_CHECKING
+from typing import Dict, Any, List, Optional, Deque, ClassVar, Tuple, TYPE_CHECKING
 
 from core.utils.logger import logger
 from core.agents.pipeline.stateless.config import config as stateless_config
@@ -63,6 +63,8 @@ class RunState:
         self._tool_results: OrderedDict[str, ToolResult] = OrderedDict()
         self._pending_tool_calls: List[Dict[str, Any]] = []
         self._accumulated_content: str = ""
+        self._accumulated_reasoning: str = ""
+        self._deferred_tool_results: List[Tuple[ToolResult, Optional[str]]] = []
 
         self._step_counter: int = 0
         self._message_counter: int = 0
@@ -216,6 +218,16 @@ class RunState:
             self._accumulated_content += content
         self._last_activity = time.time()
 
+    def append_reasoning(self, reasoning: str) -> None:
+        if len(self._accumulated_reasoning) + len(reasoning) > self.MAX_CONTENT_LENGTH:
+            logger.warning(f"[RunState] Reasoning length limit reached ({self.MAX_CONTENT_LENGTH}), truncating")
+            remaining = self.MAX_CONTENT_LENGTH - len(self._accumulated_reasoning)
+            if remaining > 0:
+                self._accumulated_reasoning += reasoning[:remaining]
+        else:
+            self._accumulated_reasoning += reasoning
+        self._last_activity = time.time()
+
     def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
         self._message_counter += 1
         message_id = str(uuid.uuid4())
@@ -243,7 +255,15 @@ class RunState:
         self._check_flush_threshold()
         return message_id
 
-    def finalize_assistant_message(self, tool_calls: Optional[List[Dict[str, Any]]] = None, thread_run_id: Optional[str] = None) -> str:
+    def reserve_assistant_message_id(self) -> str:
+        return str(uuid.uuid4())
+    
+    def finalize_assistant_message(
+        self,
+        tool_calls: Optional[List[Dict[str, Any]]] = None,
+        thread_run_id: Optional[str] = None,
+        message_id: Optional[str] = None
+    ) -> str:
         msg = {"role": "assistant", "content": self._accumulated_content or None}
         if tool_calls:
             msg["tool_calls"] = tool_calls
@@ -251,6 +271,8 @@ class RunState:
         metadata = {}
         if thread_run_id:
             metadata["thread_run_id"] = thread_run_id
+        if self._accumulated_reasoning:
+            metadata["reasoning_content"] = self._accumulated_reasoning
         if tool_calls:
             unified_tool_calls = []
             for tc in tool_calls:
@@ -269,9 +291,32 @@ class RunState:
                 unified_tool_calls.append(unified_tc)
             metadata["tool_calls"] = unified_tool_calls
 
-        message_id = self.add_message(msg, metadata if metadata else None)
+        actual_message_id = message_id if message_id else str(uuid.uuid4())
+        
+        msg_with_id = msg.copy()
+        msg_with_id["message_id"] = actual_message_id
+
+        self._messages.append(msg_with_id)
+        self._last_activity = time.time()
+
+        self._pending_writes.append(PendingWrite(
+            write_type="message",
+            data={
+                "message_id": actual_message_id,
+                "thread_id": self.thread_id,
+                "type": msg.get("role", "assistant"),
+                "content": msg,
+                "metadata": metadata or {},
+                "is_llm_message": True,
+                "agent_id": self.agent_id,
+                "agent_version_id": self.agent_version_id,
+            }
+        ))
+
+        self._check_flush_threshold()
         self._accumulated_content = ""
-        return message_id
+        self._accumulated_reasoning = ""
+        return actual_message_id
 
     def queue_tool_call(self, tool_call: Dict[str, Any]) -> None:
         self._pending_tool_calls.append(tool_call)
@@ -374,13 +419,20 @@ class RunState:
         self._check_flush_threshold()
         return message_id
 
-    def record_tool_result(self, result: ToolResult, assistant_message_id: Optional[str] = None) -> None:
+    def record_tool_result(self, result: ToolResult, assistant_message_id: Optional[str] = None, defer_message: bool = False) -> None:
         while len(self._tool_results) >= self.MAX_TOOL_RESULTS:
             self._tool_results.popitem(last=False)
 
         self._tool_results[result.tool_call_id] = result
         self._last_activity = time.time()
 
+        if defer_message:
+            self._deferred_tool_results.append((result, assistant_message_id))
+            return
+
+        self._add_tool_result_message(result, assistant_message_id)
+
+    def _add_tool_result_message(self, result: ToolResult, assistant_message_id: Optional[str] = None) -> str:
         output_for_metadata = result.output
         if isinstance(result.output, str):
             content_value = result.output
@@ -414,12 +466,27 @@ class RunState:
         if assistant_message_id:
             metadata["assistant_message_id"] = assistant_message_id
 
-        self.add_message({
+        return self.add_message({
             "role": "tool",
             "tool_call_id": result.tool_call_id,
             "name": result.tool_name,
             "content": content_value,
         }, metadata)
+
+    def commit_deferred_tool_results(self) -> int:
+        count = 0
+        for result, assistant_message_id in self._deferred_tool_results:
+            self._add_tool_result_message(result, assistant_message_id)
+            count += 1
+        
+        self._deferred_tool_results.clear()
+        return count
+
+    def trigger_flush(self) -> None:
+        if self._pending_writes:
+            task = asyncio.create_task(self.flush())
+            self._flush_tasks.add(task)
+            task.add_done_callback(lambda t: self._flush_tasks.discard(t))
 
     def get_tool_result(self, tool_call_id: str) -> Optional[ToolResult]:
         return self._tool_results.get(tool_call_id)
@@ -497,6 +564,7 @@ class RunState:
         self._tool_results.clear()
         self._pending_tool_calls.clear()
         self._pending_writes.clear()
+        self._deferred_tool_results.clear()
 
     def to_dict(self) -> Dict[str, Any]:
         return {

@@ -221,10 +221,10 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     message: string,
     options?: { model_name?: string; enable_thinking?: boolean; enable_context_manager?: boolean }
   ) => {
-    const fileIds = chatInputRef.current?.getUploadedFileIds() || [];
+    const pendingFiles = chatInputRef.current?.getPendingFiles() || [];
     const uploadedFiles = chatInputRef.current?.getUploadedFiles() || [];
 
-    if ((!message.trim() && !fileIds.length) || isSubmitting || isRedirecting || isOptimisticStarting) {
+    if ((!message.trim() && !pendingFiles.length) || isSubmitting || isRedirecting || isOptimisticStarting) {
       return;
     }
     
@@ -258,12 +258,12 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
       promptLength: message.length,
       model_name: options?.model_name,
       agent_id: selectedAgentId,
-      fileIds: fileIds.length,
+      filesCount: pendingFiles.length,
     });
 
     const result = await startAgent({
       message,
-      fileIds: fileIds.length > 0 ? fileIds : undefined,
+      files: pendingFiles.length > 0 ? pendingFiles : undefined,
       modelName: options?.model_name,
       agentId: selectedAgentId || undefined,
     });

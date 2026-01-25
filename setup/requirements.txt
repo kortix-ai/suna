@@ -1,0 +1,13 @@
+# Requirements for Kortix Suna Setup Package
+# Install with: uv pip install -r setup/requirements.txt
+
+# Required - Core dependencies
+pydantic>=2.0.0
+rich>=13.0.0
+
+# Optional - for YAML config file support
+PyYAML>=6.0.0
+
+# For testing
+pytest>=7.0.0
+pytest-cov>=4.0.0

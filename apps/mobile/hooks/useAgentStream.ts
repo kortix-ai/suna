@@ -14,6 +14,8 @@ import {
 interface UseAgentStreamResult {
   status: string;
   textContent: string; // String for compatibility with existing components
+  reasoningContent: string; // Reasoning/thinking content from the model
+  isReasoningComplete: boolean; // Whether reasoning generation is complete
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;
@@ -91,9 +93,25 @@ export function useAgentStream(
     return coreResult.textContent.map(chunk => chunk.content).join('');
   }, [coreResult.textContent]);
 
+  // Determine if reasoning is complete:
+  // - When we transition from having reasoning to having text content
+  // - Or when the stream status indicates completion
+  const isReasoningComplete = useMemo(() => {
+    const hasReasoning = coreResult.reasoningContent.length > 0;
+    const hasText = textContentString.length > 0;
+    const isNotStreaming = !['streaming', 'connecting'].includes(coreResult.status);
+
+    // Reasoning is complete when:
+    // 1. We have reasoning and now have text (model moved to response)
+    // 2. Or stream ended with reasoning content
+    return (hasReasoning && hasText) || (hasReasoning && isNotStreaming);
+  }, [coreResult.reasoningContent, textContentString, coreResult.status]);
+
   return {
     status: coreResult.status,
     textContent: textContentString,
+    reasoningContent: coreResult.reasoningContent,
+    isReasoningComplete,
     toolCall: coreResult.toolCall,
     error: coreResult.error,
     agentRunId: coreResult.agentRunId,

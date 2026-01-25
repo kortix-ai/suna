@@ -338,6 +338,7 @@
     /* stylelint-disable-next-line at-rule-no-unknown */
     @apply bg-background text-foreground;
     font-feature-settings: 'ss10' on, 'ss09' on, 'ss03' on, 'ss04' on, 'ss14' on, 'palt';
+    min-height: 100dvh;
   }
 
   /* Add font fallbacks for CJK characters */
@@ -920,61 +921,32 @@
   display: inline;
 }
 
-/* DOCX Preview Styles - Clean, no paper wrapper */
-.docx-container {
-  background: white;
-  padding: 24px;
+/* Pulse heartbeat animation for reasoning section Kortix icon */
+@keyframes pulse-heartbeat {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.85;
+  }
 }
 
-/* Direct content styling (no wrapper mode) */
-.docx-container > section.docx-preview {
-  width: 100%;
-  max-width: 100%;
-  padding: 0;
-  margin: 0;
+.animate-pulse-heartbeat {
+  animation: pulse-heartbeat 1.2s ease-in-out infinite;
 }
 
-/* Ensure proper text rendering */
-.docx-container .docx-preview {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  line-height: 1.6;
-  color: #1a1a1a;
+/* Text shimmer animation for reasoning label */
+@keyframes text-shimmer {
+  0%, 100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
-/* Typography improvements */
-.docx-container .docx-preview p {
-  margin-bottom: 0.75em;
-}
-
-.docx-container .docx-preview h1,
-.docx-container .docx-preview h2,
-.docx-container .docx-preview h3 {
-  margin-top: 1em;
-  margin-bottom: 0.5em;
-}
-
-.docx-container .docx-preview table {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1em 0;
-}
-
-.docx-container .docx-preview td,
-.docx-container .docx-preview th {
-  border: 1px solid #ddd;
-  padding: 8px;
-}
-
-/* Dark mode support */
-.dark .docx-container {
-  background: hsl(var(--background));
-}
-
-.dark .docx-container .docx-preview {
-  color: hsl(var(--foreground));
-}
-
-.dark .docx-container .docx-preview td,
-.dark .docx-container .docx-preview th {
-  border-color: hsl(var(--border));
+.animate-text-shimmer {
+  animation: text-shimmer 1.2s ease-in-out infinite;
 }

@@ -16,6 +16,7 @@ class RecoveryResponse(BaseModel):
 
 class StuckRunResponse(BaseModel):
     run_id: str
+    thread_id: Optional[str]
     owner: Optional[str]
     status: Optional[str]
     heartbeat: Optional[float]
@@ -127,14 +128,18 @@ async def get_run_info(
 async def get_dashboard(admin_user: Dict = Depends(require_admin)) -> Dict[str, Any]:
     from core.agents.pipeline.stateless import metrics, recovery, ownership, write_buffer
     from core.agents.pipeline.stateless.persistence import wal, dlq
+    from core.agents import repo as agents_repo
 
     stuck = await recovery.get_stuck(5)
     health = metrics.check_health()
     wal_stats = await wal.get_stats()
     dlq_stats = await dlq.get_stats()
 
+    active_threads_count = await agents_repo.get_active_thread_ids_count()
+
     return {
-        "active_runs": int(metrics.active_runs.get()),
+        "active_runs": active_threads_count,
+        "active_runs_metric": int(metrics.active_runs.get()),
         "owned_runs": ownership.owned_count,
         "pending_writes": int(metrics.pending_writes.get()),
         "stuck_count": len(stuck),
@@ -149,6 +154,18 @@ async def get_dashboard(admin_user: Dict = Depends(require_admin)) -> Dict[str, 
         "dlq": dlq_stats,
         "healthy": health["healthy"],
         "alerts": health["alerts"],
+    }
+
+
+@router.get("/active-threads")
+async def get_active_threads(admin_user: Dict = Depends(require_admin)) -> Dict[str, Any]:
+    from core.agents import repo as agents_repo
+
+    active_threads = await agents_repo.get_active_thread_ids_with_runs()
+    
+    return {
+        "count": len(active_threads),
+        "threads": active_threads,
     }
 
 

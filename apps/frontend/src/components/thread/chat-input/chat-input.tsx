@@ -657,7 +657,6 @@ export interface ChatInputProps {
     options?: {
       model_name?: string;
       agent_id?: string;
-      file_ids?: string[];
     },
   ) => void;
   placeholder?: string;
@@ -1102,8 +1101,14 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
 
       let message = currentValue;
 
-      // File references are now built by backend - frontend just passes file_ids
-      // No need to add file references here
+      // Build file references for message (files will be uploaded to sandbox after agent start)
+      const fileRefs = currentUploadedFiles
+        .filter((f) => f.status === 'ready')
+        .map((f) => `[Uploaded File: uploads/${f.name}]`);
+      
+      if (fileRefs.length > 0) {
+        message = message + '\n\n' + fileRefs.join('\n');
+      }
 
       // Append Markdown for data visualization options
       const dataOptionsMarkdown = generateDataOptionsMarkdown();
@@ -1118,17 +1123,12 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       }
 
       const baseModelName = selectedModel ? getActualModelId(selectedModel) : undefined;
-      
-      const fileIds = currentUploadedFiles
-        .filter((f) => f.fileId && f.status === 'ready')
-        .map((f) => f.fileId!);
 
       posthog.capture("task_prompt_submitted", { message });
 
       onSubmit(message, {
         agent_id: selectedAgentId,
         model_name: baseModelName && baseModelName.trim() ? baseModelName.trim() : undefined,
-        file_ids: fileIds.length > 0 ? fileIds : undefined,
       });
 
       // Keep files visible with loading spinner - they'll be cleared when agent starts running
@@ -1276,7 +1276,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     // Controls are split into left and right to minimize re-renders
     // Memoized to prevent recreation on every keystroke
     const leftControls = useMemo(() => (
-      <div className="flex items-center gap-1.5 min-w-0 flex-shrink overflow-visible">
+      <div className="flex items-center gap-1 sm:gap-1.5 min-w-0 flex-shrink overflow-visible">
         {!hideAttachments && (
           <FileUploadHandler
             ref={fileInputRef}
@@ -1328,14 +1328,17 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, threadId, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
 
     const rightControls = useMemo(() => (
-      <div className='flex items-center gap-2 flex-shrink-0'>
+      <div className='flex items-center gap-1.5 sm:gap-2 flex-shrink-0'>
         
-        {threadId && selectedAgentId && (
-          <ContextUsageIndicator 
-            threadId={threadId}
-            modelName={selectedAgentId}
-          />
-        )}
+        {/* Hide context indicator on mobile - not critical */}
+        <div className="hidden sm:block">
+          {threadId && selectedAgentId && (
+            <ContextUsageIndicator 
+              threadId={threadId}
+              modelName={selectedAgentId}
+            />
+          )}
+        </div>
 
         {!hideAgentSelection && (
           <UnifiedConfigMenu
@@ -1366,7 +1369,7 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     ), [isLoggedIn, loading, disabled, handleTranscription, isAgentRunning, hasContent, hasFiles, isUploading, onStopAgent, handleSubmit, buttonLoaderVariant, pendingFilesCount, hideAgentSelection, selectedAgentId, onAgentSelect, threadId]);
 
     const renderControls = useMemo(() => (
-      <div className="flex items-center justify-between mt-0 mb-1 px-2 gap-1.5">
+      <div className="flex items-center justify-between mt-0 mb-1 px-1.5 sm:px-2 gap-1 sm:gap-1.5">
         {leftControls}
         {rightControls}
       </div>

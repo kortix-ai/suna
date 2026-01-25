@@ -384,3 +384,142 @@ async def convert_presentation_to_pdf(request: ConvertRequest):
 async def pdf_health_check():
     """PDF service health check endpoint."""
     return {"status": "healthy", "service": "HTML to PDF Converter"}
+
+
+# ============================================================================
+# Single HTML File to PDF Conversion
+# ============================================================================
+
+class HtmlToPdfRequest(BaseModel):
+    """Request model for single HTML file/content to PDF conversion"""
+    content: str = Field(None, description="HTML content to convert (used if file_path not provided)")
+    file_path: str = Field(None, description="Path to HTML file in workspace (takes precedence over content)")
+    file_name: str = Field("document", description="Output filename (without extension)")
+
+
+@router.post("/html-to-pdf")
+async def convert_html_to_pdf(request: HtmlToPdfRequest):
+    """
+    Convert a single HTML file or HTML content to PDF using Playwright/Chromium.
+
+    Provides high-quality PDF rendering using a real browser engine.
+    Either provide file_path (path to HTML file in workspace) or content (raw HTML string).
+    """
+    try:
+        html_content = None
+        file_name = request.file_name or "document"
+
+        # Get HTML content from file or direct content
+        if request.file_path:
+            # Read from file
+            file_path = Path(request.file_path)
+            if not file_path.is_absolute():
+                file_path = Path("/workspace") / file_path
+
+            if not file_path.exists():
+                raise HTTPException(status_code=404, detail=f"File not found: {request.file_path}")
+
+            with open(file_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+
+            # Use filename from path if not specified
+            if request.file_name == "document":
+                file_name = file_path.stem
+
+        elif request.content:
+            html_content = request.content
+        else:
+            raise HTTPException(status_code=400, detail="Either 'content' or 'file_path' must be provided")
+
+        print(f"[HTML to PDF] Converting: {file_name}, Content length: {len(html_content)}")
+
+        # Ensure content is a complete HTML document
+        if '<!DOCTYPE' not in html_content.upper() and '<html' not in html_content.lower():
+            html_content = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>{file_name}</title>
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 12pt;
+            line-height: 1.6;
+            color: #1a1a1a;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }}
+        h1, h2, h3, h4, h5, h6 {{ font-weight: 600; line-height: 1.3; margin: 1.5em 0 0.5em 0; }}
+        h1 {{ font-size: 2em; border-bottom: 1px solid #e0e0e0; padding-bottom: 0.3em; }}
+        h2 {{ font-size: 1.5em; }}
+        h3 {{ font-size: 1.25em; }}
+        p {{ margin: 1em 0; }}
+        code {{ font-family: monospace; background: #f4f4f5; padding: 0.2em 0.4em; border-radius: 3px; }}
+        pre {{ background: #f4f4f5; padding: 1em; border-radius: 6px; overflow-x: auto; }}
+        pre code {{ background: none; padding: 0; }}
+        blockquote {{ margin: 1em 0; padding: 0.5em 1em; border-left: 4px solid #e0e0e0; color: #555; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 1em 0; }}
+        th, td {{ border: 1px solid #e0e0e0; padding: 0.5em 1em; text-align: left; }}
+        th {{ background: #f8f9fa; font-weight: 600; }}
+        img {{ max-width: 100%; height: auto; }}
+        a {{ color: #0066cc; }}
+    </style>
+</head>
+<body>
+{html_content}
+</body>
+</html>"""
+
+        # Convert to PDF using Playwright
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                ]
+            )
+
+            try:
+                page = await browser.new_page()
+
+                # Set content and wait for load
+                await page.set_content(html_content, wait_until="networkidle")
+                await page.wait_for_timeout(1000)  # Allow fonts/images to load
+
+                # Generate PDF with A4 size and margins
+                pdf_bytes = await page.pdf(
+                    format="A4",
+                    margin={
+                        "top": "20mm",
+                        "right": "20mm",
+                        "bottom": "20mm",
+                        "left": "20mm"
+                    },
+                    print_background=True
+                )
+
+            finally:
+                await browser.close()
+
+        print(f"[HTML to PDF] Success: {file_name}.pdf ({len(pdf_bytes)} bytes)")
+
+        # Return PDF directly
+        encoded_filename = quote(f"{file_name}.pdf", safe="")
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        error_msg = str(e)
+        print(f"❌ HTML to PDF error: {error_msg}")
+        print(f"❌ Traceback:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"PDF conversion failed: {error_msg}")

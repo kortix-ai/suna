@@ -9,11 +9,13 @@ export const REFERRALS_QUERY_KEYS = {
   list: (limit: number, offset: number) => ['referrals', 'list', limit, offset] as const,
 };
 
-export function useReferralCode() {
+export function useReferralCode(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   return useQuery({
     queryKey: REFERRALS_QUERY_KEYS.code,
     queryFn: () => referralsApi.getReferralCode(),
     staleTime: Infinity,
+    enabled,
   });
 }
 
@@ -34,19 +36,25 @@ export function useRefreshReferralCode() {
   });
 }
 
-export function useReferralStats() {
+export function useReferralStats(options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   return useQuery({
     queryKey: REFERRALS_QUERY_KEYS.stats,
     queryFn: () => referralsApi.getReferralStats(),
-    refetchInterval: 30000,
+    staleTime: 5 * 60 * 1000, // 5 minutes - data doesn't change frequently
+    refetchInterval: enabled ? 60000 : false, // Only poll when enabled, and less aggressively (1 min)
+    enabled,
   });
 }
 
-export function useUserReferrals(limit = 50, offset = 0) {
+export function useUserReferrals(limit = 50, offset = 0, options?: { enabled?: boolean }) {
+  const enabled = options?.enabled ?? true;
   return useQuery({
     queryKey: REFERRALS_QUERY_KEYS.list(limit, offset),
     queryFn: () => referralsApi.getUserReferrals(limit, offset),
-    refetchInterval: 30000,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    refetchInterval: enabled ? 60000 : false, // Only poll when enabled
+    enabled,
   });
 }
 

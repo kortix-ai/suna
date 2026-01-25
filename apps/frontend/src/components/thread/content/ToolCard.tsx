@@ -3,7 +3,7 @@ import { AppIcon } from '../tool-views/shared/AppIcon';
 import { cn } from '@/lib/utils';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
-import { Download, X } from 'lucide-react';
+import { Download, X, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { PresentationSlidePreview } from '../tool-views/presentation-tools/PresentationSlidePreview';
 import { PresentationSlideSkeleton } from '../tool-views/presentation-tools/PresentationSlideSkeleton';
 import type { Project } from '@/lib/api/threads';
@@ -22,6 +22,8 @@ export interface ToolCardProps {
   toolCallId?: string;
   paramDisplay?: string | null;
   isStreaming?: boolean;
+  isError?: boolean;
+  errorMessage?: string;
   onClick?: () => void;
   fallbackIcon?: React.ElementType;
   className?: string;
@@ -68,6 +70,8 @@ export const ToolCard: React.FC<ToolCardProps> = ({
   toolCallId,
   paramDisplay,
   isStreaming = false,
+  isError = false,
+  errorMessage,
   onClick,
   fallbackIcon,
   className,
@@ -88,26 +92,34 @@ export const ToolCard: React.FC<ToolCardProps> = ({
         className={cn(
           'inline-flex items-center gap-1.5 mt-2 cursor-pointer',
           'text-xs text-muted-foreground hover:opacity-80 transition-opacity duration-200',
-          'max-w-full'
+          'max-w-full',
+          isError && 'text-red-500 dark:text-red-400'
         )}
       >
         <div className="flex items-center justify-center flex-shrink-0">
-          <AppIcon
-            toolCall={toolCall}
-            size={14}
-            className="h-3.5 w-3.5 text-muted-foreground/90 flex-shrink-0"
-            fallbackIcon={fallbackIcon}
-          />
+          {isError ? (
+            <AlertCircle className="h-3.5 w-3.5 text-red-500 dark:text-red-400 flex-shrink-0" />
+          ) : !isStreaming ? (
+            <CheckCircle2 className="h-3.5 w-3.5 text-muted-foreground/70 flex-shrink-0" />
+          ) : (
+            <AppIcon
+              toolCall={toolCall}
+              size={14}
+              className="h-3.5 w-3.5 text-muted-foreground/90 flex-shrink-0"
+              fallbackIcon={fallbackIcon}
+            />
+          )}
         </div>
 
         <span 
           className={cn(
-            "font-medium text-sm text-muted-foreground/90 truncate",
-            isStreaming && "shimmer-text-fancy"
+            "font-medium text-sm truncate",
+            isError ? "text-red-500 dark:text-red-400" : "text-muted-foreground/90",
+            isStreaming && !isError && "shimmer-text-fancy"
           )}
         >
-          {displayName}
-          {isStreaming && (
+          {isError ? `${displayName} failed` : displayName}
+          {isStreaming && !isError && (
             <style>{`
               .shimmer-text-fancy {
                 background: linear-gradient(
@@ -151,7 +163,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({
           )}
         </span>
 
-        {paramDisplay && (
+        {paramDisplay && !isError && (
           <span
             className="ml-1 text-xs text-muted-foreground truncate max-w-[150px] sm:max-w-[200px]"
             title={paramDisplay}
@@ -160,7 +172,7 @@ export const ToolCard: React.FC<ToolCardProps> = ({
           </span>
         )}
 
-        {favicons.length > 0 && (
+        {favicons.length > 0 && !isError && (
           <div className="flex items-center ml-1.5 -space-x-1">
             {favicons.map((favicon, idx) => (
               <img

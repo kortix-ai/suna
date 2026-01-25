@@ -262,33 +262,20 @@ export function ImageRenderer({ url, className }: ImageRendererProps) {
             }}
           >
             {isSvg ? (
-              // Special handling for SVG - embed it as an object for better rendering
-              <object
-                data={url}
-                type="image/svg+xml"
-                className="max-w-full max-h-full"
+              // For SVGs, just use img tag - object tag has issues with blob URLs
+              <img
+                ref={imageRef}
+                src={url}
+                alt="SVG preview"
+                className="max-w-full max-h-full object-contain"
                 style={{
                   transform: imageTransform,
                   transition: 'transform 0.2s ease',
-                  width: '100%',
-                  height: '100%',
                 }}
-              >
-                {/* Fallback to img if object fails */}
-                <img
-                  ref={imageRef}
-                  src={url}
-                  alt="SVG preview"
-                  className="max-w-full max-h-full object-contain"
-                  style={{
-                    transform: imageTransform,
-                    transition: 'transform 0.2s ease',
-                  }}
-                  draggable={false}
-                  onLoad={handleImageLoad}
-                  onError={handleImageError}
-                />
-              </object>
+                draggable={false}
+                onLoad={handleImageLoad}
+                onError={handleImageError}
+              />
             ) : (
               <img
                 ref={imageRef}

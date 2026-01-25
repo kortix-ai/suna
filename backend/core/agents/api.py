@@ -12,7 +12,7 @@ import time
 import traceback
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from fastapi import APIRouter, HTTPException, Depends, Request, File, UploadFile, Form
 from fastapi.responses import StreamingResponse
@@ -32,10 +32,6 @@ from core.services.supabase import DBConnection
 
 # Import from new modules
 from core.agents.runner import execute_agent_run
-from core.files import (
-    handle_staged_files_for_thread,
-    get_staged_files_for_thread,
-)
 
 db = DBConnection()
 router = APIRouter(tags=["agent-runs"])
@@ -317,11 +313,11 @@ async def start_agent_run(
     project_id: Optional[str] = None,
     metadata: Optional[Dict[str, Any]] = None,
     skip_limits_check: bool = False,
-    staged_files: Optional[List[Dict[str, Any]]] = None,
     memory_enabled: Optional[bool] = None,
     is_optimistic: bool = False,
     emit_timing: bool = False,
     mode: Optional[str] = None,
+    files_data: Optional[List[Tuple[str, bytes, str, Optional[str]]]] = None,
 ) -> Dict[str, Any]:
     from core.agents.config import load_agent_config_fast
     from core.agents.pipeline.slot_manager import (
@@ -387,6 +383,70 @@ async def start_agent_run(
             thread_id = str(uuid.uuid4())
     
     agent_run_id = str(uuid.uuid4())
+    
+    # Sandbox handling - always start sandbox creation for new threads
+    sandbox_id = None
+    from core.threads import repo as threads_repo
+    from core.sandbox.resolver import resolve_sandbox
+    client = await db.client
+    
+    has_files = files_data and len(files_data) > 0
+    
+    if has_files:
+        # WITH FILES: Create sandbox (blocking) and upload files immediately
+        # Ensure project exists first (needed for sandbox linking)
+        if is_new_thread:
+            placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt if prompt else "Untitled"
+            try:
+                await threads_repo.create_project(project_id, account_id, placeholder_name)
+            except Exception as e:
+                logger.debug(f"Project creation skipped (may already exist): {e}")
+        else:
+            try:
+                existing_project = await threads_repo.get_project(project_id)
+                if not existing_project:
+                    placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt if prompt else "Untitled"
+                    await threads_repo.create_project(project_id, account_id, placeholder_name)
+            except Exception as e:
+                logger.debug(f"Project check/creation skipped: {e}")
+        
+        # Resolve sandbox (creates if needed, starts it) - BLOCKING
+        sandbox_info = await resolve_sandbox(project_id, account_id, client, require_started=True)
+        sandbox_id = sandbox_info.sandbox_id if sandbox_info else None
+        
+        if sandbox_id:
+            logger.info(f"✅ [AGENT_START] Resolved sandbox {sandbox_id} for file uploads (project {project_id})")
+            # Upload files immediately
+            from core.files.upload_handler import upload_files_to_sandbox
+            await upload_files_to_sandbox(project_id, thread_id, files_data, account_id)
+            logger.info(f"✅ [AGENT_START] Uploaded {len(files_data)} files to sandbox {sandbox_id}")
+        else:
+            logger.warning(f"⚠️ [AGENT_START] Failed to resolve sandbox for file uploads (project {project_id})")
+    
+    elif is_new_thread:
+        # NO FILES but NEW THREAD: Start sandbox creation in background (non-blocking)
+        # This ensures sandbox is ready by the time user checks Files tab
+        async def create_sandbox_background(proj_id: str, acc_id: str, db_client):
+            try:
+                # First ensure project exists
+                placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt if prompt else "Untitled"
+                try:
+                    await threads_repo.create_project(proj_id, acc_id, placeholder_name)
+                except Exception:
+                    pass  # May already exist
+                
+                # Then create sandbox
+                sandbox_info = await resolve_sandbox(proj_id, acc_id, db_client, require_started=True)
+                if sandbox_info:
+                    logger.info(f"✅ [BACKGROUND] Created sandbox {sandbox_info.sandbox_id} for project {proj_id}")
+                else:
+                    logger.warning(f"⚠️ [BACKGROUND] Failed to create sandbox for project {proj_id}")
+            except Exception as e:
+                logger.error(f"❌ [BACKGROUND] Error creating sandbox for project {proj_id}: {e}")
+        
+        # Fire and forget - don't wait for sandbox creation
+        asyncio.create_task(create_sandbox_background(project_id, account_id, client))
+        logger.info(f"🚀 [AGENT_START] Started background sandbox creation for new project {project_id}")
     
     slot_reservation = await reserve_slot(
         account_id=account_id,
@@ -464,7 +524,6 @@ async def start_agent_run(
         agent_config=agent_config,
         effective_model=effective_model,
         metadata=metadata,
-        staged_files=staged_files,
         memory_enabled=memory_enabled,
         is_new_thread=is_new_thread,
         mode=mode,
@@ -476,6 +535,7 @@ async def start_agent_run(
         "thread_id": thread_id,
         "agent_run_id": agent_run_id,
         "project_id": project_id,
+        "sandbox_id": sandbox_id,  # NEW
         "status": "running",
         "timing_breakdown": {"setup_ms": setup_time_ms} if emit_timing else None,
     }
@@ -490,7 +550,6 @@ async def _background_setup_and_execute(
     agent_config: dict,
     effective_model: str,
     metadata: Optional[Dict[str, Any]],
-    staged_files: Optional[List[Dict[str, Any]]],
     memory_enabled: Optional[bool],
     is_new_thread: bool,
     mode: Optional[str],
@@ -521,23 +580,8 @@ async def _background_setup_and_execute(
         final_message_content = prompt
         image_contexts_to_inject = []
         
-        if is_new_thread and staged_files:
-            from core.threads import repo as threads_repo
-            placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt
-            logger.debug(f"⚡ [BG] Creating project row first (before sandbox claim)")
-            try:
-                await threads_repo.create_project(project_id, account_id, placeholder_name)
-            except Exception as e:
-                logger.debug(f"Project creation skipped (may already exist): {e}")
-        
-        if staged_files:
-            final_message_content, image_contexts_to_inject = await handle_staged_files_for_thread(
-                staged_files=staged_files,
-                thread_id=thread_id,
-                project_id=project_id,
-                prompt=prompt,
-                account_id=account_id
-            )
+        # Note: Project and sandbox are now created upfront in start_agent_run()
+        # Files are uploaded directly to sandbox by frontend after receiving sandbox_id
         
         if is_new_thread:
             await prepopulate_caches_for_new_thread(
@@ -678,40 +722,43 @@ async def unified_agent_start(
     prompt: Optional[str] = Form(None),
     model_name: Optional[str] = Form(None),
     agent_id: Optional[str] = Form(None),
-    file_ids: List[str] = Form(default=[]),
     optimistic: Optional[str] = Form(None),
     memory_enabled: Optional[str] = Form(None),
     mode: Optional[str] = Form(None),
+    files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     client = await db.client
     account_id = user_id
     is_optimistic = optimistic and optimistic.lower() == 'true'
     
-    staged_files_data = None
-    if file_ids:
-        target_id = thread_id or project_id or str(uuid.uuid4())
-        staged_files_data = await get_staged_files_for_thread(file_ids, user_id, target_id)
-    
     if is_optimistic:
         if not thread_id or not project_id:
             raise HTTPException(status_code=400, detail="thread_id and project_id required for optimistic mode")
-        if (not prompt or not prompt.strip()) and not file_ids:
-            raise HTTPException(status_code=400, detail="prompt or file_ids required for optimistic mode")
+        if not prompt or not prompt.strip():
+            raise HTTPException(status_code=400, detail="prompt required for optimistic mode")
         try:
             uuid.UUID(thread_id)
             uuid.UUID(project_id)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid UUID format")
     
-    if not is_optimistic and not thread_id and (not prompt or not prompt.strip()) and not file_ids:
-        raise HTTPException(status_code=400, detail="prompt or file_ids required when creating new thread")
+    if not is_optimistic and not thread_id and (not prompt or not prompt.strip()):
+        raise HTTPException(status_code=400, detail="prompt required when creating new thread")
     
     if model_name is None:
         model_name = await model_manager.get_default_model_for_user(client, account_id)
     elif model_name != "mock-ai":
         model_name = model_manager.resolve_model_id(model_name)
-    
+
+    if model_name in ("kortix/basic", "kortix-basic") and config.ENV_MODE != EnvMode.LOCAL:
+        from core.billing.subscriptions import subscription_service
+        from core.cache.runtime_cache import get_cached_tier_info
+        tier_info = await get_cached_tier_info(account_id) or await subscription_service.get_user_subscription_tier(account_id)
+        if tier_info.get('name') in ('free', 'none'):
+            logger.info(f"⚡ [MODEL_OVERRIDE] Free tier user {account_id} - using kimi-k2 instead of basic")
+            model_name = "kortix/kimi-k2"
+
     memory_enabled_bool = memory_enabled.lower() == 'true' if memory_enabled else None
     
     skip_limits = False
@@ -733,25 +780,46 @@ async def unified_agent_start(
             if thread_data['account_id'] != user_id:
                 await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=True)
         
+        # Parse files if present
+        files_data = []
+        final_prompt = prompt or ""
+        if files:
+            from core.files.upload_handler import fast_parse_files
+            final_prompt, files_data = await fast_parse_files(files, final_prompt)
+            logger.info(f"[AGENT_START] Received {len(files)} files, parsed {len(files_data)} for upload")
+        if files_data and model_name == "kortix/kimi-k2":
+            has_images = any(mime.startswith("image/") for _, _, mime, _ in files_data)
+            if has_images:
+                logger.info(f"⚡ [IMAGE_UPGRADE] Free tier user uploaded image - injecting upgrade prompt")
+                final_prompt = f"""[SYSTEM INSTRUCTION: The user uploaded an image but they are on the FREE tier which does not support image analysis. You MUST respond by:
+1. Acknowledge you see they uploaded an image
+2. Explain that image analysis requires an upgrade
+3. Promote Plus ($20/month) which includes: image analysis, unlimited threads, 4,000 credits/month, advanced AI models, and faster responses
+4. Be friendly and encouraging about upgrading
+DO NOT attempt to analyze or describe the image. Just deliver the upgrade message naturally.]
+
+{final_prompt}"""
+
         result = await start_agent_run(
             account_id=account_id,
-            prompt=prompt or "",
+            prompt=final_prompt,
             agent_id=agent_id,
             model_name=model_name,
             thread_id=thread_id,
             project_id=project_id,
-            staged_files=staged_files_data,
             memory_enabled=memory_enabled_bool,
             is_optimistic=is_optimistic,
             skip_limits_check=skip_limits,
             emit_timing=emit_timing,
             mode=mode,
+            files_data=files_data if files_data else None,
         )
         
         response = {
             "thread_id": result["thread_id"],
             "agent_run_id": result["agent_run_id"],
             "project_id": result.get("project_id"),
+            "sandbox_id": result.get("sandbox_id"),
             "status": result.get("status", "running")
         }
         if emit_timing and result.get("timing_breakdown"):
@@ -766,6 +834,7 @@ async def unified_agent_start(
 
 
 @router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")
+@router.post("/agent-runs/{agent_run_id}/stop", summary="Stop Agent Run (plural)", include_in_schema=False)
 async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     """Stop an agent run."""
     from core.utils.run_management import stop_agent_run_with_helpers as stop_agent_run

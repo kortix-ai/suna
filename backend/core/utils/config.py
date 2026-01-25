@@ -53,6 +53,13 @@ class Configuration:
     # Model selection
     # Options: "bedrock", "anthropic", "minimax", "grok", "openai"
     MAIN_LLM: str = "bedrock"
+    # Optional: Override the default model for the selected provider
+    # If not set, uses the default model for the provider:
+    #   - anthropic: anthropic/claude-haiku-4-5-20251001
+    #   - grok: openrouter/x-ai/grok-4.1-fast
+    #   - openai: openrouter/openai/gpt-4o-mini
+    #   - minimax: openrouter/minimax/minimax-m2.1
+    MAIN_LLM_MODEL: Optional[str] = None
     # ============================================
     
     # ===== PRESENCE CONFIGURATION =====
@@ -368,8 +375,8 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: Optional[str] = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.29"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.29"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.30"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.30"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
     
     # Debug configuration

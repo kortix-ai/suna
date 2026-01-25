@@ -1,4 +1,5 @@
 import React, { useRef, useState, useEffect, memo, useMemo } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { useTranslations } from "next-intl";
 import {
@@ -13,6 +14,7 @@ import { Project } from "@/lib/api/threads";
 import {
   safeJsonParse,
   HIDE_STREAMING_XML_TAGS,
+  extractUserMessageText,
 } from "@/components/thread/utils";
 import { KortixLogo } from "@/components/sidebar/kortix-logo";
 import { AgentLoader } from "./loader";
@@ -169,6 +171,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   streamingToolCall,
   streamHookStatus,
   agentStatus,
+  isReasoningComplete,
   readOnly,
   visibleMessages,
   streamingText,
@@ -177,6 +180,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   t,
   threadId,
   onPromptFill,
+  reasoningExpandedProp,
+  onReasoningExpandedChange,
 }: {
   group: MessageGroup;
   groupIndex: number;
@@ -195,6 +200,7 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   streamingToolCall?: any;
   streamHookStatus?: string;
   agentStatus: string;
+  isReasoningComplete: boolean;
   readOnly: boolean;
   visibleMessages?: UnifiedMessage[];
   streamingText?: string;
@@ -203,27 +209,133 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   t: any;
   threadId?: string;
   onPromptFill?: (message: string) => void;
+  reasoningExpandedProp?: boolean;
+  onReasoningExpandedChange?: (expanded: boolean) => void;
 }) {
   const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
-  
+  const isAgentActive = agentStatus === "running" || agentStatus === "connecting";
+
+  // Persist reasoning expanded state across streaming/persisted transitions
+  // Use controlled mode if parent provides props, otherwise use internal state
+  const [internalReasoningExpanded, setInternalReasoningExpanded] = useState(false);
+  const reasoningExpanded = reasoningExpandedProp ?? internalReasoningExpanded;
+  const setReasoningExpanded = onReasoningExpandedChange ?? setInternalReasoningExpanded;
+
+  // Simpler frozen content approach using refs to avoid state timing issues
+  // Refs always have the latest value without causing re-renders
+  const lastTextContentRef = useRef<string>("");
+  const lastReasoningContentRef = useRef<string>("");
+  const lastAskCompleteTextRef = useRef<string>("");
+
+  // Always keep refs updated with latest content
+  useEffect(() => {
+    if (streamingTextContent) {
+      lastTextContentRef.current = streamingTextContent;
+    }
+  }, [streamingTextContent]);
+
+  useEffect(() => {
+    if (streamingReasoningContent) {
+      lastReasoningContentRef.current = streamingReasoningContent;
+    }
+  }, [streamingReasoningContent]);
+
+  // Reset refs when agent starts a new turn
+  const prevAgentActiveRef = useRef(isAgentActive);
+
+  // Reasoning grace period: When agent starts, briefly delay showing text to allow reasoning to arrive first
+  // This prevents the jarring experience of text appearing before the reasoning section
+  const REASONING_GRACE_PERIOD_MS = 200;
+  const [isInReasoningGracePeriod, setIsInReasoningGracePeriod] = useState(false);
+  const gracePeriodTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const wasActive = prevAgentActiveRef.current;
+    const isNowActive = isAgentActive;
+    prevAgentActiveRef.current = isNowActive;
+
+    // Agent just started - clear refs for fresh content and start grace period
+    if (!wasActive && isNowActive && isLastGroup) {
+      lastTextContentRef.current = "";
+      lastReasoningContentRef.current = "";
+      lastAskCompleteTextRef.current = "";
+
+      // Start reasoning grace period
+      setIsInReasoningGracePeriod(true);
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+      }
+      gracePeriodTimeoutRef.current = setTimeout(() => {
+        setIsInReasoningGracePeriod(false);
+        gracePeriodTimeoutRef.current = null;
+      }, REASONING_GRACE_PERIOD_MS);
+    }
+
+    // Agent stopped - end grace period
+    if (wasActive && !isNowActive) {
+      setIsInReasoningGracePeriod(false);
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+        gracePeriodTimeoutRef.current = null;
+      }
+    }
+  }, [isAgentActive, isLastGroup]);
+
+  // End grace period immediately when reasoning content arrives
+  useEffect(() => {
+    if (streamingReasoningContent && streamingReasoningContent.trim().length > 0 && isInReasoningGracePeriod) {
+      setIsInReasoningGracePeriod(false);
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+        gracePeriodTimeoutRef.current = null;
+      }
+    }
+  }, [streamingReasoningContent, isInReasoningGracePeriod]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (gracePeriodTimeoutRef.current) {
+        clearTimeout(gracePeriodTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Determine the text content to display:
+  // - If streaming content exists, use it (live)
+  // - Otherwise fall back to last known content (frozen)
+  const rawTextContent = useMemo(() => {
+    return streamingTextContent || lastTextContentRef.current || "";
+  }, [streamingTextContent]);
+
+  // Re-enable smooth text streaming with the raw content
   const displayStreamingText = useSmoothStream(
-    streamingTextContent || "",
+    rawTextContent,
     isActivelyStreaming,
-    300
+    300 // animation delay in ms
   );
 
+  // Determine reasoning content to display (same logic as text)
+  const displayReasoningContent = useMemo(() => {
+    return streamingReasoningContent || lastReasoningContentRef.current || "";
+  }, [streamingReasoningContent]);
+
   const askCompleteText = useMemo(() => {
-    if (!streamingToolCall) return "";
-    
+    if (!streamingToolCall) {
+      // No tool call - return cached value to prevent flash during transitions
+      return lastAskCompleteTextRef.current;
+    }
+
     const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const parsedContent = safeJsonParse<any>(streamingToolCall.content, {});
-    
+
+    let extractedText = "";
+
     if (parsedMetadata.function_name) {
       const toolName = parsedMetadata.function_name.replace(/_/g, "-").toLowerCase();
       if (toolName === "ask" || toolName === "complete") {
         const toolArgs = parsedContent.arguments;
         if (toolArgs) {
-          let extractedText = "";
           if (typeof toolArgs === "string") {
             try {
               const parsed = JSON.parse(toolArgs);
@@ -234,11 +346,14 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
           } else if (typeof toolArgs === "object" && toolArgs !== null) {
             extractedText = toolArgs?.text || "";
           }
-          if (extractedText) return extractedText;
+          if (extractedText) {
+            lastAskCompleteTextRef.current = extractedText;
+            return extractedText;
+          }
         }
       }
     }
-    
+
     // Fall back to raw streaming format
     // Structure: metadata.tool_calls[].arguments_delta
     const toolCalls = parsedMetadata.tool_calls || [];
@@ -246,17 +361,22 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
       const toolName = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
       return toolName === "ask" || toolName === "complete";
     });
-    if (!askOrCompleteTool) return "";
-    
+    if (!askOrCompleteTool) {
+      // No ask/complete tool found - return cached value
+      return lastAskCompleteTextRef.current;
+    }
+
     // Try arguments first (accumulated), then arguments_delta (streaming)
     let toolArgs: any = askOrCompleteTool.arguments;
     if (!toolArgs || (typeof toolArgs === "object" && Object.keys(toolArgs).length === 0)) {
       toolArgs = askOrCompleteTool.arguments_delta;
     }
-    
-    if (!toolArgs) return "";
-    
-    let extractedText = "";
+
+    if (!toolArgs) {
+      // No args yet - return cached value
+      return lastAskCompleteTextRef.current;
+    }
+
     if (typeof toolArgs === "string") {
       try {
         const parsed = JSON.parse(toolArgs);
@@ -268,8 +388,13 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     } else if (typeof toolArgs === "object" && toolArgs !== null) {
       extractedText = toolArgs?.text || "";
     }
-    
-    return extractedText;
+
+    // Cache the extracted text for smooth transitions
+    if (extractedText) {
+      lastAskCompleteTextRef.current = extractedText;
+    }
+
+    return extractedText || lastAskCompleteTextRef.current;
   }, [streamingToolCall]);
 
   // No animation - display ask/complete text immediately
@@ -332,6 +457,9 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     group.messages.forEach((message, msgIndex) => {
       if (message.type === "assistant") {
+        // Skip fake streaming messages - they are rendered separately by streamingContent
+        if (message.message_id === "streamingTextContent" || message.message_id === "playbackStreamingText") return;
+
         const msgKey = message.message_id || `submsg-assistant-${msgIndex}`;
         const isLatestMessage =
           isLastGroup && message.message_id === lastAssistantMessageId;
@@ -385,14 +513,113 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   ]);
 
   const streamingContent = useMemo(() => {
-    const hasTextToShow = displayStreamingText && displayStreamingText.length > 0;
-    const shouldRender = isLastGroup && !readOnly && hasTextToShow;
-    
-    if (!shouldRender) {
+    // Render streaming content for the last group when there's content
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+    const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
+
+    // Only render for last group in non-readonly mode with content
+    if (!isLastGroup || readOnly || !displayStreamingText) {
       return null;
     }
 
-    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+    // During reasoning grace period, don't show text content yet
+    // This allows reasoning to arrive first before showing any text
+    if (isInReasoningGracePeriod) {
+      return null;
+    }
+
+    // EARLY CHECK: If agent is idle and there's a persisted ask/complete tool,
+    // the ask/complete tool will render its own text via renderAskToolCall/renderCompleteToolCall.
+    // We should NOT show streaming content in this case to avoid duplication.
+    if (!isStreaming && !isAgentRunning) {
+      const hasPersistedAskComplete = group.messages.some(m => {
+        if (m.message_id === "streamingTextContent" || m.message_id === "playbackStreamingText") return false;
+        if (m.type === "tool") {
+          const toolContent = safeJsonParse<{ name?: string }>(m.content, {});
+          return toolContent.name === "ask" || toolContent.name === "complete";
+        }
+        if (m.type === "assistant") {
+          const meta = safeJsonParse<ParsedMetadata>(m.metadata, {});
+          const toolCalls = meta.tool_calls || [];
+          return toolCalls.some(tc => {
+            const toolName = tc.function_name?.replace(/_/g, '-').toLowerCase();
+            return toolName === "ask" || toolName === "complete";
+          });
+        }
+        return false;
+      });
+      if (hasPersistedAskComplete) {
+        return null;
+      }
+    }
+
+    // Check if we have ANY real persisted messages (not fake streaming messages)
+    // This includes: assistant messages (with or without text) and tool messages
+    const hasRealPersistedMessage = group.messages.some(m => {
+      // Skip fake streaming messages
+      if (m.message_id === "streamingTextContent" || m.message_id === "playbackStreamingText") return false;
+      // Accept any assistant or tool message as "real"
+      return m.type === "assistant" || m.type === "tool";
+    });
+
+    // Also check for assistant with actual text content (for the active streaming case)
+    // Check both m.content AND metadata.text_content since renderAssistantMessage uses metadata.text_content
+    const persistedAssistantWithContent = group.messages.find(m => {
+      if (m.type !== "assistant") return false;
+      if (m.message_id === "streamingTextContent" || m.message_id === "playbackStreamingText") return false;
+
+      // Check content field
+      const content = safeJsonParse<ParsedContent>(m.content, { content: '' });
+      const textFromContent = content.content || (typeof m.content === 'string' ? m.content : '');
+
+      // Check metadata.text_content (this is what renderAssistantMessage uses)
+      const meta = safeJsonParse<ParsedMetadata>(m.metadata, {});
+      const textFromMetadata = typeof meta.text_content === 'string' ? meta.text_content : '';
+
+      const hasContent = (textFromContent && textFromContent.trim().length > 0) ||
+                         (textFromMetadata && textFromMetadata.trim().length > 0);
+      return hasContent;
+    });
+
+    // If agent is idle and we have persisted messages with actual text content,
+    // let renderedMessages handle it - no need for streaming content anymore
+    if (!isStreaming && !isAgentRunning && persistedAssistantWithContent) {
+      return null;
+    }
+
+    // If agent is idle and persisted messages exist but have NO text content,
+    // check if there's non-ask/complete tools (ask/complete already handled above)
+    if (!isStreaming && !isAgentRunning && hasRealPersistedMessage && !persistedAssistantWithContent) {
+      const streamingTextLength = displayStreamingText.trim().length;
+
+      if (streamingTextLength <= 5) {
+        // Minimal streaming text (probably just tool call) - safe to hide
+        return null;
+      }
+      // Substantial streaming text but no persisted text content - KEEP showing streaming
+    }
+
+    // If still streaming but we have persisted assistant with content, check lengths
+    if (persistedAssistantWithContent) {
+      const content = safeJsonParse<ParsedContent>(persistedAssistantWithContent.content, { content: '' });
+      const meta = safeJsonParse<ParsedMetadata>(persistedAssistantWithContent.metadata, {});
+
+      // Check both content.content and metadata.text_content for persisted text
+      const textFromContent = content.content || (typeof persistedAssistantWithContent.content === 'string' ? persistedAssistantWithContent.content : '');
+      const textFromMetadata = typeof meta.text_content === 'string' ? meta.text_content : '';
+      const persistedText = textFromMetadata || textFromContent || '';
+
+      const isComplete = meta.stream_status === "complete";
+      const persistedIsLongerOrEqual = String(persistedText).trim().length >= displayStreamingText.trim().length;
+
+      if (isComplete || persistedIsLongerOrEqual) {
+        return null;
+      }
+    }
+
+    // NOTE: We no longer return null just because agent stopped streaming.
+    // We keep showing streaming content until hasPersistedContent is true.
+    // This prevents the empty gap between streaming end and server merge.
 
     let detectedTag: string | null = null;
     let tagStartIndex = -1;
@@ -496,6 +723,8 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     agentStatus,
     visibleMessages,
     handleToolClick,
+    group.messages,
+    isInReasoningGracePeriod,
   ]);
 
   const playbackStreamingContent = useMemo(() => {
@@ -587,11 +816,17 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
   const streamingToolCallContent = useMemo(() => {
     // Don't show streaming tool call if not streaming or agent is not running
     if (!isLastGroup || readOnly || !streamingToolCall) return null;
-    
-    // Don't show if agent is not in a streaming state (unless animation is still playing)
+
+    // During reasoning grace period, don't show tool calls yet (especially ask/complete)
+    // This allows reasoning to arrive first before showing any content
+    if (isInReasoningGracePeriod) return null;
+
+    // Don't show if agent is not in a streaming state (unless we have ask/complete text to show)
+    // This prevents flash during transition - keep showing content until persisted messages take over
     const isActivelyStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
     const isAgentRunning = agentStatus === "running" || agentStatus === "connecting";
-    if (!isActivelyStreaming && !isAgentRunning && !isAskCompleteAnimating) return null;
+    const hasAskCompleteContent = askCompleteText && askCompleteText.trim().length > 0;
+    if (!isActivelyStreaming && !isAgentRunning && !hasAskCompleteContent) return null;
 
     const parsedMetadata = safeJsonParse<any>(streamingToolCall.metadata, {});
     const toolCalls = parsedMetadata.tool_calls || [];
@@ -609,13 +844,30 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
 
     if (isAccumulatedAskComplete || askOrCompleteTool) {
       const currentGroupAssistantMessages = group.messages.filter(
-        (m) => m.type === "assistant",
+        (m) => m.type === "assistant" && m.message_id !== "streamingTextContent" && m.message_id !== "playbackStreamingText",
       );
+
+      // Check if ANY persisted assistant message has an ask/complete tool call
+      // If so, and the agent is not actively streaming, the persisted message will handle rendering
+      const hasPersistedAskComplete = currentGroupAssistantMessages.some((msg) => {
+        const msgMeta = safeJsonParse<ParsedMetadata>(msg.metadata, {});
+        const msgToolCalls = msgMeta.tool_calls || [];
+        return msgToolCalls.some((tc: any) => {
+          const tn = tc.function_name?.replace(/_/g, "-").toLowerCase() || "";
+          return tn === "ask" || tn === "complete";
+        });
+      });
+
+      // If agent is not actively streaming AND there's a persisted ask/complete message,
+      // let the persisted message handle rendering (via renderedMessages)
+      if (!isActivelyStreaming && !isAgentRunning && hasPersistedAskComplete) {
+        return null;
+      }
+
+      // Also check the original condition for stream_status=complete
       const lastAssistantMessage =
         currentGroupAssistantMessages.length > 0
-          ? currentGroupAssistantMessages[
-              currentGroupAssistantMessages.length - 1
-            ]
+          ? currentGroupAssistantMessages[currentGroupAssistantMessages.length - 1]
           : null;
       if (lastAssistantMessage) {
         const lastMsgMetadata = safeJsonParse<ParsedMetadata>(
@@ -738,11 +990,18 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     agentStatus,
     handleToolClick,
     askCompleteText,
+    isInReasoningGracePeriod,
   ]);
 
   const showLoader = useMemo(() => {
     if (!isLastGroup || readOnly) return false;
     if (agentStatus !== "running" && agentStatus !== "connecting") return false;
+
+    // During grace period, show loader while waiting for reasoning (unless reasoning already arrived)
+    if (isInReasoningGracePeriod && !(streamingReasoningContent && streamingReasoningContent.trim().length > 0)) {
+      return true;
+    }
+
     if (streamingTextContent || streamingToolCall) return false;
     // Don't show loader if we have reasoning content streaming
     if (streamingReasoningContent && streamingReasoningContent.trim().length > 0) return false;
@@ -775,40 +1034,108 @@ const AssistantGroupRow = memo(function AssistantGroupRow({
     streamHookStatus,
     group.messages,
     askCompleteText,
+    isInReasoningGracePeriod,
   ]);
 
-  // Display reasoning section ONLY when reasoning chunks actually arrive
+  // Determine if reasoning is actively happening (agent running, before text response starts)
+  const isReasoningActive = useMemo(() => {
+    if (!isLastGroup || readOnly) return false;
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting";
+    const isRunning = agentStatus === "running" || agentStatus === "connecting";
+    return isStreaming || isRunning;
+  }, [isLastGroup, readOnly, streamHookStatus, agentStatus]);
+
+  // Check if there's reasoning content to display (from streaming, frozen, or cached)
+  const hasStreamingReasoningContent = displayReasoningContent.trim().length > 0;
+
+  // Extract persisted reasoning content from the first assistant message in the group
+  const persistedReasoningContent = useMemo(() => {
+    const firstAssistant = group.messages.find((m) => m.type === "assistant");
+    if (!firstAssistant) return null;
+    const meta = safeJsonParse<ParsedMetadata>(firstAssistant.metadata, {});
+    return meta.reasoning_content || null;
+  }, [group.messages]);
+
+  // Display reasoning section when active, has streaming content, or has persisted content
+  // Use a consistent key to preserve expanded state across streaming/persisted transitions
   const reasoningSection = useMemo(() => {
-    if (!isLastGroup || readOnly) return null;
-    
-    // Only show if we have actual reasoning content - don't show if no reasoning chunks arrive
-    const hasReasoningContent = streamingReasoningContent && streamingReasoningContent.trim().length > 0;
-    
-    // Don't show section at all if no reasoning content
-    if (!hasReasoningContent) return null;
-    
-    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting" || 
+    const isStreaming = streamHookStatus === "streaming" || streamHookStatus === "connecting" ||
                         agentStatus === "running" || agentStatus === "connecting";
-    
-    return (
-      <div className="mb-2">
-        <ReasoningSection 
-          content={streamingReasoningContent} 
-          isStreaming={isStreaming}
-        />
-      </div>
-    );
-  }, [streamingReasoningContent, isLastGroup, readOnly, streamHookStatus, agentStatus]);
+
+    // For last group: prefer streaming content, fall back to persisted
+    if (isLastGroup && !readOnly) {
+      // Only show reasoning section when we actually have streaming reasoning content
+      if (hasStreamingReasoningContent) {
+        // SIMPLE FIX: If agent is idle and we have persisted reasoning, ALWAYS use persisted.
+        // This fixes duplication issues where streaming content may be accumulated/duplicated.
+        // The persisted content from the server is the source of truth once agent is done.
+        const usePersistedInstead = !isStreaming && persistedReasoningContent;
+
+        if (usePersistedInstead) {
+          return (
+            <div className="mb-2" key={`reasoning-${group.key}`}>
+              <ReasoningSection
+                content={persistedReasoningContent}
+                isStreaming={false}
+                isReasoningActive={false}
+                isReasoningComplete={true}
+                isPersistedContent={true}
+                isExpanded={reasoningExpanded}
+                onExpandedChange={setReasoningExpanded}
+              />
+            </div>
+          );
+        }
+
+        return (
+          <div className="mb-2" key={`reasoning-${group.key}`}>
+            <ReasoningSection
+              content={displayReasoningContent}
+              isStreaming={isStreaming}
+              isReasoningActive={isReasoningActive}
+              isReasoningComplete={isReasoningComplete}
+              isPersistedContent={false}
+              isExpanded={reasoningExpanded}
+              onExpandedChange={setReasoningExpanded}
+            />
+          </div>
+        );
+      }
+    }
+
+    // For all groups (including last group after streaming ends): show if persisted reasoning exists
+    if (persistedReasoningContent) {
+      return (
+        <div className="mb-2" key={`reasoning-${group.key}`}>
+          <ReasoningSection
+            content={persistedReasoningContent}
+            isStreaming={false}
+            isReasoningActive={false}
+            isReasoningComplete={true}
+            isPersistedContent={true}
+            isExpanded={reasoningExpanded}
+            onExpandedChange={setReasoningExpanded}
+          />
+        </div>
+      );
+    }
+
+    return null;
+  }, [displayReasoningContent, isLastGroup, readOnly, streamHookStatus, agentStatus, isReasoningActive, hasStreamingReasoningContent, isReasoningComplete, persistedReasoningContent, group.key, reasoningExpanded]);
 
   return (
     <div key={group.key} ref={isLastGroup ? latestMessageRef : null}>
       <div className="flex flex-col gap-2">
-        <div className="flex items-center">
-          <AgentHeader agentInfo={agentInfo} />
-        </div>
+        {/* Reasoning section with integrated Kortix icon */}
+        {reasoningSection}
+        {/* Show AgentHeader only when reasoning section is NOT displayed */}
+        {!reasoningSection && (
+          <div className="flex items-center">
+            <AgentHeader agentInfo={agentInfo} />
+          </div>
+        )}
         <div className="flex w-full break-words">
           <div className="space-y-1.5 min-w-0 flex-1">
-            {reasoningSection}
             {renderedMessages}
             {streamingContent}
             {playbackStreamingContent}
@@ -838,6 +1165,7 @@ export interface ThreadContentProps {
   streamingTextContent?: string;
   streamingToolCall?: any;
   agentStatus: "idle" | "running" | "connecting" | "error";
+  isReasoningComplete?: boolean;
   handleToolClick: (
     assistantMessageId: string | null,
     toolName: string,
@@ -870,6 +1198,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     streamingReasoningContent = "",
     streamingToolCall,
     agentStatus,
+    isReasoningComplete = false,
     handleToolClick,
     handleOpenFileViewer,
     readOnly = false,
@@ -894,6 +1223,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     const latestMessageRef = useRef<HTMLDivElement>(null);
     const contentRef = useRef<HTMLDivElement>(null);
     const [shouldJustifyToTop, setShouldJustifyToTop] = useState(false);
+    // Track expanded state for new group loader's reasoning section
+    const [newGroupReasoningExpanded, setNewGroupReasoningExpanded] = useState(false);
     const { session } = useAuth();
     const t = useTranslations();
     const { preloadFiles } = useFilePreloader();
@@ -953,10 +1284,57 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       const groups: MessageGroup[] = [];
       let currentGroup: MessageGroup | null = null;
       let assistantGroupCounter = 0;
+      // Track processed message IDs to prevent duplicate bubbles
+      const processedMessageIds = new Set<string>();
+      // Track temp user message content to detect duplicate temp messages (race conditions)
+      const processedTempUserContents = new Set<string>();
 
+      // Build message groups
       displayMessages.forEach((message, index) => {
         const messageType = message.type;
         const key = message.message_id || `msg-${index}`;
+
+        // Skip duplicate messages (same message_id already processed)
+        if (message.message_id && processedMessageIds.has(message.message_id)) {
+          return;
+        }
+
+        // For user messages, perform content-based deduplication ONLY for temp messages
+        // Server-confirmed messages (with real UUIDs) are NEVER deduplicated - they represent
+        // intentional user actions and should always be displayed
+        if (messageType === 'user') {
+          const isTemp = message.message_id?.startsWith('temp-');
+
+          // Only deduplicate temp messages - server-confirmed messages are always kept
+          if (isTemp) {
+            const contentKey = extractUserMessageText(message.content).trim().toLowerCase();
+
+            if (contentKey) {
+              const tempCreatedAt = message.created_at ? new Date(message.created_at).getTime() : Date.now();
+
+              // Skip temp message if server already confirmed a message with same content
+              // Uses timestamp-aware deduplication: only skip if server message was created within 30 seconds
+              const hasMatchingServerVersion = displayMessages.some((existing) => {
+                if (existing.type !== 'user') return false;
+                if (existing.message_id?.startsWith('temp-')) return false;
+                if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+                const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
+              });
+
+              if (hasMatchingServerVersion) return;
+
+              // Also skip if we already have another temp message with same content (race condition)
+              if (processedTempUserContents.has(contentKey)) return;
+              processedTempUserContents.add(contentKey);
+            }
+          }
+        }
+
+        if (message.message_id) {
+          processedMessageIds.add(message.message_id);
+        }
 
         if (messageType === "user") {
           if (currentGroup) {
@@ -1043,6 +1421,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
     const groupedMessages = useMemo(() => {
       const mergedGroups = [...baseGroups];
 
+      // Calculate the next assistant group index for stable keys
+      // This ensures the streaming group has the same key as the persisted group will have,
+      // preventing React from remounting the component when persisted content arrives
+      const existingAssistantGroupCount = mergedGroups.filter(g => g.type === "assistant_group").length;
+      const nextAssistantGroupKey = `assistant-group-${existingAssistantGroupCount + 1}`;
+
       if (streamingTextContent) {
         const lastGroup = mergedGroups.at(-1);
         if (!lastGroup || lastGroup.type === "user") {
@@ -1061,7 +1445,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
                 sequence: Infinity,
               },
             ],
-            key: `streaming-group-text`,
+            key: nextAssistantGroupKey,
           });
         }
       }
@@ -1072,7 +1456,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           mergedGroups.push({
             type: "assistant_group",
             messages: [],
-            key: `streaming-group-tool`,
+            key: nextAssistantGroupKey,
           });
         }
       }
@@ -1080,6 +1464,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       if (readOnly && streamingText && isStreamingText) {
         const lastGroup = mergedGroups.at(-1);
         if (!lastGroup || lastGroup.type === "user") {
+          // Recalculate in case previous blocks added a group
+          const currentAssistantCount = mergedGroups.filter(g => g.type === "assistant_group").length;
           mergedGroups.push({
             type: "assistant_group",
             messages: [
@@ -1095,7 +1481,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
                 sequence: Infinity,
               },
             ],
-            key: `streaming-group-playback`,
+            key: `assistant-group-${currentAssistantCount + 1}`,
           });
         }
       }
@@ -1239,6 +1625,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             streamingToolCall={streamingToolCall}
             streamHookStatus={streamHookStatus}
             agentStatus={agentStatus}
+            isReasoningComplete={isReasoningComplete}
             readOnly={readOnly}
             visibleMessages={visibleMessages}
             streamingText={streamingText}
@@ -1247,6 +1634,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
             t={t}
             threadId={threadId}
             onPromptFill={onPromptFill}
+            // Share reasoning expanded state with new group loader for the last group
+            reasoningExpandedProp={isLastGroup ? newGroupReasoningExpanded : undefined}
+            onReasoningExpandedChange={isLastGroup ? setNewGroupReasoningExpanded : undefined}
           />
         </div>
       );
@@ -1259,7 +1649,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
       >
         <div
           ref={contentRef}
-          className="mx-auto max-w-3xl min-w-0 w-full pl-6 pr-6"
+          className="mx-auto max-w-3xl min-w-0 w-full px-3 sm:px-6"
         >
           <div className="space-y-6 min-w-0">
             {groupedMessages.map((group, index) =>
@@ -1268,14 +1658,45 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           </div>
 
           {showNewGroupLoader && (
-            <div ref={latestMessageRef} className="w-full h-22 rounded mt-6">
+            <div ref={latestMessageRef} className="w-full rounded mt-6">
               <div className="flex flex-col gap-2">
-                <div className="flex items-center">
-                  <AgentHeader agentInfo={agentInfo} />
-                </div>
-                <div className="space-y-2 w-full h-12">
-                  <AgentLoader />
-                </div>
+                {/* Smooth transition between loader and reasoning section */}
+                <AnimatePresence mode="wait" initial={false}>
+                  {streamingReasoningContent && streamingReasoningContent.trim().length > 0 ? (
+                    <ReasoningSection
+                      key="reasoning-section"
+                      content={streamingReasoningContent}
+                      isStreaming={streamHookStatus === 'streaming' || streamHookStatus === 'connecting'}
+                      isReasoningActive={agentStatus === 'running' || agentStatus === 'connecting'}
+                      isReasoningComplete={isReasoningComplete}
+                      isPersistedContent={false}
+                      isExpanded={newGroupReasoningExpanded}
+                      onExpandedChange={setNewGroupReasoningExpanded}
+                    />
+                  ) : (
+                    <motion.div
+                      key="loader-section"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.15, ease: "easeOut" }}
+                      className="w-full"
+                    >
+                      {/* Match ReasoningSection header layout for smooth transition */}
+                      <div className="flex items-center gap-3">
+                        <img
+                          src="/kortix-logomark-white.svg"
+                          alt="Kortix"
+                          className="dark:invert-0 invert flex-shrink-0 animate-pulse"
+                          style={{ height: '14px', width: 'auto' }}
+                        />
+                        <div className="flex items-center gap-1.5 py-1">
+                          <AgentLoader />
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
             </div>
           )}

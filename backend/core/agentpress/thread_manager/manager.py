@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from core.jit.config import JITConfig
 from core.agentpress.tool import Tool
 from core.agentpress.tool_registry import ToolRegistry
-from core.agentpress.response_processor import ResponseProcessor, ProcessorConfig
+from core.agentpress.processor_config import ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
@@ -44,16 +44,6 @@ class ThreadManager:
         
         self.message_fetcher = MessageFetcher()
         self.execution_orchestrator = ExecutionOrchestrator()
-        
-        self.response_processor = ResponseProcessor(
-            tool_registry=self.tool_registry,
-            add_message_callback=self.add_message,
-            trace=self.trace,
-            agent_config=self.agent_config,
-            jit_config=self.jit_config,
-            thread_manager=self,
-            project_id=self.project_id
-        )
 
     def set_memory_context(self, memory_context: Optional[Dict[str, Any]]):
         self._memory_context = memory_context

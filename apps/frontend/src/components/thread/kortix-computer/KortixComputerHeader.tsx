@@ -48,27 +48,27 @@ export function KortixComputerHeader({
   actions,
 }: KortixComputerHeaderProps) {
   return (
-    <div className="h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-2 px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
+    <div className="h-12 sm:h-14 bg-zinc-50/80 dark:bg-zinc-900/80 backdrop-blur-sm border-b p-1.5 sm:p-2 px-3 sm:px-4 flex items-center justify-between flex-shrink-0 max-w-full min-w-0">
       {/* Left section: Icon + Title/Breadcrumbs/FileName */}
-      <div className="flex items-center gap-3 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
-        {/* Icon Button - ALWAYS same styling */}
+      <div className="flex items-center gap-2 sm:gap-3 overflow-x-auto min-w-0 scrollbar-hide max-w-full">
+        {/* Icon Button - compact on mobile */}
         {onIconClick ? (
           <button
             onClick={onIconClick}
-            className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-300/60 dark:hover:bg-zinc-800 transition-colors"
+            className="relative p-1.5 sm:p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 hover:bg-zinc-300/60 dark:hover:bg-zinc-800 active:bg-zinc-300 transition-colors touch-manipulation"
             title={iconTitle}
           >
-            <Icon className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+            <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-zinc-600 dark:text-zinc-400" />
           </button>
         ) : (
-          <div className="relative p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
-            <Icon className="h-5 w-5 text-zinc-600 dark:text-zinc-400" />
+          <div className="relative p-1.5 sm:p-2 rounded-lg border flex-shrink-0 bg-zinc-200/60 dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700">
+            <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-zinc-600 dark:text-zinc-400" />
           </div>
         )}
 
         {/* Simple Title */}
         {title && (
-          <span className="text-base font-medium text-zinc-900 dark:text-zinc-100">
+          <span className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100">
             {title}
           </span>
         )}
@@ -77,7 +77,7 @@ export function KortixComputerHeader({
         {fileName && (
           <>
             <ChevronRight className="h-3 w-3 text-muted-foreground/50 flex-shrink-0" />
-            <span className="text-base font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-[200px]">
+            <span className="text-sm sm:text-base font-medium text-zinc-900 dark:text-zinc-100 truncate max-w-[140px] sm:max-w-[200px]">
               {fileName}
             </span>
           </>
@@ -85,7 +85,7 @@ export function KortixComputerHeader({
 
         {/* Breadcrumbs */}
         {breadcrumbs && breadcrumbs.length > 0 && (
-          <div className="flex items-center gap-1.5 min-w-0">
+          <div className="flex items-center gap-1 sm:gap-1.5 min-w-0">
             {breadcrumbs.map((segment, index) => (
               <Fragment key={segment.path}>
                 {index > 0 && (
@@ -94,7 +94,7 @@ export function KortixComputerHeader({
                 <button
                   onClick={() => onBreadcrumbClick?.(segment.path)}
                   className={cn(
-                    "text-base transition-colors truncate max-w-[150px]",
+                    "text-sm sm:text-base transition-colors truncate max-w-[100px] sm:max-w-[150px] touch-manipulation",
                     segment.isLast 
                       ? "text-zinc-900 dark:text-zinc-100 font-medium" 
                       : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-100"
@@ -109,7 +109,7 @@ export function KortixComputerHeader({
       </div>
 
       {/* Right section: Actions */}
-      <div className="flex items-center gap-1.5 flex-shrink-0 ml-2">
+      <div className="flex items-center gap-1 sm:gap-1.5 flex-shrink-0 ml-1.5 sm:ml-2">
         {actions}
       </div>
     </div>

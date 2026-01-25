@@ -21,7 +21,7 @@ export type AgentStatus =
   | 'error';
 
 export interface StreamMessage {
-  type: 'assistant' | 'tool' | 'status' | 'user' | 'system' | 'ping' | 'tool_output_stream' | 'llm_response_start' | 'llm_response_end' | 'browser_state' | 'image_context' | 'ack' | 'estimate' | 'prep_stage' | 'degradation' | 'thinking' | 'error';
+  type: 'assistant' | 'tool' | 'status' | 'user' | 'system' | 'ping' | 'tool_output_stream' | 'llm_response_start' | 'llm_response_end' | 'browser_state' | 'image_context' | 'ack' | 'estimate' | 'prep_stage' | 'degradation' | 'thinking' | 'reasoning' | 'error';
   message_id?: string;
   thread_id?: string;
   content?: string;
@@ -132,6 +132,7 @@ export interface UseAgentStreamResult {
   status: AgentStatus;
   textContent: string;
   reasoningContent: string;
+  isReasoningComplete: boolean;
   toolCall: UnifiedMessage | null;
   error: string | null;
   agentRunId: string | null;

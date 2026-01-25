@@ -897,6 +897,8 @@ export function ThreadPage({
                 <ThreadContent
                   messages={messages}
                   streamingTextContent={streamingContent}
+                  streamingReasoningContent={chat.streamingReasoningContent}
+                  isReasoningComplete={chat.isReasoningComplete}
                   streamingToolCall={streamingToolCall}
                   agentStatus={chat.isAgentRunning ? 'running' : 'idle'}
                   streamHookStatus={chat.isStreaming ? 'streaming' : 'idle'}

@@ -95,8 +95,10 @@ export function HeroSection() {
 
         {/* Main content area - greeting and modes centered */}
         <div className="flex-1 flex flex-col relative z-[1]">
-          {/* Centered content: Greeting + Subtitle + Modes - absolutely positioned for true center */}
-          <div className="absolute inset-0 flex items-center justify-center px-4 pointer-events-none">
+          {/* Centered content: Greeting + Subtitle + Modes
+              - Mobile: shifted up with pb-28 to account for chat input and feel more balanced
+              - Desktop: true center with no offset */}
+          <div className="absolute inset-0 flex items-center justify-center px-4 pb-28 sm:pb-0 pointer-events-none">
             <div className="w-full max-w-3xl mx-auto flex flex-col items-center text-center pointer-events-auto">
               {/* Greeting */}
               <div className="animate-in fade-in-0 slide-in-from-bottom-4 duration-500 fill-mode-both">
@@ -104,12 +106,12 @@ export function HeroSection() {
               </div>
               
               {/* Subtitle */}
-              <p className="mt-3 text-sm sm:text-base text-muted-foreground/70 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-75 fill-mode-both">
+              <p className="mt-2 sm:mt-3 text-sm sm:text-base text-muted-foreground/70 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-75 fill-mode-both">
                 {t('modeSubtitle')}
               </p>
               
               {/* Modes Panel */}
-              <div className="mt-8 w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both">
+              <div className="mt-6 sm:mt-8 w-full animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-150 fill-mode-both">
                 <Suspense fallback={<div className="h-12 bg-muted/10 rounded-lg animate-pulse" />}>
                   <SunaModesPanel
                     selectedMode={selectedMode}
@@ -130,8 +132,9 @@ export function HeroSection() {
             </div>
           </div>
 
-          {/* Chat Input - fixed at bottom */}
-          <div className="absolute bottom-0 left-0 right-0 px-4 pb-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
+          {/* Chat Input - fixed at bottom
+              - Mobile: safe area padding for iOS home indicator */}
+          <div className="absolute bottom-0 left-0 right-0 px-3 sm:px-4 pb-3 sm:pb-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:pb-4 animate-in fade-in-0 slide-in-from-bottom-4 duration-500 delay-100 fill-mode-both">
             <div className="w-full max-w-3xl mx-auto">
               <ChatInput
                 ref={chatInputRef}

@@ -6,6 +6,7 @@ import { useMessagesQuery } from '@/hooks/messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
+import { extractUserMessageText } from '@/components/thread/utils';
 import { getStreamPreconnectService } from '@/lib/streaming/stream-preconnect';
 
 interface UseThreadDataReturn {
@@ -273,7 +274,74 @@ export function useThreadData(
             return aTime - bTime;
           });
 
-          setMessages(mergedMessages);
+          // Deduplicate by message_id and content fingerprint
+          const dedupedMessages: UnifiedMessage[] = [];
+          const seenIds = new Set<string>();
+          const seenFingerprints = new Set<string>();
+
+          // First pass: collect content from server-confirmed user messages (non-temp IDs)
+          const serverUserContents = new Set<string>();
+          mergedMessages.forEach((msg) => {
+            if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
+              const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+              if (contentKey) serverUserContents.add(contentKey);
+            }
+          });
+
+          // Second pass: build deduped list
+          // Only deduplicate temp messages when server version exists
+          // Server-confirmed messages with different IDs are kept (intentional duplicates)
+          mergedMessages.forEach((msg) => {
+            const msgId = msg.message_id;
+            // Skip if we've already seen this exact message ID
+            if (msgId && seenIds.has(msgId)) return;
+
+            // For user messages: only deduplicate temp messages
+            if (msg.type === 'user') {
+              const isTemp = msgId?.startsWith('temp-');
+              const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+
+              if (isTemp && contentKey) {
+                const tempCreatedAt = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
+
+                // Find if there's a matching server message created at similar time
+                const hasMatchingServerVersion = mergedMessages.some((existing) => {
+                  if (existing.type !== 'user') return false;
+                  if (existing.message_id?.startsWith('temp-')) return false;
+                  if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+                  const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                  return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
+                });
+
+                if (hasMatchingServerVersion) return;
+              }
+
+              // For temp messages, also check if we already added a temp with same content
+              if (isTemp && contentKey) {
+                const alreadyHasTempWithContent = dedupedMessages.some(
+                  (m) => m.type === 'user' &&
+                    m.message_id?.startsWith('temp-') &&
+                    extractUserMessageText(m.content).trim().toLowerCase() === contentKey
+                );
+                if (alreadyHasTempWithContent) return;
+              }
+            }
+
+            // For assistant/tool: use fingerprint to avoid duplicates from race conditions
+            if ((msg.type === 'assistant' || msg.type === 'tool') && msg.content) {
+              const createdTime = msg.created_at ? new Date(msg.created_at).getTime() : 0;
+              const roundedTime = Math.floor(createdTime / 1000);
+              const fingerprint = `${msg.type}:${roundedTime}:${String(msg.content).substring(0, 200)}`;
+              if (seenFingerprints.has(fingerprint)) return;
+              seenFingerprints.add(fingerprint);
+            }
+
+            dedupedMessages.push(msg);
+            if (msgId) seenIds.add(msgId);
+          });
+
+          setMessages(dedupedMessages);
           messagesLoadedRef.current = true;
 
           if (!hasInitiallyScrolled.current) {
@@ -321,49 +389,167 @@ export function useThreadData(
     messagesQuery.data,
     agentRunsQuery.data,
     isShared,
-    messages
+    // Note: 'messages' was removed from deps to prevent infinite loops
+    // The effect is guarded by messagesLoadedRef.current anyway
   ]);
 
+  // Merge server data with local state when query data updates
+  // This ensures reasoning_content and other metadata updates from server are reflected
   useEffect(() => {
     if (messagesQuery.data && messagesQuery.status === 'success' && !isLoading) {
-      const shouldReload = messages.length === 0 || messagesQuery.data.length > messages.length + 50;
-      
-      if (shouldReload) {
-        const unifiedMessages = (messagesQuery.data || [])
-          .map((msg: ApiMessageType) => ({
-            message_id: msg.message_id || null,
-            thread_id: msg.thread_id || threadId,
-            type: (msg.type || 'system') as UnifiedMessage['type'],
-            is_llm_message: Boolean(msg.is_llm_message),
-            content: msg.content || '',
-            metadata: msg.metadata || '{}',
-            created_at: msg.created_at || new Date().toISOString(),
-            updated_at: msg.updated_at || new Date().toISOString(),
-            agent_id: (msg as any).agent_id,
-            agents: (msg as any).agents,
-          }));
+      const unifiedMessages = (messagesQuery.data || [])
+        .map((msg: ApiMessageType) => ({
+          message_id: msg.message_id || null,
+          thread_id: msg.thread_id || threadId,
+          type: (msg.type || 'system') as UnifiedMessage['type'],
+          is_llm_message: Boolean(msg.is_llm_message),
+          content: msg.content || '',
+          metadata: msg.metadata || '{}',
+          created_at: msg.created_at || new Date().toISOString(),
+          updated_at: msg.updated_at || new Date().toISOString(),
+          agent_id: (msg as any).agent_id,
+          agents: (msg as any).agents,
+        }));
 
-        setMessages((prev) => {
-          const serverIds = new Set(
-            unifiedMessages.map((m) => m.message_id).filter(Boolean) as string[],
-          );
-          const localExtras = (prev || []).filter(
-            (m) =>
-              !m.message_id ||
-              (typeof m.message_id === 'string' && m.message_id.startsWith('temp-')) ||
-              !serverIds.has(m.message_id as string),
-          );
-          const merged = [...unifiedMessages, ...localExtras].sort((a, b) => {
-            const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
-            const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
-            return aTime - bTime;
-          });
-          
-          return merged;
+      setMessages((prev) => {
+        // Create a map of server messages by ID for quick lookup
+        const serverMessageMap = new Map(
+          unifiedMessages
+            .filter((m) => m.message_id)
+            .map((m) => [m.message_id, m])
+        );
+
+        // Merge: use server version for existing messages (to get updated metadata),
+        // keep local-only messages (temp IDs or not in server response)
+        const merged: UnifiedMessage[] = [];
+        const processedIds = new Set<string | null>();
+        const skippedDuplicates: string[] = [];
+
+        // First, process local messages - replace with server version if available
+        (prev || []).forEach((localMsg) => {
+          const msgId = localMsg.message_id;
+
+          // Skip if we've already processed this message ID (prevents duplicates)
+          if (msgId && processedIds.has(msgId)) {
+            skippedDuplicates.push(msgId.slice(-8));
+            return;
+          }
+
+          if (msgId && serverMessageMap.has(msgId)) {
+            // Use server version (has updated metadata like reasoning_content)
+            merged.push(serverMessageMap.get(msgId)!);
+            processedIds.add(msgId);
+          } else if (
+            !msgId ||
+            (typeof msgId === 'string' && msgId.startsWith('temp-'))
+          ) {
+            // Keep local-only messages (temp IDs or no ID)
+            merged.push(localMsg);
+            if (msgId) processedIds.add(msgId);
+          } else {
+            // Keep local messages with real IDs that aren't in server response yet
+            // (might be recently added via streaming)
+            merged.push(localMsg);
+            if (msgId) processedIds.add(msgId);
+          }
         });
-      }
+
+        // Add any server messages not in local state (new messages from refetch)
+        let addedFromServer = 0;
+        unifiedMessages.forEach((serverMsg) => {
+          if (serverMsg.message_id && !processedIds.has(serverMsg.message_id)) {
+            merged.push(serverMsg);
+            processedIds.add(serverMsg.message_id);
+            addedFromServer++;
+          }
+        });
+
+        // Sort by created_at
+        merged.sort((a, b) => {
+          const aTime = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const bTime = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return aTime - bTime;
+        });
+
+        // Final deduplication pass - ensure no duplicate message_ids
+        // Also deduplicate temp user messages that have been confirmed by server
+        const finalDeduped: UnifiedMessage[] = [];
+        const seenIds = new Set<string>();
+
+        // Track content fingerprints to catch duplicates even with different IDs
+        // This handles race conditions where same message might appear twice
+        const seenContentFingerprints = new Set<string>();
+
+        // First pass: collect content from server-confirmed user messages (non-temp IDs)
+        // This allows us to filter out temp messages that have been confirmed by server
+        const serverUserContents = new Set<string>();
+        merged.forEach((msg) => {
+          if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
+            // Use extractUserMessageText to properly parse JSON content
+            const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+            if (contentKey) serverUserContents.add(contentKey);
+          }
+        });
+
+        // Second pass: build deduped list
+        merged.forEach((msg) => {
+          const msgId = msg.message_id;
+
+          // Check for duplicate by message_id
+          if (msgId && seenIds.has(msgId)) {
+            return;
+          }
+
+          // For temp user messages, skip if server already confirmed a message with same content
+          // This handles the race where both temp and server versions appear
+          // Uses timestamp-aware deduplication: only skip if server message was created within 30 seconds
+          // This allows intentionally repeated messages (different turns) while preventing duplicates
+          if (msg.type === 'user' && msgId?.startsWith('temp-')) {
+            // Use extractUserMessageText to properly parse JSON content
+            const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+            if (contentKey) {
+              const tempCreatedAt = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
+
+              const hasMatchingServerVersion = merged.some((existing) => {
+                if (existing.type !== 'user') return false;
+                if (existing.message_id?.startsWith('temp-')) return false;
+                if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+                const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
+              });
+
+              if (hasMatchingServerVersion) return;
+            }
+          }
+
+          // Content fingerprint check ONLY for temp messages to catch duplicates
+          // Server-confirmed messages (non-temp IDs) are ALWAYS preserved - this allows
+          // intentionally repeated messages (user sent same text multiple times)
+          // NOTE: We intentionally do NOT include timestamp in fingerprint because
+          // race conditions can cause same message to arrive with slightly different timestamps
+          const isTemp = msgId?.startsWith('temp-');
+          if (isTemp && msg.content) {
+            // For user messages, use extractUserMessageText to properly parse JSON content
+            const contentKey = msg.type === 'user'
+              ? extractUserMessageText(msg.content).trim().toLowerCase().substring(0, 200)
+              : String(msg.content).trim().substring(0, 200);
+            const fingerprint = `${msg.type}:${contentKey}`;
+
+            if (seenContentFingerprints.has(fingerprint)) {
+              return;
+            }
+            seenContentFingerprints.add(fingerprint);
+          }
+
+          finalDeduped.push(msg);
+          if (msgId) seenIds.add(msgId);
+        });
+
+        return finalDeduped;
+      });
     }
-  }, [messagesQuery.data, messagesQuery.status, isLoading, messages.length, threadId]);
+  }, [messagesQuery.data, messagesQuery.status, isLoading, threadId]);
 
   return {
     messages,

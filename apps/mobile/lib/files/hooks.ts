@@ -506,6 +506,99 @@ export function useUploadMultipleFiles(
   });
 }
 
+/**
+ * Hook to upload files to a project (creates sandbox on-demand if needed)
+ * This is the preferred method for file uploads as it doesn't require sandbox_id upfront
+ */
+export function useUploadFilesToProject(
+  options?: UseMutationOptions<
+    FileUploadResponse[],
+    Error,
+    {
+      projectId: string;
+      files: Array<{ uri: string; name: string; type: string }>;
+      onProgress?: (file: string, progress: number) => void;
+    }
+  >
+) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ projectId, files, onProgress }) => {
+      const token = await getAuthToken();
+      if (!token) throw new Error('Authentication required');
+
+      // Signal upload start
+      try {
+        await fetch(`${API_URL}/project/${projectId}/files/upload-started`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ file_count: files.length }),
+        });
+      } catch (e) {
+        console.warn('Failed to signal upload start:', e);
+      }
+
+      const results: FileUploadResponse[] = [];
+
+      try {
+        for (const file of files) {
+          // Normalize filename for Unix compatibility
+          const normalizedName = normalizeFilenameToNFC(file.name);
+          const uploadPath = `/workspace/uploads/${normalizedName}`;
+
+          const formData = new FormData();
+          formData.append('file', {
+            uri: file.uri,
+            name: normalizedName,
+            type: file.type || 'application/octet-stream',
+          } as any);
+          formData.append('path', uploadPath);
+
+          const res = await fetch(`${API_URL}/project/${projectId}/files`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+            body: formData,
+          });
+
+          if (!res.ok) {
+            if (res.status === 431) {
+              throw new Error('Request is too large');
+            }
+            throw new Error(`Upload failed: ${res.statusText}`);
+          }
+
+          const result = await res.json();
+          results.push(result);
+          onProgress?.(file.name, 100);
+        }
+      } finally {
+        // Signal upload complete
+        try {
+          await fetch(`${API_URL}/project/${projectId}/files/upload-completed`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch (e) {
+          console.warn('Failed to signal upload complete:', e);
+        }
+      }
+
+      return results;
+    },
+    onSuccess: (_, variables) => {
+      // Invalidate sandbox status to reflect new files
+      queryClient.invalidateQueries({ 
+        queryKey: sandboxKeys.status(variables.projectId),
+      });
+    },
+    ...options,
+  });
+}
+
 export function useDeleteSandboxFile(
   options?: UseMutationOptions<void, Error, { sandboxId: string; filePath: string }>
 ) {

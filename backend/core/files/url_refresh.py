@@ -14,7 +14,10 @@ from urllib.parse import parse_qs, urlparse
 
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
-from core.files.staged_files_api import STAGED_FILES_BUCKET, SIGNED_URL_EXPIRY
+
+# Constants for signed URL refresh (legacy - may still be used for image URLs in messages)
+STAGED_FILES_BUCKET = "staged-files"  # Keep for backward compatibility with existing image URLs
+SIGNED_URL_EXPIRY = 3600
 
 
 def is_supabase_signed_url(url: str) -> bool:

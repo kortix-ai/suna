@@ -1,6 +1,6 @@
 'use client';
 
-import { Suspense, lazy, useEffect } from 'react';
+import { Suspense, lazy } from 'react';
 import { BackgroundAALChecker } from '@/components/auth/background-aal-checker';
 import { HeroSection as NewHeroSection } from '@/components/home/hero-section';
 
@@ -10,17 +10,9 @@ const MobileAppInterstitial = lazy(() =>
 );
 
 export default function Home() {
-  // Prevent body scroll on home page only
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, []);
-
   return (
     <BackgroundAALChecker>
-      <div className="h-dvh overflow-hidden">
+      <div className="h-dvh">
         <NewHeroSection />
         {/* Mobile app banner - shown on mobile devices for logged-in users */}
         <Suspense fallback={null}>
