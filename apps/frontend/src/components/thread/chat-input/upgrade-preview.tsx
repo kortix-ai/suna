@@ -99,20 +99,6 @@ export const UpgradePreview: React.FC<UpgradePreviewProps> = ({
                 </button>
             )}
 
-            {/* Upgrade Button */}
-            <Button
-                variant="default"
-                size="sm"
-                className="h-8 px-3 flex-shrink-0 gap-1.5"
-                onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenUpgrade?.();
-                }}
-            >
-                <Sparkles className="h-3.5 w-3.5" />
-                <span>Upgrade</span>
-            </Button>
-
             <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0 hover:bg-muted/50" onClick={(e) => { e.stopPropagation(); onClose?.(); }}>
                 <X className="h-4 w-4 text-muted-foreground hover:text-foreground transition-colors" />
             </Button>
