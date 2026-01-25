@@ -7,9 +7,10 @@ import { KeyboardStickyView, useReanimatedKeyboardAnimation } from 'react-native
 import Animated, { useAnimatedStyle, interpolate } from 'react-native-reanimated';
 import { ChatInput, type ChatInputRef } from '../ChatInput';
 import { ToolSnack, type ToolSnackData } from '../ToolSnack';
+import { UpgradeSnack } from '../UpgradeSnack';
 import { AttachmentBar } from '@/components/attachments';
 import { QuickActionBar, QuickActionExpandedView, QUICK_ACTIONS } from '@/components/quick-actions';
-import { useLanguage } from '@/contexts';
+import { useLanguage, useBillingContext } from '@/contexts';
 import type { Agent } from '@/api/types';
 import type { Attachment } from '@/hooks/useChat';
 import { log } from '@/lib/logger';
@@ -79,6 +80,14 @@ export interface ChatInputSectionProps {
   onToolSnackPress?: () => void;
   /** Callback when user swipes to dismiss the tool snack */
   onToolSnackDismiss?: () => void;
+
+  // Upgrade Snack props (only shown for free tier users)
+  /** Callback when pressing the upgrade snack to open paywall */
+  onUpgradePress?: () => void;
+  /** Whether the upgrade snack has been dismissed this session */
+  isUpgradeDismissed?: boolean;
+  /** Callback when user dismisses the upgrade snack */
+  onUpgradeDismiss?: () => void;
 }
 
 export interface ChatInputSectionRef {
@@ -178,12 +187,16 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
   agentName,
   onToolSnackPress,
   onToolSnackDismiss,
+  onUpgradePress,
+  isUpgradeDismissed = false,
+  onUpgradeDismiss,
   isNewThread = false,
 }, ref) => {
   const { colorScheme } = useColorScheme();
   const { t } = useLanguage();
   const insets = useSafeAreaInsets();
   const chatInputRef = React.useRef<ChatInputRef>(null);
+  const { hasFreeTier, subscriptionData, isLoading: billingLoading } = useBillingContext();
 
   // For new threads, briefly disable keyboard tracking to ensure correct initial position
   // This prevents stale keyboard metrics from HomePage affecting the initial layout
@@ -309,6 +322,22 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
             agentName={agentName}
             onPress={onToolSnackPress}
             onDismiss={onToolSnackDismiss}
+          />
+        )}
+
+        {/* Upgrade Snack - Shows for free tier users when no tool is active */}
+        {/* Priority: voice > tool > upgrade - so only show when no activeToolData */}
+        {!activeToolData && (
+          <UpgradeSnack
+            isVisible={
+              hasFreeTier &&
+              !!subscriptionData &&
+              !billingLoading &&
+              !isUpgradeDismissed &&
+              !!onUpgradePress
+            }
+            onPress={onUpgradePress}
+            onDismiss={onUpgradeDismiss}
           />
         )}
 

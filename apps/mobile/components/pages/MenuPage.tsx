@@ -27,21 +27,19 @@ import {
 import { ConversationSection } from '@/components/menu/ConversationSection';
 import { BottomNav } from '@/components/menu/BottomNav';
 import { ProfileSection } from '@/components/menu/ProfileSection';
-import { SettingsPage } from '@/components/settings/SettingsPage';
 import { useAuthContext, useLanguage } from '@/contexts';
 import { useRouter, useFocusEffect } from 'expo-router';
 import { AgentList } from '@/components/agents/AgentList';
 import { LibrarySection } from '@/components/agents/LibrarySection';
 import { useAgent } from '@/contexts/AgentContext';
 import { useSearch } from '@/lib/utils/search';
-import { useThreads } from '@/lib/chat';
+import { useThreads, useDeleteThread } from '@/lib/chat';
 import { useAllTriggers } from '@/lib/triggers';
 import { groupThreadsByMonth, groupAgentsByTimePeriod } from '@/lib/utils/thread-utils';
 import { TriggerCreationDrawer, TriggerList } from '@/components/triggers';
 import { WorkerCreationDrawer } from '@/components/workers/WorkerCreationDrawer';
 import { WorkerConfigDrawer } from '@/components/workers/WorkerConfigDrawer';
 import { useAdvancedFeatures } from '@/hooks';
-import { AnimatedPageWrapper } from '@/components/shared/AnimatedPageWrapper';
 import type {
   Conversation,
   UserProfile,
@@ -50,7 +48,6 @@ import type {
 import type { Agent, TriggerWithAgent } from '@/api/types';
 import { ProfilePicture } from '../settings/ProfilePicture';
 import { TierBadge } from '@/components/billing/TierBadge';
-import { cn } from '@/lib/utils';
 import { log } from '@/lib/logger';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
@@ -237,92 +234,6 @@ function NewChatButton({ onPress }: NewChatButtonProps) {
   );
 }
 
-interface FloatingActionButtonProps {
-  activeTab: 'chats' | 'workers' | 'triggers';
-  onChatPress?: () => void;
-  onWorkerPress?: () => void;
-  onTriggerPress?: () => void;
-}
-
-function FloatingActionButton({
-  activeTab,
-  onChatPress,
-  onWorkerPress,
-  onTriggerPress,
-}: FloatingActionButtonProps) {
-  const { t } = useLanguage();
-  const { colorScheme } = useColorScheme();
-  const { isEnabled: advancedFeaturesEnabled } = useAdvancedFeatures();
-  const scale = useSharedValue(1);
-  const rotate = useSharedValue(0);
-
-  const animatedStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: scale.value }, { rotate: `${rotate.value}deg` }],
-  }));
-
-  const handlePressIn = () => {
-    scale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePressOut = () => {
-    scale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  const handlePress = () => {
-    const action =
-      activeTab === 'chats'
-        ? t('menu.newChat')
-        : activeTab === 'workers'
-          ? t('menu.newWorker')
-          : t('menu.newTrigger');
-    log.log('🎯 FAB pressed:', action);
-    log.log('⏰ Timestamp:', new Date().toISOString());
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    rotate.value = withSpring(rotate.value + 90, { damping: 15, stiffness: 400 });
-
-    if (activeTab === 'chats') onChatPress?.();
-    else if (activeTab === 'workers') onWorkerPress?.();
-    else if (activeTab === 'triggers') onTriggerPress?.();
-  };
-
-  const getAccessibilityLabel = () => {
-    const item = activeTab === 'chats' ? 'chat' : activeTab === 'workers' ? 'worker' : 'trigger';
-    return t('actions.createNew', { item });
-  };
-
-  const bgColor = colorScheme === 'dark' ? '#FFFFFF' : '#121215';
-  const iconColor = colorScheme === 'dark' ? '#121215' : '#FFFFFF';
-
-  return (
-    <AnimatedPressable
-      onPress={handlePress}
-      onPressIn={handlePressIn}
-      onPressOut={handlePressOut}
-      style={[
-        animatedStyle,
-        {
-          width: 60,
-          height: 60,
-          backgroundColor: bgColor,
-          shadowColor: '#000',
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.25,
-          shadowRadius: 12,
-          elevation: 10,
-        },
-      ]}
-      className={cn(
-        'absolute bottom-44 right-6 items-center justify-center rounded-full',
-        advancedFeaturesEnabled ? 'bottom-[230px]' : 'bottom-34'
-      )}
-      accessibilityRole="button"
-      accessibilityLabel={getAccessibilityLabel()}>
-      <Icon as={Plus} size={26} color={iconColor} strokeWidth={2.5} />
-    </AnimatedPressable>
-  );
-}
-
 interface MenuPageProps {
   sections?: ConversationSectionType[]; // Made optional - will use real threads
   profile: UserProfile;
@@ -396,7 +307,6 @@ export function MenuPage({
   const insets = useSafeAreaInsets();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
-  const [isSettingsVisible, setIsSettingsVisible] = React.useState(false);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
   const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
 
@@ -408,7 +318,20 @@ export function MenuPage({
   const isGuest = !user;
 
   // Fetch real threads from backend
-  const { data: threads = [], isLoading: isLoadingThreads, error: threadsError } = useThreads();
+  const { data: threads = [], isLoading: isLoadingThreads, error: threadsError, refetch: refetchThreads } = useThreads();
+
+  // Refetch threads when drawer opens/gains focus
+  useFocusEffect(
+    React.useCallback(() => {
+      refetchThreads();
+    }, [refetchThreads])
+  );
+
+  // Delete thread mutation
+  const deleteThreadMutation = useDeleteThread();
+
+  // Track which conversation is being deleted
+  const [deletingConversationId, setDeletingConversationId] = React.useState<string | null>(null);
 
   // Transform threads to sections
   const sections = React.useMemo(() => {
@@ -486,6 +409,22 @@ export function MenuPage({
   }, [activeTab]);
 
   /**
+   * Handle conversation delete
+   */
+  const handleConversationDelete = React.useCallback(async (conversation: Conversation) => {
+    log.log('🗑️ Deleting conversation:', conversation.id);
+    setDeletingConversationId(conversation.id);
+    try {
+      await deleteThreadMutation.mutateAsync(conversation.id);
+      log.log('✅ Conversation deleted successfully');
+    } catch (error) {
+      log.error('❌ Failed to delete conversation:', error);
+    } finally {
+      setDeletingConversationId(null);
+    }
+  }, [deleteThreadMutation]);
+
+  /**
    * Handle scroll event to track scroll position
    * Used for blur fade effect at bottom
    */
@@ -499,12 +438,12 @@ export function MenuPage({
   }));
 
   /**
-   * Handle profile press - Opens settings drawer
+   * Handle profile press - Navigate to settings
    */
   const handleProfilePress = () => {
-    log.log('🎯 Opening settings drawer');
+    log.log('🎯 Navigating to settings');
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setIsSettingsVisible(true);
+    router.push('/(settings)');
   };
 
   const handleProfilePressIn = () => {
@@ -513,14 +452,6 @@ export function MenuPage({
 
   const handleProfilePressOut = () => {
     profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
-  };
-
-  /**
-   * Handle settings drawer close
-   */
-  const handleCloseSettings = () => {
-    log.log('🎯 Closing settings drawer');
-    setIsSettingsVisible(false);
   };
 
   /**
@@ -710,6 +641,8 @@ export function MenuPage({
                               conversations: filteredConversations,
                             }}
                             onConversationPress={onConversationPress}
+                            onConversationDelete={handleConversationDelete}
+                            deletingConversationId={deletingConversationId}
                           />
                         );
                       })}
@@ -922,21 +855,6 @@ export function MenuPage({
           )}
         </View>
       </SafeAreaView>
-
-      {/* Settings Page */}
-      <AnimatedPageWrapper visible={isSettingsVisible} onClose={handleCloseSettings}>
-        <SettingsPage visible={isSettingsVisible} profile={profile} onClose={handleCloseSettings} />
-      </AnimatedPageWrapper>
-
-      {/* Floating Action Button */}
-      {advancedFeaturesEnabled && (
-        <FloatingActionButton
-          activeTab={activeTab}
-          onChatPress={onNewChat}
-          onWorkerPress={handleWorkerCreate}
-          onTriggerPress={handleTriggerCreate}
-        />
-      )}
 
       {isTriggerDrawerVisible && (
         <TriggerCreationDrawer

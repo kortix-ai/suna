@@ -873,19 +873,22 @@ export function useChat(): UseChatReturn {
         const optimisticTitle = content.trim().substring(0, 50) + (content.length > 50 ? '...' : '');
 
         // Add optimistic thread to threads cache for instant side menu update
-        queryClient.setQueryData(
-          [...chatKeys.threads(), { projectId: undefined }],
+        // Use setQueriesData to update ALL threads queries (regardless of projectId)
+        const optimisticThread = {
+          thread_id: optimisticThreadId,
+          title: optimisticTitle || 'New Chat',
+          created_at: optimisticTimestamp,
+          updated_at: optimisticTimestamp,
+          is_public: false,
+          metadata: { mode: selectedQuickAction, isOptimistic: true },
+        };
+
+        queryClient.setQueriesData(
+          { queryKey: chatKeys.threads() },
           (oldThreads: any[] | undefined) => {
-            const optimisticThread = {
-              thread_id: optimisticThreadId,
-              title: optimisticTitle || 'New Chat',
-              created_at: optimisticTimestamp,
-              updated_at: optimisticTimestamp,
-              is_public: false,
-              metadata: { mode: selectedQuickAction, isOptimistic: true },
-            };
+            if (!oldThreads) return [optimisticThread];
             log.log('✨ [useChat] Adding optimistic thread to side menu:', optimisticThreadId);
-            return [optimisticThread, ...(oldThreads || [])];
+            return [optimisticThread, ...oldThreads];
           }
         );
 
@@ -1004,8 +1007,8 @@ export function useChat(): UseChatReturn {
           currentThreadId = newThreadId;
 
           // Replace optimistic thread with real thread in cache
-          queryClient.setQueryData(
-            [...chatKeys.threads(), { projectId: undefined }],
+          queryClient.setQueriesData(
+            { queryKey: chatKeys.threads() },
             (oldThreads: any[] | undefined) => {
               if (!oldThreads) return oldThreads;
               // Remove the optimistic thread, real thread will be added via invalidation
@@ -1049,8 +1052,8 @@ export function useChat(): UseChatReturn {
           log.error('[useChat] Error starting agent for new thread:', agentStartError);
 
           // Remove optimistic thread from cache on error
-          queryClient.setQueryData(
-            [...chatKeys.threads(), { projectId: undefined }],
+          queryClient.setQueriesData(
+            { queryKey: chatKeys.threads() },
             (oldThreads: any[] | undefined) => {
               if (!oldThreads) return oldThreads;
               const filtered = oldThreads.filter((t: any) => t.thread_id !== optimisticThreadId);

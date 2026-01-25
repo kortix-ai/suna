@@ -30,6 +30,7 @@ import {
   isMarkdownExtension,
   isHtmlExtension,
   isDocxExtension,
+  isPdfExtension,
 } from '@/lib/utils/file-types';
 import { WebView } from 'react-native-webview';
 import { getAuthToken } from '@/api/config';
@@ -214,6 +215,121 @@ function generateDocxPreviewHtml(base64Data: string, isDark: boolean): string {
         }
       };
     }
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Generates HTML with embedded PDF.js for rendering PDF files
+ * Uses the official PDF.js viewer for reliable PDF rendering in WebView
+ */
+function generatePdfPreviewHtml(base64Data: string, isDark: boolean): string {
+  const bgColor = isDark ? '#121215' : '#ffffff';
+
+  // Extract just the base64 part if it's a data URL
+  const base64Content = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+
+  return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: ${bgColor};
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+    #loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      font-size: 14px;
+      color: ${isDark ? '#a1a1aa' : '#71717a'};
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    #error {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #ef4444;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    #container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+    }
+    .page-canvas {
+      max-width: 100%;
+      height: auto;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      background: white;
+    }
+  </style>
+</head>
+<body>
+  <div id="loading">Loading PDF...</div>
+  <div id="error">Failed to load PDF</div>
+  <div id="container"></div>
+  <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    async function renderPdf() {
+      try {
+        const base64 = '${base64Content}';
+        const binaryString = atob(base64);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+        document.getElementById('loading').style.display = 'none';
+
+        const container = document.getElementById('container');
+        const containerWidth = container.clientWidth - 16;
+
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1 });
+          const scale = containerWidth / viewport.width;
+          const scaledViewport = page.getViewport({ scale });
+
+          const canvas = document.createElement('canvas');
+          canvas.className = 'page-canvas';
+          canvas.width = scaledViewport.width;
+          canvas.height = scaledViewport.height;
+
+          const ctx = canvas.getContext('2d');
+          await page.render({ canvasContext: ctx, viewport: scaledViewport }).promise;
+
+          container.appendChild(canvas);
+        }
+      } catch (err) {
+        console.error('PDF error:', err);
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error').textContent = 'Failed to load PDF: ' + (err.message || err);
+      }
+    }
+
+    renderPdf();
   </script>
 </body>
 </html>`;
@@ -682,6 +798,7 @@ function DocumentAttachment({
   const scale = useSharedValue(1);
   const [fileContent, setFileContent] = useState<string | null>(null);
   const [docxBlobUrl, setDocxBlobUrl] = useState<string | null>(null);
+  const [pdfBlobUrl, setPdfBlobUrl] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
 
@@ -697,6 +814,7 @@ function DocumentAttachment({
 
   const ext = file.extension?.toLowerCase() || '';
   const isDocx = isDocxExtension(ext);
+  const isPdf = isPdfExtension(ext);
 
   const isPreviewable = useMemo(() => {
     if (!showPreview || !file.extension) return false;
@@ -725,8 +843,8 @@ function DocumentAttachment({
 
           const url = `${apiUrl}/sandboxes/${sandboxId}/files/content?path=${encodeURIComponent(filePath)}`;
 
-          // DOCX files need to be fetched as blob
-          if (isDocx) {
+          // DOCX and PDF files need to be fetched as blob
+          if (isDocx || isPdf) {
             const response = await fetch(url, {
               headers: {
                 'Authorization': `Bearer ${token}`,
@@ -742,12 +860,17 @@ function DocumentAttachment({
             const reader = new FileReader();
             reader.onloadend = () => {
               const base64 = reader.result as string;
-              log.log('[DocumentAttachment] DOCX blob converted to base64, length:', base64.length);
-              setDocxBlobUrl(base64);
+              if (isDocx) {
+                log.log('[DocumentAttachment] DOCX blob converted to base64, length:', base64.length);
+                setDocxBlobUrl(base64);
+              } else if (isPdf) {
+                log.log('[DocumentAttachment] PDF blob converted to base64, length:', base64.length);
+                setPdfBlobUrl(base64);
+              }
               setIsLoading(false);
             };
             reader.onerror = () => {
-              log.error('[DocumentAttachment] Failed to read DOCX blob');
+              log.error('[DocumentAttachment] Failed to read blob');
               setHasError(true);
               setIsLoading(false);
             };
@@ -773,7 +896,7 @@ function DocumentAttachment({
           log.error('[DocumentAttachment] Failed to fetch file content:', error);
           setHasError(true);
         } finally {
-          if (!isDocx) {
+          if (!isDocx && !isPdf) {
             setIsLoading(false);
           }
         }
@@ -781,7 +904,7 @@ function DocumentAttachment({
 
       fetchFileContent();
     }
-  }, [isPreviewable, sandboxId, file.path, isDocx]);
+  }, [isPreviewable, sandboxId, file.path, isDocx, isPdf]);
 
   if (showPreview && isPreviewable) {
     const ext = file.extension?.toLowerCase() || '';
@@ -831,6 +954,16 @@ function DocumentAttachment({
           ) : isDocx && docxBlobUrl ? (
             <WebView
               source={{ html: generateDocxPreviewHtml(docxBlobUrl, colorScheme === 'dark') }}
+              style={{ width: '100%', height: 400 }}
+              scrollEnabled={true}
+              originWhitelist={['*']}
+              javaScriptEnabled={true}
+              domStorageEnabled={true}
+              mixedContentMode="compatibility"
+            />
+          ) : isPdf && pdfBlobUrl ? (
+            <WebView
+              source={{ html: generatePdfPreviewHtml(pdfBlobUrl, colorScheme === 'dark') }}
               style={{ width: '100%', height: 400 }}
               scrollEnabled={true}
               originWhitelist={['*']}

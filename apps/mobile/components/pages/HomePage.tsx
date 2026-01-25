@@ -8,7 +8,7 @@ import { QUICK_ACTIONS, ModeThreadListView } from '@/components/quick-actions';
 import { TopNav, BackgroundLogo } from '@/components/home';
 import { useRouter } from 'expo-router';
 import { UsageDrawer } from '@/components/settings/UsageDrawer';
-import { useChatCommons } from '@/hooks';
+import { useChatCommons, useUpgradePaywall } from '@/hooks';
 import type { UseChatReturn } from '@/hooks';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
 import { log } from '@/lib/logger';
@@ -45,6 +45,10 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
 
     const chatInputRef = React.useRef<ChatInputSectionRef>(null);
     const lastSwipeIndex = React.useRef(-1);
+
+    // Track if user dismissed the upgrade snack this session
+    const [isUpgradeDismissed, setIsUpgradeDismissed] = React.useState(false);
+    const { presentUpgradePaywall } = useUpgradePaywall();
 
     // Find current selected index for swipe gestures
     const selectedIndex = React.useMemo(() => {
@@ -258,6 +262,11 @@ export const HomePage = React.forwardRef<HomePageRef, HomePageProps>(
             isSendingMessage={chat.isSendingMessage}
             isTranscribing={isTranscribing}
             showQuickActions={true}
+            onUpgradePress={async () => {
+              await presentUpgradePaywall();
+            }}
+            isUpgradeDismissed={isUpgradeDismissed}
+            onUpgradeDismiss={() => setIsUpgradeDismissed(true)}
           />
         </View>
 
