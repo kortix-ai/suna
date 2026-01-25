@@ -777,12 +777,19 @@ async def invalidate_tier_info_cache(account_id: str) -> None:
         logger.debug(f"🗑️ Invalidated tier info cache: {account_id}")
     except Exception as e:
         logger.warning(f"Failed to invalidate tier info cache: {e}")
-    
+
     try:
         from core.agents.pipeline.slot_manager import invalidate_tier_cache
         await invalidate_tier_cache(account_id)
     except Exception as e:
         logger.warning(f"Failed to invalidate slot_manager tier cache: {e}")
+
+    # Also invalidate user context cache since it contains subscription tier info
+    try:
+        await invalidate_user_context_cache(account_id)
+        logger.debug(f"🗑️ Also invalidated user context cache for tier change: {account_id}")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate user context cache on tier change: {e}")
 
 
 AGENT_RUN_STREAM_TTL = 3600
