@@ -206,7 +206,9 @@ async def make_llm_api_call(
         override_params["extra_headers"] = extra_headers
     if frequency_penalty is not None:
         override_params["frequency_penalty"] = frequency_penalty
-    
+    if max_tokens is not None:
+        override_params["max_tokens"] = max_tokens
+
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
     
     if tools:

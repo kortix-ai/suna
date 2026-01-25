@@ -70,7 +70,7 @@ class ResponseProcessor:
                         self._state.thread_id
                     )
                     continue
-                
+
                 chunk_type = chunk.get("type")
                 if chunk_type == "content":
                     self._state.append_content(chunk.get("content", ""))
@@ -180,7 +180,7 @@ class ResponseProcessor:
 
             if finish_reason and not finish_processed:
                 finish_processed = True
-                
+
                 has_tool_calls = pending_executions or any(
                     is_tool_call_complete(tool_call_buffer.get(idx, {})) 
                     for idx in tool_call_buffer.keys()
@@ -406,10 +406,10 @@ class ResponseProcessor:
                     buf["function"]["arguments"] += fn.arguments
 
     async def _handle_finish_reason(
-        self, 
-        finish_reason: str, 
-        tool_calls: list, 
-        tool_call_buffer: Dict, 
+        self,
+        finish_reason: str,
+        tool_calls: list,
+        tool_call_buffer: Dict,
         stream_start: str,
         llm_response_id: str,
         final_llm_response = None
@@ -419,6 +419,10 @@ class ResponseProcessor:
                 yield msg
         elif finish_reason in ("stop", "end_turn"):
             async for msg in self._handle_stop_finish(tool_calls, stream_start, llm_response_id, final_llm_response):
+                yield msg
+        elif finish_reason == "length":
+            # Handle max tokens reached - save content and emit finish message for auto-continue
+            async for msg in self._handle_length_finish(tool_calls, stream_start, llm_response_id, final_llm_response):
                 yield msg
 
     async def _handle_tool_calls_finish(
@@ -492,10 +496,48 @@ class ResponseProcessor:
             f"message_id={complete_msg.get('message_id')}, content_len={len(accumulated_content)}"
         )
         yield complete_msg
-        
+
         self._state.add_status_message(
             {"status_type": "finish", "finish_reason": "stop"},
             {"thread_run_id": thread_run_id}
         )
         yield self._message_builder.build_finish_message("stop")
+
+    async def _handle_length_finish(
+        self,
+        tool_calls: list,
+        stream_start: str,
+        llm_response_id: str,
+        final_llm_response = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """Handle finish_reason='length' (max tokens reached). Saves content and emits status for auto-continue."""
+        thread_run_id = self._message_builder._get_thread_run_id()
+
+        accumulated_content = self._state._accumulated_content or ""
+        accumulated_reasoning = self._state._accumulated_reasoning or ""
+
+        logger.info(f"[ResponseProcessor] Max tokens reached, saving {len(accumulated_content)} chars of content")
+
+        assistant_message_id = self._state.finalize_assistant_message(
+            tool_calls if tool_calls else None,
+            thread_run_id
+        )
+
+        self._state.trigger_flush()
+
+        complete_msg = self._message_builder.build_assistant_complete(
+            assistant_message_id, accumulated_content, tool_calls if tool_calls else None, stream_start,
+            reasoning_content=accumulated_reasoning if accumulated_reasoning else None
+        )
+        logger.debug(
+            f"[ResponseProcessor] Yielding assistant_complete (length): "
+            f"message_id={complete_msg.get('message_id')}, content_len={len(accumulated_content)}"
+        )
+        yield complete_msg
+
+        self._state.add_status_message(
+            {"status_type": "finish", "finish_reason": "length"},
+            {"thread_run_id": thread_run_id}
+        )
+        yield self._message_builder.build_finish_message("length")
         
