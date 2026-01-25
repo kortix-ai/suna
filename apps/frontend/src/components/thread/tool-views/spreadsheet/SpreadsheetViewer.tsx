@@ -26,7 +26,7 @@ import '../../../../../node_modules/@syncfusion/ej2-react-spreadsheet/styles/mat
 import './kortix-spreadsheet-styles.css';
 
 
-const SYNCFUSION_LICENSE = "Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCf0x0QHxbf1x2ZFFMYFtbRHZPMyBoS35Rc0RhW3ledHRSRmVeVUx+VEFf";
+const SYNCFUSION_LICENSE = "Ngo9BigBOggjHTQxAR8/V1JGaF5cXGpCfEx0QXxbf1x2ZFRMZVxbQXNPIiBoS35RcEViW3pfc3FXQmJYUkZ3VEFf";
 const SYNCFUSION_BASE_URL = 'https://ej2services.syncfusion.com/production/web-services/api/spreadsheet';
 
 registerLicense(SYNCFUSION_LICENSE);
