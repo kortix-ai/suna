@@ -836,6 +836,7 @@ export function FileOperationToolView({
                 content={fileContent}
                 fileName={fileName || 'file.txt'}
                 disabled={isStreaming}
+                sandboxUrl={project?.sandbox?.sandbox_url}
               />
             )}
             {fileContent && !isPresentationSlide && (

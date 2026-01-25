@@ -31,6 +31,7 @@ Provides file system operations relative to /workspace directory.
 - **str_replace**: Exact string replacement (alternative to edit_file)
 - **full_file_rewrite**: Complete file replacement (use sparingly)
 - **delete_file**: Delete files
+- **export_to_pdf**: Export HTML files to PDF (use this instead of npx html-pdf or wkhtmltopdf)
 
 ### Usage Guidelines
 
@@ -603,4 +604,86 @@ Usage:
                 "original_content": original_content_on_error,
                 "updated_content": None
             }))
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
+            "name": "export_to_pdf",
+            "description": "Export an HTML file to PDF format using high-quality Playwright/Chromium rendering. Use this instead of shell commands like 'npx html-pdf' or 'wkhtmltopdf' for better quality output.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_path": {
+                        "type": "string",
+                        "description": "Path to the HTML file to export (e.g., 'index.html' or 'output/report.html')"
+                    }
+                },
+                "required": ["file_path"]
+            }
+        }
+    })
+    async def export_to_pdf(self, file_path: str) -> ToolResult:
+        """Export an HTML file to PDF using sandbox Playwright rendering."""
+        try:
+            await self._ensure_sandbox()
+
+            cleaned_path = self.clean_path(file_path)
+            full_path = self._get_full_path(file_path)
+
+            # Check file exists
+            if not await self._file_exists(full_path):
+                return self.fail_response(f"File '{file_path}' does not exist")
+
+            # Check it's an HTML file
+            if not cleaned_path.lower().endswith(('.html', '.htm')):
+                return self.fail_response(f"File '{file_path}' is not an HTML file. Only .html/.htm files can be exported to PDF.")
+
+            # Determine output filename
+            base_name = cleaned_path.rsplit('.', 1)[0] if '.' in cleaned_path else cleaned_path
+            output_filename = f"{base_name.replace('/', '_')}.pdf"
+
+            logger.info(f"[export_to_pdf] Exporting {cleaned_path} to PDF")
+
+            # Call sandbox html-to-pdf endpoint
+            from core.services.http_client import get_http_client
+            async with get_http_client() as client:
+                response = await client.post(
+                    f"{self.sandbox_url}/presentation/html-to-pdf",
+                    json={
+                        "file_path": cleaned_path,
+                        "file_name": base_name.replace('/', '_')
+                    },
+                    timeout=120.0
+                )
+
+                if response.status_code == 200:
+                    pdf_bytes = response.content
+
+                    # Save to downloads folder
+                    downloads_path = f"{self.workspace_path}/downloads"
+                    output_path = f"{downloads_path}/{output_filename}"
+
+                    # Ensure downloads directory exists
+                    try:
+                        await self.sandbox.fs.upload_file(pdf_bytes, output_path)
+                    except Exception:
+                        # Directory might not exist, create it
+                        await self.sandbox.process.start(f"mkdir -p {downloads_path}")
+                        await self.sandbox.fs.upload_file(pdf_bytes, output_path)
+
+                    logger.info(f"[export_to_pdf] Success: {output_path}")
+
+                    return self.success_response({
+                        "message": f"Successfully exported '{file_path}' to PDF",
+                        "output_file": f"downloads/{output_filename}",
+                        "format": "pdf"
+                    })
+                else:
+                    error_text = response.text
+                    logger.error(f"[export_to_pdf] Failed: {response.status_code} - {error_text}")
+                    return self.fail_response(f"PDF export failed: {error_text}")
+
+        except Exception as e:
+            logger.error(f"[export_to_pdf] Error: {str(e)}")
+            return self.fail_response(f"PDF export failed: {str(e)}")
             

@@ -26,6 +26,8 @@ interface FileDownloadButtonProps {
   className?: string;
   /** Optional function to get rendered HTML content (from an editor) - if provided, uses this instead of marked conversion */
   getHtmlContent?: () => string;
+  /** Optional sandbox URL for high-quality PDF export via Playwright */
+  sandboxUrl?: string;
 }
 
 /**
@@ -42,6 +44,7 @@ export function FileDownloadButton({
   disabled = false,
   className,
   getHtmlContent,
+  sandboxUrl,
 }: FileDownloadButtonProps) {
   const [isExporting, setIsExporting] = useState(false);
   
@@ -50,9 +53,10 @@ export function FileDownloadButton({
     featureName: 'files',
   });
 
-  // Check if file is markdown
+  // Check if file is markdown or HTML
   const fileExtension = fileName.split('.').pop()?.toLowerCase() || '';
   const isMarkdown = fileExtension === 'md' || fileExtension === 'markdown';
+  const isHtml = fileExtension === 'html' || fileExtension === 'htm';
 
   // Handle direct file download (for non-markdown or markdown "raw" download)
   const handleDirectDownload = useCallback(async () => {
@@ -93,7 +97,7 @@ export function FileDownloadButton({
     setIsExporting(true);
     try {
       const baseFileName = fileName.replace(/\.(md|markdown)$/i, '');
-      
+
       if (format === 'markdown') {
         // For markdown format, just download the raw content
         const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
@@ -110,7 +114,7 @@ export function FileDownloadButton({
         // For PDF, Word, HTML - get HTML content
         // If getHtmlContent is provided (from editor), use it; otherwise convert markdown to HTML
         const htmlContent = getHtmlContent ? getHtmlContent() : await marked(content);
-        
+
         await exportDocument({
           content: htmlContent,
           fileName: baseFileName,
@@ -124,6 +128,80 @@ export function FileDownloadButton({
       setIsExporting(false);
     }
   }, [content, fileName, isDownloadRestricted, openUpgradeModal, getHtmlContent]);
+
+  // Handle HTML file export to various formats (PDF, Word, HTML)
+  const handleHtmlExport = useCallback(async (format: ExportFormat) => {
+    if (isDownloadRestricted) {
+      openUpgradeModal();
+      return;
+    }
+    if (!content) return;
+
+    setIsExporting(true);
+    try {
+      const baseFileName = fileName.replace(/\.(html|htm)$/i, '');
+
+      if (format === 'html') {
+        // For HTML format, just download the raw content
+        const blob = new Blob([content], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${baseFileName}.html`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        toast.success(`Downloaded ${baseFileName}.html`);
+      } else if (format === 'pdf' && sandboxUrl) {
+        // Use sandbox Playwright for high-quality PDF export
+        const toastId = toast.loading('Exporting to PDF...');
+        try {
+          const response = await fetch(`${sandboxUrl}/presentation/html-to-pdf`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              content: content,
+              file_name: baseFileName,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(errorText || `Export failed: ${response.status}`);
+          }
+
+          const blob = await response.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `${baseFileName}.pdf`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          toast.dismiss(toastId);
+          toast.success('PDF exported');
+        } catch (error) {
+          console.error('Sandbox PDF export error:', error);
+          toast.dismiss(toastId);
+          toast.error(`PDF export failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        }
+      } else {
+        // For Word or PDF without sandbox - use backend API
+        await exportDocument({
+          content: content,
+          fileName: baseFileName,
+          format,
+        });
+      }
+    } catch (error) {
+      console.error('Export error:', error);
+      toast.error('Failed to export file');
+    } finally {
+      setIsExporting(false);
+    }
+  }, [content, fileName, isDownloadRestricted, openUpgradeModal, sandboxUrl]);
 
   // For markdown files, show dropdown with export options
   if (isMarkdown) {
@@ -160,6 +238,39 @@ export function FileDownloadButton({
           <DropdownMenuItem onClick={() => handleMarkdownExport('markdown')}>
             <FileCode className="h-4 w-4 text-muted-foreground" />
             Markdown
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
+  // For HTML files, show dropdown with export options (PDF, Word, HTML)
+  if (isHtml) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className={className || "h-8 w-8 p-0"}
+            disabled={disabled || isExporting || !content}
+            title="Export file"
+          >
+            {isExporting ? (
+              <KortixLoader customSize={16} />
+            ) : (
+              <Download className="h-4 w-4" />
+            )}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => handleHtmlExport('pdf')}>
+            <FileType className="h-4 w-4 text-muted-foreground" />
+            PDF
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => handleHtmlExport('html')}>
+            <FileCode className="h-4 w-4 text-muted-foreground" />
+            HTML
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
