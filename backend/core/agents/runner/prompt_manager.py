@@ -688,25 +688,25 @@ Multiple parallel tool calls:
         if not user_id:
             return None
 
-        # try:
-        #     from core.billing.subscriptions.handlers.tier import TierHandler
-        #     from core.utils.config import config, EnvMode
+        try:
+            from core.billing.subscriptions.handlers.tier import TierHandler
+            from core.utils.config import config, EnvMode
 
-        #     # Skip tier check in local mode (for testing)
-        #     if config.ENV_MODE == EnvMode.LOCAL:
-        #         logger.debug(f"[PROMO] Local mode - showing promo for testing")
-        #     else:
-        #         tier_info = await TierHandler.get_user_subscription_tier(user_id)
-        #         tier_name = tier_info.get('name', 'free')
+            # Skip tier check in local mode (for testing)
+            if config.ENV_MODE == EnvMode.LOCAL:
+                logger.debug(f"[PROMO] Local mode - showing promo for testing")
+            else:
+                tier_info = await TierHandler.get_user_subscription_tier(user_id)
+                tier_name = tier_info.get('name', 'free')
 
-        #         if tier_name not in ('free', 'none'):
-        #             logger.debug(f"[PROMO] User {user_id} is on {tier_name} tier - skipping promo")
-        #             return None
+                if tier_name not in ('free', 'none'):
+                    logger.debug(f"[PROMO] User {user_id} is on {tier_name} tier - skipping promo")
+                    return None
 
-        # except Exception as e:
-        #     logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
-        #     return None
-        # logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
+        except Exception as e:
+            logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
+            return None
+        logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
 
         promo_content = """
 
