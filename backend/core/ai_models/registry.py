@@ -83,7 +83,7 @@ class PricingPresets:
     )
 
 
-FREE_MODEL_ID = "kortix/kimi-k2"
+FREE_MODEL_ID = "kortix/minimax"
 PREMIUM_MODEL_ID = "kortix/power"
 IMAGE_MODEL_ID = "kortix/haiku"
 
@@ -597,15 +597,14 @@ class ModelFactory:
     def create_kimi_k2() -> Model:
         return Model(
             id="kortix/kimi-k2",
-            name="Kimi K2 Thinking",
-            litellm_model_id="openrouter/moonshotai/kimi-k2-thinking",
+            name="Kimi K2",
+            litellm_model_id="openrouter/moonshotai/kimi-k2",
             provider=ModelProvider.OPENROUTER,
-            aliases=["kimi-k2", "kimi", "moonshotai/kimi-k2-thinking"],
+            aliases=["kimi-k2", "kimi", "moonshotai/kimi-k2"],
             context_window=262_144,
             capabilities=[
                 ModelCapability.CHAT,
                 ModelCapability.FUNCTION_CALLING,
-                ModelCapability.THINKING,
                 ModelCapability.PROMPT_CACHING,
             ],
             pricing=PricingPresets.KIMI_K2,
@@ -660,7 +659,7 @@ class ModelRegistry:
         self._litellm_id_to_pricing["openrouter/x-ai/grok-4.1-fast"] = PricingPresets.GROK_4_1_FAST
         self._litellm_id_to_pricing["openrouter/openai/gpt-4o-mini"] = PricingPresets.GPT_4O_MINI
         self._litellm_id_to_pricing["openrouter/xiaomi/mimo-v2-flash"] = PricingPresets.MIMO_V2_FLASH
-        self._litellm_id_to_pricing["openrouter/moonshotai/kimi-k2-thinking"] = PricingPresets.KIMI_K2
+        self._litellm_id_to_pricing["openrouter/moonshotai/kimi-k2"] = PricingPresets.KIMI_K2
         self._litellm_id_to_pricing["bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"] = PricingPresets.HAIKU_3_5
         self._litellm_id_to_pricing["openrouter/deepseek/deepseek-chat-v3-0324"] = PricingPresets.DEEPSEEK_V3
     
