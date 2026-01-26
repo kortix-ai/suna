@@ -53,10 +53,18 @@ export interface UseAgentStartInputReturn {
   selectedCharts: any;
   selectedOutputFormat: any;
   selectedTemplate: any;
+  selectedDocsType: any;
+  selectedImageStyle: any;
+  selectedCanvasAction: any;
+  selectedVideoStyle: any;
   setSelectedMode: (mode: any) => void;
   setSelectedCharts: (charts: any) => void;
   setSelectedOutputFormat: (format: any) => void;
   setSelectedTemplate: (template: any) => void;
+  setSelectedDocsType: (type: any) => void;
+  setSelectedImageStyle: (style: any) => void;
+  setSelectedCanvasAction: (action: any) => void;
+  setSelectedVideoStyle: (style: any) => void;
   
   // Agent limit banner
   agentLimitData: AgentLimitInfo | null;
@@ -111,10 +119,18 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     selectedCharts,
     selectedOutputFormat,
     selectedTemplate,
+    selectedDocsType,
+    selectedImageStyle,
+    selectedCanvasAction,
+    selectedVideoStyle,
     setSelectedMode,
     setSelectedCharts,
     setSelectedOutputFormat,
     setSelectedTemplate,
+    setSelectedDocsType,
+    setSelectedImageStyle,
+    setSelectedCanvasAction,
+    setSelectedVideoStyle,
   } = useSunaModePersistence();
   
   // Callback to reset loading states when a background error occurs
@@ -315,10 +331,18 @@ export function useAgentStartInput(options: UseAgentStartInputOptions = {}): Use
     selectedCharts,
     selectedOutputFormat,
     selectedTemplate,
+    selectedDocsType,
+    selectedImageStyle,
+    selectedCanvasAction,
+    selectedVideoStyle,
     setSelectedMode,
     setSelectedCharts,
     setSelectedOutputFormat,
     setSelectedTemplate,
+    setSelectedDocsType,
+    setSelectedImageStyle,
+    setSelectedCanvasAction,
+    setSelectedVideoStyle,
     
     // Agent limit banner
     agentLimitData,

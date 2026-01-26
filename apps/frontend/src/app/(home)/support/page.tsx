@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 
 const SectionHeader = ({ children }: { children: React.ReactNode }) => {
   return (
-    <div className="p-4 sm:p-8 space-y-2 sm:space-y-4">
+    <div className="p-8 space-y-4">
       {children}
     </div>
   );
@@ -23,18 +23,18 @@ const FAQItem = ({ question, answer }: { question: string; answer: React.ReactNo
     <div className="border-b border-border last:border-0">
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full text-left p-4 sm:p-6 hover:bg-accent/20 transition-colors flex items-center justify-between gap-3 sm:gap-4 touch-manipulation"
+        className="w-full text-left p-6 hover:bg-accent/20 transition-colors flex items-center justify-between gap-4"
       >
-        <span className="font-medium text-sm sm:text-base">{question}</span>
+        <span className="font-medium">{question}</span>
         <ChevronDown
-          className={`w-4 h-4 sm:w-5 sm:h-5 text-muted-foreground flex-shrink-0 transition-transform ${
+          className={`w-5 h-5 text-muted-foreground flex-shrink-0 transition-transform ${
             isOpen ? 'rotate-180' : ''
           }`}
         />
       </button>
       {isOpen && (
-        <div className="px-4 sm:px-6 pb-4 sm:pb-6">
-          <div className="text-muted-foreground leading-relaxed text-sm sm:text-base">{answer}</div>
+        <div className="px-6 pb-6">
+          <div className="text-muted-foreground leading-relaxed">{answer}</div>
         </div>
       )}
     </div>
@@ -143,51 +143,51 @@ function SupportPageContent() {
               </SectionHeader>
 
               <div className="grid grid-cols-1 md:grid-cols-3 border-t border-border">
-                <div className="p-4 sm:p-8 border-b md:border-b-0 md:border-r border-border space-y-3 sm:space-y-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Mail className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <div className="p-8 border-r border-border space-y-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Mail className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold mb-1.5 sm:mb-2">Email Support</h3>
-                    <p className="text-muted-foreground text-xs sm:text-sm mb-3 sm:mb-4">
+                    <h3 className="text-lg font-semibold mb-2">Email Support</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
                       Send us a detailed message and we'll get back to you as soon as possible.
                     </p>
                     <a 
                       href="mailto:support@kortix.com" 
-                      className="text-primary hover:underline font-medium inline-flex items-center gap-2 text-sm"
+                      className="text-primary hover:underline font-medium inline-flex items-center gap-2"
                     >
                       support@kortix.com
                     </a>
                   </div>
                 </div>
 
-                <div className="p-4 sm:p-8 border-b md:border-b-0 md:border-r border-border space-y-3 sm:space-y-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <div className="p-8 border-r border-border space-y-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Clock className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold mb-1.5 sm:mb-2">Response Time</h3>
-                    <p className="text-muted-foreground text-xs sm:text-sm mb-3 sm:mb-4">
+                    <h3 className="text-lg font-semibold mb-2">Response Time</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
                       We aim to respond within 24 hours during business days (Monday-Friday).
                     </p>
-                    <p className="text-xs sm:text-sm font-medium text-muted-foreground">
+                    <p className="text-sm font-medium text-muted-foreground">
                       Business Hours: 9 AM - 6 PM CST
                     </p>
                   </div>
                 </div>
 
-                <div className="p-4 sm:p-8 space-y-3 sm:space-y-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <div className="p-8 space-y-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold mb-1.5 sm:mb-2">Priority Support</h3>
-                    <p className="text-muted-foreground text-xs sm:text-sm mb-3 sm:mb-4">
-                      Enterprise customers receive priority support with dedicated assistance.
+                    <h3 className="text-lg font-semibold mb-2">Priority Support</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
+                      Pro and Team customers receive priority support with dedicated assistance.
                     </p>
-                    <Link href="/enterprise" className="text-primary hover:underline font-medium text-sm">
-                      Learn more
-                    </Link>
+                    <a href="mailto:support@kortix.com" className="text-primary hover:underline font-medium">
+                      Contact us
+                    </a>
                   </div>
                 </div>
               </div>
@@ -336,46 +336,46 @@ function SupportPageContent() {
               </SectionHeader>
 
               <div className="grid grid-cols-1 md:grid-cols-3 border-t border-border">
-                <div className="p-4 sm:p-8 border-b md:border-b-0 md:border-r border-border space-y-3 sm:space-y-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <div className="p-8 border-r border-border space-y-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold mb-1.5 sm:mb-2">Terms of Service</h3>
-                    <p className="text-muted-foreground text-xs sm:text-sm mb-3 sm:mb-4">
+                    <h3 className="text-lg font-semibold mb-2">Terms of Service</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
                       Our terms and conditions for using Kortix services, including user responsibilities and service limitations.
                     </p>
-                    <Link href="/legal?tab=terms" className="text-primary hover:underline font-medium text-xs sm:text-sm">
+                    <Link href="/legal?tab=terms" className="text-primary hover:underline font-medium text-sm">
                       Read Terms →
                     </Link>
                   </div>
                 </div>
 
-                <div className="p-4 sm:p-8 border-b md:border-b-0 md:border-r border-border space-y-3 sm:space-y-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <div className="p-8 border-r border-border space-y-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold mb-1.5 sm:mb-2">Privacy Policy</h3>
-                    <p className="text-muted-foreground text-xs sm:text-sm mb-3 sm:mb-4">
+                    <h3 className="text-lg font-semibold mb-2">Privacy Policy</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
                       How we collect, use, and protect your personal information. We're committed to data privacy and security.
                     </p>
-                    <Link href="/legal?tab=privacy" className="text-primary hover:underline font-medium text-xs sm:text-sm">
+                    <Link href="/legal?tab=privacy" className="text-primary hover:underline font-medium text-sm">
                       Read Policy →
                     </Link>
                   </div>
                 </div>
 
-                <div className="p-4 sm:p-8 space-y-3 sm:space-y-4">
-                  <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Shield className="w-5 h-5 sm:w-6 sm:h-6 text-primary" />
+                <div className="p-8 space-y-4">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Shield className="w-6 h-6 text-primary" />
                   </div>
                   <div>
-                    <h3 className="text-base sm:text-lg font-semibold mb-1.5 sm:mb-2">Imprint</h3>
-                    <p className="text-muted-foreground text-xs sm:text-sm mb-3 sm:mb-4">
+                    <h3 className="text-lg font-semibold mb-2">Imprint</h3>
+                    <p className="text-muted-foreground text-sm mb-4">
                       Company information and legal details about Kortix AI Corp, including contact information and registration.
                     </p>
-                    <Link href="/legal?tab=imprint" className="text-primary hover:underline font-medium text-xs sm:text-sm">
+                    <Link href="/legal?tab=imprint" className="text-primary hover:underline font-medium text-sm">
                       View Imprint →
                     </Link>
                   </div>

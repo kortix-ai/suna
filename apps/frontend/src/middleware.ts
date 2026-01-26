@@ -8,7 +8,6 @@ import { detectBestLocaleFromHeaders } from '@/lib/utils/geo-detection-server';
 const MARKETING_ROUTES = [
   '/',
   '/suna',
-  '/enterprise',
   '/legal',
   '/support',
   '/templates',
@@ -26,7 +25,6 @@ const PUBLIC_ROUTES = [
   '/api/auth',
   '/share', // Shared content should be public
   '/templates', // Template pages should be public
-  '/enterprise', // Enterprise page should be public
   '/master-login', // Master password admin login
   '/checkout', // Public checkout wrapper for Apple compliance
   '/support', // Support page should be public
@@ -40,6 +38,7 @@ const PUBLIC_ROUTES = [
   '/app', // App download page should be public,
   '/careers',
   '/pricing', // Pricing page should be public
+  '/tutorials', // Tutorials page should be public
   '/countryerror', // Country restriction error page should be public
   ...locales.flatMap(locale => MARKETING_ROUTES.map(route => `/${locale}${route === '/' ? '' : route}`)),
 ];
