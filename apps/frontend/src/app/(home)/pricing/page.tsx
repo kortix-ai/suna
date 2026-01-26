@@ -2,7 +2,6 @@
 
 import { Suspense, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import Link from 'next/link';
 import { SimpleFooter } from '@/components/home/simple-footer';
 import { PricingSection } from '@/components/billing/pricing';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -39,8 +38,8 @@ export default function PricingPage() {
   }, []);
 
   return (
-    <main className="min-h-[100dvh] bg-background">
-      <article className="max-w-4xl mx-auto px-4 sm:px-6 md:px-10 pt-16 sm:pt-24 md:pt-28 pb-12 sm:pb-16">
+    <main className="min-h-screen bg-background">
+      <article className="max-w-4xl mx-auto px-6 md:px-10 pt-24 md:pt-28 pb-16">
         {/* Pricing Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -63,25 +62,6 @@ export default function PricingPage() {
           onOpenChange={setCreditsModalOpen}
         />
 
-        {/* Enterprise CTA */}
-        <motion.div
-          className="mt-10 sm:mt-16 text-center px-2"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-        >
-          <h2 className="text-xl sm:text-2xl font-semibold mb-3 sm:mb-4">Need more?</h2>
-          <p className="text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6 max-w-xl mx-auto">
-            Looking for higher limits, custom integrations, or dedicated support? 
-            We offer custom plans for teams with specific needs.
-          </p>
-          <Link
-            href="/enterprise"
-            className="inline-flex items-center justify-center px-5 sm:px-6 py-2.5 sm:py-3 rounded-lg border border-border hover:bg-muted transition-colors font-medium text-sm sm:text-base"
-          >
-            Contact Sales
-          </Link>
-        </motion.div>
       </article>
 
       <SimpleFooter />

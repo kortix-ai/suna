@@ -22,6 +22,7 @@ import { X, Image as ImageIcon, Presentation, BarChart3, FileText, Search, Palet
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { VoiceRecorder } from './voice-recorder';
 import { useTheme } from 'next-themes';
+import { useTranslations } from 'next-intl';
 import { AttachmentGroup } from '../file-attachment';
 import { cn } from '@/lib/utils';
 import { useModelSelection } from '@/hooks/agents';
@@ -31,6 +32,7 @@ import { ToolCallInput } from './floating-tool-preview';
 import { ChatSnack } from './chat-snack';
 import { Brain, Zap, Database, ArrowDown, ArrowUp, Wrench, Clock, Send } from 'lucide-react';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { useSunaModesStore } from '@/stores/suna-modes-store';
 import { useComposioToolkitIcon } from '@/hooks/composio/use-composio';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ContextUsageIndicator } from '../ContextUsageIndicator';
@@ -400,18 +402,98 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
   );
 });
 
-// Mode button - isolated from typing state
+// Mode button - reads directly from Zustand store for instant updates
 interface ModeButtonProps {
-  selectedMode: string | null | undefined;
   isModeDismissing: boolean;
   onDeselect: () => void;
 }
 
-const ModeButton = memo(function ModeButton({
-  selectedMode,
+// NOTE: Removed memo() wrapper to ensure Zustand state changes always trigger re-renders
+function ModeButton({
   isModeDismissing,
   onDeselect,
 }: ModeButtonProps) {
+  const t = useTranslations('suna');
+  
+  // Read ALL mode state directly from Zustand store with individual selectors
+  // Each selector returns a primitive/stable reference, so no infinite loop
+  const selectedMode = useSunaModesStore((state) => state.selectedMode);
+  const selectedCharts = useSunaModesStore((state) => state.selectedCharts);
+  const selectedOutputFormat = useSunaModesStore((state) => state.selectedOutputFormat);
+  const selectedTemplate = useSunaModesStore((state) => state.selectedTemplate);
+  const selectedDocsType = useSunaModesStore((state) => state.selectedDocsType);
+  const selectedImageStyle = useSunaModesStore((state) => state.selectedImageStyle);
+  const selectedCanvasAction = useSunaModesStore((state) => state.selectedCanvasAction);
+  const selectedVideoStyle = useSunaModesStore((state) => state.selectedVideoStyle);
+  
+  // Generate mode-specific display text - computed directly (no useMemo to ensure fresh values)
+  const getDisplayText = () => {
+    if (!selectedMode) return '';
+    
+    switch (selectedMode) {
+      case 'slides':
+        // Slides mode: show template name if selected
+        if (selectedTemplate) {
+          const templateName = t(`templates.${selectedTemplate}.name`);
+          return `${t('templateLabel')}: ${templateName}`;
+        }
+        return t('promptSelected');
+        
+      case 'data':
+        // Data mode: show format and/or charts
+        const parts: string[] = [];
+        if (selectedOutputFormat) {
+          const formatName = t(`outputFormats.${selectedOutputFormat}.name`);
+          parts.push(formatName);
+        }
+        if (selectedCharts.length > 0) {
+          parts.push(`${selectedCharts.length} ${selectedCharts.length === 1 ? t('chartSingular') : t('chartsPlural')}`);
+        }
+        if (parts.length > 0) {
+          return parts.join(' + ');
+        }
+        return t('promptSelected');
+        
+      case 'docs':
+        // Docs mode: show document type if selected
+        if (selectedDocsType) {
+          const typeName = t(`templates.${selectedDocsType}.name`);
+          return `${t('typeLabel')}: ${typeName}`;
+        }
+        return t('promptSelected');
+        
+      case 'image':
+        // Image mode: show style if selected
+        if (selectedImageStyle) {
+          const styleName = t(`styles.${selectedImageStyle}`);
+          return `${t('styleLabel')}: ${styleName}`;
+        }
+        return t('promptSelected');
+        
+      case 'canvas':
+        // Canvas mode: show action if selected
+        if (selectedCanvasAction) {
+          const actionName = t(`canvasActions.${selectedCanvasAction}.name`);
+          return `${t('actionLabel')}: ${actionName}`;
+        }
+        return t('promptSelected');
+        
+      case 'video':
+        // Video mode: show style if selected
+        if (selectedVideoStyle) {
+          const styleName = t(`videoStyles.${selectedVideoStyle}`);
+          return `${t('styleLabel')}: ${styleName}`;
+        }
+        return t('promptSelected');
+        
+      default:
+        // Research mode - no preset state tracking
+        return t('promptSelected');
+    }
+  };
+  
+  const displayText = getDisplayText();
+
   if (!selectedMode && !isModeDismissing) return null;
 
   const getModeIcon = (mode: string) => {
@@ -459,13 +541,13 @@ const ModeButton = memo(function ModeButton({
       {selectedMode && getModeIcon(selectedMode)}
       {selectedMode && (
         <span className="hidden sm:inline text-sm">
-          {selectedMode.charAt(0).toUpperCase()}{selectedMode.slice(1)}
+          {displayText}
         </span>
       )}
       <X className="w-4 h-4" strokeWidth={2} />
     </Button>
   );
-});
+}
 
 // Kortix agent modes switcher - isolated from typing state
 interface SunaAgentModeSwitcherProps {
@@ -690,9 +772,6 @@ export interface ChatInputProps {
   selectedMode?: string | null;
   onModeDeselect?: () => void;
   animatePlaceholder?: boolean;
-  selectedCharts?: string[];
-  selectedOutputFormat?: string | null;
-  selectedTemplate?: string | null;
   threadId?: string | null;
   projectId?: string;
 }
@@ -743,9 +822,6 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       selectedMode,
       onModeDeselect,
       animatePlaceholder = false,
-      selectedCharts = [],
-      selectedOutputFormat = null,
-      selectedTemplate = null,
       threadId = null,
       projectId,
     },
@@ -790,6 +866,11 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
     const [isModeDismissing, setIsModeDismissing] = useState(false);    // Kortix Agent Modes feature flag
     const ENABLE_SUNA_AGENT_MODES = false;
     const [sunaAgentModes, setSunaAgentModes] = useState<'adaptive' | 'autonomous' | 'chat'>('adaptive');
+
+    // Read mode-specific state directly from Zustand for markdown generation
+    const selectedCharts = useSunaModesStore((state) => state.selectedCharts);
+    const selectedOutputFormat = useSunaModesStore((state) => state.selectedOutputFormat);
+    const selectedTemplate = useSunaModesStore((state) => state.selectedTemplate);
 
     // Voice player state for snack visibility
     const voiceState = useVoicePlayerStore((s) => s.state);
@@ -1052,14 +1133,16 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
       return `\n\n----\n\n**Presentation Template:** ${selectedTemplate}`;
     }, [selectedMode, selectedTemplate]);
 
-    // Handle mode deselection with animation
+    // Handle mode deselection with animation - also clears the input value
     const handleModeDeselect = useCallback(() => {
       setIsModeDismissing(true);
       setTimeout(() => {
         onModeDeselect?.();
+        // Clear the input value when mode is deselected
+        controlledOnChange?.('');
         setIsModeDismissing(false);
       }, 200); // Match animation duration
-    }, [onModeDeselect]);
+    }, [onModeDeselect, controlledOnChange]);
 
     // Auto-focus textarea on mount
     useEffect(() => {
@@ -1318,14 +1401,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
         {onModeDeselect && (
           <div className="hidden sm:block">
             <ModeButton
-              selectedMode={selectedMode}
               isModeDismissing={isModeDismissing}
               onDeselect={handleModeDeselect}
             />
           </div>
         )}
       </div>
-    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, threadId, isSunaAgent, sunaAgentModes, onModeDeselect, selectedMode, isModeDismissing, handleModeDeselect]);
+    ), [hideAttachments, loading, disabled, isAgentRunning, isUploading, sandboxId, projectId, messages, isLoggedIn, isFreeTier, quickIntegrations, integrationIcons, handleOpenRegistry, handleOpenPlanModal, threadId, isSunaAgent, sunaAgentModes, onModeDeselect, isModeDismissing, handleModeDeselect]);
 
     const rightControls = useMemo(() => (
       <div className='flex items-center gap-1.5 sm:gap-2 flex-shrink-0'>

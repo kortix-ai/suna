@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Image from 'next/image';
 import { cn } from '@/lib/utils';
+import { useSunaModesStore } from '@/stores/suna-modes-store';
 import {
   Image as ImageIcon,
   Presentation,
@@ -91,6 +92,14 @@ interface SunaModesPanelProps {
   onOutputFormatChange?: (format: string | null) => void;
   selectedTemplate?: string | null;
   onTemplateChange?: (template: string | null) => void;
+  selectedDocsType?: string | null;
+  onDocsTypeChange?: (type: string | null) => void;
+  selectedImageStyle?: string | null;
+  onImageStyleChange?: (style: string | null) => void;
+  selectedCanvasAction?: string | null;
+  onCanvasActionChange?: (action: string | null) => void;
+  selectedVideoStyle?: string | null;
+  onVideoStyleChange?: (style: string | null) => void;
   isFreeTier?: boolean;
   onUpgradeClick?: () => void;
 }
@@ -923,6 +932,14 @@ export function SunaModesPanel({
   onOutputFormatChange,
   selectedTemplate: controlledSelectedTemplate,
   onTemplateChange,
+  selectedDocsType: controlledSelectedDocsType,
+  onDocsTypeChange,
+  selectedImageStyle: controlledSelectedImageStyle,
+  onImageStyleChange,
+  selectedCanvasAction: controlledSelectedCanvasAction,
+  onCanvasActionChange,
+  selectedVideoStyle: controlledSelectedVideoStyle,
+  onVideoStyleChange,
   isFreeTier = false,
   onUpgradeClick,
 }: SunaModesPanelProps) {
@@ -986,10 +1003,35 @@ export function SunaModesPanel({
   const selectedTemplateId = controlledSelectedTemplate ?? uncontrolledSelectedTemplateId;
   const setSelectedTemplateId = onTemplateChange ?? setUncontrolledSelectedTemplateId;
 
+  // State for selected docs type (use controlled state if provided)
+  const [uncontrolledSelectedDocsType, setUncontrolledSelectedDocsType] = useState<string | null>(null);
+  const selectedDocsType = controlledSelectedDocsType ?? uncontrolledSelectedDocsType;
+  const setSelectedDocsType = onDocsTypeChange ?? setUncontrolledSelectedDocsType;
+
+  // State for selected image style (use controlled state if provided)
+  const [uncontrolledSelectedImageStyle, setUncontrolledSelectedImageStyle] = useState<string | null>(null);
+  const selectedImageStyle = controlledSelectedImageStyle ?? uncontrolledSelectedImageStyle;
+  const setSelectedImageStyle = onImageStyleChange ?? setUncontrolledSelectedImageStyle;
+
+  // State for selected canvas action (use controlled state if provided)
+  const [uncontrolledSelectedCanvasAction, setUncontrolledSelectedCanvasAction] = useState<string | null>(null);
+  const selectedCanvasAction = controlledSelectedCanvasAction ?? uncontrolledSelectedCanvasAction;
+  const setSelectedCanvasAction = onCanvasActionChange ?? setUncontrolledSelectedCanvasAction;
+
+  // State for selected video style (use controlled state if provided)
+  const [uncontrolledSelectedVideoStyle, setUncontrolledSelectedVideoStyle] = useState<string | null>(null);
+  const selectedVideoStyle = controlledSelectedVideoStyle ?? uncontrolledSelectedVideoStyle;
+  const setSelectedVideoStyle = onVideoStyleChange ?? setUncontrolledSelectedVideoStyle;
+
   // State for mode modal
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<ModeType | null>(null);
   const modalModeData = modalMode ? modes.find((m) => m.id === modalMode) : null;
+
+  // Helper to close modal
+  const closeModal = useCallback(() => {
+    setIsModalOpen(false);
+  }, []);
 
   // Randomize prompts when mode changes or on mount
   useEffect(() => {
@@ -1016,44 +1058,61 @@ export function SunaModesPanel({
     }
   };
   
-  // Handler for chart selection toggle
+  // Get atomic combined setters from Zustand store - these set mode AND selection in one call
+  const selectTemplate = useSunaModesStore((state) => state.selectTemplate);
+  const selectOutputFormat = useSunaModesStore((state) => state.selectOutputFormat);
+  const selectCharts = useSunaModesStore((state) => state.selectCharts);
+  const selectDocsType = useSunaModesStore((state) => state.selectDocsType);
+  const selectImageStyle = useSunaModesStore((state) => state.selectImageStyle);
+  const selectCanvasAction = useSunaModesStore((state) => state.selectCanvasAction);
+  const selectVideoStyle = useSunaModesStore((state) => state.selectVideoStyle);
+  const storeSetSelectedMode = useSunaModesStore((state) => state.setSelectedMode);
+
+  // Handler for chart selection toggle - uses atomic setter
   const handleChartToggle = (chartId: string) => {
-    // Select the mode when user makes a choice
-    if (modalMode) {
-      onModeSelect(modalMode);
-    }
     const newCharts = selectedCharts.includes(chartId) 
       ? selectedCharts.filter(id => id !== chartId)
       : [...selectedCharts, chartId];
-    setSelectedCharts(newCharts);
+    selectCharts(newCharts);
   };
   
-  // Handler for output format selection
+  // Handler for output format selection - uses atomic setter
   const handleOutputFormatSelect = (formatId: string) => {
-    // Select the mode when user makes a choice
-    if (modalMode) {
-      onModeSelect(modalMode);
-    }
-    const newFormat = selectedOutputFormat === formatId ? null : formatId;
-    setSelectedOutputFormat(newFormat);
+    selectOutputFormat(formatId);
   };
   
-  // Handler for prompt selection - selects the mode and sets the prompt
+  // Handler for prompt selection - sets mode from modalMode or current selection
   const handlePromptSelect = (prompt: string) => {
-    // Select the mode when user makes a choice
-    if (modalMode) {
-      onModeSelect(modalMode);
+    const targetMode = modalMode || selectedMode;
+    if (targetMode) {
+      storeSetSelectedMode(targetMode);
     }
     onSelectPrompt(prompt);
   };
 
-  // Handler for template selection (stores the template ID and selects the mode)
+  // Handler for template selection - uses atomic setter
   const handleTemplateSelect = (templateId: string) => {
-    // Select the mode when user makes a choice
-    if (modalMode) {
-      onModeSelect(modalMode);
-    }
-    setSelectedTemplateId(templateId);
+    selectTemplate(templateId);
+  };
+
+  // Handler for docs type selection - uses atomic setter
+  const handleDocsTypeSelect = (typeId: string) => {
+    selectDocsType(typeId);
+  };
+
+  // Handler for image style selection - uses atomic setter
+  const handleImageStyleSelect = (styleId: string) => {
+    selectImageStyle(styleId);
+  };
+
+  // Handler for canvas action selection - uses atomic setter
+  const handleCanvasActionSelect = (actionId: string) => {
+    selectCanvasAction(actionId);
+  };
+
+  // Handler for video style selection - uses atomic setter
+  const handleVideoStyleSelect = (styleId: string) => {
+    selectVideoStyle(styleId);
   };
 
   // Handler to preload PDF on hover
@@ -1194,7 +1253,10 @@ export function SunaModesPanel({
                         ? "border-primary bg-primary/5"
                         : "border-border"
                     )}
-                    onClick={() => handleTemplateSelect(item.id)}
+                    onClick={() => {
+                      handleTemplateSelect(item.id);
+                      handlePromptSelect(`Create a presentation using the ${item.name} template`);
+                    }}
                   >
                     <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
                       {item.image ? (
@@ -1275,7 +1337,10 @@ export function SunaModesPanel({
                         ? "bg-primary/10 border-primary" 
                         : "bg-transparent hover:bg-muted border-border"
                     )}
-                    onClick={() => handleOutputFormatSelect(item.id)}
+                    onClick={() => {
+                      handleOutputFormatSelect(item.id);
+                      handlePromptSelect(`Generate data analysis with ${item.name} output format`);
+                    }}
                   >
                     <div className={cn(
                       "w-12 h-12 rounded-2xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
@@ -1567,7 +1632,10 @@ export function SunaModesPanel({
                         ? "border-primary bg-primary/5"
                         : "border-border"
                     )}
-                    onClick={() => handleTemplateSelect(item.id)}
+                    onClick={() => {
+                      handleTemplateSelect(item.id);
+                      handlePromptSelect(`Create a presentation using the ${item.name} template`);
+                    }}
                   >
                     <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
                       {item.image ? (
@@ -1664,7 +1732,10 @@ export function SunaModesPanel({
                         ? "bg-primary/10 border-primary border-2" 
                         : "border border-border hover:bg-primary/5 hover:border-primary/30"
                     )}
-                    onClick={() => handleOutputFormatSelect(item.id)}
+                    onClick={() => {
+                      handleOutputFormatSelect(item.id);
+                      handlePromptSelect(`Generate data analysis with ${item.name} output format`);
+                    }}
                   >
                     <AnimatePresence>
                       {isSelected && (
@@ -1925,34 +1996,53 @@ export function SunaModesPanel({
                   {/* Image Styles */}
                   {modalMode === 'image' && (
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                      {modalModeData.options.items.map((item) => (
-                        <Card
-                          key={item.id}
-                          className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden"
-                          onClick={() => {
-                            handlePromptSelect(`Generate an image using ${item.name.toLowerCase()} style`);
-                            setIsModalOpen(false);
-                          }}
-                        >
-                          <div className="w-full aspect-square bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
-                            {item.image ? (
-                              <Image 
-                                src={item.image} 
-                                alt={item.name}
-                                fill
-                                sizes="(max-width: 640px) 33vw, 25vw"
-                                className="object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      {modalModeData.options.items.map((item) => {
+                        const isSelected = selectedImageStyle === item.id;
+                        return (
+                          <Card
+                            key={item.id}
+                            className={cn(
+                              "flex flex-col items-center gap-2 cursor-pointer group p-2 transition-all duration-200 border rounded-xl overflow-hidden",
+                              isSelected 
+                                ? "bg-primary/10 border-primary" 
+                                : "hover:bg-muted border-border"
                             )}
-                          </div>
-                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
-                            {t(`styles.${item.id}`) || item.name}
-                          </span>
-                        </Card>
-                      ))}
+                            onClick={() => {
+                              handleImageStyleSelect(item.id);
+                              handlePromptSelect(`Generate an image using ${item.name.toLowerCase()} style`);
+                              closeModal();
+                            }}
+                          >
+                            <div className={cn(
+                              "w-full aspect-square bg-gradient-to-br from-muted/50 to-muted rounded-lg border group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative",
+                              isSelected
+                                ? "border-primary/50"
+                                : "border-border/50 group-hover:border-primary/50"
+                            )}>
+                              {item.image ? (
+                                <Image 
+                                  src={item.image} 
+                                  alt={item.name}
+                                  fill
+                                  sizes="(max-width: 640px) 33vw, 25vw"
+                                  className="object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <ImageIcon className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                              )}
+                            </div>
+                            <span className={cn(
+                              "text-xs text-center transition-colors duration-200 font-medium",
+                              isSelected
+                                ? "text-foreground"
+                                : "text-muted-foreground group-hover:text-foreground"
+                            )}>
+                              {t(`styles.${item.id}`) || item.name}
+                            </span>
+                          </Card>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -1970,7 +2060,8 @@ export function SunaModesPanel({
                           )}
                           onClick={() => {
                             handleTemplateSelect(item.id);
-                            setIsModalOpen(false);
+                            handlePromptSelect(`Create a presentation using the ${item.name} template`);
+                            closeModal();
                           }}
                         >
                           <div className="w-full bg-muted/30 rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-[1.02] transition-all duration-200 overflow-hidden relative aspect-video">
@@ -2003,23 +2094,42 @@ export function SunaModesPanel({
                   {/* Docs Types */}
                   {modalMode === 'docs' && (
                     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                      {modalModeData.options.items.map((item) => (
-                        <Card
-                          key={item.id}
-                          className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
-                          onClick={() => {
-                            handlePromptSelect(`Create a ${item.name} document: ${item.description}`);
-                            setIsModalOpen(false);
-                          }}
-                        >
-                          <div className="w-12 h-12 rounded-2xl bg-muted/50 group-hover:bg-primary/10 border border-border/50 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
-                            {getOptionIcon((item as { icon?: string }).icon || '')}
-                          </div>
-                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
-                            {t(`templates.${item.id}.name`) || item.name}
-                          </span>
-                        </Card>
-                      ))}
+                      {modalModeData.options.items.map((item) => {
+                        const isSelected = selectedDocsType === item.id;
+                        return (
+                          <Card
+                            key={item.id}
+                            className={cn(
+                              "flex flex-col items-center gap-3 cursor-pointer group p-4 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                              isSelected 
+                                ? "bg-primary/10 border-primary" 
+                                : "bg-transparent hover:bg-muted border-border"
+                            )}
+                            onClick={() => {
+                              handleDocsTypeSelect(item.id);
+                              handlePromptSelect(`Create a ${item.name} document: ${item.description}`);
+                              closeModal();
+                            }}
+                          >
+                            <div className={cn(
+                              "w-12 h-12 rounded-2xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                              isSelected
+                                ? "bg-primary/15 border-primary/30 text-primary"
+                                : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                            )}>
+                              {getOptionIcon((item as { icon?: string }).icon || '')}
+                            </div>
+                            <span className={cn(
+                              "text-xs text-center transition-colors duration-200 font-medium",
+                              isSelected
+                                ? "text-foreground"
+                                : "text-muted-foreground group-hover:text-foreground"
+                            )}>
+                              {t(`templates.${item.id}.name`) || item.name}
+                            </span>
+                          </Card>
+                        );
+                      })}
                     </div>
                   )}
 
@@ -2039,7 +2149,8 @@ export function SunaModesPanel({
                             )}
                             onClick={() => {
                               handleOutputFormatSelect(item.id);
-                              setIsModalOpen(false);
+                              handlePromptSelect(`Generate data analysis with ${item.name} output format`);
+                              closeModal();
                             }}
                           >
                             <div className={cn(
@@ -2077,19 +2188,36 @@ export function SunaModesPanel({
                             default: return `${item.name}: ${item.description}`;
                           }
                         };
+                        const isSelected = selectedCanvasAction === item.id;
                         return (
                           <Card
                             key={item.id}
-                            className="flex flex-col items-center gap-3 cursor-pointer group p-4 bg-transparent hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden shadow-none"
+                            className={cn(
+                              "flex flex-col items-center gap-3 cursor-pointer group p-4 transition-all duration-200 border rounded-xl overflow-hidden shadow-none",
+                              isSelected 
+                                ? "bg-primary/10 border-primary" 
+                                : "bg-transparent hover:bg-muted border-border"
+                            )}
                             onClick={() => {
+                              handleCanvasActionSelect(item.id);
                               handlePromptSelect(getCanvasPrompt(item.id));
-                              setIsModalOpen(false);
+                              closeModal();
                             }}
                           >
-                            <div className="w-12 h-12 rounded-2xl bg-muted/50 border border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 group-hover:scale-105 transition-all duration-200 flex items-center justify-center text-muted-foreground group-hover:text-primary">
+                            <div className={cn(
+                              "w-12 h-12 rounded-2xl border group-hover:scale-105 transition-all duration-200 flex items-center justify-center",
+                              isSelected
+                                ? "bg-primary/15 border-primary/30 text-primary"
+                                : "bg-muted/50 border-border/50 group-hover:bg-primary/10 group-hover:border-primary/30 text-muted-foreground group-hover:text-primary"
+                            )}>
                               {getOptionIcon((item as { icon?: string }).icon || '')}
                             </div>
-                            <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
+                            <span className={cn(
+                              "text-xs text-center transition-colors duration-200 font-medium",
+                              isSelected
+                                ? "text-foreground"
+                                : "text-muted-foreground group-hover:text-foreground"
+                            )}>
                               {t(`canvasActions.${item.id}.name`) || item.name}
                             </span>
                           </Card>
@@ -2101,34 +2229,53 @@ export function SunaModesPanel({
                   {/* Video Styles */}
                   {modalMode === 'video' && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {modalModeData.options.items.map((item) => (
-                        <Card
-                          key={item.id}
-                          className="flex flex-col items-center gap-2 cursor-pointer group p-2 hover:bg-muted transition-all duration-200 border border-border rounded-xl overflow-hidden"
-                          onClick={() => {
-                            handlePromptSelect(`Create a ${item.name.toLowerCase()} style video`);
-                            setIsModalOpen(false);
-                          }}
-                        >
-                          <div className="w-full aspect-video bg-gradient-to-br from-muted/50 to-muted rounded-lg border border-border/50 group-hover:border-primary/50 group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative">
-                            {item.image ? (
-                              <Image 
-                                src={item.image} 
-                                alt={item.name}
-                                fill
-                                sizes="(max-width: 640px) 50vw, 33vw"
-                                className="object-cover"
-                                loading="lazy"
-                              />
-                            ) : (
-                              <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                      {modalModeData.options.items.map((item) => {
+                        const isSelected = selectedVideoStyle === item.id;
+                        return (
+                          <Card
+                            key={item.id}
+                            className={cn(
+                              "flex flex-col items-center gap-2 cursor-pointer group p-2 transition-all duration-200 border rounded-xl overflow-hidden",
+                              isSelected 
+                                ? "bg-primary/10 border-primary" 
+                                : "hover:bg-muted border-border"
                             )}
-                          </div>
-                          <span className="text-xs text-center text-muted-foreground group-hover:text-foreground transition-colors duration-200 font-medium">
-                            {t(`videoStyles.${item.id}`) || item.name}
-                          </span>
-                        </Card>
-                      ))}
+                            onClick={() => {
+                              handleVideoStyleSelect(item.id);
+                              handlePromptSelect(`Create a ${item.name.toLowerCase()} style video`);
+                              closeModal();
+                            }}
+                          >
+                            <div className={cn(
+                              "w-full aspect-video bg-gradient-to-br from-muted/50 to-muted rounded-lg border group-hover:scale-105 transition-all duration-200 flex items-center justify-center overflow-hidden relative",
+                              isSelected
+                                ? "border-primary/50"
+                                : "border-border/50 group-hover:border-primary/50"
+                            )}>
+                              {item.image ? (
+                                <Image 
+                                  src={item.image} 
+                                  alt={item.name}
+                                  fill
+                                  sizes="(max-width: 640px) 50vw, 33vw"
+                                  className="object-cover"
+                                  loading="lazy"
+                                />
+                              ) : (
+                                <Video className="w-8 h-8 text-muted-foreground/50 group-hover:text-primary/70 transition-colors duration-200" />
+                              )}
+                            </div>
+                            <span className={cn(
+                              "text-xs text-center transition-colors duration-200 font-medium",
+                              isSelected
+                                ? "text-foreground"
+                                : "text-muted-foreground group-hover:text-foreground"
+                            )}>
+                              {t(`videoStyles.${item.id}`) || item.name}
+                            </span>
+                          </Card>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
@@ -2190,7 +2337,7 @@ export function SunaModesPanel({
                         className="p-3 cursor-pointer hover:bg-muted transition-colors border border-border rounded-xl group"
                         onClick={() => {
                           handlePromptSelect(prompt.text);
-                          setIsModalOpen(false);
+                          closeModal();
                         }}
                       >
                         <div className="flex items-center justify-between gap-3">
@@ -2218,7 +2365,7 @@ export function SunaModesPanel({
                         className="p-3 cursor-pointer hover:bg-muted transition-colors border border-border rounded-xl group"
                         onClick={() => {
                           handlePromptSelect(prompt.text);
-                          setIsModalOpen(false);
+                          closeModal();
                         }}
                       >
                         <div className="flex items-center justify-between gap-3">

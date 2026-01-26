@@ -6,7 +6,6 @@ import { locales } from '@/i18n/config';
 const MARKETING_ROUTES = [
   { path: '/', priority: 1, changeFrequency: 'daily' as const },
   { path: '/suna', priority: 0.9, changeFrequency: 'monthly' as const },
-  { path: '/enterprise', priority: 0.8, changeFrequency: 'monthly' as const },
   { path: '/legal', priority: 0.5, changeFrequency: 'monthly' as const },
   { path: '/support', priority: 0.7, changeFrequency: 'weekly' as const },
 ];

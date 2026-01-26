@@ -138,10 +138,18 @@ export function AgentStartInput({
     selectedCharts,
     selectedOutputFormat,
     selectedTemplate,
+    selectedDocsType,
+    selectedImageStyle,
+    selectedCanvasAction,
+    selectedVideoStyle,
     setSelectedMode,
     setSelectedCharts,
     setSelectedOutputFormat,
     setSelectedTemplate,
+    setSelectedDocsType,
+    setSelectedImageStyle,
+    setSelectedCanvasAction,
+    setSelectedVideoStyle,
     agentLimitData,
     showAgentLimitBanner,
     setShowAgentLimitBanner,
@@ -195,9 +203,6 @@ export function AgentStartInput({
           onModeDeselect={() => setSelectedMode(null)}
           animatePlaceholder={animatePlaceholder}
           hideAttachments={hideAttachments}
-          selectedCharts={selectedCharts}
-          selectedOutputFormat={selectedOutputFormat}
-          selectedTemplate={selectedTemplate}
         />
         
         {/* Alert Banners */}
@@ -216,7 +221,10 @@ export function AgentStartInput({
               <Button 
                 size='sm' 
                 className='h-6 text-xs'
-                onClick={() => pricingModalStore.openPricingModal()}
+                onClick={() => pricingModalStore.openPricingModal({
+                  isAlert: true,
+                  alertTitle: tBilling('creditsExhaustedTitle'),
+                })}
               >
                 {tCommon('upgrade')}
               </Button>
@@ -231,7 +239,10 @@ export function AgentStartInput({
               marginTop: '-40px',
               transition: 'margin-top 300ms ease-in-out, opacity 300ms ease-in-out',
             }}
-            onClick={() => pricingModalStore.openPricingModal()}
+            onClick={() => pricingModalStore.openPricingModal({
+              isAlert: true,
+              alertTitle: tBilling('chatLimitReached'),
+            })}
           >
             <span className='-mb-3.5 dark:text-amber-500 text-amber-700 text-sm flex items-center gap-1'>
               {t('limitsExceeded')}
@@ -256,6 +267,14 @@ export function AgentStartInput({
               onOutputFormatChange={setSelectedOutputFormat}
               selectedTemplate={selectedTemplate}
               onTemplateChange={setSelectedTemplate}
+              selectedDocsType={selectedDocsType}
+              onDocsTypeChange={setSelectedDocsType}
+              selectedImageStyle={selectedImageStyle}
+              onImageStyleChange={setSelectedImageStyle}
+              selectedCanvasAction={selectedCanvasAction}
+              onCanvasActionChange={setSelectedCanvasAction}
+              selectedVideoStyle={selectedVideoStyle}
+              onVideoStyleChange={setSelectedVideoStyle}
               isFreeTier={isFreeTier || false}
               onUpgradeClick={() => pricingModalStore.openPricingModal()}
             />
