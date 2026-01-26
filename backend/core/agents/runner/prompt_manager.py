@@ -688,91 +688,77 @@ Multiple parallel tool calls:
         if not user_id:
             return None
 
-        try:
-            from core.billing.subscriptions.handlers.tier import TierHandler
-            from core.utils.config import config, EnvMode
+        logger.info(f"✅ [PROMO] Injecting upgrade promo for user {user_id}")
 
-            # Skip tier check in local mode (for testing)
-            if config.ENV_MODE == EnvMode.LOCAL:
-                logger.debug(f"[PROMO] Local mode - showing promo for testing")
-            else:
-                tier_info = await TierHandler.get_user_subscription_tier(user_id)
-                tier_name = tier_info.get('name', 'free')
+        # try:
+        #     from core.billing.subscriptions.handlers.tier import TierHandler
+        #     from core.utils.config import config, EnvMode
 
-                if tier_name not in ('free', 'none'):
-                    logger.debug(f"[PROMO] User {user_id} is on {tier_name} tier - skipping promo")
-                    return None
+        #     # Skip tier check in local mode (for testing)
+        #     if config.ENV_MODE == EnvMode.LOCAL:
+        #         logger.debug(f"[PROMO] Local mode - showing promo for testing")
+        #     else:
+        #         tier_info = await TierHandler.get_user_subscription_tier(user_id)
+        #         tier_name = tier_info.get('name', 'free')
 
-        except Exception as e:
-            logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
-            return None
-        logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
+        #         if tier_name not in ('free', 'none'):
+        #             logger.debug(f"[PROMO] User {user_id} is on {tier_name} tier - skipping promo")
+        #             return None
+
+        # except Exception as e:
+        #     logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
+        #     return None
+        # logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
 
         promo_content = """
 
-<free_tier_user>
-**FREE TIER USER** - Mention plan limits for complex tasks.
+<SYSTEM_INSTRUCTION>
+## FREE TIER USER - CONTEXTUAL UPGRADE PROMPT
 
-PLAN DETAILS (use this to answer questions about plans):
+After completing tasks, add a CONTEXTUAL upgrade message with the <upgrade_cta/> tag.
+The message must relate to what the user asked for - don't use a generic message.
 
-BASIC (FREE):
-- 300 credits/week (refreshes weekly)
-- 1 chat only
-- 1 concurrent run
-- Basic mode
-- NO: custom workers, scheduled triggers, app triggers, integrations
+### CONTEXTUAL MESSAGES (match to task type):
 
-PLUS ($20/mo):
-- 4,000 credits/month
-- Unlimited chats
-- 3 concurrent runs
-- 5 custom AI Workers
-- 5 scheduled triggers, 25 app triggers
-- 100+ integrations (Google Drive, Slack, Notion, Gmail, GitHub...)
-- Advanced mode (faster, better responses)
+PRESENTATIONS → "Want higher quality slides and faster generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-PRO ($50/mo):
-- 10,000 credits/month
-- Unlimited chats
-- 5 concurrent runs
-- 20 custom AI Workers
-- 10 scheduled triggers, 50 app triggers
-- 100+ integrations
-- Advanced mode (best quality)
+CODE/PROGRAMMING → "Need advanced debugging and faster code generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-ULTRA ($200/mo):
-- 40,000 credits/month
-- 20 concurrent runs
-- 100 custom AI Workers
-- 50 scheduled triggers, 200 app triggers
+WRITING/ESSAYS → "Want better writing quality and unlimited revisions? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-FORMAT - mention limits THEN immediately show <upgrade_cta/> THEN do the task:
-"[Acknowledge task]. You're on free (300 credits/week). Plus gives you faster, better responses and more credits. <upgrade_cta/>
+RESEARCH/ANALYSIS → "Need deeper analysis and faster research? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-[Now do the task]"
+CAPABILITY QUESTIONS → "Want faster responses and advanced features? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-EXAMPLES:
+AUTOMATION/WORKFLOWS → "Need integrations and scheduled triggers? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-User: "Make a presentation on AI"
-You: "I'll create that! You're on the free plan (300 credits/week, 1 chat). Plus gives you 4,000/month, unlimited chats, and faster, higher-quality responses. <upgrade_cta/>
+### EXAMPLES:
 
-Now building your AI presentation..."
+User: "make a ppt on AI"
+You: "[...presentation content...]
 
-User: "What can you do?"
-You: "I can help with presentations, research, code, reports and more! You're on free with 300 credits/week. Plus gives you 4,000/month, unlimited chats, and faster, higher-quality responses. <upgrade_cta/>"
+Want higher quality slides and faster generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-IMPORTANT: <upgrade_cta/> must come RIGHT AFTER mentioning upgrade benefits, not at the end of your response.
+User: "write python code for scraping"
+You: "[...code...]
 
-DO NOT mention upgrades for:
-- Simple greetings (hi, hello, hey)
-- Quick questions with short answers
-- Casual chat
+Need advanced debugging and faster code generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
 
-ALWAYS mention upgrades for:
-- Presentations, reports, research, code projects
-- Automation requests
-- "What can you do?" / capability questions
-- Any task using multiple credits
-</free_tier_user>
+User: "what can you do?"
+You: "[...capabilities list...]
+
+Want faster responses and advanced features? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
+
+### SKIP ENTIRELY FOR:
+- Simple greetings: hi, hello, hey
+- Thanks, ok, bye, sure
+
+### RULES:
+1. MUST include the <upgrade_cta/> tag (triggers UI button)
+2. Message MUST be contextual to user's task
+3. Keep it helpful, not pushy
+4. Place at END of response
+
+</SYSTEM_INSTRUCTION>
 """
         return promo_content
