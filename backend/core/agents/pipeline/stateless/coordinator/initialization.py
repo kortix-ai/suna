@@ -54,7 +54,7 @@ class ManagerInitializer:
             ctx.project_id,
             ctx.thread_id,
             ctx.agent_config,
-            tier_name=tier_name
+            tier_disabled_tools=tier_disabled_tools
         )
         tool_manager.register_core_tools()
 

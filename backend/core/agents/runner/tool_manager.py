@@ -53,24 +53,22 @@ class ToolManager:
     }
     """
 
-    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None, tier_name: Optional[str] = None):
+    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None, tier_disabled_tools: Optional[List[str]] = None):
         self.thread_manager = thread_manager
         self.project_id = project_id
         self.thread_id = thread_id
         self.agent_config = agent_config
-        self.tier_name = tier_name or 'free'
+        self.tier_disabled_tools = tier_disabled_tools or []
         self.disabled_tools = self._get_disabled_tools()
-    
+
     def _get_disabled_tools(self) -> Set[str]:
         """Get set of disabled tools from agent config AND tier restrictions."""
         disabled = set()
 
-        # 1. Get tier-based disabled tools
-        from core.billing.shared.config import get_tier_disabled_tools
-        tier_disabled = get_tier_disabled_tools(self.tier_name)
-        if tier_disabled:
-            disabled.update(tier_disabled)
-            logger.info(f"Tools disabled by tier '{self.tier_name}': {tier_disabled}")
+        # 1. Add tier-based disabled tools (passed from caller, no re-fetch needed)
+        if self.tier_disabled_tools:
+            disabled.update(self.tier_disabled_tools)
+            logger.info(f"Tools disabled by tier: {self.tier_disabled_tools}")
 
         # 2. Get agent config disabled tools
         if self.agent_config and 'agentpress_tools' in self.agent_config:
