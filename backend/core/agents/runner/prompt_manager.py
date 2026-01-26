@@ -3,22 +3,23 @@ import json
 import asyncio
 import datetime
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
-from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
+from core.tools.tool_guide_registry import get_minimal_tool_index, get_minimal_tool_index_filtered, get_tool_guide
 from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
-    async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
-                                  thread_id: str, 
+    async def build_system_prompt(model_name: str, agent_config: Optional[dict],
+                                  thread_id: str,
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
                                   client=None,
                                   tool_registry=None,
                                   xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None,
-                                  mcp_loader=None) -> Tuple[dict, Optional[dict]]:
+                                  mcp_loader=None,
+                                  disabled_tools: Optional[List[str]] = None) -> Tuple[dict, Optional[dict]]:
         
         build_start = time.time()
         
@@ -27,9 +28,14 @@ class PromptManager:
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
-        
+
+        # Filter disabled tools from core prompt (disabled_tools already fetched by caller)
+        if disabled_tools:
+            logger.info(f"🔒 [PROMPT] Filtering {len(disabled_tools)} disabled tools from prompt")
+            system_content = PromptManager._filter_disabled_tools(system_content, disabled_tools)
+
         t1 = time.time()
-        system_content = PromptManager._build_base_prompt(system_content)
+        system_content = PromptManager._build_base_prompt(system_content, disabled_tools)
         logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
         
         # Start parallel fetch tasks
@@ -117,9 +123,30 @@ class PromptManager:
             return None
     
     @staticmethod
-    def _build_base_prompt(system_content: str) -> str:
+    def _filter_disabled_tools(content: str, disabled_tools: list) -> str:
+        """Filter out lines mentioning disabled tools from content."""
+        if not disabled_tools:
+            return content
+        lines = content.split('\n')
+        filtered = []
+        for line in lines:
+            skip = False
+            for tool in disabled_tools:
+                if tool in line:
+                    skip = True
+                    break
+            if not skip:
+                filtered.append(line)
+        return '\n'.join(filtered)
+
+    @staticmethod
+    def _build_base_prompt(system_content: str, disabled_tools: list = None) -> str:
         logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
-        minimal_index = get_minimal_tool_index()
+        if disabled_tools:
+            minimal_index = get_minimal_tool_index_filtered(disabled_tools)
+            logger.info(f"🔒 [DYNAMIC TOOLS] Filtered out {len(disabled_tools)} disabled tools from index")
+        else:
+            minimal_index = get_minimal_tool_index()
         system_content += "\n\n" + minimal_index
         logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
         
@@ -712,53 +739,33 @@ Multiple parallel tool calls:
 
         promo_content = """
 
-<SYSTEM_INSTRUCTION>
-## FREE TIER USER - CONTEXTUAL UPGRADE PROMPT
+<SYSTEM_CRITICAL_INSTRUCTION>
+## PREMIUM FEATURES (Upgrade Required)
 
-After completing tasks, add a CONTEXTUAL upgrade message with the <upgrade_cta/> tag.
-The message must relate to what the user asked for - don't use a generic message.
+These features are NOT available on free plan:
+- **Presentations/Slides** - Creating PPT, slideshows, decks
+- **Spreadsheets** - Creating Excel, CSV, data tables
+- **Canvas/Design** - Visual designs, graphics
 
-### CONTEXTUAL MESSAGES (match to task type):
+When users ask for these, respond:
+"Creating [presentations/spreadsheets/designs] is a premium feature. Upgrade to unlock it! Use code **KORTIX2026** for 30% off + 2X credits. <upgrade_cta/>"
 
-PRESENTATIONS → "Want higher quality slides and faster generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
+## FOR ALL OTHER TASKS (code, writing, research, etc.)
 
-CODE/PROGRAMMING → "Need advanced debugging and faster code generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
+Complete the task normally, then add this signature at the end:
 
-WRITING/ESSAYS → "Want better writing quality and unlimited revisions? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
+---
+🚀 Upgrade for [relevant benefit]. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>
 
-RESEARCH/ANALYSIS → "Need deeper analysis and faster research? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
+Examples:
+- Code task → "🚀 Upgrade for faster debugging. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
+- Writing task → "🚀 Upgrade for better quality. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
+- Research → "🚀 Upgrade for deeper analysis. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
 
-CAPABILITY QUESTIONS → "Want faster responses and advanced features? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
+❌ SKIP signature FOR: hi, hello, thanks, ok, bye
 
-AUTOMATION/WORKFLOWS → "Need integrations and scheduled triggers? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
+The <upgrade_cta/> tag shows the upgrade button. Without it = no button.
 
-### EXAMPLES:
-
-User: "make a ppt on AI"
-You: "[...presentation content...]
-
-Want higher quality slides and faster generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
-
-User: "write python code for scraping"
-You: "[...code...]
-
-Need advanced debugging and faster code generation? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
-
-User: "what can you do?"
-You: "[...capabilities list...]
-
-Want faster responses and advanced features? Use code **KORTIX2026** for 30% off + 2X credits! <upgrade_cta/>"
-
-### SKIP ENTIRELY FOR:
-- Simple greetings: hi, hello, hey
-- Thanks, ok, bye, sure
-
-### RULES:
-1. MUST include the <upgrade_cta/> tag (triggers UI button)
-2. Message MUST be contextual to user's task
-3. Keep it helpful, not pushy
-4. Place at END of response
-
-</SYSTEM_INSTRUCTION>
+</SYSTEM_CRITICAL_INSTRUCTION>
 """
         return promo_content

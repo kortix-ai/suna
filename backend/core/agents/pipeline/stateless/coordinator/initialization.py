@@ -9,9 +9,25 @@ class ManagerInitializer:
         from core.jit.config import JITConfig
         from core.services.langfuse import langfuse
 
+        # Get user tier for tool restrictions FIRST
+        tier_name = 'free'
+        tier_disabled_tools = []
+        if ctx.account_id:
+            try:
+                from core.agents.pipeline.slot_manager import get_tier_limits
+                from core.billing.shared.config import get_tier_disabled_tools
+                tier_info = await get_tier_limits(ctx.account_id)
+                tier_name = tier_info.get('name', 'free')
+                tier_disabled_tools = get_tier_disabled_tools(tier_name)
+                if tier_disabled_tools:
+                    logger.info(f"🔒 [TIER] User tier '{tier_name}' - disabled tools: {tier_disabled_tools}")
+            except Exception as e:
+                logger.warning(f"Failed to get tier for tool restrictions: {e}")
+
+        # Create JIT config with tier-disabled tools
         jit_config = JITConfig.from_run_context(
-            agent_config=ctx.agent_config, 
-            disabled_tools=[]
+            agent_config=ctx.agent_config,
+            disabled_tools=tier_disabled_tools
         )
 
         trace = langfuse.trace(
@@ -34,10 +50,11 @@ class ManagerInitializer:
 
         from core.agents.runner.tool_manager import ToolManager
         tool_manager = ToolManager(
-            thread_manager, 
-            ctx.project_id, 
-            ctx.thread_id, 
-            ctx.agent_config
+            thread_manager,
+            ctx.project_id,
+            ctx.thread_id,
+            ctx.agent_config,
+            tier_name=tier_name
         )
         tool_manager.register_core_tools()
 
@@ -108,7 +125,12 @@ class ManagerInitializer:
     @staticmethod
     async def load_prompt_and_tools(ctx: PipelineContext, state, tool_registry, thread_manager):
         from core.agents.pipeline import prep_tasks
-        
+
+        # Get disabled tools from jit_config (already fetched in init_managers)
+        disabled_tools = []
+        if hasattr(thread_manager, 'jit_config') and thread_manager.jit_config:
+            disabled_tools = list(thread_manager.jit_config.disabled_tools)
+
         prompt = await prep_tasks.prep_prompt(
             model_name=ctx.model_name,
             agent_config=ctx.agent_config,
@@ -116,7 +138,8 @@ class ManagerInitializer:
             account_id=ctx.account_id,
             tool_registry=tool_registry,
             mcp_loader=getattr(thread_manager, 'mcp_loader', None),
-            client=await thread_manager.db.client if thread_manager else None
+            client=await thread_manager.db.client if thread_manager else None,
+            disabled_tools=disabled_tools
         )
         if prompt:
             state.system_prompt = prompt.system_prompt
