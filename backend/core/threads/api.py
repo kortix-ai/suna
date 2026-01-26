@@ -17,6 +17,50 @@ db = DBConnection()
 
 router = APIRouter(tags=["threads"])
 
+
+@router.get("/threads/search", summary="Search Threads", operation_id="search_threads")
+async def search_threads_endpoint(
+    request: Request,
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+):
+    """
+    Search threads using semantic (vector) search.
+
+    Returns threads that semantically match the query, ordered by relevance.
+    Only returns threads owned by the authenticated user.
+    """
+    from core.threads.thread_search import search_threads, get_thread_search_service
+
+    logger.debug(f"Searching threads for user {user_id[:8]}... with query: {q[:50]}...")
+
+    try:
+        service = get_thread_search_service()
+        if not service.is_configured:
+            logger.debug("Thread search service not configured, returning empty results")
+            return {
+                "results": [],
+                "total": 0,
+                "configured": False
+            }
+
+        results = await search_threads(q, user_id, limit)
+
+        return {
+            "results": [
+                {"thread_id": r.thread_id, "score": r.score, "text_preview": r.text_preview}
+                for r in results
+            ],
+            "total": len(results),
+            "configured": True
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching threads for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to search threads: {str(e)}")
+
+
 @router.get("/threads", summary="List User Threads", operation_id="list_user_threads")
 async def get_user_threads(
     request: Request,
@@ -895,10 +939,17 @@ async def delete_thread(
         
         logger.debug(f"Deleting thread data for {thread_id}")
         deleted = await delete_thread_data(thread_id)
-        
+
         if not deleted:
             raise HTTPException(status_code=500, detail="Failed to delete thread")
-        
+
+        # Delete thread embedding from vector store
+        try:
+            from core.threads.thread_search import delete_thread_embedding
+            await delete_thread_embedding(thread_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete thread embedding for {thread_id}: {e}")
+
         try:
             from core.agents.pipeline.slot_manager import decrement_thread_count
             await decrement_thread_count(auth.user_id)

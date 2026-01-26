@@ -11,6 +11,7 @@ __pycache__/
 # claude
 CLAUDE.md
 .claude
+thread_search_test/
 
 # Distribution / packaging
 .Python

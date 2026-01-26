@@ -6,6 +6,7 @@ export { useProjectRealtime } from './useProjectRealtime';
 
 // Thread queries
 export { useThreadQuery, useThreads, useThreadsForProject } from './use-threads';
+export { useThreadSearch } from './use-thread-search';
 
 // Thread mutations
 export { useToggleThreadPublicStatus, useUpdateThreadMutation, useDeleteThreadMutation } from './use-threads';

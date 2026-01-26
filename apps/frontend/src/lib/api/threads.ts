@@ -4,6 +4,19 @@ import { backendApi } from '../api-client';
 
 export type ThreadStatus = 'pending' | 'initializing' | 'ready' | 'error';
 
+// Thread search types
+export interface ThreadSearchResult {
+  thread_id: string;
+  score: number;
+  text_preview: string;
+}
+
+export interface ThreadSearchResponse {
+  results: ThreadSearchResult[];
+  total: number;
+  configured: boolean;
+}
+
 export type Thread = {
   thread_id: string;
   project_id?: string | null;
@@ -558,6 +571,52 @@ export const getMessages = async (threadId: string): Promise<Message[]> => {
     return data.messages || [];
   } catch (error) {
     throw error;
+  }
+};
+
+/**
+ * Search threads using semantic (vector) search.
+ *
+ * @param query - The search query text
+ * @param limit - Maximum number of results (default: 10)
+ * @returns Promise with search results containing thread_ids and relevance scores
+ */
+export const searchThreads = async (
+  query: string,
+  limit: number = 10
+): Promise<ThreadSearchResponse> => {
+  try {
+    const params = new URLSearchParams({
+      q: query,
+      limit: limit.toString(),
+    });
+
+    const response = await backendApi.get<ThreadSearchResponse>(
+      `/threads/search?${params.toString()}`,
+      { showErrors: false }
+    );
+
+    if (response.error) {
+      console.error('Error searching threads:', response.error);
+      return {
+        results: [],
+        total: 0,
+        configured: false,
+      };
+    }
+
+    return response.data || {
+      results: [],
+      total: 0,
+      configured: false,
+    };
+  } catch (error) {
+    console.error('Error searching threads:', error);
+    return {
+      results: [],
+      total: 0,
+      configured: false,
+    };
   }
 };
 
