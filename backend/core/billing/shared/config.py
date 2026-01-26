@@ -37,6 +37,7 @@ class Tier:
     memory_config: Optional[Dict] = None
     daily_credit_config: Optional[Dict] = None
     monthly_refill_enabled: Optional[bool] = True
+    disabled_tools: Optional[List[str]] = None  # Tools disabled for this tier
 
 TIERS: Dict[str, Tier] = {
     'none': Tier(
@@ -81,7 +82,12 @@ TIERS: Dict[str, Tier] = {
             'amount': Decimal('3.00'),
             'refresh_interval_hours': 168
         },
-        monthly_refill_enabled=False
+        monthly_refill_enabled=False,
+        disabled_tools=[
+            'sb_presentation_tool',  # Slides/presentations
+            'sb_canvas_tool',        # Canvas designs
+            'sb_spreadsheet_tool',   # Spreadsheets
+        ]
     ),
     'tier_2_20': Tier(
         name='tier_2_20',
@@ -461,3 +467,8 @@ def get_max_memories(tier_name: str) -> int:
 def get_memory_retrieval_limit(tier_name: str) -> int:
     config = get_memory_config(tier_name)
     return config.get('retrieval_limit', 0)
+
+def get_tier_disabled_tools(tier_name: str) -> List[str]:
+    """Get list of tools disabled for a specific tier."""
+    tier = TIERS.get(tier_name, TIERS['free'])
+    return tier.disabled_tools or []

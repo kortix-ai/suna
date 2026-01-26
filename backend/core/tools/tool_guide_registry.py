@@ -197,3 +197,26 @@ def get_tool_guide(tool_name: str) -> Optional[str]:
 
 def get_minimal_tool_index() -> str:
     return get_tool_guide_registry().get_minimal_index()
+
+
+def get_minimal_tool_index_filtered(disabled_tools: List[str]) -> str:
+    """Get minimal tool index with disabled tools filtered out."""
+    if not disabled_tools:
+        return get_minimal_tool_index()
+
+    index = get_minimal_tool_index()
+
+    # Filter out lines that mention disabled tools
+    lines = index.split('\n')
+    filtered_lines = []
+    for line in lines:
+        # Check if any disabled tool is mentioned in this line
+        should_skip = False
+        for tool in disabled_tools:
+            if tool in line:
+                should_skip = True
+                break
+        if not should_skip:
+            filtered_lines.append(line)
+
+    return '\n'.join(filtered_lines)
