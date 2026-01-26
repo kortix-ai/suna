@@ -2,12 +2,8 @@
 
 import { FileText, Sparkles } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
 
 export default function KnowledgeRoute() {
-  const router = useRouter();
-
   return (
     <div className="min-h-[100dvh] flex items-center justify-center">
       <div className="container mx-auto max-w-2xl px-3 sm:px-4 py-6 sm:py-8">
@@ -28,15 +24,6 @@ export default function KnowledgeRoute() {
               </p>
             </AlertDescription>
           </Alert>
-
-          <div className="flex justify-center">
-            <Button
-              variant="outline"
-              onClick={() => router.push('/settings?tab=knowledge-base')}
-            >
-              Go to Settings
-            </Button>
-          </div>
         </div>
       </div>
     </div>
