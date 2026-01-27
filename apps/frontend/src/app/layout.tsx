@@ -22,6 +22,7 @@ const PlanSelectionModal = lazy(() => import('@/components/billing/pricing/plan-
 const AnnouncementDialog = lazy(() => import('@/components/announcements/announcement-dialog').then(mod => ({ default: mod.AnnouncementDialog })));
 const RouteChangeTracker = lazy(() => import('@/components/analytics/route-change-tracker').then(mod => ({ default: mod.RouteChangeTracker })));
 const AuthEventTracker = lazy(() => import('@/components/analytics/auth-event-tracker').then(mod => ({ default: mod.AuthEventTracker })));
+const CookieVisibility = lazy(() => import('@/components/cookie-visibility').then(mod => ({ default: mod.CookieVisibility })));
 
 
 export const viewport: Viewport = {
@@ -280,6 +281,9 @@ export default function RootLayout({
           </Suspense>
           <Suspense fallback={null}>
             <AuthEventTracker />
+          </Suspense>
+          <Suspense fallback={null}>
+            <CookieVisibility />
           </Suspense>
         </ThemeProvider>
       </body>

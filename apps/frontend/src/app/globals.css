@@ -950,3 +950,16 @@
 .animate-text-shimmer {
   animation: text-shimmer 1.2s ease-in-out infinite;
 }
+
+/* CookieYes consent button - right side on desktop, left side on mobile */
+.cky-btn-revisit-wrapper {
+  left: auto !important;
+  right: 20px !important;
+}
+
+@media (max-width: 768px) {
+  .cky-btn-revisit-wrapper {
+    left: 20px !important;
+    right: auto !important;
+  }
+}
