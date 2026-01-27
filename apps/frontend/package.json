@@ -63,6 +63,8 @@
     "@react-pdf/renderer": "^4.3.0",
     "@shikijs/transformers": "^3.12.0",
     "@silevis/reactgrid": "^4.1.17",
+    "@stripe/react-stripe-js": "^5.5.0",
+    "@stripe/stripe-js": "^8.6.4",
     "@supabase/ssr": "latest",
     "@supabase/supabase-js": "latest",
     "@syncfusion/ej2-base": "^32.1.19",

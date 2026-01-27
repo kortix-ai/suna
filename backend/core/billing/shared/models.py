@@ -30,3 +30,8 @@ class TokenUsageRequest(BaseModel):
 
 class CancelSubscriptionRequest(BaseModel):
     feedback: Optional[str] = None
+
+class CreateInlineCheckoutRequest(BaseModel):
+    tier_key: str  # Backend tier key like 'tier_2_20', etc.
+    billing_period: str  # 'monthly' or 'yearly'
+    promo_code: Optional[str] = None  # Customer-facing promo code (e.g., "HEHE2020")

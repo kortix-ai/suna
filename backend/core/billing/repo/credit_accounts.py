@@ -1,6 +1,7 @@
 from typing import Dict, Any, Optional
 from datetime import datetime, timezone
 from core.services.db import execute_one, execute_mutate
+from core.utils.logger import logger
 
 
 async def get_credit_account(account_id: str) -> Optional[Dict[str, Any]]:
@@ -159,8 +160,8 @@ async def update_credit_account(account_id: str, update_data: Dict[str, Any]) ->
             from core.utils.cache import Cache
             await invalidate_tier_info_cache(account_id)
             await Cache.invalidate(f"subscription_tier:{account_id}")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"[CREDIT_ACCOUNT] Failed to invalidate tier caches for {account_id}: {e}")
     
     return True
 
