@@ -4,8 +4,8 @@
  * Matches web's "Billing Status – Manage your credits and subscription" design
  */
 
-import React, { useState, useCallback, useEffect } from 'react';
-import { View, ScrollView, Pressable, Platform } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, ScrollView, Pressable, Platform, Alert } from 'react-native';
 import * as WebBrowser from 'expo-web-browser';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
@@ -45,6 +45,7 @@ import {
   AlertCircle,
   ArrowRight,
   Settings,
+  RotateCcw,
 } from 'lucide-react-native';
 import { formatCredits } from '@agentpress/shared';
 import { ScheduledDowngradeCard } from '@/components/billing/ScheduledDowngradeCard';
@@ -125,6 +126,7 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
   const creditsLinkScale = useSharedValue(1);
   const changePlanButtonScale = useSharedValue(1);
   const customerInfoButtonScale = useSharedValue(1);
+  const restorePurchaseButtonScale = useSharedValue(1);
 
   const creditsButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: creditsButtonScale.value }],
@@ -140,6 +142,10 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
 
   const customerInfoButtonStyle = useAnimatedStyle(() => ({
     transform: [{ scale: customerInfoButtonScale.value }],
+  }));
+
+  const restorePurchaseButtonStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: restorePurchaseButtonScale.value }],
   }));
 
   const handleChangePlan = useCallback(() => {
@@ -171,6 +177,15 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     }
   }, [user, handleSubscriptionUpdate]);
+
+  const handleRestorePurchase = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Alert.alert(
+      t('billing.restorePurchase', 'Restore Purchase'),
+      t('billing.noPurchaseToRestore', 'No purchase to be restored'),
+      [{ text: t('common.ok', 'OK') }]
+    );
+  }, [t]);
 
   // Show button if RevenueCat should be used (iOS/Android only)
   const useRevenueCat = shouldUseRevenueCat();
@@ -596,6 +611,26 @@ export function BillingPage({ visible, onClose, onChangePlan }: BillingPageProps
                   <Icon as={Settings} size={18} className="text-foreground" strokeWidth={2} />
                   <Text className="text-sm font-roobert-semibold text-foreground">
                     {t('billing.customerInfo', 'Customer Info')}
+                  </Text>
+                </AnimatedPressable>
+              )}
+
+              {/* Restore Purchase Button */}
+              {useRevenueCat && (
+                <AnimatedPressable
+                  onPress={handleRestorePurchase}
+                  onPressIn={() => {
+                    restorePurchaseButtonScale.value = withSpring(0.96, { damping: 15, stiffness: 400 });
+                  }}
+                  onPressOut={() => {
+                    restorePurchaseButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                  }}
+                  style={restorePurchaseButtonStyle}
+                  className="w-full h-12 bg-card border border-border rounded-2xl items-center justify-center flex-row gap-2"
+                >
+                  <Icon as={RotateCcw} size={18} className="text-foreground" strokeWidth={2} />
+                  <Text className="text-sm font-roobert-semibold text-foreground">
+                    {t('billing.restorePurchase', 'Restore Purchase')}
                   </Text>
                 </AnimatedPressable>
               )}
