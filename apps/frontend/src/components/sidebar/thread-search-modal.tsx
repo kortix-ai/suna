@@ -114,24 +114,38 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
         // If using semantic search and we have results
         if (shouldSearch && searchResults.length > 0) {
             // Deduplicate by thread_id, keeping highest score and its text_preview
-            const seen = new Map<string, { score: number; textPreview: string }>();
+            const seen = new Map<string, { score: number; textPreview: string; projectId: string | null; projectName: string; iconName: string | null; updatedAt: string | null }>();
             for (const result of searchResults) {
                 const existing = seen.get(result.thread_id);
                 if (!existing || result.score > existing.score) {
                     seen.set(result.thread_id, {
                         score: result.score,
-                        textPreview: result.text_preview
+                        textPreview: result.text_preview,
+                        projectId: result.project_id,
+                        projectName: result.project_name,
+                        iconName: result.project_icon_name,
+                        updatedAt: result.updated_at,
                     });
                 }
             }
 
-            // Map to thread objects with text preview
+            // Map to thread objects with text preview — fall back to search metadata for older threads
             const semanticResults: ThreadWithProject[] = [];
             for (const [threadId, data] of seen) {
                 const thread = threadMap.get(threadId);
                 if (thread) {
                     semanticResults.push({
                         ...thread,
+                        textPreview: data.textPreview,
+                    });
+                } else if (data.projectId) {
+                    semanticResults.push({
+                        threadId,
+                        projectId: data.projectId,
+                        projectName: data.projectName || 'Unnamed Project',
+                        url: `/projects/${data.projectId}/thread/${threadId}`,
+                        updatedAt: data.updatedAt || new Date().toISOString(),
+                        iconName: data.iconName || undefined,
                         textPreview: data.textPreview,
                     });
                 }

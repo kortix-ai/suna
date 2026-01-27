@@ -9,6 +9,10 @@ export interface ThreadSearchResult {
   thread_id: string;
   score: number;
   text_preview: string;
+  project_id: string | null;
+  project_name: string;
+  project_icon_name: string | null;
+  updated_at: string | null;
 }
 
 export interface ThreadSearchResponse {

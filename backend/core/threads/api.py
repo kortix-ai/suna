@@ -47,12 +47,44 @@ async def search_threads_endpoint(
 
         results = await search_threads(q, user_id, limit)
 
+        if not results:
+            return {"results": [], "total": 0, "configured": True}
+
+        # Enrich results with thread/project metadata so the frontend
+        # can display results for threads beyond the loaded page
+        from core.services.db import execute
+
+        result_thread_ids = list({r.thread_id for r in results})
+        enrichment_sql = """
+        SELECT
+            t.thread_id,
+            t.project_id,
+            t.updated_at,
+            p.name AS project_name,
+            p.icon_name AS project_icon_name
+        FROM threads t
+        LEFT JOIN projects p ON t.project_id = p.project_id
+        WHERE t.thread_id = ANY(CAST(:thread_ids AS uuid[]))
+        """
+        rows = await execute(enrichment_sql, {"thread_ids": result_thread_ids})
+        thread_meta = {str(row["thread_id"]): row for row in (rows or [])}
+
+        enriched = []
+        for r in results:
+            meta = thread_meta.get(r.thread_id, {})
+            enriched.append({
+                "thread_id": r.thread_id,
+                "score": r.score,
+                "text_preview": r.text_preview,
+                "project_id": str(meta["project_id"]) if meta.get("project_id") else None,
+                "project_name": meta.get("project_name") or "Unnamed Project",
+                "project_icon_name": meta.get("project_icon_name"),
+                "updated_at": meta["updated_at"].isoformat() if meta.get("updated_at") else None,
+            })
+
         return {
-            "results": [
-                {"thread_id": r.thread_id, "score": r.score, "text_preview": r.text_preview}
-                for r in results
-            ],
-            "total": len(results),
+            "results": enriched,
+            "total": len(enriched),
             "configured": True
         }
 

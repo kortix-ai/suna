@@ -127,23 +127,36 @@ export function SidebarSearch() {
   const filteredThreads = useMemo(() => {
     if (shouldSearch && searchResults.length > 0) {
       // Deduplicate by thread_id, keeping highest score
-      const seen = new Map<string, { score: number; textPreview: string }>();
+      const seen = new Map<string, { score: number; textPreview: string; projectId: string | null; projectName: string; updatedAt: string | null }>();
       for (const result of searchResults) {
         const existing = seen.get(result.thread_id);
         if (!existing || result.score > existing.score) {
           seen.set(result.thread_id, {
             score: result.score,
-            textPreview: result.text_preview
+            textPreview: result.text_preview,
+            projectId: result.project_id,
+            projectName: result.project_name,
+            updatedAt: result.updated_at,
           });
         }
       }
 
       const semanticResults: ThreadWithProject[] = [];
       for (const [threadId, data] of seen) {
+        // Try local thread first, fall back to search result metadata
         const thread = threadMap.get(threadId);
         if (thread) {
           semanticResults.push({
             ...thread,
+            textPreview: data.textPreview,
+          });
+        } else if (data.projectId) {
+          semanticResults.push({
+            threadId,
+            projectId: data.projectId,
+            projectName: data.projectName || 'Unnamed Project',
+            url: `/projects/${data.projectId}/thread/${threadId}`,
+            updatedAt: data.updatedAt || new Date().toISOString(),
             textPreview: data.textPreview,
           });
         }
