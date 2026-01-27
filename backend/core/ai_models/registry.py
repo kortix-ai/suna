@@ -89,7 +89,7 @@ class PricingPresets:
     )
 
 
-FREE_MODEL_ID = "kortix/kimi-k2.5"
+FREE_MODEL_ID = "kortix/minimax"
 PREMIUM_MODEL_ID = "kortix/power"
 IMAGE_MODEL_ID = "kortix/haiku"
 
