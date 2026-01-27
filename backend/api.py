@@ -72,7 +72,6 @@ MAX_CONCURRENT_IPS = 25
 _worker_metrics_task = None
 _memory_watchdog_task = None
 _stream_cleanup_task = None
-_embedding_scheduler_task = None
 
 # Graceful shutdown flag for health checks
 # When True, health check will return unhealthy to stop receiving traffic
@@ -80,7 +79,7 @@ _is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _worker_metrics_task, _memory_watchdog_task, _stream_cleanup_task, _embedding_scheduler_task, _is_shutting_down
+    global _worker_metrics_task, _memory_watchdog_task, _stream_cleanup_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
@@ -150,20 +149,6 @@ async def lifespan(app: FastAPI):
         # Start sandbox pool service (maintains pre-warmed sandboxes)
         from core.sandbox.pool_background import start_pool_service
         asyncio.create_task(start_pool_service())
-
-        # Start thread embedding scheduler for semantic search
-        # TODO: Enable after running migration 20260126100000_thread_search_embedding.sql
-        # try:
-        #     from core.threads.embedding_job import start_embedding_scheduler
-        #     from core.threads.thread_search import get_thread_search_service
-        #     search_service = get_thread_search_service()
-        #     if search_service.is_configured:
-        #         _embedding_scheduler_task = asyncio.create_task(start_embedding_scheduler())
-        #         logger.info("[STARTUP] Thread embedding scheduler started")
-        #     else:
-        #         logger.info("[STARTUP] Thread embedding scheduler skipped (not configured)")
-        # except Exception as e:
-        #     logger.warning(f"[STARTUP] Failed to start embedding scheduler: {e}")
 
         # Initialize stateless pipeline
         from core.agents.pipeline.stateless import lifecycle
@@ -243,16 +228,6 @@ async def lifespan(app: FastAPI):
                 await _memory_watchdog_task
             except asyncio.CancelledError:
                 pass
-
-        # Stop embedding scheduler task
-        # TODO: Enable after running migration 20260126100000_thread_search_embedding.sql
-        # if _embedding_scheduler_task is not None:
-        #     _embedding_scheduler_task.cancel()
-        #     try:
-        #         await _embedding_scheduler_task
-        #     except asyncio.CancelledError:
-        #         pass
-        #     logger.debug("Embedding scheduler stopped")
 
         # Stop sandbox pool service
         from core.sandbox.pool_background import stop_pool_service
