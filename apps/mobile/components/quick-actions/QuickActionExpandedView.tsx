@@ -29,7 +29,7 @@ interface QuickActionExpandedViewProps {
 
 /**
  * QuickActionExpandedView Component
- * 
+ *
  * Displays options/templates for the selected quick action mode.
  * Shown above the chat input when a mode is selected.
  * For slides: displays templates in 16:9 aspect ratio for better preview.
@@ -46,75 +46,79 @@ export function QuickActionExpandedView({
   const { t } = useLanguage();
   const options = getQuickActionOptions(actionId);
 
-  // General mode has no options/styles - don't show expanded view
-  if (actionId === 'general') {
-    return null;
-  }
-
-  // Slides mode gets special treatment with better spacing
+  // Derived values (not hooks)
   const isSlideMode = actionId === 'slides';
   const showPromptExamples = actionId === 'people' || actionId === 'research';
-  
+  const isGeneralMode = actionId === 'general';
+
+  // ALL HOOKS MUST BE CALLED BEFORE ANY EARLY RETURNS
   // Collapsible state - expanded by default
   const [isExpanded, setIsExpanded] = React.useState(true);
-  
+
   // Fetch threads and filter by mode
   const { data: allThreads = [] } = useThreads();
-  
-  // Filter threads that match the current mode
-  const modeThreads = React.useMemo(() => {
-    return allThreads
-      .filter((thread: Thread) => thread.metadata?.mode === actionId)
-      .slice(0, 5); // Limit to 5 most recent
-  }, [allThreads, actionId]);
-  
+
   // State for prompt examples
   const [prompts, setPrompts] = React.useState<string[]>([]);
-  
+
   // State for template preview
   const [previewTemplate, setPreviewTemplate] = React.useState<{ id: string; name: string } | null>(null);
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false);
-  
+
+  // Filter threads that match the current mode
+  const modeThreads = React.useMemo(() => {
+    if (isGeneralMode) return [];
+    return allThreads
+      .filter((thread: Thread) => thread.metadata?.mode === actionId)
+      .slice(0, 5); // Limit to 5 most recent
+  }, [allThreads, actionId, isGeneralMode]);
+
   // Load random prompts on mount and when actionId changes
   React.useEffect(() => {
     if (showPromptExamples) {
       setPrompts(getRandomPrompts(actionId, 3, t));
     }
   }, [actionId, showPromptExamples, t]);
-  
+
   // Toggle expansion with animation
   const toggleExpanded = React.useCallback(() => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
     setIsExpanded(prev => !prev);
   }, []);
-  
-  const refreshPrompts = () => {
+
+  const refreshPrompts = React.useCallback(() => {
     setPrompts(getRandomPrompts(actionId, 3, t));
-  };
-  
-  const handlePreview = (templateId: string, templateName: string) => {
+  }, [actionId, t]);
+
+  const handlePreview = React.useCallback((templateId: string, templateName: string) => {
     log.log('👁️ Opening template preview:', templateName);
     setPreviewTemplate({ id: templateId, name: templateName });
     setIsPreviewVisible(true);
-  };
-  
-  const handleClosePreview = () => {
+  }, []);
+
+  const handleClosePreview = React.useCallback(() => {
     log.log('👁️ Closing template preview');
     setIsPreviewVisible(false);
-  };
-  
+  }, []);
+
   // Use "template" for slides, "style" for everything else
-  const headerText = isSlideMode 
+  const headerText = isSlideMode
     ? t('quickActions.chooseTemplate', { defaultValue: 'Choose template' })
     : t('quickActions.chooseStyle', { action: actionLabel });
-  
+
   // Collapsible header text
   const collapsibleHeaderText = showPromptExamples
     ? t('quickActions.examplePrompts', { defaultValue: 'Example Prompts' })
     : headerText;
 
+  // NOW we can do early return - after all hooks
+  // General mode has no options/styles - don't show expanded view
+  if (isGeneralMode) {
+    return null;
+  }
+
   return (
-    <Animated.View 
+    <Animated.View
       entering={FadeIn.duration(200)}
       exiting={FadeOut.duration(200)}
     >
@@ -126,10 +130,10 @@ export function QuickActionExpandedView({
               {t('quickActions.recent', { defaultValue: 'Recent' })}
             </Text>
           </View>
-          <ScrollView 
+          <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ 
+            contentContainerStyle={{
               paddingHorizontal: 12,
               gap: 8
             }}
@@ -145,8 +149,8 @@ export function QuickActionExpandedView({
                 style={{ maxWidth: 200 }}
               >
                 <Icon as={MessageCircle} size={14} className="text-muted-foreground flex-shrink-0" />
-                <Text 
-                  className="text-sm text-foreground/80 flex-1" 
+                <Text
+                  className="text-sm text-foreground/80 flex-1"
                   numberOfLines={1}
                   ellipsizeMode="tail"
                 >
@@ -159,7 +163,7 @@ export function QuickActionExpandedView({
       )}
 
       {/* Collapsible Header - Tap to expand/collapse templates/styles */}
-      <Pressable 
+      <Pressable
         onPress={toggleExpanded}
         className={`flex-row items-center justify-between px-3 py-1 active:opacity-70 ${isExpanded ? 'mb-3' : ''}`}
       >
@@ -175,10 +179,10 @@ export function QuickActionExpandedView({
             </View>
           )}
         </View>
-        <Icon 
-          as={isExpanded ? ChevronUp : ChevronDown} 
-          size={18} 
-          className="text-muted-foreground" 
+        <Icon
+          as={isExpanded ? ChevronUp : ChevronDown}
+          size={18}
+          className="text-muted-foreground"
         />
       </Pressable>
 
@@ -193,7 +197,7 @@ export function QuickActionExpandedView({
                   <Icon as={RefreshCw} size={14} className="text-muted-foreground" />
                 </Pressable>
               </View>
-              
+
               {prompts.map((prompt, index) => (
                 <Pressable
                   key={`${prompt}-${index}`}
@@ -214,10 +218,10 @@ export function QuickActionExpandedView({
             </View>
           ) : (
             /* Options Grid for visual modes */
-            <ScrollView 
+            <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
-              contentContainerStyle={{ 
+              contentContainerStyle={{
                 paddingHorizontal: 12,
                 paddingVertical: isSlideMode ? 8 : 0,
                 gap: 16
@@ -225,8 +229,8 @@ export function QuickActionExpandedView({
               className="flex-row"
             >
               {options.map((option) => (
-                <QuickActionOptionCard 
-                  key={option.id} 
+                <QuickActionOptionCard
+                  key={option.id}
                   option={option}
                   actionId={actionId}
                   onPress={onSelectOption}
@@ -238,7 +242,7 @@ export function QuickActionExpandedView({
           )}
         </>
       )}
-    
+
       {/* Template Preview Modal */}
       {previewTemplate && (
         <TemplatePreviewModal
@@ -251,4 +255,3 @@ export function QuickActionExpandedView({
     </Animated.View>
   );
 }
-

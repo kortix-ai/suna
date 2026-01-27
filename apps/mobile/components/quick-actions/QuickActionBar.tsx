@@ -5,6 +5,7 @@ import Animated, {
   useAnimatedStyle,
   withSpring,
   interpolate,
+  useDerivedValue,
 } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import { useColorScheme } from 'nativewind';
@@ -18,11 +19,11 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const ITEM_SPACING = 8;
 const CONTAINER_PADDING = 16;
 
-// Native-feel spring config - snappy like iOS
+// Ultra-snappy spring - instant response like iOS native
 const SPRING_CONFIG = {
-  damping: 20,
-  stiffness: 300,
-  mass: 0.8,
+  damping: 28,
+  stiffness: 500,
+  mass: 0.5,
 };
 
 // Android hit slop for better touch targets
@@ -32,38 +33,37 @@ interface QuickActionBarProps {
   actions?: QuickAction[];
   onActionPress?: (actionId: string) => void;
   selectedActionId?: string | null;
-  selectedOptionId?: string | null;
-  onSelectOption?: (optionId: string) => void;
-  onSelectPrompt?: (prompt: string) => void;
 }
 
 interface ModeItemProps {
   action: QuickAction;
   index: number;
-  selectedIndex: number;
+  animatedIndex: Animated.SharedValue<number>;
   onPress: () => void;
   isLast: boolean;
 }
 
-// Animated ModeItem - uses Reanimated for 60fps animations on UI thread
-const ModeItem = React.memo(({ action, index, selectedIndex, onPress, isLast }: ModeItemProps) => {
+// Optimized ModeItem - derives animation from parent's shared value
+// No useEffect, no per-item state updates - pure UI thread animation
+const ModeItem = React.memo(({ action, index, animatedIndex, onPress, isLast }: ModeItemProps) => {
   const { t } = useLanguage();
   const { colorScheme } = useColorScheme();
   const translatedLabel = t(`quickActions.${action.id}`, { defaultValue: action.label });
 
-  // Animated value that tracks selection - drives all animations
-  const animatedSelected = useSharedValue(index === selectedIndex ? 1 : 0);
+  // Derive selection progress from parent's animated index - runs on UI thread
+  const selectionProgress = useDerivedValue(() => {
+    const distance = Math.abs(animatedIndex.value - index);
+    return Math.max(0, 1 - distance);
+  }, [index]);
 
-  // Update animation when selection changes
-  React.useEffect(() => {
-    animatedSelected.value = withSpring(index === selectedIndex ? 1 : 0, SPRING_CONFIG);
-  }, [selectedIndex, index, animatedSelected]);
-
-  // Animated style - runs on UI thread for 60fps
-  const animatedStyle = useAnimatedStyle(() => ({
-    opacity: interpolate(animatedSelected.value, [0, 1], [0.5, 1]),
-    transform: [{ scale: interpolate(animatedSelected.value, [0, 1], [0.92, 1]) }],
-  }));
+  // Animated style - 100% UI thread, no JS bridge
+  const animatedStyle = useAnimatedStyle(() => {
+    const progress = selectionProgress.value;
+    return {
+      opacity: interpolate(progress, [0, 1], [0.45, 1]),
+      transform: [{ scale: interpolate(progress, [0, 1], [0.94, 1]) }],
+    };
+  });
 
   // Icon color based on theme
   const iconColor = colorScheme === 'dark' ? '#F8F8F8' : '#121215';
@@ -101,13 +101,12 @@ const ModeItem = React.memo(({ action, index, selectedIndex, onPress, isLast }: 
 
 ModeItem.displayName = 'ModeItem';
 
-export function QuickActionBar({ 
+export function QuickActionBar({
   actions = QUICK_ACTIONS,
   onActionPress,
   selectedActionId,
 }: QuickActionBarProps) {
   const scrollViewRef = React.useRef<ScrollView>(null);
-  const lastHapticIndex = React.useRef(-1);
 
   // Find the index of the selected action
   const selectedIndex = React.useMemo(() => {
@@ -115,45 +114,64 @@ export function QuickActionBar({
     return index >= 0 ? index : 0;
   }, [actions, selectedActionId]);
 
+  // Single shared value for the entire bar - drives all item animations
+  // Key insight: we animate this IMMEDIATELY on tap, before React state updates
+  const animatedIndex = useSharedValue(selectedIndex);
+
   // Store item positions for scrolling
   const itemPositions = React.useRef<number[]>([]);
   const itemWidths = React.useRef<number[]>([]);
 
+  // Track last pressed to avoid double-taps
+  const lastPressedRef = React.useRef<string | null>(null);
+
   // Measure items and calculate positions
-  // x is relative to the contentContainer (which includes padding)
   const measureItem = React.useCallback((index: number, width: number, x: number) => {
     itemWidths.current[index] = width;
     itemPositions.current[index] = x;
   }, []);
 
-  // Scroll to selected item when it changes
-  React.useEffect(() => {
-    if (itemPositions.current[selectedIndex] !== undefined && itemWidths.current[selectedIndex] !== undefined) {
-      const itemX = itemPositions.current[selectedIndex];
-      const itemWidth = itemWidths.current[selectedIndex];
+  // Scroll to center an item
+  const scrollToIndex = React.useCallback((index: number) => {
+    if (itemPositions.current[index] !== undefined && itemWidths.current[index] !== undefined) {
+      const itemX = itemPositions.current[index];
+      const itemWidth = itemWidths.current[index];
       const itemCenter = itemX + (itemWidth / 2);
       const offset = itemCenter - (SCREEN_WIDTH / 2);
       scrollViewRef.current?.scrollTo({ x: Math.max(0, offset), animated: true });
     }
-  }, [selectedIndex]);
+  }, []);
 
-  // Handle mode change with haptic
-  const handleModeChange = React.useCallback((newIndex: number) => {
-    const clampedIndex = Math.max(0, Math.min(newIndex, actions.length - 1));
-    if (clampedIndex !== lastHapticIndex.current) {
-      lastHapticIndex.current = clampedIndex;
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      const newAction = actions[clampedIndex];
-      if (newAction) {
-        onActionPress?.(newAction.id);
-      }
+  // Sync animation when parent state changes (e.g., from external source)
+  React.useEffect(() => {
+    // Only animate if this wasn't triggered by our own tap
+    if (lastPressedRef.current !== selectedActionId) {
+      animatedIndex.value = withSpring(selectedIndex, SPRING_CONFIG);
+      scrollToIndex(selectedIndex);
     }
-  }, [actions, onActionPress]);
+    lastPressedRef.current = null;
+  }, [selectedIndex, animatedIndex, scrollToIndex, selectedActionId]);
 
-  // Handle direct tap on an item
-  const handleItemPress = React.useCallback((index: number) => {
-    handleModeChange(index);
-  }, [handleModeChange]);
+  // Handle tap - INSTANT animation, then notify parent
+  const handleItemPress = React.useCallback((index: number, actionId: string) => {
+    // Skip if same item
+    if (actionId === selectedActionId) return;
+
+    // Mark this as our tap (so useEffect doesn't double-animate)
+    lastPressedRef.current = actionId;
+
+    // 1. Haptic - instant feedback
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // 2. Animate IMMEDIATELY - don't wait for React state
+    animatedIndex.value = withSpring(index, SPRING_CONFIG);
+
+    // 3. Scroll to center
+    scrollToIndex(index);
+
+    // 4. Notify parent (this triggers React state update, but animation already started)
+    onActionPress?.(actionId);
+  }, [onActionPress, selectedActionId, animatedIndex, scrollToIndex]);
 
   return (
     <View className="w-full overflow-hidden">
@@ -167,6 +185,7 @@ export function QuickActionBar({
           alignItems: 'center',
         }}
         decelerationRate="fast"
+        scrollEventThrottle={16}
       >
         {actions.map((action, index) => (
           <View
@@ -179,8 +198,8 @@ export function QuickActionBar({
             <ModeItem
               action={action}
               index={index}
-              selectedIndex={selectedIndex}
-              onPress={() => handleItemPress(index)}
+              animatedIndex={animatedIndex}
+              onPress={() => handleItemPress(index, action.id)}
               isLast={index === actions.length - 1}
             />
           </View>
