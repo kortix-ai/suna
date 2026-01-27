@@ -35,8 +35,8 @@ interface QuickActionExpandedViewProps {
  * For slides: displays templates in 16:9 aspect ratio for better preview.
  * For people & research: shows example prompts for inspiration.
  */
-export function QuickActionExpandedView({ 
-  actionId, 
+export function QuickActionExpandedView({
+  actionId,
   actionLabel,
   onSelectOption,
   selectedOptionId,
@@ -45,7 +45,12 @@ export function QuickActionExpandedView({
 }: QuickActionExpandedViewProps) {
   const { t } = useLanguage();
   const options = getQuickActionOptions(actionId);
-  
+
+  // General mode has no options/styles - don't show expanded view
+  if (actionId === 'general') {
+    return null;
+  }
+
   // Slides mode gets special treatment with better spacing
   const isSlideMode = actionId === 'slides';
   const showPromptExamples = actionId === 'people' || actionId === 'research';
