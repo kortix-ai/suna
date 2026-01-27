@@ -70,6 +70,12 @@ class PricingPresets:
         cached_read_cost_per_million_tokens=0.15,
     )
 
+    KIMI_K2_5 = ModelPricing(
+        input_cost_per_million_tokens=0.60,
+        output_cost_per_million_tokens=3.00,
+        cached_read_cost_per_million_tokens=0.10,
+    )
+
     HAIKU_3_5 = ModelPricing(
         input_cost_per_million_tokens=0.80,
         output_cost_per_million_tokens=4.00,
@@ -83,7 +89,7 @@ class PricingPresets:
     )
 
 
-FREE_MODEL_ID = "kortix/minimax"
+FREE_MODEL_ID = "kortix/kimi-k2.5"
 PREMIUM_MODEL_ID = "kortix/power"
 IMAGE_MODEL_ID = "kortix/haiku"
 
@@ -97,6 +103,17 @@ def _create_minimax_model_config() -> ModelConfig:
         reasoning=ReasoningSettings(enabled=True, split_output=True),
         extra_body={"app": "Kortix.com"},
     )
+
+def _create_kimi_model_config() -> ModelConfig:
+    
+    
+    return ModelConfig(
+        reasoning=ReasoningSettings(enabled=True)
+        # reasoning always
+        # reasoning=ReasoningSettings(enabled=True)
+
+    )
+
 
 
 def _should_use_bedrock() -> bool:
@@ -181,9 +198,32 @@ class ModelFactory:
             "grok": "openrouter/x-ai/grok-4.1-fast",
             "openai": "openrouter/openai/gpt-4o-mini",
             "minimax": "openrouter/minimax/minimax-m2.1",
+            "kimi": "openrouter/moonshotai/kimi-k2.5",
         }
 
-        if main_llm == "bedrock":
+        if main_llm == "kimi":
+            return Model(
+                id="kortix/basic",
+                name="Kortix Basic",
+                litellm_model_id=custom_model or default_models["kimi"],
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-basic", "Kortix Basic"],
+                context_window=262_144,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                    ModelCapability.PROMPT_CACHING,
+                    ModelCapability.THINKING,
+                ],
+                pricing=PricingPresets.KIMI_K2_5,
+                tier_availability=["free", "paid"],
+                priority=102,
+                recommended=True,
+                enabled=True,
+                config=_create_kimi_model_config(),
+            )
+        elif main_llm == "bedrock":
             return Model(
                 id="kortix/basic",
                 name="Kortix Basic",
@@ -314,9 +354,32 @@ class ModelFactory:
             "grok": "openrouter/x-ai/grok-4.1-fast",
             "openai": "openrouter/openai/gpt-4o-mini",
             "minimax": "openrouter/minimax/minimax-m2.1",
+            "kimi": "openrouter/moonshotai/kimi-k2.5",
         }
 
-        if main_llm == "bedrock":
+        if main_llm == "kimi":
+            return Model(
+                id="kortix/power",
+                name="Kortix Advanced Mode",
+                litellm_model_id=custom_model or default_models["kimi"],
+                provider=ModelProvider.OPENROUTER,
+                aliases=["kortix-power", "Kortix POWER Mode", "Kortix Power", "Kortix Advanced Mode"],
+                context_window=262_144,
+                capabilities=[
+                    ModelCapability.CHAT,
+                    ModelCapability.FUNCTION_CALLING,
+                    ModelCapability.VISION,
+                    ModelCapability.THINKING,
+                    ModelCapability.PROMPT_CACHING,
+                ],
+                pricing=PricingPresets.KIMI_K2_5,
+                tier_availability=["paid"],
+                priority=101,
+                recommended=True,
+                enabled=True,
+                config=_create_kimi_model_config(),
+            )
+        elif main_llm == "bedrock":
             return Model(
                 id="kortix/power",
                 name="Kortix Advanced Mode",
@@ -600,7 +663,7 @@ class ModelFactory:
             name="Kimi K2",
             litellm_model_id="openrouter/moonshotai/kimi-k2",
             provider=ModelProvider.OPENROUTER,
-            aliases=["kimi-k2", "kimi", "moonshotai/kimi-k2"],
+            aliases=["kimi-k2", "moonshotai/kimi-k2"],
             context_window=262_144,
             capabilities=[
                 ModelCapability.CHAT,
@@ -610,10 +673,34 @@ class ModelFactory:
             pricing=PricingPresets.KIMI_K2,
             tier_availability=["free", "paid"],
             priority=104,
-            recommended=True,
+            recommended=False,
             enabled=True,
+            config=_create_kimi_model_config(),
         )
 
+    @staticmethod
+    def create_kimi_k2_5() -> Model:
+        return Model(
+            id="kortix/kimi-k2.5",
+            name="Kimi K2.5",
+            litellm_model_id="openrouter/moonshotai/kimi-k2.5",
+            provider=ModelProvider.OPENROUTER,
+            aliases=["kimi-k2.5", "kimi", "moonshotai/kimi-k2.5"],
+            context_window=262_144,
+            capabilities=[
+                ModelCapability.CHAT,
+                ModelCapability.FUNCTION_CALLING,
+                ModelCapability.VISION,
+                ModelCapability.PROMPT_CACHING,
+                ModelCapability.THINKING
+            ],
+            pricing=PricingPresets.KIMI_K2_5,
+            tier_availability=["free", "paid"],
+            priority=105,
+            recommended=True,
+            enabled=True,
+            config=_create_kimi_model_config(),
+        )
 
 class ModelRegistry:
     
@@ -645,6 +732,7 @@ class ModelRegistry:
         self.register(ModelFactory.create_gpt4o_mini())
         self.register(ModelFactory.create_mimo_v2_flash())
         self.register(ModelFactory.create_kimi_k2())
+        self.register(ModelFactory.create_kimi_k2_5())
         self.register(ModelFactory.create_minimax_m2())
         self.register(ModelFactory.create_haiku_3_5())
         self.register(ModelFactory.create_deepseek_v3())
@@ -660,6 +748,7 @@ class ModelRegistry:
         self._litellm_id_to_pricing["openrouter/openai/gpt-4o-mini"] = PricingPresets.GPT_4O_MINI
         self._litellm_id_to_pricing["openrouter/xiaomi/mimo-v2-flash"] = PricingPresets.MIMO_V2_FLASH
         self._litellm_id_to_pricing["openrouter/moonshotai/kimi-k2"] = PricingPresets.KIMI_K2
+        self._litellm_id_to_pricing["openrouter/moonshotai/kimi-k2.5"] = PricingPresets.KIMI_K2_5
         self._litellm_id_to_pricing["bedrock/anthropic.claude-3-5-haiku-20241022-v1:0"] = PricingPresets.HAIKU_3_5
         self._litellm_id_to_pricing["openrouter/deepseek/deepseek-chat-v3-0324"] = PricingPresets.DEEPSEEK_V3
     
