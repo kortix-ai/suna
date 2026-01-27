@@ -69,17 +69,25 @@ async def get_user_threads(
     limit: Optional[int] = Query(100, ge=1, le=1000, description="Number of items per page (max 1000)")
 ):
     from core.threads.repo import list_user_threads as repo_list_threads
-    
+
     logger.debug(f"Fetching threads for user: {user_id} (page={page}, limit={limit})")
     try:
         offset = (page - 1) * limit
         threads, total_count = await repo_list_threads(user_id, limit, offset)
-        
+
         if total_count == 0:
             logger.debug(f"No threads found for user: {user_id}")
-        
+
         total_pages = (total_count + limit - 1) // limit if total_count else 0
-        
+
+        # Fire background task to embed any unembedded threads (non-blocking)
+        if threads:
+            try:
+                from core.threads.thread_search import embed_unembedded_threads
+                asyncio.create_task(embed_unembedded_threads(user_id, threads))
+            except Exception as e:
+                logger.debug(f"Failed to start background embedding task: {e}")
+
         return {
             "threads": threads,
             "pagination": {
@@ -89,7 +97,7 @@ async def get_user_threads(
                 "pages": total_pages
             }
         }
-        
+
     except Exception as e:
         logger.error(f"Error fetching threads for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch threads: {str(e)}")

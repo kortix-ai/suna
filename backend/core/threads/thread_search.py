@@ -176,36 +176,36 @@ class ThreadSearchService:
         return self._is_configured
 
     def _get_openai_client(self):
-        """Lazily initialize OpenAI client."""
+        """Lazily initialize AsyncOpenAI client."""
         if self._openai_client is None and self._is_configured:
             try:
-                from openai import OpenAI
-                self._openai_client = OpenAI(api_key=self._openai_api_key)
-                logger.debug("[ThreadSearch] OpenAI client initialized")
+                from openai import AsyncOpenAI
+                self._openai_client = AsyncOpenAI(api_key=self._openai_api_key)
+                logger.debug("[ThreadSearch] AsyncOpenAI client initialized")
             except Exception as e:
                 logger.error(f"[ThreadSearch] Failed to initialize OpenAI client: {e}")
                 self._openai_client = None
         return self._openai_client
 
-    def _create_embedding(self, text: str) -> Optional[List[float]]:
-        """Create an embedding vector for the given text."""
+    async def _create_embedding(self, text: str) -> Optional[List[float]]:
+        """Create an embedding vector for the given text (async, non-blocking)."""
         openai = self._get_openai_client()
         if not openai:
+            logger.error("[ThreadSearch] _create_embedding: No OpenAI client available")
             return None
 
         try:
-            # Truncate text if too long (OpenAI has token limits)
             max_chars = 30000
             if len(text) > max_chars:
                 text = text[:max_chars]
 
-            response = openai.embeddings.create(
+            response = await openai.embeddings.create(
                 input=text,
                 model=self.EMBEDDING_MODEL
             )
             return response.data[0].embedding
         except Exception as e:
-            logger.error(f"[ThreadSearch] Failed to create embedding: {e}")
+            logger.error(f"[ThreadSearch] Failed to create embedding: {type(e).__name__}: {e}")
             return None
 
     def _extract_snippet(self, text: str, query: str, snippet_length: int = 120) -> Tuple[str, List[str]]:
@@ -331,40 +331,38 @@ class ThreadSearchService:
 
         # Split into chunks using recursive splitter
         chunks = text_splitter.split_text(text_to_embed)
-        logger.info(f"[ThreadSearch] Embedding thread {thread_id}: {len(chunks)} chunks")
 
         try:
             from core.services.db import execute_mutate
 
             # Delete existing chunks for this thread first
             await execute_mutate(
-                "DELETE FROM public.documents WHERE thread_id = :thread_id",
-                {"thread_id": thread_id}
+                "DELETE FROM public.documents WHERE account_id = :account_id AND thread_id = :thread_id",
+                {"account_id": account_id, "thread_id": thread_id}
             )
 
             # Insert each chunk
             success_count = 0
             for chunk_content in chunks:
-                embedding = self._create_embedding(chunk_content)
+                embedding = await self._create_embedding(chunk_content)
                 if not embedding:
                     continue
 
                 embedding_str = json.dumps(embedding)
                 sql = """
-                INSERT INTO public.documents (chunk_id, thread_id, user_id, chunk_content, embedding, last_updated_at)
-                VALUES (:chunk_id, :thread_id, :user_id, :chunk_content, CAST(:embedding AS vector), NOW())
+                INSERT INTO public.documents (chunk_id, account_id, thread_id, chunk_content, embedding, last_updated_at)
+                VALUES (:chunk_id, :account_id, :thread_id, :chunk_content, CAST(:embedding AS vector), NOW())
                 """
 
                 await execute_mutate(sql, {
                     "chunk_id": str(uuid.uuid4()),
+                    "account_id": account_id,
                     "thread_id": thread_id,
-                    "user_id": account_id,
                     "chunk_content": chunk_content[:1200],
                     "embedding": embedding_str,
                 })
                 success_count += 1
 
-            logger.info(f"[ThreadSearch] Embedded {success_count}/{len(chunks)} chunks for thread {thread_id}")
             return success_count > 0
 
         except Exception as e:
@@ -398,7 +396,7 @@ class ThreadSearchService:
         logger.info(f"[ThreadSearch] Searching: \"{query}\"")
 
         # Create embedding for the query
-        query_embedding = self._create_embedding(query)
+        query_embedding = await self._create_embedding(query)
         if not query_embedding:
             logger.error(f"[ThreadSearch] OpenAI embedding failed for query: \"{query}\"")
             return []
@@ -409,21 +407,37 @@ class ThreadSearchService:
             # Use pgvector cosine similarity search
             # 1 - (embedding <=> query_embedding) converts distance to similarity score
             # Use CAST instead of :: to avoid parameter parsing issues
+            # sql = """
+            # SELECT
+            #     thread_id,
+            #     user_id,
+            #     chunk_content,
+            #     1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
+            # FROM public.documents
+            # WHERE embedding IS NOT NULL
+            #   AND thread_id IS NOT NULL
+            # ORDER BY embedding <=> CAST(:query_embedding AS vector)
+            # LIMIT :limit
+            # """
+            
             sql = """
             SELECT
                 thread_id,
-                user_id,
+                account_id,
                 chunk_content,
-                1 - (embedding <=> CAST(:query_embedding AS vector)) as similarity
+                1 - (embedding <=> CAST(:query_embedding AS vector)) AS similarity
             FROM public.documents
             WHERE embedding IS NOT NULL
-              AND thread_id IS NOT NULL
-            ORDER BY embedding <=> CAST(:query_embedding AS vector)
-            LIMIT :limit
+            AND thread_id IS NOT NULL
+            AND account_id = :account_id       -- filter by tenant
+            ORDER BY embedding <=> CAST(:query_embedding AS vector)  -- closest first
+            LIMIT :limit;
             """
+
 
             rows = await execute(sql, {
                 "query_embedding": json.dumps(query_embedding),
+                "account_id": account_id,
                 "limit": limit,
             })
 
@@ -527,3 +541,206 @@ async def delete_thread_embedding(thread_id: str) -> bool:
     """Delete embedding for a thread."""
     service = get_thread_search_service()
     return await service.delete_thread_embedding(thread_id)
+
+
+async def get_threads_needing_embedding(account_id: str, thread_ids: List[str]) -> set:
+    """
+    Return set of thread_ids that need embedding (no embedding or stale embedding).
+
+    A thread needs embedding if:
+    1. It has no embeddings in the documents table, OR
+    2. It has messages newer than its latest embedding
+
+    Filters by account_id first for efficient lookups on the documents table.
+
+    Args:
+        account_id: The account that owns the threads
+        thread_ids: List of thread IDs to check
+
+    Returns:
+        Set of thread_ids that need (re-)embedding
+    """
+    if not thread_ids:
+        return set()
+
+    try:
+        from core.services.db import execute
+
+        # Find threads that either:
+        # 1. Have no embeddings at all, OR
+        # 2. Have messages created after the last embedding update
+        # Filter documents by account_id first for index efficiency
+        sql = """
+        WITH thread_embedding_status AS (
+            SELECT
+                t.thread_id,
+                MAX(d.last_updated_at) as last_embedded_at,
+                MAX(m.updated_at) as last_message_at
+            FROM unnest(CAST(:thread_ids AS uuid[])) AS t(thread_id)
+            LEFT JOIN public.documents d
+                ON d.account_id = :account_id
+                AND d.thread_id = t.thread_id
+            LEFT JOIN public.messages m
+                ON m.thread_id = t.thread_id
+                AND m.type IN ('user', 'assistant')
+            GROUP BY t.thread_id
+        )
+        SELECT thread_id
+        FROM thread_embedding_status
+        WHERE last_embedded_at IS NULL  -- Never embedded
+           OR last_message_at > last_embedded_at  -- Has newer messages
+        """
+        rows = await execute(sql, {
+            "account_id": account_id,
+            "thread_ids": thread_ids,
+        })
+        result = {str(row['thread_id']) for row in rows} if rows else set()
+        logger.info(f"[ThreadSearch] Account {account_id[:8]}...: {len(result)}/{len(thread_ids)} threads need embedding")
+        return result
+    except Exception as e:
+        logger.error(f"[ThreadSearch] Failed to check threads needing embedding: {e}")
+        # On error, return all thread_ids to be safe (will re-embed everything)
+        return set(thread_ids)
+
+
+async def embed_thread_with_messages(thread_id: str, account_id: str) -> bool:
+    """
+    Fetch all thread messages and embed the full conversation.
+
+    Args:
+        thread_id: The thread's unique identifier
+        account_id: The account that owns the thread
+
+    Returns:
+        True if embedding was successful, False otherwise
+    """
+    service = get_thread_search_service()
+    if not service.is_configured:
+        return False
+
+    try:
+        from core.services.db import execute
+
+        # Fetch thread info
+        thread_sql = """
+        SELECT
+            t.thread_id,
+            t.name as thread_name,
+            p.name as project_name
+        FROM threads t
+        LEFT JOIN projects p ON t.project_id = p.project_id
+        WHERE t.thread_id = :thread_id
+        """
+
+        thread_rows = await execute(thread_sql, {"thread_id": thread_id})
+        if not thread_rows:
+            logger.warning(f"[ThreadSearch] Thread {thread_id} not found for embedding")
+            return False
+
+        thread = thread_rows[0]
+        project_name = thread.get("project_name") or ""
+        thread_name = thread.get("thread_name") or ""
+
+        # Fetch ALL messages in the thread (user and assistant only)
+        messages_sql = """
+        SELECT
+            type,
+            content->>'content' as text_content
+        FROM messages
+        WHERE thread_id = :thread_id
+          AND type IN ('user', 'assistant')
+          AND content->>'content' IS NOT NULL
+          AND content->>'content' != ''
+        ORDER BY created_at ASC
+        """
+
+        message_rows = await execute(messages_sql, {"thread_id": thread_id})
+
+        # Build conversation content
+        conversation_parts = []
+        for msg in message_rows or []:
+            msg_type = msg.get("type", "")
+            text = msg.get("text_content", "")
+            if text:
+                if msg_type == "user":
+                    conversation_parts.append(f"User: {text}")
+                elif msg_type == "assistant":
+                    conversation_parts.append(f"Assistant: {text}")
+
+        full_content = "\n\n".join(conversation_parts)
+
+        # Skip if no content to embed
+        if not full_content and not project_name and not thread_name:
+            logger.debug(f"[ThreadSearch] Thread {thread_id} has no content to embed")
+            return True  # Not an error, just nothing to embed
+
+        success = await embed_thread(
+            thread_id=thread_id,
+            account_id=account_id,
+            content=full_content,
+            project_name=project_name,
+            thread_name=thread_name
+        )
+
+        return success
+
+    except Exception as e:
+        logger.error(f"[ThreadSearch] Failed to embed thread {thread_id}: {e}")
+        return False
+
+
+async def embed_unembedded_threads(account_id: str, threads: List[dict]):
+    """
+    Check which threads need embedding and embed them in parallel.
+    Runs in background, doesn't block the response.
+
+    A thread needs embedding if:
+    1. It has never been embedded, OR
+    2. It has new messages since the last embedding
+
+    Args:
+        account_id: The account that owns the threads
+        threads: List of thread dicts (must have 'thread_id' key)
+    """
+    import asyncio
+
+    service = get_thread_search_service()
+    if not service.is_configured:
+        logger.debug("[ThreadSearch] Service not configured, skipping background embedding")
+        return
+
+    try:
+        # Get thread_ids from the list (str() to handle UUID objects from DB)
+        thread_ids = [str(t.get('thread_id')) for t in threads if t.get('thread_id')]
+        if not thread_ids:
+            return
+
+        # Check which threads need embedding (no embedding or stale)
+        needs_embedding_ids = await get_threads_needing_embedding(account_id, thread_ids)
+
+        if not needs_embedding_ids:
+            return
+
+        # Filter to threads needing embedding (str() to handle UUID objects)
+        to_embed = [t for t in threads if str(t.get('thread_id')) in needs_embedding_ids]
+
+        # Embed in parallel with semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(5)
+
+        async def embed_one(thread: dict):
+            async with semaphore:
+                await embed_thread_with_messages(
+                    thread_id=str(thread['thread_id']),
+                    account_id=account_id
+                )
+
+        # Use gather with return_exceptions to not fail on individual errors
+        await asyncio.gather(
+            *[embed_one(t) for t in to_embed],
+            return_exceptions=True
+        )
+
+        logger.info(f"[ThreadSearch] Background embedding complete for {len(to_embed)} threads")
+
+    except Exception as e:
+        logger.error(f"[ThreadSearch] Background embedding failed: {e}")
