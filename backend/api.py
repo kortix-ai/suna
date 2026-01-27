@@ -488,7 +488,7 @@ async def redis_health_endpoint():
         health_data = await redis.health_check()
         
         # Add instance info
-        health_data["instance_id"] = instance_id
+        health_data["instance_id"] = instance_id    
         health_data["timestamp"] = datetime.now(timezone.utc).isoformat()
         
         # Return appropriate status code
