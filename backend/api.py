@@ -149,7 +149,7 @@ async def lifespan(app: FastAPI):
         # Start sandbox pool service (maintains pre-warmed sandboxes)
         from core.sandbox.pool_background import start_pool_service
         asyncio.create_task(start_pool_service())
-        
+
         # Initialize stateless pipeline
         from core.agents.pipeline.stateless import lifecycle
         await lifecycle.initialize()
@@ -228,7 +228,7 @@ async def lifespan(app: FastAPI):
                 await _memory_watchdog_task
             except asyncio.CancelledError:
                 pass
-        
+
         # Stop sandbox pool service
         from core.sandbox.pool_background import stop_pool_service
         await stop_pool_service()
