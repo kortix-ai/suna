@@ -155,9 +155,6 @@ export default function BerlinPage() {
                       enableAdvancedConfig={false}
                       selectedMode={selectedMode}
                       onModeDeselect={() => setSelectedMode(null)}
-                      selectedCharts={selectedCharts}
-                      selectedOutputFormat={selectedOutputFormat}
-                      selectedTemplate={selectedTemplate}
                     />
                   </div>
                 </div>
