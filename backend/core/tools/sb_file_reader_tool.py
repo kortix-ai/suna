@@ -515,12 +515,28 @@ Examples:
             elif file_path:
                 paths = [f"{self.workspace_path}/{self.clean_path(file_path)}"]
             else:
-                paths = [f"{self.workspace_path}/uploads"]
-            
-            for p in paths:
-                check = await self.sandbox.process.exec(f"test -e {shlex.quote(p)} && echo 'ok'")
-                if "ok" not in check.result:
-                    return self.fail_response(f"Path not found: {p}")
+                # Check default paths: uploads, KB directory, and workspace root
+                default_paths = [
+                    f"{self.workspace_path}/uploads",
+                    f"{self.workspace_path}/downloads/global-knowledge",
+                    self.workspace_path
+                ]
+                for candidate in default_paths:
+                    check = await self.sandbox.process.exec(f"test -e {shlex.quote(candidate)} && echo 'ok'")
+                    if "ok" in check.result:
+                        paths.append(candidate)
+
+                if not paths:
+                    return self.fail_response(
+                        "No searchable paths found. Upload files to /workspace/uploads or sync knowledge base with global_kb_sync first."
+                    )
+
+            # Verify explicitly provided paths exist
+            if file_paths or file_path:
+                for p in paths:
+                    check = await self.sandbox.process.exec(f"test -e {shlex.quote(p)} && echo 'ok'")
+                    if "ok" not in check.result:
+                        return self.fail_response(f"Path not found: {p}")
             
             if not await self._ensure_kb():
                 return self.fail_response("Failed to initialize search. Try read_file instead.")
