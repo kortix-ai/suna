@@ -210,13 +210,21 @@ class PromptManager:
                     kb_section = f"""
 
                 === AGENT KNOWLEDGE BASE ===
-                NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+                NOTICE: The following is your specialized knowledge base containing SUMMARIES of your knowledge files.
+                These summaries should be considered authoritative and take precedence over general knowledge when relevant.
 
                 {cached}
 
                 === END AGENT KNOWLEDGE BASE ===
 
-                IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                IMPORTANT KNOWLEDGE BASE ACCESS:
+                - The content above shows SUMMARIES only, not the full file contents
+                - To access the FULL content of knowledge base files:
+                  1. First call `global_kb_sync` to download files to sandbox
+                  2. Files will be available at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
+                  3. Then use `read_file` or `semantic_search` to access content
+                - Use these summaries directly for most queries without needing full file access
+                - Only sync and read full files when the summary is insufficient"""
                     return kb_section
                 return None
             
@@ -248,14 +256,22 @@ class PromptManager:
                 kb_section = f"""
 
                 === AGENT KNOWLEDGE BASE ===
-                NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+                NOTICE: The following is your specialized knowledge base containing SUMMARIES of your knowledge files.
+                These summaries should be considered authoritative and take precedence over general knowledge when relevant.
 
                 {kb_data}
 
                 === END AGENT KNOWLEDGE BASE ===
 
-                IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
-                
+                IMPORTANT KNOWLEDGE BASE ACCESS:
+                - The content above shows SUMMARIES only, not the full file contents
+                - To access the FULL content of knowledge base files:
+                  1. First call `global_kb_sync` to download files to sandbox
+                  2. Files will be available at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
+                  3. Then use `read_file` or `semantic_search` to access content
+                - Use these summaries directly for most queries without needing full file access
+                - Only sync and read full files when the summary is insufficient"""
+
                 return kb_section
             else:
                 # Cache empty result

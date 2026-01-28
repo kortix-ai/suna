@@ -17,39 +17,44 @@ from core.utils.logger import logger
     usage_guide="""
 ### KNOWLEDGE BASE SEMANTIC SEARCH
 
+**IMPORTANT: These are TOOL FUNCTIONS - invoke them as tool calls, NOT as bash commands!**
+
 **LOCAL KNOWLEDGE BASE (Sandbox Files):**
-- Use `semantic_search` to perform intelligent content discovery with natural language queries
+- Use `semantic_search` tool to perform intelligent content discovery with natural language queries
 - Files are automatically indexed in the background - large files/folders may take time to index
 - IMPORTANT: Only searches files that have already been indexed. If you get no results, files might still be indexing
-- Use `ls_kb` to check which files are indexed and their status
+- Use `ls_kb` tool to check which files are indexed and their status
 - Path is optional - defaults to /workspace for general questions, or specify a file path for targeted search
-- Use `cleanup_kb` for maintenance operations (default|remove_files|clear_embeddings|clear_all)
+- Use `cleanup_kb` tool for maintenance operations (default|remove_files|clear_embeddings|clear_all)
 
 **INDEXING NOTES:**
 - First search may be slower as kb-fusion initializes
 - New files are indexed automatically but may not appear in search results immediately
-- Check `ls_kb` to verify file indexing status before searching
+- Check `ls_kb` tool to verify file indexing status before searching
 
 **GLOBAL KNOWLEDGE BASE MANAGEMENT:**
-- Use `global_kb_sync` to download assigned knowledge base files to sandbox
-- Files synced to `/workspace/downloads/global-knowledge/` with proper folder structure
+- KB files are AUTO-SYNCED when you first use `semantic_search` tool - no manual sync needed!
+- Files are synced to `/workspace/downloads/global-knowledge/` with proper folder structure
+- You can also manually call `global_kb_sync` tool to force a re-sync
 - Files are automatically searchable via semantic_search since they're in /workspace
-- Use when users ask vague questions without specific file uploads or references
+- The system prompt shows SUMMARIES of KB files - use semantic_search or read_file for full content
 
-**CRUD OPERATIONS FOR GLOBAL KB:**
+**CRUD OPERATIONS FOR GLOBAL KB (all are tool functions):**
 - **CREATE:**
-  - `global_kb_create_folder` - Create new folders to organize files
-  - `global_kb_upload_file` - Upload files from sandbox to global KB (USE FULL PATH)
+  - `global_kb_create_folder` tool - Create new folders to organize files
+  - `global_kb_upload_file` tool - Upload files from sandbox to global KB (USE FULL PATH)
 - **READ:**
-  - `global_kb_list_contents` - View all folders and files with their IDs
+  - `global_kb_list_contents` tool - View all folders and files with their IDs
 - **DELETE:**
-  - `global_kb_delete_item` - Remove files or folders using their ID
+  - `global_kb_delete_item` tool - Remove files or folders using their ID
 - **ENABLE/DISABLE:**
-  - `global_kb_enable_item` - Enable or disable KB files for this agent (controls sync)
-    
+  - `global_kb_enable_item` tool - Enable or disable KB files for this agent (controls sync)
+
 **WORKFLOW:**
 Create folder → Upload files from sandbox → Organize and manage → Enable → Sync to access
 Structure is 1-level deep: folders contain files only (no nested folders)
+
+**REMEMBER:** All KB operations are TOOL FUNCTIONS. Call them using the tool system, not via execute_command/bash!
 """
 )
 class SandboxKbTool(SandboxToolsBase):
@@ -60,6 +65,42 @@ class SandboxKbTool(SandboxToolsBase):
         super().__init__(project_id, thread_manager)
         self.kb_version = "0.1.2"
         self.kb_download_url = f"https://github.com/kortix-ai/kb-fusion/releases/download/v{self.kb_version}/kb"
+        self._kb_synced = False  # Track if KB has been synced this session
+
+    async def _auto_sync_kb_if_needed(self) -> bool:
+        """Auto-sync KB files from S3 to sandbox if not already synced this session."""
+        if self._kb_synced:
+            return True
+
+        try:
+            # Check if KB directory already exists with files
+            kb_dir = f"{self.workspace_path}/downloads/global-knowledge"
+            check = await self.sandbox.process.exec(f"test -d {kb_dir} && ls -A {kb_dir} | head -1")
+            if check.exit_code == 0 and check.result.strip():
+                # KB directory exists and has files
+                self._kb_synced = True
+                logger.debug("[KB] Auto-sync skipped: KB directory already has files")
+                return True
+
+            # Try to sync KB files
+            logger.info("[KB] Auto-syncing knowledge base files...")
+            result = await self.global_kb_sync()
+
+            if result.success:
+                self._kb_synced = True
+                synced_count = result.output.get("synced_files", 0) if isinstance(result.output, dict) else 0
+                if synced_count > 0:
+                    logger.info(f"[KB] Auto-synced {synced_count} knowledge base files")
+                else:
+                    logger.debug("[KB] No knowledge base files to sync")
+                return True
+            else:
+                logger.warning(f"[KB] Auto-sync failed: {result.output}")
+                return False
+
+        except Exception as e:
+            logger.warning(f"[KB] Auto-sync error: {e}")
+            return False
 
     async def _execute_kb_command(self, command: str, cwd: str = None) -> dict:
         await self._ensure_sandbox()
@@ -116,47 +157,59 @@ class SandboxKbTool(SandboxToolsBase):
         "type": "function",
         "function": {
             "name": "semantic_search",
-            "description": "Perform semantic search on files using natural language queries. Searches /workspace by default, or specify a file path for targeted search. NOTE: Only searches already-indexed files. Files are indexed automatically in the background, but large codebases may take time. If no results found, files might still be indexing - use ls_kb to check indexing status. **🚨 PARAMETER NAMES**: Use EXACTLY these parameter names: `queries` (REQUIRED), `path` (optional).",
+            "description": "Perform semantic search on files using natural language queries. Searches /workspace by default, or specify a file path for targeted search. NOTE: Only searches already-indexed files. Files are indexed automatically in the background, but large codebases may take time. If no results found, files might still be indexing - use ls_kb to check indexing status. **🚨 PARAMETER NAMES**: Use `query` (single string) OR `queries` (array of strings), and optional `path`.",
             "parameters": {
                 "type": "object",
                 "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Single natural language question to search for. Example: 'How does authentication work?'"
+                    },
                     "queries": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "**REQUIRED** - Natural language questions to search for. Example: ['How does authentication work?', 'Where is the database configured?']"
+                        "description": "Multiple natural language questions to search for. Example: ['How does authentication work?', 'Where is the database configured?']"
                     },
                     "path": {
                         "type": "string",
                         "description": "**OPTIONAL** - Path to specific file or directory to search. Defaults to /workspace if not provided."
                     }
                 },
-                "required": ["queries"],
+                "required": [],
                 "additionalProperties": False
             }
         }
     })
-    async def semantic_search(self, queries: List[str], path: Optional[str] = None) -> ToolResult:
+    async def semantic_search(self, queries: Optional[List[str]] = None, query: Optional[str] = None, path: Optional[str] = None) -> ToolResult:
         import json
-        
+
         try:
-            # Handle case where queries might be passed as a JSON string instead of a list
-            if isinstance(queries, str):
+            # Handle both 'query' (single string) and 'queries' (array) parameters
+            # This provides flexibility for different calling conventions
+            if query and not queries:
+                # Single query string provided
+                queries = [query]
+            elif isinstance(queries, str):
+                # Handle case where queries might be passed as a JSON string instead of a list
                 try:
                     queries = json.loads(queries)
                 except json.JSONDecodeError:
                     # If it's a plain string, wrap it in a list
                     queries = [queries]
-            
+
             if not queries:
-                return self.fail_response("At least one query is required for search.")
-            
+                return self.fail_response("At least one query is required for search. Use 'query' for a single search or 'queries' for multiple searches.")
+
             # Ensure all queries are strings
             queries = [str(q) for q in queries]
-            
+
             # Ensure kb-fusion is initialized
             init_result = await self._ensure_kb_initialized()
             if not init_result.get("success"):
                 return self.fail_response(f"Failed to initialize kb-fusion: {init_result.get('error', 'Unknown error')}")
+
+            # Auto-sync KB files from cloud storage if not already done
+            await self._auto_sync_kb_if_needed()
             
             # Default to workspace_path if no path provided
             search_path = path or self.workspace_path
@@ -366,26 +419,44 @@ class SandboxKbTool(SandboxToolsBase):
                 
                 try:
                     # Download file from S3
+                    logger.info(f"[KB_SYNC] Downloading {file_path} from S3...")
                     file_response = await client.storage.from_('file-uploads').download(file_path)
-                    
+
                     if not file_response:
+                        logger.warning(f"[KB_SYNC] Empty response for {file_path}")
                         continue
-                    
-                    # Create folder structure in sandbox
-                    folder_path = f"{kb_dir}/{folder_name}"
-                    await self.sandbox.process.exec(f"mkdir -p '{folder_path}'")
-                    
-                    # Upload file to sandbox (path relative to /workspace for fs.upload_file)
-                    file_destination = f"downloads/global-knowledge/{folder_name}/{filename}"
+
+                    logger.info(f"[KB_SYNC] Downloaded {len(file_response) if file_response else 0} bytes")
+
+                    # Create folder structure in sandbox - sanitize folder name for filesystem
+                    safe_folder_name = folder_name.replace("'", "").replace('"', '')
+                    folder_path = f"{kb_dir}/{safe_folder_name}"
+                    mkdir_result = await self.sandbox.process.exec(f'mkdir -p "{folder_path}"')
+                    if mkdir_result.exit_code != 0:
+                        logger.error(f"[KB_SYNC] Failed to create folder: {mkdir_result.result}")
+                        continue
+
+                    # Upload file to sandbox using FULL path (required by Daytona SDK)
+                    file_destination = f"{self.workspace_path}/downloads/global-knowledge/{safe_folder_name}/{filename}"
+                    logger.info(f"[KB_SYNC] Uploading {len(file_response)} bytes to: {file_destination}")
                     await self.sandbox.fs.upload_file(file_response, file_destination)
-                    
+
+                    # Verify the file was written
+                    verify_result = await self.sandbox.process.exec(f'test -f "{kb_dir}/{safe_folder_name}/{filename}" && echo "exists"')
+                    if "exists" not in verify_result.result:
+                        logger.error(f"[KB_SYNC] File not found after upload: {file_destination}, verify result: {verify_result.result}")
+                        continue
+
                     synced_files += 1
-                    
+                    logger.info(f"[KB_SYNC] Successfully synced: {safe_folder_name}/{filename}")
+
+                    # Use original folder name for output structure
                     if folder_name not in folder_structure:
                         folder_structure[folder_name] = []
                     folder_structure[folder_name].append(filename)
-                    
+
                 except Exception as e:
+                    logger.error(f"[KB_SYNC] Error syncing {folder_name}/{filename}: {e}", exc_info=True)
                     continue
             
             # Create README
@@ -412,7 +483,7 @@ Location: `/workspace/downloads/global-knowledge/`
 Agent ID: {agent_id}
 """
             
-            await self.sandbox.fs.upload_file(readme_content.encode('utf-8'), "downloads/global-knowledge/README.md")
+            await self.sandbox.fs.upload_file(readme_content.encode('utf-8'), f"{self.workspace_path}/downloads/global-knowledge/README.md")
             
             return self.success_response({
                 "message": f"Successfully synced {synced_files} files to knowledge base",
