@@ -56,9 +56,13 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
     }
   }, [isBatch, batchResults?.length]);
 
-  const handleOpenUrl = (url: string) => {
+  const handleOpenUrl = (url: string | any) => {
+    // Safety: ensure url is a string before opening (API may return objects)
+    const resolvedUrl = typeof url === 'string' ? url
+      : (typeof url === 'object' && url !== null) ? (url.url || url.src || url.href || '') : '';
+    if (!resolvedUrl) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    Linking.openURL(url);
+    Linking.openURL(resolvedUrl);
   };
 
   const currentResults = isBatch && batchResults && batchResults[currentQueryIndex]
@@ -267,7 +271,12 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
                 )}
               </View>
               <View className="flex-row flex-wrap gap-3">
-                {currentImages.slice(0, 6).map((imageUrl, idx) => (
+                {currentImages.slice(0, 6).map((imageEntry, idx) => {
+                  // Resolve to string URL (safety for objects leaking through)
+                  const imageUrl = typeof imageEntry === 'string' ? imageEntry
+                    : (typeof imageEntry === 'object' && imageEntry !== null) ? (imageEntry.url || imageEntry.src || '') : '';
+                  if (!imageUrl) return null;
+                  return (
                   <Pressable
                     key={idx}
                     onPress={() => handleOpenUrl(imageUrl)}
@@ -283,7 +292,8 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
                       <Icon as={ExternalLink} size={12} className="text-white" />
                     </View>
                   </Pressable>
-                ))}
+                  );
+                })}
               </View>
               {currentImages.length > 6 && (
                 <Text className="text-xs font-roobert text-muted-foreground text-center mt-1">
