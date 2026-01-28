@@ -32,6 +32,20 @@ const parseContent = (content: any): any => {
   return content;
 };
 
+/** Normalize image entries to plain URL strings. API may return strings or objects with url/src. */
+const normalizeImages = (images: any[]): string[] => {
+  if (!Array.isArray(images)) return [];
+  return images
+    .map((img: any) => {
+      if (typeof img === 'string') return img;
+      if (typeof img === 'object' && img !== null) {
+        return img.url || img.src || img.image_url || img.thumbnail || null;
+      }
+      return null;
+    })
+    .filter((url): url is string => typeof url === 'string' && url.length > 0);
+};
+
 export function extractWebSearchData(
   toolCall: ToolCallData,
   toolResult?: ToolResultData,
@@ -72,7 +86,7 @@ export function extractWebSearchData(
           snippet: r.content || r.snippet || ''
         })),
         answer: batchItem.answer || '',
-        images: batchItem.images || []
+        images: normalizeImages(batchItem.images || [])
       }));
 
       // Flatten all results and images for combined display
@@ -97,15 +111,15 @@ export function extractWebSearchData(
     // Handle legacy batch_results format (for image search)
     if (output.batch_results && Array.isArray(output.batch_results)) {
       images = output.batch_results.reduce((acc: string[], res: any) => {
-        return acc.concat(res.images || []);
-      }, []);
+        return acc.concat(normalizeImages(res.images || []));
+      }, [] as string[]);
       
       const queries = output.batch_results.map((r: any) => r.query).filter(Boolean);
       if (queries.length > 0) {
         query = queries.length > 1 ? `${queries.length} queries` : queries[0];
       }
     } else {
-      images = output.images || [];
+      images = normalizeImages(output.images || []);
     }
     
     if (output.results && Array.isArray(output.results)) {
