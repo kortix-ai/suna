@@ -1,5 +1,5 @@
 import { Button } from '@/components/ui/button';
-import { KortixProcessModal } from '@/components/sidebar/kortix-enterprise-modal';
+// import { KortixProcessModal } from '@/components/sidebar/kortix-enterprise-modal';
 
 export function CTACard() {
   return (
@@ -15,11 +15,9 @@ export function CTACard() {
         </div>
 
         <div>
-          <KortixProcessModal>
-            <Button className="w-full">
-              Learn more
-            </Button>
-          </KortixProcessModal>
+          <Button className="w-full">
+            Learn more
+          </Button>
         </div>
 
       </div>
