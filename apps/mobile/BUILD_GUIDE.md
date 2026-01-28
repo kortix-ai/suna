@@ -51,13 +51,13 @@ eas build --profile testflight --platform android --auto-submit
 
 ```bash
 # 1. app.json (line 5)
-"version": "1.1.1"
+"version": "1.1.2"
 
 # 2. ios/Kortix/Info.plist (CFBundleShortVersionString - line 24)
-<string>1.1.1</string>
+<string>1.1.2</string>
 
 # 3. android/app/build.gradle (versionName - line 96)
-versionName "1.1.1"
+versionName "1.1.2"
 ```
 
 **Important:** All 3 files must match exactly, or the build will use the wrong version!
