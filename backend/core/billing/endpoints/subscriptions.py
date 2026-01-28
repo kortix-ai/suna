@@ -217,6 +217,14 @@ async def create_inline_checkout(
 
                         logger.info(f"[INLINE CHECKOUT] Subscription upgraded: {updated_sub['id']} status={updated_sub['status']}")
 
+                        # Verify subscription is active before granting credits
+                        if updated_sub['status'] != 'active':
+                            logger.error(f"[INLINE CHECKOUT] Upgrade failed - subscription status: {updated_sub['status']}")
+                            raise HTTPException(
+                                status_code=402,
+                                detail=f"Payment failed. Subscription status: {updated_sub['status']}. Please check your payment method."
+                            )
+
                         # Grant credits for the upgrade
                         lifecycle_service = LifecycleService()
                         new_tier_info = {
@@ -310,7 +318,10 @@ async def create_inline_checkout(
             'customer': customer_id,
             'items': [{'price': price_id}],
             'payment_behavior': 'default_incomplete',
-            'payment_settings': {'save_default_payment_method': 'on_subscription'},
+            'payment_settings': {
+                'save_default_payment_method': 'on_subscription',
+                'payment_method_types': ['card'],  # Cards only, matching normal checkout
+            },
             'expand': ['latest_invoice.payment_intent'],
             'metadata': metadata
         }

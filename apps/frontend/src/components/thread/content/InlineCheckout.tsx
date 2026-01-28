@@ -98,7 +98,7 @@ function PaymentForm({
         return;
       }
 
-      // Payment succeeded without redirect
+      // Handle payment intent status (cards only - no async payment methods)
       if (paymentIntent?.status === 'succeeded') {
         console.log('[InlineCheckout] Payment succeeded:', {
           paymentIntentId: paymentIntent.id,
@@ -123,6 +123,12 @@ function PaymentForm({
         onSuccess();
         // Redirect to dashboard
         window.location.href = '/dashboard?subscription=success';
+      } else {
+        // Any non-succeeded status is an error for card payments
+        const status = paymentIntent?.status || 'unknown';
+        console.error('[InlineCheckout] Payment not succeeded:', status);
+        setError('Payment could not be completed. Please try again.');
+        setIsProcessing(false);
       }
     } catch (err: any) {
       console.error('Payment error:', err);
