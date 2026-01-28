@@ -104,9 +104,9 @@ export function DowngradeConfirmationDialog({
       if (!open) resetAndClose();
       else onOpenChange(open);
     }}>
-      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] sm:max-h-[85vh]">
+      <DialogContent className="sm:max-w-lg p-0 gap-0 overflow-hidden max-h-[90vh] sm:max-h-[85vh] flex flex-col">
         {step === 1 ? (
-          <div className="p-4 sm:p-8">
+          <div className="p-4 sm:p-8 overflow-y-auto">
             {/* Logo & Header - compact on mobile */}
             <div className="flex flex-col items-center text-center mb-4 sm:mb-6">
               <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">
@@ -139,7 +139,7 @@ export function DowngradeConfirmationDialog({
             </div>
           </div>
         ) : (
-          <div className="p-4 sm:p-8 overflow-y-auto max-h-[85vh] sm:max-h-none">
+          <div className="p-4 sm:p-8 overflow-y-auto">
             {/* Logo & Header - compact on mobile */}
             <div className="flex flex-col items-center text-center mb-3 sm:mb-6">
               <div className="mb-2 sm:mb-4 p-2 sm:p-3 rounded-xl sm:rounded-2xl bg-muted/50">
