@@ -15,7 +15,11 @@ async def invalidate_account_state_cache(account_id: str):
     """Invalidate the account state cache for a user."""
     cache_key = f"account_state:{account_id}"
     await Cache.invalidate(cache_key)
-    
+
+    # Also invalidate minimal cache
+    minimal_key = f"account_state_minimal:{account_id}"
+    await Cache.invalidate(minimal_key)
+
     # Also invalidate tier_info cache
     tier_key = f"tier_info:{account_id}"
     await Cache.invalidate(tier_key)
@@ -34,6 +38,7 @@ async def invalidate_all_billing_caches(account_id: str):
     """Invalidate all billing-related caches for a user using batch operation."""
     keys = [
         f"account_state:{account_id}",
+        f"account_state_minimal:{account_id}",
         f"credit_balance:{account_id}",
         f"credit_summary:{account_id}",
         f"subscription_tier:{account_id}",

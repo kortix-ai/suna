@@ -379,9 +379,12 @@ class SchedulingHandler:
             }
         
         if not scheduled_tier or not scheduled_date:
-            return await SchedulingHandler._check_stripe_metadata_for_scheduled_changes(
-                data, current_tier_name, subscription_data
-            )
+            # No scheduled change in DB - skip Stripe API call
+            # Scheduled changes are tracked in DB fields, not Stripe metadata
+            return {
+                'has_scheduled_change': False,
+                'scheduled_change': None
+            }
         
         current_tier = get_tier_by_name(data.get('tier', 'none'))
         target_tier = get_tier_by_name(scheduled_tier)
