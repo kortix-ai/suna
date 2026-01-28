@@ -29,10 +29,9 @@ class PromptManager:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
 
-        # Filter disabled tools from core prompt (disabled_tools already fetched by caller)
-        if disabled_tools:
-            logger.info(f"🔒 [PROMPT] Filtering {len(disabled_tools)} disabled tools from prompt")
-            system_content = PromptManager._filter_disabled_tools(system_content, disabled_tools)
+        # Note: Tier-based tool filtering removed - tools are now blocked at execution time
+        # in tool_executor.py via check_tool_access_for_account(). This allows the agent
+        # to see all tools but get a proper upgrade CTA when blocked.
 
         t1 = time.time()
         system_content = PromptManager._build_base_prompt(system_content, disabled_tools)
@@ -141,12 +140,9 @@ class PromptManager:
 
     @staticmethod
     def _build_base_prompt(system_content: str, disabled_tools: list = None) -> str:
+        # Note: Tool filtering removed - all tools shown to agent, blocked at execution time
         logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
-        if disabled_tools:
-            minimal_index = get_minimal_tool_index_filtered(disabled_tools)
-            logger.info(f"🔒 [DYNAMIC TOOLS] Filtered out {len(disabled_tools)} disabled tools from index")
-        else:
-            minimal_index = get_minimal_tool_index()
+        minimal_index = get_minimal_tool_index()
         system_content += "\n\n" + minimal_index
         logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
         
@@ -799,63 +795,42 @@ This is NOT optional - without the tag, users see nothing!
 - User wants to upgrade → include `<inline_checkout/>`
 - User says "how to subscribe" → include `<inline_checkout/>`
 
+**When NOT to use:**
+- NEVER use `<inline_checkout/>` when a tool returns TOOL_ACCESS_DENIED error
+- The UI already shows an upgrade button next to blocked tools - do NOT duplicate it
+- Just acknowledge the limitation and move on, the user can click the upgrade button shown in the UI
+
+**IMPORTANT:** The `<inline_checkout/>` tag only shows a PAYMENT FORM. It does NOT upgrade the user.
+The user must complete payment themselves. NEVER say "I've upgraded you" or "You're now on Plus" - that's false.
+
 **Examples (you must output the tag exactly):**
 
 1. User: "how do I upgrade?" or "what are the plans?"
-   Your response MUST include:
    ```
    Here are your subscription options:
    <inline_checkout/>
    ```
 
 2. User: "upgrade me to Plus"
-   Your response MUST include:
    ```
-   I'll set you up with Plus!
+   Here's the checkout form for Plus - complete payment to upgrade:
    <inline_checkout plan="plus"/>
    ```
 
 3. User: "I want Pro yearly"
-   Your response MUST include:
    ```
-   Great choice! Here's Pro with yearly billing:
+   Here's the Pro yearly checkout - complete payment to upgrade:
    <inline_checkout plan="pro" period="yearly"/>
    ```
 
 **Tag format:**
 - `<inline_checkout/>` - shows plan picker (user chooses)
-- `<inline_checkout plan="plus"/>` - skips to Plus payment
-- `<inline_checkout plan="pro"/>` - skips to Pro payment
-- `<inline_checkout plan="ultra"/>` - skips to Ultra payment
+- `<inline_checkout plan="plus"/>` - shows Plus payment form
+- `<inline_checkout plan="pro"/>` - shows Pro payment form
+- `<inline_checkout plan="ultra"/>` - shows Ultra payment form
 - Add `period="yearly"` or `period="monthly"` optionally
 
-WITHOUT THE TAG = USER SEES NOTHING. Always include it!
-
-## PREMIUM FEATURES (Upgrade Required)
-
-These features are NOT available on free plan:
-- **Presentations/Slides** - Creating PPT, slideshows, decks
-- **Spreadsheets** - Creating Excel, CSV, data tables
-- **Canvas/Design** - Visual designs, graphics
-
-When users ask for these, respond:
-"Creating [presentations/spreadsheets/designs] is a premium feature. Upgrade to unlock it! Use code **KORTIX2026** for 30% off + 2X credits. <upgrade_cta/>"
-
-## FOR ALL OTHER TASKS (code, writing, research, etc.)
-
-Complete the task normally, then add this signature at the end:
-
----
-🚀 Upgrade for [relevant benefit]. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>
-
-Examples:
-- Code task → "🚀 Upgrade for faster debugging. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
-- Writing task → "🚀 Upgrade for better quality. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
-- Research → "🚀 Upgrade for deeper analysis. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
-
-❌ SKIP signature FOR: hi, hello, thanks, ok, bye
-
-The <upgrade_cta/> tag shows a small upgrade button. The <inline_checkout/> tag shows a full plan picker for direct subscription.
+The tag shows a payment form. The user must complete payment to actually upgrade.
 
 </SYSTEM_CRITICAL_INSTRUCTION>
 """

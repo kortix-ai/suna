@@ -472,3 +472,12 @@ def get_tier_disabled_tools(tier_name: str) -> List[str]:
     """Get list of tools disabled for a specific tier."""
     tier = TIERS.get(tier_name, TIERS['free'])
     return tier.disabled_tools or []
+
+def get_disabled_tools(tier_name: str) -> List[str]:
+    """Alias for get_tier_disabled_tools."""
+    return get_tier_disabled_tools(tier_name)
+
+def is_tool_disabled(tier_name: str, tool_name: str) -> bool:
+    """Check if a tool is disabled for a specific tier."""
+    disabled = get_disabled_tools(tier_name)
+    return tool_name in disabled
