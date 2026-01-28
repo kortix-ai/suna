@@ -884,9 +884,15 @@ export function useChat(): UseChatReturn {
         };
 
         queryClient.setQueriesData(
-          { queryKey: chatKeys.threads() },
-          (oldThreads: any[] | undefined) => {
-            if (!oldThreads) return [optimisticThread];
+          { queryKey: chatKeys.threads(), exact: false, predicate: (query) => {
+            // Only match thread LIST queries (e.g. ['chat', 'threads', { projectId }])
+            // Avoid matching individual thread/message queries that also start with ['chat', 'threads']
+            const key = query.queryKey;
+            return key.length >= 2 && key[0] === 'chat' && key[1] === 'threads' &&
+              (key.length === 2 || (key.length === 3 && typeof key[2] === 'object'));
+          }},
+          (oldThreads: any) => {
+            if (!Array.isArray(oldThreads)) return oldThreads; // Safety: don't corrupt non-array query data
             log.log('✨ [useChat] Adding optimistic thread to side menu:', optimisticThreadId);
             return [optimisticThread, ...oldThreads];
           }
@@ -1008,9 +1014,13 @@ export function useChat(): UseChatReturn {
 
           // Replace optimistic thread with real thread in cache
           queryClient.setQueriesData(
-            { queryKey: chatKeys.threads() },
-            (oldThreads: any[] | undefined) => {
-              if (!oldThreads) return oldThreads;
+            { queryKey: chatKeys.threads(), exact: false, predicate: (query) => {
+              const key = query.queryKey;
+              return key.length >= 2 && key[0] === 'chat' && key[1] === 'threads' &&
+                (key.length === 2 || (key.length === 3 && typeof key[2] === 'object'));
+            }},
+            (oldThreads: any) => {
+              if (!Array.isArray(oldThreads)) return oldThreads;
               // Remove the optimistic thread, real thread will be added via invalidation
               const filtered = oldThreads.filter((t: any) => t.thread_id !== optimisticThreadId);
               log.log('✅ [useChat] Replaced optimistic thread with real thread:', newThreadId);
@@ -1053,9 +1063,13 @@ export function useChat(): UseChatReturn {
 
           // Remove optimistic thread from cache on error
           queryClient.setQueriesData(
-            { queryKey: chatKeys.threads() },
-            (oldThreads: any[] | undefined) => {
-              if (!oldThreads) return oldThreads;
+            { queryKey: chatKeys.threads(), exact: false, predicate: (query) => {
+              const key = query.queryKey;
+              return key.length >= 2 && key[0] === 'chat' && key[1] === 'threads' &&
+                (key.length === 2 || (key.length === 3 && typeof key[2] === 'object'));
+            }},
+            (oldThreads: any) => {
+              if (!Array.isArray(oldThreads)) return oldThreads;
               const filtered = oldThreads.filter((t: any) => t.thread_id !== optimisticThreadId);
               log.log('❌ [useChat] Removed optimistic thread due to error');
               return filtered;
@@ -1270,8 +1284,9 @@ export function useChat(): UseChatReturn {
         }
       }
     } catch (error: any) {
-      log.error('[useChat] Error sending message:', error);
-      throw error;
+      log.error('[useChat] Error sending message:', error?.message || error, error?.stack);
+      // Don't re-throw - callers don't await/catch this, so re-throwing causes
+      // unhandled promise rejections that break subsequent sends
     }
   }, [
     activeThreadId,
@@ -1284,6 +1299,14 @@ export function useChat(): UseChatReturn {
     selectedQuickAction,
     selectedQuickActionOption,
     t,
+    currentModel,
+    queryClient,
+    router,
+    selectedModelId,
+    availableModels,
+    accessibleModels,
+    hasActiveSubscription,
+    openPricingModal,
   ]);
 
   const stopAgent = useCallback(async () => {
