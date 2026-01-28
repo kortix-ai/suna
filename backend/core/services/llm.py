@@ -206,9 +206,16 @@ async def make_llm_api_call(
         override_params["extra_headers"] = extra_headers
     if frequency_penalty is not None:
         override_params["frequency_penalty"] = frequency_penalty
-    
+    if max_tokens is not None:
+        override_params["max_tokens"] = max_tokens
+
     params = model_manager.get_litellm_params(resolved_model_name, **override_params)
-    
+
+    # Kimi models only support frequency_penalty=0
+    model_str = params.get("model", "")
+    if "kimi" in model_str.lower():
+        params["frequency_penalty"] = 0
+
     if tools:
         params["tools"] = tools
         params["tool_choice"] = tool_choice

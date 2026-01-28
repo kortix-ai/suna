@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { MessageCircle, Clock, Frown } from 'lucide-react';
+import { MessageCircle, Frown, Loader2 } from 'lucide-react';
 import {
     Command,
     CommandEmpty,
@@ -16,6 +16,7 @@ import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
 import { ThreadIcon } from './thread-icon';
 import { useThreads } from '@/hooks/sidebar/use-sidebar';
+import { useThreadSearch } from '@/hooks/threads/use-thread-search';
 import { useIsMobile } from '@/hooks/utils';
 import { useSidebar } from '@/components/ui/sidebar';
 import { useTranslations } from 'next-intl';
@@ -32,7 +33,29 @@ type ThreadWithProject = {
     url: string;
     updatedAt: string;
     iconName?: string;
+    textPreview?: string;
 };
+
+// Highlight matching terms in text
+function highlightText(text: string, query: string): ReactNode {
+    if (!query.trim() || !text) return text;
+
+    const words = query.toLowerCase().split(/\s+/).filter(w => w.length > 1);
+    if (words.length === 0) return text;
+
+    // Create regex pattern for all words
+    const pattern = new RegExp(`(${words.map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`, 'gi');
+    const parts = text.split(pattern);
+
+    return parts.map((part, i) => {
+        const isMatch = words.some(w => part.toLowerCase() === w);
+        return isMatch ? (
+            <mark key={i} className="bg-yellow-200 dark:bg-yellow-800 rounded px-0.5">
+                {part}
+            </mark>
+        ) : part;
+    });
+}
 
 export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps) {
     const [search, setSearch] = useState('');
@@ -41,22 +64,27 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
     const { setOpenMobile } = useSidebar();
     const t = useTranslations('sidebar');
 
-    // Reduced limit from 50 to 20 to reduce API response size
     const { data: threadsResponse } = useThreads({ page: 1, limit: 20 });
 
-    // Process threads directly from backend data - backend already provides project info
+    const {
+        results: searchResults,
+        isSearching,
+        shouldSearch,
+    } = useThreadSearch(search, 20);
+
+    // Process threads directly from backend data
     const combinedThreads = useMemo(() => {
         const threads = threadsResponse?.threads || [];
         if (!threads.length) return [];
-        
+
         const processed: ThreadWithProject[] = [];
-        
+
         for (const thread of threads) {
             const projectId = thread.project_id;
             const project = thread.project;
-            
+
             if (!projectId || !project) continue;
-            
+
             processed.push({
                 threadId: thread.thread_id,
                 projectId: projectId,
@@ -66,17 +94,80 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
                 iconName: project.icon_name,
             });
         }
-        
-        return processed.sort((a, b) => 
+
+        return processed.sort((a, b) =>
             new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
     }, [threadsResponse]);
 
-    const filtered = search
-        ? combinedThreads.filter((t) =>
-            t.projectName.toLowerCase().includes(search.toLowerCase())
-        )
-        : combinedThreads.slice(0, 50);
+    // Create a map for quick thread lookup by ID
+    const threadMap = useMemo(() => {
+        const map = new Map<string, ThreadWithProject>();
+        for (const thread of combinedThreads) {
+            map.set(thread.threadId, thread);
+        }
+        return map;
+    }, [combinedThreads]);
+
+    // Determine filtered threads based on search mode
+    const filtered = useMemo(() => {
+        // If using semantic search and we have results
+        if (shouldSearch && searchResults.length > 0) {
+            // Deduplicate by thread_id, keeping highest score and its text_preview
+            const seen = new Map<string, { score: number; textPreview: string; projectId: string | null; projectName: string; iconName: string | null; updatedAt: string | null }>();
+            for (const result of searchResults) {
+                const existing = seen.get(result.thread_id);
+                if (!existing || result.score > existing.score) {
+                    seen.set(result.thread_id, {
+                        score: result.score,
+                        textPreview: result.text_preview,
+                        projectId: result.project_id,
+                        projectName: result.project_name,
+                        iconName: result.project_icon_name,
+                        updatedAt: result.updated_at,
+                    });
+                }
+            }
+
+            // Map to thread objects with text preview — fall back to search metadata for older threads
+            const semanticResults: ThreadWithProject[] = [];
+            for (const [threadId, data] of seen) {
+                const thread = threadMap.get(threadId);
+                if (thread) {
+                    semanticResults.push({
+                        ...thread,
+                        textPreview: data.textPreview,
+                    });
+                } else if (data.projectId) {
+                    semanticResults.push({
+                        threadId,
+                        projectId: data.projectId,
+                        projectName: data.projectName || 'Unnamed Project',
+                        url: `/projects/${data.projectId}/thread/${threadId}`,
+                        updatedAt: data.updatedAt || new Date().toISOString(),
+                        iconName: data.iconName || undefined,
+                        textPreview: data.textPreview,
+                    });
+                }
+            }
+            return semanticResults;
+        }
+
+        // If searching but no results yet (still searching or no matches)
+        if (shouldSearch && isSearching) {
+            return [];
+        }
+
+        // Fall back to client-side filtering for short queries
+        if (search) {
+            return combinedThreads.filter((t) =>
+                t.projectName.toLowerCase().includes(search.toLowerCase())
+            );
+        }
+
+        // No search - show recent threads
+        return combinedThreads.slice(0, 50);
+    }, [search, shouldSearch, searchResults, isSearching, combinedThreads, threadMap]);
 
     const handleSelect = (url: string) => {
         onOpenChange(false);
@@ -97,12 +188,19 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
                 </VisuallyHidden>
                 <Command className="bg-background border-0" shouldFilter={false}>
                     <div className="px-4 py-3 border-b">
-                        <CommandInput
-                            placeholder="Search chats..."
-                            value={search}
-                            onValueChange={setSearch}
-                            className=" px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-                        />
+                        <div className="relative">
+                            <CommandInput
+                                placeholder="Search chats..."
+                                value={search}
+                                onValueChange={setSearch}
+                                className=" px-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                            />
+                            {isSearching && (
+                                <div className="absolute right-0 top-1/2 -translate-y-1/2">
+                                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                </div>
+                            )}
+                        </div>
                     </div>
                     <CommandList className="max-h-[400px] p-3">
                         {combinedThreads.length === 0 && !search ? (
@@ -110,6 +208,13 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
                                 <Frown className="h-12 w-12 text-muted-foreground/40 mb-3" />
                                 <p className="text-sm text-muted-foreground">
                                     {t('noConversations')}
+                                </p>
+                            </div>
+                        ) : isSearching && shouldSearch ? (
+                            <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/40 mb-3" />
+                                <p className="text-sm text-muted-foreground">
+                                    Searching...
                                 </p>
                             </div>
                         ) : filtered.length === 0 ? (
@@ -127,16 +232,24 @@ export function ThreadSearchModal({ open, onOpenChange }: ThreadSearchModalProps
                                             className="p-0 rounded-2xl"
                                         >
                                             <SpotlightCard className="w-full cursor-pointer">
-                                                <div className="flex items-center gap-3 px-3 py-2">
-                                                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border shrink-0">
+                                                <div className="flex items-start gap-3 px-3 py-2">
+                                                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border shrink-0 mt-0.5">
                                                         <ThreadIcon
                                                             iconName={thread.iconName}
                                                             className="text-muted-foreground"
                                                             size={16}
                                                         />
                                                     </div>
-                                                    <span className="flex-1 truncate text-sm">{thread.projectName}</span>
-                                                    <Clock className="h-3 w-3 opacity-50 shrink-0" />
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="truncate text-sm font-medium">{thread.projectName}</span>
+                                                        </div>
+                                                        {thread.textPreview && shouldSearch && (
+                                                            <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                                                                {highlightText(thread.textPreview.slice(0, 150), search)}
+                                                            </p>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             </SpotlightCard>
                                         </CommandItem>

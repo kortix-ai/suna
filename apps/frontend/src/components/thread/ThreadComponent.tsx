@@ -1526,24 +1526,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     }
   }, [projectName]);
 
-  const hasCheckedUpgradeDialog = useRef(false);
-
-  useEffect(() => {
-    if (
-      initialLoadCompleted &&
-      subscriptionData &&
-      !hasCheckedUpgradeDialog.current
-    ) {
-      hasCheckedUpgradeDialog.current = true;
-      const hasSeenUpgradeDialog = localStorage.getItem(
-        'suna_upgrade_dialog_displayed',
-      );
-      const isFreeTier = subscriptionStatus === 'no_subscription';
-      if (!hasSeenUpgradeDialog && isFreeTier && !isLocalMode()) {
-        openBillingModal();
-      }
-    }
-  }, [subscriptionData, subscriptionStatus, initialLoadCompleted, openBillingModal]);
+  // NOTE: Removed auto-show upgrade modal for free users - let users discover pricing naturally
 
   useEffect(() => {
     setIsSidePanelAnimating(true);

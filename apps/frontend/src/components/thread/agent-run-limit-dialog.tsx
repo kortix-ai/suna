@@ -236,7 +236,9 @@ export const AgentRunLimitDialog: React.FC<AgentRunLimitDialogProps> = ({
 
   const handleUpgrade = () => {
     pricingModalStore.openPricingModal({
-      title: 'Upgrade to run more workers in parallel'
+      isAlert: true,
+      alertTitle: 'Parallel Runs Limit Reached',
+      alertSubtitle: 'Upgrade to run more workers in parallel.',
     });
     onOpenChange(false);
   };

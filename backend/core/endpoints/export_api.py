@@ -215,17 +215,25 @@ def sanitize_filename(name: str) -> str:
 def preprocess_html(html: str) -> str:
     """Preprocess HTML for better conversion"""
     import re
-    
+
     if not html or not isinstance(html, str):
         return '<p></p>'
-    
+
+    # If content is a full HTML document, extract just the body content
+    # This prevents nested HTML documents when we wrap it later
+    if '<!DOCTYPE' in html.upper() or '<html' in html.lower():
+        # Try to extract body content
+        body_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.IGNORECASE | re.DOTALL)
+        if body_match:
+            html = body_match.group(1)
+
     # Remove script/style tags
     html = re.sub(r'<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>', '', html, flags=re.IGNORECASE)
     html = re.sub(r'<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>', '', html, flags=re.IGNORECASE)
-    
+
     # Clean up empty paragraphs
     html = re.sub(r'<p>\s*<\/p>', '', html)
-    
+
     return html.strip()
 
 
@@ -311,21 +319,24 @@ async def export_to_docx(
     try:
         content = request.content
         file_name = sanitize_filename(request.fileName)
-        
+
         print(f"[DOCX Export] User: {user_id}, File: {file_name}, Content length: {len(content)}")
-        
+
+        # Preprocess HTML to extract body content if it's a full document
+        preprocessed_content = preprocess_html(content)
+
         # Create DOCX document with clean black/white styling
         doc = Document()
-        
+
         # Set default font to clean black/white theme
         style = doc.styles['Normal']
         style.font.name = 'Calibri'
         style.font.size = Pt(11)
         style.font.color.rgb = RGBColor(26, 26, 26)  # #1a1a1a - dark gray/black
-        
+
         # Parse HTML with BeautifulSoup
-        soup = BeautifulSoup(content, 'html.parser')
-        
+        soup = BeautifulSoup(preprocessed_content, 'html.parser')
+
         # Convert HTML elements to DOCX
         for element in soup.children:
             process_html_element(element, doc)

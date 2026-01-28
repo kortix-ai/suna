@@ -3,22 +3,23 @@ import json
 import asyncio
 import datetime
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from core.tools.mcp_tool_wrapper import MCPToolWrapper
 from core.agentpress.tool import SchemaType
-from core.tools.tool_guide_registry import get_minimal_tool_index, get_tool_guide
+from core.tools.tool_guide_registry import get_minimal_tool_index, get_minimal_tool_index_filtered, get_tool_guide
 from core.utils.logger import logger
 
 class PromptManager:
     @staticmethod
-    async def build_system_prompt(model_name: str, agent_config: Optional[dict], 
-                                  thread_id: str, 
+    async def build_system_prompt(model_name: str, agent_config: Optional[dict],
+                                  thread_id: str,
                                   mcp_wrapper_instance: Optional[MCPToolWrapper],
                                   client=None,
                                   tool_registry=None,
                                   xml_tool_calling: bool = False,
                                   user_id: Optional[str] = None,
-                                  mcp_loader=None) -> Tuple[dict, Optional[dict]]:
+                                  mcp_loader=None,
+                                  disabled_tools: Optional[List[str]] = None) -> Tuple[dict, Optional[dict]]:
         
         build_start = time.time()
         
@@ -27,9 +28,14 @@ class PromptManager:
         else:
             from core.prompts.core_prompt import get_core_system_prompt
             system_content = get_core_system_prompt()
-        
+
+        # Filter disabled tools from core prompt (disabled_tools already fetched by caller)
+        if disabled_tools:
+            logger.info(f"🔒 [PROMPT] Filtering {len(disabled_tools)} disabled tools from prompt")
+            system_content = PromptManager._filter_disabled_tools(system_content, disabled_tools)
+
         t1 = time.time()
-        system_content = PromptManager._build_base_prompt(system_content)
+        system_content = PromptManager._build_base_prompt(system_content, disabled_tools)
         logger.debug(f"⏱️ [PROMPT TIMING] _build_base_prompt: {(time.time() - t1) * 1000:.1f}ms")
         
         # Start parallel fetch tasks
@@ -117,9 +123,30 @@ class PromptManager:
             return None
     
     @staticmethod
-    def _build_base_prompt(system_content: str) -> str:
+    def _filter_disabled_tools(content: str, disabled_tools: list) -> str:
+        """Filter out lines mentioning disabled tools from content."""
+        if not disabled_tools:
+            return content
+        lines = content.split('\n')
+        filtered = []
+        for line in lines:
+            skip = False
+            for tool in disabled_tools:
+                if tool in line:
+                    skip = True
+                    break
+            if not skip:
+                filtered.append(line)
+        return '\n'.join(filtered)
+
+    @staticmethod
+    def _build_base_prompt(system_content: str, disabled_tools: list = None) -> str:
         logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
-        minimal_index = get_minimal_tool_index()
+        if disabled_tools:
+            minimal_index = get_minimal_tool_index_filtered(disabled_tools)
+            logger.info(f"🔒 [DYNAMIC TOOLS] Filtered out {len(disabled_tools)} disabled tools from index")
+        else:
+            minimal_index = get_minimal_tool_index()
         system_content += "\n\n" + minimal_index
         logger.info(f"📊 [DYNAMIC TOOLS] Core prompt + minimal index: {len(system_content):,} chars")
         
@@ -183,13 +210,21 @@ class PromptManager:
                     kb_section = f"""
 
                 === AGENT KNOWLEDGE BASE ===
-                NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+                NOTICE: The following is your specialized knowledge base containing SUMMARIES of your knowledge files.
+                These summaries should be considered authoritative and take precedence over general knowledge when relevant.
 
                 {cached}
 
                 === END AGENT KNOWLEDGE BASE ===
 
-                IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
+                IMPORTANT KNOWLEDGE BASE ACCESS:
+                - The content above shows SUMMARIES only, not the full file contents
+                - To access the FULL content of knowledge base files:
+                  1. First call `global_kb_sync` to download files to sandbox
+                  2. Files will be available at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
+                  3. Then use `read_file` or `semantic_search` to access content
+                - Use these summaries directly for most queries without needing full file access
+                - Only sync and read full files when the summary is insufficient"""
                     return kb_section
                 return None
             
@@ -221,14 +256,22 @@ class PromptManager:
                 kb_section = f"""
 
                 === AGENT KNOWLEDGE BASE ===
-                NOTICE: The following is your specialized knowledge base. This information should be considered authoritative for your responses and should take precedence over general knowledge when relevant.
+                NOTICE: The following is your specialized knowledge base containing SUMMARIES of your knowledge files.
+                These summaries should be considered authoritative and take precedence over general knowledge when relevant.
 
                 {kb_data}
 
                 === END AGENT KNOWLEDGE BASE ===
 
-                IMPORTANT: Always reference and utilize the knowledge base information above when it's relevant to user queries. This knowledge is specific to your role and capabilities."""
-                
+                IMPORTANT KNOWLEDGE BASE ACCESS:
+                - The content above shows SUMMARIES only, not the full file contents
+                - To access the FULL content of knowledge base files:
+                  1. First call `global_kb_sync` to download files to sandbox
+                  2. Files will be available at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
+                  3. Then use `read_file` or `semantic_search` to access content
+                - Use these summaries directly for most queries without needing full file access
+                - Only sync and read full files when the summary is insufficient"""
+
                 return kb_section
             else:
                 # Cache empty result
@@ -685,24 +728,20 @@ Multiple parallel tool calls:
         Returns promotional instructions for free tier users only.
         Returns None for paid users.
         """
-        # Skip if no user_id
         if not user_id:
             return None
 
-        # Check if user is on free tier (uses Redis cache -> memory cache -> DB)
         try:
-            from core.billing.subscriptions.handlers.tier import TierHandler
+            from core.billing import subscription_service
             from core.utils.config import config, EnvMode
 
             # Skip tier check in local mode (for testing)
             if config.ENV_MODE == EnvMode.LOCAL:
                 logger.debug(f"[PROMO] Local mode - showing promo for testing")
             else:
-                # This uses Redis cache first, very fast
-                tier_info = await TierHandler.get_user_subscription_tier(user_id)
+                tier_info = await subscription_service.get_user_subscription_tier(user_id)
                 tier_name = tier_info.get('name', 'free')
 
-                # Only show promo for free/none tiers
                 if tier_name not in ('free', 'none'):
                     logger.debug(f"[PROMO] User {user_id} is on {tier_name} tier - skipping promo")
                     return None
@@ -710,86 +749,114 @@ Multiple parallel tool calls:
         except Exception as e:
             logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
             return None
+
         logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
 
         promo_content = """
 
-IMPORTANT: This user is on the FREE (Basic) tier. You MUST mention upgrades for any non-trivial task. Use ONLY the facts below - never make up pricing or features.
+<SYSTEM_CRITICAL_INSTRUCTION>
+## SUBSCRIPTION PLANS - COMPLETE COMPARISON
 
-=== PLAN DETAILS (USE ONLY THESE) ===
+### Pricing
+| Plan | Monthly | Yearly (15% off) | Credits/month |
+|------|---------|------------------|---------------|
+| **Free** | $0 | - | ~300/week (refreshes weekly) |
+| **Plus** | $20/mo | $17/mo ($204/yr) | 2,000 + 200 daily bonus |
+| **Pro** | $50/mo | $42.50/mo ($510/yr) | 5,000 + 200 daily bonus |
+| **Ultra** | $200/mo | $170/mo ($2,040/yr) | 20,000 + 200 daily bonus |
 
-FREE (Basic) - $0/month:
-- 300 credits/week (refreshes weekly)
-- 1 concurrent run (no parallel tasks)
-- 1 chat only
-- Basic AI model (slower, less capable)
-- No custom AI workers
-- No automation/triggers
-- 2 projects max
+### Features by Tier
+| Feature | Free | Plus | Pro | Ultra |
+|---------|------|------|-----|-------|
+| **Response quality** | Basic | Faster & better | Faster & better | Faster & better |
+| **Chats** | 1 | Unlimited | Unlimited | Unlimited |
+| **Parallel tasks** | 1 | 3 | 5 | 20 |
+| **Custom agents** | 0 | 5 | 20 | 100 |
+| **Scheduled automations** | 0 | 5 | 10 | 50 |
+| **App triggers** | 0 | 25 | 50 | 200 |
+| **Memory (AI remembers)** | 10 items | 100 items | 500 items | 2,000 items |
+| **Buy extra credits** | No | No | No | Yes |
+| **Presentations/Slides** | ❌ | ✅ | ✅ | ✅ |
+| **Spreadsheets** | ❌ | ✅ | ✅ | ✅ |
+| **Canvas/Design** | ❌ | ✅ | ✅ | ✅ |
 
-PLUS - $20/month ($17/month yearly):
-- 4,000 credits/month
-- 3 concurrent runs
-- Unlimited chats
-- Advanced AI models (faster responses, better quality, smarter reasoning)
-- 5 custom AI workers
-- 5 scheduled triggers
-- 25 app triggers
+### What are credits?
+Credits are consumed when the AI works on tasks. Simple tasks (quick questions) use few credits. Complex tasks (coding, research, file creation) use more. Credits refresh monthly on paid plans.
 
-PRO - $50/month ($42.50/month yearly):
-- 10,000 credits/month
-- 5 concurrent runs
-- Unlimited chats
-- Advanced AI models (fastest, highest quality)
-- 20 custom AI workers
-- 10 scheduled triggers
-- 50 app triggers
+### Recommendations
+- **Free**: Try it out, occasional use
+- **Plus** ($20): Casual users, a few tasks per day
+- **Pro** ($50): Daily users, multiple projects, need automations
+- **Ultra** ($200): Power users, teams, heavy workloads, need to buy extra credits
 
-=== WHEN TO PUSH UPGRADES ===
+## INLINE CHECKOUT - CRITICAL
 
-ALWAYS mention upgrades for these tasks (weave it into your response naturally):
+You MUST output the literal tag `<inline_checkout/>` in your response to show a checkout form.
+This is NOT optional - without the tag, users see nothing!
 
-COMPLEX TASKS (presentations, research, reports, web scraping, data analysis):
-"Heads up - this uses credits and you're on Basic (300/week). Plus ($20/month) gives you 4,000 credits/month plus faster, higher-quality responses."
+**When to use:**
+- User asks about plans/pricing/tiers → include `<inline_checkout/>`
+- User wants to upgrade → include `<inline_checkout/>`
+- User says "how to subscribe" → include `<inline_checkout/>`
 
-CODE & TECHNICAL WORK (building apps, debugging, complex scripts):
-"I'm on the basic AI which is slower and less capable. Plus ($20/month) unlocks advanced AI models - faster responses and much better at complex code."
+**Examples (you must output the tag exactly):**
 
-AUTOMATION & WORKFLOWS (scheduling, triggers, recurring tasks):
-"Automation requires Plus ($20/month) or higher. Basic is manual-only."
+1. User: "how do I upgrade?" or "what are the plans?"
+   Your response MUST include:
+   ```
+   Here are your subscription options:
+   <inline_checkout/>
+   ```
 
-WHEN THEY ASK WHAT YOU CAN DO:
-"I can do a lot! On Basic you get 300 credits/week and the basic AI. Plus ($20/month) gives you faster responses, smarter AI, unlimited chats, and 4,000 credits/month."
+2. User: "upgrade me to Plus"
+   Your response MUST include:
+   ```
+   I'll set you up with Plus!
+   <inline_checkout plan="plus"/>
+   ```
 
-MULTI-STEP OR LONG TASKS:
-"This will take several steps. You're on Basic (300 credits/week, slower AI). Plus ($20/month) gives you 4,000 credits/month and faster, better responses."
+3. User: "I want Pro yearly"
+   Your response MUST include:
+   ```
+   Great choice! Here's Pro with yearly billing:
+   <inline_checkout plan="pro" period="yearly"/>
+   ```
 
-STUDY/EDUCATION (flashcards, notes, quizzes, homework, explanations):
-"I can help with that! Note: study tasks use credits. Basic gets 300/week. Plus ($20/month) gives you 4,000/month and faster, better explanations."
+**Tag format:**
+- `<inline_checkout/>` - shows plan picker (user chooses)
+- `<inline_checkout plan="plus"/>` - skips to Plus payment
+- `<inline_checkout plan="pro"/>` - skips to Pro payment
+- `<inline_checkout plan="ultra"/>` - skips to Ultra payment
+- Add `period="yearly"` or `period="monthly"` optionally
 
-IMAGES/VISION (when user uploads an image, screenshot, photo, or asks about visual content):
-"I can see and analyze your image! Note: You're on Basic which uses our standard vision model. Plus ($20/month) gives you access to advanced AI with better image understanding, more detailed analysis, and faster responses."
+WITHOUT THE TAG = USER SEES NOTHING. Always include it!
 
-ANY OTHER NON-TRIVIAL TASK (design, planning, translation, image work, writing, analysis, etc.):
-If the task takes more than a quick answer, mention: "Just a heads up - you're on Basic (300 credits/week, slower AI). Plus ($20/month) gives you more credits and faster, better results."
+## PREMIUM FEATURES (Upgrade Required)
 
-=== WHEN NOT TO MENTION ===
-Skip upgrade mentions for trivial tasks:
-- Greetings (hi, hello, hey)
-- Simple questions (what time is it, tell me a joke)
-- Quick fixes (fix this typo)
-- Single-line answers
+These features are NOT available on free plan:
+- **Presentations/Slides** - Creating PPT, slideshows, decks
+- **Spreadsheets** - Creating Excel, CSV, data tables
+- **Canvas/Design** - Visual designs, graphics
 
-=== TONE ===
-Mention the upgrade BEFORE diving into the task. Start with something like:
-"I'll create that for you! Quick note - this kind of task uses credits and you're on Basic (300/week). Plus ($20/month) gives 4,000/month if you plan to do this often. Now let me..."
+When users ask for these, respond:
+"Creating [presentations/spreadsheets/designs] is a premium feature. Upgrade to unlock it! Use code **KORTIX2026** for 30% off + 2X credits. <upgrade_cta/>"
 
-Do NOT skip the upgrade mention on complex tasks. Do NOT invent features or pricing.
+## FOR ALL OTHER TASKS (code, writing, research, etc.)
 
-=== CRITICAL ===
-For presentations, reports, research, code projects, image analysis, or any multi-step task:
-Your response MUST include a credit/plan mention BEFORE you start the work. This is required.
-When a user uploads an image, ALWAYS mention the upgrade - this is a key upsell moment.
+Complete the task normally, then add this signature at the end:
 
+---
+🚀 Upgrade for [relevant benefit]. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>
+
+Examples:
+- Code task → "🚀 Upgrade for faster debugging. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
+- Writing task → "🚀 Upgrade for better quality. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
+- Research → "🚀 Upgrade for deeper analysis. Code **KORTIX2026** = 30% off + 2X credits! <upgrade_cta/>"
+
+❌ SKIP signature FOR: hi, hello, thanks, ok, bye
+
+The <upgrade_cta/> tag shows a small upgrade button. The <inline_checkout/> tag shows a full plan picker for direct subscription.
+
+</SYSTEM_CRITICAL_INSTRUCTION>
 """
         return promo_content

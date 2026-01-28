@@ -292,7 +292,7 @@ class Configuration:
     OPENAI_API_KEY: Optional[str] = None
     
     ENABLE_MEMORY: bool = False
-    ENABLE_KNOWLEDGE_BASE: bool = False
+    ENABLE_KNOWLEDGE_BASE: bool = True
     ENABLE_USER_CONTEXT: bool = True
     MEMORY_EMBEDDING_PROVIDER: Optional[str] = "openai"
     MEMORY_EMBEDDING_MODEL: Optional[str] = "text-embedding-3-small"
@@ -375,8 +375,8 @@ class Configuration:
     STRIPE_PRODUCT_ID_STAGING: Optional[str] = 'prod_SCgIj3G7yPOAWY'
     
     # Sandbox configuration
-    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.29"
-    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.29"
+    SANDBOX_IMAGE_NAME = "kortix/suna:0.1.3.30"
+    SANDBOX_SNAPSHOT_NAME = "kortix/suna:0.1.3.30"
     SANDBOX_ENTRYPOINT = "/usr/bin/supervisord -n -c /etc/supervisor/conf.d/supervisord.conf"
     
     # Debug configuration

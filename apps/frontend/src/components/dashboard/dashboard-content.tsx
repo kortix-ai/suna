@@ -398,9 +398,6 @@ export function DashboardContent() {
                     animatePlaceholder={true}
                     hideAttachments={false}
                     hideAgentSelection={false}
-                    selectedCharts={selectedCharts}
-                    selectedOutputFormat={selectedOutputFormat}
-                    selectedTemplate={selectedTemplate}
                   />
                 </div>
               </div>

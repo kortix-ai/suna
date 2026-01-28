@@ -199,13 +199,7 @@ After initial setup, you can run `python setup.py` again to:
 - **Add/Update API Keys** - Configure additional LLM providers (Anthropic, OpenAI, Groq, etc.), search APIs (Tavily, Firecrawl, etc.), and other integrations
 - **Clear setup and start fresh** - Remove all configuration and start over
 
-That's it! Your Kortix platform will be running with Kortix Super Worker ready to assist you.
-
-## 🏠 Self-Hosting
-
-Just use "setup.py". Ty mate.
-
-
+That's it! Your Kortix platform will be running with Kortix Super Worker ready to assist you. Ty mate
 ---
 
 <div align="center">

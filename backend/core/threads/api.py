@@ -17,6 +17,82 @@ db = DBConnection()
 
 router = APIRouter(tags=["threads"])
 
+
+@router.get("/threads/search", summary="Search Threads", operation_id="search_threads")
+async def search_threads_endpoint(
+    request: Request,
+    q: str = Query(..., min_length=1, description="Search query"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
+    user_id: str = Depends(verify_and_get_user_id_from_jwt),
+):
+    """
+    Search threads using semantic (vector) search.
+
+    Returns threads that semantically match the query, ordered by relevance.
+    Only returns threads owned by the authenticated user.
+    """
+    from core.threads.thread_search import search_threads, get_thread_search_service
+
+    logger.debug(f"Searching threads for user {user_id[:8]}... with query: {q[:50]}...")
+
+    try:
+        service = get_thread_search_service()
+        if not service.is_configured:
+            logger.debug("Thread search service not configured, returning empty results")
+            return {
+                "results": [],
+                "total": 0,
+                "configured": False
+            }
+
+        results = await search_threads(q, user_id, limit)
+
+        if not results:
+            return {"results": [], "total": 0, "configured": True}
+
+        # Enrich results with thread/project metadata so the frontend
+        # can display results for threads beyond the loaded page
+        from core.services.db import execute
+
+        result_thread_ids = list({r.thread_id for r in results})
+        enrichment_sql = """
+        SELECT
+            t.thread_id,
+            t.project_id,
+            t.updated_at,
+            p.name AS project_name,
+            p.icon_name AS project_icon_name
+        FROM threads t
+        LEFT JOIN projects p ON t.project_id = p.project_id
+        WHERE t.thread_id = ANY(CAST(:thread_ids AS uuid[]))
+        """
+        rows = await execute(enrichment_sql, {"thread_ids": result_thread_ids})
+        thread_meta = {str(row["thread_id"]): row for row in (rows or [])}
+
+        enriched = []
+        for r in results:
+            meta = thread_meta.get(r.thread_id, {})
+            enriched.append({
+                "thread_id": r.thread_id,
+                "score": r.score,
+                "text_preview": r.text_preview,
+                "project_id": str(meta["project_id"]) if meta.get("project_id") else None,
+                "project_name": meta.get("project_name") or "Unnamed Project",
+                "project_icon_name": meta.get("project_icon_name"),
+                "updated_at": meta["updated_at"].isoformat() if meta.get("updated_at") else None,
+            })
+
+        return {
+            "results": enriched,
+            "total": len(enriched),
+            "configured": True
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching threads for user {user_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to search threads: {str(e)}")
+
+
 @router.get("/threads", summary="List User Threads", operation_id="list_user_threads")
 async def get_user_threads(
     request: Request,
@@ -25,17 +101,25 @@ async def get_user_threads(
     limit: Optional[int] = Query(100, ge=1, le=1000, description="Number of items per page (max 1000)")
 ):
     from core.threads.repo import list_user_threads as repo_list_threads
-    
+
     logger.debug(f"Fetching threads for user: {user_id} (page={page}, limit={limit})")
     try:
         offset = (page - 1) * limit
         threads, total_count = await repo_list_threads(user_id, limit, offset)
-        
+
         if total_count == 0:
             logger.debug(f"No threads found for user: {user_id}")
-        
+
         total_pages = (total_count + limit - 1) // limit if total_count else 0
-        
+
+        # Fire background task to embed any unembedded threads (non-blocking)
+        if threads:
+            try:
+                from core.threads.thread_search import embed_unembedded_threads
+                asyncio.create_task(embed_unembedded_threads(user_id, threads))
+            except Exception as e:
+                logger.debug(f"Failed to start background embedding task: {e}")
+
         return {
             "threads": threads,
             "pagination": {
@@ -45,7 +129,7 @@ async def get_user_threads(
                 "pages": total_pages
             }
         }
-        
+
     except Exception as e:
         logger.error(f"Error fetching threads for user {user_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch threads: {str(e)}")
@@ -895,10 +979,17 @@ async def delete_thread(
         
         logger.debug(f"Deleting thread data for {thread_id}")
         deleted = await delete_thread_data(thread_id)
-        
+
         if not deleted:
             raise HTTPException(status_code=500, detail="Failed to delete thread")
-        
+
+        # Delete thread embedding from vector store
+        try:
+            from core.threads.thread_search import delete_thread_embedding
+            await delete_thread_embedding(thread_id)
+        except Exception as e:
+            logger.warning(f"Failed to delete thread embedding for {thread_id}: {e}")
+
         try:
             from core.agents.pipeline.slot_manager import decrement_thread_count
             await decrement_thread_count(auth.user_id)

@@ -10,6 +10,8 @@ import type { ConversationSection as ConversationSectionType, Conversation } fro
 interface ConversationSectionProps {
   section: ConversationSectionType;
   onConversationPress?: (conversation: Conversation) => void;
+  onConversationDelete?: (conversation: Conversation) => void;
+  deletingConversationId?: string | null;
 }
 
 /**
@@ -20,9 +22,11 @@ interface ConversationSectionProps {
  * - Gap between title and items: 12px (gap-3)
  * - Gap between items: 16px (gap-4) via EntityList
  */
-export function ConversationSection({ 
-  section, 
-  onConversationPress 
+export function ConversationSection({
+  section,
+  onConversationPress,
+  onConversationDelete,
+  deletingConversationId,
 }: ConversationSectionProps) {
   const { currentLanguage, t } = useLanguage();
   
@@ -53,6 +57,8 @@ export function ConversationSection({
             key={conversation.id}
             conversation={conversation}
             onPress={onConversationPress}
+            onDelete={onConversationDelete}
+            isDeleting={deletingConversationId === conversation.id}
           />
         )}
       />

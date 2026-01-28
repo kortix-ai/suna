@@ -59,6 +59,92 @@ const AnimatedPressable = ({ onPress, disabled, children, className }: AnimatedP
   );
 };
 
+// Command tools that show command preview
+const COMMAND_TOOLS = new Set([
+  'execute-command',
+  'execute_command',
+  'check-command-output',
+  'check_command_output',
+  'terminate-command',
+  'terminate_command',
+  'list-commands',
+  'list_commands',
+]);
+
+/**
+ * Extract a field value from partial JSON string during streaming
+ */
+function extractFieldFromPartialJson(jsonString: string, fieldName: string): string | null {
+  if (!jsonString || typeof jsonString !== 'string') return null;
+
+  // Look for the field in the JSON string: "field_name": "value"
+  const pattern = new RegExp(`"${fieldName}"\\s*:\\s*"`, 'i');
+  const match = jsonString.match(pattern);
+
+  if (!match || match.index === undefined) return null;
+
+  // Find the start of the value (after the opening quote)
+  const valueStart = match.index + match[0].length;
+  let value = '';
+  let i = valueStart;
+  let escaped = false;
+
+  // Parse the string value, handling escape sequences
+  while (i < jsonString.length) {
+    const char = jsonString[i];
+
+    if (escaped) {
+      // Handle escape sequences
+      switch (char) {
+        case 'n': value += '\n'; break;
+        case 't': value += '\t'; break;
+        case 'r': value += '\r'; break;
+        case '"': value += '"'; break;
+        case '\\': value += '\\'; break;
+        default: value += char;
+      }
+      escaped = false;
+    } else if (char === '\\') {
+      escaped = true;
+    } else if (char === '"') {
+      // End of string value
+      break;
+    } else {
+      value += char;
+    }
+    i++;
+  }
+
+  return value || null;
+}
+
+/**
+ * Extract command from tool call arguments
+ * Handles both complete JSON objects and partial JSON strings during streaming
+ */
+function extractCommandPreview(toolCall: any): string | null {
+  if (!toolCall?.arguments) return null;
+
+  try {
+    // If arguments is a string, try to parse it as JSON first
+    if (typeof toolCall.arguments === 'string') {
+      // Try full JSON parse first
+      try {
+        const parsed = JSON.parse(toolCall.arguments);
+        return parsed?.command || null;
+      } catch {
+        // If that fails, try extracting from partial JSON (during streaming)
+        return extractFieldFromPartialJson(toolCall.arguments, 'command');
+      }
+    }
+
+    // If it's already an object, just get the command
+    return toolCall.arguments?.command || null;
+  } catch {
+    return null;
+  }
+}
+
 interface CompactToolCardProps {
   message?: UnifiedMessage;
   isLoading?: boolean;
@@ -129,13 +215,34 @@ export const CompactToolCard = React.memo(function CompactToolCard({
         toolName: 'Unknown Tool',
         displayName: 'Unknown Tool',
         isError: true,
+        commandPreview: null,
       };
+    }
+
+    // Extract command preview for command tools
+    const normalizedToolName = parsed.toolName.replace(/_/g, '-');
+    const isCommandTool = COMMAND_TOOLS.has(normalizedToolName) || COMMAND_TOOLS.has(parsed.toolName);
+    let commandPreview: string | null = null;
+
+    if (isCommandTool && parsed.arguments) {
+      if (typeof parsed.arguments === 'string') {
+        // Try full JSON parse first, fall back to partial JSON extraction
+        try {
+          const args = JSON.parse(parsed.arguments);
+          commandPreview = args?.command || null;
+        } catch {
+          commandPreview = extractFieldFromPartialJson(parsed.arguments, 'command');
+        }
+      } else {
+        commandPreview = parsed.arguments?.command || null;
+      }
     }
 
     return {
       toolName: parsed.toolName,
       displayName: getUserFriendlyToolName(parsed.toolName),
       isError: !parsed.result.success,
+      commandPreview,
     };
   }, [message, isLoading]);
 
@@ -152,12 +259,13 @@ export const CompactToolCard = React.memo(function CompactToolCard({
   const displayName = isLoading ? loadingData?.displayName : completedData?.displayName;
   const IconComponent = toolName ? getToolIcon(toolName) : CircleDashed;
   const isError = completedData?.isError;
+  const commandPreview = completedData?.commandPreview;
 
   return (
     <AnimatedPressable
       onPress={onPress}
       disabled={!onPress}
-      className="w-full flex-row items-center gap-1 rounded-full"
+      className="w-full"
     >
       <View className="w-5 h-5 rounded-md items-center justify-center">
         <Icon
@@ -166,9 +274,9 @@ export const CompactToolCard = React.memo(function CompactToolCard({
           className={isError ? 'text-rose-500' : 'text-muted-foreground'}
         />
       </View>
-      
-      <Text 
-        className={`text-sm font-roobert-medium ${isError ? 'text-rose-500' : 'text-muted-foreground'}`} 
+
+      <Text
+        className={`text-sm font-roobert-medium ${isError ? 'text-rose-500' : 'text-muted-foreground'}`}
         numberOfLines={1}
       >
         {isError ? `${displayName} failed` : displayName}
@@ -203,7 +311,7 @@ export const CompactStreamingToolCard = React.memo(function CompactStreamingTool
   const isError = useMemo(() => {
     const toolResult = toolCall?.tool_result;
     if (!toolResult || !isCompleted) return false;
-    
+
     // Check explicit success: false
     if (typeof toolResult === 'object' && toolResult !== null) {
       if (toolResult.success === false) return true;
@@ -216,7 +324,7 @@ export const CompactStreamingToolCard = React.memo(function CompactStreamingTool
         }
       }
     }
-    
+
     // Check if string result indicates error
     if (typeof toolResult === 'string') {
       const result = toolResult.toLowerCase();
@@ -224,13 +332,18 @@ export const CompactStreamingToolCard = React.memo(function CompactStreamingTool
         return true;
       }
     }
-    
+
     return false;
   }, [toolCall?.tool_result, isCompleted]);
 
   const resolvedToolName = toolName || toolCall?.function_name || (toolCall as any)?.name || '';
+  const normalizedToolName = resolvedToolName.replace(/_/g, '-');
   const displayName = resolvedToolName ? getUserFriendlyToolName(resolvedToolName) : 'Running...';
   const IconComponent = resolvedToolName ? getToolIcon(resolvedToolName) : CircleDashed;
+
+  // Check if this is a command tool and extract command preview
+  const isCommandTool = COMMAND_TOOLS.has(normalizedToolName) || COMMAND_TOOLS.has(resolvedToolName);
+  const commandPreview = isCommandTool ? extractCommandPreview(toolCall) : null;
 
   const cardContent = (
     <View className="w-full flex-row items-center rounded-full">

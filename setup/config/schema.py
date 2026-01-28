@@ -75,8 +75,9 @@ class LLMConfig(BaseModel):
     """LLM provider API keys configuration."""
 
     # Main LLM provider selection (determines which API key is required)
-    # Options: anthropic, grok, openai, minimax
-    MAIN_LLM: str = "anthropic"
+    # Options: bedrock, anthropic, grok, openai, minimax
+    # The setup wizard reads the actual default from backend/core/utils/config.py
+    MAIN_LLM: str = ""
 
     # Optional: Custom model name to override the default for the selected provider
     # Default models per provider:
@@ -122,6 +123,9 @@ class LLMConfig(BaseModel):
 
     def has_required_keys(self) -> bool:
         """Check if the required LLM key for the selected main provider is configured."""
+        # If no provider selected yet, not complete
+        if not self.MAIN_LLM:
+            return False
         # Check main LLM provider key
         if self.MAIN_LLM == "anthropic":
             return bool(self.ANTHROPIC_API_KEY)

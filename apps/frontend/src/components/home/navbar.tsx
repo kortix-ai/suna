@@ -192,9 +192,6 @@ export function Navbar({ isAbsolute = false }: NavbarProps) {
                 
                 {/* QR Code Popover - appears on hover */}
                 <div className="absolute top-full left-1/2 -translate-x-1/2 pt-2 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                  {/* Arrow */}
-                  <div className="absolute top-0.5 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#E8E8E8] dark:bg-[#1a1a1a] border-l border-t border-border/60 dark:border-[#2a2a2a] rotate-45" />
-                  
                   <div className="relative bg-[#E8E8E8] dark:bg-[#1a1a1a] rounded-2xl border border-border/60 dark:border-[#2a2a2a] p-4 min-w-[200px]">
                     <AppDownloadQR size={160} logoSize={24} className="rounded-xl p-3 shadow-md" />
                     <p className="text-xs text-muted-foreground text-center mt-3">

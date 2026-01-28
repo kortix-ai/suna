@@ -114,6 +114,8 @@ export const RESEARCH_SOURCES: QuickActionOption[] = [
  */
 export function getQuickActionOptions(actionId: string): QuickActionOption[] {
   switch (actionId) {
+    case 'general':
+      return []; // No templates for general chat
     case 'image':
       return IMAGE_STYLES;
     case 'slides':

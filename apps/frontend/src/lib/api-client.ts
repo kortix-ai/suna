@@ -79,6 +79,9 @@ async function makeRequest<T = any>(
         errorData = await response.json();
         if (errorData.message) {
           errorMessage = errorData.message;
+        } else if (typeof errorData.detail === 'string') {
+          // FastAPI returns {"detail": "error message"}
+          errorMessage = errorData.detail;
         } else if (errorData.detail?.message) {
           errorMessage = errorData.detail.message;
         }

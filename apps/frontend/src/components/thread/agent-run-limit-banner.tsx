@@ -129,7 +129,7 @@ export const AgentRunLimitBanner: React.FC<AgentRunLimitBannerProps> = ({
   const handleUpgrade = () => {
     onOpenChange(false);
     pricingModalStore.openPricingModal({
-      title: 'Upgrade to run multiple workers in parallel',
+      isAlert: true,
       alertTitle: 'Concurrent Run Limit Reached',
       alertSubtitle: `Your current plan allows ${runningCount === 1 ? '1 worker' : `${runningCount} workers`} running at a time. Upgrade to run more in parallel.`,
     });

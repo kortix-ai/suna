@@ -48,6 +48,8 @@ import { AgentLoader } from './AgentLoader';
 import { StreamingToolCard } from './StreamingToolCard';
 import { CompactToolCard, CompactStreamingToolCard } from './CompactToolCard';
 import { MediaGenerationInline } from './MediaGenerationInline';
+import { SlideInlineThumbnail, SlideInfo } from './SlideInlineThumbnail';
+import { EnhancedToolCard } from './EnhancedToolCard';
 import { MessageActions } from './MessageActions';
 import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedFeedback';
 import { renderAssistantMessage } from './assistant-message-renderer';
@@ -94,6 +96,40 @@ function renderStandaloneAttachments(
 
 // Use shared preprocessTextOnlyTools function (imported above)
 const preprocessTextOnlyToolsLocal = preprocessTextOnlyTools;
+
+/**
+ * Extract slide info from a create-slide tool result
+ */
+function extractSlideInfo(toolResult: { output?: any; success?: boolean } | undefined): SlideInfo | undefined {
+  if (!toolResult) return undefined;
+
+  try {
+    const output = toolResult.output;
+    if (!output) return undefined;
+
+    // Handle string output (parse as JSON)
+    let outputData = output;
+    if (typeof output === 'string') {
+      try {
+        outputData = JSON.parse(output);
+      } catch {
+        return undefined;
+      }
+    }
+
+    if (outputData?.presentation_name && outputData?.slide_number !== undefined) {
+      return {
+        presentationName: outputData.presentation_name,
+        slideNumber: outputData.slide_number,
+        slideTitle: outputData.slide_title || `Slide ${outputData.slide_number}`,
+        totalSlides: outputData.total_slides || outputData.slide_number,
+      };
+    }
+  } catch (e) {
+    log.error('[extractSlideInfo] Error:', e);
+  }
+  return undefined;
+}
 
 interface MarkdownContentProps {
   content: string;
@@ -1529,6 +1565,38 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                 );
                               }
                               
+                              // Handle create-slide tool with inline preview
+                              if (toolName === 'create-slide') {
+                                const slideInfo = extractSlideInfo(parsed?.result);
+                                return (
+                                  <View key={`slide-tool-${toolMsg.message_id || toolIdx}`}>
+                                    <CompactToolCard
+                                      message={toolMsg}
+                                      onPress={() => handleToolPressInternal(toolMsg)}
+                                    />
+                                    {slideInfo && sandboxUrl && (
+                                      <SlideInlineThumbnail
+                                        slideInfo={slideInfo}
+                                        sandboxUrl={sandboxUrl}
+                                        onClick={() => handleToolPressInternal(toolMsg)}
+                                        isLoading={!parsed?.result}
+                                      />
+                                    )}
+                                  </View>
+                                );
+                              }
+
+                              // Handle web-search and image-search with enhanced cards (favicons/thumbnails)
+                              if (toolName === 'web-search' || toolName === 'image-search') {
+                                return (
+                                  <EnhancedToolCard
+                                    key={`enhanced-tool-${toolMsg.message_id || toolIdx}`}
+                                    message={toolMsg}
+                                    onPress={() => handleToolPressInternal(toolMsg)}
+                                  />
+                                );
+                              }
+
                               // Regular tool card for other tools
                               return (
                                 <CompactToolCard
@@ -1740,7 +1808,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                     key={tc.tool_call_id || `streaming-media-${tcIndex}`}
                                     toolCall={{
                                       function_name: toolName,
-                                      arguments: typeof tc.arguments === 'string' 
+                                      arguments: typeof tc.arguments === 'string'
                                         ? (() => { try { return JSON.parse(tc.arguments); } catch { return {}; } })()
                                         : (tc.arguments || {}),
                                       tool_call_id: tc.tool_call_id,
@@ -1754,7 +1822,34 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                   />
                                 );
                               }
-                              
+
+                              // Special handling for create-slide - show inline thumbnail when completed
+                              if (toolName === 'create-slide') {
+                                const toolResult = isCompleted && tc.tool_result ? {
+                                  output: tc.tool_result?.output || tc.tool_result,
+                                  success: tc.tool_result?.success !== false,
+                                } : undefined;
+                                const slideInfo = extractSlideInfo(toolResult);
+
+                                return (
+                                  <View key={tc.tool_call_id || `streaming-slide-${tcIndex}`}>
+                                    <CompactStreamingToolCard
+                                      toolCall={tc}
+                                      toolName={toolName}
+                                      onPress={isCompleted ? () => handleStreamingToolCallPress(tc, assistantMsgId) : undefined}
+                                    />
+                                    {isCompleted && slideInfo && sandboxUrl && (
+                                      <SlideInlineThumbnail
+                                        slideInfo={slideInfo}
+                                        sandboxUrl={sandboxUrl}
+                                        onClick={() => handleStreamingToolCallPress(tc, assistantMsgId)}
+                                        isLoading={false}
+                                      />
+                                    )}
+                                  </View>
+                                );
+                              }
+
                               return (
                                 <CompactStreamingToolCard
                                   key={tc.tool_call_id || `streaming-tool-${tcIndex}`}
@@ -2004,20 +2099,79 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                   );
                 }
 
-                // Non-ask/complete tool - show tool card
-                const firstToolCall = toolCalls[0];
-                if (firstToolCall) {
-                  const toolName = getUserFriendlyToolName(firstToolCall.function_name);
-                  return (
-                    <View className="mt-2">
-                      <CompactStreamingToolCard toolCall={firstToolCall} toolName={toolName} />
-                    </View>
-                  );
+                // Filter out hidden and ask/complete tools
+                const visibleToolCalls = toolCalls.filter((tc: any) => {
+                  const name = (tc.function_name || '').replace(/_/g, '-');
+                  return !isHiddenTool(name) && !isAskOrCompleteTool(tc.function_name);
+                });
+
+                if (visibleToolCalls.length === 0) {
+                  return null;
                 }
 
                 return (
-                  <View className="mt-2">
-                    <CompactStreamingToolCard toolCall={null} toolName="" />
+                  <View className="mt-2 gap-2">
+                    {visibleToolCalls.map((tc: any, tcIndex: number) => {
+                      const rawToolName = (tc.function_name || '').replace(/_/g, '-');
+                      const displayToolName = getUserFriendlyToolName(tc.function_name);
+                      const isCompleted = tc.completed === true ||
+                        (tc.tool_result !== undefined &&
+                         tc.tool_result !== null &&
+                         (typeof tc.tool_result === 'object' || Boolean(tc.tool_result)));
+
+                      // Handle create-slide with inline thumbnail
+                      if (rawToolName === 'create-slide') {
+                        const toolResult = isCompleted && tc.tool_result ? {
+                          output: tc.tool_result?.output || tc.tool_result,
+                          success: tc.tool_result?.success !== false,
+                        } : undefined;
+                        const slideInfo = extractSlideInfo(toolResult);
+
+                        return (
+                          <View key={tc.tool_call_id || `trailing-slide-${tcIndex}`}>
+                            <CompactStreamingToolCard toolCall={tc} toolName={displayToolName} />
+                            {isCompleted && slideInfo && sandboxUrl && (
+                              <SlideInlineThumbnail
+                                slideInfo={slideInfo}
+                                sandboxUrl={sandboxUrl}
+                                onClick={() => {}}
+                                isLoading={false}
+                              />
+                            )}
+                          </View>
+                        );
+                      }
+
+                      // Handle media generation
+                      if (rawToolName === 'image-edit-or-generate') {
+                        return (
+                          <MediaGenerationInline
+                            key={tc.tool_call_id || `trailing-media-${tcIndex}`}
+                            toolCall={{
+                              function_name: rawToolName,
+                              arguments: typeof tc.arguments === 'string'
+                                ? (() => { try { return JSON.parse(tc.arguments); } catch { return {}; } })()
+                                : (tc.arguments || {}),
+                              tool_call_id: tc.tool_call_id,
+                            }}
+                            toolResult={isCompleted && tc.tool_result ? {
+                              output: tc.tool_result,
+                              success: tc.tool_result?.success !== false,
+                            } : undefined}
+                            onToolClick={() => {}}
+                            sandboxId={sandboxId}
+                          />
+                        );
+                      }
+
+                      return (
+                        <CompactStreamingToolCard
+                          key={tc.tool_call_id || `trailing-tool-${tcIndex}`}
+                          toolCall={tc}
+                          toolName={displayToolName}
+                        />
+                      );
+                    })}
                   </View>
                 );
               })()}

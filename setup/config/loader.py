@@ -233,7 +233,7 @@ class ConfigLoader:
         Load the last saved step and data from progress file.
 
         Returns:
-            Dictionary with 'step' and 'data' keys
+            Dictionary with 'current_step' and 'data' keys
         """
         progress_path = self.root_dir / self.PROGRESS_FILE
 
@@ -244,7 +244,7 @@ class ConfigLoader:
             except (json.JSONDecodeError, KeyError):
                 pass
 
-        return {"step": 0, "data": {}}
+        return {"current_step": 0, "data": {}}
 
     def save_progress(self, step: int, data: Dict[str, Any]) -> None:
         """
@@ -300,7 +300,7 @@ class ConfigLoader:
             with open(path, "r") as f:
                 if path.suffix in [".yaml", ".yml"]:
                     if not HAS_YAML:
-                        raise ImportError("PyYAML is required for YAML config files")
+                        raise ImportError("PyYAML is required for YAML config files. Install with: uv pip install PyYAML")
                     return yaml.safe_load(f)
                 elif path.suffix == ".json":
                     return json.load(f)
@@ -313,7 +313,11 @@ class ConfigLoader:
                         if HAS_YAML:
                             return yaml.safe_load(content)
                         raise ValueError(f"Unknown config file format: {path.suffix}")
-        except Exception:
+        except (ImportError, ValueError):
+            # Re-raise intentional errors
+            raise
+        except (IOError, OSError, json.JSONDecodeError) as e:
+            # File read errors - return None to fall back to other sources
             return None
 
     def load_config(

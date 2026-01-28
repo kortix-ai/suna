@@ -145,13 +145,14 @@ async def prep_prompt(
     account_id: str,
     tool_registry,
     mcp_loader=None,
-    client=None
+    client=None,
+    disabled_tools: Optional[List[str]] = None
 ) -> PromptResult:
     start = time.time()
-    
+
     try:
         from core.agents.runner.prompt_manager import PromptManager
-        
+
         system_prompt, memory_context = await PromptManager.build_system_prompt(
             model_name=model_name,
             agent_config=agent_config,
@@ -161,7 +162,8 @@ async def prep_prompt(
             tool_registry=tool_registry,
             xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
             user_id=account_id,
-            mcp_loader=mcp_loader
+            mcp_loader=mcp_loader,
+            disabled_tools=disabled_tools
         )
         
         elapsed_ms = (time.time() - start) * 1000

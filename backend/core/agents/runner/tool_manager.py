@@ -37,11 +37,12 @@ DEFAULT_CORE_TOOLS = [
 class ToolManager:
     """
     Manages tool registration for agent threads.
-    
-    Tools are registered based on agent config:
+
+    Tools are registered based on agent config AND user tier:
     - Core tools (preloaded): Registered at startup if enabled in config
     - On-demand tools: Loaded via initialize_tools() when needed
-    
+    - Tier restrictions: Some tools disabled for free tier users
+
     Agent config structure:
     {
         "agentpress_tools": {
@@ -51,36 +52,38 @@ class ToolManager:
         }
     }
     """
-    
-    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None):
+
+    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None, tier_disabled_tools: Optional[List[str]] = None):
         self.thread_manager = thread_manager
         self.project_id = project_id
         self.thread_id = thread_id
         self.agent_config = agent_config
+        self.tier_disabled_tools = tier_disabled_tools or []
         self.disabled_tools = self._get_disabled_tools()
-    
+
     def _get_disabled_tools(self) -> Set[str]:
-        """Get set of disabled tools from agent config."""
-        if not self.agent_config or 'agentpress_tools' not in self.agent_config:
-            return set()
-        
-        raw_tools = self.agent_config.get('agentpress_tools', {})
-        if not isinstance(raw_tools, dict):
-            return set()
-        
-        # For default Suna agent with no explicit config, enable all
-        if self.agent_config.get('is_suna_default', False) and not raw_tools:
-            return set()
-        
+        """Get set of disabled tools from agent config AND tier restrictions."""
         disabled = set()
-        for tool_name, tool_config in raw_tools.items():
-            if isinstance(tool_config, bool) and not tool_config:
-                disabled.add(tool_name)
-            elif isinstance(tool_config, dict) and not tool_config.get('enabled', True):
-                disabled.add(tool_name)
-        
+
+        # 1. Add tier-based disabled tools (passed from caller, no re-fetch needed)
+        if self.tier_disabled_tools:
+            disabled.update(self.tier_disabled_tools)
+            logger.info(f"Tools disabled by tier: {self.tier_disabled_tools}")
+
+        # 2. Get agent config disabled tools
+        if self.agent_config and 'agentpress_tools' in self.agent_config:
+            raw_tools = self.agent_config.get('agentpress_tools', {})
+            if isinstance(raw_tools, dict):
+                # For default Suna agent with no explicit config, only use tier restrictions
+                if not (self.agent_config.get('is_suna_default', False) and not raw_tools):
+                    for tool_name, tool_config in raw_tools.items():
+                        if isinstance(tool_config, bool) and not tool_config:
+                            disabled.add(tool_name)
+                        elif isinstance(tool_config, dict) and not tool_config.get('enabled', True):
+                            disabled.add(tool_name)
+
         if disabled:
-            logger.info(f"Tools disabled by config: {disabled}")
+            logger.info(f"Total disabled tools: {disabled}")
         return disabled
     
     def _is_tool_enabled(self, tool_name: str) -> bool:
