@@ -368,9 +368,8 @@ async def confirm_inline_checkout(
     try:
         from ..subscriptions.repositories.credit_account import CreditAccountRepository
         from ..subscriptions.services.lifecycle_service import LifecycleService
-        from ..shared.config import get_tier_by_name, get_plan_type
+        from ..shared.config import get_tier_by_name
         from datetime import datetime, timezone
-        from decimal import Decimal
 
         logger.info(f"[INLINE CHECKOUT] Received confirm request: {request}")
 
