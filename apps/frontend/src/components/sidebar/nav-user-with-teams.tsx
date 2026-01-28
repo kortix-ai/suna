@@ -6,6 +6,7 @@ import Link from 'next/link';
 import {
   BadgeCheck,
   Bell,
+  BookOpen,
   ChevronDown,
   ChevronsUpDown,
   ChevronRight,
@@ -420,6 +421,12 @@ export function NavUserWithTeams({
                 >
                   <Settings className="h-4 w-4" />
                   <span>Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href="/tutorials" className="gap-2 p-2">
+                    <BookOpen className="h-4 w-4" />
+                    <span>Tutorials</span>
+                  </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}
