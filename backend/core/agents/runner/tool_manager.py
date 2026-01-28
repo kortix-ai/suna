@@ -53,24 +53,23 @@ class ToolManager:
     }
     """
 
-    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None, tier_disabled_tools: Optional[List[str]] = None):
+    def __init__(self, thread_manager: ThreadManager, project_id: str, thread_id: str, agent_config: Optional[dict] = None):
         self.thread_manager = thread_manager
         self.project_id = project_id
         self.thread_id = thread_id
         self.agent_config = agent_config
-        self.tier_disabled_tools = tier_disabled_tools or []
         self.disabled_tools = self._get_disabled_tools()
 
     def _get_disabled_tools(self) -> Set[str]:
-        """Get set of disabled tools from agent config AND tier restrictions."""
+        """Get set of disabled tools from agent config.
+
+        Note: Tier-based tool restrictions are now handled at execution time
+        in tool_executor.py via check_tool_access_for_account(). This allows
+        the agent to see all tools but get a proper upgrade CTA when blocked.
+        """
         disabled = set()
 
-        # 1. Add tier-based disabled tools (passed from caller, no re-fetch needed)
-        if self.tier_disabled_tools:
-            disabled.update(self.tier_disabled_tools)
-            logger.info(f"Tools disabled by tier: {self.tier_disabled_tools}")
-
-        # 2. Get agent config disabled tools
+        # Get agent config disabled tools (NOT tier-based - that's handled at execution time)
         if self.agent_config and 'agentpress_tools' in self.agent_config:
             raw_tools = self.agent_config.get('agentpress_tools', {})
             if isinstance(raw_tools, dict):
