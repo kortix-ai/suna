@@ -292,7 +292,8 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
                       <Icon as={ExternalLink} size={12} className="text-white" />
                     </View>
                   </Pressable>
-                ))}
+                  );
+                })}
               </View>
               {currentImages.length > 6 && (
                 <Text className="text-xs font-roobert text-muted-foreground text-center mt-1">
