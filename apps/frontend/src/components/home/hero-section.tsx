@@ -153,9 +153,6 @@ export function HeroSection() {
                 onModeDeselect={() => setSelectedMode(null)}
                 animatePlaceholder={true}
                 hideAttachments={false}
-                selectedCharts={selectedCharts}
-                selectedOutputFormat={selectedOutputFormat}
-                selectedTemplate={selectedTemplate}
               />
             </div>
           </div>
