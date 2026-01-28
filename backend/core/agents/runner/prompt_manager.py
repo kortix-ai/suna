@@ -715,17 +715,15 @@ Multiple parallel tool calls:
         if not user_id:
             return None
 
-        logger.info(f"✅ [PROMO] Injecting upgrade promo for user {user_id}")
-
         try:
-            from core.billing.subscriptions.handlers.tier import TierHandler
+            from core.billing import subscription_service
             from core.utils.config import config, EnvMode
 
             # Skip tier check in local mode (for testing)
             if config.ENV_MODE == EnvMode.LOCAL:
                 logger.debug(f"[PROMO] Local mode - showing promo for testing")
             else:
-                tier_info = await TierHandler.get_user_subscription_tier(user_id)
+                tier_info = await subscription_service.get_user_subscription_tier(user_id)
                 tier_name = tier_info.get('name', 'free')
 
                 if tier_name not in ('free', 'none'):
@@ -735,11 +733,88 @@ Multiple parallel tool calls:
         except Exception as e:
             logger.warning(f"[PROMO] Failed to check tier for {user_id}: {e} - skipping promo (fail safe)")
             return None
+
         logger.info(f"✅ [PROMO] User {user_id} is on free tier - injecting upgrade promo")
 
         promo_content = """
 
 <SYSTEM_CRITICAL_INSTRUCTION>
+## SUBSCRIPTION PLANS - COMPLETE COMPARISON
+
+### Pricing
+| Plan | Monthly | Yearly (15% off) | Credits/month |
+|------|---------|------------------|---------------|
+| **Free** | $0 | - | ~300/week (refreshes weekly) |
+| **Plus** | $20/mo | $17/mo ($204/yr) | 2,000 + 200 daily bonus |
+| **Pro** | $50/mo | $42.50/mo ($510/yr) | 5,000 + 200 daily bonus |
+| **Ultra** | $200/mo | $170/mo ($2,040/yr) | 20,000 + 200 daily bonus |
+
+### Features by Tier
+| Feature | Free | Plus | Pro | Ultra |
+|---------|------|------|-----|-------|
+| **Response quality** | Basic | Faster & better | Faster & better | Faster & better |
+| **Chats** | 1 | Unlimited | Unlimited | Unlimited |
+| **Parallel tasks** | 1 | 3 | 5 | 20 |
+| **Custom agents** | 0 | 5 | 20 | 100 |
+| **Scheduled automations** | 0 | 5 | 10 | 50 |
+| **App triggers** | 0 | 25 | 50 | 200 |
+| **Memory (AI remembers)** | 10 items | 100 items | 500 items | 2,000 items |
+| **Buy extra credits** | No | No | No | Yes |
+| **Presentations/Slides** | ❌ | ✅ | ✅ | ✅ |
+| **Spreadsheets** | ❌ | ✅ | ✅ | ✅ |
+| **Canvas/Design** | ❌ | ✅ | ✅ | ✅ |
+
+### What are credits?
+Credits are consumed when the AI works on tasks. Simple tasks (quick questions) use few credits. Complex tasks (coding, research, file creation) use more. Credits refresh monthly on paid plans.
+
+### Recommendations
+- **Free**: Try it out, occasional use
+- **Plus** ($20): Casual users, a few tasks per day
+- **Pro** ($50): Daily users, multiple projects, need automations
+- **Ultra** ($200): Power users, teams, heavy workloads, need to buy extra credits
+
+## INLINE CHECKOUT - CRITICAL
+
+You MUST output the literal tag `<inline_checkout/>` in your response to show a checkout form.
+This is NOT optional - without the tag, users see nothing!
+
+**When to use:**
+- User asks about plans/pricing/tiers → include `<inline_checkout/>`
+- User wants to upgrade → include `<inline_checkout/>`
+- User says "how to subscribe" → include `<inline_checkout/>`
+
+**Examples (you must output the tag exactly):**
+
+1. User: "how do I upgrade?" or "what are the plans?"
+   Your response MUST include:
+   ```
+   Here are your subscription options:
+   <inline_checkout/>
+   ```
+
+2. User: "upgrade me to Plus"
+   Your response MUST include:
+   ```
+   I'll set you up with Plus!
+   <inline_checkout plan="plus"/>
+   ```
+
+3. User: "I want Pro yearly"
+   Your response MUST include:
+   ```
+   Great choice! Here's Pro with yearly billing:
+   <inline_checkout plan="pro" period="yearly"/>
+   ```
+
+**Tag format:**
+- `<inline_checkout/>` - shows plan picker (user chooses)
+- `<inline_checkout plan="plus"/>` - skips to Plus payment
+- `<inline_checkout plan="pro"/>` - skips to Pro payment
+- `<inline_checkout plan="ultra"/>` - skips to Ultra payment
+- Add `period="yearly"` or `period="monthly"` optionally
+
+WITHOUT THE TAG = USER SEES NOTHING. Always include it!
+
 ## PREMIUM FEATURES (Upgrade Required)
 
 These features are NOT available on free plan:
@@ -764,7 +839,7 @@ Examples:
 
 ❌ SKIP signature FOR: hi, hello, thanks, ok, bye
 
-The <upgrade_cta/> tag shows the upgrade button. Without it = no button.
+The <upgrade_cta/> tag shows a small upgrade button. The <inline_checkout/> tag shows a full plan picker for direct subscription.
 
 </SYSTEM_CRITICAL_INSTRUCTION>
 """

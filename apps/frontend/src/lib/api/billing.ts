@@ -625,3 +625,63 @@ export const scheduleDowngrade = (request: ScheduleDowngradeRequest) =>
 export const cancelScheduledChange = () => billingApi.cancelScheduledChange();
 export const syncSubscription = () => billingApi.syncSubscription();
 export const getCheckoutSession = (sessionId: string) => billingApi.getCheckoutSession(sessionId);
+
+// =============================================================================
+// INLINE CHECKOUT
+// =============================================================================
+
+export interface CreateInlineCheckoutRequest {
+  tier_key: string;
+  billing_period: 'monthly' | 'yearly';
+  promo_code?: string;
+}
+
+export interface CreateInlineCheckoutResponse {
+  // For new subscriptions
+  client_secret?: string;
+  subscription_id: string;
+  tier_key: string;
+  amount?: number;
+  currency?: string;
+  // For 100% discount promo codes (no payment needed)
+  no_payment_required?: boolean;
+  // For upgrades (no payment needed - uses existing payment method)
+  upgraded?: boolean;
+  previous_tier?: string;
+  credits_granted?: number;
+  message?: string;
+}
+
+export async function createInlineCheckout(
+  request: CreateInlineCheckoutRequest
+): Promise<CreateInlineCheckoutResponse> {
+  const response = await backendApi.post<CreateInlineCheckoutResponse>(
+    '/billing/create-inline-checkout',
+    request
+  );
+  if (response.error) throw response.error;
+  return response.data!;
+}
+
+export interface ConfirmInlineCheckoutRequest {
+  subscription_id: string;
+  tier_key: string;
+  payment_intent_id?: string;
+}
+
+export interface ConfirmInlineCheckoutResponse {
+  success: boolean;
+  tier: string;
+  message: string;
+}
+
+export async function confirmInlineCheckout(
+  request: ConfirmInlineCheckoutRequest
+): Promise<ConfirmInlineCheckoutResponse> {
+  const response = await backendApi.post<ConfirmInlineCheckoutResponse>(
+    '/billing/confirm-inline-checkout',
+    request
+  );
+  if (response.error) throw response.error;
+  return response.data!;
+}

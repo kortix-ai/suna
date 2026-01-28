@@ -15,6 +15,7 @@ import { ApifyApprovalInline } from '@/components/thread/content/ApifyApprovalIn
 import { MediaGenerationInline } from '@/components/thread/content/MediaGenerationInline';
 import { constructHtmlPreviewUrl } from '@/lib/utils/url';
 import { UpgradeCTA, extractUpgradeCTA } from '@/components/thread/content/UpgradeCTA';
+import { InlineCheckout, extractInlineCheckout } from '@/components/thread/content/InlineCheckout';
 
 export interface AssistantMessageRendererProps {
   message: UnifiedMessage;
@@ -51,7 +52,9 @@ function renderAskToolCall(
   const followUpAnswers = normalizeArrayValue(toolCall.arguments?.follow_up_answers);
 
   // Extract upgrade CTA if present
-  const { cleanContent, hasCTA } = extractUpgradeCTA(askText);
+  const { cleanContent: contentAfterCTA, hasCTA } = extractUpgradeCTA(askText);
+  // Extract inline checkout if present
+  const { cleanContent, hasCheckout, options: checkoutOptions } = extractInlineCheckout(contentAfterCTA);
 
   return (
     <div key={`ask-${index}`} className="space-y-3 my-1.5">
@@ -59,7 +62,8 @@ function renderAskToolCall(
         content={cleanContent}
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3"
       />
-      {hasCTA && <UpgradeCTA />}
+      {hasCheckout && <InlineCheckout options={checkoutOptions} />}
+      {hasCTA && !hasCheckout && <UpgradeCTA />}
       {attachments.length > 0 && (
         <div className="mt-3">
           <FileAttachmentGrid
@@ -108,7 +112,9 @@ function renderCompleteToolCall(
   const followUpPrompts = normalizeArrayValue(toolCall.arguments?.follow_up_prompts);
 
   // Extract upgrade CTA if present
-  const { cleanContent, hasCTA } = extractUpgradeCTA(completeText);
+  const { cleanContent: contentAfterCTA, hasCTA } = extractUpgradeCTA(completeText);
+  // Extract inline checkout if present
+  const { cleanContent, hasCheckout, options: checkoutOptions } = extractInlineCheckout(contentAfterCTA);
 
   return (
     <div key={`complete-${index}`} className="space-y-3 my-1.5">
@@ -117,7 +123,8 @@ function renderCompleteToolCall(
         content={cleanContent}
         className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words [&>:first-child]:mt-0 prose-headings:mt-3"
       />
-      {hasCTA && <UpgradeCTA />}
+      {hasCheckout && <InlineCheckout options={checkoutOptions} />}
+      {hasCTA && !hasCheckout && <UpgradeCTA />}
 
       {/* Attachments underneath the text */}
       {attachments.length > 0 && (
@@ -567,7 +574,9 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
 
   if (shouldRenderTextContent) {
     // Extract upgrade CTA if present
-    const { cleanContent, hasCTA } = extractUpgradeCTA(textContent);
+    const { cleanContent: contentAfterCTA, hasCTA } = extractUpgradeCTA(textContent);
+    // Extract inline checkout if present
+    const { cleanContent, hasCheckout, options: checkoutOptions } = extractInlineCheckout(contentAfterCTA);
 
     contentParts.push(
       <div key="text-content" className="my-1.5">
@@ -575,7 +584,8 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
           content={cleanContent}
           className="text-sm prose prose-sm dark:prose-invert chat-markdown max-w-none break-words"
         />
-        {hasCTA && <UpgradeCTA />}
+        {hasCheckout && <InlineCheckout options={checkoutOptions} />}
+        {hasCTA && !hasCheckout && <UpgradeCTA />}
       </div>
     );
   }
