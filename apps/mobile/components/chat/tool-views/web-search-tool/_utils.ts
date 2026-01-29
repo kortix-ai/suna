@@ -1,4 +1,6 @@
 import type { ToolCallData, ToolResultData } from '../types';
+import type { LucideIcon } from 'lucide-react-native';
+import { Globe, FileText, BookOpen, Calendar } from 'lucide-react-native';
 
 export interface WebSearchResult {
   title: string;
@@ -64,16 +66,16 @@ export function extractWebSearchData(
       }
     }
   }
-  
+
   let query = args?.query || null;
   let results: WebSearchResult[] = [];
   let images: string[] = [];
-  
+
   if (toolResult?.output) {
-    const output = typeof toolResult.output === 'string' 
-      ? parseContent(toolResult.output) 
+    const output = typeof toolResult.output === 'string'
+      ? parseContent(toolResult.output)
       : toolResult.output;
-    
+
     // Check if this is a batch search response
     if (output.batch_mode === true && Array.isArray(output.results)) {
       // Batch search response
@@ -93,8 +95,8 @@ export function extractWebSearchData(
       const allResults = batchResults.flatMap(br => br.results);
       const allImages = batchResults.flatMap(br => br.images);
       const allQueries = batchResults.map(br => br.query).filter(Boolean);
-      const combinedQuery = allQueries.length > 1 
-        ? `${allQueries.length} queries` 
+      const combinedQuery = allQueries.length > 1
+        ? `${allQueries.length} queries`
         : allQueries[0] || null;
       const allSuccessful = batchResults.every(br => br.success);
 
@@ -107,13 +109,13 @@ export function extractWebSearchData(
         batchResults
       };
     }
-    
+
     // Handle legacy batch_results format (for image search)
     if (output.batch_results && Array.isArray(output.batch_results)) {
       images = output.batch_results.reduce((acc: string[], res: any) => {
         return acc.concat(normalizeImages(res.images || []));
       }, [] as string[]);
-      
+
       const queries = output.batch_results.map((r: any) => r.query).filter(Boolean);
       if (queries.length > 0) {
         query = queries.length > 1 ? `${queries.length} queries` : queries[0];
@@ -121,7 +123,7 @@ export function extractWebSearchData(
     } else {
       images = normalizeImages(output.images || []);
     }
-    
+
     if (output.results && Array.isArray(output.results)) {
       results = output.results.map((r: any) => ({
         title: r.title || '',
@@ -130,7 +132,7 @@ export function extractWebSearchData(
       }));
     }
   }
-  
+
   return {
     query,
     results,
@@ -146,7 +148,7 @@ export function cleanUrl(url: string): string {
 
 export function extractQueriesFromToolCall(toolCall: ToolCallData): string[] {
   if (!toolCall?.arguments) return [];
-  
+
   let args: Record<string, any> = {};
   if (typeof toolCall.arguments === 'object' && toolCall.arguments !== null) {
     args = toolCall.arguments;
@@ -157,12 +159,12 @@ export function extractQueriesFromToolCall(toolCall: ToolCallData): string[] {
       return [];
     }
   }
-  
+
   // Check for queries array (batch mode)
   if (args?.queries && Array.isArray(args.queries)) {
     return args.queries.filter((q: any) => typeof q === 'string' && q.trim().length > 0);
   }
-  
+
   // Check for single query that might be an array
   if (args?.query) {
     // If query is already an array
@@ -185,16 +187,48 @@ export function extractQueriesFromToolCall(toolCall: ToolCallData): string[] {
       return [args.query];
     }
   }
-  
+
   return [];
 }
 
-export function getFavicon(url: string): string | null {
+/**
+ * Gets the favicon URL for a given URL using Google's favicon service.
+ * Always returns a valid URL string (never null).
+ * If URL parsing fails, returns a default favicon URL.
+ */
+export function getFavicon(url: string): string {
   try {
     const domain = new URL(url).hostname;
     return `https://www.google.com/s2/favicons?domain=${domain}&sz=128`;
   } catch (e) {
-    return null;
+    // Return a default favicon URL if URL parsing fails
+    return `https://www.google.com/s2/favicons?domain=example.com&sz=128`;
+  }
+}
+
+/**
+ * Determines the result type (Website, Article, Wiki, Blog) based on URL and title.
+ * Returns an object with the icon component and label string.
+ */
+export function getResultType(result: { url?: string; title?: string }): { icon: LucideIcon; label: string } {
+  const { url, title } = result;
+
+  // Guard against undefined/null values
+  if (!url || !title) {
+    return { icon: Globe, label: 'Website' };
+  }
+
+  const urlLower = url.toLowerCase();
+  const titleLower = title.toLowerCase();
+
+  if (urlLower.includes('news') || urlLower.includes('article') || titleLower.includes('news')) {
+    return { icon: FileText, label: 'Article' };
+  } else if (urlLower.includes('wiki')) {
+    return { icon: BookOpen, label: 'Wiki' };
+  } else if (urlLower.includes('blog')) {
+    return { icon: Calendar, label: 'Blog' };
+  } else {
+    return { icon: Globe, label: 'Website' };
   }
 }
 
