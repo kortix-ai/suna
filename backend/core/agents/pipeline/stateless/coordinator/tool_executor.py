@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 
 from core.utils.logger import logger
 from core.agents.pipeline.stateless.state import ToolResult
+from core.agents.pipeline.tool_access import check_tool_access_for_account
 from .message_builder import _transform_mcp_tool_call
 
 TERMINATING_TOOLS = {"ask", "complete"}
@@ -259,11 +260,26 @@ class ToolExecutor:
                     yield msg
 
     async def _execute_single_tool(
-        self, 
-        name: str, 
-        args: str, 
+        self,
+        name: str,
+        args: str,
         available_functions: Dict
     ) -> tuple[Any, bool, Optional[str]]:
+        # Check tool access based on user's subscription tier
+        account_id = getattr(self._state, 'account_id', None)
+        if account_id:
+            access_result = await check_tool_access_for_account(account_id, name)
+            if not access_result.allowed:
+                logger.warning(f"[ToolExecutor] Tool '{name}' blocked for account {account_id}")
+                error_response = {
+                    "error": access_result.reason,
+                    "error_code": access_result.error_code,
+                    "upgrade_required": access_result.upgrade_required,
+                    "current_tier": access_result.current_tier,
+                    "current_tier_display": access_result.current_tier_display,
+                }
+                return json.dumps(error_response), False, access_result.reason
+
         try:
             parsed = json.loads(args) if isinstance(args, str) else args
             tool_fn = available_functions.get(name)

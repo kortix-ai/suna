@@ -172,7 +172,19 @@ class ExpandMessageTool(Tool):
         start = time.time()
         
         if isinstance(tool_names, str):
-            tool_names = [tool_names]
+            # Handle case where LLM passes JSON-encoded array as string (e.g., '["sb_presentation_tool"]')
+            stripped = tool_names.strip()
+            if stripped.startswith('[') and stripped.endswith(']'):
+                try:
+                    parsed = json.loads(stripped)
+                    if isinstance(parsed, list):
+                        tool_names = parsed
+                    else:
+                        tool_names = [tool_names]
+                except json.JSONDecodeError:
+                    tool_names = [tool_names]
+            else:
+                tool_names = [tool_names]
         
         logger.info(f"🔧 [INIT TOOLS] Initializing tools: {tool_names}")
         

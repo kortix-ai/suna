@@ -9,25 +9,14 @@ class ManagerInitializer:
         from core.jit.config import JITConfig
         from core.services.langfuse import langfuse
 
-        # Get user tier for tool restrictions FIRST
-        tier_name = 'free'
-        tier_disabled_tools = []
-        if ctx.account_id:
-            try:
-                from core.agents.pipeline.slot_manager import get_tier_limits
-                from core.billing.shared.config import get_tier_disabled_tools
-                tier_info = await get_tier_limits(ctx.account_id)
-                tier_name = tier_info.get('name', 'free')
-                tier_disabled_tools = get_tier_disabled_tools(tier_name)
-                if tier_disabled_tools:
-                    logger.info(f"🔒 [TIER] User tier '{tier_name}' - disabled tools: {tier_disabled_tools}")
-            except Exception as e:
-                logger.warning(f"Failed to get tier for tool restrictions: {e}")
+        # Note: Tier-based tool restrictions are now handled at execution time
+        # in tool_executor.py via check_tool_access_for_account(). This allows
+        # the agent to see all tools but get a proper upgrade CTA when blocked.
 
-        # Create JIT config with tier-disabled tools
+        # Create JIT config without tier-disabled tools
         jit_config = JITConfig.from_run_context(
             agent_config=ctx.agent_config,
-            disabled_tools=tier_disabled_tools
+            disabled_tools=[]  # Empty - blocking handled at execution time
         )
 
         trace = langfuse.trace(
@@ -53,8 +42,8 @@ class ManagerInitializer:
             thread_manager,
             ctx.project_id,
             ctx.thread_id,
-            ctx.agent_config,
-            tier_disabled_tools=tier_disabled_tools
+            ctx.agent_config
+            # tier_disabled_tools removed - blocking handled at execution time
         )
         tool_manager.register_core_tools()
 
@@ -126,11 +115,7 @@ class ManagerInitializer:
     async def load_prompt_and_tools(ctx: PipelineContext, state, tool_registry, thread_manager):
         from core.agents.pipeline import prep_tasks
 
-        # Get disabled tools from jit_config (already fetched in init_managers)
-        disabled_tools = []
-        if hasattr(thread_manager, 'jit_config') and thread_manager.jit_config:
-            disabled_tools = list(thread_manager.jit_config.disabled_tools)
-
+        # Note: Tool filtering removed - blocking handled at execution time in tool_executor.py
         prompt = await prep_tasks.prep_prompt(
             model_name=ctx.model_name,
             agent_config=ctx.agent_config,
@@ -139,7 +124,7 @@ class ManagerInitializer:
             tool_registry=tool_registry,
             mcp_loader=getattr(thread_manager, 'mcp_loader', None),
             client=await thread_manager.db.client if thread_manager else None,
-            disabled_tools=disabled_tools
+            disabled_tools=[]  # Empty - blocking handled at execution time
         )
         if prompt:
             state.system_prompt = prompt.system_prompt
