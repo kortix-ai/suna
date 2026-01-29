@@ -13,8 +13,6 @@ export interface ConversationInsight {
     mixed: number;
   };
   avg_frustration: number;
-  avg_churn_risk: number;
-  top_topics: Array<{ topic: string; count: number }>;
   feature_request_count: number;
   total_analyzed: number;
   intent_distribution: {
@@ -30,25 +28,15 @@ export interface ConversationAnalyticsItem {
   thread_id: string;
   account_id: string;
   user_email?: string | null;
-  sentiment_score?: number | null;
   sentiment_label?: string | null;
   frustration_score?: number | null;
   frustration_signals: string[];
-  churn_risk_score?: number | null;
-  churn_signals: string[];
-  primary_topic?: string | null;
   intent_type?: string | null;
   is_feature_request: boolean;
   feature_request_text?: string | null;
+  first_user_message?: string | null;
   user_message_count?: number | null;
   analyzed_at: string;
-}
-
-export interface TopicDistribution {
-  distribution: Record<string, number>;
-  total: number;
-  date_from?: string | null;
-  date_to?: string | null;
 }
 
 export interface QueueStatus {
@@ -124,29 +112,6 @@ export function useFrustratedConversations(
   });
 }
 
-export function useChurnRiskConversations(
-  threshold: number = 0.7,
-  page: number = 1,
-  pageSize: number = 20
-) {
-  return useQuery({
-    queryKey: ['admin', 'analytics', 'churn-risk-conversations', threshold, page, pageSize],
-    queryFn: async (): Promise<PaginatedResponse<ConversationAnalyticsItem>> => {
-      const params = new URLSearchParams();
-      params.append('threshold', threshold.toString());
-      params.append('page', page.toString());
-      params.append('page_size', pageSize.toString());
-      const response = await backendApi.get(`/admin/analytics/conversations/churn-risk?${params.toString()}`);
-      if (response.error) {
-        throw new Error(response.error.message);
-      }
-      return response.data;
-    },
-    staleTime: 30000, // 30 seconds
-    placeholderData: (previousData) => previousData,
-  });
-}
-
 export function useFeatureRequests(page: number = 1, pageSize: number = 20) {
   return useQuery({
     queryKey: ['admin', 'analytics', 'feature-requests', page, pageSize],
@@ -165,24 +130,60 @@ export function useFeatureRequests(page: number = 1, pageSize: number = 20) {
   });
 }
 
-export function useTopicDistribution(dateFrom?: string, dateTo?: string) {
+export function useConversationsBySentiment(
+  sentiment: string | null,
+  page: number = 1,
+  pageSize: number = 20,
+  dateFrom?: string,
+  dateTo?: string
+) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'topic-distribution', dateFrom, dateTo],
-    queryFn: async (): Promise<TopicDistribution> => {
+    queryKey: ['admin', 'analytics', 'conversations-by-sentiment', sentiment, page, pageSize, dateFrom, dateTo],
+    queryFn: async (): Promise<PaginatedResponse<ConversationAnalyticsItem>> => {
+      if (!sentiment) throw new Error('Sentiment is required');
       const params = new URLSearchParams();
+      params.append('sentiment', sentiment);
+      params.append('page', page.toString());
+      params.append('page_size', pageSize.toString());
       if (dateFrom) params.append('date_from', dateFrom);
       if (dateTo) params.append('date_to', dateTo);
-      const queryString = params.toString();
-      const url = queryString
-        ? `/admin/analytics/conversations/topics?${queryString}`
-        : '/admin/analytics/conversations/topics';
-      const response = await backendApi.get(url);
+      const response = await backendApi.get(`/admin/analytics/conversations/by-sentiment?${params.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
       return response.data;
     },
-    staleTime: 60000, // 1 minute
+    enabled: !!sentiment,
+    staleTime: 30000,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+export function useConversationsByIntent(
+  intent: string | null,
+  page: number = 1,
+  pageSize: number = 20,
+  dateFrom?: string,
+  dateTo?: string
+) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'conversations-by-intent', intent, page, pageSize, dateFrom, dateTo],
+    queryFn: async (): Promise<PaginatedResponse<ConversationAnalyticsItem>> => {
+      if (!intent) throw new Error('Intent is required');
+      const params = new URLSearchParams();
+      params.append('intent', intent);
+      params.append('page', page.toString());
+      params.append('page_size', pageSize.toString());
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const response = await backendApi.get(`/admin/analytics/conversations/by-intent?${params.toString()}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    enabled: !!intent,
+    staleTime: 30000,
     placeholderData: (previousData) => previousData,
   });
 }
@@ -202,47 +203,41 @@ export function useAnalyticsQueueStatus() {
   });
 }
 
-// Use case patterns - what users are actually doing
-export interface UseCasePatterns {
-  top_use_cases: Array<{ use_case: string; count: number }>;
-  output_types: Record<string, number>;
-  domains: Record<string, number>;
-  top_keywords: Array<{ keyword: string; count: number }>;
-  total: number;
-  date_from?: string | null;
-  date_to?: string | null;
-}
-
-export function useUseCasePatterns(dateFrom?: string, dateTo?: string) {
+export function useConversationsByCategory(
+  category: string | null,
+  page: number = 1,
+  pageSize: number = 20,
+  dateFrom?: string,
+  dateTo?: string
+) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'use-case-patterns', dateFrom, dateTo],
-    queryFn: async (): Promise<UseCasePatterns> => {
+    queryKey: ['admin', 'analytics', 'conversations-by-category', category, page, pageSize, dateFrom, dateTo],
+    queryFn: async (): Promise<PaginatedResponse<ConversationAnalyticsItem>> => {
+      if (!category) throw new Error('Category is required');
       const params = new URLSearchParams();
+      params.append('category', category);
+      params.append('page', page.toString());
+      params.append('page_size', pageSize.toString());
       if (dateFrom) params.append('date_from', dateFrom);
       if (dateTo) params.append('date_to', dateTo);
-      const queryString = params.toString();
-      const url = queryString
-        ? `/admin/analytics/conversations/use-cases?${queryString}`
-        : '/admin/analytics/conversations/use-cases';
-      const response = await backendApi.get(url);
+      const response = await backendApi.get(`/admin/analytics/conversations/by-category?${params.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
       }
       return response.data;
     },
-    staleTime: 60000, // 1 minute
+    enabled: !!category,
+    staleTime: 30000,
     placeholderData: (previousData) => previousData,
   });
 }
 
-// Clustered use cases - groups similar use cases by semantic similarity
+// Use case categories - groups by category
 export interface UseCluster {
   cluster_id: number;
   label: string;
   count: number;
-  use_cases: string[];
   examples: Array<{
-    use_case_summary: string;
     thread_id: string;
     account_id: string;
   }>;

@@ -36,10 +36,6 @@ CREATE TABLE IF NOT EXISTS conversation_analytics (
     -- Use case details (what users are actually doing)
     is_useful BOOLEAN DEFAULT TRUE,
     use_case_category TEXT,
-    use_case_summary TEXT,
-    output_type TEXT,
-    domain TEXT,
-    keywords JSONB DEFAULT '[]',
 
     -- Conversation metrics
     user_message_count INTEGER,
@@ -51,10 +47,7 @@ CREATE TABLE IF NOT EXISTS conversation_analytics (
     analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
 
     -- Raw LLM response for debugging
-    raw_analysis JSONB DEFAULT '{}',
-
-    -- Embedding for semantic clustering of use cases
-    use_case_embedding vector(1536)
+    raw_analysis JSONB DEFAULT '{}'
 );
 
 -- Queue table for async processing
@@ -85,15 +78,6 @@ CREATE INDEX IF NOT EXISTS idx_conv_analytics_feature_req ON conversation_analyt
 CREATE INDEX IF NOT EXISTS idx_conv_analytics_is_useful ON conversation_analytics(is_useful);
 CREATE INDEX IF NOT EXISTS idx_conv_analytics_primary_topic ON conversation_analytics(primary_topic);
 CREATE INDEX IF NOT EXISTS idx_conv_analytics_intent ON conversation_analytics(intent_type);
-CREATE INDEX IF NOT EXISTS idx_conv_analytics_output_type ON conversation_analytics(output_type);
-CREATE INDEX IF NOT EXISTS idx_conv_analytics_domain ON conversation_analytics(domain);
-CREATE INDEX IF NOT EXISTS idx_conv_analytics_use_case ON conversation_analytics USING gin (to_tsvector('english', use_case_summary));
-
--- Vector index for embedding similarity search (requires pgvector extension)
-CREATE INDEX IF NOT EXISTS idx_conv_analytics_embedding ON conversation_analytics
-    USING ivfflat (use_case_embedding vector_cosine_ops)
-    WITH (lists = 100);
-
 -- Indexes for the queue table
 CREATE INDEX IF NOT EXISTS idx_analytics_queue_status ON conversation_analytics_queue(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_analytics_queue_thread ON conversation_analytics_queue(thread_id);

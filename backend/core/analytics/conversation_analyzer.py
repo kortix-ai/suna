@@ -14,26 +14,28 @@ from datetime import datetime, timedelta
 
 from core.services.supabase import DBConnection
 from core.services.llm import make_llm_api_call
-from core.memory.embedding_service import EmbeddingService
 from core.utils.logger import logger
 
-# Default seed categories (used when DB is empty)
+# Default categories (from project_helpers.py - LLM picks or extends)
 DEFAULT_USE_CASE_CATEGORIES = [
-    "create_presentation",
-    "create_document",
-    "create_spreadsheet",
-    "create_image",
-    "scrape_data",
-    "write_code",
-    "debug_code",
+    "Research & Information Gathering",
+    "Business & Marketing",
+    "Code & Programming",
+    "Web Development",
+    "Content Creation",
+    "Presentations",
+    "Image Generation",
 ]
 
 
 async def get_existing_categories() -> List[str]:
     """
-    Fetch all unique use_case_category values from the database.
-    This allows the category list to grow organically as new use cases are discovered.
+    Returns default categories plus any valid new ones from DB.
+    Always includes defaults so LLM has good options.
     """
+    # Always start with defaults
+    categories = set(DEFAULT_USE_CASE_CATEGORIES)
+
     try:
         db = DBConnection()
         client = await db.client
@@ -43,22 +45,16 @@ async def get_existing_categories() -> List[str]:
             .not_.is_('use_case_category', 'null')\
             .execute()
 
-        # Get unique categories
-        categories = set()
+        # Add valid DB categories (skip garbage like "action_subject")
         for r in result.data or []:
             cat = r.get('use_case_category')
-            if cat:
+            if cat and len(cat) > 3 and not cat.startswith('action_') and not cat.startswith('CREATE'):
                 categories.add(cat)
-
-        # If no categories in DB yet, use defaults
-        if not categories:
-            return DEFAULT_USE_CASE_CATEGORIES
-
-        return sorted(list(categories))
 
     except Exception as e:
         logger.warning(f"[ANALYTICS] Failed to fetch existing categories: {e}")
-        return DEFAULT_USE_CASE_CATEGORIES
+
+    return sorted(list(categories))
 
 def build_analysis_prompt(existing_categories: List[str]) -> str:
     """Build the analysis prompt with dynamic categories from DB."""
@@ -82,12 +78,8 @@ Return this exact JSON structure:
   }},
   "use_case": {{
     "is_useful": <true if user accomplished a real task, false if just chat/greeting/gibberish/question>,
-    "category": "<EXISTING CATEGORIES: {categories_str}. If no fit, CREATE NEW using format: action_subject>",
-    "summary": "<2-4 word task description, or null if not useful>",
-    "output_type": "<presentation, document, spreadsheet, code, report, data, email, website, image, audio, video, other, none>",
-    "domain": "<sales, marketing, finance, hr, engineering, research, personal, support, other>"
-  }},
-  "keywords": ["<3-5 key terms from conversation>"]
+    "category": "<Pick from: {categories_str}. Or create a new category if none fit>"
+  }}
 }}
 
 FRUSTRATION SIGNALS:
@@ -325,19 +317,6 @@ async def analyze_conversation(
         # Build result
         use_case = analysis.get('use_case', {})
         use_case_category = use_case.get('category')
-        use_case_summary = use_case.get('summary')
-
-        # Generate embedding for the use case CATEGORY (for clustering)
-        # Category is more consistent than summary, leading to better clusters
-        use_case_embedding = None
-        text_to_embed = use_case_category or use_case_summary
-        if text_to_embed:
-            try:
-                embedding_service = EmbeddingService()
-                use_case_embedding = await embedding_service.embed_text(text_to_embed)
-                logger.debug(f"[ANALYTICS] Generated embedding for use case: {text_to_embed}")
-            except Exception as e:
-                logger.warning(f"[ANALYTICS] Failed to embed use case for thread {thread_id}: {e}")
 
         result = {
             'sentiment_label': analysis.get('sentiment'),
@@ -346,20 +325,15 @@ async def analyze_conversation(
             'intent_type': analysis.get('intent_type'),
             'is_feature_request': analysis.get('feature_request', {}).get('detected', False),
             'feature_request_text': analysis.get('feature_request', {}).get('text'),
-            'is_useful': use_case.get('is_useful', True),  # Whether user accomplished a real task
+            'is_useful': use_case.get('is_useful', True),
             'use_case_category': use_case_category,
-            'use_case_summary': use_case_summary,
-            'output_type': use_case.get('output_type'),
-            'domain': use_case.get('domain'),
-            'keywords': analysis.get('keywords', []),
             'user_message_count': user_count,
             'assistant_message_count': assistant_count,
             'conversation_duration_seconds': duration_seconds,
-            'use_case_embedding': use_case_embedding,
             'raw_analysis': analysis,
         }
 
-        logger.debug(f"[ANALYTICS] Analyzed thread {thread_id}: category={use_case_category}, summary={use_case_summary}")
+        logger.debug(f"[ANALYTICS] Analyzed thread {thread_id}: category={use_case_category}")
         return result
 
     except Exception as e:
@@ -391,12 +365,6 @@ async def store_analysis(
         db = DBConnection()
         client = await db.client
 
-        # Format embedding for pgvector storage
-        embedding = analysis.get('use_case_embedding')
-        embedding_str = None
-        if embedding:
-            embedding_str = f"[{','.join(str(x) for x in embedding)}]"
-
         record = {
             'thread_id': thread_id,
             'agent_run_id': agent_run_id,
@@ -409,16 +377,11 @@ async def store_analysis(
             'feature_request_text': analysis.get('feature_request_text'),
             'is_useful': analysis.get('is_useful', True),
             'use_case_category': analysis.get('use_case_category'),
-            'use_case_summary': analysis.get('use_case_summary'),
-            'output_type': analysis.get('output_type'),
-            'domain': analysis.get('domain'),
-            'keywords': json.dumps(analysis.get('keywords', [])),
             'user_message_count': analysis.get('user_message_count'),
             'assistant_message_count': analysis.get('assistant_message_count'),
             'conversation_duration_seconds': analysis.get('conversation_duration_seconds'),
             'agent_run_status': agent_run_status,
             'raw_analysis': json.dumps(analysis.get('raw_analysis', {})),
-            'use_case_embedding': embedding_str,
         }
 
         await client.from_('conversation_analytics').insert(record).execute()
