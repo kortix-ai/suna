@@ -20,6 +20,7 @@ import {
   BarChart3,
   UserCheck,
   Zap,
+  Brain,
 } from 'lucide-react';
 import { KortixLoader } from '@/components/ui/kortix-loader';
 import { Calendar } from '@/components/ui/calendar';
@@ -42,7 +43,7 @@ import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
 import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
 
-import { UserEmailLink, MetricCard, ThreadBrowser, RetentionTab, ARRSimulator } from './components';
+import { UserEmailLink, MetricCard, ThreadBrowser, RetentionTab, ARRSimulator, ConversationInsightsTab } from './components';
 
 // Get current date in Berlin timezone
 function getBerlinToday(): Date {
@@ -291,6 +292,10 @@ export default function AdminAnalyticsPage() {
               <TabsTrigger value="simulator" className="gap-1.5">
                 <TrendingUp className="h-3.5 w-3.5" />
                 ARR
+              </TabsTrigger>
+              <TabsTrigger value="conversations" className="gap-1.5">
+                <Brain className="h-3.5 w-3.5" />
+                Conversations
               </TabsTrigger>
             </TabsList>
           </Tabs>
@@ -947,6 +952,11 @@ export default function AdminAnalyticsPage() {
           {/* ARR Simulator Tab */}
           <TabsContent value="simulator" className="mt-0">
             <ARRSimulator analyticsSource="vercel" />
+          </TabsContent>
+
+          {/* Conversation Analytics Tab */}
+          <TabsContent value="conversations" className="mt-0">
+            <ConversationInsightsTab dateFrom={dateFromString} dateTo={dateToString} />
           </TabsContent>
         </Tabs>
 

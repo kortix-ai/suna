@@ -3461,3 +3461,645 @@ async def get_profitability(
     except Exception as e:
         logger.error(f"Failed to get profitability: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get profitability data")
+
+
+# ============================================================================
+# CONVERSATION ANALYTICS ENDPOINTS
+# ============================================================================
+
+class ConversationInsight(BaseModel):
+    """Aggregated insights from conversation analytics."""
+    sentiment_distribution: Dict[str, int]  # {"positive": 45, "neutral": 30, "negative": 25}
+    avg_frustration: float
+    avg_churn_risk: float
+    top_topics: List[Dict[str, Any]]  # [{"topic": "code_execution", "count": 120}, ...]
+    feature_request_count: int
+    total_analyzed: int
+    intent_distribution: Dict[str, int]  # {"task": 100, "question": 50, ...}
+
+
+class ConversationAnalyticsItem(BaseModel):
+    """Single conversation analytics record."""
+    id: str
+    thread_id: str
+    account_id: str
+    user_email: Optional[str] = None
+    sentiment_score: Optional[float] = None
+    sentiment_label: Optional[str] = None
+    frustration_score: Optional[float] = None
+    frustration_signals: List[str] = []
+    churn_risk_score: Optional[float] = None
+    churn_signals: List[str] = []
+    primary_topic: Optional[str] = None
+    intent_type: Optional[str] = None
+    is_feature_request: bool = False
+    feature_request_text: Optional[str] = None
+    user_message_count: Optional[int] = None
+    analyzed_at: datetime
+
+
+@router.get("/conversations/insights")
+async def get_conversation_insights(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> ConversationInsight:
+    """
+    Get aggregated insights from analyzed conversations.
+
+    Returns:
+    - Sentiment distribution (positive/neutral/negative/mixed counts)
+    - Average frustration and churn risk scores
+    - Top topics by frequency
+    - Feature request count
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query
+        query = client.from_('conversation_analytics').select('*')
+
+        # Apply date filters
+        if date_from:
+            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await query.execute()
+        records = result.data or []
+
+        if not records:
+            return ConversationInsight(
+                sentiment_distribution={"positive": 0, "neutral": 0, "negative": 0, "mixed": 0},
+                avg_frustration=0.0,
+                avg_churn_risk=0.0,
+                top_topics=[],
+                feature_request_count=0,
+                total_analyzed=0,
+                intent_distribution={"task": 0, "question": 0, "complaint": 0, "feature_request": 0}
+            )
+
+        # Calculate sentiment distribution
+        sentiment_distribution = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
+        for r in records:
+            label = r.get('sentiment_label')
+            if label in sentiment_distribution:
+                sentiment_distribution[label] += 1
+
+        # Calculate averages
+        frustration_scores = [r.get('frustration_score') for r in records if r.get('frustration_score') is not None]
+        churn_scores = [r.get('churn_risk_score') for r in records if r.get('churn_risk_score') is not None]
+
+        avg_frustration = sum(frustration_scores) / len(frustration_scores) if frustration_scores else 0.0
+        avg_churn_risk = sum(churn_scores) / len(churn_scores) if churn_scores else 0.0
+
+        # Calculate topic distribution
+        topic_counts: Dict[str, int] = {}
+        for r in records:
+            topic = r.get('primary_topic')
+            if topic:
+                topic_counts[topic] = topic_counts.get(topic, 0) + 1
+
+        top_topics = sorted(
+            [{"topic": t, "count": c} for t, c in topic_counts.items()],
+            key=lambda x: x["count"],
+            reverse=True
+        )[:10]
+
+        # Count feature requests
+        feature_request_count = sum(1 for r in records if r.get('is_feature_request'))
+
+        # Intent distribution
+        intent_distribution = {"task": 0, "question": 0, "complaint": 0, "feature_request": 0}
+        for r in records:
+            intent = r.get('intent_type')
+            if intent in intent_distribution:
+                intent_distribution[intent] += 1
+
+        return ConversationInsight(
+            sentiment_distribution=sentiment_distribution,
+            avg_frustration=round(avg_frustration, 3),
+            avg_churn_risk=round(avg_churn_risk, 3),
+            top_topics=top_topics,
+            feature_request_count=feature_request_count,
+            total_analyzed=len(records),
+            intent_distribution=intent_distribution
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get conversation insights: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get conversation insights")
+
+
+@router.get("/conversations/frustrated")
+async def get_frustrated_conversations(
+    threshold: float = Query(0.5, ge=0, le=1, description="Frustration score threshold"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations with high frustration scores.
+
+    Args:
+        threshold: Minimum frustration score (0-1)
+        page: Page number
+        page_size: Items per page
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Get total count
+        count_result = await client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .gte('frustration_score', threshold)\
+            .limit(1)\
+            .execute()
+
+        total_items = count_result.count or 0
+
+        # Get paginated data
+        offset = (page - 1) * page_size
+        result = await client.from_('conversation_analytics')\
+            .select('*')\
+            .gte('frustration_score', threshold)\
+            .order('frustration_score', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Fetch user emails for the account_ids
+        account_ids = list(set(r.get('account_id') for r in records if r.get('account_id')))
+        email_map = {}
+        if account_ids:
+            try:
+                email_result = await client.schema('basejump').from_('accounts')\
+                    .select('id, primary_owner_user_id')\
+                    .in_('id', account_ids)\
+                    .execute()
+
+                user_ids = [a.get('primary_owner_user_id') for a in (email_result.data or []) if a.get('primary_owner_user_id')]
+                if user_ids:
+                    users_result = await client.schema('auth').from_('users')\
+                        .select('id, email')\
+                        .in_('id', user_ids)\
+                        .execute()
+
+                    user_email_map = {u['id']: u['email'] for u in (users_result.data or [])}
+                    for a in (email_result.data or []):
+                        if a.get('primary_owner_user_id') in user_email_map:
+                            email_map[a['id']] = user_email_map[a['primary_owner_user_id']]
+            except Exception as e:
+                logger.warning(f"Failed to fetch user emails: {e}")
+
+        # Build response items
+        items = []
+        for r in records:
+            frustration_signals = r.get('frustration_signals', [])
+            if isinstance(frustration_signals, str):
+                import json as json_lib
+                try:
+                    frustration_signals = json_lib.loads(frustration_signals)
+                except:
+                    frustration_signals = []
+
+            churn_signals = r.get('churn_signals', [])
+            if isinstance(churn_signals, str):
+                import json as json_lib
+                try:
+                    churn_signals = json_lib.loads(churn_signals)
+                except:
+                    churn_signals = []
+
+            items.append(ConversationAnalyticsItem(
+                id=r['id'],
+                thread_id=r['thread_id'],
+                account_id=r['account_id'],
+                user_email=email_map.get(r['account_id']),
+                sentiment_score=r.get('sentiment_score'),
+                sentiment_label=r.get('sentiment_label'),
+                frustration_score=r.get('frustration_score'),
+                frustration_signals=frustration_signals,
+                churn_risk_score=r.get('churn_risk_score'),
+                churn_signals=churn_signals,
+                primary_topic=r.get('primary_topic'),
+                intent_type=r.get('intent_type'),
+                is_feature_request=r.get('is_feature_request', False),
+                feature_request_text=r.get('feature_request_text'),
+                user_message_count=r.get('user_message_count'),
+                analyzed_at=r['analyzed_at']
+            ))
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return PaginationService.create_response(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get frustrated conversations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get frustrated conversations")
+
+
+@router.get("/conversations/churn-risk")
+async def get_churn_risk_conversations(
+    threshold: float = Query(0.7, ge=0, le=1, description="Churn risk score threshold"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations with high churn risk scores.
+
+    Args:
+        threshold: Minimum churn risk score (0-1)
+        page: Page number
+        page_size: Items per page
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Get total count
+        count_result = await client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .gte('churn_risk_score', threshold)\
+            .limit(1)\
+            .execute()
+
+        total_items = count_result.count or 0
+
+        # Get paginated data
+        offset = (page - 1) * page_size
+        result = await client.from_('conversation_analytics')\
+            .select('*')\
+            .gte('churn_risk_score', threshold)\
+            .order('churn_risk_score', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Build response items (similar to frustrated endpoint)
+        items = []
+        for r in records:
+            frustration_signals = r.get('frustration_signals', [])
+            if isinstance(frustration_signals, str):
+                import json as json_lib
+                try:
+                    frustration_signals = json_lib.loads(frustration_signals)
+                except:
+                    frustration_signals = []
+
+            churn_signals = r.get('churn_signals', [])
+            if isinstance(churn_signals, str):
+                import json as json_lib
+                try:
+                    churn_signals = json_lib.loads(churn_signals)
+                except:
+                    churn_signals = []
+
+            items.append(ConversationAnalyticsItem(
+                id=r['id'],
+                thread_id=r['thread_id'],
+                account_id=r['account_id'],
+                sentiment_score=r.get('sentiment_score'),
+                sentiment_label=r.get('sentiment_label'),
+                frustration_score=r.get('frustration_score'),
+                frustration_signals=frustration_signals,
+                churn_risk_score=r.get('churn_risk_score'),
+                churn_signals=churn_signals,
+                primary_topic=r.get('primary_topic'),
+                intent_type=r.get('intent_type'),
+                is_feature_request=r.get('is_feature_request', False),
+                feature_request_text=r.get('feature_request_text'),
+                user_message_count=r.get('user_message_count'),
+                analyzed_at=r['analyzed_at']
+            ))
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return PaginationService.create_response(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get churn risk conversations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get churn risk conversations")
+
+
+@router.get("/conversations/feature-requests")
+async def get_feature_requests(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations where feature requests were detected.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Get total count
+        count_result = await client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .eq('is_feature_request', True)\
+            .limit(1)\
+            .execute()
+
+        total_items = count_result.count or 0
+
+        # Get paginated data
+        offset = (page - 1) * page_size
+        result = await client.from_('conversation_analytics')\
+            .select('*')\
+            .eq('is_feature_request', True)\
+            .order('analyzed_at', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Build response items
+        items = []
+        for r in records:
+            items.append(ConversationAnalyticsItem(
+                id=r['id'],
+                thread_id=r['thread_id'],
+                account_id=r['account_id'],
+                sentiment_score=r.get('sentiment_score'),
+                sentiment_label=r.get('sentiment_label'),
+                frustration_score=r.get('frustration_score'),
+                frustration_signals=[],
+                churn_risk_score=r.get('churn_risk_score'),
+                churn_signals=[],
+                primary_topic=r.get('primary_topic'),
+                intent_type=r.get('intent_type'),
+                is_feature_request=True,
+                feature_request_text=r.get('feature_request_text'),
+                user_message_count=r.get('user_message_count'),
+                analyzed_at=r['analyzed_at']
+            ))
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return PaginationService.create_response(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get feature requests: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get feature requests")
+
+
+@router.get("/conversations/topics")
+async def get_topic_distribution(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get topic distribution counts.
+
+    Returns:
+        {"file_operations": 120, "web_browsing": 85, ...}
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query
+        query = client.from_('conversation_analytics')\
+            .select('primary_topic')
+
+        # Apply date filters
+        if date_from:
+            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await query.execute()
+        records = result.data or []
+
+        # Calculate distribution
+        topic_counts: Dict[str, int] = {}
+        for r in records:
+            topic = r.get('primary_topic')
+            if topic:
+                topic_counts[topic] = topic_counts.get(topic, 0) + 1
+
+        return {
+            "distribution": topic_counts,
+            "total": len(records),
+            "date_from": date_from,
+            "date_to": date_to
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get topic distribution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get topic distribution")
+
+
+@router.get("/conversations/queue-status")
+async def get_analytics_queue_status(
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get the current status of the conversation analytics queue.
+
+    Useful for monitoring the background worker.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Get counts by status
+        pending_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'pending')\
+            .limit(1)\
+            .execute()
+
+        processing_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'processing')\
+            .limit(1)\
+            .execute()
+
+        failed_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'failed')\
+            .limit(1)\
+            .execute()
+
+        completed_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'completed')\
+            .limit(1)\
+            .execute()
+
+        # Get total analyzed
+        analyzed_result = await client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .limit(1)\
+            .execute()
+
+        return {
+            "queue": {
+                "pending": pending_result.count or 0,
+                "processing": processing_result.count or 0,
+                "failed": failed_result.count or 0,
+                "completed": completed_result.count or 0
+            },
+            "total_analyzed": analyzed_result.count or 0
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get queue status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get queue status")
+
+
+@router.get("/conversations/use-cases")
+async def get_use_case_patterns(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get patterns of what users are doing.
+
+    Returns:
+    - Top use cases (e.g., "create sales presentation", "scrape competitor data")
+    - Output type distribution (presentation, document, spreadsheet, code, etc.)
+    - Domain distribution (sales, marketing, engineering, etc.)
+    - Common keywords
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build query
+        query = client.from_('conversation_analytics')\
+            .select('use_case_summary, output_type, domain, keywords')
+
+        if date_from:
+            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await query.execute()
+        records = result.data or []
+
+        # Aggregate use cases
+        use_case_counts: Dict[str, int] = {}
+        output_type_counts: Dict[str, int] = {}
+        domain_counts: Dict[str, int] = {}
+        keyword_counts: Dict[str, int] = {}
+
+        for r in records:
+            # Count use cases
+            use_case = r.get('use_case_summary')
+            if use_case:
+                use_case_counts[use_case] = use_case_counts.get(use_case, 0) + 1
+
+            # Count output types
+            output_type = r.get('output_type')
+            if output_type and output_type != 'none':
+                output_type_counts[output_type] = output_type_counts.get(output_type, 0) + 1
+
+            # Count domains
+            domain = r.get('domain')
+            if domain and domain != 'other':
+                domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+            # Count keywords
+            keywords = r.get('keywords', [])
+            if isinstance(keywords, str):
+                import json as json_lib
+                try:
+                    keywords = json_lib.loads(keywords)
+                except:
+                    keywords = []
+            for kw in keywords:
+                if kw:
+                    keyword_counts[kw.lower()] = keyword_counts.get(kw.lower(), 0) + 1
+
+        # Sort and limit results
+        top_use_cases = sorted(
+            [{"use_case": k, "count": v} for k, v in use_case_counts.items()],
+            key=lambda x: x["count"],
+            reverse=True
+        )[:20]
+
+        top_keywords = sorted(
+            [{"keyword": k, "count": v} for k, v in keyword_counts.items()],
+            key=lambda x: x["count"],
+            reverse=True
+        )[:30]
+
+        return {
+            "top_use_cases": top_use_cases,
+            "output_types": output_type_counts,
+            "domains": domain_counts,
+            "top_keywords": top_keywords,
+            "total": len(records),
+            "date_from": date_from,
+            "date_to": date_to
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get use case patterns: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get use case patterns")
+
+
+@router.get("/conversations/use-cases/clustered")
+async def get_clustered_use_cases_endpoint(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    distance_threshold: float = Query(0.3, ge=0.1, le=0.8, description="Cosine distance threshold (lower = tighter clusters)"),
+    min_cluster_size: int = Query(2, ge=1, le=10, description="Minimum items to form a cluster"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get use cases grouped by semantic similarity using embedding-based clustering.
+
+    Groups similar use cases like "create sales ppt", "make presentation", "build slides"
+    into a single cluster labeled by the most common use case text.
+
+    Args:
+        date_from: Start date filter
+        date_to: End date filter
+        distance_threshold: Lower values create tighter clusters (0.2-0.4 recommended)
+        min_cluster_size: Minimum items to form a cluster
+
+    Returns:
+        {
+            "clusters": [...],
+            "total_clusters": 12,
+            "total_use_cases": 156,
+            "date_from": "2024-01-01",
+            "date_to": "2024-01-31"
+        }
+    """
+    try:
+        from core.analytics.use_case_clustering import get_clustered_use_cases
+
+        clusters = await get_clustered_use_cases(
+            date_from=date_from,
+            date_to=date_to,
+            distance_threshold=distance_threshold,
+            min_cluster_size=min_cluster_size
+        )
+
+        return {
+            "clusters": clusters,
+            "total_clusters": len(clusters),
+            "total_use_cases": sum(c['count'] for c in clusters),
+            "date_from": date_from,
+            "date_to": date_to
+        }
+
+    except ImportError as e:
+        logger.error(f"Clustering dependency missing: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Clustering requires scikit-learn. Install with: pip install scikit-learn"
+        )
+    except Exception as e:
+        logger.error(f"Failed to get clustered use cases: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get clustered use cases")

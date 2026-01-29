@@ -209,6 +209,17 @@ class StatelessCoordinator(BaseCoordinator):
 
         await asyncio.sleep(0.2)
 
+        # Queue for conversation analytics (non-blocking)
+        try:
+            from core.analytics.conversation_analyzer import queue_for_analysis
+            await queue_for_analysis(
+                thread_id=self._state.thread_id,
+                agent_run_id=self._state.run_id,
+                account_id=self._state.account_id
+            )
+        except Exception as e:
+            logger.warning(f"[Coordinator] Failed to queue analytics: {e}")
+
     async def _cleanup(self, ctx: PipelineContext) -> None:
         cleanup_errors = []
         
