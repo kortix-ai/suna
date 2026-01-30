@@ -3,9 +3,9 @@ Conversation Analyzer
 
 Analyzes agent conversations using LLM to extract:
 - Sentiment and frustration levels
-- Churn risk indicators
 - Topic classification
 - Feature request detection
+- RFM-based engagement scoring
 """
 
 import json
@@ -42,7 +42,7 @@ async def get_existing_categories() -> List[str]:
 
         result = await client.from_('conversation_analytics')\
             .select('use_case_category')\
-            .not_.is_('use_case_category', 'null')\
+            .not_.is_('use_case_category', None)\
             .execute()
 
         # Add valid DB categories (skip garbage like "action_subject")
@@ -60,9 +60,26 @@ def build_analysis_prompt(existing_categories: List[str]) -> str:
     """Build the analysis prompt with dynamic categories from DB."""
     categories_str = ", ".join(existing_categories) if existing_categories else "none yet"
 
-    return f"""Analyze this AI agent conversation between a user and an AI assistant. Return valid JSON only.
+    return f"""You are analyzing conversations from Suna, an open-source AI agent platform.
 
-IMPORTANT: Be objective and evidence-based. Only flag frustration if there are clear signals.
+## ABOUT SUNA
+Suna is a generalist AI agent that can:
+- Browse the web and extract information
+- Write, edit, and execute code
+- Create and manage files (documents, spreadsheets, presentations)
+- Interact with APIs and external services
+- Perform multi-step tasks autonomously
+
+Users interact with Suna to accomplish real-world tasks like research, content creation, data analysis, coding, and automation.
+
+## YOUR TASK
+Analyze the conversation and return valid JSON only. Be objective and evidence-based.
+
+The conversation may have two sections:
+- **PREVIOUS CONTEXT**: Earlier user messages showing what they asked for before
+- **CURRENT INTERACTION**: The actual interaction to analyze (user + assistant)
+
+Focus your analysis on the CURRENT INTERACTION, but use PREVIOUS CONTEXT to understand the user's overall goal.
 
 Return this exact JSON structure:
 {{
@@ -82,11 +99,25 @@ Return this exact JSON structure:
   }}
 }}
 
-FRUSTRATION SIGNALS:
-- Repeated requests for the same thing
-- Expressions like "still not working", "this is frustrating", "I give up"
-- Multiple error corrections
-- Negative language about the assistant's performance
+## FRUSTRATION SIGNALS (Suna-specific)
+- Agent stuck in loops or repeating actions
+- Browser/sandbox errors or timeouts
+- Agent not understanding the task after multiple attempts
+- User saying "try again", "that's wrong", "not what I asked"
+- Failed file creation or code execution
+- Agent apologizing repeatedly
+- User giving up mid-task
+
+## SUCCESS SIGNALS
+- Task completed as requested
+- User thanks or expresses satisfaction
+- User asks follow-up questions (engaged)
+- Agent successfully created files/output
+
+## WHAT'S NOT FRUSTRATION
+- Long tasks (expected for complex work)
+- Multiple tool calls (normal agent behavior)
+- User providing clarifications (normal interaction)
 
 Analyze the following conversation:
 """
@@ -141,16 +172,26 @@ async def queue_for_analysis(
 
 async def fetch_conversation_messages(
     thread_id: str,
-    agent_run_id: Optional[str] = None
-) -> List[Dict[str, Any]]:
+    agent_run_id: Optional[str] = None,
+    include_context: bool = True,
+    context_message_limit: int = 10
+) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """
     Fetch messages from a thread for analysis.
 
-    If agent_run_id is provided, only fetches messages from that run's time range.
-    Returns only actual conversation messages (user, assistant, tool).
+    If agent_run_id is provided, fetches messages from that run's time range
+    PLUS previous messages as context.
+
+    Returns:
+        Tuple of (context_messages, run_messages)
+        - context_messages: Previous messages before this run (for context)
+        - run_messages: Messages from this specific run (to analyze)
     """
     db = DBConnection()
     client = await db.client
+
+    context_messages = []
+    run_messages = []
 
     # If agent_run_id provided, get time range
     started_at = None
@@ -169,21 +210,40 @@ async def fetch_conversation_messages(
                 started_at = (started_dt - timedelta(seconds=30)).isoformat()
             completed_at = run_result.data.get('completed_at')
 
-    query = client.from_('messages')\
+    base_query = client.from_('messages')\
         .select('type, content, created_at')\
         .eq('thread_id', thread_id)\
         .eq('is_llm_message', True)\
         .in_('type', ['user', 'assistant', 'tool'])
 
-    # Filter by time range if available
-    if started_at:
-        query = query.gte('created_at', started_at)
-    if completed_at:
-        query = query.lte('created_at', completed_at)
+    if started_at and completed_at:
+        # Fetch messages for this run
+        run_query = base_query\
+            .gte('created_at', started_at)\
+            .lte('created_at', completed_at)\
+            .order('created_at', desc=False)
+        run_result = await run_query.execute()
+        run_messages = run_result.data or []
 
-    result = await query.order('created_at', desc=False).execute()
+        # Fetch previous USER messages as context (we care about what they asked, not assistant verbosity)
+        if include_context:
+            context_query = client.from_('messages')\
+                .select('type, content, created_at')\
+                .eq('thread_id', thread_id)\
+                .eq('is_llm_message', True)\
+                .eq('type', 'user')\
+                .lt('created_at', started_at)\
+                .order('created_at', desc=True)\
+                .limit(context_message_limit)
+            context_result = await context_query.execute()
+            # Reverse to get chronological order
+            context_messages = list(reversed(context_result.data or []))
+    else:
+        # No agent_run_id or missing timestamps - fetch all messages
+        result = await base_query.order('created_at', desc=False).execute()
+        run_messages = result.data or []
 
-    return result.data or []
+    return context_messages, run_messages
 
 
 def format_conversation_for_analysis(messages: List[Dict[str, Any]]) -> str:
@@ -233,16 +293,16 @@ async def analyze_conversation(
         Analysis results dict or None if analysis fails
     """
     try:
-        # Fetch messages (filtered by agent run time range if provided)
-        messages = await fetch_conversation_messages(thread_id, agent_run_id)
+        # Fetch messages with context
+        context_messages, run_messages = await fetch_conversation_messages(thread_id, agent_run_id)
 
-        if not messages:
+        if not run_messages:
             logger.debug(f"[ANALYTICS] No messages found for thread {thread_id}")
             return None
 
-        # Count messages by type
-        user_count = sum(1 for m in messages if m.get('type') == 'user')
-        assistant_count = sum(1 for m in messages if m.get('type') == 'assistant')
+        # Count messages by type (only in run_messages - what we're analyzing)
+        user_count = sum(1 for m in run_messages if m.get('type') == 'user')
+        assistant_count = sum(1 for m in run_messages if m.get('type') == 'assistant')
 
         # Skip very short conversations (likely not meaningful)
         if user_count < 1:
@@ -250,9 +310,9 @@ async def analyze_conversation(
             return None
 
         # Calculate duration
-        if len(messages) >= 2:
-            first_time = messages[0].get('created_at')
-            last_time = messages[-1].get('created_at')
+        if len(run_messages) >= 2:
+            first_time = run_messages[0].get('created_at')
+            last_time = run_messages[-1].get('created_at')
             if first_time and last_time:
                 try:
                     first_dt = datetime.fromisoformat(first_time.replace('Z', '+00:00'))
@@ -265,12 +325,32 @@ async def analyze_conversation(
         else:
             duration_seconds = None
 
-        # Format for LLM
-        conversation_text = format_conversation_for_analysis(messages)
+        # Format for LLM with context budget management
+        # Budget: ~3000 chars for context, ~12000 chars for current run
+        CONTEXT_BUDGET = 3000
+        RUN_BUDGET = 12000
 
-        # Limit total context size
-        if len(conversation_text) > 15000:
-            conversation_text = conversation_text[:15000] + "\n\n[... conversation truncated for analysis ...]"
+        # Format context (previous messages)
+        context_text = ""
+        if context_messages:
+            context_text = format_conversation_for_analysis(context_messages)
+            if len(context_text) > CONTEXT_BUDGET:
+                context_text = context_text[:CONTEXT_BUDGET] + "\n[... earlier context truncated ...]"
+
+        # Format current run messages (priority)
+        run_text = format_conversation_for_analysis(run_messages)
+        if len(run_text) > RUN_BUDGET:
+            run_text = run_text[:RUN_BUDGET] + "\n\n[... conversation truncated for analysis ...]"
+
+        # Combine with clear labels
+        if context_text:
+            conversation_text = f"""=== PREVIOUS CONTEXT (for background only) ===
+{context_text}
+
+=== CURRENT INTERACTION (analyze this) ===
+{run_text}"""
+        else:
+            conversation_text = run_text
 
         # Fetch existing categories from DB (list grows organically)
         existing_categories = await get_existing_categories()
@@ -317,6 +397,15 @@ async def analyze_conversation(
         # Build result
         use_case = analysis.get('use_case', {})
         use_case_category = use_case.get('category')
+
+        # Fallback: try alternate structures the LLM might use
+        if not use_case_category:
+            use_case_category = analysis.get('use_case_category') or analysis.get('category')
+
+        # Debug: log what we got from LLM
+        logger.debug(f"[ANALYTICS] LLM response keys: {list(analysis.keys())}")
+        logger.debug(f"[ANALYTICS] use_case object: {use_case}")
+        logger.debug(f"[ANALYTICS] Extracted category: {use_case_category}")
 
         result = {
             'sentiment_label': analysis.get('sentiment'),
@@ -394,88 +483,176 @@ async def store_analysis(
         return False
 
 
-async def calculate_churn_risk(account_id: str, days: int = 30) -> Dict[str, Any]:
+async def calculate_rfm_engagement(account_id: str, days: int = 30) -> Dict[str, Any]:
     """
-    Calculate churn risk from historical frustration data.
+    Calculate engagement health using RFM (Recency, Frequency, Monetary) model.
 
-    Logic:
-    - Get frustration scores from last N days
-    - Higher average frustration = higher churn risk
-    - Increasing frustration trend = higher churn risk
+    This is a proven customer segmentation approach used since the 1930s.
+    Each dimension is scored 1-5, where 5 is best.
+
+    Dimensions:
+    - Recency: Days since last agent run (lower is better)
+    - Frequency: Agent runs in the period (higher is better)
+    - Monetary: Proxy via total conversation count (higher is better)
 
     Returns:
         {
-            'churn_risk_score': float 0-1,
-            'frustration_count': int,
-            'avg_frustration': float,
-            'trend': 'increasing' | 'stable' | 'decreasing'
+            'rfm_score': '5-4-3' format string,
+            'recency_score': int 1-5,
+            'frequency_score': int 1-5,
+            'monetary_score': int 1-5,
+            'churn_risk': float 0-1 (derived from RFM),
+            'segment': str (e.g., 'champion', 'at_risk', 'hibernating'),
+            'days_since_last_activity': int,
+            'runs_in_period': int
         }
     """
     try:
         db = DBConnection()
         client = await db.client
 
-        # Get frustration scores from last N days
-        from_date = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        now = datetime.utcnow()
+        from_date = (now - timedelta(days=days)).isoformat()
 
-        result = await client.from_('conversation_analytics')\
-            .select('frustration_score, created_at')\
+        # First get thread_ids for this account
+        threads_result = await client.from_('threads')\
+            .select('thread_id')\
             .eq('account_id', account_id)\
-            .gte('created_at', from_date)\
-            .not_.is_('frustration_score', 'null')\
-            .order('created_at', desc=False)\
             .execute()
 
-        if not result.data or len(result.data) < 2:
+        thread_ids = [t['thread_id'] for t in (threads_result.data or [])]
+
+        if not thread_ids:
+            # No threads = no activity
             return {
-                'churn_risk_score': 0,
-                'frustration_count': len(result.data) if result.data else 0,
-                'avg_frustration': 0,
-                'trend': 'stable'
+                'rfm_score': '1-1-1',
+                'recency_score': 1,
+                'frequency_score': 1,
+                'monetary_score': 1,
+                'churn_risk': 1.0,
+                'segment': 'hibernating',
+                'days_since_last_activity': days,
+                'runs_in_period': 0,
+                'total_conversations': 0
             }
 
-        scores = [r['frustration_score'] for r in result.data if r['frustration_score'] is not None]
+        logger.debug(f"[RFM] Account {account_id} has {len(thread_ids)} threads")
 
-        if not scores:
-            return {
-                'churn_risk_score': 0,
-                'frustration_count': 0,
-                'avg_frustration': 0,
-                'trend': 'stable'
-            }
+        # Get agent runs for this account's threads in the period
+        runs_result = await client.from_('agent_runs')\
+            .select('started_at')\
+            .in_('thread_id', thread_ids)\
+            .gte('started_at', from_date)\
+            .order('started_at', desc=True)\
+            .execute()
 
-        avg_frustration = sum(scores) / len(scores)
+        runs = runs_result.data or []
+        runs_in_period = len(runs)
+        logger.debug(f"[RFM] Found {runs_in_period} runs in period for account {account_id}")
 
-        # Calculate trend (compare first half vs second half)
-        mid = len(scores) // 2
-        first_half_avg = sum(scores[:mid]) / mid if mid > 0 else 0
-        second_half_avg = sum(scores[mid:]) / (len(scores) - mid) if (len(scores) - mid) > 0 else 0
-
-        if second_half_avg > first_half_avg + 0.1:
-            trend = 'increasing'
-            trend_multiplier = 1.3
-        elif second_half_avg < first_half_avg - 0.1:
-            trend = 'decreasing'
-            trend_multiplier = 0.7
+        # Calculate days since last activity
+        if runs:
+            last_run_time = runs[0].get('started_at')
+            if last_run_time:
+                last_dt = datetime.fromisoformat(last_run_time.replace('Z', '+00:00'))
+                days_since_last = (now - last_dt.replace(tzinfo=None)).days
+            else:
+                days_since_last = days  # Assume max if no timestamp
         else:
-            trend = 'stable'
-            trend_multiplier = 1.0
+            days_since_last = days  # No runs = max days
 
-        # Churn risk = avg frustration * trend multiplier, capped at 1
-        churn_risk = min(1.0, avg_frustration * trend_multiplier)
+        # Get total conversations (monetary proxy)
+        total_result = await client.from_('agent_runs')\
+            .select('id', count='exact')\
+            .in_('thread_id', thread_ids)\
+            .limit(1)\
+            .execute()
+        total_conversations = total_result.count or 0
+
+        # Score Recency (1-5): fewer days since last activity = higher score
+        if days_since_last <= 1:
+            recency_score = 5
+        elif days_since_last <= 3:
+            recency_score = 4
+        elif days_since_last <= 7:
+            recency_score = 3
+        elif days_since_last <= 14:
+            recency_score = 2
+        else:
+            recency_score = 1
+
+        # Score Frequency (1-5): more runs in period = higher score
+        if runs_in_period >= 20:
+            frequency_score = 5
+        elif runs_in_period >= 10:
+            frequency_score = 4
+        elif runs_in_period >= 5:
+            frequency_score = 3
+        elif runs_in_period >= 2:
+            frequency_score = 2
+        else:
+            frequency_score = 1
+
+        # Score Monetary (1-5): more total conversations = higher score
+        if total_conversations >= 100:
+            monetary_score = 5
+        elif total_conversations >= 50:
+            monetary_score = 4
+        elif total_conversations >= 20:
+            monetary_score = 3
+        elif total_conversations >= 5:
+            monetary_score = 2
+        else:
+            monetary_score = 1
+
+        # Derive churn risk from RFM (low R and F = high churn risk)
+        # Weight recency and frequency more heavily than monetary
+        avg_rf = (recency_score + frequency_score) / 2
+        churn_risk = round(1 - (avg_rf - 1) / 4, 2)  # Maps 1-5 to 1.0-0.0
+
+        # Determine segment based on RFM pattern
+        rfm_sum = recency_score + frequency_score + monetary_score
+        if recency_score >= 4 and frequency_score >= 4:
+            segment = 'champion'
+        elif recency_score >= 4 and frequency_score <= 2:
+            segment = 'new_user'
+        elif recency_score <= 2 and frequency_score >= 4:
+            segment = 'at_risk'
+        elif recency_score <= 2 and frequency_score <= 2 and monetary_score >= 3:
+            segment = 'cant_lose'
+        elif recency_score <= 2 and frequency_score <= 2:
+            segment = 'hibernating'
+        elif rfm_sum >= 12:
+            segment = 'loyal'
+        elif rfm_sum >= 9:
+            segment = 'potential'
+        elif rfm_sum >= 6:
+            segment = 'needs_attention'
+        else:
+            segment = 'about_to_sleep'
 
         return {
-            'churn_risk_score': round(churn_risk, 2),
-            'frustration_count': len(scores),
-            'avg_frustration': round(avg_frustration, 2),
-            'trend': trend
+            'rfm_score': f"{recency_score}-{frequency_score}-{monetary_score}",
+            'recency_score': recency_score,
+            'frequency_score': frequency_score,
+            'monetary_score': monetary_score,
+            'churn_risk': churn_risk,
+            'segment': segment,
+            'days_since_last_activity': days_since_last,
+            'runs_in_period': runs_in_period,
+            'total_conversations': total_conversations
         }
 
     except Exception as e:
-        logger.error(f"[ANALYTICS] Failed to calculate churn risk for {account_id}: {e}")
+        logger.error(f"[ANALYTICS] Failed to calculate RFM for {account_id}: {e}")
         return {
-            'churn_risk_score': 0,
-            'frustration_count': 0,
-            'avg_frustration': 0,
-            'trend': 'unknown'
+            'rfm_score': '0-0-0',
+            'recency_score': 0,
+            'frequency_score': 0,
+            'monetary_score': 0,
+            'churn_risk': 1.0,
+            'segment': 'unknown',
+            'days_since_last_activity': -1,
+            'runs_in_period': 0,
+            'total_conversations': 0
         }

@@ -34,6 +34,7 @@ export interface ConversationAnalyticsItem {
   intent_type?: string | null;
   is_feature_request: boolean;
   feature_request_text?: string | null;
+  use_case_category?: string | null;
   first_user_message?: string | null;
   user_message_count?: number | null;
   analyzed_at: string;
@@ -228,6 +229,87 @@ export function useConversationsByCategory(
     },
     enabled: !!category,
     staleTime: 30000,
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+// ============================================================================
+// RFM ENGAGEMENT
+// ============================================================================
+
+export interface AccountEngagementItem {
+  account_id: string;
+  user_email?: string | null;
+  rfm_score: string;
+  recency_score: number;
+  frequency_score: number;
+  monetary_score: number;
+  churn_risk: number;
+  segment: string;
+  days_since_last_activity: number;
+  runs_in_period: number;
+}
+
+export interface RFMEngagementSummary {
+  total_accounts: number;
+  segments: Record<string, number>;
+  at_risk_accounts: AccountEngagementItem[];
+  avg_churn_risk: number;
+}
+
+export function useEngagementSummary(days: number = 30, limit: number = 20) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'engagement-summary', days, limit],
+    queryFn: async (): Promise<RFMEngagementSummary> => {
+      const params = new URLSearchParams();
+      params.append('days', days.toString());
+      params.append('limit', limit.toString());
+      const response = await backendApi.get(`/admin/analytics/conversations/engagement-summary?${params.toString()}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 120000, // 2 minutes (expensive query)
+    placeholderData: (previousData) => previousData,
+  });
+}
+
+// Accounts by segment
+export interface SegmentAccount {
+  account_id: string;
+  email?: string | null;
+  rfm_score: string;
+  days_since_last_activity: number;
+  runs_in_period: number;
+  total_runs: number;
+}
+
+export interface SegmentAccountsResponse {
+  accounts: SegmentAccount[];
+  total: number;
+  page: number;
+  page_size: number;
+  segment: string;
+}
+
+export function useAccountsBySegment(segment: string | null, days: number = 30, page: number = 1, pageSize: number = 50) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'accounts-by-segment', segment, days, page, pageSize],
+    queryFn: async (): Promise<SegmentAccountsResponse> => {
+      const params = new URLSearchParams();
+      params.append('segment', segment!);
+      params.append('days', days.toString());
+      params.append('page', page.toString());
+      params.append('page_size', pageSize.toString());
+      const response = await backendApi.get(`/admin/analytics/conversations/accounts-by-segment?${params.toString()}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    enabled: !!segment,
+    staleTime: 60000,
     placeholderData: (previousData) => previousData,
   });
 }

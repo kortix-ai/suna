@@ -19,6 +19,9 @@ import {
   ExternalLink,
   X,
   ArrowLeft,
+  UserX,
+  TrendingDown,
+  Activity,
 } from 'lucide-react';
 import {
   useConversationInsights,
@@ -29,7 +32,11 @@ import {
   useConversationsBySentiment,
   useConversationsByIntent,
   useConversationsByCategory,
+  useEngagementSummary,
+  useAccountsBySegment,
   type ConversationAnalyticsItem,
+  type AccountEngagementItem,
+  type SegmentAccount,
 } from '@/hooks/admin/use-conversation-analytics';
 
 interface ConversationInsightsTabProps {
@@ -59,7 +66,7 @@ type DrillDownType =
   | null;
 
 export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsightsTabProps) {
-  const [activeSection, setActiveSection] = useState<'overview' | 'frustrated' | 'features'>('overview');
+  const [activeSection, setActiveSection] = useState<'overview' | 'frustrated' | 'features' | 'at-risk'>('overview');
   const [frustratedPage, setFrustratedPage] = useState(1);
   const [featuresPage, setFeaturesPage] = useState(1);
   const [drillDown, setDrillDown] = useState<DrillDownType>(null);
@@ -71,6 +78,7 @@ export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsigh
   const { data: queueStatus } = useAnalyticsQueueStatus();
   const { data: frustratedData, isLoading: frustratedLoading } = useFrustratedConversations(0.5, frustratedPage, 10);
   const { data: featuresData, isLoading: featuresLoading } = useFeatureRequests(featuresPage, 10);
+  const { data: engagementData, isLoading: engagementLoading } = useEngagementSummary(30, 20);
 
   // Drill-down data
   const { data: sentimentData, isLoading: sentimentLoading } = useConversationsBySentiment(
@@ -213,6 +221,7 @@ export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsigh
           { id: 'overview', label: 'Overview', icon: Brain },
           { id: 'frustrated', label: 'Frustrated', icon: AlertTriangle, count: frustratedData?.pagination.total_items },
           { id: 'features', label: 'Feature Requests', icon: Lightbulb, count: featuresData?.pagination.total_items },
+          { id: 'at-risk', label: 'At Risk', icon: UserX, count: engagementData?.at_risk_accounts.length },
         ].map(({ id, label, icon: Icon, count }) => (
           <Button
             key={id}
@@ -374,6 +383,267 @@ export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsigh
           highlightField="feature"
         />
       )}
+
+      {activeSection === 'at-risk' && (
+        <AtRiskSection data={engagementData} loading={engagementLoading} />
+      )}
+    </div>
+  );
+}
+
+// Segment display helpers with detailed descriptions
+// Frequency thresholds based on actual data: p25=1, median=2, p75=4, p90=9
+const SEGMENT_CONFIG: Record<string, { label: string; color: string; description: string; criteria: string }> = {
+  champion: {
+    label: 'Champions',
+    color: 'bg-emerald-500',
+    description: 'Active power users',
+    criteria: 'Used in last 3 days + 5+ runs/month (top 25%)'
+  },
+  loyal: {
+    label: 'Loyal',
+    color: 'bg-blue-500',
+    description: 'Regular engaged users',
+    criteria: 'Used in last 3 days + 2+ runs/month'
+  },
+  potential: {
+    label: 'Potential',
+    color: 'bg-cyan-500',
+    description: 'Could become loyal',
+    criteria: 'Used in last week + 3+ runs/month'
+  },
+  at_risk: {
+    label: 'At Risk',
+    color: 'bg-orange-500',
+    description: 'Were active, now gone',
+    criteria: 'No use in 15+ days but had 3+ runs (above median)'
+  },
+  hibernating: {
+    label: 'Hibernating',
+    color: 'bg-gray-500',
+    description: 'Inactive users',
+    criteria: 'No use in 15+ days + below median activity'
+  },
+  other: {
+    label: 'Other',
+    color: 'bg-gray-400',
+    description: 'Mixed signals',
+    criteria: 'Does not fit other segments'
+  },
+  unknown: {
+    label: 'Unknown',
+    color: 'bg-gray-400',
+    description: 'No data',
+    criteria: 'Unable to calculate'
+  },
+};
+
+function AtRiskSection({ data, loading }: { data?: { total_accounts: number; segments: Record<string, number>; at_risk_accounts: AccountEngagementItem[]; avg_churn_risk: number }; loading: boolean }) {
+  const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
+  const [segmentPage, setSegmentPage] = useState(1);
+  const { data: segmentAccounts, isLoading: segmentLoading } = useAccountsBySegment(selectedSegment, 30, segmentPage, 50);
+
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-32" />
+        <Skeleton className="h-64" />
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="text-center py-12 text-muted-foreground">
+        <UserX className="h-12 w-12 mx-auto mb-3 opacity-50" />
+        <p>No engagement data available</p>
+      </div>
+    );
+  }
+
+  const atRiskCount = (data.segments.at_risk || 0) + (data.segments.cant_lose || 0) + (data.segments.hibernating || 0) + (data.segments.about_to_sleep || 0);
+
+  // If a segment is selected, show accounts view
+  if (selectedSegment && segmentAccounts) {
+    const config = SEGMENT_CONFIG[selectedSegment] || SEGMENT_CONFIG.unknown;
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Button variant="ghost" size="sm" onClick={() => { setSelectedSegment(null); setSegmentPage(1); }}>
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            Back
+          </Button>
+          <div className={cn('w-3 h-3 rounded-full', config.color)} />
+          <h3 className="font-medium">{config.label}</h3>
+          <Badge variant="secondary">{segmentAccounts.total} accounts</Badge>
+        </div>
+
+        <div className="rounded-xl border bg-card p-4">
+          <p className="text-xs text-muted-foreground mb-4">{config.criteria}</p>
+
+          {segmentLoading ? (
+            <div className="space-y-2">
+              {[...Array(5)].map((_, i) => <Skeleton key={i} className="h-12" />)}
+            </div>
+          ) : segmentAccounts.accounts.length === 0 ? (
+            <p className="text-center py-8 text-muted-foreground">No accounts in this segment</p>
+          ) : (
+            <div className="space-y-2">
+              <div className="grid grid-cols-12 gap-2 text-xs font-medium text-muted-foreground px-3 py-2 border-b">
+                <div className="col-span-5">Email / Account</div>
+                <div className="col-span-2">RFM Score</div>
+                <div className="col-span-2">Last Active</div>
+                <div className="col-span-2">Runs (30d)</div>
+                <div className="col-span-1">Total</div>
+              </div>
+              {segmentAccounts.accounts.map((account) => (
+                <div key={account.account_id} className="grid grid-cols-12 gap-2 text-sm px-3 py-2 rounded hover:bg-muted/50">
+                  <div className="col-span-5 truncate font-medium">
+                    {account.email || <span className="text-muted-foreground">{account.account_id.slice(0, 12)}...</span>}
+                  </div>
+                  <div className="col-span-2 font-mono">{account.rfm_score}</div>
+                  <div className="col-span-2">{account.days_since_last_activity}d ago</div>
+                  <div className="col-span-2">{account.runs_in_period}</div>
+                  <div className="col-span-1">{account.total_runs}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {segmentAccounts.total > 50 && (
+            <div className="flex justify-center gap-2 mt-4 pt-4 border-t">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={segmentPage === 1}
+                onClick={() => setSegmentPage(p => p - 1)}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <span className="text-sm text-muted-foreground px-3 py-1">
+                Page {segmentPage} of {Math.ceil(segmentAccounts.total / 50)}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={segmentPage >= Math.ceil(segmentAccounts.total / 50)}
+                onClick={() => setSegmentPage(p => p + 1)}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Summary Cards */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="text-center p-4 rounded-xl border bg-card">
+          <p className="text-3xl font-bold">{data.total_accounts}</p>
+          <p className="text-xs text-muted-foreground mt-1">Active Accounts</p>
+        </div>
+        <div className="text-center p-4 rounded-xl border bg-card">
+          <p className="text-3xl font-bold text-red-600">{atRiskCount}</p>
+          <p className="text-xs text-muted-foreground mt-1">At Risk</p>
+        </div>
+        <div className="text-center p-4 rounded-xl border bg-card">
+          <p className="text-3xl font-bold text-amber-600">{(data.avg_churn_risk * 100).toFixed(0)}%</p>
+          <p className="text-xs text-muted-foreground mt-1">Avg Churn Risk</p>
+        </div>
+        <div className="text-center p-4 rounded-xl border bg-card">
+          <p className="text-3xl font-bold text-emerald-600">{data.segments.champion || 0}</p>
+          <p className="text-xs text-muted-foreground mt-1">Champions</p>
+        </div>
+      </div>
+
+      {/* Segment Distribution */}
+      <div className="rounded-xl border bg-card p-5">
+        <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+          <Activity className="h-4 w-4 text-muted-foreground" />
+          User Segments (RFM)
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          RFM (Recency, Frequency, Monetary) segments users by engagement. <strong>Recency</strong>: days since last use. <strong>Frequency</strong>: runs in last 30 days. <strong>Monetary</strong>: subscription tier. Click a segment to see accounts.
+        </p>
+        <div className="grid grid-cols-3 md:grid-cols-5 gap-3">
+          {Object.entries(data.segments)
+            .sort((a, b) => b[1] - a[1])
+            .map(([segment, count]) => {
+              const config = SEGMENT_CONFIG[segment] || SEGMENT_CONFIG.unknown;
+              return (
+                <button
+                  key={segment}
+                  onClick={() => { setSelectedSegment(segment); setSegmentPage(1); }}
+                  className="p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors text-left cursor-pointer"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <div className={cn('w-2 h-2 rounded-full', config.color)} />
+                    <span className="text-2xl font-bold">{count}</span>
+                  </div>
+                  <p className="text-xs font-medium">{config.label}</p>
+                  <p className="text-xs text-muted-foreground">{config.criteria}</p>
+                </button>
+              );
+            })}
+        </div>
+      </div>
+
+      {/* At Risk Accounts List */}
+      <div className="rounded-xl border bg-card p-5">
+        <h3 className="text-sm font-medium mb-2 flex items-center gap-2">
+          <TrendingDown className="h-4 w-4 text-red-500" />
+          Accounts at Risk
+          <Badge variant="secondary">{data.at_risk_accounts.length}</Badge>
+        </h3>
+        <p className="text-xs text-muted-foreground mb-4">
+          Accounts with 50%+ churn risk based on declining activity. RFM score format: Recency-Frequency-Monetary (each 1-5, higher = better).
+        </p>
+
+        {data.at_risk_accounts.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <Smile className="h-10 w-10 mx-auto mb-2 text-emerald-500" />
+            <p>No at-risk accounts found</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {data.at_risk_accounts.map((account) => {
+              const config = SEGMENT_CONFIG[account.segment] || SEGMENT_CONFIG.unknown;
+              return (
+                <div key={account.account_id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/20 hover:bg-muted/40 transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className={cn('w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm', config.color)}>
+                      {account.rfm_score.split('-')[0]}
+                    </div>
+                    <div>
+                      <p className="font-medium text-sm">{account.user_email || account.account_id.slice(0, 8)}</p>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Badge variant="outline" className="text-xs">{config.label}</Badge>
+                        <span>RFM: {account.rfm_score}</span>
+                        <span>{account.days_since_last_activity}d ago</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className={cn(
+                      'text-lg font-bold px-2 py-1 rounded',
+                      account.churn_risk >= 0.7 ? 'bg-red-500/10 text-red-700' :
+                      account.churn_risk >= 0.5 ? 'bg-amber-500/10 text-amber-700' :
+                      'bg-gray-500/10 text-gray-700'
+                    )}>
+                      {(account.churn_risk * 100).toFixed(0)}%
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{account.runs_in_period} runs</p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -452,11 +722,11 @@ function DrillDownList({
                 )}
 
                 {/* Use case summary */}
-                {item.use_case_summary && (
+                {item.use_case_category && (
                   <div className="mt-3">
                     <p className="text-xs text-muted-foreground mb-1">Use case:</p>
                     <Badge variant="secondary" className="text-xs">
-                      {item.use_case_summary}
+                      {item.use_case_category}
                     </Badge>
                   </div>
                 )}

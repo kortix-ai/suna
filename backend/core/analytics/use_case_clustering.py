@@ -15,7 +15,7 @@ async def get_clustered_use_cases(
     date_from: Optional[str] = None,
     date_to: Optional[str] = None,
     distance_threshold: float = 0.3,  # Kept for API compatibility, not used
-    min_cluster_size: int = 2
+    min_cluster_size: int = 1
 ) -> List[Dict[str, Any]]:
     """
     Get use cases grouped by category.
@@ -28,9 +28,11 @@ async def get_clustered_use_cases(
         client = await db.client
 
         # Simple query - group by category, count unique threads
+        # Filter out both NULL and empty strings
         query = client.from_('conversation_analytics')\
             .select('use_case_category, thread_id, account_id')\
-            .not_.is_('use_case_category', 'null')
+            .not_.is_('use_case_category', None)\
+            .neq('use_case_category', '')
 
         if date_from:
             query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
@@ -39,6 +41,10 @@ async def get_clustered_use_cases(
 
         result = await query.execute()
         records = result.data or []
+
+        # Debug: log actual category values
+        categories_found = [r.get('use_case_category') for r in records]
+        logger.info(f"[CLUSTERING] Categories in records: {categories_found}")
 
         # Group by category
         from collections import defaultdict
@@ -53,6 +59,9 @@ async def get_clustered_use_cases(
                         'thread_id': r.get('thread_id'),
                         'account_id': r.get('account_id')
                     })
+
+        # Debug: log group counts before filtering
+        logger.info(f"[CLUSTERING] Groups before min_size filter: {[(k, len(v['threads'])) for k, v in groups.items()]}")
 
         # Build result
         clusters = []

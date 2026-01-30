@@ -3488,7 +3488,7 @@ class ConversationAnalyticsItem(BaseModel):
     intent_type: Optional[str] = None
     is_feature_request: bool = False
     feature_request_text: Optional[str] = None
-    use_case_summary: Optional[str] = None
+    use_case_category: Optional[str] = None
     first_user_message: Optional[str] = None
     user_message_count: Optional[int] = None
     analyzed_at: datetime
@@ -3665,76 +3665,453 @@ async def get_frustrated_conversations(
         raise HTTPException(status_code=500, detail="Failed to get frustrated conversations")
 
 
-@router.get("/conversations/churn-risk")
-async def get_churn_risk_conversations(
-    threshold: float = Query(0.7, ge=0, le=1, description="Churn risk score threshold"),
-    page: int = Query(1, ge=1, description="Page number"),
-    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
-    admin: dict = Depends(require_super_admin)
-) -> PaginatedResponse[ConversationAnalyticsItem]:
-    """
-    Get conversations with high churn risk scores.
+class RFMEngagementResponse(BaseModel):
+    """RFM engagement scoring response."""
+    rfm_score: str  # "5-4-3" format
+    recency_score: int
+    frequency_score: int
+    monetary_score: int
+    churn_risk: float
+    segment: str
+    days_since_last_activity: int
+    runs_in_period: int
+    total_conversations: int
 
-    Args:
-        threshold: Minimum churn risk score (0-1)
-        page: Page number
-        page_size: Items per page
+
+@router.get("/conversations/engagement/{account_id}")
+async def get_account_engagement(
+    account_id: str,
+    days: int = Query(30, ge=7, le=90, description="Period in days for analysis"),
+    admin: dict = Depends(require_super_admin)
+) -> RFMEngagementResponse:
+    """
+    Get RFM-based engagement score for an account.
+
+    RFM (Recency, Frequency, Monetary) is a proven customer segmentation model.
+    Each dimension is scored 1-5 (5 = best).
+
+    Segments:
+    - champion: High R, high F (active power users)
+    - loyal: High overall RFM
+    - potential: Medium RFM (room to grow)
+    - new_user: High R, low F (just started)
+    - at_risk: Low R, high F (was active, now gone)
+    - cant_lose: Low R, low F, high M (valuable but leaving)
+    - hibernating: Low R, low F (inactive)
+    - needs_attention: Medium-low RFM
+    - about_to_sleep: Low RFM
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        from core.analytics.conversation_analyzer import calculate_rfm_engagement
 
-        # Get total count
-        count_result = await client.from_('conversation_analytics')\
-            .select('id', count='exact')\
-            .gte('churn_risk_score', threshold)\
-            .limit(1)\
-            .execute()
-
-        total_items = count_result.count or 0
-
-        # Get paginated data
-        offset = (page - 1) * page_size
-        result = await client.from_('conversation_analytics')\
-            .select('*')\
-            .gte('churn_risk_score', threshold)\
-            .order('churn_risk_score', desc=True)\
-            .range(offset, offset + page_size - 1)\
-            .execute()
-
-        records = result.data or []
-
-        # Build response items (similar to frustrated endpoint)
-        items = []
-        for r in records:
-            frustration_signals = r.get('frustration_signals', [])
-            if isinstance(frustration_signals, str):
-                import json as json_lib
-                try:
-                    frustration_signals = json_lib.loads(frustration_signals)
-                except:
-                    frustration_signals = []
-
-            items.append(ConversationAnalyticsItem(
-                id=r['id'],
-                thread_id=r['thread_id'],
-                account_id=r['account_id'],
-                sentiment_label=r.get('sentiment_label'),
-                frustration_score=r.get('frustration_score'),
-                frustration_signals=frustration_signals,
-                intent_type=r.get('intent_type'),
-                is_feature_request=r.get('is_feature_request', False),
-                feature_request_text=r.get('feature_request_text'),
-                user_message_count=r.get('user_message_count'),
-                analyzed_at=r['analyzed_at']
-            ))
-
-        pagination_params = PaginationParams(page=page, page_size=page_size)
-        return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
+        result = await calculate_rfm_engagement(account_id, days)
+        return RFMEngagementResponse(**result)
 
     except Exception as e:
-        logger.error(f"Failed to get churn risk conversations: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail="Failed to get churn risk conversations")
+        logger.error(f"Failed to get engagement for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get account engagement")
+
+
+class AccountEngagementItem(BaseModel):
+    """Account with RFM engagement data."""
+    account_id: str
+    user_email: Optional[str] = None
+    rfm_score: str
+    recency_score: int
+    frequency_score: int
+    monetary_score: int
+    churn_risk: float
+    segment: str
+    days_since_last_activity: int
+    runs_in_period: int
+
+
+class RFMEngagementSummary(BaseModel):
+    """Summary of RFM engagement across all accounts."""
+    total_accounts: int
+    segments: Dict[str, int]
+    at_risk_accounts: List[AccountEngagementItem]
+    avg_churn_risk: float
+
+
+@router.get("/conversations/engagement-summary")
+async def get_rfm_engagement_summary(
+    days: int = Query(30, ge=7, le=90, description="Period in days"),
+    limit: int = Query(20, ge=1, le=100, description="Max at-risk accounts to return"),
+    admin: dict = Depends(require_super_admin)
+) -> RFMEngagementSummary:
+    """
+    Get engagement summary across all active accounts.
+
+    Returns:
+    - Segment distribution (how many accounts in each segment)
+    - Top at-risk accounts (sorted by churn risk)
+    - Average churn risk across all accounts
+    """
+    try:
+        from core.services.db import execute
+
+        # All RFM calculation in SQL - returns only segment counts (no Python loops)
+        segment_sql = """
+        WITH account_stats AS (
+            SELECT
+                t.account_id,
+                MAX(ar.started_at) as last_activity,
+                COUNT(*) FILTER (WHERE ar.started_at > NOW() - MAKE_INTERVAL(days => :days)) as recent_runs,
+                COALESCE(ca.tier, 'none') as tier
+            FROM agent_runs ar
+            JOIN threads t ON ar.thread_id = t.thread_id
+            LEFT JOIN credit_accounts ca ON ca.account_id = t.account_id
+            GROUP BY t.account_id, ca.tier
+        ),
+        percentiles AS (
+            SELECT
+                COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY recent_runs), 2) as p50,
+                COALESCE(percentile_cont(0.75) WITHIN GROUP (ORDER BY recent_runs), 4) as p75,
+                COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY recent_runs), 9) as p90
+            FROM account_stats
+        ),
+        scored AS (
+            SELECT
+                s.account_id,
+                -- Recency score
+                CASE
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 1 THEN 5
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 3 THEN 4
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 7 THEN 3
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 14 THEN 2
+                    ELSE 1
+                END as recency_score,
+                -- Frequency score (dynamic percentile-based)
+                CASE
+                    WHEN s.recent_runs >= p.p90 THEN 5
+                    WHEN s.recent_runs >= p.p75 THEN 4
+                    WHEN s.recent_runs > p.p50 THEN 3
+                    WHEN s.recent_runs >= p.p50 THEN 2
+                    ELSE 1
+                END as frequency_score,
+                -- Monetary score (tier-based)
+                CASE s.tier
+                    WHEN 'tier_25_200' THEN 5
+                    WHEN 'tier_50_400' THEN 5
+                    WHEN 'tier_125_800' THEN 5
+                    WHEN 'tier_150_1200' THEN 5
+                    WHEN 'tier_200_1000' THEN 5
+                    WHEN 'tier_6_50' THEN 4
+                    WHEN 'tier_12_100' THEN 4
+                    WHEN 'tier_2_20' THEN 3
+                    WHEN 'free' THEN 2
+                    ELSE 1
+                END as monetary_score
+            FROM account_stats s
+            CROSS JOIN percentiles p
+        ),
+        segmented AS (
+            SELECT
+                account_id,
+                recency_score,
+                frequency_score,
+                monetary_score,
+                ROUND((1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4)::numeric, 2) as churn_risk,
+                CASE
+                    WHEN recency_score >= 4 AND frequency_score >= 4 THEN 'champion'
+                    WHEN recency_score >= 4 AND frequency_score >= 2 THEN 'loyal'
+                    WHEN recency_score >= 3 AND frequency_score >= 3 THEN 'potential'
+                    WHEN recency_score <= 2 AND frequency_score >= 3 THEN 'at_risk'
+                    WHEN recency_score <= 2 AND frequency_score <= 2 THEN 'hibernating'
+                    ELSE 'other'
+                END as segment
+            FROM scored
+        )
+        SELECT segment, COUNT(*) as count, SUM(churn_risk) as total_churn
+        FROM segmented
+        GROUP BY segment
+        """
+        segment_rows = await execute(segment_sql, {"days": days})
+
+        segment_counts: Dict[str, int] = {}
+        total_accounts = 0
+        total_churn = 0.0
+        for row in segment_rows:
+            segment_counts[row['segment']] = row['count']
+            total_accounts += row['count']
+            total_churn += float(row['total_churn'] or 0)
+
+        avg_churn = total_churn / total_accounts if total_accounts > 0 else 0.0
+
+        # Separate query for at-risk accounts (limited, no full table scan)
+        at_risk_sql = """
+        WITH account_stats AS (
+            SELECT
+                t.account_id,
+                MAX(ar.started_at) as last_activity,
+                COUNT(*) FILTER (WHERE ar.started_at > NOW() - MAKE_INTERVAL(days => :days)) as recent_runs,
+                COALESCE(ca.tier, 'none') as tier
+            FROM agent_runs ar
+            JOIN threads t ON ar.thread_id = t.thread_id
+            LEFT JOIN credit_accounts ca ON ca.account_id = t.account_id
+            GROUP BY t.account_id, ca.tier
+        ),
+        percentiles AS (
+            SELECT
+                COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY recent_runs), 2) as p50,
+                COALESCE(percentile_cont(0.75) WITHIN GROUP (ORDER BY recent_runs), 4) as p75,
+                COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY recent_runs), 9) as p90
+            FROM account_stats
+        ),
+        scored AS (
+            SELECT
+                s.account_id,
+                s.recent_runs,
+                EXTRACT(DAY FROM NOW() - s.last_activity)::int as days_since_last,
+                CASE
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 1 THEN 5
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 3 THEN 4
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 7 THEN 3
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 14 THEN 2
+                    ELSE 1
+                END as recency_score,
+                CASE
+                    WHEN s.recent_runs >= p.p90 THEN 5
+                    WHEN s.recent_runs >= p.p75 THEN 4
+                    WHEN s.recent_runs > p.p50 THEN 3
+                    WHEN s.recent_runs >= p.p50 THEN 2
+                    ELSE 1
+                END as frequency_score,
+                CASE s.tier
+                    WHEN 'tier_25_200' THEN 5
+                    WHEN 'tier_50_400' THEN 5
+                    WHEN 'tier_125_800' THEN 5
+                    WHEN 'tier_150_1200' THEN 5
+                    WHEN 'tier_200_1000' THEN 5
+                    WHEN 'tier_6_50' THEN 4
+                    WHEN 'tier_12_100' THEN 4
+                    WHEN 'tier_2_20' THEN 3
+                    WHEN 'free' THEN 2
+                    ELSE 1
+                END as monetary_score
+            FROM account_stats s
+            CROSS JOIN percentiles p
+        )
+        SELECT
+            account_id,
+            days_since_last,
+            recent_runs,
+            recency_score,
+            frequency_score,
+            monetary_score,
+            ROUND((1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4)::numeric, 2) as churn_risk,
+            CASE
+                WHEN recency_score >= 4 AND frequency_score >= 4 THEN 'champion'
+                WHEN recency_score >= 4 AND frequency_score >= 2 THEN 'loyal'
+                WHEN recency_score >= 3 AND frequency_score >= 3 THEN 'potential'
+                WHEN recency_score <= 2 AND frequency_score >= 3 THEN 'at_risk'
+                WHEN recency_score <= 2 AND frequency_score <= 2 THEN 'hibernating'
+                ELSE 'other'
+            END as segment
+        FROM scored
+        WHERE (1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4) >= 0.5
+        ORDER BY (1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4) DESC
+        LIMIT :limit
+        """
+        at_risk_rows = await execute(at_risk_sql, {"days": days, "limit": limit})
+
+        at_risk_accounts = [
+            AccountEngagementItem(
+                account_id=str(row['account_id']),
+                user_email=None,
+                rfm_score=f"{row['recency_score']}-{row['frequency_score']}-{row['monetary_score']}",
+                recency_score=row['recency_score'],
+                frequency_score=row['frequency_score'],
+                monetary_score=row['monetary_score'],
+                churn_risk=float(row['churn_risk']),
+                segment=row['segment'],
+                days_since_last_activity=row['days_since_last'] or 0,
+                runs_in_period=row['recent_runs']
+            )
+            for row in at_risk_rows
+        ]
+
+        return RFMEngagementSummary(
+            total_accounts=total_accounts,
+            segments=segment_counts,
+            at_risk_accounts=at_risk_accounts,
+            avg_churn_risk=round(avg_churn, 2)
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get RFM engagement summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get engagement summary")
+
+
+@router.get("/conversations/accounts-by-segment")
+async def get_accounts_by_segment(
+    segment: str = Query(..., description="Segment name (champion, loyal, potential, at_risk, hibernating)"),
+    days: int = Query(30, ge=1, le=90, description="Days to look back for activity"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get accounts in a specific RFM segment with their emails.
+    All RFM calculation done in SQL for scalability.
+    """
+    try:
+        from core.services.db import execute
+
+        offset = (page - 1) * page_size
+
+        # All RFM calculation in SQL - no Python loops
+        sql = """
+        WITH account_stats AS (
+            SELECT
+                t.account_id,
+                MAX(ar.started_at) as last_activity,
+                COUNT(*) as total_runs,
+                COUNT(*) FILTER (WHERE ar.started_at > NOW() - MAKE_INTERVAL(days => :days)) as recent_runs,
+                COALESCE(ca.tier, 'none') as tier
+            FROM agent_runs ar
+            JOIN threads t ON ar.thread_id = t.thread_id
+            LEFT JOIN credit_accounts ca ON ca.account_id = t.account_id
+            GROUP BY t.account_id, ca.tier
+        ),
+        percentiles AS (
+            SELECT
+                COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY recent_runs), 2) as p50,
+                COALESCE(percentile_cont(0.75) WITHIN GROUP (ORDER BY recent_runs), 4) as p75,
+                COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY recent_runs), 9) as p90
+            FROM account_stats
+        ),
+        scored AS (
+            SELECT
+                s.account_id,
+                s.last_activity,
+                s.total_runs,
+                s.recent_runs,
+                s.tier,
+                EXTRACT(DAY FROM NOW() - s.last_activity)::int as days_since_last,
+                -- Recency score
+                CASE
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 1 THEN 5
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 3 THEN 4
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 7 THEN 3
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 14 THEN 2
+                    ELSE 1
+                END as recency_score,
+                -- Frequency score (percentile-based)
+                CASE
+                    WHEN s.recent_runs >= p.p90 THEN 5
+                    WHEN s.recent_runs >= p.p75 THEN 4
+                    WHEN s.recent_runs > p.p50 THEN 3
+                    WHEN s.recent_runs >= p.p50 THEN 2
+                    ELSE 1
+                END as frequency_score,
+                -- Monetary score (tier-based)
+                CASE s.tier
+                    WHEN 'tier_25_200' THEN 5
+                    WHEN 'tier_50_400' THEN 5
+                    WHEN 'tier_125_800' THEN 5
+                    WHEN 'tier_150_1200' THEN 5
+                    WHEN 'tier_200_1000' THEN 5
+                    WHEN 'tier_6_50' THEN 4
+                    WHEN 'tier_12_100' THEN 4
+                    WHEN 'tier_2_20' THEN 3
+                    WHEN 'free' THEN 2
+                    ELSE 1
+                END as monetary_score
+            FROM account_stats s
+            CROSS JOIN percentiles p
+        ),
+        segmented AS (
+            SELECT
+                *,
+                CASE
+                    WHEN recency_score >= 4 AND frequency_score >= 4 THEN 'champion'
+                    WHEN recency_score >= 4 AND frequency_score >= 2 THEN 'loyal'
+                    WHEN recency_score >= 3 AND frequency_score >= 3 THEN 'potential'
+                    WHEN recency_score <= 2 AND frequency_score >= 3 THEN 'at_risk'
+                    WHEN recency_score <= 2 AND frequency_score <= 2 THEN 'hibernating'
+                    ELSE 'other'
+                END as segment
+            FROM scored
+        )
+        SELECT
+            account_id,
+            recency_score || '-' || frequency_score || '-' || monetary_score as rfm_score,
+            days_since_last as days_since_last_activity,
+            recent_runs as runs_in_period,
+            total_runs,
+            COUNT(*) OVER() as total_count
+        FROM segmented
+        WHERE segment = :segment
+        ORDER BY days_since_last ASC, runs_in_period DESC
+        LIMIT :page_size OFFSET :offset
+        """
+        rows = await execute(sql, {"days": days, "segment": segment, "page_size": page_size, "offset": offset})
+
+        if not rows:
+            return {"accounts": [], "total": 0, "page": page, "page_size": page_size, "segment": segment}
+
+        # Get total count from window function
+        total = int(rows[0].get('total_count', 0))
+
+        # Build account list
+        accounts = []
+        for row in rows:
+            accounts.append({
+                'account_id': str(row['account_id']),
+                'rfm_score': row['rfm_score'],
+                'days_since_last_activity': row['days_since_last_activity'],
+                'runs_in_period': row['runs_in_period'],
+                'total_runs': row['total_runs']
+            })
+
+        # Fetch emails for this page only
+        if accounts:
+            db = DBConnection()
+            client = await db.client
+            account_ids = [a['account_id'] for a in accounts]
+
+            email_map = {}
+            try:
+                # Get user IDs from accounts
+                acct_result = await client.from_('accounts')\
+                    .select('id, primary_owner_user_id')\
+                    .in_('id', account_ids)\
+                    .execute()
+
+                user_ids = [a.get('primary_owner_user_id') for a in (acct_result.data or []) if a.get('primary_owner_user_id')]
+
+                if user_ids:
+                    # Get emails from auth.users
+                    email_sql = """
+                    SELECT id, email FROM auth.users WHERE id = ANY(:user_ids)
+                    """
+                    email_rows = await execute(email_sql, {"user_ids": user_ids})
+                    user_email_map = {str(r['id']): r['email'] for r in email_rows}
+
+                    for a in (acct_result.data or []):
+                        owner_id = a.get('primary_owner_user_id')
+                        if owner_id and str(owner_id) in user_email_map:
+                            email_map[str(a['id'])] = user_email_map[str(owner_id)]
+            except Exception as e:
+                logger.warning(f"Failed to fetch emails for segment accounts: {e}")
+
+            # Attach emails
+            for acct in accounts:
+                acct['email'] = email_map.get(acct['account_id'])
+
+        return {
+            "accounts": accounts,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "segment": segment
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get accounts by segment: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get accounts by segment")
 
 
 @router.get("/conversations/feature-requests")
@@ -4093,7 +4470,7 @@ async def _build_conversation_items(client, records: List[Dict[str, Any]]) -> Li
             intent_type=r.get('intent_type'),
             is_feature_request=r.get('is_feature_request', False),
             feature_request_text=r.get('feature_request_text'),
-            use_case_summary=r.get('use_case_summary'),
+            use_case_category=r.get('use_case_category'),
             first_user_message=messages_map.get((r['thread_id'], r.get('agent_run_id'))),
             user_message_count=r.get('user_message_count'),
             analyzed_at=r['analyzed_at']
@@ -4229,7 +4606,7 @@ async def get_use_case_patterns(
 
         # Build query
         query = client.from_('conversation_analytics')\
-            .select('use_case_summary, output_type, domain')
+            .select('use_case_category, output_type, domain')
 
         if date_from:
             query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
@@ -4246,7 +4623,7 @@ async def get_use_case_patterns(
 
         for r in records:
             # Count use cases
-            use_case = r.get('use_case_summary')
+            use_case = r.get('use_case_category')
             if use_case:
                 use_case_counts[use_case] = use_case_counts.get(use_case, 0) + 1
 
@@ -4286,7 +4663,7 @@ async def get_clustered_use_cases_endpoint(
     date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
     date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     distance_threshold: float = Query(0.3, ge=0.1, le=0.8, description="Cosine distance threshold (lower = tighter clusters)"),
-    min_cluster_size: int = Query(2, ge=1, le=10, description="Minimum items to form a cluster"),
+    min_cluster_size: int = Query(1, ge=1, le=10, description="Minimum items to form a cluster"),
     admin: dict = Depends(require_super_admin)
 ) -> Dict[str, Any]:
     """
