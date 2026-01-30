@@ -602,7 +602,7 @@ Multiple parallel tool calls:
                     'custom_workers_limit': limits.get('custom_workers_limit', 0),
                     'scheduled_triggers_limit': limits.get('scheduled_triggers_limit', 0),
                     'app_triggers_limit': limits.get('app_triggers_limit', 0),
-                    'concurrent_runs': limits.get('concurrent_runs', 1),
+                    'concurrent_runs': limits.get('concurrent_runs', 2),
                     'can_purchase_credits': limits.get('can_purchase_credits', False),
                 }
             except Exception as e:
@@ -640,7 +640,7 @@ Multiple parallel tool calls:
                 tier_info += "Custom workers: 0 (upgrade to Plus or higher)\n"
                 tier_info += "Scheduled triggers: 0 (upgrade to Plus or higher)\n"
                 tier_info += "App triggers: 0 (upgrade to Plus or higher)\n"
-                tier_info += "Concurrent runs: 1\n"
+                tier_info += "Concurrent runs: 2\n"
                 tier_info += "Credit purchases: Not available (upgrade to Ultra)\n"
             else:
                 tier_info += "Tier type: Paid\n"
@@ -814,8 +814,8 @@ Multiple parallel tool calls:
 | Feature | Free | Plus | Pro | Ultra |
 |---------|------|------|-----|-------|
 | **Response quality** | Basic | Faster & better | Faster & better | Faster & better |
-| **Chats** | 1 | Unlimited | Unlimited | Unlimited |
-| **Parallel tasks** | 1 | 3 | 5 | 20 |
+| **Chats** | 10 | Unlimited | Unlimited | Unlimited |
+| **Parallel tasks** | 2 | 3 | 5 | 20 |
 | **Custom agents** | 0 | 5 | 20 | 100 |
 | **Scheduled automations** | 0 | 5 | 10 | 50 |
 | **App triggers** | 0 | 25 | 50 | 200 |
