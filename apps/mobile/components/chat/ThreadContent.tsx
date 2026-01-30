@@ -794,6 +794,22 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     const [isInReasoningGracePeriod, setIsInReasoningGracePeriod] = React.useState(false);
     const gracePeriodTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
+    // Track previous isSendingMessage to detect new message sends
+    const prevIsSendingMessageRef = React.useRef(false);
+
+    // Reset reasoning ref when user sends a new message (before agent even starts)
+    // This prevents stale reasoning content from blocking the AgentLoader
+    React.useEffect(() => {
+      const wasSending = prevIsSendingMessageRef.current;
+      prevIsSendingMessageRef.current = isSendingMessage;
+
+      // User just started sending a new message - clear stale reasoning
+      if (!wasSending && isSendingMessage) {
+        lastReasoningContentRef.current = '';
+        setReasoningExpanded(false);
+      }
+    }, [isSendingMessage]);
+
     // Reset ref when agent starts a new turn
     React.useEffect(() => {
       const wasActive = prevAgentActiveRef.current;
@@ -2042,8 +2058,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 </View>
               )}
 
-              {/* AgentLoader - show when contemplating/brewing but NOT when reasoning is visible */}
-              {(isContemplating || isBrewing) && !hasVisibleReasoning && (
+              {/* AgentLoader - show when contemplating or brewing */}
+              {/* For contemplating: always show (stale reasoning shouldn't block it) */}
+              {/* For brewing: only show when no visible reasoning yet */}
+              {(isContemplating || (isBrewing && !hasVisibleReasoning)) && (
                 <View className="h-6 justify-center overflow-hidden">
                   <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
                 </View>

@@ -429,6 +429,8 @@ export function ThreadPage({
   // This persists after the tool completes so we can show "Success" state
   const [activeToolData, setActiveToolData] = React.useState<ToolSnackData | null>(null);
   const lastToolCallIdRef = React.useRef<string | null>(null);
+  // Track previous streaming tool call ID to avoid processing same tool repeatedly
+  const prevStreamingToolCallIdRef = React.useRef<string | null>(null);
 
   // Check if voice player is active (for scroll button positioning)
   const voiceState = useVoicePlayerStore((s) => s.state);
@@ -450,7 +452,6 @@ export function ThreadPage({
 
   // Handle snack dismiss - user swiped to close
   const handleToolSnackDismiss = React.useCallback(() => {
-    log.log('[ToolSnack] 👋 User dismissed snack for:', activeToolData?.toolCallId);
     if (activeToolData?.toolCallId) {
       setDismissedToolCallId(activeToolData.toolCallId);
     }
@@ -458,16 +459,22 @@ export function ThreadPage({
   }, [activeToolData?.toolCallId]);
 
   // Update activeToolData when streamingToolCall changes
+  // OPTIMIZATION: Only process when toolCallId actually changes to avoid re-renders on every SSE update
   React.useEffect(() => {
-    log.log('[ToolSnack] streamingToolCall changed:', streamingToolCall ? 'has data' : 'null');
     const extracted = extractToolFromStreamingMessage(streamingToolCall);
-    log.log('[ToolSnack] Extracted from streaming:', extracted?.toolName || 'null');
+    const currentToolCallId = extracted?.toolCallId || null;
+
+    // Skip if toolCallId hasn't changed (avoid processing on every SSE event)
+    if (currentToolCallId === prevStreamingToolCallIdRef.current) {
+      return;
+    }
+    prevStreamingToolCallIdRef.current = currentToolCallId;
+
     if (extracted) {
       // Check if this is a NEW tool (different from dismissed one)
       if (extracted.toolCallId && extracted.toolCallId !== dismissedToolCallId) {
         // New tool - clear dismissed state and show
         if (dismissedToolCallId) {
-          log.log('[ToolSnack] New tool started, clearing dismissed state');
           setDismissedToolCallId(null);
         }
         setActiveToolData(extracted);
@@ -486,21 +493,16 @@ export function ThreadPage({
   // 1. Opening an existing thread with tools (activeToolData is null)
   // 2. When a streaming tool completes (activeToolData.isStreaming is true, tool message appears)
   React.useEffect(() => {
-    log.log('[ToolSnack] Messages effect - count:', messages.length, 'activeToolData:', activeToolData?.toolName || 'null', 'isStreaming:', activeToolData?.isStreaming);
-
     if (messages.length === 0) return;
 
     // Case 1: No active tool data - set from messages (unless dismissed)
     if (!activeToolData) {
       const lastTool = extractLastToolFromMessages(messages);
-      log.log('[ToolSnack] Setting from messages (no active):', lastTool?.toolName || 'null');
       if (lastTool) {
         // Only show if not the dismissed tool
         if (lastTool.toolCallId !== dismissedToolCallId) {
           setActiveToolData(lastTool);
           lastToolCallIdRef.current = lastTool.toolCallId || null;
-        } else {
-          log.log('[ToolSnack] Tool was dismissed, not showing');
         }
       }
       return;
@@ -511,7 +513,6 @@ export function ThreadPage({
       // Look for this tool in messages to see if it completed
       const completedTool = extractLastToolFromMessages(messages);
       if (completedTool && completedTool.toolCallId === activeToolData.toolCallId && !completedTool.isStreaming) {
-        log.log('[ToolSnack] Tool completed! Updating from streaming to:', completedTool.success ? 'success' : 'failed');
         setActiveToolData(completedTool);
       }
     }
@@ -522,7 +523,6 @@ export function ThreadPage({
       const lastTool = extractLastToolFromMessages(messages);
       if (lastTool && lastTool.toolCallId !== activeToolData.toolCallId) {
         // New tool found - clear dismissed state and show
-        log.log('[ToolSnack] Newer tool found in messages:', lastTool.toolName);
         if (dismissedToolCallId) {
           setDismissedToolCallId(null);
         }
@@ -537,7 +537,6 @@ export function ThreadPage({
   const voiceClose = useVoicePlayerStore((s) => s.close);
 
   React.useEffect(() => {
-    log.log('[ToolSnack] Thread changed, clearing activeToolData and dismissed state');
     setActiveToolData(null);
     setDismissedToolCallId(null);
     lastToolCallIdRef.current = null;

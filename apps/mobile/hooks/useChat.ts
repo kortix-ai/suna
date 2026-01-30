@@ -253,6 +253,27 @@ export function useChat(): UseChatReturn {
   const accessibleModelIds = useMemo(() => accessibleModels.map(m => m.id).join(','), [accessibleModels]);
   const accessibleModelsLength = accessibleModels.length;
   
+  // Helper to get default model - matching frontend logic
+  // Prioritizes kortix/basic, then kortix/power, then first accessible model
+  const getDefaultModelId = useCallback((models: typeof accessibleModels): string | undefined => {
+    // kortix/basic should be first for free users since power is not accessible
+    const basicModel = models.find(m => m.id === 'kortix/basic');
+    if (basicModel) return basicModel.id;
+
+    const powerModel = models.find(m => m.id === 'kortix/power');
+    if (powerModel) return powerModel.id;
+
+    // Fallback: pick from accessible models sorted by priority
+    if (models.length > 0) {
+      return models[0].id;
+    }
+
+    return undefined;
+  }, []);
+
+  // Valid model IDs that mobile app should use (matching frontend)
+  const VALID_MODEL_IDS = useMemo(() => new Set(['kortix/basic', 'kortix/power']), []);
+
   // Auto-select model when models first load and none is selected
   useEffect(() => {
     // Skip if still loading or no accessible models
@@ -262,28 +283,29 @@ export function useChat(): UseChatReturn {
 
     // If no model is selected, auto-select the best available model
     if (!selectedModelId) {
-      const recommendedModel = accessibleModels.find(m => m.recommended);
-      const fallbackModel = recommendedModel || accessibleModels[0];
-      if (fallbackModel) {
-        log.log('🔄 [useChat] Auto-selecting model (none selected):', fallbackModel.id);
-        selectModel(fallbackModel.id);
+      const defaultModelId = getDefaultModelId(accessibleModels);
+      if (defaultModelId) {
+        log.log('🔄 [useChat] Auto-selecting model (none selected):', defaultModelId);
+        selectModel(defaultModelId);
       }
       return;
     }
 
-    // If selected model is not accessible, switch to an accessible one
+    // CRITICAL: Only allow kortix/basic or kortix/power models
+    // Other models (like kortix/kimi-k2.5) are internal and should not be used
+    const isValidModel = VALID_MODEL_IDS.has(selectedModelId);
     const isModelAccessible = accessibleModels.some(m => m.id === selectedModelId);
-    if (!isModelAccessible) {
-      log.warn('⚠️ [useChat] Selected model is not accessible, switching:', selectedModelId);
-      const recommendedModel = accessibleModels.find(m => m.recommended);
-      const fallbackModel = recommendedModel || accessibleModels[0];
-      if (fallbackModel) {
-        log.log('🔄 [useChat] Auto-selecting accessible model:', fallbackModel.id);
-        selectModel(fallbackModel.id);
+
+    if (!isValidModel || !isModelAccessible) {
+      log.warn('⚠️ [useChat] Selected model is invalid or not accessible, switching:', selectedModelId);
+      const defaultModelId = getDefaultModelId(accessibleModels);
+      if (defaultModelId) {
+        log.log('🔄 [useChat] Auto-selecting valid model:', defaultModelId);
+        selectModel(defaultModelId);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedModelId, accessibleModelIds, accessibleModelsLength, selectModel, modelsLoading]);
+  }, [selectedModelId, accessibleModelIds, accessibleModelsLength, selectModel, modelsLoading, getDefaultModelId, VALID_MODEL_IDS]);
   
   // Determine current model to use
   const currentModel = useMemo(() => {
@@ -291,22 +313,26 @@ export function useChat(): UseChatReturn {
     if (modelsLoading) {
       return undefined;
     }
-    
-    // If a model is selected and accessible, use it
-    if (selectedModelId) {
+
+    // CRITICAL: Only use kortix/basic or kortix/power
+    // Never use other models like kortix/kimi-k2.5 (internal/legacy)
+    if (selectedModelId && VALID_MODEL_IDS.has(selectedModelId)) {
       const model = accessibleModels.find(m => m.id === selectedModelId);
       if (model) {
         return model.id;
       }
     }
-    
-    // Fallback to recommended model or first accessible model
-    const recommendedModel = accessibleModels.find(m => m.recommended);
-    const firstAccessibleModel = accessibleModels[0];
-    const fallbackModel = recommendedModel?.id || firstAccessibleModel?.id;
-    
-    return fallbackModel;
-  }, [selectedModelId, accessibleModels, modelsLoading]);
+
+    // Fallback: prioritize kortix/basic, then kortix/power
+    const basicModel = accessibleModels.find(m => m.id === 'kortix/basic');
+    if (basicModel) return basicModel.id;
+
+    const powerModel = accessibleModels.find(m => m.id === 'kortix/power');
+    if (powerModel) return powerModel.id;
+
+    // Last resort fallback to first accessible model
+    return accessibleModels[0]?.id;
+  }, [selectedModelId, accessibleModels, modelsLoading, VALID_MODEL_IDS]);
   
   // Log model selection only when it actually changes
   const prevModelSelectionRef = useRef<string>('');
