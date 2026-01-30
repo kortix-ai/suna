@@ -116,8 +116,30 @@ async def prewarm_user_context(account_id: str) -> None:
                 return None
             except Exception:
                 return None
-        
-        locale, username = await asyncio.gather(fetch_locale(), fetch_username())
+
+        async def fetch_subscription():
+            try:
+                from core.billing import subscription_service
+                from core.billing.shared.config import get_tier_by_name, get_tier_limits
+
+                tier_info = await subscription_service.get_user_subscription_tier(account_id)
+                tier_name = tier_info.get('name', 'free')
+                tier = get_tier_by_name(tier_name)
+                limits = get_tier_limits(tier_name)
+
+                return {
+                    'name': tier_name,
+                    'display_name': tier.display_name if tier else 'Basic',
+                    'custom_workers_limit': limits.get('custom_workers_limit', 0),
+                    'scheduled_triggers_limit': limits.get('scheduled_triggers_limit', 0),
+                    'app_triggers_limit': limits.get('app_triggers_limit', 0),
+                    'concurrent_runs': limits.get('concurrent_runs', 1),
+                    'can_purchase_credits': limits.get('can_purchase_credits', False),
+                }
+            except Exception:
+                return None
+
+        locale, username, subscription = await asyncio.gather(fetch_locale(), fetch_username(), fetch_subscription())
         
         context_parts = []
         if locale:
@@ -125,14 +147,35 @@ async def prewarm_user_context(account_id: str) -> None:
             locale_prompt = get_locale_context_prompt(locale)
             context_parts.append(f"\n\n{locale_prompt}\n")
         if username:
-            username_info = f"\n\n=== USER INFORMATION ===\n"
+            username_info = f"\n\n<user_info>\n"
             username_info += f"The user's name is: {username}\n"
-            username_info += "Use this information to personalize your responses and address the user appropriately.\n"
+            username_info += "Use this to personalize responses and address the user appropriately.\n"
+            username_info += "</user_info>"
             context_parts.append(username_info)
-        
+        if subscription:
+            sub = subscription
+            tier_info = f"\n\n<user_subscription>\n"
+            tier_info += f"Current plan: {sub['display_name']} ({sub['name']})\n"
+            if sub['name'] in ('free', 'none'):
+                tier_info += "Tier type: Free\n"
+                tier_info += "Custom workers: 0 (upgrade to Plus or higher)\n"
+                tier_info += "Scheduled triggers: 0 (upgrade to Plus or higher)\n"
+                tier_info += "App triggers: 0 (upgrade to Plus or higher)\n"
+                tier_info += "Concurrent runs: 1\n"
+                tier_info += "Credit purchases: Not available (upgrade to Ultra)\n"
+            else:
+                tier_info += "Tier type: Paid\n"
+                tier_info += f"Custom workers limit: {sub['custom_workers_limit']}\n"
+                tier_info += f"Scheduled triggers limit: {sub['scheduled_triggers_limit']}\n"
+                tier_info += f"App triggers limit: {sub['app_triggers_limit']}\n"
+                tier_info += f"Concurrent runs: {sub['concurrent_runs']}\n"
+                tier_info += f"Credit purchases: {'Available' if sub['can_purchase_credits'] else 'Not available (Ultra only)'}\n"
+            tier_info += "</user_subscription>"
+            context_parts.append(tier_info)
+
         context_str = ''.join(context_parts) if context_parts else ""
         await set_cached_user_context(account_id, context_str)
-        logger.debug(f"⚡ Pre-warmed user context for {account_id}")
+        logger.debug(f"⚡ Pre-warmed user context for {account_id} (subscription={'yes' if subscription else 'no'})")
     except Exception as e:
         logger.debug(f"⚠️ Failed to pre-warm user context: {e}")
 

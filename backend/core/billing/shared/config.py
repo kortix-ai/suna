@@ -83,11 +83,6 @@ TIERS: Dict[str, Tier] = {
             'refresh_interval_hours': 168
         },
         monthly_refill_enabled=False,
-        disabled_tools=[
-            'sb_presentation_tool',  # Slides/presentations
-            'sb_canvas_tool',        # Canvas designs
-            'sb_spreadsheet_tool',   # Spreadsheets
-        ]
     ),
     'tier_2_20': Tier(
         name='tier_2_20',
