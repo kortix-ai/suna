@@ -43,8 +43,8 @@ export const pricingTiers: PricingTier[] = [
     hours: '0 hours',
     features: [
       '300 weekly credits - Refreshes every 7 days',
-      '1 concurrent run',
-      '1 Chat',
+      '2 concurrent runs',
+      '10 Chats',
       'Basic Mode - Core Kortix experience with basic autonomy',
     ],
     disabledFeatures: [
