@@ -267,20 +267,22 @@ export const CompactToolCard = React.memo(function CompactToolCard({
       disabled={!onPress}
       className="w-full"
     >
-      <View className="w-5 h-5 rounded-md items-center justify-center">
-        <Icon
-          as={isError ? AlertCircle : (isLoading ? IconComponent : CheckCircle2)}
-          size={16}
-          className={isError ? 'text-rose-500' : 'text-muted-foreground'}
-        />
-      </View>
+      <View className="w-full flex-row items-center">
+        <View className="w-5 h-5 rounded-md items-center justify-center">
+          <Icon
+            as={isError ? AlertCircle : (isLoading ? IconComponent : CheckCircle2)}
+            size={16}
+            className={isError ? 'text-rose-500' : 'text-muted-foreground'}
+          />
+        </View>
 
-      <Text
-        className={`text-sm font-roobert-medium ${isError ? 'text-rose-500' : 'text-muted-foreground'}`}
-        numberOfLines={1}
-      >
-        {isError ? `${displayName} failed` : displayName}
-      </Text>
+        <Text
+          className={`text-sm font-roobert-medium ml-1 ${isError ? 'text-rose-500' : 'text-muted-foreground'}`}
+          numberOfLines={1}
+        >
+          {isError ? `${displayName} failed` : displayName}
+        </Text>
+      </View>
     </AnimatedPressable>
   );
 });

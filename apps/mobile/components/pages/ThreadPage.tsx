@@ -343,7 +343,11 @@ export function ThreadPage({
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
 
-  const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
+  // Don't fetch for optimistic threads - they don't exist on server yet
+  const isOptimisticThread = chat.activeThread?.id?.startsWith('optimistic-');
+  const { data: fullThreadData, refetch: refetchThreadData } = useThread(
+    !isOptimisticThread ? chat.activeThread?.id : undefined
+  );
 
   React.useEffect(() => {
     if (isKortixComputerOpen) {
@@ -353,6 +357,66 @@ export function ThreadPage({
       setSelectedToolData(null);
     }
   }, [isKortixComputerOpen, refetchThreadData]);
+
+  // Track previous streaming state to detect when streaming ends
+  const prevIsStreamingRef = React.useRef(chat.isStreaming);
+
+  // Refetch thread data when streaming ends to get sandbox URL for tool previews
+  // This is crucial for slide previews that need sandboxUrl immediately after tool completes
+  React.useEffect(() => {
+    const wasStreaming = prevIsStreamingRef.current;
+    const isNowStreaming = chat.isStreaming;
+    prevIsStreamingRef.current = isNowStreaming;
+
+    // If streaming just ended and we have a valid (non-optimistic) thread, refetch to get sandbox URL
+    if (wasStreaming && !isNowStreaming && chat.activeThread?.id && !chat.activeThread.id.startsWith('optimistic-')) {
+      log.log('[ThreadPage] Streaming ended, refetching thread data for sandbox URL');
+      refetchThreadData();
+    }
+  }, [chat.isStreaming, chat.activeThread?.id, refetchThreadData]);
+
+  // Also refetch when thread ID changes from optimistic to real
+  React.useEffect(() => {
+    if (chat.activeThread?.id && !chat.activeThread.id.startsWith('optimistic-') && !fullThreadData) {
+      log.log('[ThreadPage] Real thread ID available, fetching thread data');
+      refetchThreadData();
+    }
+  }, [chat.activeThread?.id, fullThreadData, refetchThreadData]);
+
+  // Poll for sandbox_url when streaming and sandbox_url is missing
+  // This is CRITICAL for slide previews that need sandboxUrl to load during streaming
+  React.useEffect(() => {
+    // Only poll if:
+    // 1. We're streaming (agent is actively running)
+    // 2. We don't have sandbox_url yet (either no fullThreadData or no sandbox_url in it)
+    // 3. Thread is not optimistic
+    const hasSandboxUrl = fullThreadData?.project?.sandbox?.sandbox_url;
+    const shouldPoll = chat.isStreaming && !hasSandboxUrl && !isOptimisticThread && chat.activeThread?.id;
+
+    if (!shouldPoll) return;
+
+    log.log('[ThreadPage] Polling for sandbox_url during streaming - no URL available yet');
+
+    // Immediately fetch on start
+    refetchThreadData();
+
+    // Poll every 1.5 seconds (more aggressive than before)
+    const pollInterval = setInterval(() => {
+      log.log('[ThreadPage] Polling refetch for sandbox_url');
+      refetchThreadData();
+    }, 1500);
+
+    // Stop polling after 30 seconds
+    const stopPollingTimeout = setTimeout(() => {
+      log.log('[ThreadPage] Stopping sandbox_url polling after 30s');
+      clearInterval(pollInterval);
+    }, 30000);
+
+    return () => {
+      clearInterval(pollInterval);
+      clearTimeout(stopPollingTimeout);
+    };
+  }, [chat.isStreaming, fullThreadData?.project?.sandbox?.sandbox_url, isOptimisticThread, chat.activeThread?.id, refetchThreadData]);
 
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';

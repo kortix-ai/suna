@@ -514,8 +514,11 @@ export function useAgentStreamCore(
             lastToolCallUpdateTimeRef.current = 0;
             if (message.message_id) callbacksRef.current.onMessage(message);
           } else if (!parsedMetadata.stream_status) {
+            // Only fire onAssistantStart, do NOT call onMessage here.
+            // This matches frontend behavior - assistant messages without stream_status
+            // are initial markers, not messages to add to the list.
+            // Adding them would cause duplicates when the complete message arrives.
             callbacksRef.current.onAssistantStart?.();
-            if (message.message_id) callbacksRef.current.onMessage(message);
           }
         }
         break;

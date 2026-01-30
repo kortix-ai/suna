@@ -81,7 +81,9 @@ export function PresentationToolView({
   const isDark = colorScheme === 'dark';
 
   const threadId = toolMessage?.thread_id || assistantMessage?.thread_id;
-  const { data: thread } = useThread(threadId);
+  // Don't fetch for optimistic threads - they don't exist on server yet
+  const isOptimisticThread = threadId?.startsWith('optimistic-');
+  const { data: thread } = useThread(!isOptimisticThread ? threadId : undefined);
 
   const effectiveProject = project || thread?.project;
   const sandboxUrl = (effectiveProject as any)?.sandbox?.sandbox_url;
