@@ -784,30 +784,31 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
   // Respects overridden values when aggregating
   // Combines both web and app platform data
   const monthlyActuals = useMemo(() => {
-    const result: Record<number, { views: number; signups: number; newPaid: number; churn: number; subscribers: number; mrr: number; arr: number }> = {};
-    
+    const result: Record<string, { views: number; signups: number; newPaid: number; churn: number; subscribers: number; mrr: number; arr: number }> = {};
+
     weeklyProjections.forEach((week) => {
       const monthIdx = week.monthIndex;
-      
+      const appKey = `${monthIdx}_app`;
+
       // Get data for both platforms
       const webData = getActualData(week.week, 'web');
       const appData = getActualData(week.week, 'app');
       const webOverrides = webData?.overrides || {};
-      
+
       // Web: Use overridden value if locked, otherwise use auto-fetched data
       const webViews = webOverrides.views ? (webData?.views || 0) : (viewsByWeek[week.week] || 0);
       const webSignups = webOverrides.signups ? (webData?.signups || 0) : (signupsByWeek[week.week] || 0);
       const webNewPaid = webOverrides.new_paid ? (webData?.newPaid || 0) : (newPaidByWeek[week.week] || webData?.newPaid || 0);
       const webChurn = webOverrides.churn ? (webData?.churn || 0) : (churnByWeek[week.week] || 0);
       const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : (actualSubsByWeek[week.week] || 0);
-      
+
       // App: Always use manual data
       const appViews = appData?.views || 0;
       const appSignups = appData?.signups || 0;
       const appNewPaid = appData?.newPaid || 0;
       const appChurn = appData?.churn || 0;
       const appSubs = appData?.subscribers || 0;
-      
+
       // Combined totals
       const totalViews = webViews + appViews;
       const totalSignups = webSignups + appSignups;
@@ -816,22 +817,43 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const totalSubs = webSubs + appSubs;
       const totalMRR = (webData?.mrr || 0) + (appData?.mrr || 0);
       const totalARR = (webData?.arr || 0) + (appData?.arr || 0);
-      
+
+      // Store combined totals with numeric key (for backward compatibility)
       if (!result[monthIdx]) {
         result[monthIdx] = { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
       }
-      
+
+      // Store app-specific data
+      if (!result[appKey]) {
+        result[appKey] = { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
+      }
+
+      // Aggregate app data
+      result[appKey].views += appViews;
+      result[appKey].signups += appSignups;
+      result[appKey].newPaid += appNewPaid;
+      result[appKey].churn += appChurn;
+      if (appSubs > 0) {
+        result[appKey].subscribers = appSubs;
+      }
+      if ((appData?.mrr || 0) > 0) {
+        result[appKey].mrr = appData?.mrr || 0;
+      }
+      if ((appData?.arr || 0) > 0) {
+        result[appKey].arr = appData?.arr || 0;
+      }
+
       // Use effective values (respecting overrides)
       result[monthIdx].signups += totalSignups;
       result[monthIdx].views += totalViews;
       result[monthIdx].newPaid += totalNewPaid;
       result[monthIdx].churn += totalChurn;
-      
+
       // Take last week's value as end-of-month subscribers
       if (totalSubs > 0) {
         result[monthIdx].subscribers = totalSubs;
       }
-      
+
         // For MRR, ARR - take the last week's value as end-of-month value
       if (totalMRR > 0) {
         result[monthIdx].mrr = totalMRR;
@@ -840,7 +862,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
         result[monthIdx].arr = totalARR;
       }
     });
-    
+
     return result;
   }, [weeklyProjections, actualData, signupsByWeek, viewsByWeek, newPaidByWeek, churnByWeek, actualSubsByWeek]);
 
@@ -1654,20 +1676,27 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const platformRows = platforms.map((platform, platformIdx) => {
                   const monthlyOverride = getMonthlyActualData(month.monthIndex, platform);
                   
-                  // Use calendar month aggregations (from daily data) - only for web
-                  const autoViews = platform === 'web' ? (metricsByCalendarMonth.views[month.monthIndex] || 0) : 0;
-                  const autoSignups = platform === 'web' ? (metricsByCalendarMonth.signups[month.monthIndex] || 0) : 0;
-                  const autoNewPaid = platform === 'web' ? (metricsByCalendarMonth.newPaid[month.monthIndex] || 0) : 0;
-                  const autoChurn = platform === 'web' ? (metricsByCalendarMonth.churn[month.monthIndex] || 0) : 0;
+                  // Use calendar month aggregations (from daily data) for web, aggregated weekly for app
+                  const appAggregated = monthlyActuals[`${month.monthIndex}_app`] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
+                  const autoViews = platform === 'web' ? (metricsByCalendarMonth.views[month.monthIndex] || 0) : appAggregated.views;
+                  const autoSignups = platform === 'web' ? (metricsByCalendarMonth.signups[month.monthIndex] || 0) : appAggregated.signups;
+                  const autoNewPaid = platform === 'web' ? (metricsByCalendarMonth.newPaid[month.monthIndex] || 0) : appAggregated.newPaid;
+                  const autoChurn = platform === 'web' ? (metricsByCalendarMonth.churn[month.monthIndex] || 0) : appAggregated.churn;
                   
-                  // Effective values: use override if locked, otherwise auto-fetched (web) or 0 (app)
-                  const effectiveViews = platform === 'app' ? (monthlyOverride?.views || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'views') ? (monthlyOverride?.views || 0) : autoViews);
-                  const effectiveSignups = platform === 'app' ? (monthlyOverride?.signups || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'signups') ? (monthlyOverride?.signups || 0) : autoSignups);
-                  const effectiveNewPaid = platform === 'app' ? (monthlyOverride?.newPaid || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'newPaid') ? (monthlyOverride?.newPaid || 0) : autoNewPaid);
-                  const effectiveChurn = platform === 'app' ? (monthlyOverride?.churn || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'churn') ? (monthlyOverride?.churn || 0) : autoChurn);
-                  const effectiveSubs = platform === 'app' ? (monthlyOverride?.subscribers || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'subscribers') ? (monthlyOverride?.subscribers || 0) : actual.subscribers);
-                  const effectiveMRR = platform === 'app' ? (monthlyOverride?.mrr || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'mrr') ? (monthlyOverride?.mrr || 0) : actual.mrr);
-                  const effectiveARR = platform === 'app' ? (monthlyOverride?.arr || 0) : (isMonthlyFieldOverridden(month.monthIndex, platform, 'arr') ? (monthlyOverride?.arr || 0) : actual.arr);
+                  // Effective values: use override if locked, otherwise auto-fetched (web) or aggregated weekly (app)
+                  const effectiveViews = isMonthlyFieldOverridden(month.monthIndex, platform, 'views') ? (monthlyOverride?.views || 0) : autoViews;
+                  const effectiveSignups = isMonthlyFieldOverridden(month.monthIndex, platform, 'signups') ? (monthlyOverride?.signups || 0) : autoSignups;
+                  const effectiveNewPaid = isMonthlyFieldOverridden(month.monthIndex, platform, 'newPaid') ? (monthlyOverride?.newPaid || 0) : autoNewPaid;
+                  const effectiveChurn = isMonthlyFieldOverridden(month.monthIndex, platform, 'churn') ? (monthlyOverride?.churn || 0) : autoChurn;
+                  const effectiveSubs = platform === 'app'
+                    ? (isMonthlyFieldOverridden(month.monthIndex, platform, 'subscribers') ? (monthlyOverride?.subscribers || 0) : appAggregated.subscribers)
+                    : (isMonthlyFieldOverridden(month.monthIndex, platform, 'subscribers') ? (monthlyOverride?.subscribers || 0) : actual.subscribers);
+                  const effectiveMRR = platform === 'app'
+                    ? (isMonthlyFieldOverridden(month.monthIndex, platform, 'mrr') ? (monthlyOverride?.mrr || 0) : appAggregated.mrr)
+                    : (isMonthlyFieldOverridden(month.monthIndex, platform, 'mrr') ? (monthlyOverride?.mrr || 0) : actual.mrr);
+                  const effectiveARR = platform === 'app'
+                    ? (isMonthlyFieldOverridden(month.monthIndex, platform, 'arr') ? (monthlyOverride?.arr || 0) : appAggregated.arr)
+                    : (isMonthlyFieldOverridden(month.monthIndex, platform, 'arr') ? (monthlyOverride?.arr || 0) : actual.arr);
                   
                   // Previous month values for growth calculation (only for web row)
                   const prevMonthIdx = idx > 0 ? monthlyFromWeekly[idx - 1].monthIndex : -1;
@@ -1724,7 +1753,7 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                           <div className="flex items-center justify-end gap-1">
                             <Input
                               type="text"
-                              value={getMonthlyInputValue(month.monthIndex, platform, field)}
+                              value={getMonthlyInputValue(month.monthIndex, platform, field) || toShorthand(autoValue)}
                               onChange={(e) => handleMonthlyInputChange(month.monthIndex, platform, field, e.target.value)}
                               onBlur={() => handleMonthlyInputBlur(month.monthIndex, platform, month.month, field)}
                               className="h-6 w-16 text-[11px] text-right border-purple-300 bg-purple-50/50 dark:bg-purple-950/30"
