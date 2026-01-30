@@ -628,8 +628,8 @@ export function InlineCheckout({ options }: { options?: InlineCheckoutOptions })
   );
 }
 
-// Regex to match <inline_checkout/> tags with optional plan and period attributes
-const INLINE_CHECKOUT_REGEX = /<inline_checkout(?:\s+plan=["']?(plus|pro|ultra)["']?)?(?:\s+period=["']?(monthly|yearly)["']?)?\s*\/?>/gi;
+// Regex to match <checkout/> tags with optional plan and period attributes
+const INLINE_CHECKOUT_REGEX = /<checkout(?:\s+plan=["']?(plus|pro|ultra)["']?)?(?:\s+period=["']?(monthly|yearly)["']?)?\s*\/?>/gi;
 
 export interface InlineCheckoutOptions {
   plan?: 'plus' | 'pro' | 'ultra';
