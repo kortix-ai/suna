@@ -3622,26 +3622,35 @@ async def get_frustrated_conversations(
 
         records = result.data or []
 
-        # Fetch user emails for the account_ids using RPC (has proper permissions)
+        # Fetch user emails via billing_customers first (fast batch query)
         account_ids = list(set(r.get('account_id') for r in records if r.get('account_id')))
         email_map = {}
         if account_ids:
             try:
-                # Get primary_owner_user_id for accounts
-                email_result = await client.schema('basejump').from_('accounts')\
-                    .select('id, primary_owner_user_id')\
-                    .in_('id', account_ids)\
+                # First try billing_customers (fast path for users with billing)
+                billing_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id, email')\
+                    .in_('account_id', account_ids)\
                     .execute()
 
-                # Use RPC to get emails (bypasses RLS on auth.users)
-                for acc in (email_result.data or []):
-                    if acc.get('primary_owner_user_id'):
-                        try:
-                            rpc_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
-                            if rpc_result.data:
-                                email_map[acc['id']] = rpc_result.data
-                        except Exception:
-                            pass
+                email_map = {e['account_id']: e['email'] for e in (billing_result.data or []) if e.get('email')}
+
+                # For accounts without billing email, get from auth.users via RPC
+                missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+                if missing_account_ids:
+                    accounts_result = await client.schema('basejump').from_('accounts')\
+                        .select('id, primary_owner_user_id')\
+                        .in_('id', missing_account_ids)\
+                        .execute()
+
+                    for acc in (accounts_result.data or []):
+                        if acc.get('primary_owner_user_id'):
+                            try:
+                                email_rpc = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                                if email_rpc.data:
+                                    email_map[acc['id']] = email_rpc.data
+                            except Exception:
+                                pass
             except Exception as e:
                 logger.warning(f"Failed to fetch user emails: {e}")
 
