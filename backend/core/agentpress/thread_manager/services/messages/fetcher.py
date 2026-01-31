@@ -165,37 +165,46 @@ class MessageFetcher:
     
     def _parse_messages(self, all_messages: List[Dict[str, Any]], lightweight: bool) -> List[Dict[str, Any]]:
         messages = []
-        
+
         for item in all_messages:
             content = item['content']
             metadata = item.get('metadata', {})
             is_compressed = False
-            
+
+            # Parse metadata if it's a string
+            if isinstance(metadata, str):
+                try:
+                    metadata = json.loads(metadata)
+                except json.JSONDecodeError:
+                    metadata = {}
+
             if not lightweight and isinstance(metadata, dict) and metadata.get('compressed'):
                 compressed_content = metadata.get('compressed_content')
                 if compressed_content:
                     content = compressed_content
                     is_compressed = True
-            
-            parsed_msg = self._parse_single_message(item, content, is_compressed)
+
+            parsed_msg = self._parse_single_message(item, content, is_compressed, metadata)
             if parsed_msg is not None:
                 messages.append(parsed_msg)
-        
+
         return messages
     
-    def _parse_single_message(self, item: Dict[str, Any], content: Any, is_compressed: bool) -> Dict[str, Any] | None:
+    def _parse_single_message(self, item: Dict[str, Any], content: Any, is_compressed: bool, metadata: Dict[str, Any] = None) -> Dict[str, Any] | None:
+        metadata = metadata or {}
+        parsed_item = None
+
         if isinstance(content, str):
             try:
                 parsed_item = json.loads(content)
                 parsed_item['message_id'] = item['message_id']
-                
+
                 if parsed_item.get('role') == 'user':
                     msg_content = parsed_item.get('content', '')
                     if isinstance(msg_content, str) and not msg_content.strip():
                         logger.warning(f"Skipping empty user message {item['message_id']} from LLM context")
                         return None
-                
-                return self.validator.validate_message(parsed_item)
+
             except json.JSONDecodeError:
                 if is_compressed:
                     return {
@@ -207,15 +216,14 @@ class MessageFetcher:
                     logger.error(f"Failed to parse message: {content[:100]}")
                     return None
         elif isinstance(content, dict):
-            content['message_id'] = item['message_id']
-            
-            if content.get('role') == 'user':
-                msg_content = content.get('content', '')
+            parsed_item = content.copy()
+            parsed_item['message_id'] = item['message_id']
+
+            if parsed_item.get('role') == 'user':
+                msg_content = parsed_item.get('content', '')
                 if isinstance(msg_content, str) and not msg_content.strip():
                     logger.warning(f"Skipping empty user message {item['message_id']} from LLM context")
                     return None
-            
-            return self.validator.validate_message(content)
         else:
             logger.warning(f"Unexpected content type: {type(content)}, attempting to use as-is")
             return {
@@ -223,3 +231,15 @@ class MessageFetcher:
                 'content': str(content),
                 'message_id': item['message_id']
             }
+
+        # Inject reasoning_content from metadata for assistant messages with tool calls
+        # This is required by models like Kimi K2.5 that expect reasoning_content to be present
+        # in the message history when thinking/reasoning mode is enabled
+        if parsed_item and parsed_item.get('role') == 'assistant' and parsed_item.get('tool_calls'):
+            reasoning_content = metadata.get('reasoning_content')
+            if reasoning_content and 'reasoning_content' not in parsed_item:
+                parsed_item['reasoning_content'] = reasoning_content
+
+        if parsed_item is not None:
+            return self.validator.validate_message(parsed_item)
+        return None

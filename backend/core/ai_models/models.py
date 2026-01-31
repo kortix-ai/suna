@@ -127,7 +127,7 @@ class Model:
         params = {
             "model": self.litellm_model_id,
             "num_retries": 1,
-            "timeout": 120,
+            "timeout": 600,  # 10 minutes - needed for models with extended reasoning (Kimi, MiniMax)
         }
         
         if self.config:
