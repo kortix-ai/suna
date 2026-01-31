@@ -150,6 +150,10 @@ async def lifespan(app: FastAPI):
         from core.sandbox.pool_background import start_pool_service
         asyncio.create_task(start_pool_service())
 
+        # Start conversation analytics worker
+        from core.analytics.conversation_analytics_worker import start_analytics_worker
+        asyncio.create_task(start_analytics_worker())
+        
         # Initialize stateless pipeline
         from core.agents.pipeline.stateless import lifecycle
         await lifecycle.initialize()
@@ -232,6 +236,10 @@ async def lifespan(app: FastAPI):
         # Stop sandbox pool service
         from core.sandbox.pool_background import stop_pool_service
         await stop_pool_service()
+
+        # Stop conversation analytics worker
+        from core.analytics.conversation_analytics_worker import stop_analytics_worker
+        await stop_analytics_worker()
         
         try:
             logger.debug("Closing Redis connection")
