@@ -292,9 +292,13 @@ class RunState:
             metadata["tool_calls"] = unified_tool_calls
 
         actual_message_id = message_id if message_id else str(uuid.uuid4())
-        
+
         msg_with_id = msg.copy()
         msg_with_id["message_id"] = actual_message_id
+        # Include reasoning_content in the message for models that require it
+        # (e.g., Kimi K2.5 with thinking mode enabled)
+        if self._accumulated_reasoning and tool_calls:
+            msg_with_id["reasoning_content"] = self._accumulated_reasoning
 
         self._messages.append(msg_with_id)
         self._last_activity = time.time()
