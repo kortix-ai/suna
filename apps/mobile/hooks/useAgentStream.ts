@@ -95,6 +95,11 @@ export function useAgentStream(
     queryKeys,
   };
 
+  // Track reconnection state to suppress stale close/error events from old EventSource
+  const isReconnectingRef = useRef<boolean>(false);
+  const reconnectTimestampRef = useRef<number>(0);
+  const RECONNECT_GRACE_PERIOD_MS = 3000; // Ignore close/error events for 3s after reconnect
+
   // Wrap onMessage to filter out metadata-only message types that cause warnings
   const wrappedOnMessage = useCallback((message: UnifiedMessage) => {
     // Check if this is a metadata-only message type (not in UnifiedMessage.type union)
@@ -107,12 +112,48 @@ export function useAgentStream(
     callbacks.onMessage(message);
   }, [callbacks]);
 
-  // Map callbacks to core callbacks with wrapped onMessage
+  // Wrap onError to suppress errors during reconnection grace period
+  const wrappedOnError = useCallback((error: string) => {
+    const timeSinceReconnect = Date.now() - reconnectTimestampRef.current;
+
+    // If we're in the grace period after a reconnect, suppress "stream closed unexpectedly" errors
+    // These are likely from the OLD EventSource that died when app was backgrounded
+    if (timeSinceReconnect < RECONNECT_GRACE_PERIOD_MS) {
+      const isStaleCloseError =
+        error.includes('Stream closed unexpectedly') ||
+        error.includes('stream closed') ||
+        error.includes('connection');
+
+      if (isStaleCloseError) {
+        log.log('[useAgentStream] Suppressing stale error during reconnect grace period:', error);
+        return;
+      }
+    }
+
+    log.log('[useAgentStream] onError:', error);
+    callbacks.onError?.(error);
+  }, [callbacks]);
+
+  // Wrap onClose to suppress close events during reconnection grace period
+  const wrappedOnClose = useCallback((finalStatus: string) => {
+    const timeSinceReconnect = Date.now() - reconnectTimestampRef.current;
+
+    // If we're in the grace period after a reconnect, check if this is a stale close
+    if (timeSinceReconnect < RECONNECT_GRACE_PERIOD_MS && finalStatus === 'error') {
+      log.log('[useAgentStream] Suppressing stale close event during reconnect grace period, status:', finalStatus);
+      return;
+    }
+
+    log.log('[useAgentStream] onClose:', finalStatus);
+    callbacks.onClose?.(finalStatus);
+  }, [callbacks]);
+
+  // Map callbacks to core callbacks with wrapped handlers
   const coreCallbacks: UseAgentStreamCoreCallbacks = {
     onMessage: wrappedOnMessage,
     onStatusChange: callbacks.onStatusChange,
-    onError: callbacks.onError,
-    onClose: callbacks.onClose,
+    onError: wrappedOnError,
+    onClose: wrappedOnClose,
     onAssistantStart: callbacks.onAssistantStart,
     onAssistantChunk: callbacks.onAssistantChunk,
     onToolCallChunk: callbacks.onToolCallChunk,
@@ -176,7 +217,15 @@ export function useAgentStream(
       return { reconnected: false, agentStatus: null };
     }
 
+    // Prevent multiple simultaneous reconnects
+    if (isReconnectingRef.current) {
+      log.log('[useAgentStream] forceReconnect: Already reconnecting, skipping');
+      return { reconnected: false, agentStatus: null };
+    }
+
     log.log('[useAgentStream] forceReconnect: Checking agent status for run:', runId);
+    isReconnectingRef.current = true;
+    reconnectTimestampRef.current = Date.now();
 
     try {
       // Step 1: Check with server what the actual agent status is
@@ -189,6 +238,7 @@ export function useAgentStream(
         // 404 means agent run doesn't exist or already completed
         if (response.status === 404) {
           log.log('[useAgentStream] forceReconnect: Agent run not found (404), likely completed');
+          isReconnectingRef.current = false;
           return { reconnected: false, agentStatus: 'completed' };
         }
         throw new Error(`Failed to get agent status: ${response.status}`);
@@ -202,6 +252,7 @@ export function useAgentStream(
       if (agentStatus !== 'running') {
         // Agent is not running - no need to reconnect
         log.log('[useAgentStream] forceReconnect: Agent not running, skipping reconnect');
+        isReconnectingRef.current = false;
         return { reconnected: false, agentStatus };
       }
 
@@ -216,10 +267,19 @@ export function useAgentStream(
       await coreResult.startStreaming(runId);
 
       log.log('[useAgentStream] forceReconnect: Successfully reconnected to stream');
+
+      // Give the new stream a grace period before allowing close events to be processed
+      // This prevents stale close events from the old EventSource from triggering errors
+      setTimeout(() => {
+        isReconnectingRef.current = false;
+        log.log('[useAgentStream] forceReconnect: Grace period ended, reconnect complete');
+      }, 2000);
+
       return { reconnected: true, agentStatus: 'running' };
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       log.warn('[useAgentStream] forceReconnect: Error checking/reconnecting:', errMsg);
+      isReconnectingRef.current = false;
 
       // Check if this is an expected "not found" error
       const isExpected =
@@ -237,14 +297,128 @@ export function useAgentStream(
     }
   }, [coreResult.agentRunId, coreResult.startStreaming]);
 
+  // Auto-clear stale "stream closed unexpectedly" errors during reconnect grace period
+  // This handles the race condition where the old EventSource fires a close event
+  // after we've already reconnected with a new EventSource
+  const suppressedErrorRef = useRef<boolean>(false);
+  const isRestartingAfterStaleErrorRef = useRef<boolean>(false);
+
+  // Check if we should suppress the error (stale close event during reconnect)
+  const shouldSuppressError = useMemo(() => {
+    if (!coreResult.error) return false;
+
+    const timeSinceReconnect = Date.now() - reconnectTimestampRef.current;
+    if (timeSinceReconnect > RECONNECT_GRACE_PERIOD_MS) return false;
+
+    // Only suppress "stream closed unexpectedly" type errors during grace period
+    const isStaleCloseError =
+      coreResult.error.includes('Stream closed unexpectedly') ||
+      coreResult.error.includes('stream closed') ||
+      coreResult.error.toLowerCase().includes('connection');
+
+    if (isStaleCloseError) {
+      log.log('[useAgentStream] Suppressing stale error during grace period:', coreResult.error);
+
+      // Clear the error and RESTART the stream
+      // The finalizeStream in core hook killed the connection, we need to restart it
+      if (!suppressedErrorRef.current && !isRestartingAfterStaleErrorRef.current) {
+        suppressedErrorRef.current = true;
+        isRestartingAfterStaleErrorRef.current = true;
+
+        // Use setTimeout to avoid calling during render
+        setTimeout(async () => {
+          const runId = currentRunIdRef.current;
+          log.log('[useAgentStream] Restarting stream after stale error, runId:', runId);
+
+          // Clear the error first
+          coreResult.clearError();
+          suppressedErrorRef.current = false;
+
+          // If we have a run ID, restart the stream
+          if (runId) {
+            try {
+              // Check if agent is still running before restarting
+              const token = await getAuthToken();
+              const response = await fetch(`${API_URL}/agent-runs/${runId}/status`, {
+                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+              });
+
+              if (response.ok) {
+                const statusData = await response.json();
+                if (statusData.status === 'running') {
+                  log.log('[useAgentStream] Agent still running, restarting stream...');
+                  // Update timestamp to extend grace period for this new restart
+                  reconnectTimestampRef.current = Date.now();
+                  await coreResult.startStreaming(runId);
+                  log.log('[useAgentStream] Stream restarted successfully after stale error');
+                } else {
+                  log.log('[useAgentStream] Agent no longer running:', statusData.status);
+                  currentRunIdRef.current = null;
+                }
+              } else {
+                log.log('[useAgentStream] Failed to check agent status:', response.status);
+                currentRunIdRef.current = null;
+              }
+            } catch (err) {
+              log.warn('[useAgentStream] Error restarting stream:', err);
+              currentRunIdRef.current = null;
+            }
+          }
+
+          isRestartingAfterStaleErrorRef.current = false;
+        }, 0);
+      }
+      return true;
+    }
+
+    return false;
+  }, [coreResult.error, coreResult.clearError, coreResult.startStreaming]);
+
+  // Compute the actual error to return (null if suppressed)
+  const effectiveError = shouldSuppressError ? null : coreResult.error;
+
+  // Compute effective status (if error is suppressed, status should be 'streaming' or 'idle')
+  const effectiveStatus = useMemo(() => {
+    if (shouldSuppressError && coreResult.status === 'error') {
+      // If we suppressed the error, the agent is probably still running
+      // Use our own currentRunIdRef because coreResult.agentRunId gets cleared by finalizeStream
+      // before we have a chance to check it
+      const hasActiveRun = currentRunIdRef.current || coreResult.agentRunId;
+      log.log('[useAgentStream] effectiveStatus: suppressing error, hasActiveRun:', !!hasActiveRun, 'currentRunIdRef:', currentRunIdRef.current, 'coreResult.agentRunId:', coreResult.agentRunId);
+      return hasActiveRun ? 'streaming' : 'idle';
+    }
+    return coreResult.status;
+  }, [shouldSuppressError, coreResult.status, coreResult.agentRunId]);
+
+  // Log state changes for debugging mobile reconnection issues
+  // TODO: Remove these logs after mobile streaming is stable
+  if (coreResult.status !== effectiveStatus || coreResult.error !== effectiveError) {
+    log.log('[useAgentStream] STATE OVERRIDE:', {
+      coreStatus: coreResult.status,
+      effectiveStatus,
+      coreError: coreResult.error,
+      effectiveError,
+      coreAgentRunId: coreResult.agentRunId,
+      currentRunIdRef: currentRunIdRef.current,
+      shouldSuppressError,
+      timeSinceReconnect: Date.now() - reconnectTimestampRef.current,
+    });
+  }
+
+  // Keep our own run ID ref in sync, but don't clear it when core clears (that's the bug we're fixing)
+  if (coreResult.agentRunId && coreResult.agentRunId !== currentRunIdRef.current) {
+    log.log('[useAgentStream] Updating currentRunIdRef:', coreResult.agentRunId);
+    currentRunIdRef.current = coreResult.agentRunId;
+  }
+
   return {
-    status: coreResult.status,
+    status: effectiveStatus,
     textContent: textContentString,
     reasoningContent: coreResult.reasoningContent,
     isReasoningComplete,
     toolCall: coreResult.toolCall,
-    error: coreResult.error,
-    agentRunId: coreResult.agentRunId,
+    error: effectiveError,
+    agentRunId: coreResult.agentRunId || currentRunIdRef.current, // Return our ref if core cleared it
     retryCount: coreResult.retryCount,
     startStreaming: coreResult.startStreaming,
     stopStreaming: coreResult.stopStreaming,
