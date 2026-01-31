@@ -34,7 +34,8 @@ interface UseAgentStreamResult {
   agentRunId: string | null;
   retryCount: number; // Number of reconnection attempts (0 = connected)
   startStreaming: (runId: string) => Promise<void>;
-  stopStreaming: () => Promise<void>;
+  stopStreaming: () => Promise<void>; // Stops agent on server AND disconnects
+  disconnectStream: () => void; // Just disconnects locally, agent keeps running on server
   resumeStream: () => Promise<void>; // Call when app comes back to foreground
   /**
    * Mobile-specific: Force reconnect after app comes back from background.
@@ -197,13 +198,10 @@ export function useAgentStream(
   /**
    * Mobile-specific force reconnect function.
    * On mobile, when the app backgrounds, the OS kills EventSource connections.
-   * Unlike the shared resumeStream which tries to be smart about reconnecting,
-   * this function ALWAYS checks server status and reconnects if agent is still running.
    *
-   * CRITICAL: We do NOT call stopStreaming() here because that sends a POST to
-   * /agent-runs/{runId}/stop which actually stops the agent on the server!
-   * Instead, we call startStreaming() directly which handles cleanup of the old
-   * EventSource internally without stopping the server-side agent.
+   * CRITICAL: We use resumeStream() instead of startStreaming() because:
+   * - startStreaming() resets ALL state (textContent, toolCall, etc.) which breaks UI
+   * - resumeStream() only reconnects the EventSource without clearing accumulated data
    *
    * Returns:
    * - reconnected: true if we reconnected to a running stream
@@ -256,20 +254,17 @@ export function useAgentStream(
         return { reconnected: false, agentStatus };
       }
 
-      // Step 2: Agent is still running - we MUST reconnect
-      // The old EventSource connection is dead after backgrounding
-      log.log('[useAgentStream] forceReconnect: Agent still running, reconnecting stream...');
+      // Step 2: Agent is still running - use resumeStream to reconnect
+      // IMPORTANT: Use resumeStream() NOT startStreaming() because:
+      // - startStreaming() resets textContent, toolCall, etc. which breaks the UI
+      // - resumeStream() just reconnects without clearing accumulated stream data
+      log.log('[useAgentStream] forceReconnect: Agent still running, calling resumeStream...');
 
-      // IMPORTANT: Do NOT call stopStreaming() - that sends POST to /stop which kills the agent!
-      // Just call startStreaming() directly - it handles cleanup of the old EventSource internally
-      // (see startStreaming in use-agent-stream-core.ts lines 1031-1078 - it calls streamCleanupRef.current()
-      // which only closes the EventSource locally, without sending any HTTP requests)
-      await coreResult.startStreaming(runId);
+      await coreResult.resumeStream();
 
-      log.log('[useAgentStream] forceReconnect: Successfully reconnected to stream');
+      log.log('[useAgentStream] forceReconnect: Successfully triggered reconnect');
 
       // Give the new stream a grace period before allowing close events to be processed
-      // This prevents stale close events from the old EventSource from triggering errors
       setTimeout(() => {
         isReconnectingRef.current = false;
         log.log('[useAgentStream] forceReconnect: Grace period ended, reconnect complete');
@@ -295,13 +290,12 @@ export function useAgentStream(
       // Network error - can't determine status
       return { reconnected: false, agentStatus: null };
     }
-  }, [coreResult.agentRunId, coreResult.startStreaming]);
+  }, [coreResult.agentRunId, coreResult.resumeStream]);
 
   // Auto-clear stale "stream closed unexpectedly" errors during reconnect grace period
   // This handles the race condition where the old EventSource fires a close event
   // after we've already reconnected with a new EventSource
   const suppressedErrorRef = useRef<boolean>(false);
-  const isRestartingAfterStaleErrorRef = useRef<boolean>(false);
 
   // Check if we should suppress the error (stale close event during reconnect)
   const shouldSuppressError = useMemo(() => {
@@ -319,60 +313,20 @@ export function useAgentStream(
     if (isStaleCloseError) {
       log.log('[useAgentStream] Suppressing stale error during grace period:', coreResult.error);
 
-      // Clear the error and RESTART the stream
-      // The finalizeStream in core hook killed the connection, we need to restart it
-      if (!suppressedErrorRef.current && !isRestartingAfterStaleErrorRef.current) {
+      // Just clear the error - don't restart the stream
+      // The resumeStream we called should already be handling reconnection
+      if (!suppressedErrorRef.current) {
         suppressedErrorRef.current = true;
-        isRestartingAfterStaleErrorRef.current = true;
-
-        // Use setTimeout to avoid calling during render
-        setTimeout(async () => {
-          const runId = currentRunIdRef.current;
-          log.log('[useAgentStream] Restarting stream after stale error, runId:', runId);
-
-          // Clear the error first
+        setTimeout(() => {
           coreResult.clearError();
           suppressedErrorRef.current = false;
-
-          // If we have a run ID, restart the stream
-          if (runId) {
-            try {
-              // Check if agent is still running before restarting
-              const token = await getAuthToken();
-              const response = await fetch(`${API_URL}/agent-runs/${runId}/status`, {
-                headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-              });
-
-              if (response.ok) {
-                const statusData = await response.json();
-                if (statusData.status === 'running') {
-                  log.log('[useAgentStream] Agent still running, restarting stream...');
-                  // Update timestamp to extend grace period for this new restart
-                  reconnectTimestampRef.current = Date.now();
-                  await coreResult.startStreaming(runId);
-                  log.log('[useAgentStream] Stream restarted successfully after stale error');
-                } else {
-                  log.log('[useAgentStream] Agent no longer running:', statusData.status);
-                  currentRunIdRef.current = null;
-                }
-              } else {
-                log.log('[useAgentStream] Failed to check agent status:', response.status);
-                currentRunIdRef.current = null;
-              }
-            } catch (err) {
-              log.warn('[useAgentStream] Error restarting stream:', err);
-              currentRunIdRef.current = null;
-            }
-          }
-
-          isRestartingAfterStaleErrorRef.current = false;
         }, 0);
       }
       return true;
     }
 
     return false;
-  }, [coreResult.error, coreResult.clearError, coreResult.startStreaming]);
+  }, [coreResult.error, coreResult.clearError]);
 
   // Compute the actual error to return (null if suppressed)
   const effectiveError = shouldSuppressError ? null : coreResult.error;
@@ -422,6 +376,7 @@ export function useAgentStream(
     retryCount: coreResult.retryCount,
     startStreaming: coreResult.startStreaming,
     stopStreaming: coreResult.stopStreaming,
+    disconnectStream: coreResult.disconnectStream,
     resumeStream: coreResult.resumeStream,
     forceReconnect, // Mobile-specific: Always reconnect after app backgrounds
     clearError: coreResult.clearError,

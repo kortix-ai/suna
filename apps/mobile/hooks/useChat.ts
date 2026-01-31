@@ -501,8 +501,9 @@ export function useChat(): UseChatReturn {
     error: streamError,
     agentRunId: currentHookRunId,
     retryCount: streamRetryCount,
-    startStreaming,
-    stopStreaming,
+    startStreaming: rawStartStreaming,
+    stopStreaming: rawStopStreaming,
+    disconnectStream: rawDisconnectStream,
     resumeStream,
     forceReconnect, // Mobile-specific: Always reconnect after app backgrounds
     clearError: clearStreamError,
@@ -520,8 +521,35 @@ export function useChat(): UseChatReturn {
     undefined,
   );
 
+  // Wrap streaming functions with logging
+  const startStreaming = useCallback((runId: string) => {
+    log.log('🟢 [useChat] START_STREAMING called:', { runId, activeThreadId, currentHookRunId });
+    return rawStartStreaming(runId);
+  }, [rawStartStreaming, activeThreadId, currentHookRunId]);
+
+  const stopStreaming = useCallback(async () => {
+    log.log('🔴 [useChat] STOP_STREAMING called:', { activeThreadId, agentRunId, currentHookRunId });
+    return rawStopStreaming();
+  }, [rawStopStreaming, activeThreadId, agentRunId, currentHookRunId]);
+
+  const disconnectStream = useCallback(() => {
+    log.log('🟡 [useChat] DISCONNECT_STREAM called:', { activeThreadId, agentRunId, currentHookRunId });
+    return rawDisconnectStream();
+  }, [rawDisconnectStream, activeThreadId, agentRunId, currentHookRunId]);
+
   const isStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting' || streamHookStatus === 'reconnecting';
   const isReconnecting = streamHookStatus === 'reconnecting';
+
+  // Log stream status changes
+  useEffect(() => {
+    log.log('📊 [useChat] STREAM_STATUS changed:', {
+      status: streamHookStatus,
+      currentHookRunId,
+      agentRunId,
+      activeThreadId,
+      isStreaming,
+    });
+  }, [streamHookStatus, currentHookRunId, agentRunId, activeThreadId, isStreaming]);
 
   // Handle app state changes - resume stream when coming back to foreground
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -837,11 +865,23 @@ export function useChat(): UseChatReturn {
   }, [activeThreadId, isStreaming, refetchMessages, queryClient, activeSandboxId]);
 
   const loadThread = useCallback((threadId: string) => {
-    log.log('[useChat] Loading thread:', threadId);
+    log.log('📖 [useChat] LOAD_THREAD called:', {
+      threadId,
+      currentActiveThreadId: activeThreadId,
+      currentAgentRunId: agentRunId,
+      currentHookRunId,
+      streamHookStatus,
+    });
 
     // Don't load optimistic threads - they're already active
     if (threadId.startsWith('optimistic-')) {
       log.log('[useChat] Skipping load for optimistic thread');
+      return;
+    }
+
+    // CRITICAL: If loading the same thread, don't do anything
+    if (threadId === activeThreadId) {
+      log.log('⚠️ [useChat] SAME_THREAD - skipping loadThread to avoid disconnecting stream');
       return;
     }
 
@@ -851,14 +891,17 @@ export function useChat(): UseChatReturn {
     setAgentRunId(null);
     lastErrorRunIdRef.current = null;
     clearStreamError(); // Clear error state from streaming hook
-    
-    stopStreaming();
-    
+
+    // IMPORTANT: Use disconnectStream NOT stopStreaming when switching threads
+    // disconnectStream only disconnects locally - agent continues running on server
+    // stopStreaming would stop the agent on server which we don't want
+    disconnectStream();
+
     setSelectedToolData(null);
     setInputValue('');
     setAttachments([]);
     setIsNewThreadOptimistic(false);
-    
+
     setMessages([]);
 
     // Reset Kortix Computer state when switching threads
@@ -901,10 +944,16 @@ export function useChat(): UseChatReturn {
     }).catch(error => {
       log.error('❌ [useChat] Failed to refetch active runs:', error);
     });
-  }, [stopStreaming, clearStreamError, refetchActiveRuns, queryClient, threadsData]);
+  }, [disconnectStream, clearStreamError, refetchActiveRuns, queryClient, threadsData, activeThreadId, agentRunId, currentHookRunId, streamHookStatus]);
 
   const startNewChat = useCallback(() => {
-    log.log('[useChat] Starting new chat');
+    log.log('🆕 [useChat] START_NEW_CHAT called:', {
+      currentActiveThreadId: activeThreadId,
+      currentAgentRunId: agentRunId,
+      currentHookRunId,
+      streamHookStatus,
+    });
+
     setActiveThreadId(undefined);
     setAgentRunId(null);
     lastErrorRunIdRef.current = null;
@@ -915,12 +964,15 @@ export function useChat(): UseChatReturn {
     setIsNewThreadOptimistic(false);
     setActiveSandboxId(undefined);
     clearStreamError(); // Clear any previous error state
-    stopStreaming();
-    
+
+    // IMPORTANT: Use disconnectStream NOT stopStreaming when starting new chat
+    // We don't want to stop agents running in other threads
+    disconnectStream();
+
     // Reset Kortix Computer state when starting new chat
     useKortixComputerStore.getState().reset();
     log.log('[useChat] Reset Kortix Computer state for new chat');
-  }, [stopStreaming, clearStreamError]);
+  }, [disconnectStream, clearStreamError, activeThreadId, agentRunId, currentHookRunId, streamHookStatus]);
 
   const updateThreadTitle = useCallback(async (newTitle: string) => {
     if (!activeThreadId) {
@@ -948,7 +1000,15 @@ export function useChat(): UseChatReturn {
     lastMessageParamsRef.current = { content, agentId, agentName };
 
     try {
-      log.log('[useChat] Sending message:', { content, agentId, agentName, activeThreadId, attachmentsCount: attachments.length, selectedQuickAction, selectedQuickActionOption });
+      log.log('📤 [useChat] SEND_MESSAGE:', {
+        content: content.substring(0, 50),
+        agentId,
+        activeThreadId,
+        currentAgentRunId: agentRunId,
+        currentHookRunId,
+        streamHookStatus,
+        attachmentsCount: attachments.length,
+      });
       
       for (const attachment of attachments) {
         const validation = validateFileSize(attachment.size);
@@ -1158,7 +1218,11 @@ export function useChat(): UseChatReturn {
           });
 
           if (createResult.agent_run_id) {
-            log.log('[useChat] Starting INSTANT streaming:', createResult.agent_run_id);
+            log.log('🚀 [useChat] AGENT_STARTED (new thread):', {
+              agentRunId: createResult.agent_run_id,
+              threadId: newThreadId,
+              optimisticThreadId,
+            });
             setUserInitiatedRun(true);
             setAgentRunId(createResult.agent_run_id);
             lastErrorRunIdRef.current = null; // Clear any previous error state
@@ -1366,7 +1430,10 @@ export function useChat(): UseChatReturn {
           }
           
           if (result.agentRunId) {
-            log.log('[useChat] Starting INSTANT streaming for existing thread:', result.agentRunId);
+            log.log('🚀 [useChat] AGENT_STARTED (existing thread):', {
+              agentRunId: result.agentRunId,
+              threadId: currentThreadId,
+            });
             setUserInitiatedRun(true);
             setAgentRunId(result.agentRunId);
             lastErrorRunIdRef.current = null; // Clear any previous error state
@@ -1838,8 +1905,8 @@ export function useChat(): UseChatReturn {
     } else {
       // No saved state - show fresh thread list for new mode
       log.log('[useChat] 📋 Fresh mode, showing thread list:', actionId);
-      // Stop current streaming (agent keeps running on server)
-      stopStreaming();
+      // Disconnect from current stream (agent keeps running on server)
+      disconnectStream();
       setAgentRunId(null);
       setActiveThreadId(undefined);
       setMessages([]);
@@ -1850,17 +1917,17 @@ export function useChat(): UseChatReturn {
       setModeViewState('thread-list');
     }
   }, [
-    selectedQuickAction, 
-    activeThreadId, 
-    messages, 
-    agentRunId, 
-    activeSandboxId, 
-    modeViewState, 
-    inputValue, 
-    attachments, 
+    selectedQuickAction,
+    activeThreadId,
+    messages,
+    agentRunId,
+    activeSandboxId,
+    modeViewState,
+    inputValue,
+    attachments,
     selectedQuickActionOption,
-    modeStates, 
-    stopStreaming, 
+    modeStates,
+    disconnectStream,
     startStreaming,
   ]);
 
@@ -1869,7 +1936,7 @@ export function useChat(): UseChatReturn {
     log.log('[useChat] 📋 Going back to thread list for mode:', selectedQuickAction);
     Keyboard.dismiss();
     setModeViewState('thread-list');
-    
+
     // Clear the saved state for current mode when user explicitly goes back
     if (selectedQuickAction) {
       setModeStates(prev => {
@@ -1878,13 +1945,14 @@ export function useChat(): UseChatReturn {
         return updated;
       });
     }
-    
+
     // Clear active thread when going to list view
+    // Use disconnectStream - agent continues running on server
     setActiveThreadId(undefined);
     setMessages([]);
     setAgentRunId(null);
-    stopStreaming();
-  }, [stopStreaming, selectedQuickAction]);
+    disconnectStream();
+  }, [disconnectStream, selectedQuickAction]);
 
   // Open a specific thread (used from thread list)
   const showModeThread = useCallback((threadId: string) => {

@@ -50,7 +50,8 @@ export interface UseAgentStreamCoreResult {
   agentRunId: string | null;
   retryCount: number;
   startStreaming: (runId: string) => Promise<void>;
-  stopStreaming: () => Promise<void>;
+  stopStreaming: () => Promise<void>; // Stops agent on server AND disconnects
+  disconnectStream: () => void; // Just disconnects locally, agent keeps running on server
   resumeStream: () => Promise<void>; // Call when app comes back to foreground
   clearError: () => void; // Clear error state when switching threads
   setError: (error: string) => void; // Set error state (e.g., when retry fails)
@@ -235,8 +236,9 @@ export function useAgentStreamCore(
   }, [textContent]);
 
   // Finalize stream function
+  // preserveRunId: if true, keeps the run ID so user can retry/reconnect (for connection errors while agent is still running)
   const finalizeStream = useCallback(
-    (finalStatus: string, runId: string | null = agentRunId) => {
+    (finalStatus: string, runId: string | null = agentRunId, preserveRunId: boolean = false) => {
       if (!isMountedRef.current) return;
 
       if (runId && currentRunIdRef.current && currentRunIdRef.current !== runId) {
@@ -268,14 +270,20 @@ export function useAgentStreamCore(
       toolCallArgumentsRef.current.clear();
       previousToolCallStateRef.current = null;
       lastToolCallUpdateTimeRef.current = 0;
-      
+
       if (config.clearToolTracking) {
         config.clearToolTracking();
       }
 
       updateStatus(finalStatus);
-      setAgentRunId(null);
-      currentRunIdRef.current = null;
+
+      // Only clear run ID if not preserving it for retry
+      // When preserveRunId is true (e.g., connection error while agent still running),
+      // keep the run ID so user can retry/reconnect
+      if (!preserveRunId) {
+        setAgentRunId(null);
+        currentRunIdRef.current = null;
+      }
 
       // Invalidate queries
       if (queryClient && config.queryKeys && config.queryKeys.length > 0) {
@@ -688,10 +696,21 @@ export function useAgentStreamCore(
           }
 
           if (agentStatus.status === 'running') {
+            // Agent is still running - DON'T clear run ID so user can retry/reconnect
+            // Just set error and update status, preserving the run ID for retry
             setError('Stream closed unexpectedly while agent was running.');
-            finalizeStream('error', runId);
+
+            // Clean up the stream connection but DON'T clear run ID
+            if (streamCleanupRef.current) {
+              streamCleanupRef.current();
+              streamCleanupRef.current = null;
+            }
+
+            // Update status to error (this triggers onClose callback)
+            updateStatus('error');
+
             if (config.showToast) {
-              config.showToast('Stream disconnected. Worker might still be running.', 'warning');
+              config.showToast('Stream disconnected. Tap Refresh to reconnect.', 'warning');
             }
           } else if (agentStatus.status === 'stopped' && agentStatus.error) {
             const errorMessage = agentStatus.error;
@@ -729,8 +748,10 @@ export function useAgentStreamCore(
           if (isExpectedCompletion) {
             finalizeStream('agent_not_running', runId);
           } else {
+            // Network error checking status - agent might still be running
+            // Preserve run ID so user can retry manually
             console.error(`[useAgentStreamCore] Error checking agent status for ${runId} after stream close: ${errorMessage}`);
-            finalizeStream('error', runId);
+            finalizeStream('error', runId, true); // preserveRunId = true
           }
         });
     }, 500);
@@ -781,18 +802,19 @@ export function useAgentStreamCore(
         cleanup();
         
         // Attempt reconnect on timeout
+        // Agent might still be running, so preserve run ID for manual retry
         if (attemptReconnectRef.current) {
           const reconnected = await attemptReconnectRef.current(runId);
           if (!reconnected) {
             setError('Connection timeout - please check your internet');
             callbacksRef.current.onError?.('Connection timeout - please check your internet');
-            finalizeStream('error', runId);
+            finalizeStream('error', runId, true); // preserveRunId = true
           }
           if (!resolved) { resolved = true; resolve(reconnected); }
         } else {
           setError('Connection timeout - please check your internet');
           callbacksRef.current.onError?.('Connection timeout - please check your internet');
-          finalizeStream('error', runId);
+          finalizeStream('error', runId, true); // preserveRunId = true
           if (!resolved) { resolved = true; resolve(false); }
         }
       }, CONNECTION_TIMEOUT_MS);
@@ -826,14 +848,14 @@ export function useAgentStreamCore(
           if (attemptReconnectRef.current) {
             const reconnected = await attemptReconnectRef.current(runId);
             if (!reconnected) {
-              // Max retries exceeded
+              // Max retries exceeded - preserve run ID so user can retry manually
               handleStreamError(event);
-              finalizeStream('error', runId);
+              finalizeStream('error', runId, true); // preserveRunId = true
             }
             if (!resolved) { resolved = true; resolve(reconnected); }
           } else {
             handleStreamError(event);
-            finalizeStream('error', runId);
+            finalizeStream('error', runId, true); // preserveRunId = true
             if (!resolved) { resolved = true; resolve(false); }
           }
           return;
@@ -854,18 +876,19 @@ export function useAgentStreamCore(
           }
           
           // Network error checking status - attempt reconnect anyway
+          // Agent might still be running, so preserve run ID for retry
           console.log('[useAgentStreamCore] Status check failed, attempting reconnect...');
           cleanup();
           if (attemptReconnectRef.current) {
             const reconnected = await attemptReconnectRef.current(runId);
             if (!reconnected) {
               handleStreamError(event);
-              finalizeStream('error', runId);
+              finalizeStream('error', runId, true); // preserveRunId = true - agent might still be running
             }
             if (!resolved) { resolved = true; resolve(reconnected); }
           } else {
             handleStreamError(event);
-            finalizeStream('error', runId);
+            finalizeStream('error', runId, true); // preserveRunId = true - agent might still be running
             if (!resolved) { resolved = true; resolve(false); }
           }
         }
@@ -887,12 +910,15 @@ export function useAgentStreamCore(
             (globalThis as any).clearTimeout(connectionTimeoutId);
             connectionTimeoutId = null;
           }
-          
+
           // Reset retry state on successful connection
           retryCountRef.current = 0;
           setRetryCount(0);
           isReconnectingRef.current = false;
-          
+
+          // Clear any previous error (e.g., from "stream closed unexpectedly")
+          setError(null);
+
           updateStatus('streaming');
           lastMessageTimeRef.current = Date.now();
           
@@ -1077,11 +1103,35 @@ export function useAgentStreamCore(
     await setupEventSource(runId, false);
   }, [config, updateStatus, setupEventSource]);
 
+  // Disconnect from stream locally WITHOUT stopping the agent on server
+  // Use this when switching threads - the agent keeps running in the background
+  const disconnectStream = useCallback(() => {
+    console.log('[useAgentStreamCore] Disconnecting stream (agent continues on server)');
+    if (streamCleanupRef.current) {
+      streamCleanupRef.current();
+      streamCleanupRef.current = null;
+    }
+
+    // Clear local state but DON'T call server to stop
+    setTextContent([]);
+    setToolCall(null);
+    clearAccumulator(accumulatorRef.current);
+    toolCallArgumentsRef.current.clear();
+    previousToolCallStateRef.current = null;
+    lastToolCallUpdateTimeRef.current = 0;
+
+    // Clear run ID and update status
+    currentRunIdRef.current = null;
+    setAgentRunId(null);
+    updateStatus('idle');
+  }, [updateStatus]);
+
+  // Stop agent on server AND disconnect - use only when user explicitly wants to stop
   const stopStreaming = useCallback(async () => {
     if (streamCleanupRef.current) {
       streamCleanupRef.current();
     }
-    
+
     if (currentRunIdRef.current) {
       try {
         const runId = currentRunIdRef.current;
@@ -1093,12 +1143,12 @@ export function useAgentStreamCore(
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        
+
         await fetch(url, {
           method: 'POST',
           headers,
         });
-        
+
         if (config.showToast) {
           config.showToast('Worker stopped.', 'success');
         }
@@ -1111,7 +1161,7 @@ export function useAgentStreamCore(
       }
       currentRunIdRef.current = null;
     }
-    
+
     finalizeStream('stopped', agentRunId);
   }, [config, agentRunId, finalizeStream]);
 
@@ -1215,6 +1265,7 @@ export function useAgentStreamCore(
     retryCount,
     startStreaming,
     stopStreaming,
+    disconnectStream,
     resumeStream,
     clearError,
     setError: setStreamError,
