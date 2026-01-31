@@ -504,6 +504,7 @@ export function useChat(): UseChatReturn {
     startStreaming,
     stopStreaming,
     resumeStream,
+    forceReconnect, // Mobile-specific: Always reconnect after app backgrounds
     clearError: clearStreamError,
     setError: setStreamError,
   } = useAgentStream(
@@ -524,19 +525,67 @@ export function useChat(): UseChatReturn {
 
   // Handle app state changes - resume stream when coming back to foreground
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
-  
+  const lastKnownRunIdRef = useRef<string | null>(null);
+
+  // Track the runId so we can check its status even after finalizeStream clears currentHookRunId
   useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState: AppStateStatus) => {
+    if (currentHookRunId || agentRunId) {
+      lastKnownRunIdRef.current = currentHookRunId || agentRunId;
+    }
+  }, [currentHookRunId, agentRunId]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', async (nextAppState: AppStateStatus) => {
       // App came to foreground from background/inactive
       if (
-        appStateRef.current.match(/inactive|background/) && 
+        appStateRef.current.match(/inactive|background/) &&
         nextAppState === 'active'
       ) {
         log.log('[useChat] App came to foreground, checking stream status');
-        // Only try to resume if we have an active agent run
-        if (currentHookRunId || agentRunId) {
-          log.log('[useChat] Active run detected, resuming stream...');
-          resumeStream();
+
+        // Check if we have an active agent run OR had one before backgrounding
+        const runIdToCheck = currentHookRunId || agentRunId || lastKnownRunIdRef.current;
+
+        if (runIdToCheck) {
+          log.log('[useChat] Active/recent run detected, using forceReconnect...');
+
+          // MOBILE-SPECIFIC: Use forceReconnect instead of resumeStream
+          // On mobile, the EventSource connection is ALWAYS dead after backgrounding
+          // forceReconnect checks server status and reconnects if agent is still running
+          const result = await forceReconnect();
+
+          log.log('[useChat] forceReconnect result:', result);
+
+          if (!result.reconnected) {
+            // Agent finished while we were backgrounded, or network error
+            // Either way, we need to refetch messages to get the latest state
+            if (activeThreadId) {
+              log.log('[useChat] Agent not running or reconnect failed, refetching messages...');
+
+              // Clear tracked run ID since agent is done
+              lastKnownRunIdRef.current = null;
+              setAgentRunId(null);
+
+              // Refetch messages to get the final content
+              queryClient.invalidateQueries({
+                queryKey: chatKeys.messages(activeThreadId),
+              });
+              queryClient.invalidateQueries({
+                queryKey: ['activeRuns'],
+              });
+              await refetchMessages();
+            }
+          }
+          // If reconnected, the stream will continue receiving messages normally
+        } else if (activeThreadId) {
+          // No run was active, but we have a thread - refresh to catch any updates
+          log.log('[useChat] No active run, but thread exists - refreshing messages');
+          await refetchMessages();
+        }
+
+        // Clear the tracked runId after handling if no active run
+        if (!currentHookRunId && !agentRunId) {
+          lastKnownRunIdRef.current = null;
         }
       }
       appStateRef.current = nextAppState;
@@ -545,7 +594,7 @@ export function useChat(): UseChatReturn {
     return () => {
       subscription.remove();
     };
-  }, [currentHookRunId, agentRunId, resumeStream]);
+  }, [currentHookRunId, agentRunId, forceReconnect, activeThreadId, queryClient, refetchMessages]);
 
   const prevThreadIdRef = useRef<string | undefined>(undefined);
 
@@ -669,28 +718,44 @@ export function useChat(): UseChatReturn {
       return;
     }
 
-    // CRITICAL: Only process completion if the hook's current run matches what we started
-    // This prevents stale 'completed' status from old run triggering completion for new run
-    if (currentHookRunId !== lastStreamStartedRef.current) {
-      log.log('[useChat] Ignoring stale status:', streamHookStatus, 'for run:', currentHookRunId, 'we started:', lastStreamStartedRef.current);
+    // Check if this is a terminal status
+    const isTerminalStatus =
+      streamHookStatus === 'completed' ||
+      streamHookStatus === 'stopped' ||
+      streamHookStatus === 'agent_not_running' ||
+      streamHookStatus === 'error';
+
+    // CRITICAL: Handle the case where finalizeStream already cleared currentHookRunId to null
+    // When the stream finalizes, it sets agentRunId (currentHookRunId) to null BEFORE
+    // React updates the status. So we need to accept terminal status when:
+    // 1. currentHookRunId matches what we started (normal completion path)
+    // 2. OR currentHookRunId is null AND we have a terminal status (post-finalize path)
+    //
+    // The key protection is: we only act if lastStreamStartedRef.current is set,
+    // which means WE initiated this stream, not some stale state.
+    const isValidCompletion =
+      currentHookRunId === lastStreamStartedRef.current ||
+      (currentHookRunId === null && isTerminalStatus);
+
+    if (!isValidCompletion) {
+      // Only log if this looks like a stale status, not if we're mid-stream
+      if (isTerminalStatus) {
+        log.log('[useChat] Ignoring stale status:', streamHookStatus, 'for run:', currentHookRunId, 'we started:', lastStreamStartedRef.current);
+      }
       return;
     }
 
-    if (
-      (streamHookStatus === 'completed' ||
-        streamHookStatus === 'stopped' ||
-        streamHookStatus === 'agent_not_running' ||
-        streamHookStatus === 'error')
-    ) {
+    if (isTerminalStatus) {
       // Track the run ID that just completed to prevent immediate resume
-      // Use currentHookRunId since that's the run that actually completed
-      if (currentHookRunId) {
-        lastCompletedRunIdRef.current = currentHookRunId;
+      // Use lastStreamStartedRef since currentHookRunId might already be null
+      const completedRunId = currentHookRunId || lastStreamStartedRef.current;
+      if (completedRunId) {
+        lastCompletedRunIdRef.current = completedRunId;
 
         // On error, also track for retry - agent WAS started, don't resend
         if (streamHookStatus === 'error') {
-          lastErrorRunIdRef.current = currentHookRunId;
-          log.log('[useChat] Stored error runId for retry:', currentHookRunId);
+          lastErrorRunIdRef.current = completedRunId;
+          log.log('[useChat] Stored error runId for retry:', completedRunId);
         }
       }
 
