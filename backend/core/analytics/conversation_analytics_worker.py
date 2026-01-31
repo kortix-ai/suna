@@ -15,7 +15,7 @@ from core.analytics.conversation_analyzer import analyze_conversation, store_ana
 # Worker configuration
 PROCESSING_INTERVAL_SECONDS = 15  # Check queue every 15 seconds
 BATCH_SIZE = 15  # Process up to 15 items per batch
-MAX_CONCURRENT = 5  # Max concurrent LLM calls (avoid rate limits)
+MAX_CONCURRENT = 2  # Max concurrent LLM calls (avoid rate limits)
 MAX_ATTEMPTS = 3  # Max retries for failed analysis
 INITIAL_DELAY_SECONDS = 15  # Wait before starting (let API settle)
 
