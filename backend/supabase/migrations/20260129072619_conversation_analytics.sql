@@ -81,6 +81,9 @@ CREATE INDEX IF NOT EXISTS idx_conv_analytics_intent ON conversation_analytics(i
 -- Indexes for the queue table
 CREATE INDEX IF NOT EXISTS idx_analytics_queue_status ON conversation_analytics_queue(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_analytics_queue_thread ON conversation_analytics_queue(thread_id);
+-- Composite index for worker query: WHERE status='pending' AND attempts < N ORDER BY created_at
+CREATE INDEX IF NOT EXISTS idx_analytics_queue_pending ON conversation_analytics_queue(status, attempts, created_at)
+    WHERE status = 'pending';
 
 
 -- ============================================================================
