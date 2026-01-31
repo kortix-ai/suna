@@ -5,13 +5,13 @@ from core.utils.config import config
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.services.http_client import get_http_client
+from core.utils.replicate_client import replicate_run_sync
 import json
 import datetime
 import asyncio
 import logging
 import time
 import base64
-import replicate
 import httpx
 
 # TODO: add subpages, etc... in filters as sometimes its necessary 
@@ -480,19 +480,16 @@ IMPORTANT: For batch searches, pass query as a native array of strings, NOT as a
             if not replicate_token:
                 logging.debug("[WebSearch] Skipping Moondream2: REPLICATE_API_TOKEN not configured")
                 return ""
-            
-            import os
-            os.environ["REPLICATE_API_TOKEN"] = replicate_token
-            
+
             logging.debug(f"[WebSearch] Running Moondream2 on image ({len(image_bytes)} bytes)")
-            
+
             # Convert to base64 data URL
             image_b64 = base64.b64encode(image_bytes).decode("utf-8")
             data_url = f"data:{content_type};base64,{image_b64}"
-            
-            # Call Moondream2 vision model
+
+            # Call Moondream2 vision model with multi-key support and rate limit retry
             def run_moondream(data_url: str) -> str:
-                output = replicate.run(
+                output = replicate_run_sync(
                     "lucataco/moondream2:72ccb656353c348c1385df54b237eeb7bfa874bf11486cf0b9473e691b662d31",
                     input={
                         "image": data_url,
@@ -503,12 +500,12 @@ IMPORTANT: For batch searches, pass query as a native array of strings, NOT as a
                 if hasattr(output, '__iter__') and not isinstance(output, (str, bytes)):
                     return "".join(str(chunk) for chunk in output)
                 return str(output) if output else ""
-            
+
             description = await asyncio.to_thread(run_moondream, data_url)
-            
+
             logging.debug(f"[WebSearch] Got description: {len(description)} chars")
             return description.strip()
-            
+
         except Exception as e:
             logging.debug(f"[WebSearch] Moondream2 error: {e}")
             return ""

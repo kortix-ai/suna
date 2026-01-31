@@ -9,7 +9,6 @@ that should be played sequentially on the client.
 import asyncio
 from typing import Optional, List
 from pydantic import BaseModel
-import replicate
 import litellm
 from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
@@ -19,6 +18,7 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.billing.credits.media_integration import media_billing
 from core.billing.credits.calculator import calculate_token_cost
 from core.billing.credits.manager import credit_manager
+from core.utils.replicate_client import replicate_run
 
 router = APIRouter(tags=["voice"])
 
@@ -156,12 +156,8 @@ async def generate_voice_chunk(
     if reference_audio:
         input_params["reference_audio"] = reference_audio
 
-    # Run Replicate in thread pool to not block event loop
-    output = await asyncio.to_thread(
-        replicate.run,
-        VOICE_MODEL,
-        input=input_params
-    )
+    # Run Replicate with multi-key support and rate limit retry
+    output = await replicate_run(VOICE_MODEL, input=input_params)
 
     # Output is typically a URL string
     if isinstance(output, str):

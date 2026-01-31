@@ -5,7 +5,6 @@ from core.agentpress.thread_manager import ThreadManager
 from core.services.http_client import get_http_client
 from io import BytesIO
 import uuid
-import replicate
 import base64
 import os
 import random
@@ -16,11 +15,11 @@ import re
 from datetime import datetime
 from PIL import Image
 from core.utils.logger import logger
-from core.utils.config import get_config
 from core.billing.credits.media_integration import media_billing
 from core.billing.credits.media_calculator import select_image_quality, cap_quality_for_tier, FREE_TIERS
 from core.utils.image_processing import upscale_image_sync, remove_background_sync, UPSCALE_MODEL, REMOVE_BG_MODEL
 from core.utils.file_name_generator import generate_smart_filename
+from core.utils.replicate_client import replicate_run
 
 
 def parse_image_paths(image_path: Optional[str | list[str]]) -> list[str]:
@@ -492,14 +491,6 @@ Generate, edit, upscale, or remove background from images. Video generation supp
             logger.error(f"Image operation error: {friendly_error}")
             return ToolResult(success=True, output=f"Failed: {friendly_error}")
     
-    def _get_replicate_token(self) -> str:
-        """Get Replicate API token from config"""
-        config = get_config()
-        token = config.REPLICATE_API_TOKEN
-        if not token:
-            raise Exception("Replicate API token not configured. Add REPLICATE_API_TOKEN to your .env")
-        os.environ["REPLICATE_API_TOKEN"] = token
-        return token
 
     async def _execute_single_image_operation(
         self,
@@ -540,14 +531,9 @@ Generate, edit, upscale, or remove background from images. Video generation supp
                     return image_filename
                 return image_filename
             
-            # Ensure Replicate token is set
-            self._get_replicate_token()
-
             if mode == "generate":
                 logger.info(f"Calling Replicate openai/gpt-image-1.5 for generation (quality={quality}, aspect_ratio={aspect_ratio})")
-                # Wrap replicate.run() in thread pool to avoid blocking event loop
-                output = await asyncio.to_thread(
-                    replicate.run,
+                output = await replicate_run(
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
@@ -569,9 +555,7 @@ Generate, edit, upscale, or remove background from images. Video generation supp
                 image_data_url = f"data:image/png;base64,{image_b64}"
 
                 logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing (quality={quality}, aspect_ratio={aspect_ratio}) with image_path='{image_path}' (image size: {len(image_bytes)} bytes)")
-                # Wrap replicate.run() in thread pool to avoid blocking event loop
-                output = await asyncio.to_thread(
-                    replicate.run,
+                output = await replicate_run(
                     "openai/gpt-image-1.5",
                     input={
                         "prompt": prompt,
@@ -646,9 +630,6 @@ Generate, edit, upscale, or remove background from images. Video generation supp
                 # For mock, return a descriptive mock filename
                 return f"Mock Video {uuid.uuid4().hex[:6]}.mp4"
             
-            # Ensure Replicate token is set
-            self._get_replicate_token()
-            
             # Build input payload
             input_params = {
                 "prompt": prompt,
@@ -709,10 +690,8 @@ Generate, edit, upscale, or remove background from images. Video generation supp
             
             logger.info(f"Calling Replicate bytedance/seedance-1.5-pro for video generation")
             logger.debug(f"Video params: duration={input_params.get('duration')}, aspect_ratio={input_params.get('aspect_ratio')}, generate_audio={input_params.get('generate_audio')}, has_image={'image' in input_params}")
-            
-            # Wrap replicate.run() in thread pool to avoid blocking event loop
-            output = await asyncio.to_thread(
-                replicate.run,
+
+            output = await replicate_run(
                 "bytedance/seedance-1.5-pro",
                 input=input_params
             )

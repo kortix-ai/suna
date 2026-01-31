@@ -9,22 +9,10 @@ Models used:
 - Remove BG: 851-labs/background-remover (Replicate)
 """
 
-import os
 import base64
-import replicate
 from typing import Tuple
 from core.utils.logger import logger
-from core.utils.config import get_config
-
-
-def get_replicate_token() -> str:
-    """Get and set Replicate API token from config."""
-    config = get_config()
-    token = config.REPLICATE_API_TOKEN
-    if not token:
-        raise Exception("Replicate API token not configured. Add REPLICATE_API_TOKEN to your .env")
-    os.environ["REPLICATE_API_TOKEN"] = token
-    return token
+from core.utils.replicate_client import replicate_run_sync, get_replicate_token
 
 
 def replicate_output_to_bytes(output, output_format: str = "png") -> Tuple[bytes, str]:
@@ -71,16 +59,14 @@ def upscale_image_sync(image_bytes: bytes, mime_type: str = "image/png") -> Tupl
     Raises:
         Exception: If upscale fails
     """
-    get_replicate_token()
-    
     # Convert bytes to data URL
     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
     image_data_url = f"data:{mime_type};base64,{image_b64}"
-    
+
     logger.info("Calling Replicate recraft-ai/recraft-crisp-upscale")
-    
+
     try:
-        output = replicate.run(
+        output = replicate_run_sync(
             "recraft-ai/recraft-crisp-upscale",
             input={"image": image_data_url}
         )
@@ -110,16 +96,14 @@ def remove_background_sync(image_bytes: bytes, mime_type: str = "image/png") -> 
     Raises:
         Exception: If background removal fails
     """
-    get_replicate_token()
-    
     # Convert bytes to data URL
     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
     image_data_url = f"data:{mime_type};base64,{image_b64}"
-    
+
     logger.info("Calling Replicate 851-labs/background-remover")
-    
+
     try:
-        output = replicate.run(
+        output = replicate_run_sync(
             "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
             input={"image": image_data_url}
         )

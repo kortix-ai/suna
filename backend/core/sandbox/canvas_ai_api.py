@@ -7,7 +7,6 @@ Supports multiple models: GPT Image (via Replicate), Gemini (via OpenRouter), an
 import os
 import base64
 import asyncio
-import replicate
 from io import BytesIO
 from typing import Optional, Literal
 from fastapi import APIRouter, Depends
@@ -15,9 +14,9 @@ from pydantic import BaseModel
 
 from core.utils.logger import logger
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
-from core.utils.config import get_config
 from core.services.http_client import get_http_client
 from core.billing.credits.media_integration import media_billing
+from core.utils.replicate_client import replicate_run
 
 router = APIRouter(prefix="/canvas-ai", tags=["Canvas AI"])
 
@@ -137,18 +136,14 @@ def get_action_prompt(action: str, user_prompt: Optional[str] = None) -> str:
 
 async def process_with_replicate_gpt(image_bytes: bytes, mime_type: str, prompt: str) -> str:
     """Process image using GPT Image via Replicate (openai/gpt-image-1.5) with quality: low"""
-    _get_replicate_token()
-    
     # Convert bytes to data URL
     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
     image_data_url = f"data:{mime_type};base64,{image_b64}"
-    
+
     logger.info(f"Calling Replicate openai/gpt-image-1.5 for editing with quality: low (image size: {len(image_bytes)} bytes)")
-    
+
     try:
-        # Wrap replicate.run() in thread pool to avoid blocking event loop
-        output = await asyncio.to_thread(
-            replicate.run,
+        output = await replicate_run(
             "openai/gpt-image-1.5",
             input={
                 "prompt": prompt,
@@ -158,12 +153,12 @@ async def process_with_replicate_gpt(image_bytes: bytes, mime_type: str, prompt:
                 "quality": "low",  # Use low quality for cost efficiency ($0.02/image)
             }
         )
-        
+
         # Output is a list of FileOutput objects - get the first one
         output_list = list(output) if hasattr(output, '__iter__') and not hasattr(output, 'read') else [output]
         if len(output_list) == 0:
             raise Exception("No output from GPT image model")
-        
+
         return _replicate_output_to_base64(output_list[0], "png")
     except Exception as e:
         logger.error(f"Replicate GPT error: {e}")
@@ -256,16 +251,6 @@ async def process_with_gemini(
         raise Exception("No image in Gemini response")
 
 
-def _get_replicate_token() -> str:
-    """Get Replicate API token from config"""
-    config = get_config()
-    token = config.REPLICATE_API_TOKEN
-    if not token:
-        raise Exception("Replicate API token not configured. Add REPLICATE_API_TOKEN to your .env")
-    os.environ["REPLICATE_API_TOKEN"] = token
-    return token
-
-
 def _replicate_output_to_base64(output, output_format: str = "png") -> str:
     """Convert Replicate FileOutput to base64 data URL"""
     # FileOutput has .read() method for sync reading
@@ -287,18 +272,14 @@ def _replicate_output_to_base64(output, output_format: str = "png") -> str:
 
 async def process_with_replicate_remove_bg(image_bytes: bytes, mime_type: str) -> str:
     """Remove background using Replicate's 851-labs/background-remover"""
-    _get_replicate_token()
-    
     # Convert bytes to data URL
     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
     image_data_url = f"data:{mime_type};base64,{image_b64}"
-    
+
     logger.info("Calling Replicate 851-labs/background-remover")
-    
+
     try:
-        # Wrap replicate.run() in thread pool to avoid blocking event loop
-        output = await asyncio.to_thread(
-            replicate.run,
+        output = await replicate_run(
             "851-labs/background-remover:a029dff38972b5fda4ec5d75d7d1cd25aeff621d2cf4946a41055d7db66b80bc",
             input={"image": image_data_url}
         )
@@ -310,18 +291,14 @@ async def process_with_replicate_remove_bg(image_bytes: bytes, mime_type: str) -
 
 async def process_with_replicate_upscale(image_bytes: bytes, mime_type: str) -> str:
     """Upscale image using Replicate's recraft-ai/recraft-crisp-upscale"""
-    _get_replicate_token()
-    
     # Convert bytes to data URL
     image_b64 = base64.b64encode(image_bytes).decode('utf-8')
     image_data_url = f"data:{mime_type};base64,{image_b64}"
-    
+
     logger.info("Calling Replicate recraft-ai/recraft-crisp-upscale")
-    
+
     try:
-        # Wrap replicate.run() in thread pool to avoid blocking event loop
-        output = await asyncio.to_thread(
-            replicate.run,
+        output = await replicate_run(
             "recraft-ai/recraft-crisp-upscale",
             input={"image": image_data_url}
         )
@@ -514,14 +491,10 @@ Instructions: {request.prompt}
 Create a single cohesive image that combines these images according to the instructions.
 The result should be a high-quality merged image."""
 
-        _get_replicate_token()
-        
         logger.info(f"Calling Replicate openai/gpt-image-1.5 for merge with {len(input_images)} images")
-        
+
         try:
-            # Wrap replicate.run() in thread pool to avoid blocking event loop
-            output = await asyncio.to_thread(
-                replicate.run,
+            output = await replicate_run(
                 "openai/gpt-image-1.5",
                 input={
                     "prompt": merge_prompt,
@@ -595,16 +568,12 @@ async def generate_images(
                 success=False,
                 error="Prompt is required"
             )
-        
-        _get_replicate_token()
-        
+
         num_to_generate = min(request.num_images, 4)
         logger.info(f"Generating {num_to_generate} images with flux-schnell")
-        
+
         try:
-            # Wrap replicate.run() in thread pool to avoid blocking event loop
-            output = await asyncio.to_thread(
-                replicate.run,
+            output = await replicate_run(
                 "black-forest-labs/flux-schnell",
                 input={
                     "prompt": request.prompt,
@@ -685,7 +654,7 @@ class ConvertToSvgResponse(BaseModel):
 async def _convert_with_recraft(image_data_url: str) -> Optional[str]:
     """Try recraft-ai/recraft-vectorize, returns SVG string or None on failure."""
     try:
-        output = replicate.run(
+        output = await replicate_run(
             "recraft-ai/recraft-vectorize",
             input={"image": image_data_url}
         )
@@ -805,8 +774,6 @@ async def detect_text(
         )
     
     try:
-        _get_replicate_token()
-        
         # Extract image data
         try:
             mime_type, image_bytes, clean_b64 = extract_image_data(request.image_base64)
@@ -816,19 +783,17 @@ async def detect_text(
                 success=False,
                 error=f"Invalid base64 image data: {str(e)}"
             )
-        
+
         # Build data URL for Replicate
         if request.image_base64.startswith('data:'):
             image_data_url = request.image_base64
         else:
             image_data_url = f"data:{mime_type};base64,{clean_b64}"
-        
+
         logger.info("Calling Replicate datalab-to/ocr")
-        
+
         try:
-            # Wrap replicate.run() in thread pool to avoid blocking event loop
-            output = await asyncio.to_thread(
-                replicate.run,
+            output = await replicate_run(
                 "datalab-to/ocr",
                 input={
                     "file": image_data_url,
