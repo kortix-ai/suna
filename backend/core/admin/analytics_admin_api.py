@@ -3461,3 +3461,1328 @@ async def get_profitability(
     except Exception as e:
         logger.error(f"Failed to get profitability: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get profitability data")
+
+
+# ============================================================================
+# CONVERSATION ANALYTICS ENDPOINTS
+# ============================================================================
+
+class ConversationInsight(BaseModel):
+    """Aggregated insights from conversation analytics."""
+    sentiment_distribution: Dict[str, int]  # {"positive": 45, "neutral": 30, "negative": 25}
+    avg_frustration: float
+    feature_request_count: int
+    total_analyzed: int
+    intent_distribution: Dict[str, int]  # {"task": 100, "question": 50, ...}
+
+
+class ConversationAnalyticsItem(BaseModel):
+    """Single conversation analytics record."""
+    id: str
+    thread_id: str
+    account_id: str
+    user_email: Optional[str] = None
+    sentiment_label: Optional[str] = None
+    frustration_score: Optional[float] = None
+    frustration_signals: List[str] = []
+    intent_type: Optional[str] = None
+    is_feature_request: bool = False
+    feature_request_text: Optional[str] = None
+    use_case_category: Optional[str] = None
+    first_user_message: Optional[str] = None
+    user_message_count: Optional[int] = None
+    analyzed_at: datetime
+
+
+@router.get("/conversations/insights")
+async def get_conversation_insights(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> ConversationInsight:
+    """
+    Get aggregated insights from analyzed conversations.
+
+    Returns:
+    - Sentiment distribution (positive/neutral/negative/mixed counts)
+    - Average frustration and churn risk scores
+    - Top topics by frequency
+    - Feature request count
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query
+        query = client.from_('conversation_analytics').select('*')
+
+        # Apply date filters
+        if date_from:
+            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await query.execute()
+        records = result.data or []
+
+        if not records:
+            return ConversationInsight(
+                sentiment_distribution={"positive": 0, "neutral": 0, "negative": 0, "mixed": 0},
+                avg_frustration=0.0,
+                feature_request_count=0,
+                total_analyzed=0,
+                intent_distribution={"task": 0, "question": 0, "complaint": 0, "feature_request": 0}
+            )
+
+        # Calculate sentiment distribution
+        sentiment_distribution = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
+        for r in records:
+            label = r.get('sentiment_label')
+            if label in sentiment_distribution:
+                sentiment_distribution[label] += 1
+
+        # Calculate average frustration
+        frustration_scores = [r.get('frustration_score') for r in records if r.get('frustration_score') is not None]
+        avg_frustration = sum(frustration_scores) / len(frustration_scores) if frustration_scores else 0.0
+
+        # Count feature requests
+        feature_request_count = sum(1 for r in records if r.get('is_feature_request'))
+
+        # Intent distribution
+        intent_distribution = {"task": 0, "question": 0, "complaint": 0, "feature_request": 0}
+        for r in records:
+            intent = r.get('intent_type')
+            if intent in intent_distribution:
+                intent_distribution[intent] += 1
+
+        return ConversationInsight(
+            sentiment_distribution=sentiment_distribution,
+            avg_frustration=round(avg_frustration, 3),
+            feature_request_count=feature_request_count,
+            total_analyzed=len(records),
+            intent_distribution=intent_distribution
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get conversation insights: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get conversation insights")
+
+
+@router.get("/conversations/frustrated")
+async def get_frustrated_conversations(
+    threshold: float = Query(0.5, ge=0, le=1, description="Frustration score threshold"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations with high frustration scores.
+
+    Args:
+        threshold: Minimum frustration score (0-1)
+        page: Page number
+        page_size: Items per page
+        date_from: Optional start date filter
+        date_to: Optional end date filter
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query with date filters
+        count_query = client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .gte('frustration_score', threshold)
+
+        if date_from:
+            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        count_result = await count_query.limit(1).execute()
+        total_items = count_result.count or 0
+
+        # Get paginated data with date filters
+        offset = (page - 1) * page_size
+        data_query = client.from_('conversation_analytics')\
+            .select('*')\
+            .gte('frustration_score', threshold)
+
+        if date_from:
+            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        result = await data_query\
+            .order('frustration_score', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Fetch user emails via billing_customers first (fast batch query)
+        account_ids = list(set(r.get('account_id') for r in records if r.get('account_id')))
+        email_map = {}
+        if account_ids:
+            try:
+                # First try billing_customers (fast path for users with billing)
+                billing_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id, email')\
+                    .in_('account_id', account_ids)\
+                    .execute()
+
+                email_map = {e['account_id']: e['email'] for e in (billing_result.data or []) if e.get('email')}
+
+                # For accounts without billing email, get from auth.users via RPC
+                missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+                if missing_account_ids:
+                    accounts_result = await client.schema('basejump').from_('accounts')\
+                        .select('id, primary_owner_user_id')\
+                        .in_('id', missing_account_ids)\
+                        .execute()
+
+                    for acc in (accounts_result.data or []):
+                        if acc.get('primary_owner_user_id'):
+                            try:
+                                email_rpc = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                                if email_rpc.data:
+                                    email_map[acc['id']] = email_rpc.data
+                            except Exception:
+                                pass
+            except Exception as e:
+                logger.warning(f"Failed to fetch user emails: {e}")
+
+        # Build response items
+        items = []
+        for r in records:
+            frustration_signals = r.get('frustration_signals', [])
+            if isinstance(frustration_signals, str):
+                import json as json_lib
+                try:
+                    frustration_signals = json_lib.loads(frustration_signals)
+                except:
+                    frustration_signals = []
+
+            items.append(ConversationAnalyticsItem(
+                id=r['id'],
+                thread_id=r['thread_id'],
+                account_id=r['account_id'],
+                user_email=email_map.get(r['account_id']),
+                sentiment_label=r.get('sentiment_label'),
+                frustration_score=r.get('frustration_score'),
+                frustration_signals=frustration_signals,
+                intent_type=r.get('intent_type'),
+                is_feature_request=r.get('is_feature_request', False),
+                feature_request_text=r.get('feature_request_text'),
+                user_message_count=r.get('user_message_count'),
+                analyzed_at=r['analyzed_at']
+            ))
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get frustrated conversations: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get frustrated conversations")
+
+
+class RFMEngagementResponse(BaseModel):
+    """RFM engagement scoring response."""
+    rfm_score: str  # "5-4-3" format
+    recency_score: int
+    frequency_score: int
+    monetary_score: int
+    churn_risk: float
+    segment: str
+    days_since_last_activity: int
+    runs_in_period: int
+    total_conversations: int
+
+
+@router.get("/conversations/engagement/{account_id}")
+async def get_account_engagement(
+    account_id: str,
+    days: int = Query(30, ge=7, le=90, description="Period in days for analysis"),
+    admin: dict = Depends(require_super_admin)
+) -> RFMEngagementResponse:
+    """
+    Get RFM-based engagement score for an account.
+
+    RFM (Recency, Frequency, Monetary) is a proven customer segmentation model.
+    Each dimension is scored 1-5 (5 = best).
+
+    Segments:
+    - champion: High R, high F (active power users)
+    - loyal: High overall RFM
+    - potential: Medium RFM (room to grow)
+    - new_user: High R, low F (just started)
+    - at_risk: Low R, high F (was active, now gone)
+    - cant_lose: Low R, low F, high M (valuable but leaving)
+    - hibernating: Low R, low F (inactive)
+    - needs_attention: Medium-low RFM
+    - about_to_sleep: Low RFM
+    """
+    try:
+        from core.analytics.conversation_analyzer import calculate_rfm_engagement
+
+        result = await calculate_rfm_engagement(account_id, days)
+        return RFMEngagementResponse(**result)
+
+    except Exception as e:
+        logger.error(f"Failed to get engagement for account {account_id}: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get account engagement")
+
+
+class AccountEngagementItem(BaseModel):
+    """Account with RFM engagement data."""
+    account_id: str
+    user_email: Optional[str] = None
+    rfm_score: str
+    recency_score: int
+    frequency_score: int
+    monetary_score: int
+    churn_risk: float
+    segment: str
+    days_since_last_activity: int
+    runs_in_period: int
+
+
+class RFMEngagementSummary(BaseModel):
+    """Summary of RFM engagement across all accounts."""
+    total_accounts: int
+    segments: Dict[str, int]
+    at_risk_accounts: List[AccountEngagementItem]
+    avg_churn_risk: float
+
+
+@router.get("/conversations/engagement-summary")
+async def get_rfm_engagement_summary(
+    days: int = Query(30, ge=7, le=90, description="Period in days"),
+    limit: int = Query(20, ge=1, le=100, description="Max at-risk accounts to return"),
+    admin: dict = Depends(require_super_admin)
+) -> RFMEngagementSummary:
+    """
+    Get engagement summary across all active accounts.
+
+    Returns:
+    - Segment distribution (how many accounts in each segment)
+    - Top at-risk accounts (sorted by churn risk)
+    - Average churn risk across all accounts
+    """
+    try:
+        from core.services.db import execute
+
+        # All RFM calculation in SQL - returns only segment counts (no Python loops)
+        segment_sql = """
+        WITH account_stats AS (
+            SELECT
+                t.account_id,
+                MAX(ar.started_at) as last_activity,
+                COUNT(*) FILTER (WHERE ar.started_at > NOW() - MAKE_INTERVAL(days => :days)) as recent_runs,
+                COALESCE(ca.tier, 'none') as tier
+            FROM agent_runs ar
+            JOIN threads t ON ar.thread_id = t.thread_id
+            LEFT JOIN credit_accounts ca ON ca.account_id = t.account_id
+            GROUP BY t.account_id, ca.tier
+        ),
+        percentiles AS (
+            SELECT
+                COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY recent_runs), 2) as p50,
+                COALESCE(percentile_cont(0.75) WITHIN GROUP (ORDER BY recent_runs), 4) as p75,
+                COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY recent_runs), 9) as p90
+            FROM account_stats
+        ),
+        scored AS (
+            SELECT
+                s.account_id,
+                -- Recency score
+                CASE
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 1 THEN 5
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 3 THEN 4
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 7 THEN 3
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 14 THEN 2
+                    ELSE 1
+                END as recency_score,
+                -- Frequency score (dynamic percentile-based)
+                CASE
+                    WHEN s.recent_runs >= p.p90 THEN 5
+                    WHEN s.recent_runs >= p.p75 THEN 4
+                    WHEN s.recent_runs > p.p50 THEN 3
+                    WHEN s.recent_runs >= p.p50 THEN 2
+                    ELSE 1
+                END as frequency_score,
+                -- Monetary score (tier-based)
+                CASE s.tier
+                    WHEN 'tier_25_200' THEN 5
+                    WHEN 'tier_50_400' THEN 5
+                    WHEN 'tier_125_800' THEN 5
+                    WHEN 'tier_150_1200' THEN 5
+                    WHEN 'tier_200_1000' THEN 5
+                    WHEN 'tier_6_50' THEN 4
+                    WHEN 'tier_12_100' THEN 4
+                    WHEN 'tier_2_20' THEN 3
+                    WHEN 'free' THEN 2
+                    ELSE 1
+                END as monetary_score
+            FROM account_stats s
+            CROSS JOIN percentiles p
+        ),
+        segmented AS (
+            SELECT
+                account_id,
+                recency_score,
+                frequency_score,
+                monetary_score,
+                ROUND((1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4)::numeric, 2) as churn_risk,
+                CASE
+                    WHEN recency_score >= 4 AND frequency_score >= 4 THEN 'champion'
+                    WHEN recency_score >= 4 AND frequency_score >= 2 THEN 'loyal'
+                    WHEN recency_score >= 3 AND frequency_score >= 3 THEN 'potential'
+                    WHEN recency_score <= 2 AND frequency_score >= 3 THEN 'at_risk'
+                    WHEN recency_score <= 2 AND frequency_score <= 2 THEN 'hibernating'
+                    ELSE 'other'
+                END as segment
+            FROM scored
+        )
+        SELECT segment, COUNT(*) as count, SUM(churn_risk) as total_churn
+        FROM segmented
+        GROUP BY segment
+        """
+        segment_rows = await execute(segment_sql, {"days": days})
+
+        segment_counts: Dict[str, int] = {}
+        total_accounts = 0
+        total_churn = 0.0
+        for row in segment_rows:
+            segment_counts[row['segment']] = row['count']
+            total_accounts += row['count']
+            total_churn += float(row['total_churn'] or 0)
+
+        avg_churn = total_churn / total_accounts if total_accounts > 0 else 0.0
+
+        # Separate query for at-risk accounts (limited, no full table scan)
+        at_risk_sql = """
+        WITH account_stats AS (
+            SELECT
+                t.account_id,
+                MAX(ar.started_at) as last_activity,
+                COUNT(*) FILTER (WHERE ar.started_at > NOW() - MAKE_INTERVAL(days => :days)) as recent_runs,
+                COALESCE(ca.tier, 'none') as tier
+            FROM agent_runs ar
+            JOIN threads t ON ar.thread_id = t.thread_id
+            LEFT JOIN credit_accounts ca ON ca.account_id = t.account_id
+            GROUP BY t.account_id, ca.tier
+        ),
+        percentiles AS (
+            SELECT
+                COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY recent_runs), 2) as p50,
+                COALESCE(percentile_cont(0.75) WITHIN GROUP (ORDER BY recent_runs), 4) as p75,
+                COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY recent_runs), 9) as p90
+            FROM account_stats
+        ),
+        scored AS (
+            SELECT
+                s.account_id,
+                s.recent_runs,
+                EXTRACT(DAY FROM NOW() - s.last_activity)::int as days_since_last,
+                CASE
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 1 THEN 5
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 3 THEN 4
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 7 THEN 3
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 14 THEN 2
+                    ELSE 1
+                END as recency_score,
+                CASE
+                    WHEN s.recent_runs >= p.p90 THEN 5
+                    WHEN s.recent_runs >= p.p75 THEN 4
+                    WHEN s.recent_runs > p.p50 THEN 3
+                    WHEN s.recent_runs >= p.p50 THEN 2
+                    ELSE 1
+                END as frequency_score,
+                CASE s.tier
+                    WHEN 'tier_25_200' THEN 5
+                    WHEN 'tier_50_400' THEN 5
+                    WHEN 'tier_125_800' THEN 5
+                    WHEN 'tier_150_1200' THEN 5
+                    WHEN 'tier_200_1000' THEN 5
+                    WHEN 'tier_6_50' THEN 4
+                    WHEN 'tier_12_100' THEN 4
+                    WHEN 'tier_2_20' THEN 3
+                    WHEN 'free' THEN 2
+                    ELSE 1
+                END as monetary_score
+            FROM account_stats s
+            CROSS JOIN percentiles p
+        )
+        SELECT
+            account_id,
+            days_since_last,
+            recent_runs,
+            recency_score,
+            frequency_score,
+            monetary_score,
+            ROUND((1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4)::numeric, 2) as churn_risk,
+            CASE
+                WHEN recency_score >= 4 AND frequency_score >= 4 THEN 'champion'
+                WHEN recency_score >= 4 AND frequency_score >= 2 THEN 'loyal'
+                WHEN recency_score >= 3 AND frequency_score >= 3 THEN 'potential'
+                WHEN recency_score <= 2 AND frequency_score >= 3 THEN 'at_risk'
+                WHEN recency_score <= 2 AND frequency_score <= 2 THEN 'hibernating'
+                ELSE 'other'
+            END as segment
+        FROM scored
+        WHERE (1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4) >= 0.5
+        ORDER BY (1 - ((recency_score + frequency_score + monetary_score) / 3.0 - 1) / 4) DESC
+        LIMIT :limit
+        """
+        at_risk_rows = await execute(at_risk_sql, {"days": days, "limit": limit})
+
+        # Fetch emails for at-risk accounts
+        email_map = {}
+        if at_risk_rows:
+            try:
+                db = DBConnection()
+                client = await db.client
+                account_ids = [str(row['account_id']) for row in at_risk_rows]
+
+                # First try billing_customers (fast path for users with billing)
+                billing_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id, email')\
+                    .in_('account_id', account_ids)\
+                    .execute()
+
+                email_map = {e['account_id']: e['email'] for e in (billing_result.data or [])}
+
+                # For accounts without billing email, get from auth.users via RPC
+                missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+                if missing_account_ids:
+                    # Get primary_owner_user_id for missing accounts
+                    accounts_result = await client.schema('basejump').from_('accounts')\
+                        .select('id, primary_owner_user_id')\
+                        .in_('id', missing_account_ids)\
+                        .execute()
+
+                    for acc in (accounts_result.data or []):
+                        if acc.get('primary_owner_user_id'):
+                            try:
+                                email_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                                if email_result.data:
+                                    email_map[acc['id']] = email_result.data
+                            except Exception:
+                                pass  # Skip if RPC fails for this user
+            except Exception as e:
+                logger.warning(f"Failed to fetch emails for at-risk accounts: {e}")
+
+        at_risk_accounts = [
+            AccountEngagementItem(
+                account_id=str(row['account_id']),
+                user_email=email_map.get(str(row['account_id'])),
+                rfm_score=f"{row['recency_score']}-{row['frequency_score']}-{row['monetary_score']}",
+                recency_score=row['recency_score'],
+                frequency_score=row['frequency_score'],
+                monetary_score=row['monetary_score'],
+                churn_risk=float(row['churn_risk']),
+                segment=row['segment'],
+                days_since_last_activity=row['days_since_last'] or 0,
+                runs_in_period=row['recent_runs']
+            )
+            for row in at_risk_rows
+        ]
+
+        return RFMEngagementSummary(
+            total_accounts=total_accounts,
+            segments=segment_counts,
+            at_risk_accounts=at_risk_accounts,
+            avg_churn_risk=round(avg_churn, 2)
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get RFM engagement summary: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get engagement summary")
+
+
+@router.get("/conversations/accounts-by-segment")
+async def get_accounts_by_segment(
+    segment: str = Query(..., description="Segment name (champion, loyal, potential, at_risk, hibernating)"),
+    days: int = Query(30, ge=1, le=90, description="Days to look back for activity"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get accounts in a specific RFM segment with their emails.
+    All RFM calculation done in SQL for scalability.
+    """
+    try:
+        from core.services.db import execute
+
+        offset = (page - 1) * page_size
+
+        # All RFM calculation in SQL - no Python loops
+        sql = """
+        WITH account_stats AS (
+            SELECT
+                t.account_id,
+                MAX(ar.started_at) as last_activity,
+                COUNT(*) as total_runs,
+                COUNT(*) FILTER (WHERE ar.started_at > NOW() - MAKE_INTERVAL(days => :days)) as recent_runs,
+                COALESCE(ca.tier, 'none') as tier
+            FROM agent_runs ar
+            JOIN threads t ON ar.thread_id = t.thread_id
+            LEFT JOIN credit_accounts ca ON ca.account_id = t.account_id
+            GROUP BY t.account_id, ca.tier
+        ),
+        percentiles AS (
+            SELECT
+                COALESCE(percentile_cont(0.5) WITHIN GROUP (ORDER BY recent_runs), 2) as p50,
+                COALESCE(percentile_cont(0.75) WITHIN GROUP (ORDER BY recent_runs), 4) as p75,
+                COALESCE(percentile_cont(0.9) WITHIN GROUP (ORDER BY recent_runs), 9) as p90
+            FROM account_stats
+        ),
+        scored AS (
+            SELECT
+                s.account_id,
+                s.last_activity,
+                s.total_runs,
+                s.recent_runs,
+                s.tier,
+                EXTRACT(DAY FROM NOW() - s.last_activity)::int as days_since_last,
+                -- Recency score
+                CASE
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 1 THEN 5
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 3 THEN 4
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 7 THEN 3
+                    WHEN EXTRACT(DAY FROM NOW() - s.last_activity) <= 14 THEN 2
+                    ELSE 1
+                END as recency_score,
+                -- Frequency score (percentile-based)
+                CASE
+                    WHEN s.recent_runs >= p.p90 THEN 5
+                    WHEN s.recent_runs >= p.p75 THEN 4
+                    WHEN s.recent_runs > p.p50 THEN 3
+                    WHEN s.recent_runs >= p.p50 THEN 2
+                    ELSE 1
+                END as frequency_score,
+                -- Monetary score (tier-based)
+                CASE s.tier
+                    WHEN 'tier_25_200' THEN 5
+                    WHEN 'tier_50_400' THEN 5
+                    WHEN 'tier_125_800' THEN 5
+                    WHEN 'tier_150_1200' THEN 5
+                    WHEN 'tier_200_1000' THEN 5
+                    WHEN 'tier_6_50' THEN 4
+                    WHEN 'tier_12_100' THEN 4
+                    WHEN 'tier_2_20' THEN 3
+                    WHEN 'free' THEN 2
+                    ELSE 1
+                END as monetary_score
+            FROM account_stats s
+            CROSS JOIN percentiles p
+        ),
+        segmented AS (
+            SELECT
+                *,
+                CASE
+                    WHEN recency_score >= 4 AND frequency_score >= 4 THEN 'champion'
+                    WHEN recency_score >= 4 AND frequency_score >= 2 THEN 'loyal'
+                    WHEN recency_score >= 3 AND frequency_score >= 3 THEN 'potential'
+                    WHEN recency_score <= 2 AND frequency_score >= 3 THEN 'at_risk'
+                    WHEN recency_score <= 2 AND frequency_score <= 2 THEN 'hibernating'
+                    ELSE 'other'
+                END as segment
+            FROM scored
+        )
+        SELECT
+            account_id,
+            recency_score || '-' || frequency_score || '-' || monetary_score as rfm_score,
+            days_since_last as days_since_last_activity,
+            recent_runs as runs_in_period,
+            total_runs,
+            COUNT(*) OVER() as total_count
+        FROM segmented
+        WHERE segment = :segment
+        ORDER BY days_since_last ASC, runs_in_period DESC
+        LIMIT :page_size OFFSET :offset
+        """
+        rows = await execute(sql, {"days": days, "segment": segment, "page_size": page_size, "offset": offset})
+
+        if not rows:
+            return {"accounts": [], "total": 0, "page": page, "page_size": page_size, "segment": segment}
+
+        # Get total count from window function
+        total = int(rows[0].get('total_count', 0))
+
+        # Build account list
+        accounts = []
+        for row in rows:
+            accounts.append({
+                'account_id': str(row['account_id']),
+                'rfm_score': row['rfm_score'],
+                'days_since_last_activity': row['days_since_last_activity'],
+                'runs_in_period': row['runs_in_period'],
+                'total_runs': row['total_runs']
+            })
+
+        # Fetch emails for this page only
+        if accounts:
+            db = DBConnection()
+            client = await db.client
+            account_ids = [a['account_id'] for a in accounts]
+
+            email_map = {}
+            try:
+                # First try billing_customers (fast path for users with billing)
+                billing_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id, email')\
+                    .in_('account_id', account_ids)\
+                    .execute()
+
+                email_map = {e['account_id']: e['email'] for e in (billing_result.data or [])}
+
+                # For accounts without billing email, get from auth.users via RPC
+                missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+                if missing_account_ids:
+                    # Get primary_owner_user_id for missing accounts
+                    accounts_result = await client.schema('basejump').from_('accounts')\
+                        .select('id, primary_owner_user_id')\
+                        .in_('id', missing_account_ids)\
+                        .execute()
+
+                    for acc in (accounts_result.data or []):
+                        if acc.get('primary_owner_user_id'):
+                            try:
+                                email_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                                if email_result.data:
+                                    email_map[acc['id']] = email_result.data
+                            except Exception:
+                                pass  # Skip if RPC fails for this user
+            except Exception as e:
+                logger.warning(f"Failed to fetch emails for segment accounts: {e}")
+
+            # Attach emails
+            for acct in accounts:
+                acct['email'] = email_map.get(acct['account_id'])
+
+        return {
+            "accounts": accounts,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "segment": segment
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get accounts by segment: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get accounts by segment")
+
+
+@router.get("/conversations/feature-requests")
+async def get_feature_requests(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations where feature requests were detected.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query with date filters
+        count_query = client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .eq('is_feature_request', True)
+
+        if date_from:
+            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        count_result = await count_query.limit(1).execute()
+        total_items = count_result.count or 0
+
+        # Get paginated data with date filters
+        offset = (page - 1) * page_size
+        data_query = client.from_('conversation_analytics')\
+            .select('*')\
+            .eq('is_feature_request', True)
+
+        if date_from:
+            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        result = await data_query\
+            .order('analyzed_at', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Fetch user emails and first messages
+        items = await _build_conversation_items(client, records)
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get feature requests: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get feature requests")
+
+
+@router.get("/conversations/by-sentiment")
+async def get_conversations_by_sentiment(
+    sentiment: str = Query(..., description="Sentiment label: positive, negative, neutral, mixed"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations filtered by sentiment label.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query for count
+        count_query = client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .eq('sentiment_label', sentiment)
+
+        if date_from:
+            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        count_result = await count_query.limit(1).execute()
+        total_items = count_result.count or 0
+
+        # Get paginated data
+        offset = (page - 1) * page_size
+        data_query = client.from_('conversation_analytics')\
+            .select('*')\
+            .eq('sentiment_label', sentiment)
+
+        if date_from:
+            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await data_query\
+            .order('analyzed_at', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Fetch user emails and first messages
+        items = await _build_conversation_items(client, records)
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get conversations by sentiment: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get conversations by sentiment")
+
+
+@router.get("/conversations/by-intent")
+async def get_conversations_by_intent(
+    intent: str = Query(..., description="Intent type: question, task, complaint, feature_request, chat"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations filtered by intent type.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query for count
+        count_query = client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .eq('intent_type', intent)
+
+        if date_from:
+            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        count_result = await count_query.limit(1).execute()
+        total_items = count_result.count or 0
+
+        # Get paginated data
+        offset = (page - 1) * page_size
+        data_query = client.from_('conversation_analytics')\
+            .select('*')\
+            .eq('intent_type', intent)
+
+        if date_from:
+            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await data_query\
+            .order('analyzed_at', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Fetch user emails and first messages
+        items = await _build_conversation_items(client, records)
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get conversations by intent: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get conversations by intent")
+
+
+@router.get("/conversations/by-category")
+async def get_conversations_by_category(
+    category: str = Query(..., description="Use case category"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> PaginatedResponse[ConversationAnalyticsItem]:
+    """
+    Get conversations filtered by use case category.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query for count
+        count_query = client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .eq('use_case_category', category)
+
+        if date_from:
+            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        count_result = await count_query.limit(1).execute()
+        total_items = count_result.count or 0
+
+        # Get paginated data
+        offset = (page - 1) * page_size
+        data_query = client.from_('conversation_analytics')\
+            .select('*')\
+            .eq('use_case_category', category)
+
+        if date_from:
+            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await data_query\
+            .order('analyzed_at', desc=True)\
+            .range(offset, offset + page_size - 1)\
+            .execute()
+
+        records = result.data or []
+
+        # Fetch user emails and messages
+        items = await _build_conversation_items(client, records)
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+        return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
+
+    except Exception as e:
+        logger.error(f"Failed to get conversations by category: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get conversations by category")
+
+
+async def _build_conversation_items(client, records: List[Dict[str, Any]]) -> List[ConversationAnalyticsItem]:
+    """
+    Build ConversationAnalyticsItem list with user emails and first messages.
+    """
+    if not records:
+        return []
+
+    # Fetch user emails for the account_ids
+    account_ids = list(set(r.get('account_id') for r in records if r.get('account_id')))
+    email_map = {}
+    if account_ids:
+        try:
+            # First try billing_customers (fast path for users with billing)
+            billing_result = await client.schema('basejump').from_('billing_customers')\
+                .select('account_id, email')\
+                .in_('account_id', account_ids)\
+                .execute()
+
+            email_map = {e['account_id']: e['email'] for e in (billing_result.data or [])}
+
+            # For accounts without billing email, get from auth.users via RPC
+            missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+            if missing_account_ids:
+                # Get primary_owner_user_id for missing accounts
+                accounts_result = await client.schema('basejump').from_('accounts')\
+                    .select('id, primary_owner_user_id')\
+                    .in_('id', missing_account_ids)\
+                    .execute()
+
+                for acc in (accounts_result.data or []):
+                    if acc.get('primary_owner_user_id'):
+                        try:
+                            email_rpc = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                            if email_rpc.data:
+                                email_map[acc['id']] = email_rpc.data
+                        except Exception:
+                            pass  # Skip if RPC fails for this user
+        except Exception as e:
+            logger.warning(f"Failed to fetch user emails: {e}")
+
+    # Fetch the ACTUAL user messages that were analyzed (using agent_run time range)
+    messages_map = {}  # key: (thread_id, agent_run_id) -> list of user messages
+
+    for r in records[:50]:  # Limit to avoid too many queries
+        thread_id = r.get('thread_id')
+        agent_run_id = r.get('agent_run_id')
+        if not thread_id:
+            continue
+
+        try:
+            # Get time range from agent_run if available
+            started_at = None
+            completed_at = None
+            if agent_run_id:
+                run_result = await client.from_('agent_runs')\
+                    .select('started_at, completed_at')\
+                    .eq('id', agent_run_id)\
+                    .single()\
+                    .execute()
+                if run_result.data:
+                    from datetime import datetime, timedelta
+                    raw_started = run_result.data.get('started_at')
+                    if raw_started:
+                        started_dt = datetime.fromisoformat(raw_started.replace('Z', '+00:00'))
+                        started_at = (started_dt - timedelta(seconds=30)).isoformat()
+                    completed_at = run_result.data.get('completed_at')
+
+            # Build query for user messages
+            query = client.from_('messages')\
+                .select('content')\
+                .eq('thread_id', thread_id)\
+                .eq('type', 'user')
+
+            if started_at:
+                query = query.gte('created_at', started_at)
+            if completed_at:
+                query = query.lte('created_at', completed_at)
+
+            msg_result = await query.order('created_at', desc=False).execute()
+
+            if msg_result.data:
+                user_messages = []
+                for msg in msg_result.data:
+                    content = msg.get('content', '')
+                    # Handle content that might be a dict
+                    if isinstance(content, dict):
+                        content = content.get('content', '') or content.get('text', '') or str(content)
+                    # Handle content that might be a list
+                    elif isinstance(content, list):
+                        text_parts = []
+                        for block in content:
+                            if isinstance(block, dict) and block.get('type') == 'text':
+                                text_parts.append(block.get('text', ''))
+                            elif isinstance(block, dict) and block.get('content'):
+                                text_parts.append(block.get('content', ''))
+                            elif isinstance(block, str):
+                                text_parts.append(block)
+                        content = ' '.join(text_parts)
+                    if not isinstance(content, str):
+                        content = str(content) if content else ''
+                    if content.strip():
+                        user_messages.append(content.strip())
+
+                # Join all user messages with separator
+                all_messages = ' → '.join(user_messages)
+                if len(all_messages) > 500:
+                    all_messages = all_messages[:500] + '...'
+                messages_map[(thread_id, agent_run_id)] = all_messages
+        except Exception as e:
+            logger.warning(f"Failed to fetch messages for thread {thread_id}: {e}")
+
+    # Build response items
+    items = []
+    for r in records:
+        frustration_signals = r.get('frustration_signals', [])
+        if isinstance(frustration_signals, str):
+            import json as json_lib
+            try:
+                frustration_signals = json_lib.loads(frustration_signals)
+            except:
+                frustration_signals = []
+
+        items.append(ConversationAnalyticsItem(
+            id=r['id'],
+            thread_id=r['thread_id'],
+            account_id=r['account_id'],
+            user_email=email_map.get(r['account_id']),
+            sentiment_label=r.get('sentiment_label'),
+            frustration_score=r.get('frustration_score'),
+            frustration_signals=frustration_signals,
+            intent_type=r.get('intent_type'),
+            is_feature_request=r.get('is_feature_request', False),
+            feature_request_text=r.get('feature_request_text'),
+            use_case_category=r.get('use_case_category'),
+            first_user_message=messages_map.get((r['thread_id'], r.get('agent_run_id'))),
+            user_message_count=r.get('user_message_count'),
+            analyzed_at=r['analyzed_at']
+        ))
+
+    return items
+
+
+@router.get("/conversations/topics")
+async def get_topic_distribution(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get topic distribution counts.
+
+    Returns:
+        {"file_operations": 120, "web_browsing": 85, ...}
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build base query
+        query = client.from_('conversation_analytics')\
+            .select('primary_topic')
+
+        # Apply date filters
+        if date_from:
+            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await query.execute()
+        records = result.data or []
+
+        # Calculate distribution
+        topic_counts: Dict[str, int] = {}
+        for r in records:
+            topic = r.get('primary_topic')
+            if topic:
+                topic_counts[topic] = topic_counts.get(topic, 0) + 1
+
+        return {
+            "distribution": topic_counts,
+            "total": len(records),
+            "date_from": date_from,
+            "date_to": date_to
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get topic distribution: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get topic distribution")
+
+
+@router.get("/conversations/queue-status")
+async def get_analytics_queue_status(
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get the current status of the conversation analytics queue.
+
+    Useful for monitoring the background worker.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Get counts by status
+        pending_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'pending')\
+            .limit(1)\
+            .execute()
+
+        processing_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'processing')\
+            .limit(1)\
+            .execute()
+
+        failed_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'failed')\
+            .limit(1)\
+            .execute()
+
+        completed_result = await client.from_('conversation_analytics_queue')\
+            .select('id', count='exact')\
+            .eq('status', 'completed')\
+            .limit(1)\
+            .execute()
+
+        # Get total analyzed
+        analyzed_result = await client.from_('conversation_analytics')\
+            .select('id', count='exact')\
+            .limit(1)\
+            .execute()
+
+        return {
+            "queue": {
+                "pending": pending_result.count or 0,
+                "processing": processing_result.count or 0,
+                "failed": failed_result.count or 0,
+                "completed": completed_result.count or 0
+            },
+            "total_analyzed": analyzed_result.count or 0
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get queue status: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get queue status")
+
+
+@router.get("/conversations/use-cases")
+async def get_use_case_patterns(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get patterns of what users are doing.
+
+    Returns:
+    - Top use cases (e.g., "create sales presentation", "scrape competitor data")
+    - Output type distribution (presentation, document, spreadsheet, code, etc.)
+    - Domain distribution (sales, marketing, engineering, etc.)
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Build query
+        query = client.from_('conversation_analytics')\
+            .select('use_case_category, output_type, domain')
+
+        if date_from:
+            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        if date_to:
+            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+
+        result = await query.execute()
+        records = result.data or []
+
+        # Aggregate use cases
+        use_case_counts: Dict[str, int] = {}
+        output_type_counts: Dict[str, int] = {}
+        domain_counts: Dict[str, int] = {}
+
+        for r in records:
+            # Count use cases
+            use_case = r.get('use_case_category')
+            if use_case:
+                use_case_counts[use_case] = use_case_counts.get(use_case, 0) + 1
+
+            # Count output types
+            output_type = r.get('output_type')
+            if output_type and output_type != 'none':
+                output_type_counts[output_type] = output_type_counts.get(output_type, 0) + 1
+
+            # Count domains
+            domain = r.get('domain')
+            if domain and domain != 'other':
+                domain_counts[domain] = domain_counts.get(domain, 0) + 1
+
+        # Sort and limit results
+        top_use_cases = sorted(
+            [{"use_case": k, "count": v} for k, v in use_case_counts.items()],
+            key=lambda x: x["count"],
+            reverse=True
+        )[:20]
+
+        return {
+            "top_use_cases": top_use_cases,
+            "output_types": output_type_counts,
+            "domains": domain_counts,
+            "total": len(records),
+            "date_from": date_from,
+            "date_to": date_to
+        }
+
+    except Exception as e:
+        logger.error(f"Failed to get use case patterns: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get use case patterns")
+
+
+@router.get("/conversations/use-cases/clustered")
+async def get_clustered_use_cases_endpoint(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    distance_threshold: float = Query(0.3, ge=0.1, le=0.8, description="Cosine distance threshold (lower = tighter clusters)"),
+    min_cluster_size: int = Query(1, ge=1, le=10, description="Minimum items to form a cluster"),
+    admin: dict = Depends(require_super_admin)
+) -> Dict[str, Any]:
+    """
+    Get use cases grouped by semantic similarity using embedding-based clustering.
+
+    Groups similar use cases like "create sales ppt", "make presentation", "build slides"
+    into a single cluster labeled by the most common use case text.
+
+    Args:
+        date_from: Start date filter
+        date_to: End date filter
+        distance_threshold: Lower values create tighter clusters (0.2-0.4 recommended)
+        min_cluster_size: Minimum items to form a cluster
+
+    Returns:
+        {
+            "clusters": [...],
+            "total_clusters": 12,
+            "total_use_cases": 156,
+            "date_from": "2024-01-01",
+            "date_to": "2024-01-31"
+        }
+    """
+    try:
+        from core.analytics.use_case_clustering import get_clustered_use_cases
+
+        clusters = await get_clustered_use_cases(
+            date_from=date_from,
+            date_to=date_to,
+            distance_threshold=distance_threshold,
+            min_cluster_size=min_cluster_size
+        )
+
+        return {
+            "clusters": clusters,
+            "total_clusters": len(clusters),
+            "total_use_cases": sum(c['count'] for c in clusters),
+            "date_from": date_from,
+            "date_to": date_to
+        }
+
+    except ImportError as e:
+        logger.error(f"Clustering dependency missing: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail="Clustering requires scikit-learn. Install with: pip install scikit-learn"
+        )
+    except Exception as e:
+        logger.error(f"Failed to get clustered use cases: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get clustered use cases")
