@@ -3573,6 +3573,8 @@ async def get_frustrated_conversations(
     threshold: float = Query(0.5, ge=0, le=1, description="Frustration score threshold"),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     admin: dict = Depends(require_super_admin)
 ) -> PaginatedResponse[ConversationAnalyticsItem]:
     """
@@ -3582,52 +3584,64 @@ async def get_frustrated_conversations(
         threshold: Minimum frustration score (0-1)
         page: Page number
         page_size: Items per page
+        date_from: Optional start date filter
+        date_to: Optional end date filter
     """
     try:
         db = DBConnection()
         client = await db.client
 
-        # Get total count
-        count_result = await client.from_('conversation_analytics')\
+        # Build base query with date filters
+        count_query = client.from_('conversation_analytics')\
             .select('id', count='exact')\
-            .gte('frustration_score', threshold)\
-            .limit(1)\
-            .execute()
+            .gte('frustration_score', threshold)
 
+        if date_from:
+            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        count_result = await count_query.limit(1).execute()
         total_items = count_result.count or 0
 
-        # Get paginated data
+        # Get paginated data with date filters
         offset = (page - 1) * page_size
-        result = await client.from_('conversation_analytics')\
+        data_query = client.from_('conversation_analytics')\
             .select('*')\
-            .gte('frustration_score', threshold)\
+            .gte('frustration_score', threshold)
+
+        if date_from:
+            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        result = await data_query\
             .order('frustration_score', desc=True)\
             .range(offset, offset + page_size - 1)\
             .execute()
 
         records = result.data or []
 
-        # Fetch user emails for the account_ids
+        # Fetch user emails for the account_ids using RPC (has proper permissions)
         account_ids = list(set(r.get('account_id') for r in records if r.get('account_id')))
         email_map = {}
         if account_ids:
             try:
+                # Get primary_owner_user_id for accounts
                 email_result = await client.schema('basejump').from_('accounts')\
                     .select('id, primary_owner_user_id')\
                     .in_('id', account_ids)\
                     .execute()
 
-                user_ids = [a.get('primary_owner_user_id') for a in (email_result.data or []) if a.get('primary_owner_user_id')]
-                if user_ids:
-                    users_result = await client.schema('auth').from_('users')\
-                        .select('id, email')\
-                        .in_('id', user_ids)\
-                        .execute()
-
-                    user_email_map = {u['id']: u['email'] for u in (users_result.data or [])}
-                    for a in (email_result.data or []):
-                        if a.get('primary_owner_user_id') in user_email_map:
-                            email_map[a['id']] = user_email_map[a['primary_owner_user_id']]
+                # Use RPC to get emails (bypasses RLS on auth.users)
+                for acc in (email_result.data or []):
+                    if acc.get('primary_owner_user_id'):
+                        try:
+                            rpc_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                            if rpc_result.data:
+                                email_map[acc['id']] = rpc_result.data
+                        except Exception:
+                            pass
             except Exception as e:
                 logger.warning(f"Failed to fetch user emails: {e}")
 
@@ -3916,10 +3930,46 @@ async def get_rfm_engagement_summary(
         """
         at_risk_rows = await execute(at_risk_sql, {"days": days, "limit": limit})
 
+        # Fetch emails for at-risk accounts
+        email_map = {}
+        if at_risk_rows:
+            try:
+                db = DBConnection()
+                client = await db.client
+                account_ids = [str(row['account_id']) for row in at_risk_rows]
+
+                # First try billing_customers (fast path for users with billing)
+                billing_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id, email')\
+                    .in_('account_id', account_ids)\
+                    .execute()
+
+                email_map = {e['account_id']: e['email'] for e in (billing_result.data or [])}
+
+                # For accounts without billing email, get from auth.users via RPC
+                missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+                if missing_account_ids:
+                    # Get primary_owner_user_id for missing accounts
+                    accounts_result = await client.schema('basejump').from_('accounts')\
+                        .select('id, primary_owner_user_id')\
+                        .in_('id', missing_account_ids)\
+                        .execute()
+
+                    for acc in (accounts_result.data or []):
+                        if acc.get('primary_owner_user_id'):
+                            try:
+                                email_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                                if email_result.data:
+                                    email_map[acc['id']] = email_result.data
+                            except Exception:
+                                pass  # Skip if RPC fails for this user
+            except Exception as e:
+                logger.warning(f"Failed to fetch emails for at-risk accounts: {e}")
+
         at_risk_accounts = [
             AccountEngagementItem(
                 account_id=str(row['account_id']),
-                user_email=None,
+                user_email=email_map.get(str(row['account_id'])),
                 rfm_score=f"{row['recency_score']}-{row['frequency_score']}-{row['monetary_score']}",
                 recency_score=row['recency_score'],
                 frequency_score=row['frequency_score'],
@@ -4074,26 +4124,31 @@ async def get_accounts_by_segment(
 
             email_map = {}
             try:
-                # Get user IDs from accounts
-                acct_result = await client.from_('accounts')\
-                    .select('id, primary_owner_user_id')\
-                    .in_('id', account_ids)\
+                # First try billing_customers (fast path for users with billing)
+                billing_result = await client.schema('basejump').from_('billing_customers')\
+                    .select('account_id, email')\
+                    .in_('account_id', account_ids)\
                     .execute()
 
-                user_ids = [a.get('primary_owner_user_id') for a in (acct_result.data or []) if a.get('primary_owner_user_id')]
+                email_map = {e['account_id']: e['email'] for e in (billing_result.data or [])}
 
-                if user_ids:
-                    # Get emails from auth.users
-                    email_sql = """
-                    SELECT id, email FROM auth.users WHERE id = ANY(:user_ids)
-                    """
-                    email_rows = await execute(email_sql, {"user_ids": user_ids})
-                    user_email_map = {str(r['id']): r['email'] for r in email_rows}
+                # For accounts without billing email, get from auth.users via RPC
+                missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+                if missing_account_ids:
+                    # Get primary_owner_user_id for missing accounts
+                    accounts_result = await client.schema('basejump').from_('accounts')\
+                        .select('id, primary_owner_user_id')\
+                        .in_('id', missing_account_ids)\
+                        .execute()
 
-                    for a in (acct_result.data or []):
-                        owner_id = a.get('primary_owner_user_id')
-                        if owner_id and str(owner_id) in user_email_map:
-                            email_map[str(a['id'])] = user_email_map[str(owner_id)]
+                    for acc in (accounts_result.data or []):
+                        if acc.get('primary_owner_user_id'):
+                            try:
+                                email_result = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                                if email_result.data:
+                                    email_map[acc['id']] = email_result.data
+                            except Exception:
+                                pass  # Skip if RPC fails for this user
             except Exception as e:
                 logger.warning(f"Failed to fetch emails for segment accounts: {e}")
 
@@ -4118,6 +4173,8 @@ async def get_accounts_by_segment(
 async def get_feature_requests(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
     admin: dict = Depends(require_super_admin)
 ) -> PaginatedResponse[ConversationAnalyticsItem]:
     """
@@ -4127,42 +4184,39 @@ async def get_feature_requests(
         db = DBConnection()
         client = await db.client
 
-        # Get total count
-        count_result = await client.from_('conversation_analytics')\
+        # Build base query with date filters
+        count_query = client.from_('conversation_analytics')\
             .select('id', count='exact')\
-            .eq('is_feature_request', True)\
-            .limit(1)\
-            .execute()
+            .eq('is_feature_request', True)
 
+        if date_from:
+            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        count_result = await count_query.limit(1).execute()
         total_items = count_result.count or 0
 
-        # Get paginated data
+        # Get paginated data with date filters
         offset = (page - 1) * page_size
-        result = await client.from_('conversation_analytics')\
+        data_query = client.from_('conversation_analytics')\
             .select('*')\
-            .eq('is_feature_request', True)\
+            .eq('is_feature_request', True)
+
+        if date_from:
+            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00")
+        if date_to:
+            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59")
+
+        result = await data_query\
             .order('analyzed_at', desc=True)\
             .range(offset, offset + page_size - 1)\
             .execute()
 
         records = result.data or []
 
-        # Build response items
-        items = []
-        for r in records:
-            items.append(ConversationAnalyticsItem(
-                id=r['id'],
-                thread_id=r['thread_id'],
-                account_id=r['account_id'],
-                sentiment_label=r.get('sentiment_label'),
-                frustration_score=r.get('frustration_score'),
-                frustration_signals=[],
-                intent_type=r.get('intent_type'),
-                is_feature_request=True,
-                feature_request_text=r.get('feature_request_text'),
-                user_message_count=r.get('user_message_count'),
-                analyzed_at=r['analyzed_at']
-            ))
+        # Fetch user emails and first messages
+        items = await _build_conversation_items(client, records)
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
         return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
@@ -4353,27 +4407,36 @@ async def _build_conversation_items(client, records: List[Dict[str, Any]]) -> Li
     if not records:
         return []
 
-    # Fetch user emails for the account_ids using RPC (auth.users not directly accessible)
+    # Fetch user emails for the account_ids
     account_ids = list(set(r.get('account_id') for r in records if r.get('account_id')))
     email_map = {}
     if account_ids:
         try:
-            # Get primary_owner_user_id for each account
-            email_result = await client.schema('basejump').from_('accounts')\
-                .select('id, primary_owner_user_id')\
-                .in_('id', account_ids)\
+            # First try billing_customers (fast path for users with billing)
+            billing_result = await client.schema('basejump').from_('billing_customers')\
+                .select('account_id, email')\
+                .in_('account_id', account_ids)\
                 .execute()
 
-            # Use RPC to get emails (auth.users not directly queryable)
-            for acc in (email_result.data or []):
-                user_id = acc.get('primary_owner_user_id')
-                if user_id:
-                    try:
-                        email_rpc = await client.rpc('get_user_email', {'user_id': user_id}).execute()
-                        if email_rpc.data:
-                            email_map[acc['id']] = email_rpc.data
-                    except Exception:
-                        pass  # Skip if RPC fails for this user
+            email_map = {e['account_id']: e['email'] for e in (billing_result.data or [])}
+
+            # For accounts without billing email, get from auth.users via RPC
+            missing_account_ids = [aid for aid in account_ids if aid not in email_map]
+            if missing_account_ids:
+                # Get primary_owner_user_id for missing accounts
+                accounts_result = await client.schema('basejump').from_('accounts')\
+                    .select('id, primary_owner_user_id')\
+                    .in_('id', missing_account_ids)\
+                    .execute()
+
+                for acc in (accounts_result.data or []):
+                    if acc.get('primary_owner_user_id'):
+                        try:
+                            email_rpc = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                            if email_rpc.data:
+                                email_map[acc['id']] = email_rpc.data
+                        except Exception:
+                            pass  # Skip if RPC fails for this user
         except Exception as e:
             logger.warning(f"Failed to fetch user emails: {e}")
 

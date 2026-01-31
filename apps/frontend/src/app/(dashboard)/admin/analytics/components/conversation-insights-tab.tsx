@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
@@ -38,10 +38,12 @@ import {
   type AccountEngagementItem,
   type SegmentAccount,
 } from '@/hooks/admin/use-conversation-analytics';
+import { UserEmailLink } from './user-email-link';
 
 interface ConversationInsightsTabProps {
   dateFrom?: string;
   dateTo?: string;
+  onUserClick?: (email: string) => void;
 }
 
 // Sentiment icon mapping
@@ -65,7 +67,7 @@ type DrillDownType =
   | { type: 'category'; value: string; label: string }
   | null;
 
-export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsightsTabProps) {
+export function ConversationInsightsTab({ dateFrom, dateTo, onUserClick }: ConversationInsightsTabProps) {
   const [activeSection, setActiveSection] = useState<'overview' | 'frustrated' | 'features' | 'at-risk'>('overview');
   const [frustratedPage, setFrustratedPage] = useState(1);
   const [featuresPage, setFeaturesPage] = useState(1);
@@ -76,9 +78,16 @@ export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsigh
   const { data: insights, isLoading: insightsLoading } = useConversationInsights(dateFrom, dateTo);
   const { data: clusteredData, isLoading: clusteredLoading } = useClusteredUseCases(dateFrom, dateTo);
   const { data: queueStatus } = useAnalyticsQueueStatus();
-  const { data: frustratedData, isLoading: frustratedLoading } = useFrustratedConversations(0.5, frustratedPage, 10);
-  const { data: featuresData, isLoading: featuresLoading } = useFeatureRequests(featuresPage, 10);
+  const { data: frustratedData, isLoading: frustratedLoading } = useFrustratedConversations(0.5, frustratedPage, 10, dateFrom, dateTo);
+  const { data: featuresData, isLoading: featuresLoading } = useFeatureRequests(featuresPage, 10, dateFrom, dateTo);
   const { data: engagementData, isLoading: engagementLoading } = useEngagementSummary(30, 20);
+
+  // Reset pagination when date filters change
+  useEffect(() => {
+    setFrustratedPage(1);
+    setFeaturesPage(1);
+    setDrillDownPage(1);
+  }, [dateFrom, dateTo]);
 
   // Drill-down data
   const { data: sentimentData, isLoading: sentimentLoading } = useConversationsBySentiment(
@@ -161,6 +170,7 @@ export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsigh
           page={drillDownPage}
           onPageChange={setDrillDownPage}
           drillDownType={drillDown.type}
+          onUserClick={onUserClick}
         />
       </div>
     );
@@ -369,6 +379,7 @@ export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsigh
           onPageChange={setFrustratedPage}
           emptyMessage="No frustrated conversations found"
           highlightField="frustration"
+          onUserClick={onUserClick}
         />
       )}
 
@@ -381,11 +392,12 @@ export function ConversationInsightsTab({ dateFrom, dateTo }: ConversationInsigh
           onPageChange={setFeaturesPage}
           emptyMessage="No feature requests detected"
           highlightField="feature"
+          onUserClick={onUserClick}
         />
       )}
 
       {activeSection === 'at-risk' && (
-        <AtRiskSection data={engagementData} loading={engagementLoading} />
+        <AtRiskSection data={engagementData} loading={engagementLoading} onUserClick={onUserClick} />
       )}
     </div>
   );
@@ -438,7 +450,7 @@ const SEGMENT_CONFIG: Record<string, { label: string; color: string; description
   },
 };
 
-function AtRiskSection({ data, loading }: { data?: { total_accounts: number; segments: Record<string, number>; at_risk_accounts: AccountEngagementItem[]; avg_churn_risk: number }; loading: boolean }) {
+function AtRiskSection({ data, loading, onUserClick }: { data?: { total_accounts: number; segments: Record<string, number>; at_risk_accounts: AccountEngagementItem[]; avg_churn_risk: number }; loading: boolean; onUserClick?: (email: string) => void }) {
   const [selectedSegment, setSelectedSegment] = useState<string | null>(null);
   const [segmentPage, setSegmentPage] = useState(1);
   const { data: segmentAccounts, isLoading: segmentLoading } = useAccountsBySegment(selectedSegment, 30, segmentPage, 50);
@@ -499,7 +511,13 @@ function AtRiskSection({ data, loading }: { data?: { total_accounts: number; seg
               {segmentAccounts.accounts.map((account) => (
                 <div key={account.account_id} className="grid grid-cols-12 gap-2 text-sm px-3 py-2 rounded hover:bg-muted/50">
                   <div className="col-span-5 truncate font-medium">
-                    {account.email || <span className="text-muted-foreground">{account.account_id.slice(0, 12)}...</span>}
+                    {account.email && onUserClick ? (
+                      <UserEmailLink email={account.email} onUserClick={onUserClick} />
+                    ) : account.email ? (
+                      account.email
+                    ) : (
+                      <span className="text-muted-foreground">{account.account_id.slice(0, 12)}...</span>
+                    )}
                   </div>
                   <div className="col-span-2 font-mono">{account.rfm_score}</div>
                   <div className="col-span-2">{account.days_since_last_activity}d ago</div>
@@ -619,7 +637,15 @@ function AtRiskSection({ data, loading }: { data?: { total_accounts: number; seg
                       {account.rfm_score.split('-')[0]}
                     </div>
                     <div>
-                      <p className="font-medium text-sm">{account.user_email || account.account_id.slice(0, 8)}</p>
+                      <p className="font-medium text-sm">
+                        {account.user_email && onUserClick ? (
+                          <UserEmailLink email={account.user_email} onUserClick={onUserClick} />
+                        ) : account.user_email ? (
+                          account.user_email
+                        ) : (
+                          account.account_id.slice(0, 8)
+                        )}
+                      </p>
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <Badge variant="outline" className="text-xs">{config.label}</Badge>
                         <span>RFM: {account.rfm_score}</span>
@@ -661,6 +687,7 @@ interface DrillDownListProps {
   page: number;
   onPageChange: (page: number) => void;
   drillDownType: 'sentiment' | 'intent' | 'category';
+  onUserClick?: (email: string) => void;
 }
 
 function DrillDownList({
@@ -670,6 +697,7 @@ function DrillDownList({
   page,
   onPageChange,
   drillDownType,
+  onUserClick,
 }: DrillDownListProps) {
   if (loading) {
     return (
@@ -699,7 +727,13 @@ function DrillDownList({
                 <div className="flex items-center gap-2 mb-2">
                   <SentimentIcon label={item.sentiment_label} />
                   <span className="text-sm font-medium truncate">
-                    {item.user_email || 'Unknown user'}
+                    {item.user_email && onUserClick ? (
+                      <UserEmailLink email={item.user_email} onUserClick={onUserClick} />
+                    ) : item.user_email ? (
+                      item.user_email
+                    ) : (
+                      'Unknown user'
+                    )}
                   </span>
                   {item.intent_type && (
                     <Badge variant="outline" className="text-xs capitalize">
@@ -841,6 +875,7 @@ interface ConversationListProps {
   onPageChange: (page: number) => void;
   emptyMessage: string;
   highlightField: 'frustration' | 'feature';
+  onUserClick?: (email: string) => void;
 }
 
 function ConversationList({
@@ -851,6 +886,7 @@ function ConversationList({
   onPageChange,
   emptyMessage,
   highlightField,
+  onUserClick,
 }: ConversationListProps) {
   if (loading) {
     return (
@@ -879,7 +915,13 @@ function ConversationList({
                 <div className="flex items-center gap-2 mb-2">
                   <SentimentIcon label={item.sentiment_label} />
                   <span className="text-sm font-medium truncate">
-                    {item.user_email || 'Unknown user'}
+                    {item.user_email && onUserClick ? (
+                      <UserEmailLink email={item.user_email} onUserClick={onUserClick} />
+                    ) : item.user_email ? (
+                      item.user_email
+                    ) : (
+                      'Unknown user'
+                    )}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {item.user_message_count} messages

@@ -440,6 +440,8 @@ async def store_analysis(
     """
     Store analysis results in the database.
 
+    Also syncs use_case_category to the project's categories array for filtering.
+
     Args:
         thread_id: Thread ID
         agent_run_id: Optional agent run ID
@@ -476,6 +478,40 @@ async def store_analysis(
         await client.from_('conversation_analytics').insert(record).execute()
 
         logger.debug(f"[ANALYTICS] Stored analysis for thread {thread_id}")
+
+        # Sync use_case_category to project categories (non-blocking)
+        use_case = analysis.get('use_case_category')
+        is_useful = analysis.get('is_useful', True)
+
+        if use_case and is_useful:
+            try:
+                # Get project_id from thread
+                thread_result = await client.from_('threads')\
+                    .select('project_id')\
+                    .eq('thread_id', thread_id)\
+                    .single()\
+                    .execute()
+
+                project_id = thread_result.data.get('project_id') if thread_result.data else None
+
+                if project_id:
+                    # Add category to project if not already present
+                    from core.services.db import execute_mutate
+                    await execute_mutate("""
+                        UPDATE projects
+                        SET categories = array_append(
+                            COALESCE(categories, ARRAY[]::text[]),
+                            :category
+                        )
+                        WHERE project_id = :project_id
+                        AND NOT (:category = ANY(COALESCE(categories, ARRAY[]::text[])))
+                    """, {"project_id": project_id, "category": use_case})
+
+                    logger.debug(f"[ANALYTICS] Added category '{use_case}' to project {project_id}")
+            except Exception as e:
+                # Non-critical - don't fail the main analytics flow
+                logger.warning(f"[ANALYTICS] Failed to sync category to project: {e}")
+
         return True
 
     except Exception as e:

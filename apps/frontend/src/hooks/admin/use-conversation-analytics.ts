@@ -93,15 +93,19 @@ export function useConversationInsights(dateFrom?: string, dateTo?: string) {
 export function useFrustratedConversations(
   threshold: number = 0.5,
   page: number = 1,
-  pageSize: number = 20
+  pageSize: number = 20,
+  dateFrom?: string,
+  dateTo?: string
 ) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'frustrated-conversations', threshold, page, pageSize],
+    queryKey: ['admin', 'analytics', 'frustrated-conversations', threshold, page, pageSize, dateFrom, dateTo],
     queryFn: async (): Promise<PaginatedResponse<ConversationAnalyticsItem>> => {
       const params = new URLSearchParams();
       params.append('threshold', threshold.toString());
       params.append('page', page.toString());
       params.append('page_size', pageSize.toString());
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
       const response = await backendApi.get(`/admin/analytics/conversations/frustrated?${params.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -113,13 +117,20 @@ export function useFrustratedConversations(
   });
 }
 
-export function useFeatureRequests(page: number = 1, pageSize: number = 20) {
+export function useFeatureRequests(
+  page: number = 1,
+  pageSize: number = 20,
+  dateFrom?: string,
+  dateTo?: string
+) {
   return useQuery({
-    queryKey: ['admin', 'analytics', 'feature-requests', page, pageSize],
+    queryKey: ['admin', 'analytics', 'feature-requests', page, pageSize, dateFrom, dateTo],
     queryFn: async (): Promise<PaginatedResponse<ConversationAnalyticsItem>> => {
       const params = new URLSearchParams();
       params.append('page', page.toString());
       params.append('page_size', pageSize.toString());
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
       const response = await backendApi.get(`/admin/analytics/conversations/feature-requests?${params.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);

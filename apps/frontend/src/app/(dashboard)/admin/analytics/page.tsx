@@ -956,7 +956,7 @@ export default function AdminAnalyticsPage() {
 
           {/* Conversation Analytics Tab */}
           <TabsContent value="conversations" className="mt-0">
-            <ConversationInsightsTab dateFrom={dateFromString} dateTo={dateToString} />
+            <ConversationInsightsTab dateFrom={dateFromString} dateTo={dateToString} onUserClick={handleUserEmailClick} />
           </TabsContent>
         </Tabs>
 
