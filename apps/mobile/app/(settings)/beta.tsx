@@ -35,8 +35,7 @@ export default function BetaScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
     >
       <View className="px-6 pt-4 pb-8">
-        {/* OTA Update Test Banner */}
-        <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
+        {/* <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
           <View className="flex-row items-center gap-3 mb-2">
             <View className="h-10 w-10 rounded-full bg-purple-500/30 items-center justify-center">
               <Icon
@@ -69,7 +68,7 @@ export default function BetaScreen() {
               {Constants.expoConfig?.extra?.eas?.projectId?.slice(0, 8) || 'Local'}
             </Text>
           </View>
-        </View>
+        </View> */}
 
         {/* Web Support - Prominent */}
         <View className="mb-6">
