@@ -5,7 +5,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as Haptics from 'expo-haptics';
 import { useQueryClient } from '@tanstack/react-query';
 import { useRouter } from 'expo-router';
-import type { UnifiedMessage } from '@/api/types';
+import type { UnifiedMessage, Message, ActiveAgentRun } from '@/api/types';
 import { useLanguage } from '@/contexts';
 import type { ToolMessagePair } from '@/components/chat';
 import {
@@ -42,6 +42,24 @@ import {
   type TierLimitErrorState,
 } from '@agentpress/shared/errors';
 import { usePricingModalStore } from '@/stores/billing-modal-store';
+
+/**
+ * Convert API Message type to UnifiedMessage type
+ * Handles the difference where Message.metadata is Record<string, any>
+ * but UnifiedMessage.metadata is string (JSON)
+ */
+function messageToUnifiedMessage(msg: Message): UnifiedMessage {
+  return {
+    message_id: msg.message_id,
+    thread_id: msg.thread_id,
+    type: msg.type as UnifiedMessage['type'],
+    is_llm_message: msg.is_llm_message,
+    content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
+    metadata: typeof msg.metadata === 'string' ? msg.metadata : JSON.stringify(msg.metadata),
+    created_at: msg.created_at,
+    updated_at: msg.updated_at,
+  };
+}
 
 export interface Attachment {
   type: 'image' | 'video' | 'document';
@@ -235,6 +253,27 @@ export function useChat(): UseChatReturn {
   const accessibleModelIds = useMemo(() => accessibleModels.map(m => m.id).join(','), [accessibleModels]);
   const accessibleModelsLength = accessibleModels.length;
   
+  // Helper to get default model - matching frontend logic
+  // Prioritizes kortix/basic, then kortix/power, then first accessible model
+  const getDefaultModelId = useCallback((models: typeof accessibleModels): string | undefined => {
+    // kortix/basic should be first for free users since power is not accessible
+    const basicModel = models.find(m => m.id === 'kortix/basic');
+    if (basicModel) return basicModel.id;
+
+    const powerModel = models.find(m => m.id === 'kortix/power');
+    if (powerModel) return powerModel.id;
+
+    // Fallback: pick from accessible models sorted by priority
+    if (models.length > 0) {
+      return models[0].id;
+    }
+
+    return undefined;
+  }, []);
+
+  // Valid model IDs that mobile app should use (matching frontend)
+  const VALID_MODEL_IDS = useMemo(() => new Set(['kortix/basic', 'kortix/power']), []);
+
   // Auto-select model when models first load and none is selected
   useEffect(() => {
     // Skip if still loading or no accessible models
@@ -244,28 +283,29 @@ export function useChat(): UseChatReturn {
 
     // If no model is selected, auto-select the best available model
     if (!selectedModelId) {
-      const recommendedModel = accessibleModels.find(m => m.recommended);
-      const fallbackModel = recommendedModel || accessibleModels[0];
-      if (fallbackModel) {
-        log.log('🔄 [useChat] Auto-selecting model (none selected):', fallbackModel.id);
-        selectModel(fallbackModel.id);
+      const defaultModelId = getDefaultModelId(accessibleModels);
+      if (defaultModelId) {
+        log.log('🔄 [useChat] Auto-selecting model (none selected):', defaultModelId);
+        selectModel(defaultModelId);
       }
       return;
     }
 
-    // If selected model is not accessible, switch to an accessible one
+    // CRITICAL: Only allow kortix/basic or kortix/power models
+    // Other models (like kortix/kimi-k2.5) are internal and should not be used
+    const isValidModel = VALID_MODEL_IDS.has(selectedModelId);
     const isModelAccessible = accessibleModels.some(m => m.id === selectedModelId);
-    if (!isModelAccessible) {
-      log.warn('⚠️ [useChat] Selected model is not accessible, switching:', selectedModelId);
-      const recommendedModel = accessibleModels.find(m => m.recommended);
-      const fallbackModel = recommendedModel || accessibleModels[0];
-      if (fallbackModel) {
-        log.log('🔄 [useChat] Auto-selecting accessible model:', fallbackModel.id);
-        selectModel(fallbackModel.id);
+
+    if (!isValidModel || !isModelAccessible) {
+      log.warn('⚠️ [useChat] Selected model is invalid or not accessible, switching:', selectedModelId);
+      const defaultModelId = getDefaultModelId(accessibleModels);
+      if (defaultModelId) {
+        log.log('🔄 [useChat] Auto-selecting valid model:', defaultModelId);
+        selectModel(defaultModelId);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedModelId, accessibleModelIds, accessibleModelsLength, selectModel, modelsLoading]);
+  }, [selectedModelId, accessibleModelIds, accessibleModelsLength, selectModel, modelsLoading, getDefaultModelId, VALID_MODEL_IDS]);
   
   // Determine current model to use
   const currentModel = useMemo(() => {
@@ -273,22 +313,26 @@ export function useChat(): UseChatReturn {
     if (modelsLoading) {
       return undefined;
     }
-    
-    // If a model is selected and accessible, use it
-    if (selectedModelId) {
+
+    // CRITICAL: Only use kortix/basic or kortix/power
+    // Never use other models like kortix/kimi-k2.5 (internal/legacy)
+    if (selectedModelId && VALID_MODEL_IDS.has(selectedModelId)) {
       const model = accessibleModels.find(m => m.id === selectedModelId);
       if (model) {
         return model.id;
       }
     }
-    
-    // Fallback to recommended model or first accessible model
-    const recommendedModel = accessibleModels.find(m => m.recommended);
-    const firstAccessibleModel = accessibleModels[0];
-    const fallbackModel = recommendedModel?.id || firstAccessibleModel?.id;
-    
-    return fallbackModel;
-  }, [selectedModelId, accessibleModels, modelsLoading]);
+
+    // Fallback: prioritize kortix/basic, then kortix/power
+    const basicModel = accessibleModels.find(m => m.id === 'kortix/basic');
+    if (basicModel) return basicModel.id;
+
+    const powerModel = accessibleModels.find(m => m.id === 'kortix/power');
+    if (powerModel) return powerModel.id;
+
+    // Last resort fallback to first accessible model
+    return accessibleModels[0]?.id;
+  }, [selectedModelId, accessibleModels, modelsLoading, VALID_MODEL_IDS]);
   
   // Log model selection only when it actually changes
   const prevModelSelectionRef = useRef<string>('');
@@ -523,7 +567,8 @@ export function useChat(): UseChatReturn {
     prevThreadIdRef.current = activeThreadId;
 
     if (messagesData) {
-      const unifiedMessages = messagesData as unknown as UnifiedMessage[];
+      // Convert API Message[] to UnifiedMessage[] with proper type handling
+      const unifiedMessages = messagesData.map(messageToUnifiedMessage);
       
       const shouldReload = messages.length === 0 || messagesData.length > messages.length + 50;
       
@@ -1105,8 +1150,19 @@ export function useChat(): UseChatReturn {
           throw agentStartError;
         }
       } else {
+        // CRITICAL: Never send to optimistic threads - they don't exist on server!
+        // This can happen if user sends message before previous thread creation completes
+        if (currentThreadId.startsWith('optimistic-')) {
+          log.error('[useChat] Cannot send to optimistic thread - waiting for real thread ID');
+          Alert.alert(
+            t('common.error'),
+            t('chat.threadNotReady') || 'Please wait for the thread to be created'
+          );
+          return;
+        }
+
         log.log('[useChat] Sending to existing thread:', currentThreadId);
-        
+
         // Store attachments before clearing for upload
         const pendingAttachments = [...attachments];
         
@@ -1232,14 +1288,15 @@ export function useChat(): UseChatReturn {
               
               if (optimisticIndex !== -1) {
                 log.log('[useChat] ✅ Replacing optimistic message with real one');
+                const unifiedMessage = messageToUnifiedMessage(result.message);
                 return prev.map((m, index) =>
-                  index === optimisticIndex ? (result.message as UnifiedMessage) : m
+                  index === optimisticIndex ? unifiedMessage : m
                 );
               }
               
               // If no optimistic found, just add the message
               log.log('[useChat] No optimistic message found to replace, adding new');
-              return [...prev, result.message as UnifiedMessage];
+              return [...prev, messageToUnifiedMessage(result.message)];
             });
           }
           
@@ -1347,11 +1404,16 @@ export function useChat(): UseChatReturn {
     setIsRetrying(true);
     
     // SIMPLE CHECK: If we have ANY assistant/tool messages, AI responded - just refresh, NEVER resend
-    const hasAIResponse = messages.some(msg => 
-      msg.type === 'assistant' || 
-      msg.type === 'tool' || 
-      (msg.content && typeof msg.content === 'object' && 'role' in msg.content && msg.content.role === 'assistant')
-    );
+    const hasAIResponse = messages.some(msg => {
+      if (msg.type === 'assistant' || msg.type === 'tool') return true;
+      // Check parsed content for role (content is JSON string in UnifiedMessage)
+      try {
+        const parsed = JSON.parse(msg.content);
+        return parsed?.role === 'assistant';
+      } catch {
+        return false;
+      }
+    });
     
     if (hasAIResponse) {
       log.log('[useChat] Retry: AI already responded, refreshing thread (NOT resending)');
@@ -1368,17 +1430,16 @@ export function useChat(): UseChatReturn {
           await refetchMessages();
           
           // fetchQuery throws on error - if we get here, network is working
-          const activeRuns = await queryClient.fetchQuery({
+          const activeRuns = await queryClient.fetchQuery<ActiveAgentRun[]>({
             queryKey: chatKeys.activeRuns(),
             staleTime: 0, // Force fresh fetch
           });
-          
+
           log.log('[useChat] Retry: Got fresh activeRuns data, count:', activeRuns?.length ?? 0);
-          
+
           if (activeRuns) {
             const runningAgent = activeRuns.find(
-              (run: { thread_id: string; status: string; id: string }) => 
-                run.thread_id === activeThreadId && run.status === 'running'
+              (run) => run.thread_id === activeThreadId && run.status === 'running'
             );
             if (runningAgent) {
               log.log('[useChat] Retry: Found running agent, reconnecting:', runningAgent.id);
@@ -1422,17 +1483,16 @@ export function useChat(): UseChatReturn {
           await refetchMessages();
           
           // fetchQuery throws on error - if we get here, network is working
-          const activeRuns = await queryClient.fetchQuery({
+          const activeRuns = await queryClient.fetchQuery<ActiveAgentRun[]>({
             queryKey: chatKeys.activeRuns(),
             staleTime: 0, // Force fresh fetch
           });
-          
+
           log.log('[useChat] Retry: Got fresh activeRuns data (runId path), count:', activeRuns?.length ?? 0);
-          
+
           if (activeRuns) {
             const runningAgent = activeRuns.find(
-              (run: { thread_id: string; status: string; id: string }) => 
-                run.thread_id === activeThreadId && run.status === 'running'
+              (run) => run.thread_id === activeThreadId && run.status === 'running'
             );
             if (runningAgent) {
               log.log('[useChat] Retry: Found running agent, reconnecting:', runningAgent.id);

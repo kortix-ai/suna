@@ -35,7 +35,9 @@ export function ImageEditToolView({ toolCall, toolResult, isStreaming = false, a
 
   // Get thread data to access project/sandbox info
   const threadId = toolMessage?.thread_id || assistantMessage?.thread_id;
-  const { data: thread } = useThread(threadId);
+  // Don't fetch for optimistic threads - they don't exist on server yet
+  const isOptimisticThread = threadId?.startsWith('optimistic-');
+  const { data: thread } = useThread(!isOptimisticThread ? threadId : undefined);
 
   // Prefer project prop, fallback to thread project
   const effectiveProject = project || thread?.project;

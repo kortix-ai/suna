@@ -46,10 +46,16 @@ export function useAgentStream(
   const queryClient = useQueryClient();
 
   // Build query keys array for invalidation
+  // CRITICAL: Don't include message query keys for optimistic threads - they don't exist on server
+  const isOptimisticThread = threadId?.startsWith('optimistic-');
   const queryKeys: (string | readonly string[])[] = [
     ['active-agent-runs'],
-    chatKeys.messages(threadId),
   ];
+
+  // Only add message query key for real threads
+  if (threadId && !isOptimisticThread) {
+    queryKeys.push(chatKeys.messages(threadId));
+  }
 
   if (agentId) {
     queryKeys.push(
