@@ -307,6 +307,7 @@ export function MenuPage({
   const insets = useSafeAreaInsets();
   const scrollY = useSharedValue(0);
   const profileScale = useSharedValue(1);
+  const plusButtonScale = useSharedValue(1);
   const [isTriggerDrawerVisible, setIsTriggerDrawerVisible] = React.useState(false);
   const [isWorkerCreationDrawerVisible, setIsWorkerCreationDrawerVisible] = React.useState(false);
 
@@ -435,6 +436,10 @@ export function MenuPage({
 
   const profileAnimatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: profileScale.value }],
+  }));
+
+  const plusButtonAnimatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: plusButtonScale.value }],
   }));
 
   /**
@@ -569,12 +574,12 @@ export function MenuPage({
                 else if (activeTab === 'triggers') handleTriggerCreate();
               }}
               onPressIn={() => {
-                profileScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
+                plusButtonScale.value = withSpring(0.9, { damping: 15, stiffness: 400 });
               }}
               onPressOut={() => {
-                profileScale.value = withSpring(1, { damping: 15, stiffness: 400 });
+                plusButtonScale.value = withSpring(1, { damping: 15, stiffness: 400 });
               }}
-              style={profileAnimatedStyle}
+              style={plusButtonAnimatedStyle}
               className="h-11 w-11 items-center justify-center rounded-[21px] bg-primary">
               <Icon as={Plus} size={20} className="text-primary-foreground" strokeWidth={2.5} />
             </AnimatedPressable>

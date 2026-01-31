@@ -1692,13 +1692,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                             detectedTag = 'function_calls';
                             tagStartIndex = functionCallsIndex;
                           } else {
-                            for (const tag of HIDE_STREAMING_XML_TAGS) {
-                              const openingTagPattern = `<${tag}`;
-                              const index = rawContent.indexOf(openingTagPattern);
-                              if (index !== -1) {
-                                detectedTag = tag;
-                                tagStartIndex = index;
-                                break;
+                            // Also check for <invoke> tag directly (fallback for edge cases)
+                            const invokeIndex = rawContent.indexOf('<invoke');
+                            if (invokeIndex !== -1) {
+                              detectedTag = 'invoke';
+                              tagStartIndex = invokeIndex;
+                            } else {
+                              for (const tag of HIDE_STREAMING_XML_TAGS) {
+                                const openingTagPattern = `<${tag}`;
+                                const index = rawContent.indexOf(openingTagPattern);
+                                if (index !== -1) {
+                                  detectedTag = tag;
+                                  tagStartIndex = index;
+                                  break;
+                                }
                               }
                             }
                           }
@@ -2016,13 +2023,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               detectedTag = 'function_calls';
               tagStartIndex = functionCallsIndex;
             } else {
-              for (const tag of HIDE_STREAMING_XML_TAGS) {
-                const openingTagPattern = `<${tag}`;
-                const index = rawContent.indexOf(openingTagPattern);
-                if (index !== -1) {
-                  detectedTag = tag;
-                  tagStartIndex = index;
-                  break;
+              // Also check for <invoke> tag directly (fallback for edge cases)
+              const invokeIndex = rawContent.indexOf('<invoke');
+              if (invokeIndex !== -1) {
+                detectedTag = 'invoke';
+                tagStartIndex = invokeIndex;
+              } else {
+                for (const tag of HIDE_STREAMING_XML_TAGS) {
+                  const openingTagPattern = `<${tag}`;
+                  const index = rawContent.indexOf(openingTagPattern);
+                  if (index !== -1) {
+                    detectedTag = tag;
+                    tagStartIndex = index;
+                    break;
+                  }
                 }
               }
             }
@@ -2097,13 +2111,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       detectedTag = 'function_calls';
                       tagStartIndex = functionCallsIndex;
                     } else {
-                      for (const tag of HIDE_STREAMING_XML_TAGS) {
-                        const openingTagPattern = `<${tag}`;
-                        const index = rawContent.indexOf(openingTagPattern);
-                        if (index !== -1) {
-                          detectedTag = tag;
-                          tagStartIndex = index;
-                          break;
+                      // Also check for <invoke> tag directly (fallback for edge cases)
+                      const invokeIndex = rawContent.indexOf('<invoke');
+                      if (invokeIndex !== -1) {
+                        detectedTag = 'invoke';
+                        tagStartIndex = invokeIndex;
+                      } else {
+                        for (const tag of HIDE_STREAMING_XML_TAGS) {
+                          const openingTagPattern = `<${tag}`;
+                          const index = rawContent.indexOf(openingTagPattern);
+                          if (index !== -1) {
+                            detectedTag = tag;
+                            tagStartIndex = index;
+                            break;
+                          }
                         }
                       }
                     }

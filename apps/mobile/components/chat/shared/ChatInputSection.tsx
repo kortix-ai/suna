@@ -291,6 +291,7 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         { zIndex: 100 },
         Platform.OS === 'android' ? { elevation: 10 } : undefined,
       ]}
+      pointerEvents="box-none"
     >
       {/* Gradient fade at top - creates smooth transition from content to input area */}
       <LinearGradient
