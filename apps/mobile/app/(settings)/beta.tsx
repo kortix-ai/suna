@@ -1,14 +1,16 @@
 import * as React from 'react';
-import { Pressable, View, Switch, ScrollView, Linking } from 'react-native';
+import { Pressable, View, Switch, ScrollView, Linking, Platform } from 'react-native';
 import { useColorScheme } from 'nativewind';
 import { useLanguage } from '@/contexts';
 import { useAdvancedFeatures } from '@/hooks';
 import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
-import { Layers, Globe, ExternalLink, AlertCircle, Rocket, Sparkles } from 'lucide-react-native';
+import { Layers, Globe, ExternalLink, AlertCircle, Info } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
+import * as Updates from 'expo-updates';
 import { log } from '@/lib/logger';
 
 export default function BetaScreen() {
@@ -35,8 +37,7 @@ export default function BetaScreen() {
       contentContainerStyle={{ paddingBottom: insets.bottom + 20 }}
     >
       <View className="px-6 pt-4 pb-8">
-        {/* OTA Update Test Banner */}
-        <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
+        {/* <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
           <View className="flex-row items-center gap-3 mb-2">
             <View className="h-10 w-10 rounded-full bg-purple-500/30 items-center justify-center">
               <Icon
@@ -69,7 +70,7 @@ export default function BetaScreen() {
               {Constants.expoConfig?.extra?.eas?.projectId?.slice(0, 8) || 'Local'}
             </Text>
           </View>
-        </View>
+        </View> */}
 
         {/* Web Support - Prominent */}
         <View className="mb-6">
@@ -144,7 +145,7 @@ export default function BetaScreen() {
         </View>
 
         {/* Warning - Subtle */}
-        <View className="bg-muted/30 border border-border/30 rounded-2xl p-4">
+        <View className="bg-muted/30 border border-border/30 rounded-2xl p-4 mb-5">
           <View className="flex-row items-start gap-3">
             <Icon as={AlertCircle} size={16} className="text-muted-foreground mt-0.5" strokeWidth={2} />
             <Text className="text-xs font-roobert text-muted-foreground leading-5 flex-1">
@@ -152,7 +153,45 @@ export default function BetaScreen() {
             </Text>
           </View>
         </View>
+
+        {/* Build Info */}
+        <View className="bg-card border border-border/50 rounded-2xl p-4">
+          <View className="flex-row items-center gap-3 mb-3">
+            <Icon as={Info} size={16} className="text-muted-foreground" strokeWidth={2} />
+            <Text className="text-sm font-roobert-semibold text-foreground">
+              Build Information
+            </Text>
+          </View>
+          <View className="gap-2">
+            <BuildInfoRow label="Version" value={Constants.expoConfig?.version || 'N/A'} />
+            <BuildInfoRow
+              label="Build"
+              value={
+                Platform.OS === 'ios'
+                  ? Constants.expoConfig?.ios?.buildNumber || 'N/A'
+                  : Constants.expoConfig?.android?.versionCode?.toString() || 'N/A'
+              }
+            />
+            <BuildInfoRow label="Runtime" value={Updates.runtimeVersion || 'N/A'} />
+            <BuildInfoRow label="Update ID" value={Updates.updateId?.slice(0, 12) || 'Embedded'} />
+            <BuildInfoRow label="Channel" value={Updates.channel || 'N/A'} />
+            <BuildInfoRow label="Device" value={Device.modelName || 'N/A'} />
+            <BuildInfoRow
+              label="OS"
+              value={`${Platform.OS === 'ios' ? 'iOS' : 'Android'} ${Device.osVersion || ''}`}
+            />
+          </View>
+        </View>
       </View>
     </ScrollView>
+  );
+}
+
+function BuildInfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <View className="flex-row items-center justify-between">
+      <Text className="text-xs font-roobert text-muted-foreground">{label}</Text>
+      <Text className="text-xs font-roobert-medium text-foreground">{value}</Text>
+    </View>
   );
 }

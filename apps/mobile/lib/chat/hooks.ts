@@ -349,32 +349,37 @@ export function useSendMessage(
     SendMessageInput
   >
 ) {
-  const addMessage = useAddMessage();
   const unifiedAgentStart = useUnifiedAgentStart();
 
   return useMutation({
     mutationFn: async (input) => {
-      log.log('🚀 [useSendMessage] Step 1: Adding message to thread', input.threadId);
-
-      const message = await addMessage.mutateAsync({
-        threadId: input.threadId,
-        message: input.message,
-      });
-
-      log.log('✅ [useSendMessage] Step 1 complete: Message added', message);
-      log.log('🚀 [useSendMessage] Step 2: Starting agent run');
+      // MATCHES FRONTEND: Single call to /agent/start with prompt included
+      // Frontend does NOT call /messages/add separately - the agent start creates the message
+      log.log('🚀 [useSendMessage] Starting agent with prompt (single /agent/start call like frontend)', input.threadId);
 
       const agentRun = await unifiedAgentStart.mutateAsync({
         threadId: input.threadId,
+        prompt: input.message, // Send message as prompt to /agent/start
         modelName: input.modelName,
         agentId: input.agentId,
         files: input.files,
       });
 
-      log.log('✅ [useSendMessage] Step 2 complete: Agent started', agentRun);
+      log.log('✅ [useSendMessage] Agent started with prompt:', agentRun);
 
+      // The message is created by the backend when starting the agent
+      // Return a synthetic message object for compatibility
       return {
-        message,
+        message: {
+          message_id: `msg-${Date.now()}`,
+          thread_id: input.threadId,
+          type: 'user' as const,
+          content: input.message,
+          metadata: {},
+          is_llm_message: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as Message,
         agentRunId: agentRun.agent_run_id,
       };
     },

@@ -131,6 +131,49 @@ function extractSlideInfo(toolResult: { output?: any; success?: boolean } | unde
   return undefined;
 }
 
+/**
+ * Extract slide info from tool call arguments (for streaming state before result is available)
+ * Returns partial SlideInfo that can be used to show a loading preview
+ */
+function extractSlideInfoFromArgs(toolCallArgs: Record<string, any> | string | undefined): SlideInfo | undefined {
+  if (!toolCallArgs) return undefined;
+
+  try {
+    let args: Record<string, any> = {};
+    if (typeof toolCallArgs === 'string') {
+      try {
+        args = JSON.parse(toolCallArgs);
+      } catch {
+        // Try to extract presentation_name from partial JSON
+        const presentationMatch = toolCallArgs.match(/"presentation_name"\s*:\s*"([^"]+)"/);
+        const slideNumMatch = toolCallArgs.match(/"slide_number"\s*:\s*(\d+)/);
+        if (presentationMatch) {
+          args = {
+            presentation_name: presentationMatch[1],
+            slide_number: slideNumMatch ? parseInt(slideNumMatch[1], 10) : 1,
+          };
+        } else {
+          return undefined;
+        }
+      }
+    } else {
+      args = toolCallArgs;
+    }
+
+    if (args?.presentation_name) {
+      return {
+        presentationName: args.presentation_name,
+        slideNumber: args.slide_number || 1,
+        slideTitle: args.title || `Slide ${args.slide_number || 1}`,
+        totalSlides: args.slide_number || 1,
+      };
+    }
+  } catch (e) {
+    log.error('[extractSlideInfoFromArgs] Error:', e);
+  }
+  return undefined;
+}
+
 interface MarkdownContentProps {
   content: string;
   handleToolClick?: (assistantMessageId: string | null, toolName: string, toolCallId?: string) => void;
@@ -750,6 +793,22 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     const REASONING_GRACE_PERIOD_MS = 200;
     const [isInReasoningGracePeriod, setIsInReasoningGracePeriod] = React.useState(false);
     const gracePeriodTimeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // Track previous isSendingMessage to detect new message sends
+    const prevIsSendingMessageRef = React.useRef(false);
+
+    // Reset reasoning ref when user sends a new message (before agent even starts)
+    // This prevents stale reasoning content from blocking the AgentLoader
+    React.useEffect(() => {
+      const wasSending = prevIsSendingMessageRef.current;
+      prevIsSendingMessageRef.current = isSendingMessage;
+
+      // User just started sending a new message - clear stale reasoning
+      if (!wasSending && isSendingMessage) {
+        lastReasoningContentRef.current = '';
+        setReasoningExpanded(false);
+      }
+    }, [isSendingMessage]);
 
     // Reset ref when agent starts a new turn
     React.useEffect(() => {
@@ -1574,12 +1633,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                       message={toolMsg}
                                       onPress={() => handleToolPressInternal(toolMsg)}
                                     />
-                                    {slideInfo && sandboxUrl && (
+                                    {slideInfo && (
                                       <SlideInlineThumbnail
                                         slideInfo={slideInfo}
                                         sandboxUrl={sandboxUrl}
                                         onClick={() => handleToolPressInternal(toolMsg)}
-                                        isLoading={!parsed?.result}
+                                        isLoading={!parsed?.result || !sandboxUrl}
                                       />
                                     )}
                                   </View>
@@ -1823,13 +1882,14 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                 );
                               }
 
-                              // Special handling for create-slide - show inline thumbnail when completed
+                              // Special handling for create-slide - show inline thumbnail (with loading state during streaming)
                               if (toolName === 'create-slide') {
                                 const toolResult = isCompleted && tc.tool_result ? {
                                   output: tc.tool_result?.output || tc.tool_result,
                                   success: tc.tool_result?.success !== false,
                                 } : undefined;
-                                const slideInfo = extractSlideInfo(toolResult);
+                                // Try to get slideInfo from result first, then from arguments for streaming preview
+                                const slideInfo = extractSlideInfo(toolResult) || extractSlideInfoFromArgs(tc.arguments);
 
                                 return (
                                   <View key={tc.tool_call_id || `streaming-slide-${tcIndex}`}>
@@ -1838,12 +1898,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                                       toolName={toolName}
                                       onPress={isCompleted ? () => handleStreamingToolCallPress(tc, assistantMsgId) : undefined}
                                     />
-                                    {isCompleted && slideInfo && sandboxUrl && (
+                                    {slideInfo && (
                                       <SlideInlineThumbnail
                                         slideInfo={slideInfo}
                                         sandboxUrl={sandboxUrl}
-                                        onClick={() => handleStreamingToolCallPress(tc, assistantMsgId)}
-                                        isLoading={false}
+                                        onClick={isCompleted ? () => handleStreamingToolCallPress(tc, assistantMsgId) : undefined}
+                                        isLoading={!isCompleted || !sandboxUrl}
                                       />
                                     )}
                                   </View>
@@ -1998,8 +2058,10 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                 </View>
               )}
 
-              {/* AgentLoader - show when contemplating/brewing but NOT when reasoning is visible */}
-              {(isContemplating || isBrewing) && !hasVisibleReasoning && (
+              {/* AgentLoader - show when contemplating or brewing */}
+              {/* For contemplating: always show (stale reasoning shouldn't block it) */}
+              {/* For brewing: only show when no visible reasoning yet */}
+              {(isContemplating || (isBrewing && !hasVisibleReasoning)) && (
                 <View className="h-6 justify-center overflow-hidden">
                   <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
                 </View>
@@ -2119,23 +2181,24 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                          tc.tool_result !== null &&
                          (typeof tc.tool_result === 'object' || Boolean(tc.tool_result)));
 
-                      // Handle create-slide with inline thumbnail
+                      // Handle create-slide with inline thumbnail (with loading state during streaming)
                       if (rawToolName === 'create-slide') {
                         const toolResult = isCompleted && tc.tool_result ? {
                           output: tc.tool_result?.output || tc.tool_result,
                           success: tc.tool_result?.success !== false,
                         } : undefined;
-                        const slideInfo = extractSlideInfo(toolResult);
+                        // Try to get slideInfo from result first, then from arguments for streaming preview
+                        const slideInfo = extractSlideInfo(toolResult) || extractSlideInfoFromArgs(tc.arguments);
 
                         return (
                           <View key={tc.tool_call_id || `trailing-slide-${tcIndex}`}>
                             <CompactStreamingToolCard toolCall={tc} toolName={displayToolName} />
-                            {isCompleted && slideInfo && sandboxUrl && (
+                            {slideInfo && (
                               <SlideInlineThumbnail
                                 slideInfo={slideInfo}
                                 sandboxUrl={sandboxUrl}
                                 onClick={() => {}}
-                                isLoading={false}
+                                isLoading={!isCompleted || !sandboxUrl}
                               />
                             )}
                           </View>

@@ -343,7 +343,11 @@ export function ThreadPage({
   const deleteThreadMutation = useDeleteThread();
   const shareThreadMutation = useShareThread();
 
-  const { data: fullThreadData, refetch: refetchThreadData } = useThread(chat.activeThread?.id);
+  // Don't fetch for optimistic threads - they don't exist on server yet
+  const isOptimisticThread = chat.activeThread?.id?.startsWith('optimistic-');
+  const { data: fullThreadData, refetch: refetchThreadData } = useThread(
+    !isOptimisticThread ? chat.activeThread?.id : undefined
+  );
 
   React.useEffect(() => {
     if (isKortixComputerOpen) {
@@ -353,6 +357,66 @@ export function ThreadPage({
       setSelectedToolData(null);
     }
   }, [isKortixComputerOpen, refetchThreadData]);
+
+  // Track previous streaming state to detect when streaming ends
+  const prevIsStreamingRef = React.useRef(chat.isStreaming);
+
+  // Refetch thread data when streaming ends to get sandbox URL for tool previews
+  // This is crucial for slide previews that need sandboxUrl immediately after tool completes
+  React.useEffect(() => {
+    const wasStreaming = prevIsStreamingRef.current;
+    const isNowStreaming = chat.isStreaming;
+    prevIsStreamingRef.current = isNowStreaming;
+
+    // If streaming just ended and we have a valid (non-optimistic) thread, refetch to get sandbox URL
+    if (wasStreaming && !isNowStreaming && chat.activeThread?.id && !chat.activeThread.id.startsWith('optimistic-')) {
+      log.log('[ThreadPage] Streaming ended, refetching thread data for sandbox URL');
+      refetchThreadData();
+    }
+  }, [chat.isStreaming, chat.activeThread?.id, refetchThreadData]);
+
+  // Also refetch when thread ID changes from optimistic to real
+  React.useEffect(() => {
+    if (chat.activeThread?.id && !chat.activeThread.id.startsWith('optimistic-') && !fullThreadData) {
+      log.log('[ThreadPage] Real thread ID available, fetching thread data');
+      refetchThreadData();
+    }
+  }, [chat.activeThread?.id, fullThreadData, refetchThreadData]);
+
+  // Poll for sandbox_url when streaming and sandbox_url is missing
+  // This is CRITICAL for slide previews that need sandboxUrl to load during streaming
+  React.useEffect(() => {
+    // Only poll if:
+    // 1. We're streaming (agent is actively running)
+    // 2. We don't have sandbox_url yet (either no fullThreadData or no sandbox_url in it)
+    // 3. Thread is not optimistic
+    const hasSandboxUrl = fullThreadData?.project?.sandbox?.sandbox_url;
+    const shouldPoll = chat.isStreaming && !hasSandboxUrl && !isOptimisticThread && chat.activeThread?.id;
+
+    if (!shouldPoll) return;
+
+    log.log('[ThreadPage] Polling for sandbox_url during streaming - no URL available yet');
+
+    // Immediately fetch on start
+    refetchThreadData();
+
+    // Poll every 1.5 seconds (more aggressive than before)
+    const pollInterval = setInterval(() => {
+      log.log('[ThreadPage] Polling refetch for sandbox_url');
+      refetchThreadData();
+    }, 1500);
+
+    // Stop polling after 30 seconds
+    const stopPollingTimeout = setTimeout(() => {
+      log.log('[ThreadPage] Stopping sandbox_url polling after 30s');
+      clearInterval(pollInterval);
+    }, 30000);
+
+    return () => {
+      clearInterval(pollInterval);
+      clearTimeout(stopPollingTimeout);
+    };
+  }, [chat.isStreaming, fullThreadData?.project?.sandbox?.sandbox_url, isOptimisticThread, chat.activeThread?.id, refetchThreadData]);
 
   const messages = chat.messages || [];
   const streamingContent = chat.streamingContent || '';
@@ -365,6 +429,8 @@ export function ThreadPage({
   // This persists after the tool completes so we can show "Success" state
   const [activeToolData, setActiveToolData] = React.useState<ToolSnackData | null>(null);
   const lastToolCallIdRef = React.useRef<string | null>(null);
+  // Track previous streaming tool call ID to avoid processing same tool repeatedly
+  const prevStreamingToolCallIdRef = React.useRef<string | null>(null);
 
   // Check if voice player is active (for scroll button positioning)
   const voiceState = useVoicePlayerStore((s) => s.state);
@@ -386,7 +452,6 @@ export function ThreadPage({
 
   // Handle snack dismiss - user swiped to close
   const handleToolSnackDismiss = React.useCallback(() => {
-    log.log('[ToolSnack] 👋 User dismissed snack for:', activeToolData?.toolCallId);
     if (activeToolData?.toolCallId) {
       setDismissedToolCallId(activeToolData.toolCallId);
     }
@@ -394,16 +459,22 @@ export function ThreadPage({
   }, [activeToolData?.toolCallId]);
 
   // Update activeToolData when streamingToolCall changes
+  // OPTIMIZATION: Only process when toolCallId actually changes to avoid re-renders on every SSE update
   React.useEffect(() => {
-    log.log('[ToolSnack] streamingToolCall changed:', streamingToolCall ? 'has data' : 'null');
     const extracted = extractToolFromStreamingMessage(streamingToolCall);
-    log.log('[ToolSnack] Extracted from streaming:', extracted?.toolName || 'null');
+    const currentToolCallId = extracted?.toolCallId || null;
+
+    // Skip if toolCallId hasn't changed (avoid processing on every SSE event)
+    if (currentToolCallId === prevStreamingToolCallIdRef.current) {
+      return;
+    }
+    prevStreamingToolCallIdRef.current = currentToolCallId;
+
     if (extracted) {
       // Check if this is a NEW tool (different from dismissed one)
       if (extracted.toolCallId && extracted.toolCallId !== dismissedToolCallId) {
         // New tool - clear dismissed state and show
         if (dismissedToolCallId) {
-          log.log('[ToolSnack] New tool started, clearing dismissed state');
           setDismissedToolCallId(null);
         }
         setActiveToolData(extracted);
@@ -422,21 +493,16 @@ export function ThreadPage({
   // 1. Opening an existing thread with tools (activeToolData is null)
   // 2. When a streaming tool completes (activeToolData.isStreaming is true, tool message appears)
   React.useEffect(() => {
-    log.log('[ToolSnack] Messages effect - count:', messages.length, 'activeToolData:', activeToolData?.toolName || 'null', 'isStreaming:', activeToolData?.isStreaming);
-
     if (messages.length === 0) return;
 
     // Case 1: No active tool data - set from messages (unless dismissed)
     if (!activeToolData) {
       const lastTool = extractLastToolFromMessages(messages);
-      log.log('[ToolSnack] Setting from messages (no active):', lastTool?.toolName || 'null');
       if (lastTool) {
         // Only show if not the dismissed tool
         if (lastTool.toolCallId !== dismissedToolCallId) {
           setActiveToolData(lastTool);
           lastToolCallIdRef.current = lastTool.toolCallId || null;
-        } else {
-          log.log('[ToolSnack] Tool was dismissed, not showing');
         }
       }
       return;
@@ -447,7 +513,6 @@ export function ThreadPage({
       // Look for this tool in messages to see if it completed
       const completedTool = extractLastToolFromMessages(messages);
       if (completedTool && completedTool.toolCallId === activeToolData.toolCallId && !completedTool.isStreaming) {
-        log.log('[ToolSnack] Tool completed! Updating from streaming to:', completedTool.success ? 'success' : 'failed');
         setActiveToolData(completedTool);
       }
     }
@@ -458,7 +523,6 @@ export function ThreadPage({
       const lastTool = extractLastToolFromMessages(messages);
       if (lastTool && lastTool.toolCallId !== activeToolData.toolCallId) {
         // New tool found - clear dismissed state and show
-        log.log('[ToolSnack] Newer tool found in messages:', lastTool.toolName);
         if (dismissedToolCallId) {
           setDismissedToolCallId(null);
         }
@@ -473,7 +537,6 @@ export function ThreadPage({
   const voiceClose = useVoicePlayerStore((s) => s.close);
 
   React.useEffect(() => {
-    log.log('[ToolSnack] Thread changed, clearing activeToolData and dismissed state');
     setActiveToolData(null);
     setDismissedToolCallId(null);
     lastToolCallIdRef.current = null;

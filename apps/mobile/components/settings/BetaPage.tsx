@@ -60,7 +60,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
 
           <View className="px-6 pb-8 pt-2">
             {/* OTA Update Test Banner */}
-            <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
+            {/* <View className="mb-6 bg-gradient-to-br from-purple-500/20 to-pink-500/20 border-2 border-purple-500/40 rounded-3xl p-5 overflow-hidden">
               <View className="flex-row items-center gap-3 mb-2">
                 <View className="h-10 w-10 rounded-full bg-purple-500/30 items-center justify-center">
                   <Icon as={Rocket} size={20} className="text-purple-600 dark:text-purple-400" strokeWidth={2.5} />
@@ -83,7 +83,7 @@ export function BetaPage({ visible, onClose }: BetaPageProps) {
                   Update ID: {Constants.expoConfig?.extra?.eas?.projectId?.slice(0, 8) || 'Local'}
                 </Text>
               </View>
-            </View>
+            </View> */}
 
             {/* Web Support - Prominent */}
             <View className="mb-6">

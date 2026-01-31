@@ -1,11 +1,11 @@
 /**
  * Inline slide thumbnail component for displaying created slides in chat
  * Fetches metadata and displays a 16:9 slide preview thumbnail
+ * Includes retry logic with exponential backoff (matching frontend behavior)
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Pressable, LayoutChangeEvent } from 'react-native';
-import { Text } from '@/components/ui/text';
 import { WebView } from 'react-native-webview';
 import { useColorScheme } from 'nativewind';
 import Animated, {
@@ -102,18 +102,82 @@ export function SlideInlineThumbnail({
   const [isLoadingMetadata, setIsLoadingMetadata] = useState(true);
   const [containerWidth, setContainerWidth] = useState(0);
 
-  // Fetch metadata to get proper slide URL
+  // Refs for retry logic and current values
+  const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoadedRef = useRef(false);
+  const isMountedRef = useRef(true);
+  const currentSandboxUrlRef = useRef(sandboxUrl);
+  const currentSlideInfoRef = useRef(slideInfo);
+
+  // Keep refs updated
+  currentSandboxUrlRef.current = sandboxUrl;
+  currentSlideInfoRef.current = slideInfo;
+
+  const maxRetries = 10;
+
+  // Effect to load metadata with retry logic
+  // CRITICAL: Only fetch when tool is completed (externalLoading=false) AND sandboxUrl is available
+  // This matches frontend behavior - show shimmer during streaming, only fetch after completion
+  // The metadata.json won't exist until the tool completes and writes the file
   useEffect(() => {
-    if (!sandboxUrl || !slideInfo?.presentationName) {
+    // Reset state on dependency change
+    hasLoadedRef.current = false;
+    setSlideUrl(null);
+    setIframeLoaded(false);
+    setIsLoadingMetadata(true);
+    isMountedRef.current = true;
+
+    // Clear any pending retry
+    if (retryTimeoutRef.current) {
+      clearTimeout(retryTimeoutRef.current);
+      retryTimeoutRef.current = null;
+    }
+
+    // If still loading (tool not completed), show shimmer but don't fetch yet
+    // The slide file won't exist until the tool completes
+    if (externalLoading) {
+      log.log('[SlideInlineThumbnail] Tool still loading, showing shimmer');
+      return;
+    }
+
+    // If sandboxUrl is missing, keep loading state true (shimmer will show)
+    // but don't try to fetch - we'll re-run this effect when sandboxUrl becomes available
+    if (!sandboxUrl) {
+      log.log('[SlideInlineThumbnail] No sandboxUrl yet, showing shimmer');
+      return;
+    }
+
+    if (!slideInfo?.presentationName) {
       setIsLoadingMetadata(false);
       return;
     }
 
-    const fetchMetadata = async () => {
+    log.log('[SlideInlineThumbnail] Starting metadata fetch for', slideInfo.presentationName, 'slide', slideInfo.slideNumber);
+
+    const loadMetadata = async (retry = 0): Promise<void> => {
+      // Use refs to get current values
+      const currentUrl = currentSandboxUrlRef.current;
+      const currentInfo = currentSlideInfoRef.current;
+
+      if (!currentUrl || !currentInfo?.presentationName) {
+        if (isMountedRef.current) {
+          setIsLoadingMetadata(false);
+        }
+        return;
+      }
+
+      // If already loaded successfully, don't retry
+      if (hasLoadedRef.current) {
+        if (isMountedRef.current) {
+          setIsLoadingMetadata(false);
+        }
+        return;
+      }
+
       try {
-        const sanitizedName = slideInfo.presentationName.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
+        const sanitizedName = currentInfo.presentationName.replace(/[^a-zA-Z0-9\-_]/g, '').toLowerCase();
         const metadataUrl = constructHtmlPreviewUrl(
-          sandboxUrl,
+          currentUrl,
           `presentations/${sanitizedName}/metadata.json`
         );
 
@@ -122,23 +186,57 @@ export function SlideInlineThumbnail({
           headers: { 'Cache-Control': 'no-cache' },
         });
 
+        if (!isMountedRef.current) return;
+
         if (response.ok) {
           const data = await response.json();
-          const slideData = data.slides?.[slideInfo.slideNumber];
+          const slideData = data.slides?.[currentInfo.slideNumber];
           if (slideData?.file_path) {
-            const url = constructHtmlPreviewUrl(sandboxUrl, slideData.file_path);
+            const url = constructHtmlPreviewUrl(currentUrl, slideData.file_path);
+            hasLoadedRef.current = true;
             setSlideUrl(url);
+            setIsLoadingMetadata(false);
+
+            // Clear any pending retry
+            if (retryTimeoutRef.current) {
+              clearTimeout(retryTimeoutRef.current);
+              retryTimeoutRef.current = null;
+            }
+            return;
           }
         }
+
+        // Response not ok or no slide data - schedule retry
+        throw new Error(`Failed to load metadata: ${response.status}`);
       } catch (e) {
-        log.error('[SlideInlineThumbnail] Failed to load slide metadata:', e);
-      } finally {
-        setIsLoadingMetadata(false);
+        if (!isMountedRef.current) return;
+
+        log.warn(`[SlideInlineThumbnail] Attempt ${retry + 1}/${maxRetries} failed:`, e);
+
+        // Retry with exponential backoff (matching frontend: Math.min(1000 * Math.pow(1.5, retry), 5000))
+        if (retry < maxRetries - 1) {
+          const delay = Math.min(1000 * Math.pow(1.5, retry), 5000);
+          retryTimeoutRef.current = setTimeout(() => {
+            loadMetadata(retry + 1);
+          }, delay);
+        } else {
+          log.error('[SlideInlineThumbnail] Max retries reached, giving up');
+          setIsLoadingMetadata(false);
+        }
       }
     };
 
-    fetchMetadata();
-  }, [sandboxUrl, slideInfo?.presentationName, slideInfo?.slideNumber]);
+    // Start loading
+    loadMetadata(0);
+
+    return () => {
+      isMountedRef.current = false;
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+        retryTimeoutRef.current = null;
+      }
+    };
+  }, [sandboxUrl, slideInfo?.presentationName, slideInfo?.slideNumber, externalLoading]);
 
   const handleLayout = useCallback((event: LayoutChangeEvent) => {
     const { width } = event.nativeEvent.layout;
@@ -150,7 +248,6 @@ export function SlideInlineThumbnail({
 
   // Calculate scale: container width / original slide width (1920)
   const scale = containerWidth > 0 ? containerWidth / 1920 : 0;
-  const containerHeight = containerWidth > 0 ? containerWidth * (9 / 16) : 0;
 
   // Inject JavaScript to properly scale the slide content
   const injectedJS = `
@@ -188,7 +285,7 @@ export function SlideInlineThumbnail({
   }
 
   return (
-    <Pressable onPress={onClick}>
+    <Pressable onPress={onClick} disabled={!onClick}>
       <View
         onLayout={handleLayout}
         className="mt-2 rounded-xl overflow-hidden"
@@ -209,7 +306,7 @@ export function SlideInlineThumbnail({
             }}
           >
             <WebView
-              key={`slide-${slideInfo.slideNumber}`}
+              key={`slide-${slideInfo.slideNumber}-${slideUrl}`}
               source={{ uri: slideUrl }}
               scrollEnabled={false}
               showsVerticalScrollIndicator={false}

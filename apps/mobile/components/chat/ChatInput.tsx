@@ -218,6 +218,13 @@ export const ChatInput = React.memo(React.forwardRef<ChatInputRef, ChatInputProp
     },
   }), []);
 
+  // Dismiss keyboard when recording starts
+  React.useEffect(() => {
+    if (isRecording) {
+      Keyboard.dismiss();
+    }
+  }, [isRecording]);
+
   // Animation effects
   React.useEffect(() => {
     if (isAgentRunning) {
@@ -519,16 +526,11 @@ const RecordingMode = React.memo(({
   onStopPressOut,
   onSendAudio,
 }: RecordingModeProps) => (
-  <>
-    <View className="flex-1 items-center bottom-5 justify-center">
+  <View style={{ minHeight: 120 }}>
+    <View className="items-center justify-center mb-4" style={{ minHeight: 56 }}>
       <AudioWaveform isRecording={true} audioLevels={audioLevels} />
     </View>
-    <View className="absolute bottom-6 right-16 items-center">
-      <Text className="text-xs font-roobert-medium text-foreground/50">
-        {recordingStatusText}
-      </Text>
-    </View>
-    <View className="absolute bottom-4 left-4 right-4 flex-row items-center justify-between">
+    <View className="flex-row items-center justify-between">
       <AnimatedPressable
         onPressIn={onCancelPressIn}
         onPressOut={onCancelPressOut}
@@ -539,6 +541,9 @@ const RecordingMode = React.memo(({
       >
         <Icon as={X} size={16} className="text-foreground" strokeWidth={2} />
       </AnimatedPressable>
+      <Text className="text-xs font-roobert-medium text-foreground/50">
+        {recordingStatusText}
+      </Text>
       <AnimatedPressable
         onPressIn={onStopPressIn}
         onPressOut={onStopPressOut}
@@ -550,7 +555,7 @@ const RecordingMode = React.memo(({
         <Icon as={CornerDownLeft} size={16} className="text-primary-foreground" strokeWidth={2} />
       </AnimatedPressable>
     </View>
-  </>
+  </View>
 ));
 
 RecordingMode.displayName = 'RecordingMode';

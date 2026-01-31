@@ -311,10 +311,6 @@ export const ChatInputSection = React.memo(React.forwardRef<ChatInputSectionRef,
         />
 
         {/* Tool Snack - Above Input (only in thread view, not home) */}
-        {(() => {
-          log.log('[ChatInputSection] ToolSnack check - showQuickActions:', showQuickActions, 'activeToolData:', activeToolData?.toolName || 'null');
-          return null;
-        })()}
         {!showQuickActions && (
           <ToolSnack
             toolData={activeToolData || null}

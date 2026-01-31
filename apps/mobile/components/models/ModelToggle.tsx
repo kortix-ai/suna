@@ -52,8 +52,16 @@ export function ModelToggle({
   }, [models]);
 
   const isAdvancedSelected = advancedModel && selectedModelId === advancedModel.id;
-  const isBasicSelected = !isAdvancedSelected;
+  const isBasicSelected = basicModel && selectedModelId === basicModel.id;
   const canAccessAdvanced = advancedModel ? canAccessModel(advancedModel) : false;
+
+  // Auto-select basic model if current selection is not one of our known models
+  React.useEffect(() => {
+    if (basicModel && selectedModelId && !isBasicSelected && !isAdvancedSelected) {
+      // Unknown model selected (e.g., from old version), switch to basic
+      onModelChange(basicModel.id);
+    }
+  }, [basicModel, selectedModelId, isBasicSelected, isAdvancedSelected, onModelChange]);
 
   const handleBasicPress = () => {
     if (basicModel && !isBasicSelected) {

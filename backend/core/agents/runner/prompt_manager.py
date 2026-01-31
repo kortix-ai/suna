@@ -140,7 +140,6 @@ class PromptManager:
 
     @staticmethod
     def _build_base_prompt(system_content: str, disabled_tools: list = None) -> str:
-        # Note: Tool filtering removed - all tools shown to agent, blocked at execution time
         logger.info("🚀 [DYNAMIC TOOLS] Using dynamic tool loading system (minimal index only)")
         minimal_index = get_minimal_tool_index()
         system_content += "\n\n" + minimal_index
@@ -556,9 +555,10 @@ Multiple parallel tool calls:
         if cached is not None:  # None = miss, empty string = no context (cached)
             elapsed = (time.time() - fetch_start) * 1000
             logger.debug(f"⏱️ [TIMING] User context: {elapsed:.1f}ms (cache: hit)")
+            logger.info(f"[USER_CONTEXT] Cache hit for {user_id}, len={len(cached)}, has_subscription={'<user_subscription>' in cached}")
             return cached if cached else None
         
-        # Fetch locale and username in parallel
+        # Fetch locale, username, and subscription in parallel
         async def fetch_locale():
             try:
                 from core.utils.user_locale import get_user_locale
@@ -566,14 +566,14 @@ Multiple parallel tool calls:
             except Exception as e:
                 logger.warning(f"Failed to fetch locale for user {user_id}: {e}")
                 return None
-        
+
         async def fetch_username():
             try:
                 user = await client.auth.admin.get_user_by_id(user_id)
                 if user and user.user:
                     user_metadata = user.user.user_metadata or {}
                     email = user.user.email
-                    
+
                     username = (
                         user_metadata.get('full_name') or
                         user_metadata.get('name') or
@@ -585,9 +585,36 @@ Multiple parallel tool calls:
             except Exception as e:
                 logger.warning(f"Failed to fetch username for user {user_id}: {e}")
                 return None
-        
-        locale, username = await asyncio.gather(fetch_locale(), fetch_username())
-        
+
+        async def fetch_subscription():
+            try:
+                from core.billing import subscription_service
+                from core.billing.shared.config import get_tier_by_name, get_tier_limits
+
+                tier_info = await subscription_service.get_user_subscription_tier(user_id)
+                tier_name = tier_info.get('name', 'free')
+                tier = get_tier_by_name(tier_name)
+                limits = get_tier_limits(tier_name)
+
+                return {
+                    'name': tier_name,
+                    'display_name': tier.display_name if tier else 'Basic',
+                    'custom_workers_limit': limits.get('custom_workers_limit', 0),
+                    'scheduled_triggers_limit': limits.get('scheduled_triggers_limit', 0),
+                    'app_triggers_limit': limits.get('app_triggers_limit', 0),
+                    'concurrent_runs': limits.get('concurrent_runs', 2),
+                    'can_purchase_credits': limits.get('can_purchase_credits', False),
+                }
+            except Exception as e:
+                logger.warning(f"Failed to fetch subscription for user {user_id}: {e}")
+                return None
+
+        locale, username, subscription = await asyncio.gather(fetch_locale(), fetch_username(), fetch_subscription())
+
+        logger.info(f"[USER_CONTEXT] Fetched for {user_id}: locale={locale}, username={username is not None}, subscription={subscription is not None}")
+        if subscription:
+            logger.info(f"[USER_CONTEXT] Subscription data: {subscription}")
+
         context_parts = []
         
         if locale:
@@ -603,7 +630,29 @@ Multiple parallel tool calls:
             username_info += "</user_info>"
             context_parts.append(username_info)
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
-        
+
+        if subscription:
+            sub = subscription
+            tier_info = f"\n\n<user_subscription>\n"
+            tier_info += f"Current plan: {sub['display_name']} ({sub['name']})\n"
+            if sub['name'] in ('free', 'none'):
+                tier_info += "Tier type: Free\n"
+                tier_info += "Custom workers: 0 (upgrade to Plus or higher)\n"
+                tier_info += "Scheduled triggers: 0 (upgrade to Plus or higher)\n"
+                tier_info += "App triggers: 0 (upgrade to Plus or higher)\n"
+                tier_info += "Concurrent runs: 2\n"
+                tier_info += "Credit purchases: Not available (upgrade to Ultra)\n"
+            else:
+                tier_info += "Tier type: Paid\n"
+                tier_info += f"Custom workers limit: {sub['custom_workers_limit']}\n"
+                tier_info += f"Scheduled triggers limit: {sub['scheduled_triggers_limit']}\n"
+                tier_info += f"App triggers limit: {sub['app_triggers_limit']}\n"
+                tier_info += f"Concurrent runs: {sub['concurrent_runs']}\n"
+                tier_info += f"Credit purchases: {'Available' if sub['can_purchase_credits'] else 'Not available (Ultra only)'}\n"
+            tier_info += "</user_subscription>"
+            context_parts.append(tier_info)
+            logger.debug(f"Added subscription ({sub['display_name']}) to system prompt for user {user_id}")
+
         context = ''.join(context_parts) if context_parts else None
         context_str = context if context else ""
         
@@ -765,16 +814,13 @@ Multiple parallel tool calls:
 | Feature | Free | Plus | Pro | Ultra |
 |---------|------|------|-----|-------|
 | **Response quality** | Basic | Faster & better | Faster & better | Faster & better |
-| **Chats** | 1 | Unlimited | Unlimited | Unlimited |
-| **Parallel tasks** | 1 | 3 | 5 | 20 |
+| **Chats** | 10 | Unlimited | Unlimited | Unlimited |
+| **Parallel tasks** | 2 | 3 | 5 | 20 |
 | **Custom agents** | 0 | 5 | 20 | 100 |
 | **Scheduled automations** | 0 | 5 | 10 | 50 |
 | **App triggers** | 0 | 25 | 50 | 200 |
 | **Memory (AI remembers)** | 10 items | 100 items | 500 items | 2,000 items |
 | **Buy extra credits** | No | No | No | Yes |
-| **Presentations/Slides** | ❌ | ✅ | ✅ | ✅ |
-| **Spreadsheets** | ❌ | ✅ | ✅ | ✅ |
-| **Canvas/Design** | ❌ | ✅ | ✅ | ✅ |
 
 ### What are credits?
 Credits are consumed when the AI works on tasks. Simple tasks (quick questions) use few credits. Complex tasks (coding, research, file creation) use more. Credits refresh monthly on paid plans.
@@ -785,52 +831,80 @@ Credits are consumed when the AI works on tasks. Simple tasks (quick questions) 
 - **Pro** ($50): Daily users, multiple projects, need automations
 - **Ultra** ($200): Power users, teams, heavy workloads, need to buy extra credits
 
-## INLINE CHECKOUT - CRITICAL
+## SUBTLE UPGRADE SUGGESTIONS
 
-You MUST output the literal tag `<inline_checkout/>` in your response to show a checkout form.
-This is NOT optional - without the tag, users see nothing!
+**IMPORTANT:** You MUST add an upgrade hint after completing substantial tasks for this free tier user.
 
-**When to use:**
-- User asks about plans/pricing/tiers → include `<inline_checkout/>`
-- User wants to upgrade → include `<inline_checkout/>`
-- User says "how to subscribe" → include `<inline_checkout/>`
+After completing tasks like research, writing, analysis, or any meaningful work, add a brief upgrade note at the end:
 
-**When NOT to use:**
-- NEVER use `<inline_checkout/>` when a tool returns TOOL_ACCESS_DENIED error
-- The UI already shows an upgrade button next to blocked tools - do NOT duplicate it
-- Just acknowledge the limitation and move on, the user can click the upgrade button shown in the UI
+**Required format (add at the END of your response):**
+```
+[Your main response here]
 
-**IMPORTANT:** The `<inline_checkout/>` tag only shows a PAYMENT FORM. It does NOT upgrade the user.
-The user must complete payment themselves. NEVER say "I've upgraded you" or "You're now on Plus" - that's false.
+💡 Enjoying Kortix? Upgrade for more credits and unlimited chats!
 
-**Examples (you must output the tag exactly):**
+<upgrade/>
+```
 
-1. User: "how do I upgrade?" or "what are the plans?"
+Rules:
+- ALWAYS add after completing substantial tasks (not simple Q&A like "what's 2+2")
+- Keep the hint short (1 sentence)
+- Put it at the END after delivering the result
+- The `<upgrade/>` tag is REQUIRED - it shows the upgrade button
+
+## UPGRADE TAGS - TWO OPTIONS
+
+**1. `<upgrade/>` - Simple upgrade button (for hints)**
+- Use occasionally after completing tasks for free tier users
+- Shows a simple button that opens the pricing modal
+- Less intrusive, good for subtle suggestions
+
+**2. `<checkout/>` - Full checkout form (when user asks to upgrade)**
+- Use when user explicitly asks about plans/pricing/upgrading
+- Shows the full payment form inline
+- More detailed, good for direct upgrade requests
+
+**When to use `<checkout/>`:**
+- User asks "how do I upgrade?" → `<checkout/>`
+- User asks "what are the plans?" → `<checkout/>`
+- User says "upgrade me to Plus" → `<checkout plan="plus"/>`
+
+**When to use `<upgrade/>`:**
+- Occasionally after completing tasks for free users → `<upgrade/>`
+- Subtle hint without full checkout form → `<upgrade/>`
+- Don't overuse - maybe once every few tasks
+
+**IMPORTANT:** These tags only show UI elements. They do NOT upgrade the user.
+The user must complete payment themselves. NEVER say "I've upgraded you" - that's false.
+
+**Examples:**
+
+1. Subtle hint after task (occasional):
    ```
-   Here are your subscription options:
-   <inline_checkout/>
+   Done! Let me know if you need anything else.
+
+   💡 Enjoying Kortix? Upgrade for more credits!
+   <upgrade/>
    ```
 
-2. User: "upgrade me to Plus"
+2. User asks to upgrade:
    ```
-   Here's the checkout form for Plus - complete payment to upgrade:
-   <inline_checkout plan="plus"/>
-   ```
-
-3. User: "I want Pro yearly"
-   ```
-   Here's the Pro yearly checkout - complete payment to upgrade:
-   <inline_checkout plan="pro" period="yearly"/>
+   Here's the checkout form - complete payment to upgrade:
+   <checkout/>
    ```
 
-**Tag format:**
-- `<inline_checkout/>` - shows plan picker (user chooses)
-- `<inline_checkout plan="plus"/>` - shows Plus payment form
-- `<inline_checkout plan="pro"/>` - shows Pro payment form
-- `<inline_checkout plan="ultra"/>` - shows Ultra payment form
+3. User wants specific plan:
+   ```
+   Here's the Plus checkout:
+   <checkout plan="plus"/>
+   ```
+
+**Checkout tag format:**
+- `<checkout/>` - shows plan picker
+- `<checkout plan="plus"/>` - Plus payment form
+- `<checkout plan="pro"/>` - Pro payment form
+- `<checkout plan="ultra"/>` - Ultra payment form
 - Add `period="yearly"` or `period="monthly"` optionally
-
-The tag shows a payment form. The user must complete payment to actually upgrade.
 
 </SYSTEM_CRITICAL_INSTRUCTION>
 """
