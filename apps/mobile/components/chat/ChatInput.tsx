@@ -526,8 +526,8 @@ const RecordingMode = React.memo(({
   onStopPressOut,
   onSendAudio,
 }: RecordingModeProps) => (
-  <View style={{ minHeight: 100 }}>
-    <View className="items-center justify-center mb-3">
+  <View style={{ minHeight: 120 }}>
+    <View className="items-center justify-center mb-4" style={{ minHeight: 56 }}>
       <AudioWaveform isRecording={true} audioLevels={audioLevels} />
     </View>
     <View className="flex-row items-center justify-between">
