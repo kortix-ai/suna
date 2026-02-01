@@ -99,9 +99,9 @@ export function AdminFeedbackTable() {
       id: 'feedback',
       header: 'Feedback',
       cell: (feedback) => (
-        <div className="max-w-md">
+        <div className="w-64">
           {feedback.feedback_text ? (
-            <div className="text-sm text-foreground line-clamp-2" title={feedback.feedback_text}>
+            <div className="text-sm bg-muted/30 p-2 rounded max-h-20 overflow-y-auto whitespace-pre-wrap">
               {feedback.feedback_text}
             </div>
           ) : (

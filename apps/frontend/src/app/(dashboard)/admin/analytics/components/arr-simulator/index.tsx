@@ -1069,7 +1069,10 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const webData = getMonthlyActualData(idx, 'web');
       const appData = getMonthlyActualData(idx, 'app');
       const webOverrides = webData?.overrides || {};
-      
+      const appOverrides = appData?.overrides || {};
+      // Use same data source as app row: prefer monthly override, else weekly aggregation
+      const appAggregatedForChart = monthlyActuals[`${idx}_app`] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
+
       // Web: Use overridden value if locked, otherwise auto-fetched
       const webViews = webOverrides.views ? (webData?.views || 0) : (metricsByCalendarMonth.views[idx] || 0);
       const webSignups = webOverrides.signups ? (webData?.signups || 0) : (metricsByCalendarMonth.signups[idx] || 0);
@@ -1078,15 +1081,15 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
       const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : (monthlyActuals[idx]?.subscribers || 0);
       const webMrr = webOverrides.mrr ? (webData?.mrr || 0) : (monthlyActuals[idx]?.mrr || 0);
       const webArr = webOverrides.arr ? (webData?.arr || 0) : (monthlyActuals[idx]?.arr || 0);
-      
-      // App: Always use manual data
-      const appViews = appData?.views || 0;
-      const appSignups = appData?.signups || 0;
-      const appNewPaid = appData?.newPaid || 0;
-      const appChurn = appData?.churn || 0;
-      const appSubs = appData?.subscribers || 0;
-      const appMrr = appData?.mrr || 0;
-      const appArr = appData?.arr || 0;
+
+      // App: prefer monthly override, else use weekly aggregation (same logic as app row)
+      const appViews = appOverrides.views ? (appData?.views || 0) : appAggregatedForChart.views;
+      const appSignups = appOverrides.signups ? (appData?.signups || 0) : appAggregatedForChart.signups;
+      const appNewPaid = appOverrides.new_paid ? (appData?.newPaid || 0) : appAggregatedForChart.newPaid;
+      const appChurn = appOverrides.churn ? (appData?.churn || 0) : appAggregatedForChart.churn;
+      const appSubs = appOverrides.subscribers ? (appData?.subscribers || 0) : appAggregatedForChart.subscribers;
+      const appMrr = appOverrides.mrr ? (appData?.mrr || 0) : appAggregatedForChart.mrr;
+      const appArr = appOverrides.arr ? (appData?.arr || 0) : appAggregatedForChart.arr;
       
       // Combined totals
       const effectiveViews = webViews + appViews;
@@ -1639,7 +1642,10 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const webData = getMonthlyActualData(month.monthIndex, 'web');
                   const appData = getMonthlyActualData(month.monthIndex, 'app');
                   const webOverrides = webData?.overrides || {};
-                  
+                  const appOverrides = appData?.overrides || {};
+                  // Use same data source as app row: prefer monthly override, else weekly aggregation
+                  const appAggregatedForTotal = monthlyActuals[`${month.monthIndex}_app`] || { views: 0, signups: 0, newPaid: 0, churn: 0, subscribers: 0, mrr: 0, arr: 0 };
+
                   // Web effective values
                   const webViews = webOverrides.views ? (webData?.views || 0) : (metricsByCalendarMonth.views[month.monthIndex] || 0);
                   const webSignups = webOverrides.signups ? (webData?.signups || 0) : (metricsByCalendarMonth.signups[month.monthIndex] || 0);
@@ -1648,15 +1654,15 @@ export function ARRSimulator({ analyticsSource }: ARRSimulatorProps) {
                   const webSubs = webOverrides.subscribers ? (webData?.subscribers || 0) : actual.subscribers;
                   const webMRR = webOverrides.mrr ? (webData?.mrr || 0) : actual.mrr;
                   const webARR = webOverrides.arr ? (webData?.arr || 0) : actual.arr;
-                  
-                  // App values (always manual)
-                  const appViews = appData?.views || 0;
-                  const appSignups = appData?.signups || 0;
-                  const appNewPaid = appData?.newPaid || 0;
-                  const appChurn = appData?.churn || 0;
-                  const appSubs = appData?.subscribers || 0;
-                  const appMRR = appData?.mrr || 0;
-                  const appARR = appData?.arr || 0;
+
+                  // App values: prefer monthly override, else use weekly aggregation (same logic as app row)
+                  const appViews = appOverrides.views ? (appData?.views || 0) : appAggregatedForTotal.views;
+                  const appSignups = appOverrides.signups ? (appData?.signups || 0) : appAggregatedForTotal.signups;
+                  const appNewPaid = appOverrides.new_paid ? (appData?.newPaid || 0) : appAggregatedForTotal.newPaid;
+                  const appChurn = appOverrides.churn ? (appData?.churn || 0) : appAggregatedForTotal.churn;
+                  const appSubs = appOverrides.subscribers ? (appData?.subscribers || 0) : appAggregatedForTotal.subscribers;
+                  const appMRR = appOverrides.mrr ? (appData?.mrr || 0) : appAggregatedForTotal.mrr;
+                  const appARR = appOverrides.arr ? (appData?.arr || 0) : appAggregatedForTotal.arr;
                   
                   // Totals
                   const totalViews = webViews + appViews;
