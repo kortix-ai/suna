@@ -184,12 +184,22 @@ export function useAgentStream(
     return coreResult.textContent.map(chunk => chunk.content).join('');
   }, [coreResult.textContent]);
 
+  // Determine if reasoning is complete:
+  // - When we transition from having reasoning to having text content
+  // - Or when the model moves to tool calls (reasoning→tool path)
+  // - Or when the stream status indicates completion
   const isReasoningComplete = useMemo(() => {
     const hasReasoning = coreResult.reasoningContent.length > 0;
     const hasText = textContentString.length > 0;
+    const hasToolCall = coreResult.toolCall !== null;
     const isNotStreaming = !['streaming', 'connecting'].includes(coreResult.status);
-    return (hasReasoning && hasText) || (hasReasoning && isNotStreaming);
-  }, [coreResult.reasoningContent, textContentString, coreResult.status]);
+
+    // Reasoning is complete when:
+    // 1. We have reasoning and now have text (model moved to response)
+    // 2. We have reasoning and now have a tool call (model skipped text, went to tools)
+    // 3. Or stream ended with reasoning content
+    return (hasReasoning && hasText) || (hasReasoning && hasToolCall) || (hasReasoning && isNotStreaming);
+  }, [coreResult.reasoningContent, textContentString, coreResult.toolCall, coreResult.status]);
 
   /**
    * Force reconnect when app comes back from background.

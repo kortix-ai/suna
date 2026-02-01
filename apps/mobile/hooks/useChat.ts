@@ -640,6 +640,7 @@ export function useChat(): UseChatReturn {
   }, [currentHookRunId, agentRunId, forceReconnect, activeThreadId, queryClient, refetchMessages]);
 
   const prevThreadIdRef = useRef<string | undefined>(undefined);
+  const justSwitchedThreadRef = useRef<boolean>(false);
 
   useEffect(() => {
     const prevThread = prevThreadIdRef.current;
@@ -654,6 +655,7 @@ export function useChat(): UseChatReturn {
 
       setMessages([]);
       lastStreamStartedRef.current = null;
+      justSwitchedThreadRef.current = true; // Flag to force reload when server data arrives
     }
 
     prevThreadIdRef.current = activeThreadId;
@@ -673,7 +675,15 @@ export function useChat(): UseChatReturn {
       // Convert API Message[] to UnifiedMessage[] with proper type handling
       const unifiedMessages = messagesData.map(messageToUnifiedMessage);
 
-      const shouldReload = messages.length === 0 || messagesData.length > messages.length + 50;
+      // CRITICAL: Force reload if we just switched threads, even if streaming added messages
+      // Without this, switching threads quickly can leave messages.length > 0 from streaming
+      // which bypasses the shouldReload check and leaves user messages missing
+      const shouldReload = messages.length === 0 || justSwitchedThreadRef.current || messagesData.length > messages.length + 50;
+
+      if (justSwitchedThreadRef.current) {
+        log.log('[useChat] Forcing reload after thread switch');
+        justSwitchedThreadRef.current = false; // Clear the flag
+      }
 
       if (shouldReload) {
         setMessages((prev) => {
