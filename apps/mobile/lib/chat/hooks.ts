@@ -332,7 +332,9 @@ export function useUnifiedAgentStart(
       return res.json();
     },
     onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: chatKeys.threads() });
+      // DON'T invalidate threads list - it causes race conditions where server
+      // returns stale data (replication lag) and overwrites our optimistic updates.
+      // The thread is already in cache via setQueriesData in useChat.
       queryClient.invalidateQueries({ queryKey: chatKeys.runs(data.thread_id) });
       if (variables.threadId) {
         queryClient.invalidateQueries({ queryKey: chatKeys.runs(variables.threadId) });

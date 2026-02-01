@@ -670,16 +670,21 @@ export function useAgentStreamCore(
     const runId = currentRunIdRef.current;
     const currentStatus = status;
 
-    // If already finalized, don't show error
-    if (['completed', 'stopped', 'error', 'agent_not_running'].includes(currentStatus)) {
+    console.log('[useAgentStreamCore] handleStreamClose called:', { runId, currentStatus });
+
+    // If already finalized or idle, this is an expected close (e.g., user switched threads)
+    if (['completed', 'stopped', 'error', 'agent_not_running', 'idle'].includes(currentStatus)) {
+      console.log('[useAgentStreamCore] handleStreamClose: Already finalized/idle, ignoring');
       return;
     }
 
+    // No runId means disconnectStream was called (user navigated away) - not an error
     if (!runId) {
-      if (currentStatus === 'streaming' || currentStatus === 'connecting') {
-        finalizeStream('error');
-      } else if (currentStatus !== 'idle') {
-        finalizeStream('idle');
+      console.log('[useAgentStreamCore] handleStreamClose: No runId, user likely switched threads');
+      // Don't call finalizeStream with 'error' - this was an intentional disconnect
+      // Just ensure we're in idle state
+      if (currentStatus !== 'idle') {
+        updateStatus('idle');
       }
       return;
     }
@@ -1116,6 +1121,17 @@ export function useAgentStreamCore(
   // Use this when switching threads - the agent keeps running in the background
   const disconnectStream = useCallback(() => {
     console.log('[useAgentStreamCore] Disconnecting stream (agent continues on server)');
+
+    // CRITICAL: Update status to 'idle' BEFORE closing the stream
+    // This prevents handleStreamClose from treating this as an error
+    // (it checks if status is 'streaming' to determine if close was unexpected)
+    updateStatus('idle');
+
+    // Clear run ID BEFORE cleanup to prevent handleStreamClose from showing error
+    currentRunIdRef.current = null;
+    setAgentRunId(null);
+
+    // Now close the stream - handleStreamClose will see status is 'idle' and runId is null
     if (streamCleanupRef.current) {
       streamCleanupRef.current();
       streamCleanupRef.current = null;
@@ -1128,11 +1144,6 @@ export function useAgentStreamCore(
     toolCallArgumentsRef.current.clear();
     previousToolCallStateRef.current = null;
     lastToolCallUpdateTimeRef.current = 0;
-
-    // Clear run ID and update status
-    currentRunIdRef.current = null;
-    setAgentRunId(null);
-    updateStatus('idle');
   }, [updateStatus]);
 
   // Stop agent on server AND disconnect - use only when user explicitly wants to stop

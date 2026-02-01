@@ -195,6 +195,14 @@ export function useChat(): UseChatReturn {
     agentId: string;
     agentName: string;
   } | null>(null);
+
+  // Track the current pending thread creation to abort if user navigates away
+  // This prevents race conditions where async API response sets state after user clicked + New Chat
+  const pendingThreadCreationRef = useRef<string | null>(null);
+
+  // Track ALL created threads to prevent race condition losses
+  // Maps optimisticId -> realThread object (once API returns)
+  const createdThreadsRef = useRef<Map<string, { thread_id: string; title: string; created_at: string; updated_at: string; is_public: boolean; metadata: any }>>(new Map());
   
   
   // Per-mode full state: keeps entire mode state in memory for instant switching (like browser tabs)
@@ -474,11 +482,19 @@ export function useChat(): UseChatReturn {
 
   const handleStreamError = useCallback((errorMessage: string) => {
     const lower = errorMessage.toLowerCase();
+
+    // Filter out expected/benign errors:
+    // - "not found" / "not running" = agent completed or was stopped
+    // - "stream closed unexpectedly" = user switched threads (we called disconnectStream)
+    // - "connection" errors during thread switch are expected on mobile
     const isExpected =
-      lower.includes('not found') || lower.includes('agent run is not running');
+      lower.includes('not found') ||
+      lower.includes('agent run is not running') ||
+      lower.includes('stream closed unexpectedly') ||
+      lower.includes('stream closed');
 
     if (isExpected) {
-      log.info(`[PAGE] Stream skipped for inactive run: ${errorMessage}`);
+      log.info(`[PAGE] Stream info (expected): ${errorMessage}`);
       return;
     }
 
@@ -537,19 +553,22 @@ export function useChat(): UseChatReturn {
     return rawDisconnectStream();
   }, [rawDisconnectStream, activeThreadId, agentRunId, currentHookRunId]);
 
-  const isStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting' || streamHookStatus === 'reconnecting';
-  const isReconnecting = streamHookStatus === 'reconnecting';
+  // CRITICAL: Also check activeThreadId - if no thread is active (dashboard), we're definitely not streaming
+  // This prevents laggy "running" status when user clicks + New Chat before React state updates propagate
+  const isStreaming = !!activeThreadId && (streamHookStatus === 'streaming' || streamHookStatus === 'connecting' || streamHookStatus === 'reconnecting');
+  const isReconnecting = !!activeThreadId && streamHookStatus === 'reconnecting';
 
-  // Log stream status changes
+  // Log stream status changes - only log actual status transitions, not every dependency change
+  const prevStreamStatusRef = useRef<string | null>(null);
   useEffect(() => {
-    log.log('📊 [useChat] STREAM_STATUS changed:', {
-      status: streamHookStatus,
-      currentHookRunId,
-      agentRunId,
-      activeThreadId,
-      isStreaming,
-    });
-  }, [streamHookStatus, currentHookRunId, agentRunId, activeThreadId, isStreaming]);
+    if (streamHookStatus !== prevStreamStatusRef.current) {
+      log.log('📊 [useChat] Stream status:', streamHookStatus, {
+        runId: currentHookRunId || agentRunId,
+        thread: activeThreadId?.slice(0, 8),
+      });
+      prevStreamStatusRef.current = streamHookStatus;
+    }
+  }, [streamHookStatus, currentHookRunId, agentRunId, activeThreadId]);
 
   // Handle app state changes - resume stream when coming back to foreground
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -625,6 +644,7 @@ export function useChat(): UseChatReturn {
   }, [currentHookRunId, agentRunId, forceReconnect, activeThreadId, queryClient, refetchMessages]);
 
   const prevThreadIdRef = useRef<string | undefined>(undefined);
+  const justSwitchedThreadRef = useRef<boolean>(false);
 
   useEffect(() => {
     const prevThread = prevThreadIdRef.current;
@@ -639,16 +659,36 @@ export function useChat(): UseChatReturn {
 
       setMessages([]);
       lastStreamStartedRef.current = null;
+      justSwitchedThreadRef.current = true; // Flag to force reload when server data arrives
     }
 
     prevThreadIdRef.current = activeThreadId;
 
-    if (messagesData) {
+    if (messagesData && messagesData.length > 0) {
+      // CRITICAL: Verify messages are for the current thread to avoid stale data race condition
+      // When user clicks sidebar, activeThreadId changes but messagesData may still be cached for old thread
+      const firstMessage = messagesData[0];
+      if (firstMessage.thread_id !== activeThreadId) {
+        log.log('[useChat] Skipping stale messagesData - belongs to different thread:', {
+          messageThreadId: firstMessage.thread_id,
+          activeThreadId,
+        });
+        return; // Skip - this is stale data for a different thread
+      }
+
       // Convert API Message[] to UnifiedMessage[] with proper type handling
       const unifiedMessages = messagesData.map(messageToUnifiedMessage);
-      
-      const shouldReload = messages.length === 0 || messagesData.length > messages.length + 50;
-      
+
+      // CRITICAL: Force reload if we just switched threads, even if streaming added messages
+      // Without this, switching threads quickly can leave messages.length > 0 from streaming
+      // which bypasses the shouldReload check and leaves user messages missing
+      const shouldReload = messages.length === 0 || justSwitchedThreadRef.current || messagesData.length > messages.length + 50;
+
+      if (justSwitchedThreadRef.current) {
+        log.log('[useChat] Forcing reload after thread switch');
+        justSwitchedThreadRef.current = false; // Clear the flag
+      }
+
       if (shouldReload) {
         setMessages((prev) => {
           const serverIds = new Set(
@@ -887,6 +927,9 @@ export function useChat(): UseChatReturn {
 
     log.log('🔄 [useChat] Thread loading initiated');
 
+    // CRITICAL: Clear pending thread creation to abort any in-flight API responses
+    pendingThreadCreationRef.current = null;
+
     // Clear all error state from previous thread
     setAgentRunId(null);
     lastErrorRunIdRef.current = null;
@@ -952,7 +995,12 @@ export function useChat(): UseChatReturn {
       currentAgentRunId: agentRunId,
       currentHookRunId,
       streamHookStatus,
+      pendingThreadCreation: pendingThreadCreationRef.current,
     });
+
+    // CRITICAL: Clear pending thread creation ref to abort any in-flight API responses
+    // This prevents race condition where async response sets state after user clicks + New Chat
+    pendingThreadCreationRef.current = null;
 
     setActiveThreadId(undefined);
     setAgentRunId(null);
@@ -1038,6 +1086,10 @@ export function useChat(): UseChatReturn {
         // Generate optimistic thread ID for instant side menu display
         const optimisticThreadId = generateOptimisticId();
         const optimisticTimestamp = new Date().toISOString();
+
+        // CRITICAL: Track this pending thread creation
+        // If user clicks "+ New Chat" before API responds, we'll abort setting state
+        pendingThreadCreationRef.current = optimisticThreadId;
 
         // Create optimistic thread title from first ~50 chars of content
         const optimisticTitle = content.trim().substring(0, 50) + (content.length > 50 ? '...' : '');
@@ -1177,12 +1229,78 @@ export function useChat(): UseChatReturn {
           const newThreadId = createResult.thread_id;
           if (!newThreadId) {
             log.error('[useChat] No thread_id returned from agent start');
+            pendingThreadCreationRef.current = null;
+            return;
+          }
+
+          // CRITICAL: Check if user navigated away (clicked + New Chat) before we set state
+          // If pendingThreadCreationRef no longer matches, user left - abort setting state
+          if (pendingThreadCreationRef.current !== optimisticThreadId) {
+            log.log('⚠️ [useChat] User navigated away during thread creation, aborting state update:', {
+              expected: optimisticThreadId,
+              current: pendingThreadCreationRef.current,
+              newThreadId,
+            });
+            // Still update the cache so the thread appears in sidebar when user returns
+            const realThread = {
+              thread_id: newThreadId,
+              title: optimisticTitle || 'New Chat',
+              created_at: optimisticTimestamp,
+              updated_at: new Date().toISOString(),
+              is_public: false,
+              metadata: { mode: selectedQuickAction },
+            };
+            // Store in ref so other concurrent callbacks can see it
+            createdThreadsRef.current.set(optimisticThreadId, realThread);
+
+            // ATOMIC: Remove ALL optimistics, add ALL real threads from ref
+            queryClient.setQueriesData(
+              { queryKey: chatKeys.threads(), exact: false, predicate: (query) => {
+                const key = query.queryKey;
+                return key.length >= 2 && key[0] === 'chat' && key[1] === 'threads' &&
+                  (key.length === 2 || (key.length === 3 && typeof key[2] === 'object'));
+              }},
+              (oldThreads: any) => {
+                if (!Array.isArray(oldThreads)) return oldThreads;
+                // Get all created threads from ref
+                const allCreatedThreads = Array.from(createdThreadsRef.current.values());
+                const allOptimisticIds = Array.from(createdThreadsRef.current.keys());
+
+                // Remove ALL optimistic threads
+                let result = oldThreads.filter((t: any) => !allOptimisticIds.includes(t.thread_id));
+
+                // Add ALL real threads that don't exist yet
+                for (const thread of allCreatedThreads) {
+                  if (!result.some((t: any) => t.thread_id === thread.thread_id)) {
+                    result = [thread, ...result];
+                  }
+                }
+
+                log.log('✅ [useChat] Synced threads (nav away):', { newThreadId, count: result.length, trackedCount: allCreatedThreads.length });
+                return result;
+              }
+            );
+            // Don't set activeThreadId, agentRunId, etc - user has moved on
             return;
           }
 
           currentThreadId = newThreadId;
+          pendingThreadCreationRef.current = null; // Clear the pending ref
 
-          // Replace optimistic thread with real thread in cache
+          // Replace optimistic thread with real thread in cache DIRECTLY
+          // CRITICAL: Don't just remove and rely on invalidation - server may not have indexed yet!
+          const realThread = {
+            thread_id: newThreadId,
+            title: optimisticTitle || 'New Chat',
+            created_at: optimisticTimestamp,
+            updated_at: new Date().toISOString(),
+            is_public: false,
+            metadata: { mode: selectedQuickAction },
+          };
+          // Store in ref so other concurrent callbacks can see it
+          createdThreadsRef.current.set(optimisticThreadId, realThread);
+
+          // ATOMIC: Remove ALL optimistics, add ALL real threads from ref
           queryClient.setQueriesData(
             { queryKey: chatKeys.threads(), exact: false, predicate: (query) => {
               const key = query.queryKey;
@@ -1191,10 +1309,22 @@ export function useChat(): UseChatReturn {
             }},
             (oldThreads: any) => {
               if (!Array.isArray(oldThreads)) return oldThreads;
-              // Remove the optimistic thread, real thread will be added via invalidation
-              const filtered = oldThreads.filter((t: any) => t.thread_id !== optimisticThreadId);
-              log.log('✅ [useChat] Replaced optimistic thread with real thread:', newThreadId);
-              return filtered;
+              // Get all created threads from ref
+              const allCreatedThreads = Array.from(createdThreadsRef.current.values());
+              const allOptimisticIds = Array.from(createdThreadsRef.current.keys());
+
+              // Remove ALL optimistic threads
+              let result = oldThreads.filter((t: any) => !allOptimisticIds.includes(t.thread_id));
+
+              // Add ALL real threads that don't exist yet
+              for (const thread of allCreatedThreads) {
+                if (!result.some((t: any) => t.thread_id === thread.thread_id)) {
+                  result = [thread, ...result];
+                }
+              }
+
+              log.log('✅ [useChat] Synced threads:', { newThreadId, count: result.length, trackedCount: allCreatedThreads.length });
+              return result;
             }
           );
 
@@ -1209,10 +1339,10 @@ export function useChat(): UseChatReturn {
 
           setActiveThreadId(newThreadId);
 
-          // Invalidate to fetch real thread data (includes title generated by server)
-          queryClient.invalidateQueries({
-            queryKey: chatKeys.threads(),
-          });
+          // DON'T invalidate threads list immediately - it can cause race conditions
+          // where a background refetch overwrites our cache with stale server data
+          // (server may not have indexed the new thread yet due to replication lag)
+          // Instead, just refetch the specific thread data for title updates
           queryClient.refetchQueries({
             queryKey: chatKeys.thread(newThreadId),
           });
@@ -1227,7 +1357,7 @@ export function useChat(): UseChatReturn {
             setAgentRunId(createResult.agent_run_id);
             lastErrorRunIdRef.current = null; // Clear any previous error state
           }
-          
+
           // Files are uploaded as part of agent start - no separate upload needed
           if (pendingAttachments.length > 0 && createResult.sandbox_id) {
             log.log(`✅ [useChat] Files uploaded to sandbox ${createResult.sandbox_id} during agent start`);
@@ -1936,6 +2066,9 @@ export function useChat(): UseChatReturn {
     log.log('[useChat] 📋 Going back to thread list for mode:', selectedQuickAction);
     Keyboard.dismiss();
     setModeViewState('thread-list');
+
+    // CRITICAL: Clear pending thread creation to abort any in-flight API responses
+    pendingThreadCreationRef.current = null;
 
     // Clear the saved state for current mode when user explicitly goes back
     if (selectedQuickAction) {
