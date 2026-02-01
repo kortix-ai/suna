@@ -108,6 +108,11 @@ export function useAgentStreamCore(
   // Not for detecting "no response" - that's the connection timeout's job
   const HEARTBEAT_TIMEOUT_MS = 10 * 60 * 1000;
   
+  // Reasoning dedup: when the backend sends dedicated 'reasoning' events,
+  // disable extraction from 'assistant' metadata to prevent double-processing.
+  // Reset on each new stream so fallback works for backends that don't send 'reasoning' events.
+  const hasReceivedReasoningEventRef = useRef<boolean>(false);
+
   // Reconnection refs for graceful handling of bad network
   const retryCountRef = useRef<number>(0);
   const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -426,12 +431,14 @@ export function useAgentStreamCore(
 
     switch (message.type) {
       case 'assistant':
-        // CRITICAL: Extract reasoning content FIRST, before any other processing
-        // This ensures reasoning chunks appear in frontend as soon as possible
-        const reasoningChunk = extractReasoningContent(parsedContent, parsedMetadata);
-        if (reasoningChunk) {
-          // Update reasoning content immediately - no throttling, no delay
-          setReasoningContent((prev) => prev + reasoningChunk);
+        // Extract reasoning from assistant metadata ONLY if backend doesn't send
+        // dedicated 'reasoning' events. If it does, those are authoritative and
+        // processing both would duplicate content.
+        if (!hasReceivedReasoningEventRef.current) {
+          const reasoningChunk = extractReasoningContent(parsedContent, parsedMetadata);
+          if (reasoningChunk) {
+            setReasoningContent((prev) => prev + reasoningChunk);
+          }
         }
         
         if (parsedMetadata.stream_status === 'tool_call_chunk') {
@@ -582,7 +589,8 @@ export function useAgentStreamCore(
 
       case 'reasoning':
         // Handle dedicated reasoning stream events from backend
-        // This is sent as type: "reasoning" with content: {"reasoning_content": "..."}
+        // This is the authoritative source — when present, disables assistant metadata extraction
+        hasReceivedReasoningEventRef.current = true;
         const reasoningFromContent = parsedContent.reasoning_content;
         if (reasoningFromContent) {
           const reasoningText = typeof reasoningFromContent === 'string'
@@ -1082,8 +1090,9 @@ export function useAgentStreamCore(
     setRetryCount(0);
     isReconnectingRef.current = false;
     
-    // Clear reasoning content when starting a new stream
+    // Clear reasoning content and reset dedup flag when starting a new stream
     setReasoningContent('');
+    hasReceivedReasoningEventRef.current = false;
     
     currentRunIdRef.current = runId;
     setAgentRunId(runId);
