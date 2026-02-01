@@ -3513,19 +3513,16 @@ async def get_conversation_insights(
         db = DBConnection()
         client = await db.client
 
-        # Build base query
-        query = client.from_('conversation_analytics').select('*')
-
-        # Apply date filters
+        rpc_params = {}
         if date_from:
-            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+            rpc_params['p_date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+            rpc_params['p_date_to'] = f"{date_to}T23:59:59Z"
 
-        result = await query.execute()
-        records = result.data or []
+        result = await client.rpc('get_conversation_insights', rpc_params).execute()
+        data = result.data
 
-        if not records:
+        if not data:
             return ConversationInsight(
                 sentiment_distribution={"positive": 0, "neutral": 0, "negative": 0, "mixed": 0},
                 avg_frustration=0.0,
@@ -3534,33 +3531,12 @@ async def get_conversation_insights(
                 intent_distribution={"task": 0, "question": 0, "complaint": 0, "feature_request": 0}
             )
 
-        # Calculate sentiment distribution
-        sentiment_distribution = {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}
-        for r in records:
-            label = r.get('sentiment_label')
-            if label in sentiment_distribution:
-                sentiment_distribution[label] += 1
-
-        # Calculate average frustration
-        frustration_scores = [r.get('frustration_score') for r in records if r.get('frustration_score') is not None]
-        avg_frustration = sum(frustration_scores) / len(frustration_scores) if frustration_scores else 0.0
-
-        # Count feature requests
-        feature_request_count = sum(1 for r in records if r.get('is_feature_request'))
-
-        # Intent distribution
-        intent_distribution = {"task": 0, "question": 0, "complaint": 0, "feature_request": 0}
-        for r in records:
-            intent = r.get('intent_type')
-            if intent in intent_distribution:
-                intent_distribution[intent] += 1
-
         return ConversationInsight(
-            sentiment_distribution=sentiment_distribution,
-            avg_frustration=round(avg_frustration, 3),
-            feature_request_count=feature_request_count,
-            total_analyzed=len(records),
-            intent_distribution=intent_distribution
+            sentiment_distribution=data.get('sentiment_distribution', {"positive": 0, "neutral": 0, "negative": 0, "mixed": 0}),
+            avg_frustration=float(data.get('avg_frustration', 0)),
+            feature_request_count=data.get('feature_request_count', 0),
+            total_analyzed=data.get('total_analyzed', 0),
+            intent_distribution=data.get('intent_distribution', {"task": 0, "question": 0, "complaint": 0, "feature_request": 0})
         )
 
     except Exception as e:
@@ -4669,58 +4645,34 @@ async def get_use_case_patterns(
 
     Returns:
     - Top use cases (e.g., "create sales presentation", "scrape competitor data")
-    - Output type distribution (presentation, document, spreadsheet, code, etc.)
-    - Domain distribution (sales, marketing, engineering, etc.)
+    - Top topics
     """
     try:
         db = DBConnection()
         client = await db.client
 
-        # Build query
-        query = client.from_('conversation_analytics')\
-            .select('use_case_category, output_type, domain')
-
+        rpc_params = {'p_limit': 20}
         if date_from:
-            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+            rpc_params['p_date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+            rpc_params['p_date_to'] = f"{date_to}T23:59:59Z"
 
-        result = await query.execute()
-        records = result.data or []
+        result = await client.rpc('get_use_case_patterns', rpc_params).execute()
+        data = result.data
 
-        # Aggregate use cases
-        use_case_counts: Dict[str, int] = {}
-        output_type_counts: Dict[str, int] = {}
-        domain_counts: Dict[str, int] = {}
-
-        for r in records:
-            # Count use cases
-            use_case = r.get('use_case_category')
-            if use_case:
-                use_case_counts[use_case] = use_case_counts.get(use_case, 0) + 1
-
-            # Count output types
-            output_type = r.get('output_type')
-            if output_type and output_type != 'none':
-                output_type_counts[output_type] = output_type_counts.get(output_type, 0) + 1
-
-            # Count domains
-            domain = r.get('domain')
-            if domain and domain != 'other':
-                domain_counts[domain] = domain_counts.get(domain, 0) + 1
-
-        # Sort and limit results
-        top_use_cases = sorted(
-            [{"use_case": k, "count": v} for k, v in use_case_counts.items()],
-            key=lambda x: x["count"],
-            reverse=True
-        )[:20]
+        if not data:
+            return {
+                "top_use_cases": [],
+                "top_topics": [],
+                "total": 0,
+                "date_from": date_from,
+                "date_to": date_to
+            }
 
         return {
-            "top_use_cases": top_use_cases,
-            "output_types": output_type_counts,
-            "domains": domain_counts,
-            "total": len(records),
+            "top_use_cases": data.get('top_use_cases', []),
+            "top_topics": data.get('top_topics', []),
+            "total": data.get('total', 0),
             "date_from": date_from,
             "date_to": date_to
         }

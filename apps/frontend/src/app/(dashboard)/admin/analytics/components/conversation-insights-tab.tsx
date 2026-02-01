@@ -749,7 +749,7 @@ function DrillDownList({
                 {item.first_user_message && (
                   <div className="mt-2">
                     <p className="text-xs text-muted-foreground mb-1">User said:</p>
-                    <p className="text-sm bg-muted/30 p-2 rounded line-clamp-3">
+                    <p className="text-sm bg-muted/30 p-2 rounded line-clamp-3 overflow-auto">
                       {item.first_user_message}
                     </p>
                   </div>
