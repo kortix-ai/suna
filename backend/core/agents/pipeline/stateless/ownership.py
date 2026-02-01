@@ -72,16 +72,24 @@ class RunOwnership:
             from core.services import redis
 
             client = await redis.get_client()
-            pipeline = client.pipeline()
             
+            # Split into two operations to avoid CROSSSLOT errors in Redis Cluster
+            # Pipeline 1: All keys with same hash slot (run_id)
+            pipeline = client.pipeline()
             pipeline.set(f"run:{run_id}:owner", self.worker_id, nx=True, ex=self.CLAIM_TTL)
             pipeline.set(f"run:{run_id}:status", "running", ex=self.CLAIM_TTL)
             pipeline.set(f"run:{run_id}:start", str(time.time()), ex=self.CLAIM_TTL)
             pipeline.set(f"run:{run_id}:heartbeat", str(time.time()), ex=self.HEARTBEAT_TTL)
-            pipeline.sadd("runs:active", run_id)
             
             results = await pipeline.execute()
             claimed = results[0]
+            
+            # Separate operation for runs:active (different hash slot)
+            if claimed:
+                try:
+                    await client.sadd("runs:active", run_id)
+                except Exception as e:
+                    logger.warning(f"[Ownership] Failed to add {run_id} to runs:active: {e}")
 
             if claimed:
                 now = time.time()
@@ -113,14 +121,15 @@ class RunOwnership:
 
             client = await redis.get_client()
             pipeline = client.pipeline()
-            
             pipeline.set(f"run:{run_id}:status", status, ex=self.CLAIM_TTL)
             pipeline.delete(f"run:{run_id}:owner")
-            if status in ("completed", "failed", "cancelled"):
-                pipeline.srem("runs:active", run_id)
-            
             await pipeline.execute()
-
+            
+            if status in ("completed", "failed", "cancelled"):
+                try:
+                    await client.srem("runs:active", run_id)
+                except Exception as e:
+                    logger.warning(f"[Ownership] Failed to remove {run_id} from runs:active: {e}")
             self._owned.pop(run_id, None)
             self._heartbeat_states.pop(run_id, None)
             logger.info(f"[Ownership] Released {run_id} as {status}")
