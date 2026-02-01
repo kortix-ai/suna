@@ -26,28 +26,36 @@ _concurrency_semaphore: asyncio.Semaphore = None
 _analytics_task: Optional[asyncio.Task] = None
 
 
-async def get_pending_queue_items(limit: int = BATCH_SIZE) -> List[Dict[str, Any]]:
+async def claim_pending_queue_items(limit: int = BATCH_SIZE) -> List[Dict[str, Any]]:
     """
-    Fetch pending items from the analytics queue.
+    Atomically claim pending items from the analytics queue.
 
-    Returns items that are pending and haven't exceeded max attempts.
+    Uses FOR UPDATE SKIP LOCKED to prevent race conditions where
+    multiple workers grab the same items.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        from core.services.db import execute
 
-        result = await client.from_('conversation_analytics_queue')\
-            .select('id, thread_id, agent_run_id, account_id, attempts')\
-            .eq('status', 'pending')\
-            .lt('attempts', MAX_ATTEMPTS)\
-            .order('created_at', desc=False)\
-            .limit(limit)\
-            .execute()
+        # Atomic claim: SELECT + UPDATE in one transaction
+        # FOR UPDATE SKIP LOCKED ensures no two workers grab same row
+        result = await execute("""
+            UPDATE conversation_analytics_queue
+            SET status = 'processing'
+            WHERE id IN (
+                SELECT id
+                FROM conversation_analytics_queue
+                WHERE status = 'pending' AND attempts < :max_attempts
+                ORDER BY created_at
+                LIMIT :limit
+                FOR UPDATE SKIP LOCKED
+            )
+            RETURNING id, thread_id, agent_run_id, account_id, attempts
+        """, {"limit": limit, "max_attempts": MAX_ATTEMPTS})
 
-        return result.data or []
+        return [dict(row) for row in result] if result else []
 
     except Exception as e:
-        logger.error(f"[ANALYTICS] Failed to fetch queue items: {e}")
+        logger.error(f"[ANALYTICS] Failed to claim queue items: {e}")
         return []
 
 
@@ -96,8 +104,7 @@ async def process_queue_item(item: Dict[str, Any]) -> bool:
     account_id = item['account_id']
 
     try:
-        # Mark as processing
-        await update_queue_status(queue_id, 'processing')
+        # Note: Item already marked as 'processing' by claim_pending_queue_items()
 
         # Run analysis (filtered by agent run time range)
         analysis = await analyze_conversation(thread_id, agent_run_id)
@@ -182,8 +189,8 @@ async def _analytics_processing_loop() -> None:
 
     while True:
         try:
-            # Fetch pending items
-            pending = await get_pending_queue_items(limit=BATCH_SIZE)
+            # Atomically claim pending items (prevents race conditions)
+            pending = await claim_pending_queue_items(limit=BATCH_SIZE)
 
             if pending:
                 logger.debug(f"[ANALYTICS] Processing {len(pending)} queued conversations concurrently")
