@@ -199,6 +199,10 @@ export function useChat(): UseChatReturn {
   // Track the current pending thread creation to abort if user navigates away
   // This prevents race conditions where async API response sets state after user clicked + New Chat
   const pendingThreadCreationRef = useRef<string | null>(null);
+
+  // Track ALL created threads to prevent race condition losses
+  // Maps optimisticId -> realThread object (once API returns)
+  const createdThreadsRef = useRef<Map<string, { thread_id: string; title: string; created_at: string; updated_at: string; is_public: boolean; metadata: any }>>(new Map());
   
   
   // Per-mode full state: keeps entire mode state in memory for instant switching (like browser tabs)
@@ -1246,6 +1250,10 @@ export function useChat(): UseChatReturn {
               is_public: false,
               metadata: { mode: selectedQuickAction },
             };
+            // Store in ref so other concurrent callbacks can see it
+            createdThreadsRef.current.set(optimisticThreadId, realThread);
+
+            // ATOMIC: Remove ALL optimistics, add ALL real threads from ref
             queryClient.setQueriesData(
               { queryKey: chatKeys.threads(), exact: false, predicate: (query) => {
                 const key = query.queryKey;
@@ -1254,11 +1262,22 @@ export function useChat(): UseChatReturn {
               }},
               (oldThreads: any) => {
                 if (!Array.isArray(oldThreads)) return oldThreads;
-                const updated = oldThreads.map((t: any) =>
-                  t.thread_id === optimisticThreadId ? realThread : t
-                );
-                log.log('✅ [useChat] Updated cache despite navigation (thread still in sidebar)');
-                return updated;
+                // Get all created threads from ref
+                const allCreatedThreads = Array.from(createdThreadsRef.current.values());
+                const allOptimisticIds = Array.from(createdThreadsRef.current.keys());
+
+                // Remove ALL optimistic threads
+                let result = oldThreads.filter((t: any) => !allOptimisticIds.includes(t.thread_id));
+
+                // Add ALL real threads that don't exist yet
+                for (const thread of allCreatedThreads) {
+                  if (!result.some((t: any) => t.thread_id === thread.thread_id)) {
+                    result = [thread, ...result];
+                  }
+                }
+
+                log.log('✅ [useChat] Synced threads (nav away):', { newThreadId, count: result.length, trackedCount: allCreatedThreads.length });
+                return result;
               }
             );
             // Don't set activeThreadId, agentRunId, etc - user has moved on
@@ -1270,16 +1289,18 @@ export function useChat(): UseChatReturn {
 
           // Replace optimistic thread with real thread in cache DIRECTLY
           // CRITICAL: Don't just remove and rely on invalidation - server may not have indexed yet!
-          // Instead, replace the optimistic thread with a real thread object in cache
           const realThread = {
             thread_id: newThreadId,
-            title: optimisticTitle || 'New Chat', // Use same title until server provides real one
+            title: optimisticTitle || 'New Chat',
             created_at: optimisticTimestamp,
             updated_at: new Date().toISOString(),
             is_public: false,
             metadata: { mode: selectedQuickAction },
           };
+          // Store in ref so other concurrent callbacks can see it
+          createdThreadsRef.current.set(optimisticThreadId, realThread);
 
+          // ATOMIC: Remove ALL optimistics, add ALL real threads from ref
           queryClient.setQueriesData(
             { queryKey: chatKeys.threads(), exact: false, predicate: (query) => {
               const key = query.queryKey;
@@ -1288,16 +1309,22 @@ export function useChat(): UseChatReturn {
             }},
             (oldThreads: any) => {
               if (!Array.isArray(oldThreads)) return oldThreads;
-              // Replace optimistic thread with real thread (don't just remove!)
-              const updated = oldThreads.map((t: any) =>
-                t.thread_id === optimisticThreadId ? realThread : t
-              );
-              log.log('✅ [useChat] Replaced optimistic thread with real thread in cache:', {
-                optimisticThreadId,
-                newThreadId,
-                threadsCount: updated.length,
-              });
-              return updated;
+              // Get all created threads from ref
+              const allCreatedThreads = Array.from(createdThreadsRef.current.values());
+              const allOptimisticIds = Array.from(createdThreadsRef.current.keys());
+
+              // Remove ALL optimistic threads
+              let result = oldThreads.filter((t: any) => !allOptimisticIds.includes(t.thread_id));
+
+              // Add ALL real threads that don't exist yet
+              for (const thread of allCreatedThreads) {
+                if (!result.some((t: any) => t.thread_id === thread.thread_id)) {
+                  result = [thread, ...result];
+                }
+              }
+
+              log.log('✅ [useChat] Synced threads:', { newThreadId, count: result.length, trackedCount: allCreatedThreads.length });
+              return result;
             }
           );
 
@@ -1312,10 +1339,10 @@ export function useChat(): UseChatReturn {
 
           setActiveThreadId(newThreadId);
 
-          // Invalidate to fetch real thread data (includes title generated by server)
-          queryClient.invalidateQueries({
-            queryKey: chatKeys.threads(),
-          });
+          // DON'T invalidate threads list immediately - it can cause race conditions
+          // where a background refetch overwrites our cache with stale server data
+          // (server may not have indexed the new thread yet due to replication lag)
+          // Instead, just refetch the specific thread data for title updates
           queryClient.refetchQueries({
             queryKey: chatKeys.thread(newThreadId),
           });
