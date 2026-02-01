@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+  import React, { useMemo, useCallback } from 'react';
 import { View, Pressable, Linking, Text as RNText, TextInput, Platform, ScrollView, Image } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 // NOTE: useSmoothText removed - following frontend pattern of displaying content immediately
@@ -55,6 +55,7 @@ import { TaskCompletedFeedback } from './tool-views/complete-tool/TaskCompletedF
 import { renderAssistantMessage } from './assistant-message-renderer';
 import { PromptExamples } from '@/components/shared';
 import { ReasoningSection } from './ReasoningSection';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { useKortixComputerStore } from '@/stores/kortix-computer-store';
 import { isKortixDefaultAgentId } from '@/lib/agents';
 import { log } from '@/lib/logger';
@@ -771,8 +772,20 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
     const isDark = colorScheme === 'dark';
     const { agents } = useAgent();
 
-    // State for reasoning expanded (persists across streaming/persisted transitions)
-    const [reasoningExpanded, setReasoningExpanded] = React.useState(false);
+    // Per-section reasoning expanded state: keyed by group.key (Path 1) or 'streaming' (Path 2)
+    // Each reasoning toggle is independent — expanding one doesn't affect others,
+    // and new user turns don't collapse previously expanded sections.
+    const [expandedReasoningSections, setExpandedReasoningSections] = React.useState<Record<string, boolean>>({});
+    const getReasoningExpanded = React.useCallback(
+      (key: string) => expandedReasoningSections[key] ?? false,
+      [expandedReasoningSections]
+    );
+    const setReasoningExpandedForKey = React.useCallback(
+      (key: string, expanded: boolean) => {
+        setExpandedReasoningSections(prev => ({ ...prev, [key]: expanded }));
+      },
+      []
+    );
 
     // Ref for reasoning content freezing (prevents flash during transitions)
     const lastReasoningContentRef = React.useRef<string>('');
@@ -806,7 +819,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       // User just started sending a new message - clear stale reasoning
       if (!wasSending && isSendingMessage) {
         lastReasoningContentRef.current = '';
-        setReasoningExpanded(false);
+        // NOTE: Don't collapse reasoning sections here — each section's expanded
+        // state is independent and should persist across turns.
       }
     }, [isSendingMessage]);
 
@@ -819,7 +833,6 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
       // Agent just started - clear ref for fresh content and start grace period
       if (!wasActive && isNowActive) {
         lastReasoningContentRef.current = '';
-        setReasoningExpanded(false);
 
         // Start reasoning grace period
         setIsInReasoningGracePeriod(true);
@@ -1505,8 +1518,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                         isReasoningActive={false}
                         isReasoningComplete={true}
                         isPersistedContent={true}
-                        isExpanded={reasoningExpanded}
-                        onExpandedChange={setReasoningExpanded}
+                        isExpanded={getReasoningExpanded(group.key)}
+                        onExpandedChange={(expanded) => setReasoningExpandedForKey(group.key, expanded)}
                       />
                     );
                   }
@@ -1518,8 +1531,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       isReasoningActive={isAgentRunning}
                       isReasoningComplete={isReasoningComplete}
                       isPersistedContent={false}
-                      isExpanded={reasoningExpanded}
-                      onExpandedChange={setReasoningExpanded}
+                      isExpanded={getReasoningExpanded('streaming')}
+                      onExpandedChange={(expanded) => setReasoningExpandedForKey('streaming', expanded)}
                     />
                   );
                 }
@@ -1534,8 +1547,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     isReasoningActive={false}
                     isReasoningComplete={true}
                     isPersistedContent={true}
-                    isExpanded={reasoningExpanded}
-                    onExpandedChange={setReasoningExpanded}
+                    isExpanded={getReasoningExpanded(group.key)}
+                    onExpandedChange={(expanded) => setReasoningExpandedForKey(group.key, expanded)}
                   />
                 );
               }
@@ -1946,6 +1959,7 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                     !isSmoothAnimating &&
                     !smoothAskCompleteText &&
                     !isAskCompleteAnimating &&
+                    !(streamingReasoningContent && streamingReasoningContent.trim().length > 0) &&
                     (streamHookStatus === 'streaming' || streamHookStatus === 'connecting') &&
                     messages[messages.length - 1]?.type !== 'user' &&
                     (() => {
@@ -1962,9 +1976,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                       });
                       return !hasAskOrComplete;
                     })() && (
-                      <View className="mt-4">
+                      <Animated.View className="mt-4" exiting={FadeOut.duration(150)}>
                         <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
-                      </View>
+                      </Animated.View>
                     )}
 
                   {/* Message actions - show once at the end of the entire assistant block, only when done streaming */}
@@ -1992,9 +2006,12 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           if (lastMsg?.type !== 'user') return null;
           
           const isAgentActive = agentStatus === 'running' || agentStatus === 'connecting';
-          const hasStreamingContent = Boolean(streamingTextContent || streamingToolCall || streamingReasoningContent);
-          const hasVisibleReasoning = Boolean(streamingReasoningContent || lastReasoningContentRef.current);
           const isStreaming = streamHookStatus === 'streaming' || streamHookStatus === 'connecting';
+          // CRITICAL: streamingReasoningContent persists from previous runs (only cleared in startStreaming()).
+          // Gate ALL uses on isStreaming to prevent stale data from breaking state detection.
+          const currentReasoningContent = isStreaming ? streamingReasoningContent : null;
+          const hasStreamingContent = Boolean(streamingTextContent || streamingToolCall || currentReasoningContent);
+          const hasVisibleReasoning = Boolean(currentReasoningContent || lastReasoningContentRef.current);
 
           // Show this indicator when:
           // 1. Sending message (contemplating)
@@ -2060,7 +2077,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
           const isBrewing = isAgentActive && !hasVisibleStreamingText && !hasVisibleToolCall && !hasVisibleReasoning;
 
           // Determine if we should show reasoning section
-          const showReasoning = isStreaming && hasVisibleReasoning;
+          // Don't gate on isStreaming - reasoning content persists in lastReasoningContentRef
+          // and gating on isStreaming causes a flash when stream status briefly changes
+          const showReasoning = hasVisibleReasoning && !isContemplating;
 
           return (
             <View className="mb-6">
@@ -2076,9 +2095,13 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
               {/* For contemplating: always show (stale reasoning shouldn't block it) */}
               {/* For brewing: only show when no visible reasoning yet */}
               {(isContemplating || (isBrewing && !hasVisibleReasoning)) && (
-                <View className="h-6 justify-center overflow-hidden">
+                <Animated.View
+                  className="h-6 justify-center overflow-hidden"
+                  entering={FadeIn.duration(100)}
+                  exiting={FadeOut.duration(150)}
+                >
                   <AgentLoader isReconnecting={isReconnecting} retryCount={retryCount} />
-                </View>
+                </Animated.View>
               )}
 
               {/* ReasoningSection - show when we have reasoning content */}
@@ -2088,8 +2111,8 @@ export const ThreadContent: React.FC<ThreadContentProps> = React.memo(
                   isStreaming={isStreaming}
                   isReasoningActive={isAgentActive}
                   isReasoningComplete={isReasoningComplete}
-                  isExpanded={reasoningExpanded}
-                  onExpandedChange={setReasoningExpanded}
+                  isExpanded={getReasoningExpanded('streaming')}
+                  onExpandedChange={(expanded) => setReasoningExpandedForKey('streaming', expanded)}
                 />
               )}
               

@@ -132,7 +132,7 @@ class RunRecovery:
                 if self.is_sharded and hash(run_id) % self._total_shards != self._shard_id:
                     continue
 
-                start = await redis.get(f"run:{run_id}:start")
+                start = await redis.get(f"run:{{{run_id}}}:start")
                 if start:
                     start = start.decode() if isinstance(start, bytes) else start
                     if time.time() - float(start) > self.MAX_DURATION:
@@ -165,7 +165,7 @@ class RunRecovery:
             from core.agents import repo as agents_repo
 
             await write_buffer.flush_one(run_id)
-            await redis.set(f"run:{run_id}:status", "completed", ex=3600)
+            await redis.set(f"run:{{{run_id}}}:status", "completed", ex=3600)
             await ownership.release(run_id, "completed")
 
             agent_run = await agents_repo.get_agent_run_with_thread(run_id)
@@ -196,8 +196,8 @@ class RunRecovery:
             stream = f"agent_run:{run_id}:stream"
             await redis.xadd(stream, {"data": json.dumps({"type": "error", "error": error})})
 
-            await redis.set(f"run:{run_id}:status", "failed", ex=3600)
-            await redis.set(f"run:{run_id}:error", error, ex=3600)
+            await redis.set(f"run:{{{run_id}}}:status", "failed", ex=3600)
+            await redis.set(f"run:{{{run_id}}}:error", error, ex=3600)
             await ownership.release(run_id, "failed")
 
             agent_run = await agents_repo.get_agent_run_with_thread(run_id)
@@ -235,7 +235,7 @@ class RunRecovery:
             if not thread_id or not account_id:
                 return RecoveryResult(run_id, False, "force_resume", "Missing thread or account info")
 
-            await redis.delete(f"run:{run_id}:owner")
+            await redis.delete(f"run:{{{run_id}}}:owner")
             await redis.srem("runs:active", run_id)
             await ownership.release(run_id, "resumed")
 

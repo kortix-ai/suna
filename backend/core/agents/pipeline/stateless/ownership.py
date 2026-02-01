@@ -70,34 +70,49 @@ class RunOwnership:
     async def claim(self, run_id: str) -> bool:
         try:
             from core.services import redis
-
             client = await redis.get_client()
-            pipeline = client.pipeline()
             
-            pipeline.set(f"run:{run_id}:owner", self.worker_id, nx=True, ex=self.CLAIM_TTL)
-            pipeline.set(f"run:{run_id}:status", "running", ex=self.CLAIM_TTL)
-            pipeline.set(f"run:{run_id}:start", str(time.time()), ex=self.CLAIM_TTL)
-            pipeline.set(f"run:{run_id}:heartbeat", str(time.time()), ex=self.HEARTBEAT_TTL)
-            pipeline.sadd("runs:active", run_id)
+            try:
+                pipeline = client.pipeline()
+                pipeline.set(f"run:{{{run_id}}}:owner", self.worker_id, nx=True, ex=self.CLAIM_TTL)
+                pipeline.set(f"run:{{{run_id}}}:status", "running", ex=self.CLAIM_TTL)
+                pipeline.set(f"run:{{{run_id}}}:start", str(time.time()), ex=self.CLAIM_TTL)
+                pipeline.set(f"run:{{{run_id}}}:heartbeat", str(time.time()), ex=self.HEARTBEAT_TTL)
+                
+                results = await pipeline.execute()
+                claimed = results[0]
+            except Exception as e:
+                logger.warning(f"[Ownership] Pipeline failed for {run_id}, using individual ops: {e}")
+                claimed = await client.set(f"run:{{{run_id}}}:owner", self.worker_id, nx=True, ex=self.CLAIM_TTL)
+                if claimed:
+                    await client.set(f"run:{{{run_id}}}:status", "running", ex=self.CLAIM_TTL)
+                    await client.set(f"run:{{{run_id}}}:start", str(time.time()), ex=self.CLAIM_TTL)
+                    await client.set(f"run:{{{run_id}}}:heartbeat", str(time.time()), ex=self.HEARTBEAT_TTL)
             
-            results = await pipeline.execute()
-            claimed = results[0]
+            if claimed:
+                try:
+                    await client.sadd("runs:active", run_id)
+                except Exception as e:
+                    logger.warning(f"[Ownership] Failed to add {run_id} to runs:active: {e}")
 
             if claimed:
                 now = time.time()
                 self._owned[run_id] = now
                 heapq.heappush(self._owned_heap, (now, run_id))
                 self._heartbeat_states[run_id] = HeartbeatState()
-                logger.info(f"[Ownership] Claimed {run_id}")
+                logger.info(f"[Ownership] Claimed {run_id} (worker: {self.worker_id})")
                 return True
 
-            current = await redis.get(f"run:{run_id}:owner")
+            current = await redis.get(f"run:{{{run_id}}}:owner")
             if current:
                 current = current.decode() if isinstance(current, bytes) else current
                 if current == self.worker_id:
                     if run_id not in self._heartbeat_states:
                         self._heartbeat_states[run_id] = HeartbeatState()
+                    logger.warning(f"[Ownership] Run {run_id} already owned by THIS worker {self.worker_id}")
                     return True
+                else:
+                    logger.error(f"[Ownership] Run {run_id} already claimed by DIFFERENT worker: {current} (this worker: {self.worker_id})")
 
             return False
         except Exception as e:
@@ -109,15 +124,22 @@ class RunOwnership:
             from core.services import redis
 
             client = await redis.get_client()
-            pipeline = client.pipeline()
             
-            pipeline.set(f"run:{run_id}:status", status, ex=self.CLAIM_TTL)
-            pipeline.delete(f"run:{run_id}:owner")
+            try:
+                pipeline = client.pipeline()
+                pipeline.set(f"run:{{{run_id}}}:status", status, ex=self.CLAIM_TTL)
+                pipeline.delete(f"run:{{{run_id}}}:owner")
+                await pipeline.execute()
+            except Exception as e:
+                logger.warning(f"[Ownership] Pipeline failed for release {run_id}, using individual ops: {e}")
+                await client.set(f"run:{{{run_id}}}:status", status, ex=self.CLAIM_TTL)
+                await client.delete(f"run:{{{run_id}}}:owner")
+            
             if status in ("completed", "failed", "cancelled"):
-                pipeline.srem("runs:active", run_id)
-            
-            await pipeline.execute()
-
+                try:
+                    await client.srem("runs:active", run_id)
+                except Exception as e:
+                    logger.warning(f"[Ownership] Failed to remove {run_id} from runs:active: {e}")
             self._owned.pop(run_id, None)
             self._heartbeat_states.pop(run_id, None)
             logger.info(f"[Ownership] Released {run_id} as {status}")
@@ -131,12 +153,17 @@ class RunOwnership:
             from core.services import redis
 
             client = await redis.get_client()
-            pipeline = client.pipeline()
             
-            pipeline.set(f"run:{run_id}:status", "resumable", ex=self.CLAIM_TTL)
-            pipeline.delete(f"run:{run_id}:owner")
+            try:
+                pipeline = client.pipeline()
+                pipeline.set(f"run:{{{run_id}}}:status", "resumable", ex=self.CLAIM_TTL)
+                pipeline.delete(f"run:{{{run_id}}}:owner")
+                await pipeline.execute()
+            except Exception as e:
+                logger.warning(f"[Ownership] Pipeline failed for mark_resumable {run_id}, using individual ops: {e}")
+                await client.set(f"run:{{{run_id}}}:status", "resumable", ex=self.CLAIM_TTL)
+                await client.delete(f"run:{{{run_id}}}:owner")
             
-            await pipeline.execute()
             self._owned.pop(run_id, None)
             self._heartbeat_states.pop(run_id, None)
             return True
@@ -147,7 +174,7 @@ class RunOwnership:
     async def _heartbeat(self, run_id: str) -> bool:
         try:
             from core.services import redis
-            await redis.set(f"run:{run_id}:heartbeat", str(time.time()), ex=self.HEARTBEAT_TTL)
+            await redis.set(f"run:{{{run_id}}}:heartbeat", str(time.time()), ex=self.HEARTBEAT_TTL)
             
             if run_id in self._heartbeat_states:
                 self._heartbeat_states[run_id].record_success()
@@ -195,13 +222,16 @@ class RunOwnership:
             from core.services import redis
 
             client = await redis.get_client()
-            pipeline = client.pipeline()
-
             now_str = str(time.time())
-            for run_id in run_ids:
-                pipeline.set(f"run:{run_id}:heartbeat", now_str, ex=self.HEARTBEAT_TTL)
-
-            results = await pipeline.execute()
+            
+            async def set_heartbeat(run_id: str) -> bool:
+                try:
+                    await client.set(f"run:{{{run_id}}}:heartbeat", now_str, ex=self.HEARTBEAT_TTL)
+                    return True
+                except Exception:
+                    return False
+            
+            results = await asyncio.gather(*[set_heartbeat(run_id) for run_id in run_ids], return_exceptions=False)
             success_count = sum(1 for r in results if r)
             
             if success_count == len(run_ids):
@@ -375,30 +405,30 @@ class RunOwnership:
             run_ids = [r.decode() if isinstance(r, bytes) else r for r in active]
             
             client = await redis.get_client()
-            pipeline = client.pipeline()
-            
-            for run_id in run_ids:
-                pipeline.get(f"run:{run_id}:status")
-                pipeline.get(f"run:{run_id}:heartbeat")
-            
-            results = await pipeline.execute()
             now = time.time()
             
-            for i, run_id in enumerate(run_ids):
-                status = results[i * 2]
-                hb = results[i * 2 + 1]
-                
-                if status:
-                    status = status.decode() if isinstance(status, bytes) else status
-                    if status not in ("running", "resumable"):
-                        continue
-                
-                if not hb:
-                    orphans.append(run_id)
-                else:
+            async def check_orphan(run_id: str) -> Optional[str]:
+                try:
+                    status = await client.get(f"run:{{{run_id}}}:status")
+                    if status:
+                        status = status.decode() if isinstance(status, bytes) else status
+                        if status not in ("running", "resumable"):
+                            return None
+                    
+                    hb = await client.get(f"run:{{{run_id}}}:heartbeat")
+                    if not hb:
+                        return run_id
+                    
                     hb = hb.decode() if isinstance(hb, bytes) else hb
                     if now - float(hb) > self.ORPHAN_THRESHOLD:
-                        orphans.append(run_id)
+                        return run_id
+                    
+                    return None
+                except Exception:
+                    return None
+            
+            results = await asyncio.gather(*[check_orphan(run_id) for run_id in run_ids], return_exceptions=False)
+            orphans = [r for r in results if r is not None]
 
             return orphans
         except Exception as e:
@@ -424,31 +454,30 @@ class RunOwnership:
                 return []
             
             client = await redis.get_client()
-            pipeline = client.pipeline()
-            
-            for run_id in run_ids:
-                pipeline.get(f"run:{run_id}:status")
-                pipeline.get(f"run:{run_id}:heartbeat")
-            
-            results = await pipeline.execute()
             now = time.time()
-            orphans = []
             
-            for i, run_id in enumerate(run_ids):
-                status = results[i * 2]
-                hb = results[i * 2 + 1]
-                
-                if status:
-                    status = status.decode() if isinstance(status, bytes) else status
-                    if status not in ("running", "resumable"):
-                        continue
-                
-                if not hb:
-                    orphans.append(run_id)
-                else:
+            async def check_orphan(run_id: str) -> Optional[str]:
+                try:
+                    status = await client.get(f"run:{{{run_id}}}:status")
+                    if status:
+                        status = status.decode() if isinstance(status, bytes) else status
+                        if status not in ("running", "resumable"):
+                            return None
+                    
+                    hb = await client.get(f"run:{{{run_id}}}:heartbeat")
+                    if not hb:
+                        return run_id
+                    
                     hb = hb.decode() if isinstance(hb, bytes) else hb
                     if now - float(hb) > self.ORPHAN_THRESHOLD:
-                        orphans.append(run_id)
+                        return run_id
+                    
+                    return None
+                except Exception:
+                    return None
+            
+            results = await asyncio.gather(*[check_orphan(run_id) for run_id in run_ids], return_exceptions=False)
+            orphans = [r for r in results if r is not None]
 
             return orphans
         except Exception as e:
@@ -463,10 +492,10 @@ class RunOwnership:
             def decode(v):
                 return v.decode() if isinstance(v, bytes) else v
 
-            owner = decode(await redis.get(f"run:{run_id}:owner"))
-            status = decode(await redis.get(f"run:{run_id}:status"))
-            hb = decode(await redis.get(f"run:{run_id}:heartbeat"))
-            start = decode(await redis.get(f"run:{run_id}:start"))
+            owner = decode(await redis.get(f"run:{{{run_id}}}:owner"))
+            status = decode(await redis.get(f"run:{{{run_id}}}:status"))
+            hb = decode(await redis.get(f"run:{{{run_id}}}:heartbeat"))
+            start = decode(await redis.get(f"run:{{{run_id}}}:start"))
 
             thread_id = None
             try:
@@ -499,15 +528,6 @@ class RunOwnership:
             from core.agents import repo as agents_repo
 
             client = await redis.get_client()
-            pipeline = client.pipeline()
-
-            for run_id in run_ids:
-                pipeline.get(f"run:{run_id}:owner")
-                pipeline.get(f"run:{run_id}:status")
-                pipeline.get(f"run:{run_id}:heartbeat")
-                pipeline.get(f"run:{run_id}:start")
-
-            results = await pipeline.execute()
 
             thread_ids_map = {}
             try:
@@ -515,18 +535,24 @@ class RunOwnership:
             except Exception as e:
                 logger.warning(f"[Ownership] Failed to batch get thread_ids: {e}")
 
-            infos = {}
-            for i, run_id in enumerate(run_ids):
-                base_idx = i * 4
-
+            # In Redis Cluster, use individual operations instead of pipeline
+            async def get_run_info(run_id: str) -> tuple:
                 def decode(v):
                     return v.decode() if isinstance(v, bytes) else v
+                
+                try:
+                    owner = decode(await client.get(f"run:{{{run_id}}}:owner"))
+                    status = decode(await client.get(f"run:{{{run_id}}}:status"))
+                    hb = decode(await client.get(f"run:{{{run_id}}}:heartbeat"))
+                    start = decode(await client.get(f"run:{{{run_id}}}:start"))
+                    return (run_id, owner, status, hb, start)
+                except Exception:
+                    return (run_id, None, None, None, None)
+            
+            results = await asyncio.gather(*[get_run_info(run_id) for run_id in run_ids], return_exceptions=False)
 
-                owner = decode(results[base_idx])
-                status = decode(results[base_idx + 1])
-                hb = decode(results[base_idx + 2])
-                start = decode(results[base_idx + 3])
-
+            infos = {}
+            for run_id, owner, status, hb, start in results:
                 infos[run_id] = {
                     "run_id": run_id,
                     "thread_id": thread_ids_map.get(run_id),
@@ -630,7 +656,7 @@ class IdempotencyTracker:
     async def check(self, run_id: str, step: int, operation: str) -> bool:
         try:
             from core.services import redis
-            key = f"run:{run_id}:idem:{step}:{operation}"
+            key = f"run:{{{run_id}}}:idem:{step}:{operation}"
             return bool(await redis.set(key, "1", nx=True, ex=self.ttl))
         except Exception:
             return True
@@ -645,7 +671,7 @@ class IdempotencyTracker:
         
         try:
             from core.services import redis
-            await redis.set(f"run:{run_id}:last_step", str(step), ex=self.ttl)
+            await redis.set(f"run:{{{run_id}}}:last_step", str(step), ex=self.ttl)
         except Exception:
             pass
 
@@ -656,7 +682,7 @@ class IdempotencyTracker:
         
         try:
             from core.services import redis
-            last_step = await redis.get(f"run:{run_id}:last_step")
+            last_step = await redis.get(f"run:{{{run_id}}}:last_step")
             if last_step:
                 last_step = last_step.decode() if isinstance(last_step, bytes) else last_step
                 step = int(last_step)
