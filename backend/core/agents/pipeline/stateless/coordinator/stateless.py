@@ -37,6 +37,7 @@ class StatelessCoordinator(BaseCoordinator):
             await stream_prep_stage(ctx.stream_key, "initializing", "Setting up", 10)
 
             if not await ownership.claim(ctx.agent_run_id):
+                logger.error(f"[CLAIM_FAILED] Run {ctx.agent_run_id} already claimed by another worker! Worker ID: {ownership.worker_id}")
                 yield {"type": "error", "error": "Run already claimed", "error_code": "ALREADY_CLAIMED"}
                 return
 

@@ -515,6 +515,7 @@ async def start_agent_run(
     setup_time_ms = round((time.time() - total_start) * 1000, 1)
     logger.info(f"⚡ [FAST RESPONSE] Returning in {setup_time_ms}ms (thread={thread_id}, run={agent_run_id})")
     
+    logger.info(f"[START_AGENT] Creating background task for agent_run_id={agent_run_id}, thread_id={thread_id}")
     asyncio.create_task(_background_setup_and_execute(
         account_id=account_id,
         prompt=prompt,
@@ -575,6 +576,8 @@ async def _background_setup_and_execute(
         project_id=project_id,
         account_id=account_id
     )
+    
+    logger.info(f"[BG_TASK_START] Background task starting for agent_run_id={agent_run_id}")
     
     try:
         final_message_content = prompt

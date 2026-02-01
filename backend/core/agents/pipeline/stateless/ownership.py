@@ -88,7 +88,7 @@ class RunOwnership:
                 self._owned[run_id] = now
                 heapq.heappush(self._owned_heap, (now, run_id))
                 self._heartbeat_states[run_id] = HeartbeatState()
-                logger.info(f"[Ownership] Claimed {run_id}")
+                logger.info(f"[Ownership] Claimed {run_id} (worker: {self.worker_id})")
                 return True
 
             current = await redis.get(f"run:{run_id}:owner")
@@ -97,7 +97,10 @@ class RunOwnership:
                 if current == self.worker_id:
                     if run_id not in self._heartbeat_states:
                         self._heartbeat_states[run_id] = HeartbeatState()
+                    logger.warning(f"[Ownership] Run {run_id} already owned by THIS worker {self.worker_id}")
                     return True
+                else:
+                    logger.error(f"[Ownership] Run {run_id} already claimed by DIFFERENT worker: {current} (this worker: {self.worker_id})")
 
             return False
         except Exception as e:
