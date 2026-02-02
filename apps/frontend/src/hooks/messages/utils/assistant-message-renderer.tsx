@@ -589,9 +589,65 @@ export function renderAssistantMessage(props: AssistantMessageRendererProps): Re
   const metadata = safeJsonParse<ParsedMetadata>(message.metadata, {});
 
   const toolCalls = metadata.tool_calls || [];
-  // Ensure textContent is a string to prevent React error #301
+
+  // Ensure textContent is a displayable string.
+  // Some providers/legacy migrations may store text_content as structured blocks (arrays/objects),
+  // and coercing via String() yields "[object Object]".
+  const normalizeTextContent = (value: unknown): string => {
+    if (value == null) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+      return String(value);
+    }
+
+    // Handle array of content blocks (e.g., [{type:'text', text:'...'}])
+    if (Array.isArray(value)) {
+      const parts = value
+        .map((item) => {
+          if (item == null) return '';
+          if (typeof item === 'string') return item;
+          if (typeof item === 'number' || typeof item === 'boolean' || typeof item === 'bigint') return String(item);
+          if (typeof item === 'object') {
+            const obj = item as Record<string, unknown>;
+            const textLike =
+              (typeof obj.text === 'string' && obj.text) ||
+              (typeof obj.content === 'string' && obj.content) ||
+              (typeof obj.value === 'string' && obj.value) ||
+              '';
+            if (textLike) return textLike;
+            try {
+              return JSON.stringify(obj);
+            } catch {
+              return '';
+            }
+          }
+          return '';
+        })
+        .filter(Boolean);
+      return parts.join('');
+    }
+
+    // Handle single object content block
+    if (typeof value === 'object') {
+      const obj = value as Record<string, unknown>;
+      const textLike =
+        (typeof obj.text === 'string' && obj.text) ||
+        (typeof obj.content === 'string' && obj.content) ||
+        (typeof obj.value === 'string' && obj.value) ||
+        '';
+      if (textLike) return textLike;
+      try {
+        return JSON.stringify(obj);
+      } catch {
+        return '';
+      }
+    }
+
+    return '';
+  };
+
   const rawTextContent = metadata.text_content;
-  const textContent = typeof rawTextContent === 'string' ? rawTextContent : (rawTextContent ? String(rawTextContent) : '');
+  const textContent = normalizeTextContent(rawTextContent);
 
   const contentParts: React.ReactNode[] = [];
 
