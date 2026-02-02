@@ -15,46 +15,45 @@ from core.utils.logger import logger
     weight=200,
     visible=True,
     usage_guide="""
-### KNOWLEDGE BASE SEMANTIC SEARCH
+### KNOWLEDGE BASE - FILE STORAGE & RETRIEVAL
 
 **IMPORTANT: These are TOOL FUNCTIONS - invoke them as tool calls, NOT as bash commands!**
 
-**LOCAL KNOWLEDGE BASE (Sandbox Files):**
-- Use `semantic_search` tool to perform intelligent content discovery with natural language queries
-- Files are automatically indexed in the background - large files/folders may take time to index
-- IMPORTANT: Only searches files that have already been indexed. If you get no results, files might still be indexing
-- Use `ls_kb` tool to check which files are indexed and their status
-- Path is optional - defaults to /workspace for general questions, or specify a file path for targeted search
-- Use `cleanup_kb` tool for maintenance operations (default|remove_files|clear_embeddings|clear_all)
+**QUICK START - ACCESS KB FILES:**
+1. `global_kb_enable_all` - Enable all KB files for this agent (required first time!)
+2. `global_kb_sync` - Download enabled files to `/workspace/downloads/global-knowledge/`
+3. Read files using standard file tools at the synced paths
 
-**INDEXING NOTES:**
-- First search may be slower as kb-fusion initializes
-- New files are indexed automatically but may not appear in search results immediately
-- Check `ls_kb` tool to verify file indexing status before searching
+**WHY FILES DON'T SYNC:**
+Files must be ENABLED for this agent before they can sync. Use:
+- `global_kb_list_contents` - Shows all files and their `enabled_for_agent` status
+- `global_kb_enable_all` - Enables ALL files at once (easiest)
+- `global_kb_enable_item` - Enable specific files by ID
 
-**GLOBAL KNOWLEDGE BASE MANAGEMENT:**
-- KB files are AUTO-SYNCED when you first use `semantic_search` tool - no manual sync needed!
-- Files are synced to `/workspace/downloads/global-knowledge/` with proper folder structure
-- You can also manually call `global_kb_sync` tool to force a re-sync
-- Files are automatically searchable via semantic_search since they're in /workspace
-- The system prompt shows SUMMARIES of KB files - use semantic_search or read_file for full content
+**AVAILABLE FUNCTIONS:**
+- `global_kb_enable_all` - Enable ALL KB files for this agent (run this first!)
+- `global_kb_sync` - Download enabled files to sandbox
+- `global_kb_list_contents` - List all files with enabled status
+- `global_kb_enable_item` - Enable/disable specific file
+- `global_kb_create_folder` - Create new folder
+- `global_kb_upload_file` - Upload file from sandbox to KB
+- `global_kb_delete_item` - Delete file/folder
+- `semantic_search` - Search content with natural language
+- `ls_kb` - List indexed files
+- `cleanup_kb` - Maintenance operations
 
-**CRUD OPERATIONS FOR GLOBAL KB (all are tool functions):**
-- **CREATE:**
-  - `global_kb_create_folder` tool - Create new folders to organize files
-  - `global_kb_upload_file` tool - Upload files from sandbox to global KB (USE FULL PATH)
-- **READ:**
-  - `global_kb_list_contents` tool - View all folders and files with their IDs
-- **DELETE:**
-  - `global_kb_delete_item` tool - Remove files or folders using their ID
-- **ENABLE/DISABLE:**
-  - `global_kb_enable_item` tool - Enable or disable KB files for this agent (controls sync)
+**TYPICAL WORKFLOW:**
+1. `global_kb_list_contents` - See what files exist
+2. `global_kb_enable_all` - Enable all files for this agent
+3. `global_kb_sync` - Download to `/workspace/downloads/global-knowledge/`
+4. Read files at `/workspace/downloads/global-knowledge/{FolderName}/{filename}`
+5. Or use `semantic_search` to search content
 
-**WORKFLOW:**
-Create folder → Upload files from sandbox → Organize and manage → Enable → Sync to access
-Structure is 1-level deep: folders contain files only (no nested folders)
+**FILE LOCATIONS:**
+- Synced files: `/workspace/downloads/global-knowledge/{FolderName}/{filename}`
+- System prompt shows SUMMARIES only - sync and read for full content
 
-**REMEMBER:** All KB operations are TOOL FUNCTIONS. Call them using the tool system, not via execute_command/bash!
+**REMEMBER:** All KB operations are TOOL FUNCTIONS, not bash commands!
 """
 )
 class SandboxKbTool(SandboxToolsBase):
@@ -353,11 +352,105 @@ class SandboxKbTool(SandboxToolsBase):
         except Exception as e:
             return self.fail_response(f"Error listing files: {str(e)}")
 
+    def _sanitize_for_filesystem(self, name: str) -> str:
+        """Sanitize a name for use in filesystem paths."""
+        import re
+        # Remove or replace problematic characters
+        safe_name = re.sub(r'[<>:"/\\|?*\x00-\x1f]', '_', name)
+        # Replace spaces and other whitespace
+        safe_name = re.sub(r'\s+', '_', safe_name)
+        # Remove quotes
+        safe_name = safe_name.replace("'", "").replace('"', '')
+        # Remove multiple underscores
+        safe_name = re.sub(r'_+', '_', safe_name)
+        # Remove leading/trailing underscores and dots
+        safe_name = safe_name.strip('_.')
+        # Ensure non-empty
+        return safe_name if safe_name else 'file'
+
+    async def _download_with_retry(self, client, file_path: str, max_retries: int = 3) -> Optional[bytes]:
+        """Download file from S3 with retry logic."""
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                file_response = await client.storage.from_('file-uploads').download(file_path)
+                if file_response and len(file_response) > 0:
+                    return file_response
+                logger.warning(f"[KB_SYNC] Empty response on attempt {attempt + 1} for {file_path}")
+            except Exception as e:
+                last_error = e
+                logger.warning(f"[KB_SYNC] Download attempt {attempt + 1} failed for {file_path}: {e}")
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(1 * (attempt + 1))  # Exponential backoff
+
+        if last_error:
+            logger.error(f"[KB_SYNC] All {max_retries} download attempts failed for {file_path}: {last_error}")
+        return None
+
+    async def _upload_file_with_retry(self, file_content: bytes, destination: str, max_retries: int = 3) -> bool:
+        """Upload file to sandbox with retry logic and verification."""
+        for attempt in range(max_retries):
+            try:
+                # Ensure parent directory exists using SDK method (not shell exec)
+                parent_dir = '/'.join(destination.split('/')[:-1])
+                if parent_dir:
+                    try:
+                        await self.sandbox.fs.create_folder(parent_dir, "755")
+                        logger.debug(f"[KB_SYNC] Created/verified directory: {parent_dir}")
+                    except Exception as dir_err:
+                        # Directory might already exist, which is fine
+                        logger.debug(f"[KB_SYNC] Directory create note: {dir_err}")
+
+                # Upload the file using SDK method
+                await self.sandbox.fs.upload_file(file_content, destination)
+                logger.debug(f"[KB_SYNC] Upload call completed for: {destination}")
+
+                # Small delay to ensure filesystem sync
+                await asyncio.sleep(0.3)
+
+                # Verify using SDK's get_file_info method first
+                try:
+                    file_info = await self.sandbox.fs.get_file_info(destination)
+                    if file_info and not file_info.is_dir:
+                        logger.info(f"[KB_SYNC] Upload verified via SDK: {destination}")
+                        return True
+                except Exception as info_err:
+                    logger.debug(f"[KB_SYNC] SDK verification failed, trying shell: {info_err}")
+
+                # Fallback: verify with shell command
+                verify_cmd = f'test -f "{destination}" && wc -c < "{destination}"'
+                verify_result = await self.sandbox.process.exec(verify_cmd)
+
+                if verify_result.exit_code == 0:
+                    try:
+                        actual_size = int(verify_result.result.strip())
+                        expected_size = len(file_content)
+                        if actual_size == expected_size:
+                            logger.info(f"[KB_SYNC] Upload verified via shell: {destination} ({actual_size} bytes)")
+                            return True
+                        else:
+                            logger.warning(f"[KB_SYNC] Size mismatch for {destination}: expected {expected_size}, got {actual_size}")
+                    except ValueError:
+                        logger.warning(f"[KB_SYNC] Could not parse size from: {verify_result.result}")
+                else:
+                    logger.warning(f"[KB_SYNC] Shell verification failed for {destination}: {verify_result.result}")
+
+                if attempt < max_retries - 1:
+                    logger.info(f"[KB_SYNC] Retrying upload for {destination} (attempt {attempt + 2}/{max_retries})")
+                    await asyncio.sleep(0.5 * (attempt + 1))
+
+            except Exception as e:
+                logger.error(f"[KB_SYNC] Upload attempt {attempt + 1} failed for {destination}: {e}", exc_info=True)
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
+
+        return False
+
     @openapi_schema({
         "type": "function",
         "function": {
             "name": "global_kb_sync",
-            "description": "Sync agent's knowledge base files to /workspace/downloads/global-knowledge/. Downloads all assigned knowledge base files and creates a local copy with proper folder structure. Files are automatically searchable via semantic_search. **🚨 PARAMETER NAMES**: This function takes no parameters.",
+            "description": "Sync agent's knowledge base files to /workspace/downloads/global-knowledge/. Downloads all assigned knowledge base files and creates a local copy with proper folder structure. Files are automatically searchable via semantic_search and readable with standard file tools. **🚨 PARAMETER NAMES**: This function takes no parameters.",
             "parameters": {
                 "type": "object",
                 "properties": {},
@@ -368,21 +461,24 @@ class SandboxKbTool(SandboxToolsBase):
     })
     async def global_kb_sync(self) -> ToolResult:
         """Sync all agent's knowledge base files to /workspace/downloads/global-knowledge/."""
+        logger.info("[KB_SYNC] Starting knowledge base sync...")
         try:
             await self._ensure_sandbox()
-            
+            logger.info(f"[KB_SYNC] Sandbox ready: {self.sandbox_id}")
+
             # Get agent ID from thread manager
             agent_id = getattr(self.thread_manager, 'agent_config', {}).get('agent_id') if hasattr(self.thread_manager, 'agent_config') else None
             if not agent_id:
                 return self.fail_response("No agent ID found for knowledge base sync")
-            
+
             # Get agent's knowledge base entries
             client = await self.thread_manager.db.client
-            
+
             result = await client.from_("agent_knowledge_entry_assignments").select("""
                 entry_id,
                 enabled,
                 knowledge_base_entries (
+                    entry_id,
                     filename,
                     file_path,
                     file_size,
@@ -392,108 +488,251 @@ class SandboxKbTool(SandboxToolsBase):
                     )
                 )
             """).eq("agent_id", agent_id).eq("enabled", True).execute()
-            
+
             if not result.data:
+                # Check if there are ANY KB entries for the account (to help debug)
+                agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
+                account_id = agent_result.data[0]['account_id'] if agent_result.data else None
+
+                # Check total KB entries for account
+                total_entries = 0
+                unassigned_info = ""
+                if account_id:
+                    entries_result = await client.table('knowledge_base_entries').select(
+                        'entry_id, filename'
+                    ).eq('account_id', account_id).eq('is_active', True).execute()
+                    total_entries = len(entries_result.data) if entries_result.data else 0
+
+                    if total_entries > 0:
+                        # Check assignments for this agent
+                        assignments = await client.table('agent_knowledge_entry_assignments').select(
+                            'entry_id, enabled'
+                        ).eq('agent_id', agent_id).execute()
+
+                        assigned_count = len(assignments.data) if assignments.data else 0
+                        enabled_count = sum(1 for a in (assignments.data or []) if a.get('enabled'))
+
+                        unassigned_info = f" Your account has {total_entries} KB files, but {assigned_count} are assigned to this agent ({enabled_count} enabled). Use global_kb_list_contents to see available files, then use global_kb_enable_item to enable them for this agent."
+
+                logger.info(f"[KB_SYNC] No files to sync for agent {agent_id}. Account {account_id} has {total_entries} total KB entries.{unassigned_info}")
+
                 return self.success_response({
-                    "message": "No knowledge base files to sync",
+                    "message": f"No knowledge base files assigned and enabled for this agent.{unassigned_info}",
                     "synced_files": 0,
-                    "kb_directory": f"{self.workspace_path}/downloads/global-knowledge"
+                    "failed_files": 0,
+                    "kb_directory": f"{self.workspace_path}/downloads/global-knowledge",
+                    "agent_id": agent_id,
+                    "account_id": account_id,
+                    "total_account_kb_files": total_entries,
+                    "hint": "Files must be assigned to this agent with enabled=true. Use global_kb_list_contents to see all files, then global_kb_enable_item to enable them."
                 })
-            
+
             # Create knowledge base directory in sandbox - in workspace so it's searchable
             kb_dir = f"{self.workspace_path}/downloads/global-knowledge"
-            await self.sandbox.process.exec(f"mkdir -p {kb_dir}")
+
+            # Use SDK method to create directory structure
+            try:
+                await self.sandbox.fs.create_folder(f"{self.workspace_path}/downloads", "755")
+            except Exception:
+                pass  # May already exist
+            try:
+                await self.sandbox.fs.create_folder(kb_dir, "755")
+            except Exception:
+                pass  # May already exist
+
+            # Clear existing files using shell (SDK doesn't have delete recursive)
             await self.sandbox.process.exec(f"rm -rf {kb_dir}/*")
-            
+            logger.info(f"[KB_SYNC] KB directory prepared: {kb_dir}")
+
             synced_files = 0
+            failed_files = []
             folder_structure = {}
-            
+            file_paths = {}  # Map entry_id to local path for easy reference
+
             for assignment in result.data:
                 if not assignment.get('knowledge_base_entries'):
                     continue
-                    
+
                 entry = assignment['knowledge_base_entries']
                 folder_name = entry['knowledge_base_folders']['name']
                 filename = entry['filename']
                 file_path = entry['file_path']  # S3 path
-                
+                entry_id = entry['entry_id']
+
+                # Sanitize names for filesystem
+                safe_folder_name = self._sanitize_for_filesystem(folder_name)
+                safe_filename = self._sanitize_for_filesystem(filename)
+                # Preserve file extension
+                if '.' in filename:
+                    ext = filename.rsplit('.', 1)[-1]
+                    if not safe_filename.endswith(f'.{ext}'):
+                        safe_filename = f"{safe_filename}.{ext}"
+
                 try:
-                    # Download file from S3
+                    # Download file from S3 with retry
                     logger.info(f"[KB_SYNC] Downloading {file_path} from S3...")
-                    file_response = await client.storage.from_('file-uploads').download(file_path)
+                    file_response = await self._download_with_retry(client, file_path)
 
                     if not file_response:
-                        logger.warning(f"[KB_SYNC] Empty response for {file_path}")
+                        failed_files.append({
+                            "filename": filename,
+                            "folder": folder_name,
+                            "error": "Failed to download from storage after retries"
+                        })
                         continue
 
-                    logger.info(f"[KB_SYNC] Downloaded {len(file_response) if file_response else 0} bytes")
+                    logger.info(f"[KB_SYNC] Downloaded {len(file_response)} bytes for {filename}")
 
-                    # Create folder structure in sandbox - sanitize folder name for filesystem
-                    safe_folder_name = folder_name.replace("'", "").replace('"', '')
+                    # Create folder structure in sandbox using SDK method
                     folder_path = f"{kb_dir}/{safe_folder_name}"
-                    mkdir_result = await self.sandbox.process.exec(f'mkdir -p "{folder_path}"')
-                    if mkdir_result.exit_code != 0:
-                        logger.error(f"[KB_SYNC] Failed to create folder: {mkdir_result.result}")
-                        continue
+                    try:
+                        await self.sandbox.fs.create_folder(folder_path, "755")
+                        logger.debug(f"[KB_SYNC] Created folder: {folder_path}")
+                    except Exception as folder_err:
+                        # Folder might already exist, try to verify
+                        try:
+                            folder_info = await self.sandbox.fs.get_file_info(folder_path)
+                            if not folder_info.is_dir:
+                                failed_files.append({
+                                    "filename": filename,
+                                    "folder": folder_name,
+                                    "error": f"Path exists but is not a directory: {folder_path}"
+                                })
+                                continue
+                        except Exception:
+                            failed_files.append({
+                                "filename": filename,
+                                "folder": folder_name,
+                                "error": f"Failed to create folder: {folder_err}"
+                            })
+                            continue
 
-                    # Upload file to sandbox using FULL path (required by Daytona SDK)
-                    file_destination = f"{self.workspace_path}/downloads/global-knowledge/{safe_folder_name}/{filename}"
+                    # Upload file to sandbox with retry and verification
+                    file_destination = f"{kb_dir}/{safe_folder_name}/{safe_filename}"
                     logger.info(f"[KB_SYNC] Uploading {len(file_response)} bytes to: {file_destination}")
-                    await self.sandbox.fs.upload_file(file_response, file_destination)
 
-                    # Verify the file was written
-                    verify_result = await self.sandbox.process.exec(f'test -f "{kb_dir}/{safe_folder_name}/{filename}" && echo "exists"')
-                    if "exists" not in verify_result.result:
-                        logger.error(f"[KB_SYNC] File not found after upload: {file_destination}, verify result: {verify_result.result}")
+                    upload_success = await self._upload_file_with_retry(file_response, file_destination)
+                    if not upload_success:
+                        failed_files.append({
+                            "filename": filename,
+                            "folder": folder_name,
+                            "error": "Failed to upload file to sandbox after retries"
+                        })
                         continue
 
                     synced_files += 1
-                    logger.info(f"[KB_SYNC] Successfully synced: {safe_folder_name}/{filename}")
+                    logger.info(f"[KB_SYNC] Successfully synced: {safe_folder_name}/{safe_filename}")
+
+                    # Track file paths
+                    file_paths[entry_id] = file_destination
 
                     # Use original folder name for output structure
                     if folder_name not in folder_structure:
                         folder_structure[folder_name] = []
-                    folder_structure[folder_name].append(filename)
+                    folder_structure[folder_name].append({
+                        "original": filename,
+                        "synced_as": safe_filename,
+                        "path": file_destination
+                    })
 
                 except Exception as e:
                     logger.error(f"[KB_SYNC] Error syncing {folder_name}/{filename}: {e}", exc_info=True)
+                    failed_files.append({
+                        "filename": filename,
+                        "folder": folder_name,
+                        "error": str(e)
+                    })
                     continue
-            
-            # Create README
+
+            # Create README with file paths
             readme_content = f"""# Global Knowledge Base
 
 This directory contains your agent's knowledge base files, synced from the cloud.
 
-Location: `/workspace/downloads/global-knowledge/`
+**Location:** `/workspace/downloads/global-knowledge/`
 
-## Structure:
+## Synced Files:
 """
             for folder_name, files in folder_structure.items():
+                safe_folder = self._sanitize_for_filesystem(folder_name)
                 readme_content += f"\n### {folder_name}/\n"
-                for filename in files:
-                    readme_content += f"- {filename}\n"
-            
+                for file_info in files:
+                    readme_content += f"- `{file_info['synced_as']}` (original: {file_info['original']})\n"
+                    readme_content += f"  Path: `{file_info['path']}`\n"
+
+            if failed_files:
+                readme_content += f"\n## Failed to Sync ({len(failed_files)} files):\n"
+                for fail in failed_files:
+                    readme_content += f"- {fail['folder']}/{fail['filename']}: {fail['error']}\n"
+
             readme_content += f"""
 ## Usage:
-- Files are automatically searchable via semantic_search (they're in /workspace)
-- You can manually sync with the `global_kb_sync` tool
-- Total files synced: {synced_files}
+- Read files directly: Use file read tools with paths above
+- Search files: Use semantic_search tool (files are in /workspace)
+- Re-sync: Use `global_kb_sync` tool to refresh
 
-## Last Sync:
-Agent ID: {agent_id}
+## Sync Summary:
+- Synced: {synced_files} files
+- Failed: {len(failed_files)} files
+- Agent ID: {agent_id}
 """
-            
-            await self.sandbox.fs.upload_file(readme_content.encode('utf-8'), f"{self.workspace_path}/downloads/global-knowledge/README.md")
-            
-            return self.success_response({
-                "message": f"Successfully synced {synced_files} files to knowledge base",
+
+            # Upload README with retry
+            readme_path = f"{kb_dir}/README.md"
+            await self._upload_file_with_retry(readme_content.encode('utf-8'), readme_path)
+
+            # Build a flat list of all synced file paths for easy access
+            all_file_paths = []
+            for folder_files in folder_structure.values():
+                for file_info in folder_files:
+                    all_file_paths.append(file_info['path'])
+
+            # Final verification: list all files in the KB directory
+            verify_ls = await self.sandbox.process.exec(f'find "{kb_dir}" -type f 2>/dev/null')
+            verified_files = []
+            if verify_ls.exit_code == 0 and verify_ls.result.strip():
+                verified_files = [f.strip() for f in verify_ls.result.strip().split('\n') if f.strip()]
+                logger.info(f"[KB_SYNC] Final verification - files in KB directory: {verified_files}")
+
+            # Check if any expected files are missing
+            missing_files = []
+            for expected_path in all_file_paths:
+                if expected_path not in verified_files:
+                    missing_files.append(expected_path)
+                    logger.warning(f"[KB_SYNC] Expected file not found in verification: {expected_path}")
+
+            # Build a simple string summary of synced files (frontend-friendly)
+            files_summary = []
+            for folder_name, folder_files in folder_structure.items():
+                for file_info in folder_files:
+                    files_summary.append(f"{folder_name}/{file_info['synced_as']}")
+
+            response = {
+                "message": f"Synced {synced_files} files to knowledge base" + (f" ({len(failed_files)} failed)" if failed_files else ""),
                 "synced_files": synced_files,
+                "failed_files": len(failed_files),
                 "kb_directory": kb_dir,
-                "folder_structure": folder_structure,
-                "agent_id": agent_id
-            })
-            
+                "files": files_summary,  # Simple string list for frontend
+                "file_paths": all_file_paths,  # Full paths for agent use
+                "agent_id": agent_id,
+                "usage_hint": f"Read files using: read_file with paths like '{all_file_paths[0] if all_file_paths else kb_dir}'"
+            }
+
+            if failed_files:
+                # Convert to simple strings for frontend
+                response["failure_messages"] = [f"{f['folder']}/{f['filename']}: {f['error']}" for f in failed_files]
+
+            if missing_files:
+                response["warning"] = f"Some files may not have synced correctly"
+                logger.warning(f"[KB_SYNC] Missing files after sync: {missing_files}")
+
+            if synced_files == 0 and failed_files:
+                return self.fail_response(f"Failed to sync any files. Errors: {failed_files}")
+
+            return self.success_response(response)
+
         except Exception as e:
+            logger.error(f"[KB_SYNC] Fatal error: {e}", exc_info=True)
             return self.fail_response(f"Failed to sync knowledge base: {str(e)}")
 
     @openapi_schema({
@@ -885,6 +1124,85 @@ Agent ID: {agent_id}
     @openapi_schema({
         "type": "function",
         "function": {
+            "name": "global_kb_enable_all",
+            "description": "Enable ALL knowledge base files for this agent. Use this to quickly make all KB files available for syncing. **🚨 PARAMETER NAMES**: This function takes no parameters.",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": False
+            }
+        }
+    })
+    async def global_kb_enable_all(self) -> ToolResult:
+        """Enable all knowledge base files for this agent."""
+        try:
+            # Get agent ID
+            agent_id = getattr(self.thread_manager, 'agent_config', {}).get('agent_id') if hasattr(self.thread_manager, 'agent_config') else None
+            if not agent_id:
+                return self.fail_response("No agent ID found for knowledge base operations")
+
+            client = await self.thread_manager.db.client
+
+            # Get agent's account ID
+            agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).execute()
+            if not agent_result.data:
+                return self.fail_response("Worker not found")
+
+            account_id = agent_result.data[0]['account_id']
+
+            # Get all KB entries for this account
+            entries_result = await client.table('knowledge_base_entries').select(
+                'entry_id, filename'
+            ).eq('account_id', account_id).eq('is_active', True).execute()
+
+            if not entries_result.data:
+                return self.success_response({
+                    "message": "No knowledge base files found to enable",
+                    "enabled_count": 0
+                })
+
+            # Get existing assignments
+            existing_result = await client.table('agent_knowledge_entry_assignments').select(
+                'entry_id'
+            ).eq('agent_id', agent_id).execute()
+            existing_entries = {a['entry_id'] for a in (existing_result.data or [])}
+
+            # Enable all files
+            enabled_count = 0
+            for entry in entries_result.data:
+                entry_id = entry['entry_id']
+                try:
+                    if entry_id in existing_entries:
+                        # Update existing assignment
+                        await client.table('agent_knowledge_entry_assignments').update({
+                            'enabled': True
+                        }).eq('agent_id', agent_id).eq('entry_id', entry_id).execute()
+                    else:
+                        # Create new assignment
+                        await client.table('agent_knowledge_entry_assignments').insert({
+                            'agent_id': agent_id,
+                            'entry_id': entry_id,
+                            'account_id': account_id,
+                            'enabled': True
+                        }).execute()
+                    enabled_count += 1
+                except Exception as e:
+                    logger.warning(f"[KB] Failed to enable entry {entry_id}: {e}")
+
+            return self.success_response({
+                "message": f"Successfully enabled {enabled_count} knowledge base files for this agent. Now call global_kb_sync to download them.",
+                "enabled_count": enabled_count,
+                "total_files": len(entries_result.data),
+                "next_step": "Call global_kb_sync to download the files to /workspace/downloads/global-knowledge/"
+            })
+
+        except Exception as e:
+            return self.fail_response(f"Failed to enable all files: {str(e)}")
+
+    @openapi_schema({
+        "type": "function",
+        "function": {
             "name": "global_kb_list_contents",
             "description": "List all folders and files in the global knowledge base. **🚨 PARAMETER NAMES**: This function takes no parameters.",
             "parameters": {
@@ -922,10 +1240,20 @@ Agent ID: {agent_id}
                 entry_id, filename, file_size, created_at, summary, folder_id,
                 knowledge_base_folders (name)
             ''').eq('account_id', account_id).eq('is_active', True).order('created_at').execute()
-            
+
+            # Get assignments for this agent to show enabled status
+            assignments_result = await client.table('agent_knowledge_entry_assignments').select(
+                'entry_id, enabled'
+            ).eq('agent_id', agent_id).execute()
+
+            # Build a map of entry_id -> enabled status
+            assignment_map = {}
+            for assignment in (assignments_result.data or []):
+                assignment_map[assignment['entry_id']] = assignment['enabled']
+
             # Organize data
             kb_structure = {}
-            
+
             # Add all folders (even empty ones)
             for folder in folders_result.data:
                 kb_structure[folder['name']] = {
@@ -934,29 +1262,39 @@ Agent ID: {agent_id}
                     "created_at": folder['created_at'],
                     "files": []
                 }
-            
-            # Add files to their folders
+
+            # Add files to their folders with enabled status
+            enabled_count = 0
             for file in files_result.data:
                 folder_name = file['knowledge_base_folders']['name']
+                entry_id = file['entry_id']
+                is_enabled = assignment_map.get(entry_id, False)
+                if is_enabled:
+                    enabled_count += 1
+
                 if folder_name in kb_structure:
                     kb_structure[folder_name]['files'].append({
-                        "file_id": file['entry_id'],
+                        "file_id": entry_id,
                         "filename": file['filename'],
                         "file_size": file['file_size'],
                         "created_at": file['created_at'],
-                        "summary": file['summary'][:100] + "..." if len(file['summary']) > 100 else file['summary']
+                        "summary": file['summary'][:100] + "..." if file.get('summary') and len(file['summary']) > 100 else (file.get('summary') or ''),
+                        "enabled_for_agent": is_enabled  # Shows if this file will sync for this agent
                     })
-            
+
             total_files = len(files_result.data)
             total_folders = len(folders_result.data)
             total_size = sum(file['file_size'] for file in files_result.data)
-            
+
             return self.success_response({
-                "message": f"Knowledge base contains {total_folders} folders and {total_files} files",
+                "message": f"Knowledge base contains {total_folders} folders and {total_files} files ({enabled_count} enabled for this agent)",
                 "total_folders": total_folders,
                 "total_files": total_files,
+                "enabled_for_agent": enabled_count,
                 "total_size_mb": round(total_size / (1024 * 1024), 2),
-                "structure": kb_structure
+                "structure": kb_structure,
+                "agent_id": agent_id,
+                "hint": "Files with enabled_for_agent=false won't sync. Use global_kb_enable_item to enable them."
             })
             
         except Exception as e:

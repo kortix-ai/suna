@@ -155,12 +155,18 @@ const KbResultDisplay: React.FC<{ operation: KbOperation; toolOutput: any }> = (
                     <div key={folder} className="text-sm bg-zinc-50 dark:bg-zinc-900 rounded p-2">
                       <span className="font-medium text-zinc-900 dark:text-zinc-100">{folder}</span>
                       <div className="text-xs text-zinc-600 dark:text-zinc-400 mt-1 space-y-1">
-                        {Array.isArray(files) ? files.map((file, idx) => (
-                          <div key={idx} className="flex items-center gap-1">
-                            <span>•</span>
-                            <span>{file}</span>
-                          </div>
-                        )) : `${files.length || 0} files`}
+                        {Array.isArray(files) ? files.map((file, idx) => {
+                          // Handle both string and object formats
+                          const fileName = typeof file === 'string'
+                            ? file
+                            : (file?.synced_as || file?.filename || file?.original || file?.path?.split('/').pop() || JSON.stringify(file));
+                          return (
+                            <div key={idx} className="flex items-center gap-1">
+                              <span>•</span>
+                              <span>{fileName}</span>
+                            </div>
+                          );
+                        }) : `${files?.length || 0} files`}
                       </div>
                     </div>
                   ))}

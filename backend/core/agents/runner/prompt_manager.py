@@ -195,7 +195,6 @@ class PromptManager:
         fetch_start = time.time()
         
         try:
-            # Check cache first
             from core.cache.runtime_cache import get_cached_kb_context, set_cached_kb_context
             cached = await get_cached_kb_context(agent_id)
             if cached is not None:  # None = miss, empty string = no entries (cached)
@@ -204,22 +203,25 @@ class PromptManager:
                 if cached:
                     kb_section = f"""
 
-                === AGENT KNOWLEDGE BASE ===
-                NOTICE: The following is your specialized knowledge base containing SUMMARIES of your knowledge files.
-                These summaries should be considered authoritative and take precedence over general knowledge when relevant.
+=== YOUR KNOWLEDGE BASE ===
+You have a knowledge base with files assigned to you. Below are SUMMARIES of those files:
 
-                {cached}
+{cached}
 
-                === END AGENT KNOWLEDGE BASE ===
+=== END KNOWLEDGE BASE ===
 
-                IMPORTANT KNOWLEDGE BASE ACCESS:
-                - The content above shows SUMMARIES only, not the full file contents
-                - To access the FULL content of knowledge base files:
-                  1. First call `global_kb_sync` to download files to sandbox
-                  2. Files will be available at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
-                  3. Then use `read_file` or `semantic_search` to access content
-                - Use these summaries directly for most queries without needing full file access
-                - Only sync and read full files when the summary is insufficient"""
+HOW TO ACCESS FULL FILE CONTENT:
+You have the `sb_kb_tool` with these functions to access your knowledge base:
+
+1. `global_kb_list_contents` - List all your KB files and folders with IDs
+2. `global_kb_sync` - Download KB files to `/workspace/downloads/global-knowledge/`
+3. After sync, read files at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
+4. `semantic_search` - Search across all files with natural language queries
+
+WHEN USER ASKS ABOUT KB FILES:
+1. Call `global_kb_sync` tool FIRST to download files to sandbox
+2. Then use file read tools or `semantic_search` to get content
+3. The summaries above are just previews - sync to read full content"""
                     return kb_section
                 return None
             
@@ -250,22 +252,25 @@ class PromptManager:
                 
                 kb_section = f"""
 
-                === AGENT KNOWLEDGE BASE ===
-                NOTICE: The following is your specialized knowledge base containing SUMMARIES of your knowledge files.
-                These summaries should be considered authoritative and take precedence over general knowledge when relevant.
+=== YOUR KNOWLEDGE BASE ===
+You have a knowledge base with files assigned to you. Below are SUMMARIES of those files:
 
-                {kb_data}
+{kb_data}
 
-                === END AGENT KNOWLEDGE BASE ===
+=== END KNOWLEDGE BASE ===
 
-                IMPORTANT KNOWLEDGE BASE ACCESS:
-                - The content above shows SUMMARIES only, not the full file contents
-                - To access the FULL content of knowledge base files:
-                  1. First call `global_kb_sync` to download files to sandbox
-                  2. Files will be available at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
-                  3. Then use `read_file` or `semantic_search` to access content
-                - Use these summaries directly for most queries without needing full file access
-                - Only sync and read full files when the summary is insufficient"""
+HOW TO ACCESS FULL FILE CONTENT:
+You have the `sb_kb_tool` with these functions to access your knowledge base:
+
+1. `global_kb_list_contents` - List all your KB files and folders with IDs
+2. `global_kb_sync` - Download KB files to `/workspace/downloads/global-knowledge/`
+3. After sync, read files at `/workspace/downloads/global-knowledge/[FolderName]/[filename]`
+4. `semantic_search` - Search across all files with natural language queries
+
+WHEN USER ASKS ABOUT KB FILES:
+1. Call `global_kb_sync` tool FIRST to download files to sandbox
+2. Then use file read tools or `semantic_search` to get content
+3. The summaries above are just previews - sync to read full content"""
 
                 return kb_section
             else:

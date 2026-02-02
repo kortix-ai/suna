@@ -257,28 +257,21 @@ class FileProcessor:
             return {'success': False, 'error': str(e)}
     
     async def _generate_summary(self, content: str, filename: str) -> str:
-        """Generate LLM summary of file content with smart chunking and fallbacks."""
         try:
-            # Model priority: Google Gemini → OpenRouter → GPT-5 Mini
             models = [
-                ("google/gemini-2.5-flash-lite", 1_000_000),  # 1M context
-                ("openrouter/google/gemini-2.5-flash-lite", 1_000_000),  # Fallback
-                ("gpt-5-mini", 400_000)  # Final fallback
+                ("openrouter/google/gemini-2.5-flash-lite", 1_000_000),
+                ("gpt-5-mini", 400_000)
             ]
             
-            # Estimate tokens (rough: 1 token ≈ 4 chars)
             estimated_tokens = len(content) // 4
             
             for model_name, context_limit in models:
                 try:
-                    # Reserve tokens for prompt and response
-                    usable_context = context_limit - 1000  # Reserve for prompt + response
+                    usable_context = context_limit - 1000
                     
                     if estimated_tokens <= usable_context:
-                        # Content fits, use full content
                         processed_content = content
                     else:
-                        # Content too large, intelligent chunking
                         processed_content = self._smart_chunk_content(content, usable_context * 4)  # Convert back to chars
                     
                     prompt = f"""Analyze this file and create a concise, actionable summary for an AI agent's knowledge base.
@@ -299,10 +292,22 @@ Keep it under 200 words and make it actionable for context injection."""
                         messages=messages,
                         model_name=model_name,
                         temperature=0.1,
-                        max_tokens=300
+                        max_tokens=300,
+                        stream=False,
                     )
                     
-                    summary = response.choices[0].message.content.strip()
+                    summary = ""
+                    if isinstance(response, dict):
+                        summary = (
+                            (response.get("choices") or [{}])[0]
+                            .get("message", {})
+                            .get("content", "")
+                            .strip()
+                        )
+                    elif hasattr(response, "choices") and response.choices:
+                        summary = (response.choices[0].message.content or "").strip()
+                    else:
+                        summary = str(response).strip()
                     
                     if summary:
                         logger.info(f"Summary generated successfully using {model_name}")

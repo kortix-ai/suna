@@ -26,6 +26,7 @@ DEFAULT_CORE_TOOLS = [
     'sb_image_edit_tool',   # Image generation
     'sb_upload_file_tool',  # File uploads
     'sb_expose_tool',       # Port exposure
+    'sb_kb_tool',           # Knowledge base operations
     'agent_config_tool',
     'agent_creation_tool',
     'mcp_search_tool',
@@ -133,14 +134,15 @@ class ToolManager:
         
         # Core sandbox tools - only register if enabled
         core_sandbox_tools = [
-            'sb_shell_tool', 
-            'sb_git_sync', 
+            'sb_shell_tool',
+            'sb_git_sync',
             'sb_files_tool',
             'sb_file_reader_tool',
             'sb_vision_tool',
             'sb_image_edit_tool',
             'sb_upload_file_tool',
-            'sb_expose_tool'
+            'sb_expose_tool',
+            'sb_kb_tool',  # Knowledge base operations
         ]
         tools_needing_thread_id = {'sb_vision_tool', 'sb_image_edit_tool', 'sb_design_tool'}
         
@@ -185,7 +187,8 @@ class ToolManager:
         ]
         
         agent_id = self.agent_config.get('agent_id') if self.agent_config else None
-        account_id = self.agent_config.get('account_id') if self.agent_config else None
+        # Get account_id from thread_manager (it's not in agent_config)
+        account_id = getattr(self.thread_manager, 'account_id', None)
         db_connection = getattr(self.thread_manager, 'db', None)
         
         logger.info(f"🔧 Registering agent builder tools (agent_id={agent_id}, account_id={account_id}, has_db={db_connection is not None})")
