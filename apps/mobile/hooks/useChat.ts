@@ -1463,21 +1463,10 @@ export function useChat(): UseChatReturn {
         setAttachments([]);
         
         setIsNewThreadOptimistic(true);
-        
-        let messageContent = content;
-        
-        // Append hidden context for slides template
-        if (selectedQuickAction === 'slides' && selectedQuickActionOption) {
-          messageContent += `\n\n----\n\n**Presentation Template:** ${selectedQuickActionOption}`;
-          log.log('[useChat] Appended slides template context:', selectedQuickActionOption);
-        }
-        
-        // Append hidden context for image style
-        if (selectedQuickAction === 'image' && selectedQuickActionOption) {
-          messageContent += `\n\n----\n\n**Image Style:** ${selectedQuickActionOption}`;
-          log.log('[useChat] Appended image style context:', selectedQuickActionOption);
-        }
-        
+
+        // For existing threads, DON'T append template context - it was already sent with the first message
+        const messageContent = content;
+
         // Convert attachments to files format for upload
         const filesToUpload = pendingAttachments.length > 0
           ? pendingAttachments.map(a => ({
