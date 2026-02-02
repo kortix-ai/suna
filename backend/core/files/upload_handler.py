@@ -9,6 +9,7 @@ from core.services import redis
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
+from core.utils.files_utils import normalize_filename
 from core.sandbox.resolver import resolve_sandbox
 
 db = DBConnection()
@@ -34,9 +35,10 @@ async def fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[s
     for file in files:
         if not file.filename:
             continue
-        
+
         try:
-            original_filename = file.filename.replace('/', '_').replace('\\', '_')
+            # Normalize filename for Unicode compatibility (macOS screenshots, etc.)
+            original_filename = normalize_filename(file.filename.replace('/', '_').replace('\\', '_'))
             content_bytes = await file.read()
             mime_type = file.content_type or "application/octet-stream"
             

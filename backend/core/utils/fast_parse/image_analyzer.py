@@ -67,9 +67,21 @@ Be concise but comprehensive."""
                 model_name=self._model,
                 max_tokens=self._max_tokens,
                 temperature=0.1,
+                stream=False,
             )
             
-            description = response.choices[0].message.content.strip()
+            description = ""
+            if isinstance(response, dict):
+                description = (
+                    (response.get("choices") or [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                    .strip()
+                )
+            elif hasattr(response, "choices") and response.choices:
+                description = (response.choices[0].message.content or "").strip()
+            else:
+                description = str(response).strip()
             
             labels = self._extract_labels(description)
             text_content = self._extract_text_content(description)

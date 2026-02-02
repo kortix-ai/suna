@@ -544,7 +544,9 @@ class AgentCreationTool(Tool):
                     "message": success_message,
                     "agent_id": agent_id,
                     "agent_name": name,
-                    "is_default": is_default
+                    "name": name,  # Also include 'name' for frontend compatibility
+                    "is_default": is_default,
+                    "success": True  # Explicit success flag for frontend parsing
                 })
                 
             except Exception as e:

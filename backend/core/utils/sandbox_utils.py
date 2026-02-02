@@ -5,20 +5,27 @@ from pathlib import Path
 from typing import Optional
 from daytona_sdk import AsyncSandbox
 from core.utils.logger import logger
+from core.utils.files_utils import normalize_filename
 
 
 async def generate_unique_filename(sandbox: AsyncSandbox, base_path: str, original_filename: str) -> str:
     """
     Generate a unique filename by appending a timestamp if the file already exists.
-    
+
+    Also normalizes the filename to handle Unicode characters (e.g., macOS screenshot
+    filenames with narrow no-break spaces).
+
     Args:
         sandbox: The sandbox instance
         base_path: The base directory path (e.g., /workspace/uploads)
         original_filename: The original filename
-        
+
     Returns:
         A unique filename that doesn't conflict with existing files
     """
+    # Normalize filename to handle Unicode characters (macOS screenshots, etc.)
+    original_filename = normalize_filename(original_filename)
+
     # Parse filename and extension
     file_path = Path(original_filename)
     name_without_ext = file_path.stem

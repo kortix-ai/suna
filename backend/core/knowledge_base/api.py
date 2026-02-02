@@ -615,6 +615,96 @@ async def update_agent_assignments(
 class FolderMoveRequest(BaseModel):
     folder_id: str
 
+
+# File download/read
+@router.get("/entries/{entry_id}/content")
+async def get_entry_content(
+    entry_id: str,
+    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+):
+    """Get the actual content of a knowledge base file."""
+    if not config.ENABLE_KNOWLEDGE_BASE:
+        raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
+
+    try:
+        client = await db.client
+        account_id = user_id
+
+        # Get entry details
+        entry_result = await client.table('knowledge_base_entries').select(
+            'entry_id, filename, file_path, mime_type, file_size'
+        ).eq('entry_id', entry_id).eq('account_id', account_id).eq('is_active', True).execute()
+
+        if not entry_result.data:
+            raise HTTPException(status_code=404, detail="File not found")
+
+        entry = entry_result.data[0]
+        file_path = entry['file_path']
+
+        # Download file from S3
+        try:
+            file_content = await client.storage.from_('file-uploads').download(file_path)
+            if not file_content:
+                raise HTTPException(status_code=404, detail="File content not found in storage")
+        except Exception as e:
+            logger.error(f"Error downloading file from S3: {str(e)}")
+            raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
+
+        # Try to decode as text
+        content_text = None
+        mime_type = entry['mime_type'] or 'application/octet-stream'
+
+        if mime_type.startswith('text/') or mime_type in ['application/json', 'application/xml']:
+            try:
+                import chardet
+                detected = chardet.detect(file_content)
+                encoding = detected.get('encoding', 'utf-8')
+                content_text = file_content.decode(encoding)
+            except:
+                content_text = file_content.decode('utf-8', errors='replace')
+        elif entry['filename'].endswith('.pdf'):
+            try:
+                import io
+                import PyPDF2
+                pdf_reader = PyPDF2.PdfReader(io.BytesIO(file_content))
+                content_text = '\n\n'.join(page.extract_text() for page in pdf_reader.pages)
+            except Exception as e:
+                logger.warning(f"Failed to extract PDF text: {e}")
+        elif entry['filename'].endswith('.docx'):
+            try:
+                import io
+                import docx
+                doc = docx.Document(io.BytesIO(file_content))
+                content_text = '\n'.join(paragraph.text for paragraph in doc.paragraphs)
+            except Exception as e:
+                logger.warning(f"Failed to extract DOCX text: {e}")
+        else:
+            # Try generic text decode
+            try:
+                import chardet
+                detected = chardet.detect(file_content[:4096])
+                if detected.get('confidence', 0) > 0.7:
+                    encoding = detected.get('encoding', 'utf-8')
+                    content_text = file_content.decode(encoding)
+            except:
+                pass
+
+        return {
+            "entry_id": entry['entry_id'],
+            "filename": entry['filename'],
+            "file_size": entry['file_size'],
+            "mime_type": mime_type,
+            "content": content_text,
+            "is_binary": content_text is None
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting entry content: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve file content")
+
+
 # File operations
 @router.put("/entries/{entry_id}/move")
 async def move_file(

@@ -21,9 +21,9 @@ class JITLoader:
     @staticmethod
     def get_core_tools() -> List[str]:
         return [
-            'expand_msg_tool', 
-            'message_tool', 
-            'task_list_tool', 
+            'expand_msg_tool',
+            'message_tool',
+            'task_list_tool',
             'sb_shell_tool',
             'sb_files_tool',
             'sb_file_reader_tool',
@@ -35,7 +35,8 @@ class JITLoader:
             'browser_tool',
             'sb_git_sync',
             'sb_upload_file_tool',
-            'sb_expose_tool'
+            'sb_expose_tool',
+            'sb_kb_tool',  # Knowledge base operations
         ]
     
     @staticmethod
