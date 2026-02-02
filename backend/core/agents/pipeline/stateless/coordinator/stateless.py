@@ -135,6 +135,11 @@ class StatelessCoordinator(BaseCoordinator):
 
             await stream_thinking(ctx.stream_key)
 
+            # Re-check model before each step — images may have been added
+            # mid-run by load_image tool, requiring a vision-capable model
+            if auto_continue_count > 0:
+                await self._determine_effective_model(ctx)
+
             should_auto_continue = False
             force_terminate = False
 
