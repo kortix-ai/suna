@@ -34,7 +34,7 @@ async def claim_pending_queue_items(limit: int = BATCH_SIZE) -> List[Dict[str, A
     multiple workers grab the same items.
     """
     try:
-        from core.services.db import execute
+        from core.services.db import execute, serialize_rows
 
         # Atomic claim: SELECT + UPDATE in one transaction
         # FOR UPDATE SKIP LOCKED ensures no two workers grab same row
@@ -52,7 +52,8 @@ async def claim_pending_queue_items(limit: int = BATCH_SIZE) -> List[Dict[str, A
             RETURNING id, thread_id, agent_run_id, account_id, attempts
         """, {"limit": limit, "max_attempts": MAX_ATTEMPTS})
 
-        return [dict(row) for row in result] if result else []
+        # serialize_rows converts UUID objects to strings for JSON compatibility
+        return serialize_rows(result) if result else []
 
     except Exception as e:
         logger.error(f"[ANALYTICS] Failed to claim queue items: {e}")

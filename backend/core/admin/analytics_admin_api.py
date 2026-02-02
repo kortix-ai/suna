@@ -113,6 +113,33 @@ class ConversionFunnel(BaseModel):
     date: str
 
 
+class ActivationStats(BaseModel):
+    """Signup activation stats: how many free signups tried tasks + distribution."""
+    total_signups: int
+    activated_signups: int
+    activation_rate: float  # Percentage (0-100)
+    distribution: Dict[str, int]  # {"0": 5078, "1": 4091, "2-5": 5356, "6-10": 1156, "10+": 659}
+    date: str
+
+
+class UserFunnelStats(BaseModel):
+    """Full user funnel: Signup → Tried Task → Viewed Pricing → Converted."""
+    total_signups: int
+    tried_task: int
+    tried_task_rate: float  # % of signups who tried
+    viewed_pricing: int  # Users who viewed pricing (from database)
+    viewed_pricing_rate: float  # % of signups who viewed pricing
+    tried_and_viewed: int  # Users who both tried task AND viewed pricing
+    tried_and_viewed_rate: float
+    converted: int
+    conversion_rate: float  # % of signups who converted
+    # Detailed breakdown
+    tried_then_viewed_rate: float  # % of tried users who viewed pricing
+    viewed_then_converted_rate: float  # % of pricing viewers who converted
+    date_from: str
+    date_to: str
+
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -1335,6 +1362,150 @@ async def get_conversion_funnel(
     except Exception as e:
         logger.error(f"Failed to get conversion funnel: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get conversion funnel")
+
+
+@router.get("/activation-stats")
+async def get_activation_stats(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_admin)
+) -> ActivationStats:
+    """Get signup activation stats: free tier signups activation rate + task distribution."""
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Parse date range
+        start_date, end_date = parse_date_range(None, date_from, date_to)
+
+        # Use UTC for queries
+        UTC = ZoneInfo('UTC')
+        start_of_range = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC).isoformat()
+        end_of_range = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC).isoformat()
+
+        # Call the RPC function
+        result = await client.rpc('get_signup_activation_stats', {
+            'date_from': start_of_range,
+            'date_to': end_of_range
+        }).execute()
+
+        if result.data and len(result.data) > 0:
+            data = result.data[0]
+            total = data.get('total_signups', 0) or 0
+            activated = data.get('activated_signups', 0) or 0
+            rate = (activated / total * 100) if total > 0 else 0
+            distribution = {
+                "0": data.get('bucket_0', 0) or 0,
+                "1": data.get('bucket_1', 0) or 0,
+                "2-5": data.get('bucket_2_5', 0) or 0,
+                "6-10": data.get('bucket_6_10', 0) or 0,
+                "10+": data.get('bucket_10_plus', 0) or 0,
+            }
+        else:
+            total = 0
+            activated = 0
+            rate = 0
+            distribution = {"0": 0, "1": 0, "2-5": 0, "6-10": 0, "10+": 0}
+
+        return ActivationStats(
+            total_signups=total,
+            activated_signups=activated,
+            activation_rate=round(rate, 2),
+            distribution=distribution,
+            date=start_date.strftime("%Y-%m-%d")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get activation stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get activation stats")
+
+
+@router.get("/user-funnel")
+async def get_user_funnel(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_admin)
+) -> UserFunnelStats:
+    """
+    Get full user funnel: Signup → Tried Task → Viewed Pricing → Converted.
+
+    All data from Supabase - no GA4 cross-referencing needed.
+    """
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Parse date range
+        start_date, end_date = parse_date_range(None, date_from, date_to)
+
+        # Use UTC for Supabase queries
+        UTC = ZoneInfo('UTC')
+        start_of_range = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC).isoformat()
+        end_of_range = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC).isoformat()
+
+        # Get full funnel data from Supabase RPC
+        # Returns: user_id, has_activity (tried task), viewed_pricing, is_converted
+        signups_result = await client.rpc('get_free_signups_with_activity', {
+            'date_from': start_of_range,
+            'date_to': end_of_range
+        }).execute()
+
+        signups_data = signups_result.data or []
+
+        total_signups = 0
+        tried_task = 0
+        viewed_pricing = 0
+        tried_and_viewed = 0
+        converted = 0
+
+        for row in signups_data:
+            user_id = row.get('user_id')
+            if user_id:
+                total_signups += 1
+                has_activity = row.get('has_activity', False)
+                has_viewed_pricing = row.get('viewed_pricing', False)
+                is_converted = row.get('is_converted', False)
+
+                if has_activity:
+                    tried_task += 1
+                if has_viewed_pricing:
+                    viewed_pricing += 1
+                if has_activity and has_viewed_pricing:
+                    tried_and_viewed += 1
+                if is_converted:
+                    converted += 1
+
+        # Calculate rates
+        tried_task_rate = (tried_task / total_signups * 100) if total_signups > 0 else 0
+        viewed_pricing_rate = (viewed_pricing / total_signups * 100) if total_signups > 0 else 0
+        tried_and_viewed_rate = (tried_and_viewed / total_signups * 100) if total_signups > 0 else 0
+        conversion_rate = (converted / total_signups * 100) if total_signups > 0 else 0
+        tried_then_viewed_rate = (tried_and_viewed / tried_task * 100) if tried_task > 0 else 0
+        viewed_then_converted_rate = (converted / viewed_pricing * 100) if viewed_pricing > 0 else 0
+
+        return UserFunnelStats(
+            total_signups=total_signups,
+            tried_task=tried_task,
+            tried_task_rate=round(tried_task_rate, 2),
+            viewed_pricing=viewed_pricing,
+            viewed_pricing_rate=round(viewed_pricing_rate, 2),
+            tried_and_viewed=tried_and_viewed,
+            tried_and_viewed_rate=round(tried_and_viewed_rate, 2),
+            converted=converted,
+            conversion_rate=round(conversion_rate, 2),
+            tried_then_viewed_rate=round(tried_then_viewed_rate, 2),
+            viewed_then_converted_rate=round(viewed_then_converted_rate, 2),
+            date_from=start_date.strftime("%Y-%m-%d"),
+            date_to=end_date.strftime("%Y-%m-%d")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get user funnel: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get user funnel data")
 
 
 # ============================================================================

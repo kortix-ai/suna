@@ -132,3 +132,25 @@ async def get_usage_history(
     except Exception as e:
         logger.error(f"[BILLING] Error getting usage history: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/track-pricing-view")
+async def track_pricing_view(
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    """Track when a user views the pricing modal (for funnel analytics)."""
+    from core.services.supabase import DBConnection
+
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        await client.rpc('track_pricing_view', {
+            'p_user_id': account_id
+        }).execute()
+
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"[BILLING] Error tracking pricing view: {e}")
+        # Don't fail the request - tracking is non-critical
+        return {'success': False}
