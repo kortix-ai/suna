@@ -159,7 +159,7 @@ export function AttachmentGroup({
                                 />
                                 {onRemove && (
                                     <div
-                                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-black dark:bg-white border-3 border-sidebar text-white dark:text-black flex items-center justify-center z-10 cursor-pointer"
+                                        className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-black dark:bg-white border-3 border-sidebar text-white dark:text-black flex items-center justify-center z-30 cursor-pointer"
                                         onClick={() => onRemove(index)}
                                     >
                                         <TooltipProvider>
@@ -184,7 +184,7 @@ export function AttachmentGroup({
                         <button
                             onClick={() => setIsModalOpen(true)}
                             className={cn(
-                                "h-[54px] rounded-xl cursor-pointer",
+                                "h-[72px] rounded-xl cursor-pointer",
                                 "border border-black/10 dark:border-white/10",
                                 "bg-black/5 dark:bg-black/20",
                                 "hover:bg-primary/10 dark:hover:bg-primary/20",
@@ -220,7 +220,7 @@ export function AttachmentGroup({
                         {uniqueFiles.map((file, index) => {
                             const path = getFilePath(file);
                             return (
-                                <div key={index} className="relative group overflow-visible">
+                                <div key={index} className="relative group overflow-visible w-fit">
                                     <FileAttachment
                                         filepath={path}
                                         onClick={(p) => {
@@ -230,14 +230,14 @@ export function AttachmentGroup({
                                         sandboxId={sandboxId}
                                         showPreview={showPreviews}
                                         localPreviewUrl={getLocalPreviewUrl(file)}
-                                        collapsed={false}
+                                        collapsed={true}
                                         project={project}
                                         alignRight={false}
                                         uploadStatus={getUploadStatus(file)}
                                     />
                                     {onRemove && (
                                         <div
-                                            className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-black dark:bg-white border-3 border-sidebar text-white dark:text-black flex items-center justify-center z-10 cursor-pointer"
+                                            className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-black dark:bg-white border-3 border-sidebar text-white dark:text-black flex items-center justify-center z-30 cursor-pointer"
                                             onClick={() => {
                                                 onRemove(index);
                                                 if (uniqueFiles.length <= 1) {

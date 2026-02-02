@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { FileCard } from '@/components/file-previews/FileCard';
 import { ImagePreview } from '@/components/file-previews/ImagePreview';
 import { PdfPreview } from '@/components/file-previews/PdfPreview';
+import { PdfThumbnail } from '@/components/file-previews/PdfThumbnail';
 import { SpreadsheetPreview } from '@/components/file-previews/SpreadsheetPreview';
 import { DocumentPreview } from '@/components/file-previews/DocumentPreview';
 import { KanvaxPreview } from '@/components/file-previews/KanvaxPreview';
@@ -59,6 +60,7 @@ export interface FileAttachmentProps {
     standalone?: boolean;
     alignRight?: boolean;
     uploadStatus?: 'pending' | 'uploading' | 'ready' | 'error';
+    hideHeader?: boolean;
 }
 
 export function FileAttachment({
@@ -75,6 +77,7 @@ export function FileAttachment({
     standalone = false,
     alignRight = false,
     uploadStatus,
+    hideHeader = false,
 }: FileAttachmentProps) {
     const { openPresentation } = usePresentationViewerStore();
     const filename = getFilename(filepath);
@@ -161,6 +164,21 @@ export function FileAttachment({
             );
         }
 
+        // For images with local preview in inline/collapsed mode, show thumbnail instead of FileCard
+        if (isImage && showPreview && localPreviewUrl) {
+            return (
+                <ImagePreview
+                    filepath={filepath}
+                    sandboxId={sandboxId}
+                    localPreviewUrl={localPreviewUrl}
+                    onClick={handleClick}
+                    className={className}
+                    uploadStatus={uploadStatus}
+                    isGridLayout={false}
+                />
+            );
+        }
+
         // For kanvax, show preview in grid layout when we have localPreviewUrl or sandboxId
         if (isKanvax && isGridLayout && showPreview && (localPreviewUrl || sandboxId)) {
             return (
@@ -203,6 +221,21 @@ export function FileAttachment({
                         className="h-full w-full"
                     />
                 </div>
+            );
+        }
+
+        // For PDFs, show thumbnail preview instead of generic FileCard
+        if (isPdf && showPreview && (localPreviewUrl || sandboxId)) {
+            return (
+                <PdfThumbnail
+                    filepath={filepath}
+                    sandboxId={sandboxId}
+                    localPreviewUrl={localPreviewUrl}
+                    onClick={handleClick}
+                    className={className}
+                    uploadStatus={uploadStatus}
+                    isGridLayout={isGridLayout}
+                />
             );
         }
 
@@ -256,7 +289,8 @@ export function FileAttachment({
         <div
             className={cn(
                 "group relative w-full",
-                "rounded-xl border bg-card overflow-hidden pt-10",
+                "rounded-xl border bg-card overflow-hidden",
+                !hideHeader && "pt-10",
                 isPdf ? "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[500px] sm:!min-w-[300px]" :
                     isPreviewable ? "!min-h-[200px] sm:min-h-0 sm:h-[400px] max-h-[600px] sm:!min-w-[300px]" :
                         standalone ? "min-h-[300px] h-auto" : "h-[300px]",
@@ -344,22 +378,24 @@ export function FileAttachment({
             </div>
             
             {/* Header with filename */}
-            <div className="absolute top-0 left-0 right-0 bg-accent p-2 h-[40px] z-10 flex items-center justify-between">
-                <div className="flex items-center gap-2 min-w-0">
-                    <div className="text-sm font-medium truncate">{filename}</div>
+            {!hideHeader && (
+                <div className="absolute top-0 left-0 right-0 bg-accent p-2 h-[40px] z-10 flex items-center justify-between">
+                    <div className="flex items-center gap-2 min-w-0">
+                        <div className="text-sm font-medium truncate">{filename}</div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                        {onClick && (
+                            <button
+                                onClick={handleClick}
+                                className="cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
+                                title="Open in viewer"
+                            >
+                                <ExternalLink size={14} />
+                            </button>
+                        )}
+                    </div>
                 </div>
-                <div className="flex items-center gap-1">
-                    {onClick && (
-                        <button
-                            onClick={handleClick}
-                            className="cursor-pointer p-1 rounded-full hover:bg-black/10 dark:hover:bg-white/10"
-                            title="Open in viewer"
-                        >
-                            <ExternalLink size={14} />
-                        </button>
-                    )}
-                </div>
-            </div>
+            )}
         </div>
     );
 }
@@ -376,6 +412,7 @@ export interface FileAttachmentGridProps {
     standalone?: boolean;
     alignRight?: boolean;
     localPreviewUrls?: Record<string, string>;
+    hideHeader?: boolean;
 }
 
 // Helper function to check if a string is a URL
@@ -406,6 +443,7 @@ export function FileAttachmentGrid({
     standalone = false,
     alignRight = false,
     localPreviewUrls = {},
+    hideHeader = false,
 }: FileAttachmentGridProps) {
     // Call hooks at the top level before any early returns
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -565,6 +603,7 @@ export function FileAttachmentGrid({
                                         standalone={standalone}
                                         alignRight={alignRight}
                                         localPreviewUrl={localUrl}
+                                        hideHeader={hideHeader}
                                         customStyle={
                                             isImageFile(filepath) ? {
                                                 width: '100%',
@@ -597,6 +636,7 @@ export function FileAttachmentGrid({
                                         standalone={standalone}
                                         alignRight={alignRight}
                                         localPreviewUrl={localUrl}
+                                        hideHeader={hideHeader}
                                         customStyle={
                                             isImageFile(filepath) ? {
                                                 width: '100%',

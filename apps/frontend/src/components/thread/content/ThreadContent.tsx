@@ -52,6 +52,7 @@ export function renderAttachments(
       sandboxId={sandboxId}
       project={project}
       localPreviewUrls={localPreviewUrls}
+      hideHeader={true}
     />
   );
 }

@@ -69,7 +69,7 @@ export function ImagePreview({
                     "border border-border/50",
                     "bg-muted/20",
                     "flex flex-col items-center justify-center gap-2",
-                    isGridLayout ? "w-full aspect-[4/3] min-h-[200px]" : "h-[54px] w-[54px]",
+                    isGridLayout ? "w-full aspect-[4/3] min-h-[200px]" : "h-[72px] w-[72px] rounded-xl",
                     className
                 )}
                 style={customStyle}
@@ -96,7 +96,7 @@ export function ImagePreview({
                     "bg-red-500/5 dark:bg-red-500/10",
                     "p-0 overflow-hidden",
                     "flex flex-col items-center justify-center gap-2",
-                    isGridLayout ? "w-full aspect-[4/3]" : "h-[54px] w-[54px]",
+                    isGridLayout ? "w-full aspect-[4/3]" : "h-[72px] w-[72px] rounded-xl",
                     className
                 )}
                 style={{
@@ -124,7 +124,7 @@ export function ImagePreview({
                     "border border-border/50",
                     "bg-muted/20",
                     "flex flex-col items-center justify-center gap-2",
-                    isGridLayout ? "w-full aspect-[4/3] min-h-[200px]" : "h-[54px] w-[54px]",
+                    isGridLayout ? "w-full aspect-[4/3] min-h-[200px]" : "h-[72px] w-[72px] rounded-xl",
                     className
                 )}
                 style={customStyle}
@@ -145,7 +145,7 @@ export function ImagePreview({
                 "bg-black/5 dark:bg-black/20",
                 "p-0 overflow-hidden",
                 "flex items-center justify-center",
-                isGridLayout ? "w-full" : "h-[54px] inline-block",
+                isGridLayout ? "w-full" : "h-[72px] w-[72px] inline-block rounded-xl",
                 className
             )}
             style={{
@@ -186,8 +186,7 @@ export function ImagePreview({
                 src={imageSrc}
                 alt={filename}
                 className={cn(
-                    isGridLayout ? "w-full h-auto" : "h-full w-auto",
-                    "object-contain",
+                    isGridLayout ? "w-full h-auto object-contain" : "h-full w-full object-cover",
                     !imageLoaded && isGridLayout ? "opacity-0" : "opacity-100"
                 )}
                 style={{
