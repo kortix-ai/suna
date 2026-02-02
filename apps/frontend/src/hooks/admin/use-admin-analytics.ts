@@ -94,6 +94,22 @@ export interface ActivationStats {
   date: string;
 }
 
+export interface UserFunnelStats {
+  total_signups: number;
+  tried_task: number;
+  tried_task_rate: number;  // % of signups who tried
+  viewed_pricing: number;  // Users who viewed pricing (from database)
+  viewed_pricing_rate: number;  // % of signups who viewed pricing
+  tried_and_viewed: number;  // Users who both tried task AND viewed pricing
+  tried_and_viewed_rate: number;
+  converted: number;
+  conversion_rate: number;  // % of signups who converted
+  tried_then_viewed_rate: number;  // % of tried users who viewed pricing
+  viewed_then_converted_rate: number;  // % of pricing viewers who converted
+  date_from: string;
+  date_to: string;
+}
+
 export interface TranslationResponse {
   original: string;
   translated: string;
@@ -304,6 +320,26 @@ export function useActivationStats(dateFrom?: string, dateTo?: string) {
       if (dateFrom) params.append('date_from', dateFrom);
       if (dateTo) params.append('date_to', dateTo);
       const url = `/admin/analytics/activation-stats?${params.toString()}`;
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 300000, // 5 minutes
+    placeholderData: (previousData) => previousData,
+    retry: 1,
+  });
+}
+
+export function useUserFunnel(dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'user-funnel', dateFrom, dateTo],
+    queryFn: async (): Promise<UserFunnelStats> => {
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const url = `/admin/analytics/user-funnel?${params.toString()}`;
       const response = await backendApi.get(url);
       if (response.error) {
         throw new Error(response.error.message);

@@ -14,6 +14,7 @@ import { KortixLogo } from '@/components/sidebar/kortix-logo';
 import { cn } from '@/lib/utils';
 import { usePricingModalStore } from '@/stores/pricing-modal-store';
 import { trackRouteChangeForModal } from '@/lib/analytics/gtm';
+import { backendApi } from '@/lib/api-client';
 
 interface PlanSelectionModalProps {
     open?: boolean;
@@ -31,18 +32,20 @@ export function PlanSelectionModal({
     upgradeReason: controlledUpgradeReason,
 }: PlanSelectionModalProps) {
     const defaultReturnUrl = typeof window !== 'undefined' ? `${window.location.origin}/dashboard?subscription=success` : '/';
-    
+
     const { isOpen: storeIsOpen, customTitle: storeCustomTitle, returnUrl: storeReturnUrl, closePricingModal, isAlert: storeIsAlert, alertTitle: storeAlertTitle, alertSubtitle: storeAlertSubtitle } = usePricingModalStore();
-    
+
     const isOpen = controlledOpen !== undefined ? controlledOpen : storeIsOpen;
     const onOpenChange = controlledOnOpenChange || ((open: boolean) => !open && closePricingModal());
     const returnUrl = controlledReturnUrl || storeReturnUrl || defaultReturnUrl;
     const displayReason = controlledUpgradeReason || storeCustomTitle;
 
-    // Track routeChange when Plans modal opens
+    // Track when Plans modal opens (for GTM and funnel analytics)
     React.useEffect(() => {
         if (isOpen) {
             trackRouteChangeForModal('plans');
+            // Track in database for funnel analytics (fire and forget)
+            backendApi.post('/billing/track-pricing-view', null, { showErrors: false });
         }
     }, [isOpen]);
 
