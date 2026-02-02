@@ -86,6 +86,14 @@ export interface ConversionFunnel {
   date: string;
 }
 
+export interface ActivationStats {
+  total_signups: number;
+  activated_signups: number;
+  activation_rate: number;
+  distribution: Record<string, number>;  // {"0": 5078, "1": 4091, "2-5": 5356, ...}
+  date: string;
+}
+
 export interface TranslationResponse {
   original: string;
   translated: string;
@@ -276,6 +284,26 @@ export function useConversionFunnel(dateFrom?: string, dateTo?: string, source: 
       if (dateTo) params.append('date_to', dateTo);
       params.append('source', source);
       const url = `/admin/analytics/conversion-funnel?${params.toString()}`;
+      const response = await backendApi.get(url);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 300000, // 5 minutes
+    placeholderData: (previousData) => previousData,
+    retry: 1,
+  });
+}
+
+export function useActivationStats(dateFrom?: string, dateTo?: string) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'activation-stats', dateFrom, dateTo],
+    queryFn: async (): Promise<ActivationStats> => {
+      const params = new URLSearchParams();
+      if (dateFrom) params.append('date_from', dateFrom);
+      if (dateTo) params.append('date_to', dateTo);
+      const url = `/admin/analytics/activation-stats?${params.toString()}`;
       const response = await backendApi.get(url);
       if (response.error) {
         throw new Error(response.error.message);

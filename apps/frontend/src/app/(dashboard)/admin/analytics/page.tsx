@@ -34,6 +34,7 @@ import {
   useCategoryDistribution,
   useTierDistribution,
   useConversionFunnel,
+  useActivationStats,
   useEngagementSummary,
   useTaskPerformance,
   useProfitability,
@@ -127,6 +128,7 @@ export default function AdminAnalyticsPage() {
   const { data: categoryDistribution, isFetching: categoryFetching } = useCategoryDistribution(dateFromString, dateToString, tierFilter, isOverviewOrThreads);
   const { data: tierDistribution } = useTierDistribution(dateFromString, dateToString, isThreadsTab);
   const { data: conversionFunnel, isLoading: funnelLoading } = useConversionFunnel(dateFromString, dateToString, 'vercel');
+  const { data: activationStats, isLoading: activationLoading } = useActivationStats(dateFromString, dateToString);
   const { data: engagementSummary, isLoading: engagementLoading, isFetching: engagementFetching } = useEngagementSummary(dateFromString, dateToString);
   const { data: taskPerformance, isLoading: taskLoading, isFetching: taskFetching } = useTaskPerformance(dateFromString, dateToString);
   const { data: profitability, isLoading: profitabilityLoading, isFetching: profitabilityFetching } = useProfitability(dateFromString, dateToString);
@@ -484,7 +486,7 @@ export default function AdminAnalyticsPage() {
                 </div>
 
                 <div className="p-5">
-                  {funnelLoading ? (
+                  {(funnelLoading || activationLoading) ? (
                     <Skeleton className="h-24" />
                   ) : conversionFunnel ? (
                     <div className="flex items-stretch">
@@ -514,11 +516,32 @@ export default function AdminAnalyticsPage() {
                         <p className="text-xs text-muted-foreground">{conversionFunnel.visitor_to_signup_rate}% of visitors</p>
                       </div>
 
-                      {/* Arrow */}
+                      {/* Arrow: Signups -> Tried Task */}
                       <div className="flex items-center justify-center px-2 bg-muted/30">
                         <div className="text-center">
                           <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
-                          <span className="text-xs font-medium text-muted-foreground">{conversionFunnel.signup_to_subscription_rate}%</span>
+                          <span className="text-xs font-medium text-muted-foreground">{activationStats?.activation_rate || 0}%</span>
+                        </div>
+                      </div>
+
+                      {/* Tried Task - signups who ran at least 1 task */}
+                      <div className="flex-1 text-center p-4 bg-blue-500/10 border-r border-background">
+                        <p className="text-3xl font-bold tracking-tight text-blue-600">
+                          {activationStats?.activated_signups?.toLocaleString() || 0}
+                        </p>
+                        <p className="text-sm font-medium mt-1">Tried Task</p>
+                        <p className="text-xs text-muted-foreground">{activationStats?.activation_rate || 0}% of signups</p>
+                      </div>
+
+                      {/* Arrow: Tried Task -> Paid */}
+                      <div className="flex items-center justify-center px-2 bg-muted/30">
+                        <div className="text-center">
+                          <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
+                          <span className="text-xs font-medium text-muted-foreground">
+                            {activationStats && activationStats.activated_signups > 0
+                              ? ((conversionFunnel.subscriptions / activationStats.activated_signups) * 100).toFixed(1)
+                              : conversionFunnel.signup_to_subscription_rate}%
+                          </span>
                         </div>
                       </div>
 
@@ -587,6 +610,35 @@ export default function AdminAnalyticsPage() {
                     </p>
                   )}
                 </div>
+
+                {/* Signup Task Distribution */}
+                {activationStats?.distribution && (
+                  <div className="p-5 pt-0">
+                    <p className="text-xs font-medium text-muted-foreground mb-3">Free Signup Task Distribution</p>
+                    <div className="flex items-end gap-2 h-24">
+                      {Object.entries(activationStats.distribution).map(([bucket, count]) => {
+                        const maxCount = Math.max(...Object.values(activationStats.distribution));
+                        const height = maxCount > 0 ? (count / maxCount) * 100 : 0;
+                        const total = activationStats.total_signups || 1;
+                        const percent = ((count / total) * 100).toFixed(0);
+                        return (
+                          <div key={bucket} className="flex-1 flex flex-col items-center gap-1">
+                            <span className="text-[10px] text-muted-foreground">{count.toLocaleString()}</span>
+                            <div
+                              className={cn(
+                                "w-full rounded-t transition-all",
+                                bucket === "0" ? "bg-muted-foreground/30" : "bg-blue-500/70"
+                              )}
+                              style={{ height: `${Math.max(height, 4)}%` }}
+                            />
+                            <span className="text-[10px] font-medium">{bucket}</span>
+                            <span className="text-[9px] text-muted-foreground">{percent}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </section>
 
               {/* SECTION 4: Financials */}

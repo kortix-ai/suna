@@ -113,6 +113,15 @@ class ConversionFunnel(BaseModel):
     date: str
 
 
+class ActivationStats(BaseModel):
+    """Signup activation stats: how many free signups tried tasks + distribution."""
+    total_signups: int
+    activated_signups: int
+    activation_rate: float  # Percentage (0-100)
+    distribution: Dict[str, int]  # {"0": 5078, "1": 4091, "2-5": 5356, "6-10": 1156, "10+": 659}
+    date: str
+
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -1335,6 +1344,64 @@ async def get_conversion_funnel(
     except Exception as e:
         logger.error(f"Failed to get conversion funnel: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to get conversion funnel")
+
+
+@router.get("/activation-stats")
+async def get_activation_stats(
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_admin)
+) -> ActivationStats:
+    """Get signup activation stats: free tier signups activation rate + task distribution."""
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        # Parse date range
+        start_date, end_date = parse_date_range(None, date_from, date_to)
+
+        # Use UTC for queries
+        UTC = ZoneInfo('UTC')
+        start_of_range = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC).isoformat()
+        end_of_range = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC).isoformat()
+
+        # Call the RPC function
+        result = await client.rpc('get_signup_activation_stats', {
+            'date_from': start_of_range,
+            'date_to': end_of_range
+        }).execute()
+
+        if result.data and len(result.data) > 0:
+            data = result.data[0]
+            total = data.get('total_signups', 0) or 0
+            activated = data.get('activated_signups', 0) or 0
+            rate = (activated / total * 100) if total > 0 else 0
+            distribution = {
+                "0": data.get('bucket_0', 0) or 0,
+                "1": data.get('bucket_1', 0) or 0,
+                "2-5": data.get('bucket_2_5', 0) or 0,
+                "6-10": data.get('bucket_6_10', 0) or 0,
+                "10+": data.get('bucket_10_plus', 0) or 0,
+            }
+        else:
+            total = 0
+            activated = 0
+            rate = 0
+            distribution = {"0": 0, "1": 0, "2-5": 0, "6-10": 0, "10+": 0}
+
+        return ActivationStats(
+            total_signups=total,
+            activated_signups=activated,
+            activation_rate=round(rate, 2),
+            distribution=distribution,
+            date=start_date.strftime("%Y-%m-%d")
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get activation stats: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to get activation stats")
 
 
 # ============================================================================
