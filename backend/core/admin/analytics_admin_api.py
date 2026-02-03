@@ -1496,47 +1496,16 @@ async def get_user_funnel(
         viewed_then_clicked_rate = (clicked_checkout / tried_and_viewed * 100) if tried_and_viewed > 0 else 0
         clicked_then_converted_rate = (converted / clicked_checkout * 100) if clicked_checkout > 0 else 0
 
-        # Get "other" checkout clicks - users who signed up BEFORE the date range
+        # Get "other" checkout clicks - free tier users who signed up BEFORE the date range
         # but clicked checkout DURING the date range
-        # We need user_ids from the cohort to exclude them
-        cohort_user_ids = [row.get('user_id') for row in signups_data if row.get('user_id')]
-
         other_clicked_checkout = 0
         try:
-            # Query checkout_clicks for clicks in date range, excluding cohort users
-            other_clicks_result = await client.from_('checkout_clicks').select(
-                'user_id', count='exact'
-            ).gte('clicked_at', start_of_range).lte('clicked_at', end_of_range).execute()
-
-            # Filter out cohort users and get only non-cohort user_ids
-            if other_clicks_result.data:
-                other_user_ids = [row['user_id'] for row in other_clicks_result.data if row['user_id'] not in cohort_user_ids]
-
-                # Filter to only free tier users
-                if other_user_ids:
-                    # Get accounts for these users
-                    accounts_result = await client.schema('basejump').from_('accounts').select(
-                        'id, primary_owner_user_id'
-                    ).in_('primary_owner_user_id', other_user_ids).eq('personal_account', True).execute()
-
-                    if accounts_result.data:
-                        account_ids = [acc['id'] for acc in accounts_result.data]
-                        user_to_account = {acc['primary_owner_user_id']: acc['id'] for acc in accounts_result.data}
-
-                        # Get tiers for these accounts
-                        tiers_result = await client.from_('credit_accounts').select(
-                            'account_id, tier'
-                        ).in_('account_id', account_ids).execute()
-
-                        account_to_tier = {row['account_id']: row['tier'] for row in (tiers_result.data or [])}
-
-                        # Count users who are on free tier
-                        for user_id in other_user_ids:
-                            account_id = user_to_account.get(user_id)
-                            if account_id:
-                                tier = account_to_tier.get(account_id, 'free')
-                                if tier in ('free', 'none', None):
-                                    other_clicked_checkout += 1
+            # Use RPC to count free tier users who signed up before range but clicked during range
+            result = await client.rpc('get_other_checkout_clicks_count', {
+                'date_from': start_of_range,
+                'date_to': end_of_range
+            }).execute()
+            other_clicked_checkout = result.data or 0
         except Exception as e:
             logger.warning(f"Failed to get other checkout clicks: {e}")
 
