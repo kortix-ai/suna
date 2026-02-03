@@ -9,11 +9,20 @@ import { CreditsExplainedModal } from '@/components/billing/credits-explained-mo
 
 function PricingSkeleton() {
   return (
-    <div className="w-full max-w-6xl mx-auto px-6">
-      <div className="grid md:grid-cols-4 gap-6">
-        <Skeleton className="h-96 w-full rounded-2xl" />
-        <Skeleton className="h-96 w-full rounded-2xl col-span-3" />
+    <div className="w-full max-w-5xl mx-auto px-6">
+      <div className="text-center mb-8">
+        <Skeleton className="h-10 w-64 mx-auto mb-4" />
+        <Skeleton className="h-5 w-96 mx-auto" />
       </div>
+      <div className="flex justify-center mb-8">
+        <Skeleton className="h-8 w-48 rounded-full" />
+      </div>
+      <div className="grid md:grid-cols-3 gap-6 mb-6">
+        <Skeleton className="h-[500px] w-full rounded-2xl" />
+        <Skeleton className="h-[500px] w-full rounded-2xl" />
+        <Skeleton className="h-[500px] w-full rounded-2xl" />
+      </div>
+      <Skeleton className="h-24 w-full rounded-2xl" />
     </div>
   );
 }
@@ -39,13 +48,12 @@ export default function PricingPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <article className="max-w-4xl mx-auto px-6 md:px-10 pt-24 md:pt-28 pb-16">
+      <article className="max-w-6xl mx-auto px-4 md:px-6 pt-24 md:pt-28 pb-16">
         {/* Pricing Section */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
-          className="[&_#pricing]:scale-100 [&_.max-w-6xl]:max-w-full [&_.border-dashed]:hidden [&_#pricing>div]:px-0 [&_#pricing>div>div:first-child]:mb-2"
         >
           <Suspense fallback={<PricingSkeleton />}>
             <PricingSection
