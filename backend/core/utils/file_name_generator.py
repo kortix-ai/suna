@@ -122,7 +122,7 @@ Respond with JSON: {"title": "Your Title Here"}"""
         response = await make_llm_api_call(
             messages=messages,
             model_name=model_name,
-            max_tokens=50,
+            max_tokens=1000,  # Reasoning models need tokens for chain-of-thought before output
             temperature=0.3,
             response_format={"type": "json_object"},
             stream=False
@@ -283,7 +283,7 @@ Respond with JSON: {"title": "Your Title Here"}"""
         response = await make_llm_api_call(
             messages=messages,
             model_name=model_name,
-            max_tokens=50,
+            max_tokens=1000,  # Reasoning models need tokens for chain-of-thought before output
             temperature=0.3,
             response_format={"type": "json_object"},
             stream=False

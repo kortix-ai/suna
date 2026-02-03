@@ -85,7 +85,7 @@ Return ONLY the JSON object."""
             {"role": "user", "content": f"Categorize:\n\n{content}"}
         ],
         model_name=MODEL_NAME,
-        max_tokens=200,
+        max_tokens=1000,  # Reasoning models need tokens for chain-of-thought before output
         temperature=0.3,
         response_format={"type": "json_object"},
         stream=False

@@ -30,27 +30,35 @@ async def generate_and_update_thread_name(thread_id: str, prompt: str):
         # Use same model and approach as project name generation
         model_name = "openai/gpt-5-nano-2025-08-07"
         
-        system_prompt = """You are a helpful assistant that generates extremely concise titles (2-4 words maximum) for chat threads based on the user's message.
+        system_prompt = """Generate a concise but accurate and meaningful title (2-6 words) for a chat thread.
 
-Respond with a JSON object containing:
-- "title": A concise 2-4 word title for the thread
+Rules:
+- 2-8 words maximum, Title Case
+- Be ACCURATE: capture the user's actual intent/topic
+- Be CONCISE: no filler words, get to the point
+- If files are attached, combine the info you get
+- Ignore system metadata like [Attached: ...] brackets - extract the real intent/details of the attached data
 
-Example responses:
-{"title": "Code Review Help"}
-{"title": "Build Todo App"}
-{"title": "Research Paper"}
-{"title": "Fix Bug"}
+Examples:
+{"title": "Fix CORS and Canvas Bug"}
+{"title": "Next.js E-Commerce App"}
+{"title": "Arxiv Research Paper"}
+{"title": "Sales Prospect Analysis"}
+{"title": "Analyze Budget Spreadsheet"}
+{"title": "Debug Auth in Login Frontend"}
 
-Keep titles short, descriptive, and action-oriented when appropriate."""
+Respond with JSON: {"title": "Your Title"}"""
 
-        user_message = f"Generate an extremely brief title (2-4 words only) for this chat thread that starts with this message: \"{prompt}\""
+        # Truncate very long prompts but keep enough context
+        truncated_prompt = prompt[:600] if len(prompt) > 600 else prompt
+        user_message = f"Title this conversation:\n\n{truncated_prompt}"
         messages = [{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}]
 
         logger.debug(f"Calling LLM ({model_name}) for thread {thread_id} naming.")
         response = await make_llm_api_call(
-            messages=messages, 
-            model_name=model_name, 
-            max_tokens=200, 
+            messages=messages,
+            model_name=model_name,
+            max_tokens=1200,  # Reasoning models need tokens for chain-of-thought before output
             temperature=0.7,
             response_format={"type": "json_object"},
             stream=False

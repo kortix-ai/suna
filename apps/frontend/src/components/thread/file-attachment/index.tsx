@@ -11,6 +11,7 @@ import { ImagePreview } from '@/components/file-previews/ImagePreview';
 import { PdfPreview } from '@/components/file-previews/PdfPreview';
 import { PdfThumbnail } from '@/components/file-previews/PdfThumbnail';
 import { SpreadsheetPreview } from '@/components/file-previews/SpreadsheetPreview';
+import { SpreadsheetThumbnail } from '@/components/file-previews/SpreadsheetThumbnail';
 import { DocumentPreview } from '@/components/file-previews/DocumentPreview';
 import { KanvaxPreview } from '@/components/file-previews/KanvaxPreview';
 import { DocxPreview } from '@/components/file-previews/DocxPreview';
@@ -228,6 +229,21 @@ export function FileAttachment({
         if (isPdf && showPreview && (localPreviewUrl || sandboxId)) {
             return (
                 <PdfThumbnail
+                    filepath={filepath}
+                    sandboxId={sandboxId}
+                    localPreviewUrl={localPreviewUrl}
+                    onClick={handleClick}
+                    className={className}
+                    uploadStatus={uploadStatus}
+                    isGridLayout={isGridLayout}
+                />
+            );
+        }
+
+        // For spreadsheets, show thumbnail preview instead of generic FileCard
+        if (isSpreadsheet && showPreview && (localPreviewUrl || sandboxId)) {
+            return (
+                <SpreadsheetThumbnail
                     filepath={filepath}
                     sandboxId={sandboxId}
                     localPreviewUrl={localPreviewUrl}

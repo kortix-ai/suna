@@ -56,9 +56,9 @@ async def generate_and_update_project_name(project_id: str, prompt: str):
 
         logger.debug(f"Calling LLM ({model_name}) for project {project_id} naming and icon selection.")
         response = await make_llm_api_call(
-            messages=messages, 
-            model_name=model_name, 
-            max_tokens=500, 
+            messages=messages,
+            model_name=model_name,
+            max_tokens=1000,  # Reasoning models need tokens for chain-of-thought before output
             temperature=0.7,
             response_format={"type": "json_object"},
             stream=False
