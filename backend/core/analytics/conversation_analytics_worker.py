@@ -34,11 +34,12 @@ async def claim_pending_queue_items(limit: int = BATCH_SIZE) -> List[Dict[str, A
     multiple workers grab the same items.
     """
     try:
-        from core.services.db import execute, serialize_rows
+        from core.services.db import execute_mutate, serialize_rows
 
         # Atomic claim: SELECT + UPDATE in one transaction
         # FOR UPDATE SKIP LOCKED ensures no two workers grab same row
-        result = await execute("""
+        # NOTE: Must use execute_mutate (not execute) to COMMIT the status change!
+        result = await execute_mutate("""
             UPDATE conversation_analytics_queue
             SET status = 'processing'
             WHERE id IN (
