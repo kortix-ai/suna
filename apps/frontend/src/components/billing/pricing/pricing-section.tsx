@@ -1110,12 +1110,12 @@ export function PricingSection({
     >
       <div className="w-full mx-auto px-4 sm:px-6 flex flex-col">
         {/* Header */}
-        <div className="w-full max-w-5xl mx-auto mb-6 sm:mb-8">
-          {/* Title */}
+        <div className="w-full max-w-5xl mx-auto mb-4 sm:mb-6 sm:pt-4">
+          {/* Title + Toggle Row */}
           {showTitleAndTabs && (
-            <div className="text-center mb-6 sm:mb-8">
+            <div className="mb-4 sm:mb-5">
               {isAlert ? (
-                <div className="flex flex-col gap-2">
+                <div className="flex flex-col gap-2 text-center">
                   <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight text-foreground">
                     {alertTitle || t('limitReachedUpgrade')}
                   </h2>
@@ -1126,14 +1126,46 @@ export function PricingSection({
                   )}
                 </div>
               ) : (
-                <>
-                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight mb-2">
-                    {customTitle || 'Choose your plan'}
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                  <h2 className="text-2xl pb-2 sm:pb-0 sm:text-3xl font-semibold tracking-tight">
+                    {customTitle || 'Pick the plan that works for you.'}
                   </h2>
-                  <p className="text-muted-foreground">
-                    Start free and scale as you grow. All plans include access to Kortix AI Workers.
-                  </p>
-                </>
+                  {/* Monthly/Yearly Toggle */}
+                  <div className="self-start sm:self-auto inline-flex items-center bg-muted/50 rounded-full pl-4 py-2" style={{ paddingRight: isYearly ? '8px' : '16px', transition: 'padding-right 200ms ease' }}>
+                    <span className={cn(
+                      "text-sm font-medium transition-colors w-16 text-center",
+                      !isYearly ? "text-foreground" : "text-muted-foreground"
+                    )}>Monthly</span>
+                    <button
+                      onClick={() => handleBillingPeriodChange(isYearly ? 'monthly' : 'yearly')}
+                      className={cn(
+                        "relative w-14 h-7 rounded-full transition-colors duration-200 mx-3",
+                        isYearly
+                          ? "bg-foreground"
+                          : "bg-muted-foreground/30"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-1 left-1 w-5 h-5 rounded-full shadow-md transition-transform duration-200 bg-background",
+                          isYearly && "translate-x-7"
+                        )}
+                      />
+                    </button>
+                    <span className={cn(
+                      "text-sm font-medium transition-colors w-14 text-center",
+                      isYearly ? "text-foreground" : "text-muted-foreground"
+                    )}>Annual</span>
+                    <div
+                      className="overflow-hidden transition-all duration-200 ease-out"
+                      style={{ width: isYearly ? '78px' : '0px', marginLeft: isYearly ? '8px' : '0px' }}
+                    >
+                      <Badge className="text-xs font-medium whitespace-nowrap bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30">
+                        Save 15%
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
               )}
             </div>
           )}
@@ -1183,44 +1215,6 @@ export function PricingSection({
               </div>
             );
           })()}
-
-          {/* Global Monthly/Yearly Toggle */}
-          <div className="flex items-center justify-center mb-6 sm:mb-8">
-            <div className="inline-flex items-center bg-muted/50 rounded-full pl-4 py-2" style={{ paddingRight: isYearly ? '8px' : '16px', transition: 'padding-right 200ms ease' }}>
-              <span className={cn(
-                "text-sm font-medium transition-colors w-16 text-center",
-                !isYearly ? "text-foreground" : "text-muted-foreground"
-              )}>Monthly</span>
-              <button
-                onClick={() => handleBillingPeriodChange(isYearly ? 'monthly' : 'yearly')}
-                className={cn(
-                  "relative w-14 h-7 rounded-full transition-colors duration-200 mx-3",
-                  isYearly
-                    ? "bg-foreground"
-                    : "bg-muted-foreground/30"
-                )}
-              >
-                <span
-                  className={cn(
-                    "absolute top-1 left-1 w-5 h-5 rounded-full shadow-md transition-transform duration-200 bg-background",
-                    isYearly && "translate-x-7"
-                  )}
-                />
-              </button>
-              <span className={cn(
-                "text-sm font-medium transition-colors w-14 text-center",
-                isYearly ? "text-foreground" : "text-muted-foreground"
-              )}>Annual</span>
-              <div
-                className="overflow-hidden transition-all duration-200 ease-out"
-                style={{ width: isYearly ? '78px' : '0px', marginLeft: isYearly ? '8px' : '0px' }}
-              >
-                <Badge className="text-xs font-medium whitespace-nowrap bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30">
-                  Save 15%
-                </Badge>
-              </div>
-            </div>
-          </div>
         </div>
 
         {/* Scheduled Downgrade Alert */}
@@ -1274,7 +1268,7 @@ export function PricingSection({
         {showBuyCredits &&
           isAuthenticated &&
           currentSubscription?.subscription.can_purchase_credits && (
-            <div className="w-full max-w-5xl mx-auto mt-12 flex flex-col items-center gap-4">
+            <div className="w-full max-w-5xl mx-auto mt-12 pb-8 flex flex-col items-center gap-4">
               <Button
                 onClick={() => setShowCreditPurchaseModal(true)}
                 variant="outline"
@@ -1299,7 +1293,7 @@ export function PricingSection({
 
         {/* Credits Explained Link */}
         {(!isAuthenticated || !currentSubscription?.subscription.can_purchase_credits) && (
-          <div className="w-full max-w-5xl mx-auto mt-8 flex justify-center">
+          <div className="w-full max-w-5xl mx-auto mt-8 pb-8 flex justify-center">
             <Button
               variant="link"
               asChild
