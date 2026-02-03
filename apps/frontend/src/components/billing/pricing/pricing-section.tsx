@@ -801,6 +801,7 @@ function BasicTierCard({
   const t = useTranslations('billing');
   const scheduleDowngradeMutation = useScheduleDowngrade();
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
+  const [isSubscribing, setIsSubscribing] = useState(false);
 
   const isSameTier =
     currentSubscription?.subscription.tier_key === tier.tierKey ||
@@ -836,14 +837,61 @@ function BasicTierCard({
     });
   };
 
+  const handleSelectFreePlan = async () => {
+    if (!isAuthenticated) {
+      window.location.href = '/auth?mode=signup';
+      return;
+    }
+
+    setIsSubscribing(true);
+    onPlanSelect?.(tier.tierKey);
+
+    try {
+      const response = await createCheckoutSession({
+        tier_key: tier.tierKey,
+        success_url: `${window.location.origin}/dashboard?subscription=success`,
+        cancel_url: returnUrl,
+        commitment_type: 'monthly',
+      } as CreateCheckoutSessionRequest);
+
+      const checkoutUrl = response.checkout_url || response.url;
+
+      switch (response.status) {
+        case 'new':
+        case 'checkout_created':
+          // Free tier won't have a checkout URL - just redirect to dashboard
+          if (checkoutUrl) {
+            window.location.href = checkoutUrl;
+          } else {
+            posthog.capture('free_plan_selected');
+            if (onSubscriptionUpdate) onSubscriptionUpdate();
+            window.location.href = '/dashboard?subscription=success';
+          }
+          break;
+        case 'upgraded':
+        case 'updated':
+          posthog.capture('free_plan_selected');
+          if (onSubscriptionUpdate) onSubscriptionUpdate();
+          window.location.href = '/dashboard?subscription=success';
+          break;
+        case 'no_change':
+          toast.info(response.message || t('alreadyOnThisPlan'));
+          break;
+        default:
+          toast.error(t('failedToInitiateSubscription'));
+      }
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || error?.message || 'Failed to select plan';
+      toast.error(errorMessage);
+    } finally {
+      setIsSubscribing(false);
+    }
+  };
+
   let buttonText = 'Get started';
   let buttonDisabled = false;
   let buttonVariant: 'outline' | 'default' = 'outline';
-  let onClickHandler = () => {
-    if (!isAuthenticated) {
-      window.location.href = '/auth?mode=signup';
-    }
-  };
+  let onClickHandler: () => void = handleSelectFreePlan;
 
   if (isCurrentPlan) {
     buttonText = t('currentPlan');
@@ -853,7 +901,7 @@ function BasicTierCard({
     onClickHandler = handleDowngrade;
   }
 
-  if (isPlanLoading || scheduleDowngradeMutation.isPending) {
+  if (isPlanLoading || scheduleDowngradeMutation.isPending || isSubscribing) {
     buttonText = t('loading');
     buttonDisabled = true;
   }
@@ -889,7 +937,7 @@ function BasicTierCard({
           className={cn(
             "min-w-[140px] h-10",
             isCurrentPlan && "bg-muted text-muted-foreground",
-            (isPlanLoading || scheduleDowngradeMutation.isPending) && "animate-pulse"
+            (isPlanLoading || scheduleDowngradeMutation.isPending || isSubscribing) && "animate-pulse"
           )}
         >
           {buttonText}
@@ -1115,15 +1163,52 @@ export function PricingSection({
           {showTitleAndTabs && (
             <div className="mb-4 sm:mb-5">
               {isAlert ? (
-                <div className="flex flex-col gap-2 text-center">
-                  <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight text-foreground">
-                    {alertTitle || t('limitReachedUpgrade')}
-                  </h2>
-                  {alertSubtitle && (
-                    <p className="text-base sm:text-lg text-muted-foreground">
-                      {alertSubtitle}
-                    </p>
-                  )}
+                <div className="flex flex-col gap-4 items-center text-center">
+                  <div className="flex flex-col gap-2">
+                    <h2 className="text-2xl sm:text-3xl lg:text-4xl font-semibold tracking-tight text-foreground">
+                      {alertTitle || t('limitReachedUpgrade')}
+                    </h2>
+                    {alertSubtitle && (
+                      <p className="text-base sm:text-lg text-muted-foreground">
+                        {alertSubtitle}
+                      </p>
+                    )}
+                  </div>
+                  {/* Monthly/Yearly Toggle for Alert mode */}
+                  <div className="inline-flex items-center bg-muted/50 rounded-full pl-4 py-2" style={{ paddingRight: isYearly ? '8px' : '16px', transition: 'padding-right 200ms ease' }}>
+                    <span className={cn(
+                      "text-sm font-medium transition-colors w-16 text-center",
+                      !isYearly ? "text-foreground" : "text-muted-foreground"
+                    )}>Monthly</span>
+                    <button
+                      onClick={() => handleBillingPeriodChange(isYearly ? 'monthly' : 'yearly')}
+                      className={cn(
+                        "relative w-14 h-7 rounded-full transition-colors duration-200 mx-3",
+                        isYearly
+                          ? "bg-foreground"
+                          : "bg-muted-foreground/30"
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "absolute top-1 left-1 w-5 h-5 rounded-full shadow-md transition-transform duration-200 bg-background",
+                          isYearly && "translate-x-7"
+                        )}
+                      />
+                    </button>
+                    <span className={cn(
+                      "text-sm font-medium transition-colors w-14 text-center",
+                      isYearly ? "text-foreground" : "text-muted-foreground"
+                    )}>Annual</span>
+                    <div
+                      className="overflow-hidden transition-all duration-200 ease-out"
+                      style={{ width: isYearly ? '78px' : '0px', marginLeft: isYearly ? '8px' : '0px' }}
+                    >
+                      <Badge className="text-xs font-medium whitespace-nowrap bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30">
+                        Save 15%
+                      </Badge>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
