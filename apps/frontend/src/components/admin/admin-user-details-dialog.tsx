@@ -367,25 +367,45 @@ export function AdminUserDetailsDialog({
                         ))}
                         {userThreads.pagination && userThreads.pagination.total_pages > 1 && (
                           <div className="flex items-center justify-between pt-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!userThreads.pagination.has_previous}
-                              onClick={() => setThreadsPage(p => Math.max(1, p - 1))}
-                            >
-                              Previous
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={userThreads.pagination.current_page <= 1}
+                                onClick={() => setThreadsPage(1)}
+                              >
+                                First
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!userThreads.pagination.has_previous}
+                                onClick={() => setThreadsPage(p => Math.max(1, p - 1))}
+                              >
+                                Previous
+                              </Button>
+                            </div>
                             <span className="text-sm text-muted-foreground">
                               Page {userThreads.pagination.current_page} of {userThreads.pagination.total_pages}
                             </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!userThreads.pagination.has_next}
-                              onClick={() => setThreadsPage(p => p + 1)}
-                            >
-                              Next
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!userThreads.pagination.has_next}
+                                onClick={() => setThreadsPage(p => p + 1)}
+                              >
+                                Next
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={userThreads.pagination.current_page >= userThreads.pagination.total_pages}
+                                onClick={() => setThreadsPage(userThreads.pagination.total_pages)}
+                              >
+                                Last
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -436,25 +456,45 @@ export function AdminUserDetailsDialog({
                         ))}
                         {userTransactions.pagination && userTransactions.pagination.total_pages > 1 && (
                           <div className="flex items-center justify-between pt-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!userTransactions.pagination.has_prev}
-                              onClick={() => setTransactionsPage(p => Math.max(1, p - 1))}
-                            >
-                              Previous
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={userTransactions.pagination.current_page <= 1}
+                                onClick={() => setTransactionsPage(1)}
+                              >
+                                First
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!userTransactions.pagination.has_previous}
+                                onClick={() => setTransactionsPage(p => Math.max(1, p - 1))}
+                              >
+                                Previous
+                              </Button>
+                            </div>
                             <span className="text-sm text-muted-foreground">
-                              Page {userTransactions.pagination.page} of {userTransactions.pagination.total_pages}
+                              Page {userTransactions.pagination.current_page} of {userTransactions.pagination.total_pages}
                             </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!userTransactions.pagination.has_next}
-                              onClick={() => setTransactionsPage(p => p + 1)}
-                            >
-                              Next
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!userTransactions.pagination.has_next}
+                                onClick={() => setTransactionsPage(p => p + 1)}
+                              >
+                                Next
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={userTransactions.pagination.current_page >= userTransactions.pagination.total_pages}
+                                onClick={() => setTransactionsPage(userTransactions.pagination.total_pages)}
+                              >
+                                Last
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
@@ -517,25 +557,45 @@ export function AdminUserDetailsDialog({
                         ))}
                         {userActivity.pagination && userActivity.pagination.total_pages > 1 && (
                           <div className="flex items-center justify-between pt-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!userActivity.pagination.has_prev}
-                              onClick={() => setActivityPage(p => Math.max(1, p - 1))}
-                            >
-                              Previous
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={userActivity.pagination.current_page <= 1}
+                                onClick={() => setActivityPage(1)}
+                              >
+                                First
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!userActivity.pagination.has_previous}
+                                onClick={() => setActivityPage(p => Math.max(1, p - 1))}
+                              >
+                                Previous
+                              </Button>
+                            </div>
                             <span className="text-sm text-muted-foreground">
-                              Page {userActivity.pagination.page} of {userActivity.pagination.total_pages}
+                              Page {userActivity.pagination.current_page} of {userActivity.pagination.total_pages}
                             </span>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              disabled={!userActivity.pagination.has_next}
-                              onClick={() => setActivityPage(p => p + 1)}
-                            >
-                              Next
-                            </Button>
+                            <div className="flex gap-1">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={!userActivity.pagination.has_next}
+                                onClick={() => setActivityPage(p => p + 1)}
+                              >
+                                Next
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={userActivity.pagination.current_page >= userActivity.pagination.total_pages}
+                                onClick={() => setActivityPage(userActivity.pagination.total_pages)}
+                              >
+                                Last
+                              </Button>
+                            </div>
                           </div>
                         )}
                       </div>
