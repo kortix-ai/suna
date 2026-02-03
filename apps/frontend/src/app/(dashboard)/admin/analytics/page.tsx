@@ -704,7 +704,7 @@ export default function AdminAnalyticsPage() {
                         <p className="text-xs text-muted-foreground">{userFunnel.clicked_checkout_rate}% of signups</p>
                         {userFunnel.other_clicked_checkout > 0 && (
                           <p className="text-xs text-muted-foreground mt-1">
-                            +{userFunnel.other_clicked_checkout} signed up earlier
+                            +{userFunnel.other_clicked_checkout} signed up earlier, clicked today
                           </p>
                         )}
                       </div>
