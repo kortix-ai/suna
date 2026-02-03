@@ -631,7 +631,7 @@ export default function AdminAnalyticsPage() {
                     <TrendingUp className="h-4 w-4 text-muted-foreground" />
                     User Funnel
                   </h2>
-                  <span className="text-xs text-muted-foreground">Signup → Tried → Viewed Pricing → Converted</span>
+                  <span className="text-xs text-muted-foreground">Signup → Tried → Viewed Pricing → Clicked Checkout → Converted</span>
                 </div>
 
                 <div className="p-5">
@@ -686,7 +686,34 @@ export default function AdminAnalyticsPage() {
                       <div className="flex items-center justify-center px-2 bg-muted/30">
                         <div className="text-center">
                           <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
-                          <span className="text-xs font-medium text-muted-foreground">{userFunnel.viewed_then_converted_rate}%</span>
+                          <span className="text-xs font-medium text-muted-foreground">{userFunnel.viewed_then_clicked_rate}%</span>
+                        </div>
+                      </div>
+
+                      {/* Clicked Checkout */}
+                      <div className="flex-1 text-center p-4 bg-muted/30 border-r border-background">
+                        <p className="text-3xl font-bold tracking-tight">
+                          {userFunnel.clicked_checkout.toLocaleString()}
+                          {userFunnel.other_clicked_checkout > 0 && (
+                            <span className="text-sm font-normal text-muted-foreground ml-1">
+                              (+{userFunnel.other_clicked_checkout})
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-sm font-medium mt-1">Clicked Checkout</p>
+                        <p className="text-xs text-muted-foreground">{userFunnel.clicked_checkout_rate}% of signups</p>
+                        {userFunnel.other_clicked_checkout > 0 && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            +{userFunnel.other_clicked_checkout} signed up earlier
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Arrow */}
+                      <div className="flex items-center justify-center px-2 bg-muted/30">
+                        <div className="text-center">
+                          <ArrowRight className="h-4 w-4 text-muted-foreground mx-auto" />
+                          <span className="text-xs font-medium text-muted-foreground">{userFunnel.clicked_then_converted_rate}%</span>
                         </div>
                       </div>
 
