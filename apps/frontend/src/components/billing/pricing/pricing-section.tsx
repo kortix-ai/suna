@@ -1255,6 +1255,46 @@ export function PricingSection({
             </div>
           )}
 
+          {/* Standalone Toggle when showTitleAndTabs is false */}
+          {!showTitleAndTabs && (
+            <div className="flex items-center justify-center mb-4 sm:mb-6">
+              <div className="inline-flex items-center bg-muted/50 rounded-full pl-4 py-2" style={{ paddingRight: isYearly ? '8px' : '16px', transition: 'padding-right 200ms ease' }}>
+                <span className={cn(
+                  "text-sm font-medium transition-colors w-16 text-center",
+                  !isYearly ? "text-foreground" : "text-muted-foreground"
+                )}>Monthly</span>
+                <button
+                  onClick={() => handleBillingPeriodChange(isYearly ? 'monthly' : 'yearly')}
+                  className={cn(
+                    "relative w-14 h-7 rounded-full transition-colors duration-200 mx-3",
+                    isYearly
+                      ? "bg-foreground"
+                      : "bg-muted-foreground/30"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "absolute top-1 left-1 w-5 h-5 rounded-full shadow-md transition-transform duration-200 bg-background",
+                      isYearly && "translate-x-7"
+                    )}
+                  />
+                </button>
+                <span className={cn(
+                  "text-sm font-medium transition-colors w-14 text-center",
+                  isYearly ? "text-foreground" : "text-muted-foreground"
+                )}>Annual</span>
+                <div
+                  className="overflow-hidden transition-all duration-200 ease-out"
+                  style={{ width: isYearly ? '78px' : '0px', marginLeft: isYearly ? '8px' : '0px' }}
+                >
+                  <Badge className="text-xs font-medium whitespace-nowrap bg-green-500/15 text-green-600 dark:text-green-400 border border-green-500/30">
+                    Save 15%
+                  </Badge>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Promo Banner */}
           {(() => {
             const isFreeTierUser = !isAuthenticated || !accountState?.subscription ||
