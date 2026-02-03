@@ -72,6 +72,7 @@ MAX_CONCURRENT_IPS = 25
 _worker_metrics_task = None
 _memory_watchdog_task = None
 _stream_cleanup_task = None
+_metrics_logger_task = None
 
 # Graceful shutdown flag for health checks
 # When True, health check will return unhealthy to stop receiving traffic
@@ -79,7 +80,7 @@ _is_shutting_down = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _worker_metrics_task, _memory_watchdog_task, _stream_cleanup_task, _is_shutting_down
+    global _worker_metrics_task, _memory_watchdog_task, _stream_cleanup_task, _metrics_logger_task, _is_shutting_down
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
@@ -145,6 +146,9 @@ async def lifespan(app: FastAPI):
         
         # Start memory watchdog for observability
         _memory_watchdog_task = asyncio.create_task(_memory_watchdog())
+        
+        # Log system metrics to CloudWatch every 5 minutes (logger ships to CloudWatch)
+        _metrics_logger_task = asyncio.create_task(_metrics_logger_loop())
         
         # Start sandbox pool service (maintains pre-warmed sandboxes)
         from core.sandbox.pool_background import start_pool_service
@@ -230,6 +234,14 @@ async def lifespan(app: FastAPI):
             _memory_watchdog_task.cancel()
             try:
                 await _memory_watchdog_task
+            except asyncio.CancelledError:
+                pass
+
+        # Stop metrics logger task
+        if _metrics_logger_task is not None:
+            _metrics_logger_task.cancel()
+            try:
+                await _metrics_logger_task
             except asyncio.CancelledError:
                 pass
 
@@ -518,20 +530,39 @@ async def redis_health_endpoint():
             }
         )
 
+def _get_health_metrics() -> dict:
+    from core.services.system_metrics import get_system_metrics
+    metrics = get_system_metrics()
+    metrics["instance_id"] = instance_id
+    metrics["timestamp"] = datetime.now(timezone.utc).isoformat()
+    try:
+        from core.agents.api import _cancellation_events
+        metrics["active_runs_on_instance"] = len(_cancellation_events)
+    except Exception:
+        metrics["active_runs_on_instance"] = None
+    try:
+        from core.utils.lifecycle_tracker import get_active_runs
+        metrics["lifecycle_active_runs"] = len(get_active_runs())
+    except Exception:
+        metrics["lifecycle_active_runs"] = None
+    return metrics
+
+
 @api_router.get("/health-docker", summary="Docker Health Check", operation_id="health_check_docker", tags=["system"])
 async def health_check_docker():
     logger.debug("Health docker check endpoint called")
     try:
         client = await redis.get_client()
         await client.ping()
-        # Use the global db singleton instead of creating a new instance
         db_client = await db.client
         await db_client.table("threads").select("thread_id").limit(1).execute()
         logger.debug("Health docker check complete")
+        metrics = _get_health_metrics()
         return {
-            "status": "ok", 
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-            "instance_id": instance_id
+            "status": "ok",
+            "timestamp": metrics["timestamp"],
+            "instance_id": instance_id,
+            "metrics": {k: v for k, v in metrics.items() if k not in ("timestamp", "instance_id")},
         }
     except Exception as e:
         logger.error(f"Failed health docker check: {e}")
@@ -540,16 +571,29 @@ async def health_check_docker():
 
 app.include_router(api_router, prefix="/v1")
 
+METRICS_LOG_INTERVAL_SECONDS = int(os.getenv("METRICS_LOG_INTERVAL_SECONDS", "300"))  # 5 min
+
+
+async def _metrics_logger_loop():
+    import json
+    await asyncio.sleep(60) 
+    logger.info("[METRICS_LOG] Started, interval=%ds", METRICS_LOG_INTERVAL_SECONDS)
+    try:
+        while True:
+            try:
+                metrics = _get_health_metrics()
+                log_payload = {"event": "system_metrics", **metrics}
+                logger.info("system_metrics %s", json.dumps(log_payload))
+            except Exception as e:
+                logger.debug("metrics_logger error: %s", e)
+            await asyncio.sleep(METRICS_LOG_INTERVAL_SECONDS)
+    except asyncio.CancelledError:
+        logger.debug("Metrics logger cancelled")
+
 
 async def _memory_watchdog():
-    """Monitor worker memory and detect stale agent runs.
-    
-    Dynamically calculates per-worker memory limit based on total RAM and worker count.
-    Also tracks _cancellation_events and lifecycle_tracker for cleanup failure detection.
-    """
     import time as time_module
     
-    # Calculate per-worker memory limit dynamically
     workers = int(os.getenv("WORKERS", "16"))
     total_ram_mb = psutil.virtual_memory().total / 1024 / 1024
     per_worker_limit_mb = (total_ram_mb * 0.8) / workers
@@ -588,7 +632,6 @@ async def _memory_watchdog():
                 active_count = len(active_runs)
                 stale_count = len(stale_runs)
                 
-                # Always log cleanup state if there are issues
                 if stale_count > 0 or cancellation_count > 10:
                     logger.warning(
                         f"[WATCHDOG] mem={mem_mb:.0f}MB "
