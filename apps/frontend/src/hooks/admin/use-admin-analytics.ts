@@ -102,10 +102,14 @@ export interface UserFunnelStats {
   viewed_pricing_rate: number;  // % of signups who viewed pricing
   tried_and_viewed: number;  // Users who both tried task AND viewed pricing
   tried_and_viewed_rate: number;
+  clicked_checkout: number;  // Users who clicked subscribe/checkout
+  clicked_checkout_rate: number;  // % of signups who clicked checkout
   converted: number;
   conversion_rate: number;  // % of signups who converted
   tried_then_viewed_rate: number;  // % of tried users who viewed pricing
-  viewed_then_converted_rate: number;  // % of pricing viewers who converted
+  viewed_then_clicked_rate: number;  // % of pricing viewers who clicked checkout
+  clicked_then_converted_rate: number;  // % of checkout clickers who converted
+  other_clicked_checkout: number;  // Users who signed up earlier but clicked checkout in this period
   date_from: string;
   date_to: string;
 }

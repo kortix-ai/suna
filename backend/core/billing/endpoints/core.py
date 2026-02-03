@@ -154,3 +154,27 @@ async def track_pricing_view(
         logger.error(f"[BILLING] Error tracking pricing view: {e}")
         # Don't fail the request - tracking is non-critical
         return {'success': False}
+
+
+@router.post("/track-checkout-click")
+async def track_checkout_click(
+    tier: str = Query(None, description="Tier being subscribed to"),
+    account_id: str = Depends(verify_and_get_user_id_from_jwt)
+) -> Dict:
+    """Track when a user clicks subscribe/checkout (before going to Stripe)."""
+    from core.services.supabase import DBConnection
+
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        await client.rpc('track_checkout_click', {
+            'p_user_id': account_id,
+            'p_tier': tier
+        }).execute()
+
+        return {'success': True}
+    except Exception as e:
+        logger.error(f"[BILLING] Error tracking checkout click: {e}")
+        # Don't fail the request - tracking is non-critical
+        return {'success': False}

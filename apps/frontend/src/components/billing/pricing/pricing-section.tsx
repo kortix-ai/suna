@@ -40,6 +40,7 @@ import { useUserCurrency } from '@/hooks/use-user-currency';
 import { useLanguage } from '@/hooks/use-language';
 import { convertPriceString, parsePriceAmount, formatPrice } from '@/lib/utils/currency';
 import { usePromo } from '@/hooks/utils/use-promo';
+import { backendApi } from '@/lib/api-client';
 
 // Constants
 export const SUBSCRIPTION_PLANS = {
@@ -281,6 +282,8 @@ function PricingTier({
               previous_tier: previousTier, // To determine customer_type (new vs returning)
             });
             posthog.capture('plan_purchase_attempted');
+            // Track checkout click for funnel analytics (fire and forget)
+            backendApi.post(`/billing/track-checkout-click?tier=${tier.tierKey}`, null, { showErrors: false });
             window.location.href = checkoutUrl;
           } else {
             console.error(
