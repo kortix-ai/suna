@@ -1450,41 +1450,20 @@ async def get_user_funnel(
         start_of_range = datetime(start_date.year, start_date.month, start_date.day, 0, 0, 0, tzinfo=UTC).isoformat()
         end_of_range = datetime(end_date.year, end_date.month, end_date.day, 23, 59, 59, microsecond=999999, tzinfo=UTC).isoformat()
 
-        # Get full funnel data from Supabase RPC
-        # Returns: user_id, has_activity (tried task), viewed_pricing, clicked_checkout, is_converted
-        signups_result = await client.rpc('get_free_signups_with_activity', {
+        # Get funnel counts directly from Supabase RPC (avoids 1000 row limit)
+        counts_result = await client.rpc('get_free_signups_funnel_counts', {
             'date_from': start_of_range,
             'date_to': end_of_range
         }).execute()
 
-        signups_data = signups_result.data or []
+        counts_data = counts_result.data[0] if counts_result.data else {}
 
-        total_signups = 0
-        tried_task = 0
-        viewed_pricing = 0
-        tried_and_viewed = 0
-        clicked_checkout = 0
-        converted = 0
-
-        for row in signups_data:
-            user_id = row.get('user_id')
-            if user_id:
-                total_signups += 1
-                has_activity = row.get('has_activity', False)
-                has_viewed_pricing = row.get('viewed_pricing', False)
-                has_clicked_checkout = row.get('clicked_checkout', False)
-                is_converted = row.get('is_converted', False)
-
-                if has_activity:
-                    tried_task += 1
-                if has_viewed_pricing:
-                    viewed_pricing += 1
-                if has_activity and has_viewed_pricing:
-                    tried_and_viewed += 1
-                if has_clicked_checkout:
-                    clicked_checkout += 1
-                if is_converted:
-                    converted += 1
+        total_signups = counts_data.get('total_signups', 0)
+        tried_task = counts_data.get('tried_task', 0)
+        viewed_pricing = counts_data.get('viewed_pricing', 0)
+        tried_and_viewed = counts_data.get('tried_and_viewed', 0)
+        clicked_checkout = counts_data.get('clicked_checkout', 0)
+        converted = counts_data.get('converted', 0)
 
         # Calculate rates
         tried_task_rate = (tried_task / total_signups * 100) if total_signups > 0 else 0
