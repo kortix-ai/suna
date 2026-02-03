@@ -8,6 +8,7 @@ Thin API layer - delegates to core modules:
 
 import asyncio
 import json
+import os
 import time
 import traceback
 import uuid
@@ -656,20 +657,34 @@ async def _background_setup_and_execute(
         cleanup_reason = None
         final_status = "unknown"
         cleanup_errors = []
+        run_timeout_seconds = int(os.getenv("AGENT_RUN_TIMEOUT_SECONDS", "3000"))  # 65min, > MAX_DURATION so cleanup always runs
         
         try:
-            await execute_agent_run(
-                agent_run_id=agent_run_id,
-                thread_id=thread_id,
-                project_id=project_id,
-                model_name=effective_model,
-                agent_config=agent_config,
-                account_id=account_id,
-                cancellation_event=cancellation_event,
-                is_new_thread=is_new_thread,
-                user_message=final_message_content
+            await asyncio.wait_for(
+                execute_agent_run(
+                    agent_run_id=agent_run_id,
+                    thread_id=thread_id,
+                    project_id=project_id,
+                    model_name=effective_model,
+                    agent_config=agent_config,
+                    account_id=account_id,
+                    cancellation_event=cancellation_event,
+                    is_new_thread=is_new_thread,
+                    user_message=final_message_content
+                ),
+                timeout=run_timeout_seconds,
             )
             final_status = "completed"
+        except asyncio.TimeoutError:
+            cancellation_event.set()
+            final_status = "failed"
+            cleanup_reason = f"run_timeout ({run_timeout_seconds}s)"
+            logger.error(f"[LIFECYCLE] RUN TIMEOUT agent_run={agent_run_id} after {run_timeout_seconds}s")
+            try:
+                from core.agents.runner import update_agent_run_status
+                await update_agent_run_status(agent_run_id, "failed", error=cleanup_reason, account_id=account_id)
+            except Exception as e:
+                logger.warning(f"[LIFECYCLE] Failed to update status on timeout: {e}")
         except asyncio.CancelledError:
             final_status = "cancelled"
             cleanup_reason = "Task cancelled"
@@ -678,7 +693,6 @@ async def _background_setup_and_execute(
             cleanup_reason = f"{type(e).__name__}: {str(e)[:100]}"
             logger.error(f"[LIFECYCLE] EXCEPTION agent_run={agent_run_id} error={cleanup_reason}")
         finally:
-            # CRITICAL: Release the slot we reserved at the start
             try:
                 from core.agents.pipeline.slot_manager import release_slot
                 await release_slot(account_id, agent_run_id)
