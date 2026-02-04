@@ -54,7 +54,11 @@ class DeadLetterQueue:
         self._lock = asyncio.Lock()
 
     def on_entry(self, handler: Callable[[DLQEntry], Awaitable[None]]) -> None:
-        self._handlers.append(handler)
+        if handler not in self._handlers:
+            self._handlers.append(handler)
+
+    def off_entry(self, handler: Callable[[DLQEntry], Awaitable[None]]) -> None:
+        self._handlers = [h for h in self._handlers if h != handler]
 
     async def send(
         self,

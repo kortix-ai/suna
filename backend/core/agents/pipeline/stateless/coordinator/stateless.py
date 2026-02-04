@@ -248,6 +248,8 @@ class StatelessCoordinator(BaseCoordinator):
             except Exception as e:
                 cleanup_errors.append(f"ownership: {e}")
 
+            idempotency.remove(ctx.agent_run_id)
+
             if self._thread_manager:
                 try:
                     await self._thread_manager.cleanup()

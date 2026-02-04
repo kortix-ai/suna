@@ -570,6 +570,12 @@ class RunState:
         self._pending_writes.clear()
         self._deferred_tool_results.clear()
 
+        self._accumulated_content = ""
+        self._accumulated_reasoning = ""
+        self.system_prompt = None
+        self.tool_schemas = None
+        self.agent_config = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "run_id": self.run_id,

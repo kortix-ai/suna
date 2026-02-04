@@ -49,7 +49,11 @@ class RunRecovery:
         return self._shard_id is not None and self._total_shards is not None
 
     def on_recovery(self, callback: Callable[[str], Awaitable[None]]) -> None:
-        self._callbacks.append(callback)
+        if callback not in self._callbacks:
+            self._callbacks.append(callback)
+
+    def off_recovery(self, callback: Callable[[str], Awaitable[None]]) -> None:
+        self._callbacks = [cb for cb in self._callbacks if cb != callback]
 
     async def start(self) -> None:
         if self._running:

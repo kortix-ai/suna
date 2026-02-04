@@ -42,8 +42,8 @@ class RunOwnership:
     CLAIM_TTL = stateless_config.CLAIM_TTL_SECONDS
     ORPHAN_THRESHOLD = stateless_config.ORPHAN_THRESHOLD_SECONDS
     MAX_OWNED_RUNS = 100
-    STALE_OWNED_THRESHOLD_SECONDS = 7200
-    
+    STALE_OWNED_THRESHOLD_SECONDS = stateless_config.STALE_RUN_AGE_SECONDS
+
     HEARTBEAT_GRACE_PERIOD_SECONDS = 60
     HEARTBEAT_CRITICAL_THRESHOLD_SECONDS = 75
     HEARTBEAT_MAX_CONSECUTIVE_FAILURES = 4
@@ -650,8 +650,9 @@ class RunOwnership:
 class IdempotencyTracker:
     def __init__(self, ttl: int = 3600):
         self.ttl = ttl
-        self._local_cache: OrderedDict[str, int] = OrderedDict()
+        self._local_cache: OrderedDict[str, tuple] = OrderedDict()
         self._cache_max_size = 1000
+        self._last_cleanup: float = 0
 
     async def check(self, run_id: str, step: int, operation: str) -> bool:
         try:
@@ -662,36 +663,48 @@ class IdempotencyTracker:
             return True
 
     async def mark_step(self, run_id: str, step: int) -> None:
+        now = time.time()
         if run_id in self._local_cache:
             self._local_cache.move_to_end(run_id)
-        self._local_cache[run_id] = step
-        
+        self._local_cache[run_id] = (step, now)
+
+        if now - self._last_cleanup > 60:
+            self._cleanup_expired()
+            self._last_cleanup = now
+
         while len(self._local_cache) > self._cache_max_size:
             self._local_cache.popitem(last=False)
-        
+
         try:
             from core.services import redis
             await redis.set(f"run:{{{run_id}}}:last_step", str(step), ex=self.ttl)
         except Exception:
             pass
 
+    def _cleanup_expired(self) -> None:
+        now = time.time()
+        expired = [run_id for run_id, (_, ts) in self._local_cache.items() if now - ts > self.ttl]
+        for run_id in expired:
+            self._local_cache.pop(run_id, None)
+
     async def get_last_step(self, run_id: str) -> int:
         if run_id in self._local_cache:
             self._local_cache.move_to_end(run_id)
-            return self._local_cache[run_id]
-        
+            step, _ = self._local_cache[run_id]
+            return step
+
         try:
             from core.services import redis
             last_step = await redis.get(f"run:{{{run_id}}}:last_step")
             if last_step:
                 last_step = last_step.decode() if isinstance(last_step, bytes) else last_step
                 step = int(last_step)
-                self._local_cache[run_id] = step
+                self._local_cache[run_id] = (step, time.time())
                 return step
             return 0
         except Exception:
             return 0
-    
+
     def remove(self, run_id: str) -> None:
         self._local_cache.pop(run_id, None)
 

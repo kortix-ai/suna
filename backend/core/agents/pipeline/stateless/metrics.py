@@ -169,12 +169,14 @@ class Metrics:
         self.flush_tasks_active = Gauge("suna_flush_tasks_active")
         self.thread_locks_count = Gauge("suna_thread_locks_count")
         self.memory_messages_count = Gauge("suna_memory_messages_count")
-        
-        # Heartbeat health gauges
+
         self.heartbeat_critical_runs = Gauge("suna_heartbeat_critical_runs")
         self.heartbeat_warning_runs = Gauge("suna_heartbeat_warning_runs")
         self.heartbeat_healthy_runs = Gauge("suna_heartbeat_healthy_runs")
         self.heartbeat_worst_age_seconds = Gauge("suna_heartbeat_worst_age_seconds")
+
+        self.buffered_runs = Gauge("suna_buffered_runs")
+        self.buffered_runs_max = Gauge("suna_buffered_runs_max")
 
         self.runs_started = Counter("suna_runs_started")
         self.runs_completed = Counter("suna_runs_completed")
@@ -186,6 +188,8 @@ class Metrics:
         self.wal_appends = Counter("suna_wal_appends")
         self.dlq_entries = Counter("suna_dlq_entries")
         self.heartbeat_failures = Counter("suna_heartbeat_failures")
+        self.runs_evicted = Counter("suna_runs_evicted")
+        self.stale_runs_cleaned = Counter("suna_stale_runs_cleaned")
 
         self.run_duration = Histogram("suna_run_duration_seconds", [1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600])
         self.flush_latency = Histogram("suna_flush_latency_seconds", [0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0])
@@ -244,6 +248,16 @@ class Metrics:
     def update_ownership(self, owned: int) -> None:
         self.owned_runs.set(owned)
 
+    def update_buffered_runs(self, count: int, max_count: int) -> None:
+        self.buffered_runs.set(count)
+        self.buffered_runs_max.set(max_count)
+
+    def record_eviction(self) -> None:
+        self.runs_evicted.inc()
+
+    def record_stale_cleanup(self, count: int) -> None:
+        self.stale_runs_cleaned.inc(count)
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "active_runs": self.active_runs.get(),
@@ -252,11 +266,15 @@ class Metrics:
             "flush_tasks_active": self.flush_tasks_active.get(),
             "thread_locks_count": self.thread_locks_count.get(),
             "memory_messages_count": self.memory_messages_count.get(),
+            "buffered_runs": self.buffered_runs.get(),
+            "buffered_runs_max": self.buffered_runs_max.get(),
             "runs_started": self.runs_started.get(),
             "runs_completed": self.runs_completed.get(),
             "runs_failed": self.runs_failed.get(),
             "runs_recovered": self.runs_recovered.get(),
             "runs_rejected": self.runs_rejected.get(),
+            "runs_evicted": self.runs_evicted.get(),
+            "stale_runs_cleaned": self.stale_runs_cleaned.get(),
             "writes_flushed": self.writes_flushed.get(),
             "writes_dropped": self.writes_dropped.get(),
             "wal_appends": self.wal_appends.get(),
@@ -364,6 +382,23 @@ class Metrics:
                 "metric": "heartbeat_warning_runs",
                 "value": self.heartbeat_warning_runs.get(),
                 "message": f"{int(self.heartbeat_warning_runs.get())} runs with degraded heartbeats",
+            })
+
+        max_runs = self.buffered_runs_max.get()
+        if max_runs > 0 and self.buffered_runs.get() > max_runs * 0.8:
+            alerts.append({
+                "level": "warning",
+                "metric": "buffered_runs_high",
+                "value": self.buffered_runs.get(),
+                "message": f"Buffered runs at {self.buffered_runs.get()}/{int(max_runs)} (80% threshold)",
+            })
+
+        if self.runs_evicted.get() > 0:
+            alerts.append({
+                "level": "warning",
+                "metric": "runs_evicted",
+                "value": self.runs_evicted.get(),
+                "message": f"{self.runs_evicted.get()} runs evicted due to memory pressure",
             })
 
         critical_alerts = [a for a in alerts if a.get("level") == "critical"]
