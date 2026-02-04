@@ -14,21 +14,29 @@ interface ViewToggleProps {
   currentView: ViewType;
   onViewChange: (view: ViewType) => void;
   showFilesTab?: boolean;
+  showBrowserTab?: boolean;
 }
 
 const AnimatedView = Animated.createAnimatedComponent(View);
 
-export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: ViewToggleProps) {
-  const viewOptions = showFilesTab
-    ? ['tools', 'files', 'browser'] as const
-    : ['tools', 'browser'] as const;
+export function ViewToggle({ currentView, onViewChange, showFilesTab = true, showBrowserTab = false }: ViewToggleProps) {
+  const viewOptions = React.useMemo(() => {
+    const options: ViewType[] = ['tools'];
+    if (showFilesTab) options.push('files');
+    if (showBrowserTab) options.push('browser');
+    return options;
+  }, [showFilesTab, showBrowserTab]);
 
   const getViewIndex = (view: ViewType) => {
     // If files tab is hidden and current view is files, default to tools
     if (!showFilesTab && view === 'files') {
       return 0; // tools
     }
-    const index = viewOptions.indexOf(view as any);
+    // If browser tab is hidden and current view is browser, default to tools
+    if (!showBrowserTab && view === 'browser') {
+      return 0; // tools
+    }
+    const index = viewOptions.indexOf(view);
     return index >= 0 ? index : 0;
   };
 
@@ -42,7 +50,7 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
       damping: 30,
       stiffness: 300,
     });
-  }, [currentView, indicatorPosition, showFilesTab]);
+  }, [currentView, indicatorPosition, showFilesTab, showBrowserTab]);
 
   const indicatorStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: indicatorPosition.value }],
@@ -86,17 +94,19 @@ export function ViewToggle({ currentView, onViewChange, showFilesTab = true }: V
         </Pressable>
       )}
 
-      <Pressable
-        onPress={() => handlePress('browser')}
-        className="relative z-10 h-7 w-7 items-center justify-center rounded-xl"
-      >
-        <Icon
-          as={Globe}
-          size={14}
-          className={currentView === 'browser' ? 'text-primary-foreground' : 'text-primary'}
-          strokeWidth={2}
-        />
-      </Pressable>
+      {showBrowserTab && (
+        <Pressable
+          onPress={() => handlePress('browser')}
+          className="relative z-10 h-7 w-7 items-center justify-center rounded-xl"
+        >
+          <Icon
+            as={Globe}
+            size={14}
+            className={currentView === 'browser' ? 'text-primary-foreground' : 'text-primary'}
+            strokeWidth={2}
+          />
+        </Pressable>
+      )}
     </View>
   );
 }
