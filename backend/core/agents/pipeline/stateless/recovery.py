@@ -86,7 +86,7 @@ class RunRecovery:
     async def sweep(self) -> Dict[str, Any]:
         from core.agents.pipeline.stateless.ownership import ownership
 
-        result = {"orphaned": 0, "recovered": 0, "stuck": 0, "completed": 0, "errors": []}
+        result = {"orphaned": 0, "recovered": 0, "stuck": 0, "completed": 0, "zombies_cleaned": 0, "errors": []}
 
         try:
             if self.is_sharded:
@@ -117,11 +117,72 @@ class RunRecovery:
                 except Exception as e:
                     result["errors"].append(f"{run_id}: {e}")
 
+            zombies_cleaned = await self._cleanup_zombies()
+            result["zombies_cleaned"] = zombies_cleaned
+
         except Exception as e:
             logger.error(f"[Recovery] Sweep failed: {e}")
             result["errors"].append(str(e))
 
         return result
+
+    async def _cleanup_zombies(self) -> int:
+        import time
+        from core.services import redis
+
+        cleaned = 0
+        try:
+            active = await redis.smembers("runs:active")
+            if not active:
+                return 0
+
+            run_ids = [r.decode() if isinstance(r, bytes) else r for r in active]
+
+            if self.is_sharded:
+                run_ids = [r for r in run_ids if hash(r) % self._total_shards == self._shard_id]
+
+            client = await redis.get_client()
+            now = time.time()
+
+            for run_id in run_ids:
+                try:
+                    heartbeat = await client.get(f"run:{{{run_id}}}:heartbeat")
+                    start = await client.get(f"run:{{{run_id}}}:start")
+                    owner = await client.get(f"run:{{{run_id}}}:owner")
+
+                    is_zombie = False
+
+                    if not heartbeat and not owner:
+                        is_zombie = True
+
+                    if start:
+                        start_time = float(start.decode() if isinstance(start, bytes) else start)
+                        if now - start_time > 3600:
+                            is_zombie = True
+
+                    if heartbeat:
+                        hb_time = float(heartbeat.decode() if isinstance(heartbeat, bytes) else heartbeat)
+                        if now - hb_time > 600 and not owner:
+                            is_zombie = True
+
+                    if is_zombie:
+                        await client.srem("runs:active", run_id)
+                        await client.delete(f"run:{{{run_id}}}:owner")
+                        await client.delete(f"run:{{{run_id}}}:status")
+                        await client.delete(f"run:{{{run_id}}}:heartbeat")
+                        await client.delete(f"run:{{{run_id}}}:start")
+                        cleaned += 1
+                        logger.info(f"[Recovery] Cleaned zombie run: {run_id}")
+                except Exception as e:
+                    logger.warning(f"[Recovery] Failed to check/clean {run_id}: {e}")
+
+            if cleaned > 0:
+                logger.info(f"[Recovery] Cleaned {cleaned} zombie runs from runs:active")
+
+        except Exception as e:
+            logger.error(f"[Recovery] Zombie cleanup failed: {e}")
+
+        return cleaned
 
     async def _find_stuck(self) -> List[str]:
         import time
