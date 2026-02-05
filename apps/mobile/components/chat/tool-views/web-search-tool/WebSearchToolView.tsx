@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/text';
 import { Icon } from '@/components/ui/icon';
 import { Search, ExternalLink, Globe, CheckCircle2, AlertCircle, ImageIcon, ChevronLeft, ChevronRight } from 'lucide-react-native';
 import type { ToolViewProps } from '../types';
-import { extractWebSearchData, cleanUrl, getFavicon, extractQueriesFromToolCall } from './_utils';
+import { extractWebSearchData, cleanUrl, getFavicon, extractQueriesFromToolCall, getResultType } from './_utils';
 import { ToolViewCard, StatusBadge, LoadingState } from '../shared';
 import { getToolMetadata } from '../tool-metadata';
 import { DeepSearchLoadingState } from './DeepSearchLoadingState';
@@ -22,12 +22,41 @@ function formatTimestamp(isoString?: string): string {
   }
 }
 
+// Favicon component with fallback handling
+function Favicon({ url, size = 18 }: { url: string; size?: number }) {
+  const [hasError, setHasError] = useState(false);
+  const faviconUrl = getFavicon(url);
+
+  // Reset error state when URL changes
+  useEffect(() => {
+    setHasError(false);
+  }, [url]);
+
+  if (hasError) {
+    return (
+      <Icon
+        as={Globe}
+        size={size}
+        className="text-muted-foreground"
+      />
+    );
+  }
+
+  return (
+    <RNImage
+      source={{ uri: faviconUrl }}
+      style={{ width: size, height: size, borderRadius: 3 }}
+      onError={() => setHasError(true)}
+    />
+  );
+}
+
 export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isStreaming, assistantTimestamp, toolTimestamp }: ToolViewProps) {
   const { query, results, images, success, isBatch, batchResults } = extractWebSearchData(toolCall, toolResult, isSuccess);
   const queriesArray = extractQueriesFromToolCall(toolCall);
   const isLoading = isStreaming && results.length === 0 && images.length === 0;
   const [currentQueryIndex, setCurrentQueryIndex] = useState(0);
-  
+
   // Log for debugging
   log.log('[WebSearchToolView] Data:', {
     query,
@@ -78,7 +107,7 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
   if (isLoading) {
     // Check for batch queries - either from queriesArray or from query being a JSON array
     let effectiveQueries = queriesArray;
-    
+
     // Also check if query itself is a JSON array string
     if (effectiveQueries.length <= 1 && query && typeof query === 'string') {
       const trimmed = query.trim();
@@ -93,9 +122,9 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
         }
       }
     }
-    
+
     const hasBatchQueries = effectiveQueries.length > 1;
-    
+
     return (
       <ToolViewCard
         header={{
@@ -107,9 +136,9 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
           isSuccess: actualIsSuccess,
           isStreaming: true,
           rightContent: (
-            <StatusBadge 
-              variant="streaming" 
-              label={hasBatchQueries ? `${effectiveQueries.length} queries` : 'Searching'} 
+            <StatusBadge
+              variant="streaming"
+              label={hasBatchQueries ? `${effectiveQueries.length} queries` : 'Searching'}
             />
           ),
         }}
@@ -277,21 +306,21 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
                     : (typeof imageEntry === 'object' && imageEntry !== null) ? (imageEntry.url || imageEntry.src || '') : '';
                   if (!imageUrl) return null;
                   return (
-                  <Pressable
-                    key={idx}
-                    onPress={() => handleOpenUrl(imageUrl)}
-                    className="relative overflow-hidden rounded-xl border border-border"
-                    style={{ width: '47%', aspectRatio: 1 }}
-                  >
-                    <RNImage
-                      source={{ uri: imageUrl }}
-                      style={{ width: '100%', height: '100%' }}
-                      resizeMode="cover"
-                    />
-                    <View className="absolute top-2 right-2 bg-black/60 rounded-lg p-1.5">
-                      <Icon as={ExternalLink} size={12} className="text-white" />
-                    </View>
-                  </Pressable>
+                    <Pressable
+                      key={idx}
+                      onPress={() => handleOpenUrl(imageUrl)}
+                      className="relative overflow-hidden rounded-xl border border-border"
+                      style={{ width: '47%', aspectRatio: 1 }}
+                    >
+                      <RNImage
+                        source={{ uri: imageUrl }}
+                        style={{ width: '100%', height: '100%' }}
+                        resizeMode="cover"
+                      />
+                      <View className="absolute top-2 right-2 bg-black/60 rounded-lg p-1.5">
+                        <Icon as={ExternalLink} size={12} className="text-white" />
+                      </View>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -317,8 +346,7 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
               {currentResults.length > 0 ? (
                 <View className="gap-2.5">
                   {currentResults.map((result: any, idx: number) => {
-                    const favicon = getFavicon(result.url);
-
+                    const { icon: ResultTypeIcon, label: resultTypeLabel } = getResultType(result);
                     return (
                       <Pressable
                         key={`batch-${currentQueryIndex}-result-${idx}`}
@@ -326,13 +354,16 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
                         className="bg-card border border-border rounded-xl p-3.5 gap-2 active:opacity-70"
                       >
                         <View className="flex-row items-start gap-2.5">
-                          {favicon && (
-                            <RNImage
-                              source={{ uri: favicon }}
-                              style={{ width: 18, height: 18, borderRadius: 3 }}
-                            />
-                          )}
+                          <Favicon url={result.url} size={18} />
                           <View className="flex-1 gap-1">
+                            <View className="flex-row items-center gap-1.5 mb-0.5">
+                              <View className="flex-row items-center justify-center gap-1 px-1.5 py-0.5 min-h-[16px] border border-border rounded-md">
+                                <Icon as={ResultTypeIcon} size={10} className="text-muted-foreground opacity-70" />
+                                <Text className="text-[10px] font-roobert text-muted-foreground" style={{ lineHeight: 14, includeFontPadding: false }}>
+                                  {resultTypeLabel}
+                                </Text>
+                              </View>
+                            </View>
                             <Text
                               className="text-sm font-roobert-medium text-primary"
                               numberOfLines={2}
@@ -374,8 +405,7 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
             // Single query mode
             <View className="gap-4">
               {currentResults.map((result: any, idx: number) => {
-                const favicon = getFavicon(result.url);
-
+                const { icon: ResultTypeIcon, label: resultTypeLabel } = getResultType(result);
                 return (
                   <Pressable
                     key={idx}
@@ -383,13 +413,16 @@ export function WebSearchToolView({ toolCall, toolResult, isSuccess = true, isSt
                     className="bg-card border border-border rounded-xl p-3.5 gap-2 active:opacity-70"
                   >
                     <View className="flex-row items-start gap-2.5">
-                      {favicon && (
-                        <RNImage
-                          source={{ uri: favicon }}
-                          style={{ width: 18, height: 18, borderRadius: 3 }}
-                        />
-                      )}
+                      <Favicon url={result.url} size={18} />
                       <View className="flex-1 gap-1">
+                        <View className="flex-row items-center gap-1.5 mb-0.5">
+                          <View className="flex-row items-center justify-center gap-1 px-1.5 py-0.5 min-h-[16px] border border-border rounded-md">
+                            <Icon as={ResultTypeIcon} size={10} className="text-muted-foreground opacity-70" />
+                            <Text className="text-[10px] font-roobert text-muted-foreground" style={{ lineHeight: 14, includeFontPadding: false }}>
+                              {resultTypeLabel}
+                            </Text>
+                          </View>
+                        </View>
                         <Text
                           className="text-sm font-roobert-medium text-primary"
                           numberOfLines={2}
