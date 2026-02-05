@@ -1,0 +1,87 @@
+config:
+  aws:region: us-west-2
+
+  # Network Configuration (required)
+  suna:vpcId: vpc-xxxxxxxxx
+  suna:publicSubnets:
+    - subnet-xxxxxxxxx
+    - subnet-yyyyyyyyy
+  suna:privateSubnets:
+    - subnet-aaaaaaaa
+    - subnet-bbbbbbbb
+    - subnet-cccccccc
+  suna:albSecurityGroupId: sg-xxxxxxxxx
+  suna:ecsSecurityGroupId: sg-yyyyyyyyy
+  suna:targetGroupArn: arn:aws:elasticloadbalancing:us-west-2:ACCOUNT_ID:targetgroup/NAME/ID
+  suna:loadBalancerArn: app/LOAD_BALANCER_NAME/ID
+  suna:albDnsName: your-alb-xxxxx.us-west-2.elb.amazonaws.com
+
+  # Secrets (required, use --secret flag)
+  # pulumi config set --secret secretsManagerArn arn:aws:secretsmanager:...
+  # pulumi config set --secret cloudflareTunnelId xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+
+  # Container Configuration (required)
+  suna:containerImage: ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/suna-api:latest
+  suna:lightsailKeyPairName: suna-prod-key
+
+  # Alert Configuration (required)
+  suna:alertEmails:
+    - ops@yourdomain.com
+
+  # Task Configuration (defaults shown)
+  # suna:serviceName: suna-api
+  # suna:containerPort: 8000
+  # suna:healthCheckPath: /v1/health-docker
+  # suna:taskCpu: 512        # 0.5 vCPU - good for most APIs
+  # suna:taskMemory: 1024    # 1GB RAM
+  # suna:desiredCount: 2     # Starting count
+  # suna:minCapacity: 1      # Scale down to 1 when idle
+  # suna:maxCapacity: 100    # Scale up to 100 under load
+
+  # Capacity Strategy (defaults shown)
+  # 80% Fargate Spot (cheap) + 20% On-Demand (reliable)
+  # suna:fargateSpotWeight: 4
+  # suna:fargateWeight: 1
+  # suna:fargateBase: 1      # Always keep 1 On-Demand running
+
+  # Autoscaling Configuration (defaults shown)
+  # suna:cpuTargetValue: 70      # Scale out when CPU > 70%
+  # suna:memoryTargetValue: 75   # Scale out when Memory > 75%
+  # suna:scaleInCooldown: 300    # Wait 5 min before scaling in
+  # suna:scaleOutCooldown: 60    # Scale out quickly (1 min)
+
+  # Monitoring Thresholds (defaults shown)
+  # suna:cpuWarningThreshold: 70
+  # suna:cpuCriticalThreshold: 85
+  # suna:memoryWarningThreshold: 75
+  # suna:memoryCriticalThreshold: 90
+  # suna:latencyThresholdMs: 2000
+  # suna:errorRateThreshold: 5
+
+  # Disaster Recovery (defaults shown)
+  # suna:backupRetentionDays: 30
+  # suna:enableCrossRegionBackup: false
+  # suna:secondaryRegion: us-east-1
+
+  # Domain Configuration (defaults shown)
+  # suna:primaryDomain: api.kortix.com
+  # suna:lightsailDomain: api-lightsail.kortix.com
+  # suna:ecsDomain: api-ecs.kortix.com
+
+# ============================================================
+# COST ESTIMATES (Fargate Spot + On-Demand mix)
+# ============================================================
+#
+# Load Level    | Tasks | Monthly Cost
+# --------------|-------|-------------
+# Idle (0)      | 1     | ~$11
+# Light (100)   | 2-3   | ~$30
+# Medium (500)  | 5-8   | ~$80
+# Heavy (1k)    | 10-15 | ~$150
+# Very Heavy    | 50+   | ~$800+ (consider EC2)
+#
+# When to switch to EC2:
+# - Monthly bill > $2000
+# - Consistent 50%+ utilization
+# - Need GPU or large memory instances
+# ============================================================
