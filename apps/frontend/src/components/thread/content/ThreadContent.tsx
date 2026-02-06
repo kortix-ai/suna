@@ -15,6 +15,8 @@ import {
   safeJsonParse,
   HIDE_STREAMING_XML_TAGS,
   extractUserMessageText,
+  extractUserMessageTextForDedup,
+  extractAttachmentFingerprint,
 } from "@/components/thread/utils";
 import { KortixLogo } from "@/components/sidebar/kortix-logo";
 import { AgentLoader } from "./loader";
@@ -1422,15 +1424,33 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
           const isTemp = message.message_id?.startsWith('temp-');
 
           if (isTemp) {
-            const contentKey = extractUserMessageText(message.content).trim().toLowerCase();
+            // Use extractUserMessageTextForDedup to strip attachment markers that may have different paths
+            const strippedContent = extractUserMessageTextForDedup(message.content).toLowerCase();
+            const fullContent = extractUserMessageText(message.content).trim().toLowerCase();
+            const isAttachmentOnly = !strippedContent && fullContent;
+            const attachmentFingerprint = isAttachmentOnly ? extractAttachmentFingerprint(message.content) : '';
 
-            if (contentKey) {
+            if (strippedContent || isAttachmentOnly) {
               const tempCreatedAt = message.created_at ? new Date(message.created_at).getTime() : Date.now();
 
               const hasMatchingServerVersion = displayMessages.some((existing) => {
                 if (existing.type !== 'user') return false;
                 if (existing.message_id?.startsWith('temp-')) return false;
-                if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+                // For attachment-only messages, compare normalized attachment paths
+                if (isAttachmentOnly) {
+                  const existingStripped = extractUserMessageTextForDedup(existing.content).toLowerCase();
+                  const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(existing.content).trim();
+                  if (!existingIsAttachmentOnly) return false;
+
+                  const existingFingerprint = extractAttachmentFingerprint(existing.content);
+                  if (attachmentFingerprint !== existingFingerprint) return false;
+
+                  const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                  return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
+                }
+
+                if (extractUserMessageTextForDedup(existing.content).toLowerCase() !== strippedContent) return false;
 
                 const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
                 return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
@@ -1438,8 +1458,9 @@ export const ThreadContent: React.FC<ThreadContentProps> = memo(
 
               if (hasMatchingServerVersion) return;
 
-              if (processedTempUserContents.has(contentKey)) return;
-              processedTempUserContents.add(contentKey);
+              const trackingKey = isAttachmentOnly ? `attachments:${attachmentFingerprint}` : strippedContent;
+              if (processedTempUserContents.has(trackingKey)) return;
+              processedTempUserContents.add(trackingKey);
             }
           }
         }

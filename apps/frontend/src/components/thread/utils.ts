@@ -198,3 +198,68 @@ export const extractUserMessageText = (content: unknown): string => {
   // Fallback for other types
   return String(content);
 };
+
+/**
+ * Extract clean text content from a user message for deduplication purposes.
+ * This strips out attachment markers like [Uploaded File: ...], [Attached: ...], [Image: ...]
+ * because these may have different path formats between temp and server messages.
+ *
+ * Example:
+ * - Temp: "Hello [Uploaded File: uploads/file.pdf]"
+ * - Server: "Hello [Uploaded File: /workspace/uploads/file.pdf]"
+ * - Both return: "Hello"
+ */
+export const extractUserMessageTextForDedup = (content: unknown): string => {
+  const text = extractUserMessageText(content);
+  // Strip attachment markers - they may have different paths between temp and server messages
+  return text.replace(/\[(?:Uploaded File|Attached|Image): .*?\]/g, '').trim();
+};
+
+/**
+ * Normalize attachment paths for comparison between temp and server messages.
+ * Strips the /workspace/ prefix that the server adds to paths.
+ *
+ * Example:
+ * - Temp: "[Uploaded File: uploads/file.pdf]"
+ * - Server: "[Uploaded File: /workspace/uploads/file.pdf]"
+ * - Both return: "[Uploaded File: uploads/file.pdf]"
+ */
+export const normalizeAttachmentPaths = (content: unknown): string => {
+  const text = extractUserMessageText(content);
+  // Normalize /workspace/ prefix in attachment paths
+  return text.replace(
+    /\[(Uploaded File|Attached|Image): \/workspace\//g,
+    '[$1: '
+  );
+};
+
+/**
+ * Extract normalized attachment fingerprint for deduplication of attachment-only messages.
+ * Returns a string representing the attachments that can be compared between temp and server.
+ *
+ * Example:
+ * - Temp: "[Uploaded File: uploads/a.pdf]\n[Image: uploads/b.png]"
+ * - Server: "[Uploaded File: /workspace/uploads/a.pdf]\n[Image: /workspace/uploads/b.png]"
+ * - Both return: "uploads/a.pdf|uploads/b.png"
+ */
+export const extractAttachmentFingerprint = (content: unknown): string => {
+  const text = extractUserMessageText(content);
+  const matches = text.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/g);
+  if (!matches) return '';
+
+  return matches
+    .map(match => {
+      const pathMatch = match.match(/\[(?:Uploaded File|Attached|Image): (.*?)\]/);
+      if (!pathMatch) return '';
+      let path = pathMatch[1];
+      // Normalize: remove /workspace/ prefix and any size info after " -> "
+      path = path.replace(/^\/workspace\//, '');
+      if (path.includes(' -> ')) {
+        path = path.split(' -> ')[0];
+      }
+      return path;
+    })
+    .filter(Boolean)
+    .sort() // Sort for consistent comparison
+    .join('|');
+};

@@ -39,7 +39,7 @@ import {
   UnifiedMessage,
   ApiMessageType,
 } from '@/components/thread/types';
-import { extractUserMessageText } from '@/components/thread/utils';
+import { extractUserMessageText, extractUserMessageTextForDedup, extractAttachmentFingerprint } from '@/components/thread/utils';
 import {
   useThreadData,
   useThreadBilling,
@@ -938,26 +938,59 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
 
         if (message.type === 'user') {
           // Extract actual user text from message content (handles JSON and plain strings)
-          const contentKey = extractUserMessageText(message.content).trim().toLowerCase();
+          // Use extractUserMessageTextForDedup to strip attachment markers that may have different paths
+          const strippedContent = extractUserMessageTextForDedup(message.content).toLowerCase();
+          const fullContent = extractUserMessageText(message.content).trim().toLowerCase();
+          const isAttachmentOnly = !strippedContent && fullContent;
+          const attachmentFingerprint = isAttachmentOnly ? extractAttachmentFingerprint(message.content) : '';
+          const msgCreatedAt = message.created_at ? new Date(message.created_at).getTime() : Date.now();
 
           // First try to find a temp message with same content to replace
-          const tempIndex = prev.findIndex(
-            (m) =>
-              m.type === 'user' &&
-              m.message_id?.startsWith('temp-') &&
-              extractUserMessageText(m.content).trim().toLowerCase() === contentKey,
-          );
+          const tempIndex = prev.findIndex((m) => {
+            if (m.type !== 'user') return false;
+            if (!m.message_id?.startsWith('temp-')) return false;
+
+            // For attachment-only messages, compare normalized attachment paths
+            if (isAttachmentOnly) {
+              const existingStripped = extractUserMessageTextForDedup(m.content).toLowerCase();
+              const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(m.content).trim();
+              if (!existingIsAttachmentOnly) return false;
+
+              const existingFingerprint = extractAttachmentFingerprint(m.content);
+              if (attachmentFingerprint !== existingFingerprint) return false;
+
+              const tempCreatedAt = m.created_at ? new Date(m.created_at).getTime() : Date.now();
+              return Math.abs(msgCreatedAt - tempCreatedAt) < 30000;
+            }
+
+            return extractUserMessageTextForDedup(m.content).toLowerCase() === strippedContent;
+          });
+
           if (tempIndex !== -1) {
             return prev.map((m, index) => index === tempIndex ? message : m);
           }
 
           // Only deduplicate temp messages - allow multiple server-confirmed messages with same content
           // This preserves intentionally repeated messages while preventing optimistic UI duplicates
-          const tempDuplicateIndex = contentKey ? prev.findIndex(
-            (m) => m.type === 'user' &&
-              m.message_id?.startsWith('temp-') &&
-              extractUserMessageText(m.content).trim().toLowerCase() === contentKey,
-          ) : -1;
+          const tempDuplicateIndex = (strippedContent || isAttachmentOnly) ? prev.findIndex((m) => {
+            if (m.type !== 'user') return false;
+            if (!m.message_id?.startsWith('temp-')) return false;
+
+            if (isAttachmentOnly) {
+              const existingStripped = extractUserMessageTextForDedup(m.content).toLowerCase();
+              const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(m.content).trim();
+              if (!existingIsAttachmentOnly) return false;
+
+              const existingFingerprint = extractAttachmentFingerprint(m.content);
+              if (attachmentFingerprint !== existingFingerprint) return false;
+
+              const tempCreatedAt = m.created_at ? new Date(m.created_at).getTime() : Date.now();
+              return Math.abs(msgCreatedAt - tempCreatedAt) < 30000;
+            }
+
+            return extractUserMessageTextForDedup(m.content).toLowerCase() === strippedContent;
+          }) : -1;
+
           if (tempDuplicateIndex !== -1) {
             return prev.map((m, index) => index === tempDuplicateIndex ? message : m);
           }
@@ -1653,35 +1686,90 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           continue;
         }
 
-        // For USER messages: only deduplicate temp messages when server version exists
+        // For USER messages: deduplicate temp messages against server versions and vice versa
         // This preserves intentionally repeated messages (different IDs = different messages)
         if (msg.type === 'user') {
-          const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+          const strippedContent = extractUserMessageTextForDedup(msg.content).toLowerCase();
+          const fullContent = extractUserMessageText(msg.content).trim().toLowerCase();
+          const isAttachmentOnly = !strippedContent && fullContent;
+          const attachmentFingerprint = isAttachmentOnly ? extractAttachmentFingerprint(msg.content) : '';
           const isTemp = msg.message_id?.startsWith('temp-');
+          const msgCreatedAt = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
 
-          if (isTemp && contentKey) {
-            const tempCreatedAt = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
-
-            // Only skip if server message with same content exists AND was created within 30 seconds
-            // This allows intentionally repeated messages (different turns) while still deduping
-            // the temp message against its own server confirmation (same turn)
+          if (isTemp && (strippedContent || isAttachmentOnly)) {
+            // Skip temp message if server version with same content already exists
             const hasMatchingServerVersion = result.some((existing) => {
               if (existing.type !== 'user') return false;
               if (existing.message_id?.startsWith('temp-')) return false;
-              if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+              // For attachment-only messages, compare normalized attachment paths
+              if (isAttachmentOnly) {
+                const existingStripped = extractUserMessageTextForDedup(existing.content).toLowerCase();
+                const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(existing.content).trim();
+                if (!existingIsAttachmentOnly) return false;
+
+                // Compare attachment fingerprints (normalized paths)
+                const existingFingerprint = extractAttachmentFingerprint(existing.content);
+                if (attachmentFingerprint !== existingFingerprint) return false;
+
+                // Also verify within reasonable time window
+                const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                const timeDiff = Math.abs(serverCreatedAt - msgCreatedAt);
+                return timeDiff < 30000; // 30 seconds window
+              }
+
+              // For messages with text, compare the stripped content
+              if (extractUserMessageTextForDedup(existing.content).toLowerCase() !== strippedContent) return false;
 
               const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
-              const timeDiff = Math.abs(serverCreatedAt - tempCreatedAt);
+              const timeDiff = Math.abs(serverCreatedAt - msgCreatedAt);
               return timeDiff < 30000; // 30 seconds window
             });
 
             if (hasMatchingServerVersion) continue;
+
+            // Track content for temp message deduplication only
+            const trackingKey = isAttachmentOnly ? `attachments:${attachmentFingerprint}` : strippedContent;
+            if (seenUserContent.has(trackingKey)) continue;
+            seenUserContent.add(trackingKey);
           }
 
-          // Track content for temp message deduplication only
-          if (isTemp && contentKey) {
-            if (seenUserContent.has(contentKey)) continue;
-            seenUserContent.add(contentKey);
+          // For SERVER user messages: check if a temp version already exists and REPLACE it
+          if (!isTemp && (strippedContent || isAttachmentOnly)) {
+            const tempIndex = result.findIndex((existing) => {
+              if (existing.type !== 'user') return false;
+              if (!existing.message_id?.startsWith('temp-')) return false;
+
+              // For attachment-only messages, compare normalized attachment paths
+              if (isAttachmentOnly) {
+                const existingStripped = extractUserMessageTextForDedup(existing.content).toLowerCase();
+                const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(existing.content).trim();
+                if (!existingIsAttachmentOnly) return false;
+
+                // Compare attachment fingerprints (normalized paths)
+                const existingFingerprint = extractAttachmentFingerprint(existing.content);
+                if (attachmentFingerprint !== existingFingerprint) return false;
+
+                // Also verify within reasonable time window
+                const tempCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : Date.now();
+                const timeDiff = Math.abs(msgCreatedAt - tempCreatedAt);
+                return timeDiff < 30000; // 30 seconds window
+              }
+
+              // For messages with text, compare the stripped content
+              if (extractUserMessageTextForDedup(existing.content).toLowerCase() !== strippedContent) return false;
+
+              const tempCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : Date.now();
+              const timeDiff = Math.abs(msgCreatedAt - tempCreatedAt);
+              return timeDiff < 30000; // 30 seconds window
+            });
+
+            if (tempIndex !== -1) {
+              // Replace temp message with server message (server is source of truth)
+              result[tempIndex] = msg;
+              if (msg.message_id) seenIds.add(msg.message_id);
+              continue; // Don't add as new entry
+            }
           }
         }
 
@@ -1716,7 +1804,9 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
         // Filter out the optimistic-user placeholder
         if (m.message_id === 'optimistic-user') return false;
         // Filter out user messages with same content as optimistic prompt (temp or server-confirmed)
-        if (optimisticContent && String(m.content || '').trim() === optimisticContent) return false;
+        // Use extractUserMessageTextForDedup to handle JSON-wrapped content and strip attachment markers
+        // (optimisticContent is the raw text without attachments, while m.content may include attachment markers)
+        if (optimisticContent && extractUserMessageTextForDedup(m.content).trim() === optimisticContent) return false;
         // Keep other user messages (from previous messages in conversation)
         return true;
       });
