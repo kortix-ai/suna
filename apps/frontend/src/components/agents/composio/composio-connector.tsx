@@ -33,6 +33,7 @@ import {
   Wrench,
   X,
   Shield,
+  Copy,
 } from 'lucide-react';
 import {
   useCreateComposioProfile,
@@ -1318,6 +1319,141 @@ export const ComposioConnector: React.FC<ComposioConnectorProps> = ({
                             )}
                           </div>
                         )}
+
+                      {/* Custom OAuth Config Toggle & Fields */}
+                      {!isLoadingToolkitDetails &&
+                        toolkitDetails?.toolkit.auth_config_details?.[0]?.fields
+                          ?.auth_config_creation?.required?.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+                                <Label className="text-sm font-medium">
+                                  Use Custom OAuth Credentials
+                                </Label>
+                              </div>
+                              <Switch
+                                checked={useCustomAuth}
+                                onCheckedChange={(checked) => {
+                                  setUseCustomAuth(checked);
+                                  if (!checked) {
+                                    setCustomAuthConfig({});
+                                    setCustomAuthConfigErrors({});
+                                  }
+                                }}
+                                disabled={CUSTOM_OAUTH_REQUIRED_APPS.includes(app.slug)}
+                              />
+                            </div>
+                            {useCustomAuth && (
+                              <>
+                                <p className="text-[10px] text-muted-foreground">
+                                  Provide your own OAuth client credentials for this integration.
+                                </p>
+                                <div className="space-y-1">
+                                  <Label className="text-xs">
+                                    Redirect URL
+                                  </Label>
+                                  <div className="flex items-center gap-1.5">
+                                    <Input
+                                      readOnly
+                                      value="https://backend.composio.dev/api/v1/auth-apps/add"
+                                      className="h-8 text-xs bg-muted/50 cursor-default"
+                                      onFocus={(e) => e.target.select()}
+                                    />
+                                    <Button
+                                      type="button"
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 px-2 shrink-0"
+                                      onClick={() => {
+                                        navigator.clipboard.writeText(
+                                          'https://backend.composio.dev/api/v1/auth-apps/add',
+                                        );
+                                        toast.success('Redirect URL copied');
+                                      }}
+                                    >
+                                      <Copy className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </div>
+                                  <p className="text-[10px] text-muted-foreground">
+                                    Use this as the redirect URL in your OAuth app settings.
+                                  </p>
+                                </div>
+                              </>
+                            )}
+                            {useCustomAuth && toolkitDetails.toolkit.auth_config_details[0].fields.auth_config_creation.required.map(
+                              (field) => {
+                                const fieldType =
+                                  field.type?.toLowerCase() || 'string';
+                                const isNumber =
+                                  fieldType === 'number' ||
+                                  fieldType === 'double';
+
+                                return (
+                                  <div key={field.name} className="space-y-1">
+                                    <Label
+                                      htmlFor={`custom-auth-${field.name}`}
+                                      className="text-xs"
+                                    >
+                                      {field.displayName}
+                                      {field.required && (
+                                        <span className="text-destructive ml-1">
+                                          *
+                                        </span>
+                                      )}
+                                    </Label>
+                                    <Input
+                                      id={`custom-auth-${field.name}`}
+                                      type={
+                                        fieldType === 'password'
+                                          ? 'password'
+                                          : fieldType === 'email'
+                                            ? 'email'
+                                            : fieldType === 'url'
+                                              ? 'url'
+                                              : isNumber
+                                                ? 'number'
+                                                : 'text'
+                                      }
+                                      value={
+                                        customAuthConfig[field.name] || ''
+                                      }
+                                      onChange={(e) =>
+                                        handleCustomAuthFieldChange(
+                                          field.name,
+                                          e.target.value,
+                                        )
+                                      }
+                                      placeholder={
+                                        field.default ||
+                                        field.description ||
+                                        `Enter ${field.displayName.toLowerCase()}`
+                                      }
+                                      className={cn(
+                                        'h-8',
+                                        customAuthConfigErrors[
+                                          field.name
+                                        ] && 'border-destructive',
+                                      )}
+                                      step={isNumber ? 'any' : undefined}
+                                    />
+                                    {field.description && (
+                                      <p className="text-[10px] text-muted-foreground">
+                                        {field.description}
+                                      </p>
+                                    )}
+                                    {customAuthConfigErrors[field.name] && (
+                                      <p className="text-[10px] text-destructive">
+                                        {customAuthConfigErrors[field.name]}
+                                      </p>
+                                    )}
+                                  </div>
+                                );
+                              },
+                            )}
+                          </div>
+                        )}
+
                       {isLoadingToolkitDetails && (
                         <div className="space-y-3">
                           <Skeleton className="h-4 w-32" />

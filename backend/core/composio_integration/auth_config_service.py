@@ -48,15 +48,15 @@ class AuthConfigService:
             # If custom auth config is provided, use it for credentials
             if use_custom_auth and custom_auth_config:
                 logger.debug("Creating custom auth config with user-provided credentials")
-                
+
                 # Build credentials from custom auth config fields
                 credentials = {}
                 for field_name, field_value in custom_auth_config.items():
                     if field_value:
                         credentials[field_name] = str(field_value)
-                
+
                 logger.debug(f"Using custom credentials (keys): {list(credentials.keys())}")
-                
+
                 response = self.client.auth_configs.create(
                     toolkit={
                         "slug": toolkit_slug

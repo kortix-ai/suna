@@ -160,6 +160,13 @@ export function KortixComputer({
     }
   }, [showFilesTab, activeView, setActiveView]);
 
+  // If browser tab is hidden and we're on browser view, switch to tools
+  React.useEffect(() => {
+    if (activeView === 'browser') {
+      setActiveView('tools');
+    }
+  }, [activeView, setActiveView]);
+
   if (!isOpen) {
     return null;
   }

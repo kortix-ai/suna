@@ -6,7 +6,7 @@ import { useMessagesQuery } from '@/hooks/messages';
 import { useProjectQuery } from '@/hooks/threads/use-project';
 import { useAgentRunsQuery } from '@/hooks/threads/use-agent-run';
 import { ApiMessageType, UnifiedMessage, AgentStatus } from '@/components/thread/types';
-import { extractUserMessageText } from '@/components/thread/utils';
+import { extractUserMessageText, extractUserMessageTextForDedup, extractAttachmentFingerprint } from '@/components/thread/utils';
 import { getStreamPreconnectService } from '@/lib/streaming/stream-preconnect';
 
 interface UseThreadDataReturn {
@@ -283,7 +283,7 @@ export function useThreadData(
           const serverUserContents = new Set<string>();
           mergedMessages.forEach((msg) => {
             if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
-              const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+              const contentKey = extractUserMessageTextForDedup(msg.content).toLowerCase();
               if (contentKey) serverUserContents.add(contentKey);
             }
           });
@@ -299,16 +299,33 @@ export function useThreadData(
             // For user messages: only deduplicate temp messages
             if (msg.type === 'user') {
               const isTemp = msgId?.startsWith('temp-');
-              const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+              const strippedContent = extractUserMessageTextForDedup(msg.content).toLowerCase();
+              const fullContent = extractUserMessageText(msg.content).trim().toLowerCase();
+              const isAttachmentOnly = !strippedContent && fullContent;
+              const attachmentFingerprint = isAttachmentOnly ? extractAttachmentFingerprint(msg.content) : '';
 
-              if (isTemp && contentKey) {
+              if (isTemp && (strippedContent || isAttachmentOnly)) {
                 const tempCreatedAt = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
 
                 // Find if there's a matching server message created at similar time
                 const hasMatchingServerVersion = mergedMessages.some((existing) => {
                   if (existing.type !== 'user') return false;
                   if (existing.message_id?.startsWith('temp-')) return false;
-                  if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+                  // For attachment-only messages, compare normalized attachment paths
+                  if (isAttachmentOnly) {
+                    const existingStripped = extractUserMessageTextForDedup(existing.content).toLowerCase();
+                    const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(existing.content).trim();
+                    if (!existingIsAttachmentOnly) return false;
+
+                    const existingFingerprint = extractAttachmentFingerprint(existing.content);
+                    if (attachmentFingerprint !== existingFingerprint) return false;
+
+                    const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                    return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
+                  }
+
+                  if (extractUserMessageTextForDedup(existing.content).toLowerCase() !== strippedContent) return false;
 
                   const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
                   return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
@@ -318,12 +335,22 @@ export function useThreadData(
               }
 
               // For temp messages, also check if we already added a temp with same content
-              if (isTemp && contentKey) {
-                const alreadyHasTempWithContent = dedupedMessages.some(
-                  (m) => m.type === 'user' &&
-                    m.message_id?.startsWith('temp-') &&
-                    extractUserMessageText(m.content).trim().toLowerCase() === contentKey
-                );
+              if (isTemp && (strippedContent || isAttachmentOnly)) {
+                const alreadyHasTempWithContent = dedupedMessages.some((m) => {
+                  if (m.type !== 'user') return false;
+                  if (!m.message_id?.startsWith('temp-')) return false;
+
+                  if (isAttachmentOnly) {
+                    const existingStripped = extractUserMessageTextForDedup(m.content).toLowerCase();
+                    const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(m.content).trim();
+                    if (!existingIsAttachmentOnly) return false;
+
+                    const existingFingerprint = extractAttachmentFingerprint(m.content);
+                    return attachmentFingerprint === existingFingerprint;
+                  }
+
+                  return extractUserMessageTextForDedup(m.content).toLowerCase() === strippedContent;
+                });
                 if (alreadyHasTempWithContent) return;
               }
             }
@@ -485,8 +512,8 @@ export function useThreadData(
         const serverUserContents = new Set<string>();
         merged.forEach((msg) => {
           if (msg.type === 'user' && msg.message_id && !msg.message_id.startsWith('temp-')) {
-            // Use extractUserMessageText to properly parse JSON content
-            const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
+            // Use extractUserMessageTextForDedup to properly parse JSON content and strip attachment markers
+            const contentKey = extractUserMessageTextForDedup(msg.content).toLowerCase();
             if (contentKey) serverUserContents.add(contentKey);
           }
         });
@@ -505,15 +532,33 @@ export function useThreadData(
           // Uses timestamp-aware deduplication: only skip if server message was created within 30 seconds
           // This allows intentionally repeated messages (different turns) while preventing duplicates
           if (msg.type === 'user' && msgId?.startsWith('temp-')) {
-            // Use extractUserMessageText to properly parse JSON content
-            const contentKey = extractUserMessageText(msg.content).trim().toLowerCase();
-            if (contentKey) {
+            // Use extractUserMessageTextForDedup to properly parse JSON content and strip attachment markers
+            const strippedContent = extractUserMessageTextForDedup(msg.content).toLowerCase();
+            const fullContent = extractUserMessageText(msg.content).trim().toLowerCase();
+            const isAttachmentOnly = !strippedContent && fullContent;
+            const attachmentFingerprint = isAttachmentOnly ? extractAttachmentFingerprint(msg.content) : '';
+
+            if (strippedContent || isAttachmentOnly) {
               const tempCreatedAt = msg.created_at ? new Date(msg.created_at).getTime() : Date.now();
 
               const hasMatchingServerVersion = merged.some((existing) => {
                 if (existing.type !== 'user') return false;
                 if (existing.message_id?.startsWith('temp-')) return false;
-                if (extractUserMessageText(existing.content).trim().toLowerCase() !== contentKey) return false;
+
+                // For attachment-only messages, compare normalized attachment paths
+                if (isAttachmentOnly) {
+                  const existingStripped = extractUserMessageTextForDedup(existing.content).toLowerCase();
+                  const existingIsAttachmentOnly = !existingStripped && extractUserMessageText(existing.content).trim();
+                  if (!existingIsAttachmentOnly) return false;
+
+                  const existingFingerprint = extractAttachmentFingerprint(existing.content);
+                  if (attachmentFingerprint !== existingFingerprint) return false;
+
+                  const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
+                  return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
+                }
+
+                if (extractUserMessageTextForDedup(existing.content).toLowerCase() !== strippedContent) return false;
 
                 const serverCreatedAt = existing.created_at ? new Date(existing.created_at).getTime() : 0;
                 return Math.abs(serverCreatedAt - tempCreatedAt) < 30000;
@@ -530,11 +575,20 @@ export function useThreadData(
           // race conditions can cause same message to arrive with slightly different timestamps
           const isTemp = msgId?.startsWith('temp-');
           if (isTemp && msg.content) {
-            // For user messages, use extractUserMessageText to properly parse JSON content
-            const contentKey = msg.type === 'user'
-              ? extractUserMessageText(msg.content).trim().toLowerCase().substring(0, 200)
-              : String(msg.content).trim().substring(0, 200);
-            const fingerprint = `${msg.type}:${contentKey}`;
+            // For user messages, use extractUserMessageTextForDedup to properly parse JSON content and strip attachment markers
+            // For attachment-only messages, use normalized attachment fingerprint
+            let fingerprint: string;
+            if (msg.type === 'user') {
+              const strippedContent = extractUserMessageTextForDedup(msg.content).toLowerCase();
+              const fullContent = extractUserMessageText(msg.content).trim();
+              const isAttachmentOnly = !strippedContent && fullContent;
+              const contentKey = isAttachmentOnly
+                ? `attachments:${extractAttachmentFingerprint(msg.content)}`
+                : strippedContent.substring(0, 200);
+              fingerprint = `${msg.type}:${contentKey}`;
+            } else {
+              fingerprint = `${msg.type}:${String(msg.content).trim().substring(0, 200)}`;
+            }
 
             if (seenContentFingerprints.has(fingerprint)) {
               return;
