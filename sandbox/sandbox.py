@@ -79,7 +79,7 @@ async def start_supervisord_session(sandbox: AsyncSandbox):
         # Don't fail if supervisord already running
         logger.warning(f"Could not start supervisord: {str(e)}")
 
-async def create_sandbox(password: str, project_id: str = None) -> AsyncSandbox:
+async def create_sandbox(password: str, project_id: str = None, kortix_token: str = None) -> AsyncSandbox:
     """Create a new sandbox with all required services configured and running."""
 
     logger.info("Creating new Daytona sandbox environment")
@@ -95,17 +95,10 @@ async def create_sandbox(password: str, project_id: str = None) -> AsyncSandbox:
         public=True,
         labels=labels,
         env_vars={
-            "CHROME_PERSISTENT_SESSION": "true",
-            "RESOLUTION": "1048x768x24",
-            "RESOLUTION_WIDTH": "1048",
-            "RESOLUTION_HEIGHT": "768",
-            "VNC_PASSWORD": password,
-            "ANONYMIZED_TELEMETRY": "false",
-            "CHROME_PATH": "",
-            "CHROME_USER_DATA": "",
-            "CHROME_DEBUGGING_PORT": "9222",
-            "CHROME_DEBUGGING_HOST": "localhost",
-            "CHROME_CDP": ""
+            "OPENCODE_SERVER_USERNAME": "opencode",
+            "OPENCODE_SERVER_PASSWORD": password,
+            "KORTIX_API_URL": config.KORTIX_API_URL or "https://api.kortix.ai",
+            "KORTIX_TOKEN": kortix_token or "00000",  # Token for Kortix router auth (00000 = test mode)
         },
         # resources=Resources(
         #     cpu=2,

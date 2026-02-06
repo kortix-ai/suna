@@ -1,0 +1,24 @@
+services:
+  sandbox:
+    build: .
+    ports:
+      - "8000:8000"   # Kortix Master (only entry point)
+    environment:
+      - OPENCODE_SERVER_USERNAME=${OPENCODE_SERVER_USERNAME:-admin}
+      - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-changeme}
+      - KORTIX_API_URL=${KORTIX_API_URL:-https://api.kortix.ai}
+      - KORTIX_TOKEN=${KORTIX_TOKEN:-}
+      - SANDBOX_ID=${SANDBOX_ID:-local}
+      - PROJECT_ID=${PROJECT_ID:-local}
+    volumes:
+      - ./workspace:/workspace
+      - secrets_data:/app/secrets
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/kortix/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  secrets_data:
