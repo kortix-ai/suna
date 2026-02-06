@@ -334,6 +334,9 @@ class Configuration:
     DAYTONA_SERVER_URL: Optional[str] = None
     DAYTONA_TARGET: Optional[str] = None
     
+    # Kortix API URL (for sandbox plugin to call backend)
+    KORTIX_API_URL: Optional[str] = "https://api.kortix.ai"
+
     # Search and other API keys (all optional tools)
     TAVILY_API_KEY: Optional[str] = None
     RAPID_API_KEY: Optional[str] = None

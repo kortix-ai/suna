@@ -428,6 +428,9 @@ api_router.include_router(canvas_ai_router)
 
 from core.admin.stateless_admin_api import router as stateless_admin_router
 api_router.include_router(stateless_admin_router)
+
+from core.kortix import router as kortix_router
+api_router.include_router(kortix_router)
 # Auth OTP endpoint for expired magic links
 api_router.include_router(auth_api.router)
 
