@@ -36,8 +36,8 @@ Rules:
 - 2-8 words maximum, Title Case
 - Be ACCURATE: capture the user's actual intent/topic
 - Be CONCISE: no filler words, get to the point
-- If files are attached, combine the info you get
-- Ignore system metadata like [Attached: ...] brackets - extract the real intent/details of the attached data
+- If files are attached, combine the info you get from it /infer the topic of the file
+- Ignore system metadata like [Attached: ...] brackets - extract the real intent/details of the attached data.
 
 Examples:
 {"title": "Fix CORS and Canvas Bug"}
