@@ -231,7 +231,7 @@ class RunState:
     def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
         self._message_counter += 1
         message_id = str(uuid.uuid4())
-        
+
         msg_with_id = msg.copy()
         msg_with_id["message_id"] = message_id
 
@@ -243,7 +243,7 @@ class RunState:
             data={
                 "message_id": message_id,
                 "thread_id": self.thread_id,
-                "type": msg.get("role", "assistant"),
+                "type": msg.get("_db_type") or msg.get("role", "assistant"),
                 "content": msg,
                 "metadata": metadata or {},
                 "is_llm_message": True,

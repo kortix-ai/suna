@@ -8,10 +8,14 @@ from core.agentpress.thread_manager.services.execution.llm_executor import LLMEx
 from core.agentpress.prompt_caching import add_cache_control
 from core.agents.pipeline.ux_streaming import stream_context_usage, stream_summarizing
 from core.agents.pipeline.stateless.context.manager import ContextManager
+from core.agents.pipeline.stateless.context.archiver import ContextArchiver, format_archive_summary
 from core.agentpress.context_manager import ContextManager as ToolCallValidator
 
 
 class ExecutionEngine:
+    # Set to a low value (e.g., 10_000) for testing, None for normal operation
+    TEST_THRESHOLD_OVERRIDE = None
+
     THRESHOLD_MARGINS = {
         1_000_000: 350_000,
         400_000: 100_000,
@@ -43,10 +47,10 @@ class ExecutionEngine:
         system_prompt: Dict[str, Any]
     ) -> Tuple[List[Dict[str, Any]], int, bool]:
         from core.ai_models import model_manager
-        
+
         context_window = model_manager.get_context_window(self._state.model_name)
-        safety_threshold = self.get_safety_threshold(context_window)
-        
+        safety_threshold = self.TEST_THRESHOLD_OVERRIDE or self.get_safety_threshold(context_window)
+
         if tokens < safety_threshold:
             return messages, tokens, False
         
@@ -61,13 +65,13 @@ class ExecutionEngine:
             MIN_TO_COMPRESS = 3
             MAX_WORKING_MEMORY = 8
             MIN_WORKING_MEMORY = 2
-            
+
             total_messages = len(messages)
-            
+
             if total_messages <= MIN_TO_COMPRESS + MIN_WORKING_MEMORY:
                 logger.debug(f"[ExecutionEngine] Skipping compression: only {total_messages} messages, need >{MIN_TO_COMPRESS + MIN_WORKING_MEMORY}")
                 return messages, tokens, False
-            
+
             working_memory_size = min(MAX_WORKING_MEMORY, total_messages - MIN_TO_COMPRESS)
             working_memory_size = max(working_memory_size, MIN_WORKING_MEMORY)
             
@@ -75,22 +79,53 @@ class ExecutionEngine:
             to_compress = messages[:-working_memory_size]
             
             logger.debug(f"[ExecutionEngine] Compression split: {len(to_compress)} to compress, {len(working_memory)} working memory")
-            
-            result = await ContextManager.compress_history(
-                messages=to_compress,
-                working_memory_size=2,
-                model="gpt-4o-mini"
+
+            # Extract previous summary before filtering it out
+            previous_summary = None
+            for m in to_compress:
+                if m.get('_is_summary_inline'):
+                    previous_summary = m.get('content', '')
+
+            # Filter out previous archive summaries - don't re-archive them
+            to_compress = [m for m in to_compress if not m.get('_is_summary_inline')]
+
+            if not to_compress:
+                logger.debug("[ExecutionEngine] Nothing to compress after filtering summaries")
+                return messages, tokens, False
+
+            # Archive messages to sandbox filesystem for on-demand retrieval
+            archiver = ContextArchiver(
+                project_id=self._state.project_id,
+                account_id=self._state.account_id,
+                thread_id=self._state.thread_id
             )
-            
+            result = await archiver.archive_messages(to_compress, previous_summary=previous_summary)
+
             summary_msg = {
-                "role": "user", 
-                "content": f"[CONVERSATION HISTORY SUMMARY]\n\n{result.summary}\n\n{ContextManager._format_facts_inline(result.facts)}",
-                "_is_summary_inline": True
+                "role": "user",
+                "content": format_archive_summary(result),
+                "_is_summary_inline": True,
+                "_archive_batch": result.batch_number,
+                "_db_type": "summary",
             }
-            
+
+            # Persist the summary message to database so subsequent runs can load it
+            self._state.add_message(summary_msg, metadata={
+                "_is_summary_inline": True,
+                "_archive_batch": result.batch_number,
+                "archived_message_count": result.message_count,
+                "is_archived_summary": True,
+            })
+
             new_messages = [summary_msg] + working_memory
+
+            # Update the Redis cache with the new compressed message list
+            from core.cache.runtime_cache import set_cached_message_history
+            await set_cached_message_history(self._state.thread_id, new_messages)
+            logger.debug(f"[ExecutionEngine] Updated message cache with {len(new_messages)} messages")
+
             new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
-            
+
             logger.info(f"✨ [ExecutionEngine] Summarized: {tokens} -> {new_tokens} tokens "
                        f"({len(messages)} -> {len(new_messages)} messages)")
             
