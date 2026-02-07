@@ -78,3 +78,19 @@ def get_stale_runs(max_age_seconds: int = 3600) -> List[str]:
         rid for rid, info in _active_runs.items()
         if (now - info[0]) > max_age_seconds
     ]
+
+
+def evict_stale_runs(max_age_seconds: int = 7200) -> int:
+    """Remove entries older than max_age_seconds (default 2h) from _active_runs.
+
+    These are zombie entries where cleanup never ran (e.g. process crash mid-run).
+    """
+    now = time.time()
+    stale = [
+        rid for rid, info in _active_runs.items()
+        if (now - info[0]) > max_age_seconds
+    ]
+    for rid in stale:
+        _active_runs.pop(rid, None)
+        logger.warning(f"[LIFECYCLE] Evicted stale run {rid} from _active_runs (zombie)")
+    return len(stale)

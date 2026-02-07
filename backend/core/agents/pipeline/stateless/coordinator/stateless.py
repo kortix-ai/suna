@@ -228,7 +228,7 @@ class StatelessCoordinator(BaseCoordinator):
 
     async def _cleanup(self, ctx: PipelineContext) -> None:
         cleanup_errors = []
-        
+
         try:
             if hasattr(self, '_background_tasks'):
                 errors = await self._background_tasks.stop()
@@ -240,6 +240,12 @@ class StatelessCoordinator(BaseCoordinator):
                 except Exception as e:
                     logger.warning(f"[Coordinator] State cleanup error: {e}")
                     cleanup_errors.append(f"state: {e}")
+                    # Ensure WAL is cleaned even if state.cleanup() partially failed
+                    try:
+                        from core.agents.pipeline.stateless.persistence.wal import wal
+                        await wal.cleanup_run(self._state.run_id)
+                    except Exception as wal_err:
+                        logger.warning(f"[Coordinator] WAL fallback cleanup error: {wal_err}")
                 write_buffer.unregister(self._state.run_id)
 
             status = "completed" if self._state and self._state.termination_reason == "completed" else "failed"
@@ -260,7 +266,7 @@ class StatelessCoordinator(BaseCoordinator):
 
             self._tool_registry = None
             self._state = None
-            
+
             if cleanup_errors:
                 logger.warning(f"[Coordinator] Cleanup completed with errors: {cleanup_errors}")
 

@@ -263,7 +263,6 @@ async def delete_folder(
     folder_id: str,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    """Delete a knowledge base folder and all its entries."""
     if not config.ENABLE_KNOWLEDGE_BASE:
         raise HTTPException(status_code=503, detail="Knowledge base feature is currently disabled")
     
@@ -271,7 +270,6 @@ async def delete_folder(
         client = await db.client
         account_id = user_id
         
-        # Verify ownership
         folder_result = await client.table('knowledge_base_folders').select(
             'folder_id'
         ).eq('folder_id', folder_id).eq('account_id', account_id).execute()
@@ -279,12 +277,20 @@ async def delete_folder(
         if not folder_result.data:
             raise HTTPException(status_code=404, detail="Folder not found")
         
-        # Get all entries in the folder to delete their files from S3
         entries_result = await client.table('knowledge_base_entries').select(
             'entry_id, file_path'
         ).eq('folder_id', folder_id).execute()
         
-        # Delete all files from S3 storage
+        entry_ids = [e['entry_id'] for e in (entries_result.data or [])]
+        agent_ids_to_invalidate = set()
+        if entry_ids:
+            assignments_result = await client.table('agent_knowledge_entry_assignments').select(
+                'agent_id'
+            ).in_('entry_id', entry_ids).execute()
+            agent_ids_to_invalidate = set(
+                row['agent_id'] for row in (assignments_result.data or [])
+            )
+        
         if entries_result.data:
             file_paths = [entry['file_path'] for entry in entries_result.data]
             try:
@@ -293,8 +299,16 @@ async def delete_folder(
             except Exception as e:
                 logger.warning(f"Failed to delete some files from S3: {str(e)}")
         
-        # Delete folder (cascade will handle entries and assignments in DB)
         await client.table('knowledge_base_folders').delete().eq('folder_id', folder_id).execute()
+        
+        try:
+            from core.cache.runtime_cache import invalidate_kb_context_cache
+            for agent_id in agent_ids_to_invalidate:
+                await invalidate_kb_context_cache(agent_id)
+            if agent_ids_to_invalidate:
+                logger.debug(f"🗑️ Invalidated KB cache for {len(agent_ids_to_invalidate)} agents after folder deletion")
+        except Exception as e:
+            logger.warning(f"Failed to invalidate KB cache after folder deletion: {e}")
         
         return {"success": True}
         

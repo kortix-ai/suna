@@ -17,7 +17,7 @@ class BackgroundTaskManager:
 
     async def stop(self):
         cleanup_errors = []
-        
+
         if self._flush_task:
             self._flush_task.cancel()
             try:
@@ -37,6 +37,10 @@ class BackgroundTaskManager:
             except Exception as e:
                 cleanup_errors.append(f"heartbeat_task: {e}")
             self._heartbeat_task = None
+
+        # Release references so RunState and Ownership can be GC'd
+        self._state = None
+        self._ownership = None
 
         return cleanup_errors
 
