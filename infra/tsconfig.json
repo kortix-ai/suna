@@ -12,19 +12,17 @@
     "rootDir": ".",
     "baseUrl": ".",
     "paths": {
-      "@components/*": ["components/*"],
+      "@modules/*": ["modules/*"],
       "@environments/*": ["environments/*"]
     }
   },
   "include": [
-    "components/**/*.ts",
+    "modules/**/*.ts",
     "environments/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    ".pulumi",
-    "cluster",
-    "staging"
+    ".pulumi"
   ]
 }

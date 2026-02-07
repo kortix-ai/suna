@@ -1,87 +1,50 @@
 config:
   aws:region: us-west-2
 
-  # Network Configuration (required)
-  suna:vpcId: vpc-xxxxxxxxx
-  suna:publicSubnets:
-    - subnet-xxxxxxxxx
-    - subnet-yyyyyyyyy
-  suna:privateSubnets:
-    - subnet-aaaaaaaa
-    - subnet-bbbbbbbb
-    - subnet-cccccccc
-  suna:albSecurityGroupId: sg-xxxxxxxxx
-  suna:ecsSecurityGroupId: sg-yyyyyyyyy
-  suna:targetGroupArn: arn:aws:elasticloadbalancing:us-west-2:ACCOUNT_ID:targetgroup/NAME/ID
-  suna:loadBalancerArn: app/LOAD_BALANCER_NAME/ID
-  suna:albDnsName: your-alb-xxxxx.us-west-2.elb.amazonaws.com
+  # Network (required)
+  kortix-infra-prod:vpcId: vpc-xxxxxxxxx
+  kortix-infra-prod:publicSubnets: '["subnet-aaa","subnet-bbb","subnet-ccc"]'
+  kortix-infra-prod:privateSubnets: '["subnet-ddd","subnet-eee","subnet-fff"]'
 
-  # Secrets (required, use --secret flag)
-  # pulumi config set --secret secretsManagerArn arn:aws:secretsmanager:...
-  # pulumi config set --secret cloudflareTunnelId xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+  # Secrets (required — set via: pulumi config set --secret <key> <value>)
+  # kortix-infra-prod:secretsManagerArn:
+  #   secure: <encrypted>
+  # kortix-infra-prod:cloudflareTunnelId:
+  #   secure: <encrypted>
 
-  # Container Configuration (required)
-  suna:containerImage: ACCOUNT_ID.dkr.ecr.us-west-2.amazonaws.com/suna-api:latest
-  suna:lightsailKeyPairName: suna-prod-key
+  # Container (required)
+  kortix-infra-prod:containerImage: ghcr.io/kortix-ai/suna/suna-backend:prod
 
-  # Alert Configuration (required)
-  suna:alertEmails:
-    - ops@yourdomain.com
+  # Alerts (required)
+  kortix-infra-prod:alertEmails: '["ops@yourdomain.com"]'
 
-  # Task Configuration (defaults shown)
-  # suna:serviceName: suna-api
-  # suna:containerPort: 8000
-  # suna:healthCheckPath: /v1/health-docker
-  # suna:taskCpu: 512        # 0.5 vCPU - good for most APIs
-  # suna:taskMemory: 1024    # 1GB RAM
-  # suna:desiredCount: 2     # Starting count
-  # suna:minCapacity: 1      # Scale down to 1 when idle
-  # suna:maxCapacity: 100    # Scale up to 100 under load
+  # EKS cluster (optional — defaults shown)
+  # kortix-infra-prod:eksVersion: "1.31"
+  # kortix-infra-prod:apiNodeInstanceType: c7i.xlarge
+  # kortix-infra-prod:apiNodeMin: 2
+  # kortix-infra-prod:apiNodeMax: 8
+  # kortix-infra-prod:apiNodeDesired: 3
+  # kortix-infra-prod:burstNodeInstanceTypes: '["c7i.xlarge","c6i.xlarge"]'
+  # kortix-infra-prod:burstNodeMax: 10
 
-  # Capacity Strategy (defaults shown)
-  # 80% Fargate Spot (cheap) + 20% On-Demand (reliable)
-  # suna:fargateSpotWeight: 4
-  # suna:fargateWeight: 1
-  # suna:fargateBase: 1      # Always keep 1 On-Demand running
+  # Pod config (optional — defaults shown)
+  # kortix-infra-prod:serviceName: suna-api
+  # kortix-infra-prod:containerPort: 8000
+  # kortix-infra-prod:healthCheckPath: /v1/health-docker
+  # kortix-infra-prod:podReplicas: 4
+  # kortix-infra-prod:podCpuRequest: 500m
+  # kortix-infra-prod:podCpuLimit: 1500m
+  # kortix-infra-prod:podMemoryRequest: 2Gi
+  # kortix-infra-prod:podMemoryLimit: 3Gi
+  # kortix-infra-prod:workersPerPod: 2
 
-  # Autoscaling Configuration (defaults shown)
-  # suna:cpuTargetValue: 70      # Scale out when CPU > 70%
-  # suna:memoryTargetValue: 75   # Scale out when Memory > 75%
-  # suna:scaleInCooldown: 300    # Wait 5 min before scaling in
-  # suna:scaleOutCooldown: 60    # Scale out quickly (1 min)
+  # Ingress / DNS (optional — defaults shown)
+  # kortix-infra-prod:primaryDomain: api-eks.kortix.com
+  # kortix-infra-prod:lightsailDomain: api-lightsail.kortix.com
+  # kortix-infra-prod:acmCertificateArn: arn:aws:acm:us-west-2:ACCOUNT:certificate/xxx
 
-  # Monitoring Thresholds (defaults shown)
-  # suna:cpuWarningThreshold: 70
-  # suna:cpuCriticalThreshold: 85
-  # suna:memoryWarningThreshold: 75
-  # suna:memoryCriticalThreshold: 90
-  # suna:latencyThresholdMs: 2000
-  # suna:errorRateThreshold: 5
-
-  # Disaster Recovery (defaults shown)
-  # suna:backupRetentionDays: 30
-  # suna:enableCrossRegionBackup: false
-  # suna:secondaryRegion: us-east-1
-
-  # Domain Configuration (defaults shown)
-  # suna:primaryDomain: api.kortix.com
-  # suna:lightsailDomain: api-lightsail.kortix.com
-  # suna:ecsDomain: api-ecs.kortix.com
-
-# ============================================================
-# COST ESTIMATES (Fargate Spot + On-Demand mix)
-# ============================================================
-#
-# Load Level    | Tasks | Monthly Cost
-# --------------|-------|-------------
-# Idle (0)      | 1     | ~$11
-# Light (100)   | 2-3   | ~$30
-# Medium (500)  | 5-8   | ~$80
-# Heavy (1k)    | 10-15 | ~$150
-# Very Heavy    | 50+   | ~$800+ (consider EC2)
-#
-# When to switch to EC2:
-# - Monthly bill > $2000
-# - Consistent 50%+ utilization
-# - Need GPU or large memory instances
-# ============================================================
+  # Monitoring thresholds (optional — defaults shown)
+  # kortix-infra-prod:cpuWarningThreshold: 70
+  # kortix-infra-prod:cpuCriticalThreshold: 85
+  # kortix-infra-prod:memoryWarningThreshold: 75
+  # kortix-infra-prod:memoryCriticalThreshold: 90
