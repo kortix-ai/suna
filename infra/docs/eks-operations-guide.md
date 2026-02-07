@@ -201,19 +201,22 @@ There are two levels of autoscaling, and they work together:
 
 ### Level 1: Pod Autoscaling (HPA)
 
-The **Horizontal Pod Autoscaler** watches CPU usage across your pods and adds/removes pods to keep CPU around the target.
+The **Horizontal Pod Autoscaler** watches CPU and memory usage across your pods and adds/removes pods to keep utilization around the target.
 
 | Setting | Value |
 |---------|-------|
 | Min pods | 4 |
 | Max pods | 15 |
 | CPU target | 70% average utilization |
+| Memory target | 80% average utilization |
 | Scale up speed | Can double pods every 60 seconds |
 | Scale down speed | Removes at most 25% of pods every 60 seconds |
 | Scale down cooldown | Waits 5 minutes before scaling down (prevents flapping) |
 | Scale up cooldown | Only waits 30 seconds before scaling up (fast reaction) |
 
-**Example:** If your 4 pods are averaging 85% CPU, HPA will add more pods. If they drop to 40% CPU, HPA will (after 5 minutes) remove some pods back to the minimum of 4.
+HPA will scale up if **either** CPU or memory exceeds its target. So if CPU is at 40% but memory hits 85%, HPA will still add pods.
+
+**Example:** If your 4 pods are averaging 85% CPU (or 85% memory), HPA will add more pods. If both drop below target, HPA will (after 5 minutes) remove pods back to the minimum of 4.
 
 ### Level 2: Node Autoscaling (Cluster Autoscaler)
 
@@ -254,6 +257,33 @@ Traffic drops
 ### PodDisruptionBudget (PDB)
 
 During voluntary disruptions (node drain, cluster upgrade, autoscaler removing a node), the PDB guarantees at least **50% of pods** stay running. So if you have 4 pods, at least 2 must be alive during any maintenance operation.
+
+### Pod Recycling (Memory Leak Defense)
+
+Even with memory leak fixes in the code, long-running Python processes can slowly accumulate memory over time. To handle this, we have a **CronJob** that does a rolling restart of all pods every 6 hours.
+
+```
+Every 6 hours (0 */6 * * *):
+  → CronJob runs: kubectl rollout restart deployment/suna-api
+  → Rolling restart begins (same as a deploy — zero downtime)
+  → Each pod is replaced one at a time
+  → New pods start fresh with clean memory
+  → Old pods get 120s to finish in-flight requests before being killed
+```
+
+This runs inside the cluster itself (not from CI/CD). It has its own ServiceAccount with minimal permissions — it can only restart the `suna-api` deployment in the `suna` namespace, nothing else.
+
+To check the recycler:
+```bash
+# See recent recycler runs
+kubectl get jobs -n suna -l app=suna-api-recycler
+
+# See CronJob schedule
+kubectl get cronjob -n suna
+
+# Logs from the last recycle
+kubectl logs -l job-name=<job-name> -n suna
+```
 
 ---
 
