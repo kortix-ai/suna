@@ -792,12 +792,12 @@ async def get_llm_messages_paginated(
     sql = """
     SELECT message_id, type, content, metadata
     FROM messages
-    WHERE thread_id = :thread_id 
+    WHERE thread_id = :thread_id
       AND is_llm_message = true
       AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
       AND type != 'image_context'
     ORDER BY created_at ASC
-    LIMIT :limit 
+    LIMIT :limit
     OFFSET :offset
     """
     rows = await execute(sql, {
@@ -805,6 +805,37 @@ async def get_llm_messages_paginated(
         "limit": batch_size,
         "offset": offset
     })
+    return [dict(row) for row in rows] if rows else []
+
+
+async def get_llm_messages_from_last_summary(thread_id: str) -> List[Dict[str, Any]]:
+    """Fetch only messages from the last archive summary onward.
+
+    If no summary exists, returns all LLM messages.
+    """
+    sql = """
+    WITH last_summary AS (
+        SELECT created_at
+        FROM messages
+        WHERE thread_id = :thread_id
+          AND is_llm_message = true
+          AND metadata->>'_is_summary_inline' = 'true'
+        ORDER BY created_at DESC
+        LIMIT 1
+    )
+    SELECT message_id, type, content, metadata
+    FROM messages
+    WHERE thread_id = :thread_id
+      AND is_llm_message = true
+      AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
+      AND type != 'image_context'
+      AND created_at >= COALESCE(
+          (SELECT created_at FROM last_summary),
+          '1970-01-01T00:00:00Z'::timestamptz
+      )
+    ORDER BY created_at ASC
+    """
+    rows = await execute(sql, {"thread_id": thread_id})
     return [dict(row) for row in rows] if rows else []
 
 

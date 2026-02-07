@@ -55,28 +55,41 @@ class ContextManager:
     
     @staticmethod
     def extract_layers(messages: List[Dict[str, Any]]) -> ContextLayers:
+        # Check for inline archive summary (from ExecutionEngine archiver)
+        # Find the LAST one — only messages after it are working memory
+        last_inline_idx = None
+        for i, msg in enumerate(messages):
+            if msg.get('_is_summary_inline'):
+                last_inline_idx = i
+
+        if last_inline_idx is not None:
+            summary_msg = messages[last_inline_idx]
+            working_memory = messages[last_inline_idx:]  # summary + everything after
+            return ContextLayers(working_memory=working_memory)
+
+        # Legacy: check for old thread_summary format
         summary_msg = None
         working_memory = []
-        
+
         for msg in messages:
             if msg.get('type') == 'thread_summary' or msg.get('_is_summary'):
                 summary_msg = msg
             elif not msg.get('type') in ['thread_summary']:
                 working_memory.append(msg)
-        
+
         if not summary_msg:
             return ContextLayers(working_memory=messages)
-        
+
         content = summary_msg.get('content', {})
         if isinstance(content, str):
             try:
                 content = json.loads(content)
             except json.JSONDecodeError:
                 content = {}
-        
+
         facts = content.get('facts', {})
         summary_text = content.get('summary', '')
-        
+
         if summary_text:
             summary_as_user_msg = {
                 "role": "user",
@@ -85,9 +98,9 @@ class ContextManager:
                 "_is_summary_inline": True
             }
             working_memory.insert(0, summary_as_user_msg)
-        
+
         return ContextLayers(
-            facts_message=None,    
+            facts_message=None,
             summary_message=None,
             working_memory=working_memory
         )

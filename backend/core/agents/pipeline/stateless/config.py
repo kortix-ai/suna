@@ -4,7 +4,6 @@ from dataclasses import dataclass
 @dataclass
 class StatelessConfig:
 
-    MAX_MESSAGES: ClassVar[int] = 50
     MAX_TOOL_RESULTS: ClassVar[int] = 20
     MAX_PENDING_WRITES: ClassVar[int] = 100
     MAX_STEPS: ClassVar[int] = 100
