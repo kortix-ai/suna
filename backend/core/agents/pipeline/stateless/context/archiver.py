@@ -37,12 +37,11 @@ class ContextArchiver:
       manifest.json
       summaries/
         batch_001.md                    # Small summary (~500 tokens)
-      tool_results/
-        {tool_call_id}.md               # Individual tool outputs
       messages/
         batch_001/
           MSG-001_user.md               # Individual messages
           MSG-002_assistant.md
+          MSG-003_tool.md               # Tool results
           ...
     """
 
@@ -150,7 +149,6 @@ class ContextArchiver:
                 "thread_id": self.thread_id,
                 "total_archived": 0,
                 "batches": [],
-                "tool_results": [],
                 "key_facts": {}
             }
 
@@ -177,7 +175,6 @@ class ContextArchiver:
         })
 
         manifest["total_archived"] = total_before + message_count
-        manifest["tool_results"].extend(tool_results)
 
         # Merge key facts
         existing_facts = manifest.get("key_facts", {})
@@ -430,12 +427,11 @@ class ContextArchiver:
 
         # Retrieval hints
         lines.append("## Retrieval")
+        lines.append(f"Files: MSG-XXX_user.md, MSG-XXX_assistant.md, MSG-XXX_tool.md")
         lines.append("```bash")
-        lines.append(f"# Search all archived content")
+        lines.append(f"ls /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/")
         lines.append(f"grep -ri \"keyword\" /workspace/{self.BASE_DIR}/")
-        lines.append("")
-        lines.append(f"# Read specific message or tool result")
-        lines.append(f"read_file(\"{self.BASE_DIR}/messages/batch_{batch_number:03d}/MSG-{msg_start:03d}_user.md\")")
+        lines.append(f"cat /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/MSG-{msg_start:03d}_user.md")
         lines.append("```")
 
         return "\n".join(lines)

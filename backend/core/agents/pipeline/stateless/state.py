@@ -98,30 +98,51 @@ class RunState:
         return state
 
     async def _load_initial_state(self) -> None:
-        await asyncio.gather(
+        results = await asyncio.gather(
             self._load_messages(),
             self._check_credits(),
             return_exceptions=True,
         )
-        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs, credits OK")
+        # If message loading raised an exception, retry once
+        if isinstance(results[0], Exception):
+            logger.warning(f"[RunState] Message load failed ({results[0]}), retrying from DB...")
+            try:
+                await self._load_messages_from_db()
+            except Exception as e:
+                logger.error(f"[RunState] Message load retry failed: {e}")
+        # Also retry if loaded 0 messages (possible DB/cache race)
+        elif len(self._messages) == 0:
+            logger.warning(f"[RunState] Message load returned 0 messages, retrying from DB...")
+            try:
+                await self._load_messages_from_db()
+            except Exception as e:
+                logger.error(f"[RunState] Message load retry failed: {e}")
+
+        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs loaded")
 
     async def _load_messages(self) -> None:
-        try:
-            from core.cache.runtime_cache import get_cached_message_history
-            from core.agentpress.thread_manager.services.messages.fetcher import MessageFetcher
+        from core.cache.runtime_cache import get_cached_message_history
+        from core.agentpress.thread_manager.services.messages.fetcher import MessageFetcher
 
-            cached = await get_cached_message_history(self.thread_id)
-            if cached:
-                for msg in cached:
-                    self._messages.append(msg)
-                return
-
-            fetcher = MessageFetcher()
-            messages = await fetcher.get_llm_messages(self.thread_id, lightweight=False)
-            for msg in messages:
+        cached = await get_cached_message_history(self.thread_id)
+        if cached:
+            for msg in cached:
                 self._messages.append(msg)
-        except Exception as e:
-            logger.warning(f"[RunState] Load messages failed: {e}")
+            return
+
+        fetcher = MessageFetcher()
+        messages = await fetcher.get_llm_messages(self.thread_id, lightweight=False)
+        for msg in messages:
+            self._messages.append(msg)
+
+    async def _load_messages_from_db(self) -> None:
+        """Fallback: load directly from DB, bypassing cache."""
+        from core.agentpress.thread_manager.services.messages.fetcher import MessageFetcher
+
+        fetcher = MessageFetcher()
+        messages = await fetcher.get_llm_messages(self.thread_id, lightweight=False)
+        for msg in messages:
+            self._messages.append(msg)
 
     async def _check_credits(self) -> None:
         try:

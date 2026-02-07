@@ -294,6 +294,32 @@ class ExecutionEngine:
 
         system = self._state.system_prompt or {"role": "system", "content": "You are a helpful assistant."}
 
+        # If archived context exists, add retrieval instructions to system prompt
+        has_archive = any(m.get('_is_summary_inline') for m in messages)
+        if has_archive:
+            archive_hint = (
+                "\n\n## Archived Context\n"
+                "Earlier conversation messages have been archived to the sandbox filesystem.\n"
+                "Files are named by role: MSG-001_user.md, MSG-002_assistant.md, MSG-003_tool.md\n"
+                "To retrieve archived content:\n"
+                "```bash\n"
+                "# List all archived batches and files\n"
+                "ls /workspace/.kortix/context/messages/\n"
+                "ls /workspace/.kortix/context/messages/batch_001/\n"
+                "\n"
+                "# Search across all archived content\n"
+                "grep -ri \"keyword\" /workspace/.kortix/context/\n"
+                "\n"
+                "# Read a specific message (user, assistant, or tool result)\n"
+                "cat /workspace/.kortix/context/messages/batch_001/MSG-001_user.md\n"
+                "cat /workspace/.kortix/context/messages/batch_001/MSG-005_tool.md\n"
+                "\n"
+                "# Read the batch summary\n"
+                "cat /workspace/.kortix/context/summaries/batch_001.md\n"
+                "```"
+            )
+            system = {**system, "content": system.get("content", "") + archive_hint}
+
         layers = ContextManager.extract_layers(messages)
         processed_messages = layers.to_messages()
         
