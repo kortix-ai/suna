@@ -1,96 +1,204 @@
 import * as pulumi from "@pulumi/pulumi";
-import * as aws from "@pulumi/aws";
 
-import { COMMON_TAGS } from "../../components";
+import { COMMON_TAGS } from "../../modules/constants";
+import {
+  SunaEksCluster,
+  ApiWorkload,
+  ClusterAutoscaler,
+  EksIamRoles,
+  AlbControllerIamRole,
+  ClusterAutoscalerIamRole,
+} from "../../modules/kubernetes";
+import { EksMonitoring } from "../../modules/monitoring";
 
-// ============================================================================
-// LIGHTSAIL INSTANCE (Imported from existing)
-// ============================================================================
+const config = new pulumi.Config();
+const awsConfig = new pulumi.Config("aws");
+const environment = "prod";
+const region = awsConfig.require("region");
 
-const instance = new aws.lightsail.Instance("suna-prod-instance", {
-  name: "suna-prod",
-  availabilityZone: "us-west-2a",
-  blueprintId: "ubuntu_24_04",
-  bundleId: "8xlarge_3_0",
-  keyPairName: "suna-prod-key",
-  tags: {
-    ...COMMON_TAGS,
-    Environment: "prod",
-    Name: "suna-prod",
+const networkConfig = {
+  vpcId: config.require("vpcId"),
+  publicSubnets: config.requireObject<string[]>("publicSubnets"),
+  privateSubnets: config.requireObject<string[]>("privateSubnets"),
+};
+
+const serviceConfig = {
+  name: config.get("serviceName") || "suna-api",
+  containerImage: config.require("containerImage"),
+  containerPort: config.getNumber("containerPort") || 8000,
+  healthCheckPath: config.get("healthCheckPath") || "/v1/health-docker",
+};
+
+const eksConfig = {
+  version: config.get("eksVersion") || "1.31",
+  apiNodeInstanceType: config.get("apiNodeInstanceType") || "c7i.xlarge",
+  apiNodeMin: config.getNumber("apiNodeMin") || 2,
+  apiNodeMax: config.getNumber("apiNodeMax") || 8,
+  apiNodeDesired: config.getNumber("apiNodeDesired") || 3,
+};
+
+const podConfig = {
+  replicas: config.getNumber("podReplicas") || 4,
+  cpuRequest: config.get("podCpuRequest") || "500m",
+  cpuLimit: config.get("podCpuLimit") || "1500m",
+  memoryRequest: config.get("podMemoryRequest") || "2Gi",
+  memoryLimit: config.get("podMemoryLimit") || "3Gi",
+  workersPerPod: config.getNumber("workersPerPod") || 2,
+};
+
+const monitoringConfig = {
+  cpuWarning: config.getNumber("cpuWarningThreshold") || 70,
+  cpuCritical: config.getNumber("cpuCriticalThreshold") || 85,
+  memoryWarning: config.getNumber("memoryWarningThreshold") || 75,
+  memoryCritical: config.getNumber("memoryCriticalThreshold") || 90,
+  alertEmails: config.requireObject<string[]>("alertEmails"),
+};
+
+const secretsManagerArn = config.requireSecret("secretsManagerArn");
+const cloudflareTunnelId = config.requireSecret("cloudflareTunnelId");
+
+const iamRoles = new EksIamRoles("suna-eks-iam", {
+  serviceName: serviceConfig.name,
+  secretsArn: secretsManagerArn,
+  tags: COMMON_TAGS,
+});
+
+const eksClusterName = "suna-eks";
+const namespace = "suna";
+
+const eksCluster = new SunaEksCluster("suna-eks", {
+  name: eksClusterName,
+  environment,
+  version: eksConfig.version,
+  vpcId: networkConfig.vpcId,
+  privateSubnetIds: networkConfig.privateSubnets,
+  publicSubnetIds: networkConfig.publicSubnets,
+  nodeRole: iamRoles.nodeRole,
+  instanceProfile: iamRoles.nodeInstanceProfile,
+  tags: COMMON_TAGS,
+  apiNodeGroup: {
+    name: "suna-api-nodes",
+    instanceTypes: [eksConfig.apiNodeInstanceType],
+    capacityType: "ON_DEMAND",
+    scalingConfig: {
+      minSize: eksConfig.apiNodeMin,
+      maxSize: eksConfig.apiNodeMax,
+      desiredSize: eksConfig.apiNodeDesired,
+    },
+    labels: { pool: "api" },
+    tags: {
+      NodeGroup: "api",
+      [`k8s.io/cluster-autoscaler/${eksClusterName}`]: "owned",
+      "k8s.io/cluster-autoscaler/enabled": "true",
+    },
   },
 });
 
-const ports = new aws.lightsail.InstancePublicPorts("suna-prod-ports", {
-  instanceName: instance.name,
-  portInfos: [{
-    protocol: "tcp",
-    fromPort: 22,
-    toPort: 22,
-    cidrs: ["0.0.0.0/0"],
-  }],
+const albControllerRole = new AlbControllerIamRole("suna-alb-controller", {
+  clusterName: eksClusterName,
+  oidcProviderArn: eksCluster.oidcProviderArn,
+  oidcProviderUrl: eksCluster.oidcProviderUrl,
+  namespace: "kube-system",
+  serviceAccountName: "aws-load-balancer-controller",
+  tags: COMMON_TAGS,
 });
 
-// ============================================================================
-// CLOUDFLARE (Existing - not managed by Pulumi)
-// ============================================================================
+const clusterAutoscalerRole = new ClusterAutoscalerIamRole("suna-cas", {
+  clusterName: eksClusterName,
+  oidcProviderArn: eksCluster.oidcProviderArn,
+  oidcProviderUrl: eksCluster.oidcProviderUrl,
+  namespace: "kube-system",
+  serviceAccountName: "cluster-autoscaler",
+  tags: COMMON_TAGS,
+});
 
-// Tunnel and DNS records are already configured in Cloudflare
-const EXISTING_TUNNEL_ID = "f4125d84-33d5-424d-ae6b-2b84b790392b";
+const clusterAutoscaler = new ClusterAutoscaler("suna-cas", {
+  clusterName: eksClusterName,
+  namespace: "kube-system",
+  serviceAccountName: "cluster-autoscaler",
+  roleArn: clusterAutoscalerRole.roleArn,
+  region,
+}, eksCluster.k8sProvider);
 
-// ============================================================================
-// ECS (Existing - not managed by Pulumi)
-// ============================================================================
+const apiWorkload = new ApiWorkload("suna-api", {
+  name: serviceConfig.name,
+  namespace,
+  image: serviceConfig.containerImage,
+  port: serviceConfig.containerPort,
+  replicas: podConfig.replicas,
+  cpu: { request: podConfig.cpuRequest, limit: podConfig.cpuLimit },
+  memory: { request: podConfig.memoryRequest, limit: podConfig.memoryLimit },
+  healthCheckPath: serviceConfig.healthCheckPath,
+  envSecretName: "suna-env",
+  secretsArn: secretsManagerArn,
+  workersPerPod: podConfig.workersPerPod,
+  hpa: {
+    minReplicas: podConfig.replicas,
+    maxReplicas: 15,
+    cpuTargetPercent: 70,
+  },
+  ingress: {
+    enabled: true,
+    host: config.get("primaryDomain") || "api-eks.kortix.com",
+    annotations: {
+      "alb.ingress.kubernetes.io/certificate-arn": config.get("acmCertificateArn") || "",
+      "alb.ingress.kubernetes.io/subnets": networkConfig.publicSubnets.join(","),
+    },
+  },
+  tags: COMMON_TAGS,
+}, eksCluster.k8sProvider);
 
-// ECS cluster and related resources are already configured in AWS
-const ECS_CLUSTER_NAME = "suna-ecs";
-const ALB_DNS_NAME = "suna-alb-3975a7d-1271164322.us-west-2.elb.amazonaws.com";
+const monitoring = new EksMonitoring("suna-api-monitoring", {
+  clusterName: eksClusterName,
+  deploymentName: serviceConfig.name,
+  namespace,
+  environment,
+  cpuThresholdWarning: monitoringConfig.cpuWarning,
+  cpuThresholdCritical: monitoringConfig.cpuCritical,
+  memoryThresholdWarning: monitoringConfig.memoryWarning,
+  memoryThresholdCritical: monitoringConfig.memoryCritical,
+  alertEmails: monitoringConfig.alertEmails,
+  tags: COMMON_TAGS,
+});
 
-// ============================================================================
-// SECRETS MANAGER (Reference to existing secret)
-// ============================================================================
+export const outputs = {
+  environment,
 
-// IMPORTANT: If this secret is recreated, update the ARN here AND in:
-// 1. IAM policy: suna-ecs-task-exec-role -> suna-ecs-task-exec-secrets
-// 2. ECS task definition: suna-api (secrets.SUNA_ENV_JSON.valueFrom)
-const SECRETS_MANAGER_ENV_ARN = "arn:aws:secretsmanager:us-west-2:935064898258:secret:suna-env-prod-2ikWXj";
+  eks: {
+    clusterName: eksCluster.clusterName,
+    clusterArn: eksCluster.clusterArn,
+    kubeconfig: eksCluster.kubeconfig,
+  },
 
-// ============================================================================
-// EXPORTS
-// ============================================================================
+  workload: {
+    namespace,
+    deploymentName: serviceConfig.name,
+    replicas: podConfig.replicas,
+    cpuRequest: podConfig.cpuRequest,
+    memoryRequest: podConfig.memoryRequest,
+    workersPerPod: podConfig.workersPerPod,
+  },
 
-export const environment = "prod";
-export const instanceName = instance.name;
-export const publicIpAddress = instance.publicIpAddress;
-export const privateIpAddress = instance.privateIpAddress;
+  nodeGroups: {
+    api: {
+      instanceType: eksConfig.apiNodeInstanceType,
+      min: eksConfig.apiNodeMin,
+      max: eksConfig.apiNodeMax,
+      capacityType: "ON_DEMAND",
+    },
+  },
 
-export const tunnelId = EXISTING_TUNNEL_ID;
-export const tunnelCname = `${EXISTING_TUNNEL_ID}.cfargotunnel.com`;
+  monitoring: {
+    alertTopicArn: monitoring.alertTopic.arn,
+    dashboardUrl: pulumi.interpolate`https://${region}.console.aws.amazon.com/cloudwatch/home?region=${region}#dashboards:name=${serviceConfig.name}-${environment}`,
+  },
 
-export const ecsClusterName = ECS_CLUSTER_NAME;
-export const albDnsName = ALB_DNS_NAME;
-export const secretsManagerEnvArn = SECRETS_MANAGER_ENV_ARN;
+  cloudflare: {
+    tunnelCname: cloudflareTunnelId.apply(id => `${id}.cfargotunnel.com`),
+  },
 
-export const apiEndpoints = {
-  primary: "api.kortix.com",
-  lightsail: "api-lightsail.kortix.com",
-  ecs: "api-ecs.kortix.com",
+  endpoints: {
+    primary: config.get("primaryDomain") || "api-eks.kortix.com",
+    lightsail: config.get("lightsailDomain") || "api-lightsail.kortix.com",
+  },
 };
-
-// Setup instructions
-export const setupInstructions = pulumi.interpolate`
-=== PRODUCTION ENVIRONMENT SETUP ===
-
-1. SSH into Lightsail instance:
-   ssh ubuntu@${instance.publicIpAddress}
-
-2. Check tunnel status:
-   sudo systemctl status cloudflared
-
-3. API endpoints:
-   - Primary (routed via Cloudflare Worker): https://api.kortix.com
-   - Lightsail direct: https://api-lightsail.kortix.com
-   - ECS direct: https://api-ecs.kortix.com
-
-4. ECS cluster: ${ECS_CLUSTER_NAME}
-   ALB: ${ALB_DNS_NAME}
-`;

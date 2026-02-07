@@ -3,6 +3,8 @@ node_modules/
 
 # Pulumi
 .pulumi/
+Pulumi.*.yaml
+!Pulumi.*.yaml.example
 
 # Environment files (contain secrets)
 .env

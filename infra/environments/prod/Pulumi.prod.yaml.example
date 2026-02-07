@@ -1,0 +1,50 @@
+config:
+  aws:region: us-west-2
+
+  # Network (required)
+  kortix-infra-prod:vpcId: vpc-xxxxxxxxx
+  kortix-infra-prod:publicSubnets: '["subnet-aaa","subnet-bbb","subnet-ccc"]'
+  kortix-infra-prod:privateSubnets: '["subnet-ddd","subnet-eee","subnet-fff"]'
+
+  # Secrets (required — set via: pulumi config set --secret <key> <value>)
+  # kortix-infra-prod:secretsManagerArn:
+  #   secure: <encrypted>
+  # kortix-infra-prod:cloudflareTunnelId:
+  #   secure: <encrypted>
+
+  # Container (required)
+  kortix-infra-prod:containerImage: ghcr.io/kortix-ai/suna/suna-backend:prod
+
+  # Alerts (required)
+  kortix-infra-prod:alertEmails: '["ops@yourdomain.com"]'
+
+  # EKS cluster (optional — defaults shown)
+  # kortix-infra-prod:eksVersion: "1.31"
+  # kortix-infra-prod:apiNodeInstanceType: c7i.xlarge
+  # kortix-infra-prod:apiNodeMin: 2
+  # kortix-infra-prod:apiNodeMax: 8
+  # kortix-infra-prod:apiNodeDesired: 3
+  # kortix-infra-prod:burstNodeInstanceTypes: '["c7i.xlarge","c6i.xlarge"]'
+  # kortix-infra-prod:burstNodeMax: 10
+
+  # Pod config (optional — defaults shown)
+  # kortix-infra-prod:serviceName: suna-api
+  # kortix-infra-prod:containerPort: 8000
+  # kortix-infra-prod:healthCheckPath: /v1/health-docker
+  # kortix-infra-prod:podReplicas: 4
+  # kortix-infra-prod:podCpuRequest: 500m
+  # kortix-infra-prod:podCpuLimit: 1500m
+  # kortix-infra-prod:podMemoryRequest: 2Gi
+  # kortix-infra-prod:podMemoryLimit: 3Gi
+  # kortix-infra-prod:workersPerPod: 2
+
+  # Ingress / DNS (optional — defaults shown)
+  # kortix-infra-prod:primaryDomain: api-eks.kortix.com
+  # kortix-infra-prod:lightsailDomain: api-lightsail.kortix.com
+  # kortix-infra-prod:acmCertificateArn: arn:aws:acm:us-west-2:ACCOUNT:certificate/xxx
+
+  # Monitoring thresholds (optional — defaults shown)
+  # kortix-infra-prod:cpuWarningThreshold: 70
+  # kortix-infra-prod:cpuCriticalThreshold: 85
+  # kortix-infra-prod:memoryWarningThreshold: 75
+  # kortix-infra-prod:memoryCriticalThreshold: 90

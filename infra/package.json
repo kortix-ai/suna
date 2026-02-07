@@ -24,6 +24,8 @@
     "@pulumi/aws": "^7.7.0",
     "@pulumi/awsx": "^3.0.0",
     "@pulumi/cloudflare": "^5.0.0",
+    "@pulumi/eks": "^3.0.0",
+    "@pulumi/kubernetes": "^4.0.0",
     "@pulumi/pulumi": "^3.113.0",
     "@pulumi/random": "^4.0.0"
   },

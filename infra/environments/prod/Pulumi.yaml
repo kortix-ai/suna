@@ -1,5 +1,5 @@
 name: kortix-infra-prod
-description: Kortix PRODUCTION environment - ECS + Lightsail + Cloudflare Router
+description: Kortix PRODUCTION environment - EKS + Cloudflare Tunnel
 runtime:
   name: nodejs
   options:
