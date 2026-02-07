@@ -19,11 +19,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-# Mock daytona_sdk before any project imports — sandbox.py initializes the
-# Daytona client at module level which crashes without an API key.
-sys.modules.setdefault("daytona_sdk", MagicMock())
-sys.modules.setdefault("daytona_sdk.common", MagicMock())
-sys.modules.setdefault("daytona_sdk.common.errors", MagicMock())
+# Set dummy env vars so module-level initializers don't crash in CI.
+# These are never used — all external calls (sandbox, DB, LLM) are mocked.
+os.environ.setdefault("DAYTONA_API_KEY", "test-key")
+os.environ.setdefault("DAYTONA_SERVER_URL", "http://localhost")
+os.environ.setdefault("DAYTONA_TARGET", "local")
+os.environ.setdefault("MCP_CREDENTIAL_ENCRYPTION_KEY", "KEp9Zg9R1XO8EOcHoUH58dEkIQVJHIFKzKWKlpuQ6tY=")
+os.environ.setdefault("SUPABASE_URL", "http://localhost:54321")
+os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
+os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
+os.environ.setdefault("SUPABASE_JWT_SECRET", "test-jwt-secret")
 
 from core.agents.pipeline.stateless.coordinator.execution import ExecutionEngine
 
