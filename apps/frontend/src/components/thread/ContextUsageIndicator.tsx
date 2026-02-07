@@ -68,7 +68,7 @@ export const ContextUsageIndicator = ({
                 className={cn("w-5 h-5 -rotate-90")}
                 viewBox={`0 0 ${size} ${size}`}
                 role="img"
-                aria-label={summarizing ? "Summarizing context" : `Context usage ${percentage.toFixed(1)} percent`}
+                aria-label={summarizing ? "Summarizing context window" : `Context usage ${percentage.toFixed(1)} percent`}
               >
                 {/* Background track */}
                 <circle
@@ -114,7 +114,7 @@ export const ContextUsageIndicator = ({
             </div>
             {summarizing && (
               <span className="text-[11px] text-muted-foreground font-medium animate-pulse">
-                Compressing...
+                Summarizing...
               </span>
             )}
           </div>
@@ -127,7 +127,7 @@ export const ContextUsageIndicator = ({
           <div className="flex flex-col gap-1">
             {summarizing ? (
               <span className="text-muted-foreground text-[11px]">
-                Compressing context window
+                Summarizing context
               </span>
             ) : (
               <>
