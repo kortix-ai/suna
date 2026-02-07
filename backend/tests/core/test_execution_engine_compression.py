@@ -163,7 +163,7 @@ class TestContextExceeds200k:
 
         with patch("core.ai_models.model_manager.get_context_window", return_value=200_000), \
              patch("core.services.supabase.DBConnection", return_value=mock_db_conn), \
-             patch("core.agents.pipeline.stateless.context.archiver.resolve_sandbox", new_callable=AsyncMock, return_value=mock_sandbox_info), \
+             patch("core.sandbox.resolver.resolve_sandbox", new_callable=AsyncMock, return_value=mock_sandbox_info), \
              patch("core.services.llm.make_llm_api_call", side_effect=mock_make_llm_call), \
              patch("core.cache.runtime_cache.set_cached_message_history", new_callable=AsyncMock), \
              patch("core.agents.pipeline.ux_streaming.stream_summarizing", new_callable=AsyncMock):

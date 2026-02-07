@@ -5,7 +5,6 @@ from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 from core.utils.logger import logger
-from core.sandbox.resolver import resolve_sandbox
 
 
 @dataclass
@@ -61,6 +60,7 @@ class ContextArchiver:
         previous_summary: str = None
     ) -> ArchiveResult:
         """Archive messages to sandbox filesystem with per-file structure."""
+        from core.sandbox.resolver import resolve_sandbox
         sandbox_info = await resolve_sandbox(
             self.project_id,
             self.account_id,
