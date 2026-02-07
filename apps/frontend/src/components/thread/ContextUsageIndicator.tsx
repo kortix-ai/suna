@@ -137,13 +137,13 @@ export const ContextUsageIndicator = ({
                     {percentage.toFixed(0)}%
                   </span>
                 </div>
-                <div className="text-muted-foreground/60 font-mono text-[10px] tabular-nums">
+                <div className="text-muted-foreground font-mono text-[10px] tabular-nums">
                   {(current_tokens / 1000).toFixed(0)}k / {(context_window / 1000).toFixed(0)}k tokens
                 </div>
               </>
             )}
             {displayModelName && (
-              <div className="text-muted-foreground/50 text-[10px] mt-0.5 border-t border-border/40 pt-1">
+              <div className="text-muted-foreground text-[10px] mt-0.5 border-t border-border pt-1">
                 {displayModelName}
               </div>
             )}

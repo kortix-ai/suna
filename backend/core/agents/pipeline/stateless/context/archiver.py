@@ -84,34 +84,33 @@ class ContextArchiver:
 
         # Write individual message and tool result files
         total_before = manifest.get("total_archived", 0)
-        tool_results_written = await self._write_message_files(sandbox, messages, batch_number, total_before)
 
-        # Generate summary via LLM
-        summary_data = await self._generate_summary(messages, batch_number, model, previous_summary)
+        # Run file writes and LLM summary in parallel
+        file_write_task = self._write_message_files(sandbox, messages, batch_number, total_before)
+        summary_task = self._generate_summary(messages, batch_number, model, previous_summary)
+        tool_results_written, summary_data = await asyncio.gather(file_write_task, summary_task)
 
-        # Write summary file
+        # Write summary file + update manifest in parallel
         summary_path = f"{self.WORKSPACE_PATH}/{self.BASE_DIR}/summaries/batch_{batch_number:03d}.md"
         summary_content = self._format_summary_file(batch_number, messages, summary_data, tool_results_written, total_before)
-        await sandbox.fs.upload_file(summary_content.encode('utf-8'), summary_path)
 
-        logger.info(f"[ContextArchiver] Wrote batch {batch_number}: {len(messages)} messages, {len(tool_results_written)} tool results")
-
-        # Build retrieval hints
         retrieval_hints = self._build_retrieval_hints(summary_data, batch_number, len(messages))
-
-        # Estimate tokens
         tokens_archived = sum(len(str(m.get('content', ''))) // 4 for m in messages)
 
-        # Update manifest
-        await self._update_manifest(
-            sandbox=sandbox,
-            manifest=manifest,
-            batch_number=batch_number,
-            message_count=len(messages),
-            tool_results=list(tool_results_written.keys()),
-            topics=summary_data.get("topics", []),
-            key_facts=summary_data.get("facts", {})
+        await asyncio.gather(
+            sandbox.fs.upload_file(summary_content.encode('utf-8'), summary_path),
+            self._update_manifest(
+                sandbox=sandbox,
+                manifest=manifest,
+                batch_number=batch_number,
+                message_count=len(messages),
+                tool_results=list(tool_results_written.keys()),
+                topics=summary_data.get("topics", []),
+                key_facts=summary_data.get("facts", {})
+            )
         )
+
+        logger.info(f"[ContextArchiver] Wrote batch {batch_number}: {len(messages)} messages, {len(tool_results_written)} tool results")
 
         return ArchiveResult(
             batch_number=batch_number,
@@ -205,16 +204,17 @@ class ContextArchiver:
             pass
 
         tool_results_written = {}
+        upload_tasks = []
 
         for i, msg in enumerate(messages, 1):
             global_num = total_before + i
             role = msg.get('role', 'unknown')
 
-            # Write message file (user/assistant/tool all in order)
+            # Prepare message file
             filename = f"MSG-{global_num:03d}_{role}.md"
             filepath = f"{batch_dir}/{filename}"
             msg_content = self._format_message_file(global_num, msg)
-            await sandbox.fs.upload_file(msg_content.encode('utf-8'), filepath)
+            upload_tasks.append(sandbox.fs.upload_file(msg_content.encode('utf-8'), filepath))
 
             # Track tool results for summary reference
             if role == 'tool':
@@ -228,8 +228,11 @@ class ContextArchiver:
                 for tc in tool_calls:
                     tc_id = tc.get('id', '')
                     if tc_id:
-                        # Store tool call info (the result will come in a tool message)
                         tool_results_written[tc_id] = f"MSG-{global_num:03d}_assistant.md"
+
+        # Upload all files in parallel
+        if upload_tasks:
+            await asyncio.gather(*upload_tasks)
 
         return tool_results_written
 

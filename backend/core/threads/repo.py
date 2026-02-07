@@ -809,9 +809,11 @@ async def get_llm_messages_paginated(
 
 
 async def get_llm_messages_from_last_summary(thread_id: str) -> List[Dict[str, Any]]:
-    """Fetch only messages from the last archive summary onward.
+    """Fetch messages from the last archive summary onward, plus working memory.
 
-    If no summary exists, returns all LLM messages.
+    Working memory messages (kept in context during compression) have timestamps
+    BEFORE the summary. We include the last 10 messages before the summary to
+    capture them.
     """
     sql = """
     WITH last_summary AS (
@@ -822,6 +824,18 @@ async def get_llm_messages_from_last_summary(thread_id: str) -> List[Dict[str, A
           AND metadata->>'_is_summary_inline' = 'true'
         ORDER BY created_at DESC
         LIMIT 1
+    ),
+    working_memory_cutoff AS (
+        SELECT MIN(created_at) as cutoff_at
+        FROM (
+            SELECT created_at
+            FROM messages
+            WHERE thread_id = :thread_id
+              AND is_llm_message = true
+              AND created_at < (SELECT created_at FROM last_summary)
+            ORDER BY created_at DESC
+            LIMIT 10
+        ) recent
     )
     SELECT message_id, type, content, metadata
     FROM messages
@@ -830,6 +844,7 @@ async def get_llm_messages_from_last_summary(thread_id: str) -> List[Dict[str, A
       AND (metadata->>'omitted' IS NULL OR metadata->>'omitted' != 'true')
       AND type != 'image_context'
       AND created_at >= COALESCE(
+          (SELECT cutoff_at FROM working_memory_cutoff),
           (SELECT created_at FROM last_summary),
           '1970-01-01T00:00:00Z'::timestamptz
       )
