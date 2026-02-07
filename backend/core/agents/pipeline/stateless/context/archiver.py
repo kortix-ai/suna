@@ -25,6 +25,7 @@ class ArchiveResult:
     tool_results_count: int
     tokens_archived: int
     key_facts: Dict[str, Any] = field(default_factory=dict)
+    full_summary_content: str = ""
 
 
 class ContextArchiver:
@@ -121,7 +122,8 @@ class ContextArchiver:
             message_count=len(messages),
             tool_results_count=len(tool_results_written),
             tokens_archived=tokens_archived,
-            key_facts=summary_data.get("facts", {})
+            key_facts=summary_data.get("facts", {}),
+            full_summary_content=summary_content,
         )
 
     async def _ensure_directories(self, sandbox) -> None:
@@ -344,6 +346,42 @@ class ContextArchiver:
             ""
         ]
 
+        # Key facts
+        facts = summary_data.get("facts", {})
+        if facts:
+            lines.append("## Key Facts")
+            if facts.get("project_name"):
+                lines.append(f"- Project: {facts['project_name']}")
+            if facts.get("tech_stack"):
+                lines.append(f"- Stack: {', '.join(facts['tech_stack'][:5])}")
+            if facts.get("current_goal"):
+                lines.append(f"- Goal: {facts['current_goal']}")
+            if facts.get("user_preferences"):
+                prefs = facts["user_preferences"]
+                if isinstance(prefs, list):
+                    lines.append(f"- Preferences: {', '.join(prefs[:3])}")
+            lines.append("")
+
+        # Preserve user requests so original intent is never lost from archives
+        user_messages = [
+            m for m in messages
+            if m.get('role') == 'user' and not m.get('_is_summary_inline')
+        ]
+        if user_messages:
+            lines.append("## User Requests")
+            for req_i, msg in enumerate(user_messages, 1):
+                req_content = msg.get('content', '')
+                if isinstance(req_content, list):
+                    text_parts = [
+                        b.get('text', '') for b in req_content
+                        if isinstance(b, dict) and b.get('type') == 'text'
+                    ]
+                    req_content = '\n'.join(text_parts)
+                req_content = str(req_content)[:2000]
+                lines.append(f"### Request {req_i}")
+                lines.append(req_content)
+                lines.append("")
+
         # Key decisions
         if summary_data.get("key_decisions"):
             lines.append("## Key Decisions")
@@ -360,10 +398,11 @@ class ContextArchiver:
             role = msg.get('role', 'unknown')
             content = msg.get('content', '')
 
-            # Get short preview of content
+            # Get short preview of content (longer for user messages to preserve intent)
+            preview_limit = 500 if role == 'user' else 80
             if isinstance(content, str):
-                preview = content[:80].replace('\n', ' ')
-                if len(content) > 80:
+                preview = content[:preview_limit].replace('\n', ' ')
+                if len(content) > preview_limit:
                     preview += "..."
             elif isinstance(content, list):
                 # Extract text from content blocks
@@ -395,15 +434,8 @@ class ContextArchiver:
         lines.append(f"# Search all archived content")
         lines.append(f"grep -ri \"keyword\" /workspace/{self.BASE_DIR}/")
         lines.append("")
-        lines.append(f"# Read specific message")
+        lines.append(f"# Read specific message or tool result")
         lines.append(f"read_file(\"{self.BASE_DIR}/messages/batch_{batch_number:03d}/MSG-{msg_start:03d}_user.md\")")
-        lines.append("")
-        lines.append(f"# Read specific tool result")
-        if tool_results:
-            example_id = list(tool_results.keys())[0]
-            lines.append(f"read_file(\"{self.BASE_DIR}/tool_results/{example_id}.md\")")
-        else:
-            lines.append(f"read_file(\"{self.BASE_DIR}/tool_results/{{tool_call_id}}.md\")")
         lines.append("```")
 
         return "\n".join(lines)
@@ -540,47 +572,5 @@ Return ONLY valid JSON."""
 
 
 def format_archive_summary(result: ArchiveResult) -> str:
-    """Format the archive result as a concise summary for the agent's context."""
-    batch_num = result.batch_number
-
-    # Topics
-    topics = [hint.topic for hint in result.retrieval_hints[:5]]
-    topics_str = ", ".join(topics) if topics else "general"
-
-    # Key facts
-    facts_lines = []
-    if result.key_facts:
-        if result.key_facts.get("project_name"):
-            facts_lines.append(f"- Project: {result.key_facts['project_name']}")
-        if result.key_facts.get("tech_stack"):
-            facts_lines.append(f"- Stack: {', '.join(result.key_facts['tech_stack'][:5])}")
-        if result.key_facts.get("current_goal"):
-            facts_lines.append(f"- Goal: {result.key_facts['current_goal']}")
-    facts_section = "\n".join(facts_lines) if facts_lines else "None extracted"
-
-    base_dir = ContextArchiver.BASE_DIR
-
-    return f"""[ARCHIVED CONTEXT - Batch {batch_num:03d}: {result.message_count} messages, {result.tool_results_count} tool results]
-
-## Summary
-{result.summary}
-
-## Key Facts
-{facts_section}
-
-## Topics
-{topics_str}
-
-## Retrieval
-```bash
-# Search archived content
-grep -ri "keyword" /workspace/{base_dir}/
-
-# Read specific message
-read_file("{base_dir}/messages/batch_{batch_num:03d}/MSG-XXX_role.md")
-
-# Read specific tool result
-read_file("{base_dir}/tool_results/{{tool_call_id}}.md")
-```
-
-Full summary: {base_dir}/summaries/batch_{batch_num:03d}.md"""
+    """Return the full disk summary content for the agent's context."""
+    return result.full_summary_content

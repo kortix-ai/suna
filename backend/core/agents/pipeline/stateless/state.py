@@ -29,7 +29,6 @@ class PendingWrite:
     created_at: float = field(default_factory=time.time)
 
 class RunState:
-    MAX_MESSAGES: ClassVar[int] = stateless_config.MAX_MESSAGES
     MAX_TOOL_RESULTS: ClassVar[int] = stateless_config.MAX_TOOL_RESULTS
     MAX_PENDING_WRITES: ClassVar[int] = stateless_config.MAX_PENDING_WRITES
     MAX_DURATION_SECONDS: ClassVar[int] = stateless_config.MAX_DURATION_SECONDS
@@ -59,7 +58,7 @@ class RunState:
         self.system_prompt: Optional[Dict[str, Any]] = None
         self.tool_schemas: Optional[List[Dict[str, Any]]] = None
 
-        self._messages: Deque[Dict[str, Any]] = deque(maxlen=self.MAX_MESSAGES)
+        self._messages: Deque[Dict[str, Any]] = deque()
         self._tool_results: OrderedDict[str, ToolResult] = OrderedDict()
         self._pending_tool_calls: List[Dict[str, Any]] = []
         self._accumulated_content: str = ""
@@ -113,13 +112,13 @@ class RunState:
 
             cached = await get_cached_message_history(self.thread_id)
             if cached:
-                for msg in cached[-self.MAX_MESSAGES:]:
+                for msg in cached:
                     self._messages.append(msg)
                 return
 
             fetcher = MessageFetcher()
             messages = await fetcher.get_llm_messages(self.thread_id, lightweight=False)
-            for msg in messages[-self.MAX_MESSAGES:]:
+            for msg in messages:
                 self._messages.append(msg)
         except Exception as e:
             logger.warning(f"[RunState] Load messages failed: {e}")
@@ -236,6 +235,7 @@ class RunState:
         msg_with_id["message_id"] = message_id
 
         self._messages.append(msg_with_id)
+
         self._last_activity = time.time()
 
         self._pending_writes.append(PendingWrite(
@@ -301,6 +301,7 @@ class RunState:
             msg_with_id["reasoning_content"] = self._accumulated_reasoning
 
         self._messages.append(msg_with_id)
+
         self._last_activity = time.time()
 
         self._pending_writes.append(PendingWrite(

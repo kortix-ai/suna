@@ -129,7 +129,7 @@ class MessageFetcher:
     
     async def _fetch_from_db(self, thread_id: str, lightweight: bool, threads_repo, _time) -> List[Dict[str, Any]]:
         all_messages = []
-        
+
         if lightweight:
             logger.info(f"📊 Starting lightweight message fetch for thread {thread_id}")
             t0 = _time.time()
@@ -140,27 +140,16 @@ class MessageFetcher:
             elapsed = (_time.time() - t0) * 1000
             logger.info(f"📊 Lightweight message fetch completed: {elapsed:.0f}ms, {len(all_messages)} messages")
         else:
-            batch_size = 1000
-            offset = 0
-            
-            while True:
-                logger.info(f"📊 Starting message fetch (offset={offset}) for thread {thread_id}")
-                t0 = _time.time()
-                batch = await asyncio.wait_for(
-                    threads_repo.get_llm_messages_paginated(thread_id, offset=offset, batch_size=batch_size),
-                    timeout=MESSAGE_QUERY_TIMEOUT
-                )
-                elapsed = (_time.time() - t0) * 1000
-                logger.info(f"📊 Message fetch (offset={offset}) completed: {elapsed:.0f}ms, {len(batch)} messages")
-                
-                if not batch:
-                    break
-                
-                all_messages.extend(batch)
-                if len(batch) < batch_size:
-                    break
-                offset += batch_size
-        
+            # Optimized: only fetch from the last summary onward
+            logger.info(f"📊 Starting optimized message fetch for thread {thread_id}")
+            t0 = _time.time()
+            all_messages = await asyncio.wait_for(
+                threads_repo.get_llm_messages_from_last_summary(thread_id),
+                timeout=MESSAGE_QUERY_TIMEOUT
+            )
+            elapsed = (_time.time() - t0) * 1000
+            logger.info(f"📊 Optimized message fetch completed: {elapsed:.0f}ms, {len(all_messages)} messages")
+
         return all_messages
     
     def _parse_messages(self, all_messages: List[Dict[str, Any]], lightweight: bool) -> List[Dict[str, Any]]:
