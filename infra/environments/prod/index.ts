@@ -31,7 +31,7 @@ const serviceConfig = {
 
 const eksConfig = {
   version: config.get("eksVersion") || "1.31",
-  apiNodeInstanceType: config.get("apiNodeInstanceType") || "c7i.xlarge",
+  apiNodeInstanceType: config.get("apiNodeInstanceType") || "c7i.2xlarge",
   apiNodeMin: config.getNumber("apiNodeMin") || 2,
   apiNodeMax: config.getNumber("apiNodeMax") || 8,
   apiNodeDesired: config.getNumber("apiNodeDesired") || 3,
