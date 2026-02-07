@@ -12,10 +12,18 @@ import os
 import uuid
 import json
 import pytest
+
+pytestmark = pytest.mark.filterwarnings("ignore::UserWarning")
 from typing import List, Dict, Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+
+# Mock daytona_sdk before any project imports — sandbox.py initializes the
+# Daytona client at module level which crashes without an API key.
+sys.modules.setdefault("daytona_sdk", MagicMock())
+sys.modules.setdefault("daytona_sdk.common", MagicMock())
+sys.modules.setdefault("daytona_sdk.common.errors", MagicMock())
 
 from core.agents.pipeline.stateless.coordinator.execution import ExecutionEngine
 
