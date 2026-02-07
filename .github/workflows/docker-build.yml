@@ -267,7 +267,7 @@ jobs:
         run: |
           echo "Syncing secrets from AWS Secrets Manager..."
           SECRET_JSON=$(aws secretsmanager get-secret-value \
-            --secret-id suna/prod/env \
+            --secret-id suna-env-prod \
             --query SecretString \
             --output text)
 
