@@ -282,7 +282,7 @@ jobs:
 
       - name: Deploy to EKS
         run: |
-          IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ needs.build.outputs.image_tag }}"
+          IMAGE="${REGISTRY}/${IMAGE_NAME}:${{ github.sha }}"
           echo "🚀 Deploying $IMAGE to EKS..."
 
           kubectl set image deployment/suna-api -n suna \
