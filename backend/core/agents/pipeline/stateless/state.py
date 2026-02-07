@@ -29,7 +29,6 @@ class PendingWrite:
     created_at: float = field(default_factory=time.time)
 
 class RunState:
-    MAX_MESSAGES: ClassVar[int] = stateless_config.MAX_MESSAGES
     MAX_TOOL_RESULTS: ClassVar[int] = stateless_config.MAX_TOOL_RESULTS
     MAX_PENDING_WRITES: ClassVar[int] = stateless_config.MAX_PENDING_WRITES
     MAX_DURATION_SECONDS: ClassVar[int] = stateless_config.MAX_DURATION_SECONDS
@@ -59,7 +58,7 @@ class RunState:
         self.system_prompt: Optional[Dict[str, Any]] = None
         self.tool_schemas: Optional[List[Dict[str, Any]]] = None
 
-        self._messages: Deque[Dict[str, Any]] = deque(maxlen=self.MAX_MESSAGES)
+        self._messages: Deque[Dict[str, Any]] = deque()
         self._tool_results: OrderedDict[str, ToolResult] = OrderedDict()
         self._pending_tool_calls: List[Dict[str, Any]] = []
         self._accumulated_content: str = ""
@@ -99,30 +98,51 @@ class RunState:
         return state
 
     async def _load_initial_state(self) -> None:
-        await asyncio.gather(
+        results = await asyncio.gather(
             self._load_messages(),
             self._check_credits(),
             return_exceptions=True,
         )
-        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs, credits OK")
+        # If message loading raised an exception, retry once
+        if isinstance(results[0], Exception):
+            logger.warning(f"[RunState] Message load failed ({results[0]}), retrying from DB...")
+            try:
+                await self._load_messages_from_db()
+            except Exception as e:
+                logger.error(f"[RunState] Message load retry failed: {e}")
+        # Also retry if loaded 0 messages (possible DB/cache race)
+        elif len(self._messages) == 0:
+            logger.warning(f"[RunState] Message load returned 0 messages, retrying from DB...")
+            try:
+                await self._load_messages_from_db()
+            except Exception as e:
+                logger.error(f"[RunState] Message load retry failed: {e}")
+
+        logger.info(f"[RunState] {self.run_id}: {len(self._messages)} msgs loaded")
 
     async def _load_messages(self) -> None:
-        try:
-            from core.cache.runtime_cache import get_cached_message_history
-            from core.agentpress.thread_manager.services.messages.fetcher import MessageFetcher
+        from core.cache.runtime_cache import get_cached_message_history
+        from core.agentpress.thread_manager.services.messages.fetcher import MessageFetcher
 
-            cached = await get_cached_message_history(self.thread_id)
-            if cached:
-                for msg in cached[-self.MAX_MESSAGES:]:
-                    self._messages.append(msg)
-                return
-
-            fetcher = MessageFetcher()
-            messages = await fetcher.get_llm_messages(self.thread_id, lightweight=False)
-            for msg in messages[-self.MAX_MESSAGES:]:
+        cached = await get_cached_message_history(self.thread_id)
+        if cached:
+            for msg in cached:
                 self._messages.append(msg)
-        except Exception as e:
-            logger.warning(f"[RunState] Load messages failed: {e}")
+            return
+
+        fetcher = MessageFetcher()
+        messages = await fetcher.get_llm_messages(self.thread_id, lightweight=False)
+        for msg in messages:
+            self._messages.append(msg)
+
+    async def _load_messages_from_db(self) -> None:
+        """Fallback: load directly from DB, bypassing cache."""
+        from core.agentpress.thread_manager.services.messages.fetcher import MessageFetcher
+
+        fetcher = MessageFetcher()
+        messages = await fetcher.get_llm_messages(self.thread_id, lightweight=False)
+        for msg in messages:
+            self._messages.append(msg)
 
     async def _check_credits(self) -> None:
         try:
@@ -231,11 +251,12 @@ class RunState:
     def add_message(self, msg: Dict[str, Any], metadata: Optional[Dict[str, Any]] = None) -> str:
         self._message_counter += 1
         message_id = str(uuid.uuid4())
-        
+
         msg_with_id = msg.copy()
         msg_with_id["message_id"] = message_id
 
         self._messages.append(msg_with_id)
+
         self._last_activity = time.time()
 
         self._pending_writes.append(PendingWrite(
@@ -243,7 +264,7 @@ class RunState:
             data={
                 "message_id": message_id,
                 "thread_id": self.thread_id,
-                "type": msg.get("role", "assistant"),
+                "type": msg.get("_db_type") or msg.get("role", "assistant"),
                 "content": msg,
                 "metadata": metadata or {},
                 "is_llm_message": True,
@@ -301,6 +322,7 @@ class RunState:
             msg_with_id["reasoning_content"] = self._accumulated_reasoning
 
         self._messages.append(msg_with_id)
+
         self._last_activity = time.time()
 
         self._pending_writes.append(PendingWrite(

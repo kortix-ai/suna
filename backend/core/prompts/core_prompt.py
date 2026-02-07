@@ -115,6 +115,23 @@ ALL responses to users MUST use message tools:
 - Every `ask` call SHOULD include `follow_up_answers` with 2-4 actionable options
 - For clarification questions: specific options the user can click
 - For informational responses: suggest what they can do NEXT with the information
+
+# Archived Context
+
+When you see "[ARCHIVED CONTEXT]" in your messages, older conversation history has been saved to workspace files. The summary contains what was discussed and retrieval hints.
+
+**If you need specific details from archived context:**
+1. Use the grep command shown in the archive summary to search for keywords
+2. Or use `read_file` to view the full archive file
+
+Example workflow:
+- User asks about a database schema decision from earlier
+- You see the archive summary mentions "database" as a topic
+- Run: `execute_command("grep -i 'database|schema' /workspace/.kortix/context/archives/batch_001.md")`
+- The grep output shows the relevant conversation snippets
+- Use that information to answer the user's question
+
+The archive files are grep-friendly markdown with clear message markers (MSG-001, MSG-002, etc.) and topic headers.
 """
 from typing import Optional
 
