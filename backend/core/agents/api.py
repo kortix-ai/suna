@@ -469,53 +469,59 @@ async def start_agent_run(
     
     cancellation_event = asyncio.Event()
     _cancellation_events[agent_run_id] = cancellation_event
-    
-    stream_key = f"agent_run:{agent_run_id}:stream"
-    
-    asyncio.create_task(stream_ack(stream_key, agent_run_id))
-    
-    has_mcp = bool(agent_config and agent_config.get('mcp_servers'))
-    estimate = time_estimator.estimate(
-        model_name=effective_model,
-        has_mcp=has_mcp,
-        is_continuation=False
-    )
-    asyncio.create_task(stream_estimate(
-        stream_key,
-        estimate.estimated_seconds,
-        estimate.confidence,
-        estimate.breakdown.to_dict()
-    ))
 
-    if is_new_thread:
-        from core.cache.runtime_cache import set_pending_thread, set_agent_run_stream_data
-        await set_pending_thread(
-            thread_id=thread_id,
-            project_id=project_id,
-            account_id=account_id,
-            agent_run_id=agent_run_id,
-            prompt=prompt
+    try:
+        stream_key = f"agent_run:{agent_run_id}:stream"
+
+        asyncio.create_task(stream_ack(stream_key, agent_run_id))
+
+        has_mcp = bool(agent_config and agent_config.get('mcp_servers'))
+        estimate = time_estimator.estimate(
+            model_name=effective_model,
+            has_mcp=has_mcp,
+            is_continuation=False
         )
-        await set_agent_run_stream_data(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            account_id=account_id,
-            status="running",
-            metadata=metadata
-        )
-    else:
-        from core.cache.runtime_cache import set_agent_run_stream_data
-        await set_agent_run_stream_data(
-            agent_run_id=agent_run_id,
-            thread_id=thread_id,
-            account_id=account_id,
-            status="running",
-            metadata=metadata
-        )
+        asyncio.create_task(stream_estimate(
+            stream_key,
+            estimate.estimated_seconds,
+            estimate.confidence,
+            estimate.breakdown.to_dict()
+        ))
+
+        if is_new_thread:
+            from core.cache.runtime_cache import set_pending_thread, set_agent_run_stream_data
+            await set_pending_thread(
+                thread_id=thread_id,
+                project_id=project_id,
+                account_id=account_id,
+                agent_run_id=agent_run_id,
+                prompt=prompt
+            )
+            await set_agent_run_stream_data(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                account_id=account_id,
+                status="running",
+                metadata=metadata
+            )
+        else:
+            from core.cache.runtime_cache import set_agent_run_stream_data
+            await set_agent_run_stream_data(
+                agent_run_id=agent_run_id,
+                thread_id=thread_id,
+                account_id=account_id,
+                status="running",
+                metadata=metadata
+            )
+    except Exception:
+        # Clean up cancellation event if setup between event creation
+        # and background task launch fails
+        _cancellation_events.pop(agent_run_id, None)
+        raise
 
     setup_time_ms = round((time.time() - total_start) * 1000, 1)
     logger.info(f"⚡ [FAST RESPONSE] Returning in {setup_time_ms}ms (thread={thread_id}, run={agent_run_id})")
-    
+
     logger.info(f"[START_AGENT] Creating background task for agent_run_id={agent_run_id}, thread_id={thread_id}")
     asyncio.create_task(_background_setup_and_execute(
         account_id=account_id,

@@ -14,6 +14,23 @@ from core.utils.logger import logger
 from core.services.supabase import DBConnection
 from core.services.llm import make_llm_api_call
 
+
+async def _invalidate_kb_cache_for_entry(client, entry_id: str) -> None:
+    """Invalidate KB context cache for all agents that have this entry assigned."""
+    try:
+        from core.cache.runtime_cache import invalidate_kb_context_cache
+        result = await client.table('agent_knowledge_entry_assignments').select(
+            'agent_id'
+        ).eq('entry_id', entry_id).execute()
+        agent_ids = set(row['agent_id'] for row in (result.data or []))
+        for agent_id in agent_ids:
+            await invalidate_kb_context_cache(agent_id)
+        if agent_ids:
+            logger.debug(f"🗑️ Invalidated KB cache for {len(agent_ids)} agents after entry summary update")
+    except Exception as e:
+        logger.warning(f"Failed to invalidate KB cache after entry update: {e}")
+
+
 class FileProcessor:
     SUPPORTED_EXTENSIONS = {'.txt', '.pdf', '.docx'}
     MAX_FILE_SIZE = 50 * 1024 * 1024
@@ -168,6 +185,7 @@ class FileProcessor:
                 'summary': summary
             }).eq('entry_id', entry_id).execute()
             
+            await _invalidate_kb_cache_for_entry(client, entry_id)
             logger.info(f"Successfully generated summary for entry {entry_id}")
             
         except Exception as e:
@@ -178,7 +196,8 @@ class FileProcessor:
                 await client.table('knowledge_base_entries').update({
                     'summary': f"Error generating summary: {str(e)}"
                 }).eq('entry_id', entry_id).execute()
-            except:
+                await _invalidate_kb_cache_for_entry(client, entry_id)
+            except Exception:
                 pass
 
     async def process_file(
