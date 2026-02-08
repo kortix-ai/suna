@@ -7,6 +7,7 @@ services:
       - OPENCODE_SERVER_USERNAME=${OPENCODE_SERVER_USERNAME:-admin}
       - OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:-changeme}
       - KORTIX_API_URL=${KORTIX_API_URL:-https://api.kortix.ai}
+      - KORTIX_LLM_URL=${KORTIX_LLM_URL:-https://api.kortix.ai/v1}
       - KORTIX_TOKEN=${KORTIX_TOKEN:-}
       - SANDBOX_ID=${SANDBOX_ID:-local}
       - PROJECT_ID=${PROJECT_ID:-local}

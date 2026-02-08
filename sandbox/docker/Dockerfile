@@ -27,6 +27,9 @@ RUN mkdir -p /root/.config/opencode/agents && \
 RUN mkdir -p /root/.config/opencode/plugin && \
     cp /app/kortix-master/plugin/kortix.ts /root/.config/opencode/plugin/kortix.ts
 
+# Install OpenCode config (Kortix as default provider)
+RUN cp /app/kortix-master/opencode.json /root/.config/opencode/opencode.json
+
 # Plugin needs deps in opencode config dir
 RUN cp /app/kortix-master/package.json /root/.config/opencode/package.json && \
     cd /root/.config/opencode && bun install

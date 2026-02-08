@@ -1,211 +1,136 @@
-import { calculateLLMCost } from '../../config';
-import type { ChatCompletionRequest, LLMProxyResult, TokenUsage } from '../../types/llm';
-import { getEffectiveProvider, normalizeModelId } from './providers';
-import { createStreamingProxy, createAnthropicStreamingProxy } from './streaming';
+import { generateText, streamText } from 'ai';
+import { getModel, getAllModels, type ModelConfig } from '../../config/models';
+
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
+export interface ChatCompletionRequest {
+  model: string;
+  messages: ChatMessage[];
+  max_tokens?: number;
+  temperature?: number;
+  stream?: boolean;
+  session_id?: string;
+}
+
+export interface LLMResult {
+  success: boolean;
+  text?: string;
+  usage?: {
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  modelConfig?: ModelConfig;
+  error?: string;
+}
+
+export interface LLMStreamResult {
+  success: boolean;
+  stream?: AsyncIterable<string>;
+  usagePromise?: Promise<{
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  }>;
+  modelConfig?: ModelConfig;
+  error?: string;
+}
 
 /**
- * Proxy a chat completion request to the appropriate LLM provider.
- *
- * For streaming requests, returns the raw Response for passthrough.
- * For non-streaming, parses the response to extract usage for billing.
+ * Generate text (non-streaming).
  */
-export async function proxyChatCompletion(
-  request: ChatCompletionRequest,
-  accountId: string
-): Promise<LLMProxyResult> {
-  const effective = getEffectiveProvider(request.model);
-
-  if (!effective) {
-    return {
-      success: false,
-      error: 'No LLM provider configured. Set OPENROUTER_API_KEY in environment.',
-    };
-  }
-
-  const { provider, config: providerConfig, modelId } = effective;
-
+export async function generate(request: ChatCompletionRequest): Promise<LLMResult> {
   try {
-    // Determine endpoint
-    const endpoint = provider === 'anthropic'
-      ? `${providerConfig.apiUrl}/messages`
-      : `${providerConfig.apiUrl}/chat/completions`;
+    const modelConfig = getModel(request.model);
 
-    // Transform request if needed (e.g., Anthropic format)
-    const body = providerConfig.transformRequest
-      ? providerConfig.transformRequest({ ...request, model: normalizeModelId(modelId, provider) })
-      : {
-          ...request,
-          model: normalizeModelId(modelId, provider),
-          // Remove custom fields that providers don't understand
-          session_id: undefined,
-        };
+    console.log(`[LLM] Generating with ${request.model}`);
 
-    // Build headers
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...providerConfig.headers,
-    };
-
-    // Add Authorization header (except for Anthropic which uses x-api-key)
-    if (provider !== 'anthropic') {
-      headers['Authorization'] = `Bearer ${providerConfig.apiKey}`;
-    }
-
-    console.log(
-      `[LLM] Proxying to ${provider}: ${body.model || modelId} (stream=${request.stream}, account=${accountId})`
-    );
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
+    const result = await generateText({
+      model: modelConfig.model,
+      messages: request.messages,
+      maxOutputTokens: request.max_tokens,
+      temperature: request.temperature,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`[LLM] Provider ${provider} error: ${response.status} - ${errorText.slice(0, 500)}`);
+    const inputTokens = result.usage.inputTokens ?? 0;
+    const outputTokens = result.usage.outputTokens ?? 0;
 
-      return {
-        success: false,
-        error: `Provider error (${response.status}): ${errorText.slice(0, 200)}`,
-        provider,
-      };
-    }
-
-    // Handle streaming response
-    if (request.stream) {
-      let usage: TokenUsage | undefined;
-
-      // Create appropriate streaming proxy based on provider
-      const streamBody = provider === 'anthropic'
-        ? createAnthropicStreamingProxy(response, (u) => { usage = u; })
-        : createStreamingProxy(response, (u) => { usage = u; });
-
-      const streamResponse = new Response(streamBody, {
-        status: 200,
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-          'X-Kortix-Provider': provider,
-        },
-      });
-
-      return {
-        success: true,
-        response: streamResponse,
-        provider,
-        // Usage will be extracted during streaming
-      };
-    }
-
-    // Handle non-streaming response
-    const data = await response.json();
-
-    // Transform response if needed (e.g., Anthropic to OpenAI format)
-    let transformedData = data;
-    if (provider === 'anthropic') {
-      transformedData = transformAnthropicResponse(data);
-    }
-
-    // Extract usage
-    const usage = providerConfig.extractUsage?.(data);
-    const cost = usage
-      ? calculateLLMCost(provider, usage.inputTokens, usage.outputTokens, usage.cost)
-      : 0;
-
-    console.log(
-      `[LLM] Response from ${provider}: ${usage?.inputTokens || 0} in / ${usage?.outputTokens || 0} out tokens, cost=$${cost.toFixed(6)}`
-    );
+    console.log(`[LLM] Generated: ${inputTokens} in / ${outputTokens} out tokens`);
 
     return {
       success: true,
-      response: new Response(JSON.stringify(transformedData), {
-        status: 200,
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Kortix-Provider': provider,
-        },
-      }),
-      usage: usage
-        ? { ...usage, totalTokens: usage.inputTokens + usage.outputTokens }
-        : undefined,
-      provider,
+      text: result.text,
+      usage: {
+        promptTokens: inputTokens,
+        completionTokens: outputTokens,
+        totalTokens: inputTokens + outputTokens,
+      },
+      modelConfig,
     };
   } catch (error) {
-    console.error(`[LLM] Proxy error for ${provider}:`, error);
-
+    console.error('[LLM] Generate error:', error);
     return {
       success: false,
-      error: `Proxy error: ${error instanceof Error ? error.message : String(error)}`,
-      provider,
+      error: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
 /**
- * Transform Anthropic Messages API response to OpenAI format.
+ * Stream text.
  */
-function transformAnthropicResponse(anthropicResponse: any): any {
-  const content = anthropicResponse.content?.[0];
+export async function stream(request: ChatCompletionRequest): Promise<LLMStreamResult> {
+  try {
+    const modelConfig = getModel(request.model);
 
-  return {
-    id: anthropicResponse.id || `chatcmpl-${Date.now()}`,
-    object: 'chat.completion',
-    created: Math.floor(Date.now() / 1000),
-    model: anthropicResponse.model,
-    choices: [
-      {
-        index: 0,
-        message: {
-          role: 'assistant',
-          content: content?.type === 'text' ? content.text : '',
-        },
-        finish_reason: anthropicResponse.stop_reason === 'end_turn' ? 'stop' : anthropicResponse.stop_reason,
-      },
-    ],
-    usage: {
-      prompt_tokens: anthropicResponse.usage?.input_tokens || 0,
-      completion_tokens: anthropicResponse.usage?.output_tokens || 0,
-      total_tokens:
-        (anthropicResponse.usage?.input_tokens || 0) + (anthropicResponse.usage?.output_tokens || 0),
-    },
-  };
+    console.log(`[LLM] Streaming with ${request.model}`);
+
+    const result = streamText({
+      model: modelConfig.model,
+      messages: request.messages,
+      maxOutputTokens: request.max_tokens,
+      temperature: request.temperature,
+    });
+
+    return {
+      success: true,
+      stream: result.textStream,
+      usagePromise: (async () => {
+        const usage = await result.usage;
+        const inputTokens = usage.inputTokens ?? 0;
+        const outputTokens = usage.outputTokens ?? 0;
+        return {
+          promptTokens: inputTokens,
+          completionTokens: outputTokens,
+          totalTokens: inputTokens + outputTokens,
+        };
+      })(),
+      modelConfig,
+    };
+  } catch (error) {
+    console.error('[LLM] Stream error:', error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 /**
- * Get list of available models.
- * Returns a curated list of popular models from configured providers.
+ * Calculate cost based on token usage and model pricing.
  */
-export function getAvailableModels(): Array<{ id: string; object: string; created: number; owned_by: string }> {
-  const models = [
-    // OpenRouter models (always available if configured)
-    { id: 'openrouter/anthropic/claude-sonnet-4', owned_by: 'openrouter' },
-    { id: 'openrouter/anthropic/claude-3.5-sonnet', owned_by: 'openrouter' },
-    { id: 'openrouter/anthropic/claude-3-opus', owned_by: 'openrouter' },
-    { id: 'openrouter/anthropic/claude-3-haiku', owned_by: 'openrouter' },
-    { id: 'openrouter/openai/gpt-4o', owned_by: 'openrouter' },
-    { id: 'openrouter/openai/gpt-4o-mini', owned_by: 'openrouter' },
-    { id: 'openrouter/openai/o1', owned_by: 'openrouter' },
-    { id: 'openrouter/openai/o1-mini', owned_by: 'openrouter' },
-    { id: 'openrouter/x-ai/grok-2', owned_by: 'openrouter' },
-    { id: 'openrouter/google/gemini-2.5-pro', owned_by: 'openrouter' },
-    { id: 'openrouter/google/gemini-2.5-flash', owned_by: 'openrouter' },
-    { id: 'openrouter/meta-llama/llama-4-maverick', owned_by: 'openrouter' },
-    { id: 'openrouter/deepseek/deepseek-r1', owned_by: 'openrouter' },
-    { id: 'openrouter/qwen/qwen-3-coder', owned_by: 'openrouter' },
-  ];
-
-  const now = Math.floor(Date.now() / 1000);
-
-  return models.map((m) => ({
-    id: m.id,
-    object: 'model' as const,
-    created: now,
-    owned_by: m.owned_by,
-  }));
+export function calculateCost(
+  modelConfig: ModelConfig,
+  promptTokens: number,
+  completionTokens: number
+): number {
+  const inputCost = (promptTokens / 1_000_000) * modelConfig.inputPer1M;
+  const outputCost = (completionTokens / 1_000_000) * modelConfig.outputPer1M;
+  return (inputCost + outputCost) * 1.2; // 20% markup
 }
 
-// Re-export for convenience
-export { getProviderFromModel, getEffectiveProvider, normalizeModelId } from './providers';
-export { createStreamingProxy, createAnthropicStreamingProxy } from './streaming';
+// Re-export model functions
+export { getModel, getAllModels } from '../../config/models';

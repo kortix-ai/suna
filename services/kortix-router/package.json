@@ -10,7 +10,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.38",
+    "@ai-sdk/google": "^3.0.22",
+    "@ai-sdk/openai": "^3.0.26",
+    "@ai-sdk/openai-compatible": "^2.0.28",
+    "@ai-sdk/xai": "^3.0.48",
     "@supabase/supabase-js": "^2.95.3",
+    "ai": "^6.0.77",
     "hono": "^4.4.0",
     "zod": "^3.23.0"
   },
