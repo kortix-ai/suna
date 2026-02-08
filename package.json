@@ -1,10 +1,15 @@
 {
-  "name": "agentpress",
+  "name": "suna",
   "private": true,
   "scripts": {
-    "dev:frontend": "pnpm --filter Kortix dev",
-    "dev:mobile": "pnpm --filter kortix dev",
-    "build:frontend": "pnpm --filter Kortix build"
+    "dev": "nx run-many --target=dev --projects=frontend,kortix-router --parallel",
+    "dev:frontend": "nx run frontend:dev",
+    "dev:mobile": "nx run mobile:dev",
+    "dev:router": "nx run kortix-router:dev",
+    "build": "nx run-many --target=build --parallel",
+    "build:frontend": "nx run frontend:build",
+    "typecheck": "nx run-many --target=typecheck --parallel",
+    "graph": "nx graph"
   },
   "pnpm": {
     "overrides": {
@@ -15,5 +20,8 @@
   "dependencies": {
     "@babel/types": "^7.28.6",
     "next": "^16.1.4"
+  },
+  "devDependencies": {
+    "nx": "^22.4.5"
   }
 }

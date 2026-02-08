@@ -1,96 +1,21 @@
 {
   "cli": {
-    "version": ">= 5.9.0",
+    "version": ">= 16.13.2",
     "appVersionSource": "remote"
   },
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal",
-      "env": {
-        "EXPO_PUBLIC_ENV_MODE": "staging",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://ujzsbwvurfyeuerxxeaz.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqenNid3Z1cmZ5ZXVlcnh4ZWF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MDQwMzUsImV4cCI6MjA4NDQ4MDAzNX0.-yXpKNQphoh5F4MSPxVkW1P63Ow7jZvHgFppS2KMfWc",
-        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.kortix.com/v1",
-        "EXPO_PUBLIC_FRONTEND_URL": "https://staging.kortix.com",
-        "EXPO_PUBLIC_USE_REVENUECAT": "true",
-        "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_wckzzdVDdOjbVHemqCsuFckMrMQ"
-      }
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal"
     },
     "production": {
-      "channel": "production",
-      "ios": {
-        "simulator": false,
-        "autoIncrement": true
-      },
-      "android": {
-        "autoIncrement": true
-      },
-      "env": {
-        "EXPO_PUBLIC_ENV_MODE": "production",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://supa.kortix.com",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Impicml3YXNzZWJ4ZHdvaWVpa2dhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDQzOTMzMjYsImV4cCI6MjA1OTk2OTMyNn0.1iYSZAYGOc0B0-64KzLKwMA3dYNn0enQteikh9_VnDc",
-        "EXPO_PUBLIC_BACKEND_URL": "https://api.kortix.com/v1",
-        "EXPO_PUBLIC_FRONTEND_URL": "https://kortix.com",
-        "EXPO_PUBLIC_USE_REVENUECAT": "true",
-        "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_wckzzdVDdOjbVHemqCsuFckMrMQ"
-      }
-    },
-    "testflight": {
-      "channel": "main",
-      "environment": "preview",
-      "ios": {
-        "simulator": false,
-        "distribution": "store",
-        "autoIncrement": true
-      },
-      "android": {
-        "autoIncrement": true
-      },
-      "env": {
-        "EXPO_PUBLIC_ENV_MODE": "staging",
-        "EXPO_PUBLIC_SUPABASE_URL": "https://ujzsbwvurfyeuerxxeaz.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqenNid3Z1cmZ5ZXVlcnh4ZWF6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njg5MDQwMzUsImV4cCI6MjA4NDQ4MDAzNX0.-yXpKNQphoh5F4MSPxVkW1P63Ow7jZvHgFppS2KMfWc",
-        "EXPO_PUBLIC_BACKEND_URL": "https://staging-api.kortix.com/v1",
-        "EXPO_PUBLIC_FRONTEND_URL": "https://staging.kortix.com",
-        "EXPO_PUBLIC_USE_REVENUECAT": "true",
-        "EXPO_PUBLIC_REVENUECAT_IOS_API_KEY": "appl_UpcFYduOZYUgSqKPNvtzgXkPCeh",
-        "EXPO_PUBLIC_REVENUECAT_ANDROID_API_KEY": "goog_wckzzdVDdOjbVHemqCsuFckMrMQ"
-      }
-    },
-    "development-simulator": {
-      "developmentClient": true,
-      "distribution": "internal",
-      "ios": {
-        "simulator": true
-      },
-      "environment": "development"
+      "autoIncrement": true
     }
   },
   "submit": {
-    "production": {
-      "ios": {
-        "appleId": "mkprivat2005@gmail.com",
-        "ascAppId": "6754448524",
-        "appleTeamId": "T8G9J33433"
-      },
-      "android": {
-        "track": "internal",
-        "releaseStatus": "draft"
-      }
-    },
-    "testflight": {
-      "ios": {
-        "appleId": "mkprivat2005@gmail.com",
-        "ascAppId": "6754448524",
-        "appleTeamId": "T8G9J33433"
-      },
-      "android": {
-        "track": "internal",
-        "releaseStatus": "draft"
-      }
-    }
+    "production": {}
   }
 }

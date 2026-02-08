@@ -1,0 +1,21 @@
+{
+  "run": {
+    "command": "nx run kortix-router:dev",
+    "startTime": "2026-02-08T15:15:31.461Z",
+    "endTime": "2026-02-08T15:23:24.660Z",
+    "inner": false
+  },
+  "tasks": [
+    {
+      "taskId": "kortix-router:dev",
+      "target": "dev",
+      "projectName": "kortix-router",
+      "hash": "11027441848328642407",
+      "startTime": "2026-02-08T15:15:31.507Z",
+      "endTime": "2026-02-08T15:23:24.659Z",
+      "params": "",
+      "cacheStatus": "cache-miss",
+      "status": 1
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+> pnpm run dev
+
+
+> kortix-router@1.0.0 dev /Users/vukasinkubet/dev/suna/services/kortix-router
+> bun run --hot src/index.ts
+
+
+╔═══════════════════════════════════════════════════════════╗
+║              Kortix Router Starting                       ║
+╠═══════════════════════════════════════════════════════════╣
+║  Port: 3001                                             ║
+║  Mode: local                                            ║
+╠═══════════════════════════════════════════════════════════╣
+║  Search Providers:                                        ║
+║    Tavily:     ✓ Configured                             ║
+║    Serper:     ✓ Configured                             ║
+╠═══════════════════════════════════════════════════════════╣
+║  LLM Providers:                                           ║
+║    OpenRouter: ✓ Configured                             ║
+║    Anthropic:  ✓ Configured                             ║
+║    OpenAI:     ✓ Configured                             ║
+║    xAI:        ✓ Configured                             ║
+║    Groq:       ✗ NOT SET                                ║
+╚═══════════════════════════════════════════════════════════╝
+
+[0m[1m23 |[0m } [0m[35melse[0m [0m[35mif[0m (isServerConfig(entryNamespace?.[0m[35mdefault[0m)) {
+[0m[1m24 |[0m    [0m[35mvar[0m server = globalThis[hmrSymbol][0m[2m;[0m
+[0m[1m25 |[0m    [0m[35mif[0m (server) {
+[0m[1m26 |[0m       server[0m[3m[1m.reload[0m(entryNamespace.[0m[35mdefault[0m)[0m[2m;[0m
+[0m[1m27 |[0m       console[0m[3m[1m.debug[0m([0m[32m`Reloaded [0m${server.development ? [0m[32m'development '[0m : [0m[32m''[0m}[0m[32mserver: [0m${server.protocol}[0m[32m://[0m${server.hostname}[0m[32m:[0m${server.port}[0m[32m`[0m)[0m[2m;[0m
+[0m[1m28 |[0m       server = globalThis[hmrSymbol] = Bun[0m[3m[1m.serve[0m(entryNamespace.[0m[35mdefault[0m)[0m[2m;[0m
+     [31m[1m^[0m
+[0m[31merror[0m[2m:[0m [1mFailed to start server. Is port 3001 in use?[0m
+ syscall[0m[2m:[0m [0m[32m"listen"[0m[0m[2m,[0m
+   errno[0m[2m:[0m [0m[33m0[0m[0m[2m,[0m
+    code[0m[2m:[0m [32m"EADDRINUSE"[0m
+
+[0m      [2mat [0m[0m[36mbun:main[0m[2m:[0m[33m28[0m[2m:[33m49[0m
+[0m      [2mat [0m[0m[1m[3mloadAndEvaluateModule[0m[2m ([0m[0m[36m[0m[33m2[0m[2m:[33m1[0m[2m)[0m
+^C[41m[30m ELIFECYCLE [39m[49m [31mCommand failed.[39m
