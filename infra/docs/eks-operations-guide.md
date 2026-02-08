@@ -258,32 +258,12 @@ Traffic drops
 
 During voluntary disruptions (node drain, cluster upgrade, autoscaler removing a node), the PDB guarantees at least **50% of pods** stay running. So if you have 4 pods, at least 2 must be alive during any maintenance operation.
 
-### Pod Recycling (Memory Leak Defense)
+### Memory Safety Net
 
-Even with memory leak fixes in the code, long-running Python processes can slowly accumulate memory over time. To handle this, we have a **CronJob** that does a rolling restart of all pods every 6 hours.
+Instead of scheduled pod restarts (which would kill in-progress agent runs), we rely on K8s native mechanisms:
 
-```
-Every 6 hours (0 */6 * * *):
-  → CronJob runs: kubectl rollout restart deployment/suna-api
-  → Rolling restart begins (same as a deploy — zero downtime)
-  → Each pod is replaced one at a time
-  → New pods start fresh with clean memory
-  → Old pods get 120s to finish in-flight requests before being killed
-```
-
-This runs inside the cluster itself (not from CI/CD). It has its own ServiceAccount with minimal permissions — it can only restart the `suna-api` deployment in the `suna` namespace, nothing else.
-
-To check the recycler:
-```bash
-# See recent recycler runs
-kubectl get jobs -n suna -l app=suna-api-recycler
-
-# See CronJob schedule
-kubectl get cronjob -n suna
-
-# Logs from the last recycle
-kubectl logs -l job-name=<job-name> -n suna
-```
+1. **Memory-based HPA** — When pods average > 80% memory, HPA adds more pods to spread the load
+2. **OOMKill + auto-restart** — If a pod exceeds its 3Gi memory limit, K8s kills and restarts it automatically. The other pods keep serving traffic with zero downtime.
 
 ---
 
