@@ -246,3 +246,5 @@ apps/mobile/app-example
 *.env.docker
 
 dump.rdb
+
+.nx/
