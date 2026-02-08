@@ -1,7 +1,7 @@
 {
-  "name": "kortix-router",
+  "name": "kortix-auth",
   "version": "1.0.0",
-  "description": "Kortix Router - Bun/Hono API for web and image search",
+  "description": "Kortix Auth - Account management, API keys, Stripe webhooks",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,8 +10,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.95.3",
+    "@supabase/supabase-js": "^2.39.0",
     "hono": "^4.4.0",
+    "stripe": "^14.0.0",
     "zod": "^3.23.0"
   },
   "devDependencies": {

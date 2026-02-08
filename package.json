@@ -6,6 +6,7 @@
     "dev:frontend": "nx run frontend:dev",
     "dev:mobile": "nx run mobile:dev",
     "dev:router": "nx run kortix-router:dev",
+    "dev:auth": "nx run kortix-auth:dev",
     "build": "nx run-many --target=build --parallel",
     "build:frontend": "nx run frontend:build",
     "typecheck": "nx run-many --target=typecheck --parallel",

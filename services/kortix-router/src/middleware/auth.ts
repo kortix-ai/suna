@@ -1,15 +1,18 @@
 import { Context, Next } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { validateSecretKey } from '../repositories/api-keys';
+import { isSupabaseConfigured } from '../lib/supabase';
 
 const TEST_TOKEN = '00000';
 const TEST_ACCOUNT = 'test_account';
 
 /**
- * Validates the KORTIX_TOKEN from Authorization header.
+ * Validates API key from Authorization header.
  *
- * Auth Flow (mirrors Python implementation):
+ * Auth Flow:
  * - Token "00000" = test_account (skip billing)
- * - Other tokens = treat as account_id (temporary, until DB lookup is implemented)
+ * - Token "sk_xxx" = validate against api_keys table, get account_id
+ * - Other tokens = treat as account_id directly (backward compat / fallback)
  */
 export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
@@ -28,17 +31,34 @@ export async function authMiddleware(c: Context, next: Next) {
     });
   }
 
-  // For testing: "00000" token = skip billing
+  // Test token bypass
   if (token === TEST_TOKEN) {
     c.set('accountId', TEST_ACCOUNT);
+    c.set('isTestAccount', true);
     await next();
     return;
   }
 
-  // TODO: Real token validation - lookup token in DB to get account_id
-  // For now, treat token as account_id directly (temporary)
-  c.set('accountId', token);
+  // API key validation (sk_xxx format)
+  if (token.startsWith('sk_') && isSupabaseConfigured()) {
+    const result = await validateSecretKey(token);
 
+    if (!result.isValid) {
+      throw new HTTPException(401, {
+        message: result.error || 'Invalid API key',
+      });
+    }
+
+    c.set('accountId', result.accountId);
+    c.set('keyId', result.keyId);
+    c.set('isTestAccount', false);
+    await next();
+    return;
+  }
+
+  // Fallback: treat token as account_id directly (backward compat)
+  c.set('accountId', token);
+  c.set('isTestAccount', false);
   await next();
 }
 
