@@ -210,7 +210,45 @@ class ToolkitService:
             for toolkit in toolkits:
                 if toolkit.slug == slug:
                     return toolkit
-            return None
+                    
+            try:
+                toolkit_response = self.client.toolkits.retrieve(slug)
+
+                if hasattr(toolkit_response, 'model_dump'):
+                    toolkit_dict = toolkit_response.model_dump()
+                elif hasattr(toolkit_response, '__dict__'):
+                    toolkit_dict = toolkit_response.__dict__
+                else:
+                    toolkit_dict = dict(toolkit_response)
+
+                meta = toolkit_dict.get('meta', {})
+                if hasattr(meta, '__dict__'):
+                    meta = meta.__dict__
+
+                logo_url = None
+                if isinstance(meta, dict):
+                    logo_url = meta.get('logo')
+                if not logo_url:
+                    logo_url = toolkit_dict.get('logo')
+
+                description = None
+                if isinstance(meta, dict):
+                    description = meta.get('description')
+                if not description:
+                    description = toolkit_dict.get('description')
+
+                return ToolkitInfo(
+                    slug=toolkit_dict.get('slug', slug),
+                    name=toolkit_dict.get('name', slug),
+                    description=description,
+                    logo=logo_url,
+                    tags=[],
+                    auth_schemes=toolkit_dict.get('auth_schemes', []),
+                    categories=[]
+                )
+            except Exception:
+                logger.debug(f"Direct toolkit retrieval also failed for {slug}")
+                return None
         except Exception as e:
             logger.error(f"Failed to get toolkit {slug}: {e}", exc_info=True)
             raise
