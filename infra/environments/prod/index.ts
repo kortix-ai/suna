@@ -138,7 +138,6 @@ const apiWorkload = new ApiWorkload("suna-api", {
     minReplicas: podConfig.replicas,
     maxReplicas: 15,
     cpuTargetPercent: 70,
-    memoryTargetPercent: 80,
   },
   ingress: {
     enabled: true,
