@@ -428,13 +428,26 @@ class ContextArchiver:
 
         lines.append("")
 
-        # Retrieval hints
-        lines.append("## Retrieval")
-        lines.append(f"Files: MSG-XXX_user.md, MSG-XXX_assistant.md, MSG-XXX_tool.md")
+        # Archived files access instructions
+        # Find the first tool message number for a useful example
+        first_tool_num = None
+        for i, msg in enumerate(messages, 1):
+            if msg.get('role') == 'tool':
+                first_tool_num = total_before + i
+                break
+        example_file = f"MSG-{first_tool_num:03d}_tool.md" if first_tool_num else f"MSG-{msg_start:03d}_user.md"
+
+        lines.append("## Archived Files (you have full access)")
+        lines.append("Earlier messages were compressed into this summary. The full data "
+                      "(URLs, sources, tool outputs, exact content) is saved in your sandbox "
+                      f"at /workspace/{self.BASE_DIR}/.")
+        lines.append("These files are in YOUR sandbox — you already have full access. "
+                      "If the user asks for details not in this summary, just read the files. "
+                      "Do not ask the user for permission or say you lack access.")
         lines.append("```bash")
-        lines.append(f"ls /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/")
-        lines.append(f"grep -ri \"keyword\" /workspace/{self.BASE_DIR}/")
-        lines.append(f"cat /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/MSG-{msg_start:03d}_user.md")
+        lines.append(f"cat /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/{example_file}  # tool outputs with URLs/data")
+        lines.append(f"ls /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/  # list all archived files")
+        lines.append(f"grep -ri \"keyword\" /workspace/{self.BASE_DIR}/  # search across all batches")
         lines.append("```")
 
         return "\n".join(lines)
