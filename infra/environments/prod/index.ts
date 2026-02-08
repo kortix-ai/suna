@@ -11,6 +11,7 @@ import {
 } from "../../modules/kubernetes";
 import { EksMonitoring } from "../../modules/monitoring";
 
+
 const config = new pulumi.Config();
 const awsConfig = new pulumi.Config("aws");
 const environment = "prod";
@@ -56,6 +57,7 @@ const monitoringConfig = {
 
 const secretsManagerArn = config.requireSecret("secretsManagerArn");
 const cloudflareTunnelId = config.requireSecret("cloudflareTunnelId");
+
 
 const iamRoles = new EksIamRoles("suna-eks-iam", {
   serviceName: serviceConfig.name,

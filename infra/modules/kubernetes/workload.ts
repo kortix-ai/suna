@@ -58,7 +58,7 @@ export class ApiWorkload extends pulumi.ComponentResource {
           type: "RollingUpdate",
           rollingUpdate: {
             maxUnavailable: 0,
-            maxSurge: 1,
+            maxSurge: "25%",
           },
         },
         template: {

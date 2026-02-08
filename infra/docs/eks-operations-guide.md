@@ -201,19 +201,22 @@ There are two levels of autoscaling, and they work together:
 
 ### Level 1: Pod Autoscaling (HPA)
 
-The **Horizontal Pod Autoscaler** watches CPU usage across your pods and adds/removes pods to keep CPU around the target.
+The **Horizontal Pod Autoscaler** watches CPU and memory usage across your pods and adds/removes pods to keep utilization around the target.
 
 | Setting | Value |
 |---------|-------|
 | Min pods | 4 |
 | Max pods | 15 |
 | CPU target | 70% average utilization |
+| Memory target | 80% average utilization |
 | Scale up speed | Can double pods every 60 seconds |
 | Scale down speed | Removes at most 25% of pods every 60 seconds |
 | Scale down cooldown | Waits 5 minutes before scaling down (prevents flapping) |
 | Scale up cooldown | Only waits 30 seconds before scaling up (fast reaction) |
 
-**Example:** If your 4 pods are averaging 85% CPU, HPA will add more pods. If they drop to 40% CPU, HPA will (after 5 minutes) remove some pods back to the minimum of 4.
+HPA will scale up if **either** CPU or memory exceeds its target. So if CPU is at 40% but memory hits 85%, HPA will still add pods.
+
+**Example:** If your 4 pods are averaging 85% CPU (or 85% memory), HPA will add more pods. If both drop below target, HPA will (after 5 minutes) remove pods back to the minimum of 4.
 
 ### Level 2: Node Autoscaling (Cluster Autoscaler)
 
@@ -254,6 +257,13 @@ Traffic drops
 ### PodDisruptionBudget (PDB)
 
 During voluntary disruptions (node drain, cluster upgrade, autoscaler removing a node), the PDB guarantees at least **50% of pods** stay running. So if you have 4 pods, at least 2 must be alive during any maintenance operation.
+
+### Memory Safety Net
+
+Instead of scheduled pod restarts (which would kill in-progress agent runs), we rely on K8s native mechanisms:
+
+1. **Memory-based HPA** — When pods average > 80% memory, HPA adds more pods to spread the load
+2. **OOMKill + auto-restart** — If a pod exceeds its 3Gi memory limit, K8s kills and restarts it automatically. The other pods keep serving traffic with zero downtime.
 
 ---
 
