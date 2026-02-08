@@ -135,7 +135,10 @@ export class ApiWorkload extends pulumi.ComponentResource {
           },
         },
       },
-    }, { ...providerOpt, ignoreChanges: ["spec.replicas"] });
+    }, {
+      ...providerOpt,
+      ignoreChanges: ["spec.replicas"],
+    });
 
     this.service = new k8s.core.v1.Service(`${name}-svc`, {
       metadata: {
