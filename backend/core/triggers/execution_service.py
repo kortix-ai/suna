@@ -51,7 +51,7 @@ class ExecutionService:
                 project_limit = await check_project_count_limit(account_id)
                 if not project_limit['can_create']:
                     logger.warning(f"Trigger execution blocked: project limit reached for account {account_id} ({project_limit['current_count']}/{project_limit['limit']})")
-                    return {
+                    return {    
                         "success": False,
                         "error": f"Project limit reached ({project_limit['current_count']}/{project_limit['limit']}). Upgrade your plan to run more triggers.",
                         "message": "Failed to execute trigger - project limit exceeded"

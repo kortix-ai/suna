@@ -124,7 +124,7 @@ class RunOwnership:
             from core.services import redis
 
             client = await redis.get_client()
-            
+
             try:
                 pipeline = client.pipeline()
                 pipeline.set(f"run:{{{run_id}}}:status", status, ex=self.CLAIM_TTL)
@@ -134,7 +134,7 @@ class RunOwnership:
                 logger.warning(f"[Ownership] Pipeline failed for release {run_id}, using individual ops: {e}")
                 await client.set(f"run:{{{run_id}}}:status", status, ex=self.CLAIM_TTL)
                 await client.delete(f"run:{{{run_id}}}:owner")
-            
+
             if status in ("completed", "failed", "cancelled"):
                 try:
                     await client.srem("runs:active", run_id)
@@ -142,6 +142,11 @@ class RunOwnership:
                     logger.warning(f"[Ownership] Failed to remove {run_id} from runs:active: {e}")
             self._owned.pop(run_id, None)
             self._heartbeat_states.pop(run_id, None)
+
+            # Compact heap: remove stale entries from the top
+            while self._owned_heap and self._owned_heap[0][1] not in self._owned:
+                heapq.heappop(self._owned_heap)
+
             logger.info(f"[Ownership] Released {run_id} as {status}")
             return True
         except Exception as e:
@@ -153,7 +158,7 @@ class RunOwnership:
             from core.services import redis
 
             client = await redis.get_client()
-            
+
             try:
                 pipeline = client.pipeline()
                 pipeline.set(f"run:{{{run_id}}}:status", "resumable", ex=self.CLAIM_TTL)
@@ -163,9 +168,14 @@ class RunOwnership:
                 logger.warning(f"[Ownership] Pipeline failed for mark_resumable {run_id}, using individual ops: {e}")
                 await client.set(f"run:{{{run_id}}}:status", "resumable", ex=self.CLAIM_TTL)
                 await client.delete(f"run:{{{run_id}}}:owner")
-            
+
             self._owned.pop(run_id, None)
             self._heartbeat_states.pop(run_id, None)
+
+            # Compact heap: remove stale entries from the top
+            while self._owned_heap and self._owned_heap[0][1] not in self._owned:
+                heapq.heappop(self._owned_heap)
+
             return True
         except Exception as e:
             logger.error(f"[Ownership] Mark resumable {run_id} failed: {e}")

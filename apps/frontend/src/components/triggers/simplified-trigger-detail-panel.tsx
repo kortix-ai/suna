@@ -103,7 +103,7 @@ const ExecutionItem = ({ execution }: { execution: TriggerExecution }) => {
 
   return (
     <Link
-      href={`/threads/${execution.thread_id}`}
+      href={`/thread/${execution.thread_id}`}
       className="block"
     >
       <div className="flex items-center justify-between p-3 rounded-2xl hover:bg-muted/50 transition-colors group">

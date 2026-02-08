@@ -2,6 +2,20 @@ from typing import Dict, Any, List, Callable, Awaitable
 from core.agentpress.tool import ToolResult, ToolSchema, SchemaType
 from core.utils.logger import logger
 
+_GMAIL_ATTACHMENT_TOOLS = {
+    "GMAIL_SEND_EMAIL",
+    "GMAIL_CREATE_EMAIL_DRAFT",
+    "GMAIL_REPLY_TO_THREAD",
+}
+
+_GMAIL_ATTACHMENT_HINT = (
+    "\n\nTo attach files: first use composio_upload to upload the file to Composio storage. "
+    "The response includes attachment data (s3key, mimetype, name). "
+    "Pass these to the attachment parameter as: "
+    '{"s3key": "<s3key>", "mimetype": "<mimetype>", "name": "<name>"}. '
+    "Tip: For presentations, export as .pptx rather than .pdf for best compatibility, unless user asks for a specific file format."
+)
+
 
 class DynamicToolBuilder:
     def __init__(self):
@@ -42,7 +56,7 @@ class DynamicToolBuilder:
         dynamic_tool_method.__name__ = method_name
         dynamic_tool_method.__qualname__ = f"MCPToolWrapper.{method_name}"
         
-        description = self._build_description(tool_info, server_name)
+        description = self._build_description(tool_info, server_name, clean_tool_name)
         schema = self._create_tool_schema(method_name, description, tool_info)
         
         dynamic_tool_method.tool_schemas = [schema]
@@ -86,9 +100,12 @@ class DynamicToolBuilder:
         method_name = clean_tool_name.replace('-', '_')
         return method_name, clean_tool_name, server_name
     
-    def _build_description(self, tool_info: Dict[str, Any], server_name: str) -> str:
+    def _build_description(self, tool_info: Dict[str, Any], server_name: str, clean_tool_name: str = "") -> str:
         base_description = tool_info.get("description", f"MCP tool from {server_name}")
-        return f"{base_description} (MCP Server: {server_name})"
+        description = f"{base_description} (MCP Server: {server_name})"
+        if clean_tool_name.upper() in _GMAIL_ATTACHMENT_TOOLS:
+            description += _GMAIL_ATTACHMENT_HINT
+        return description
     
     def _create_tool_schema(self, method_name: str, description: str, tool_info: Dict[str, Any]) -> ToolSchema:
         openapi_function_schema = {

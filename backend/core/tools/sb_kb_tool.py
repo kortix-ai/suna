@@ -994,7 +994,18 @@ This directory contains your agent's knowledge base files, synced from the cloud
             account_id = agent_result.data[0]['account_id']
             
             if item_type == "folder":
-                # Delete folder (will cascade delete all files in it)
+                entries_result = await client.table('knowledge_base_entries').select(
+                    'entry_id'
+                ).eq('folder_id', item_id).execute()
+                entry_ids = [e['entry_id'] for e in (entries_result.data or [])]
+                agent_ids_to_invalidate = set()
+                if entry_ids:
+                    assign_result = await client.table('agent_knowledge_entry_assignments').select(
+                        'agent_id'
+                    ).in_('entry_id', entry_ids).execute()
+                    agent_ids_to_invalidate = set(
+                        row['agent_id'] for row in (assign_result.data or [])
+                    )
                 folder_result = await client.table('knowledge_base_folders').delete().eq(
                     'account_id', account_id
                 ).eq('folder_id', item_id).execute()
@@ -1003,6 +1014,12 @@ This directory contains your agent's knowledge base files, synced from the cloud
                     return self.fail_response(f"Folder with ID '{item_id}' not found")
                 
                 deleted_folder = folder_result.data[0]
+                try:
+                    from core.cache.runtime_cache import invalidate_kb_context_cache
+                    for aid in agent_ids_to_invalidate:
+                        await invalidate_kb_context_cache(aid)
+                except Exception as e:
+                    logger.warning(f"[KB] Failed to invalidate cache after folder delete: {e}")
                 return self.success_response({
                     "message": f"Successfully deleted folder '{deleted_folder.get('name', 'Unknown')}' and all its files",
                     "deleted_type": "folder",
@@ -1011,6 +1028,13 @@ This directory contains your agent's knowledge base files, synced from the cloud
                 })
                 
             elif item_type == "file":
+                # Get affected agents before delete
+                assign_result = await client.table('agent_knowledge_entry_assignments').select(
+                    'agent_id'
+                ).eq('entry_id', item_id).execute()
+                agent_ids_to_invalidate = set(
+                    row['agent_id'] for row in (assign_result.data or [])
+                )
                 # Delete the file directly using its ID
                 file_result = await client.table('knowledge_base_entries').delete().eq(
                     'entry_id', item_id
@@ -1020,6 +1044,12 @@ This directory contains your agent's knowledge base files, synced from the cloud
                     return self.fail_response(f"File with ID '{item_id}' not found")
                 
                 deleted_file = file_result.data[0]
+                try:
+                    from core.cache.runtime_cache import invalidate_kb_context_cache
+                    for aid in agent_ids_to_invalidate:
+                        await invalidate_kb_context_cache(aid)
+                except Exception as e:
+                    logger.warning(f"[KB] Failed to invalidate cache after file delete: {e}")
                 return self.success_response({
                     "message": f"Successfully deleted file '{deleted_file.get('filename', 'Unknown')}'",
                     "deleted_type": "file",
@@ -1108,7 +1138,11 @@ This directory contains your agent's knowledge base files, synced from the cloud
                     'account_id': account_id,
                     'enabled': enabled
                 }).execute()
-            
+            try:
+                from core.cache.runtime_cache import invalidate_kb_context_cache
+                await invalidate_kb_context_cache(agent_id)
+            except Exception as e:
+                logger.warning(f"[KB] Failed to invalidate cache after enable/disable: {e}")
             status = "enabled" if enabled else "disabled"
             return self.success_response({
                 "message": f"Successfully {status} file '{filename}' for this agent",
@@ -1189,7 +1223,11 @@ This directory contains your agent's knowledge base files, synced from the cloud
                     enabled_count += 1
                 except Exception as e:
                     logger.warning(f"[KB] Failed to enable entry {entry_id}: {e}")
-
+            try:
+                from core.cache.runtime_cache import invalidate_kb_context_cache
+                await invalidate_kb_context_cache(agent_id)
+            except Exception as e:
+                logger.warning(f"[KB] Failed to invalidate cache after enable all: {e}")
             return self.success_response({
                 "message": f"Successfully enabled {enabled_count} knowledge base files for this agent. Now call global_kb_sync to download them.",
                 "enabled_count": enabled_count,

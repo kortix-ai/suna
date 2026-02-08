@@ -1,20 +1,8 @@
-"""
-Runtime caching layer for latency optimization.
-
-This module provides Redis-based caching for frequently accessed data:
-- Agent configs (Suna static + user MCPs, custom agent configs)
-- Project metadata (sandbox info)
-- Running runs count (concurrent limit checks)
-- Thread count (thread limit checks)
-
-All caches use explicit invalidation on data changes, with TTL as safety net.
-"""
 import json
 import time
 from typing import Dict, Any, Optional, Union
 from core.utils.logger import logger
 
-# Use orjson for cache operations (3-5x faster than stdlib json)
 try:
     import orjson
     _HAS_ORJSON = True
@@ -22,13 +10,11 @@ except ImportError:
     _HAS_ORJSON = False
 
 def _json_dumps(value: Any) -> str:
-    """Fast JSON serialization using orjson when available."""
     if _HAS_ORJSON:
         return orjson.dumps(value).decode('utf-8')
     return json.dumps(value)
 
 def _json_loads(value: Union[str, bytes]) -> Any:
-    """Fast JSON deserialization using orjson when available."""
     if _HAS_ORJSON:
         if isinstance(value, str):
             return orjson.loads(value.encode('utf-8'))
@@ -37,24 +23,13 @@ def _json_loads(value: Union[str, bytes]) -> Any:
         return json.loads(value.decode('utf-8'))
     return json.loads(value)
 
-# ============================================================================
-# STATIC SUNA CONFIG - Loaded once at startup, never expires
-# This is Python code that's identical across all workers - safe to keep in memory
-# ============================================================================
 _SUNA_STATIC_CONFIG: Optional[Dict[str, Any]] = None
 _SUNA_STATIC_LOADED = False
 
 def get_static_suna_config() -> Optional[Dict[str, Any]]:
-    """Get the static Suna config (loaded once at startup)."""
     return _SUNA_STATIC_CONFIG
 
 def load_static_suna_config() -> Dict[str, Any]:
-    """
-    Load Suna's static config into memory ONCE.
-    This includes: system_prompt, model, agentpress_tools, restrictions.
-    
-    This is safe to cache in memory because it's Python code - identical across all workers.
-    """
     global _SUNA_STATIC_CONFIG, _SUNA_STATIC_LOADED
     
     if _SUNA_STATIC_LOADED:
@@ -82,28 +57,18 @@ def load_static_suna_config() -> Dict[str, Any]:
     logger.info(f"✅ Loaded static Suna config into memory (prompt: {len(_SUNA_STATIC_CONFIG['system_prompt'])} chars)")
     return _SUNA_STATIC_CONFIG
 
-# ============================================================================
-# AGENT CONFIG CACHE - Redis, invalidated on version changes
-# ============================================================================
-AGENT_CONFIG_TTL = 3600  # 1 hour (was 24h - reduced to save Redis memory)
+AGENT_CONFIG_TTL = 3600
 
 def _get_cache_key(agent_id: str, version_id: Optional[str] = None) -> str:
-    """Generate Redis cache key for agent config."""
     if version_id:
         return f"agent_config:{agent_id}:{version_id}"
     return f"agent_config:{agent_id}:current"
 
 def _get_user_mcps_key(agent_id: str) -> str:
-    """Generate cache key for user-specific MCPs."""
     return f"agent_mcps:{agent_id}"
 
 
 async def get_cached_user_mcps(agent_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Get user-specific MCPs from Redis cache.
-    
-    Returns dict with configured_mcps, custom_mcps, triggers.
-    """
     cache_key = _get_user_mcps_key(agent_id)
     
     try:
@@ -126,7 +91,6 @@ async def set_cached_user_mcps(
     custom_mcps: list,
     triggers: list = None
 ) -> None:
-    """Cache user-specific MCPs in Redis."""
     cache_key = _get_user_mcps_key(agent_id)
     data = {
         'configured_mcps': configured_mcps,
@@ -191,11 +155,6 @@ async def get_cached_agent_config(
     agent_id: str,
     version_id: Optional[str] = None
 ) -> Optional[Dict[str, Any]]:
-    """
-    Get agent config from Redis cache.
-    
-    For custom agents only - Suna uses get_static_suna_config() + get_cached_user_mcps().
-    """
     cache_key = _get_cache_key(agent_id, version_id)
     
     try:
@@ -263,7 +222,6 @@ async def set_cached_agent_type(agent_id: str, is_suna: bool) -> None:
 
 
 async def invalidate_agent_config_cache(agent_id: str) -> None:
-    """Invalidate cached configs for an agent in Redis using batch delete."""
     try:
         from core.services.redis import delete_multiple
         keys = [
@@ -278,15 +236,7 @@ async def invalidate_agent_config_cache(agent_id: str) -> None:
 
 
 async def warm_up_suna_config_cache() -> None:
-    """
-    Load static Suna config into memory at worker startup.
-    
-    This is instant since it just reads from SUNA_CONFIG (Python code).
-    No DB calls needed for the static parts.
-    """
     t_start = time.time()
-    
-    # Load static Suna config (system prompt, model, tools) - instant
     load_static_suna_config()
     
     elapsed = (time.time() - t_start) * 1000
@@ -300,6 +250,7 @@ async def prewarm_user_agents(user_id: str) -> dict:
     try:
         from core.agents import repo as agents_repo
         from core.agents.agent_loader import get_agent_loader
+        from core.services.supabase import DBConnection
         
         agent_ids = await agents_repo.get_user_agent_ids(user_id)
         
@@ -318,6 +269,8 @@ async def prewarm_user_agents(user_id: str) -> dict:
             return {"prewarmed": 0, "errors": 0, "skipped": 0}
         
         loader = await get_agent_loader()
+        db = DBConnection()
+        client = await db.client
         prewarmed = 0
         errors = 0
         skipped = 0
@@ -336,6 +289,7 @@ async def prewarm_user_agents(user_id: str) -> dict:
                 
                 agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
                 if agent_data:
+                    asyncio.create_task(warm_kb_context_for_agent(agent_id, client))
                     return True
                 return False
             except Exception as e:
@@ -366,21 +320,13 @@ async def prewarm_user_agents(user_id: str) -> dict:
         return {"prewarmed": 0, "errors": 1, "skipped": 0, "error": str(e)}
 
 
-# ============================================================================
-# PROJECT METADATA CACHE - Invalidated on sandbox changes
-# ============================================================================
-PROJECT_CACHE_TTL = 300  # 5 minutes (invalidated on sandbox change)
+PROJECT_CACHE_TTL = 300
 
 def _get_project_cache_key(project_id: str) -> str:
-    """Generate Redis cache key for project metadata."""
     return f"project_meta:{project_id}"
 
 
 async def get_cached_project_metadata(project_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Get project metadata (sandbox info) from Redis cache.
-    Eliminates ~300ms DB query on repeated agent runs.
-    """
     cache_key = _get_project_cache_key(project_id)
     
     try:
@@ -398,7 +344,6 @@ async def get_cached_project_metadata(project_id: str) -> Optional[Dict[str, Any
 
 
 async def set_cached_project_metadata(project_id: str, sandbox: Dict[str, Any]) -> None:
-    """Cache project metadata in Redis."""
     cache_key = _get_project_cache_key(project_id)
     data = {'project_id': project_id, 'sandbox': sandbox}
     
@@ -411,7 +356,6 @@ async def set_cached_project_metadata(project_id: str, sandbox: Dict[str, Any]) 
 
 
 async def invalidate_project_cache(project_id: str) -> None:
-    """Invalidate cached project metadata."""
     try:
         from core.services import redis as redis_service
         await redis_service.delete(_get_project_cache_key(project_id))
@@ -420,25 +364,15 @@ async def invalidate_project_cache(project_id: str) -> None:
         logger.warning(f"Failed to invalidate project cache: {e}")
 
 
-# Alias for backwards compatibility
 invalidate_project_metadata = invalidate_project_cache
 
-
-# ============================================================================
-# RUNNING RUNS CACHE - Short TTL for concurrent runs limit checks
-# ============================================================================
-RUNNING_RUNS_TTL = 5  # 5 seconds - needs fresh data for limit accuracy
+RUNNING_RUNS_TTL = 5
 
 def _get_running_runs_key(account_id: str) -> str:
-    """Generate Redis cache key for running runs count."""
     return f"running_runs:{account_id}"
 
 
 async def get_cached_running_runs(account_id: str) -> Optional[Dict[str, Any]]:
-    """
-    Get running runs data from Redis cache.
-    Short TTL to balance freshness and latency.
-    """
     cache_key = _get_running_runs_key(account_id)
     
     try:
@@ -460,9 +394,7 @@ async def set_cached_running_runs(
     running_count: int, 
     running_thread_ids: list
 ) -> None:
-    """Cache running runs data in Redis."""
     cache_key = _get_running_runs_key(account_id)
-    # Convert UUIDs to strings for JSON serialization
     thread_ids_str = [str(tid) for tid in running_thread_ids] if running_thread_ids else []
     data = {
         'running_count': running_count,
@@ -479,7 +411,6 @@ async def set_cached_running_runs(
 
 
 async def invalidate_running_runs_cache(account_id: str) -> None:
-    """Invalidate cached running runs when agent starts/stops."""
     try:
         from core.services import redis as redis_service
         await redis_service.delete(_get_running_runs_key(account_id))
@@ -488,18 +419,13 @@ async def invalidate_running_runs_cache(account_id: str) -> None:
         logger.warning(f"Failed to invalidate running runs cache: {e}")
 
 
-# ============================================================================
-# THREAD COUNT CACHE - Invalidated on thread create/delete
-# ============================================================================
-THREAD_COUNT_TTL = 300  # 5 minutes (invalidated on create/delete)
+THREAD_COUNT_TTL = 300
 
 def _get_thread_count_key(account_id: str) -> str:
-    """Generate Redis cache key for thread count."""
     return f"thread_count:{account_id}"
 
 
 async def get_cached_thread_count(account_id: str) -> Optional[int]:
-    """Get thread count from Redis cache."""
     cache_key = _get_thread_count_key(account_id)
     
     try:
@@ -517,7 +443,6 @@ async def get_cached_thread_count(account_id: str) -> Optional[int]:
 
 
 async def set_cached_thread_count(account_id: str, count: int) -> None:
-    """Cache thread count in Redis."""
     cache_key = _get_thread_count_key(account_id)
     
     try:
@@ -529,12 +454,10 @@ async def set_cached_thread_count(account_id: str, count: int) -> None:
 
 
 async def increment_thread_count_cache(account_id: str) -> None:
-    """Increment cached thread count when a new thread is created."""
-    cache_key = _get_thread_count_key(account_id)
+    cache_key = _get_thread_count_key(account_id)   
     
     try:
         from core.services import redis as redis_service
-        # Use INCR for atomic increment, but only if key exists
         current = await redis_service.get(cache_key)
         if current is not None:
             await redis_service.incr(cache_key)
@@ -544,7 +467,6 @@ async def increment_thread_count_cache(account_id: str) -> None:
 
 
 async def invalidate_thread_count_cache(account_id: str) -> None:
-    """Invalidate cached thread count when thread is deleted."""
     try:
         from core.services import redis as redis_service
         await redis_service.delete(_get_thread_count_key(account_id))
@@ -553,21 +475,13 @@ async def invalidate_thread_count_cache(account_id: str) -> None:
         logger.warning(f"Failed to invalidate thread count cache: {e}")
 
 
-# ============================================================================
-# KNOWLEDGE BASE CONTEXT CACHE - Short TTL, invalidated on KB mutations
-# ============================================================================
-KB_CONTEXT_TTL = 300  # 5 minutes
+KB_CONTEXT_TTL = 300
 
 def _get_kb_context_key(agent_id: str) -> str:
-    """Generate Redis cache key for knowledge base context."""
     return f"kb_context:{agent_id}"
 
 
 async def get_cached_kb_context(agent_id: str) -> Optional[str]:
-    """
-    Get knowledge base context from Redis cache.
-    Returns None on cache miss, empty string if cached as "no entries".
-    """
     cache_key = _get_kb_context_key(agent_id)
     
     try:
@@ -575,26 +489,20 @@ async def get_cached_kb_context(agent_id: str) -> Optional[str]:
         
         cached = await redis_service.get(cache_key)
         if cached is not None:
-            # Empty string means "no entries", None means cache miss
             data = cached.decode() if isinstance(cached, bytes) else cached
             logger.debug(f"⚡ Redis cache hit for KB context: {agent_id}")
-            return data if data else None  # Return None for empty string (no entries)
+            return data if data else None
     except Exception as e:
         logger.warning(f"Failed to get KB context from cache: {e}")
     
-    return None  # Cache miss
+    return None
 
 
 async def set_cached_kb_context(agent_id: str, context: str) -> None:
-    """
-    Cache knowledge base context in Redis.
-    Use empty string to cache "no entries" result.
-    """
     cache_key = _get_kb_context_key(agent_id)
     
     try:
         from core.services import redis as redis_service
-        # Store empty string as empty string (to distinguish from cache miss)
         await redis_service.set(cache_key, context, ex=KB_CONTEXT_TTL)
         logger.debug(f"✅ Cached KB context in Redis: {agent_id} ({len(context)} chars)")
     except Exception as e:
@@ -602,7 +510,6 @@ async def set_cached_kb_context(agent_id: str, context: str) -> None:
 
 
 async def invalidate_kb_context_cache(agent_id: str) -> None:
-    """Invalidate cached knowledge base context when KB entries change."""
     try:
         from core.services import redis as redis_service
         await redis_service.delete(_get_kb_context_key(agent_id))
@@ -611,21 +518,39 @@ async def invalidate_kb_context_cache(agent_id: str) -> None:
         logger.warning(f"Failed to invalidate KB context cache: {e}")
 
 
-# ============================================================================
-# USER CONTEXT CACHE - Locale + username, invalidated on profile updates
-# ============================================================================
-USER_CONTEXT_TTL = 900  # 15 minutes
+async def warm_kb_context_for_agent(agent_id: str, client) -> None:
+    try:
+        from core.utils.config import config
+        if not config.ENABLE_KNOWLEDGE_BASE:
+            return
+        if not client:
+            return
+        cached = await get_cached_kb_context(agent_id)
+        if cached is not None:
+            return
+        from core.threads import repo as threads_repo
+        entry_count = await threads_repo.get_kb_entry_count(agent_id)
+        if entry_count == 0:
+            await set_cached_kb_context(agent_id, "")
+            return
+        kb_result = await client.rpc("get_agent_knowledge_base_context", {"p_agent_id": agent_id}).execute()
+        kb_data = kb_result.data if kb_result and kb_result.data else None
+        if kb_data and kb_data.strip():
+            await set_cached_kb_context(agent_id, kb_data)
+            logger.debug(f"✅ [PREWARM] Warmed KB cache for agent {agent_id} ({len(kb_data)} chars)")
+        else:
+            await set_cached_kb_context(agent_id, "")
+    except Exception as e:
+        logger.debug(f"[PREWARM] KB warm skipped for {agent_id}: {e}")
+
+
+USER_CONTEXT_TTL = 900
 
 def _get_user_context_key(user_id: str) -> str:
-    """Generate Redis cache key for user context."""
     return f"user_context:{user_id}"
 
 
 async def get_cached_user_context(user_id: str) -> Optional[str]:
-    """
-    Get user context (locale + username) from Redis cache.
-    Returns None on cache miss, empty string if cached as "no context".
-    """
     cache_key = _get_user_context_key(user_id)
     
     try:
@@ -635,18 +560,14 @@ async def get_cached_user_context(user_id: str) -> Optional[str]:
         if cached is not None:
             data = cached.decode() if isinstance(cached, bytes) else cached
             logger.debug(f"⚡ Redis cache hit for user context: {user_id}")
-            return data if data else None  # Return None for empty string (no context)
+            return data if data else None
     except Exception as e:
         logger.warning(f"Failed to get user context from cache: {e}")
     
-    return None  # Cache miss
+    return None
 
 
 async def set_cached_user_context(user_id: str, context: str) -> None:
-    """
-    Cache user context in Redis.
-    Use empty string to cache "no context" result.
-    """
     cache_key = _get_user_context_key(user_id)
     
     try:
@@ -658,7 +579,6 @@ async def set_cached_user_context(user_id: str, context: str) -> None:
 
 
 async def invalidate_user_context_cache(user_id: str) -> None:
-    """Invalidate cached user context when profile is updated."""
     try:
         from core.services import redis as redis_service
         await redis_service.delete(_get_user_context_key(user_id))
@@ -667,18 +587,13 @@ async def invalidate_user_context_cache(user_id: str) -> None:
         logger.warning(f"Failed to invalidate user context cache: {e}")
 
 
-# ============================================================================
-# MESSAGE HISTORY CACHE - Short TTL for repeated turns in same thread
-# ============================================================================
-MESSAGE_HISTORY_TTL = 60  # 1 minute - very short since messages change frequently
+MESSAGE_HISTORY_TTL = 60
 
 def _get_message_history_key(thread_id: str) -> str:
-    """Generate Redis cache key for message history."""
     return f"message_history:{thread_id}"
 
 
 async def get_cached_message_history(thread_id: str) -> Optional[list]:
-    """Get message history from Redis cache."""
     cache_key = _get_message_history_key(thread_id)
     
     try:
@@ -696,7 +611,6 @@ async def get_cached_message_history(thread_id: str) -> Optional[list]:
 
 
 async def set_cached_message_history(thread_id: str, messages: list) -> None:
-    """Cache message history in Redis."""
     cache_key = _get_message_history_key(thread_id)
     
     try:
@@ -708,7 +622,6 @@ async def set_cached_message_history(thread_id: str, messages: list) -> None:
 
 
 async def invalidate_message_history_cache(thread_id: str) -> None:
-    """Invalidate cached message history when new message is added."""
     try:
         from core.services import redis as redis_service
         await redis_service.delete(_get_message_history_key(thread_id))
@@ -784,7 +697,6 @@ async def invalidate_tier_info_cache(account_id: str) -> None:
     except Exception as e:
         logger.warning(f"Failed to invalidate slot_manager tier cache: {e}")
 
-    # Also invalidate user context cache since it contains subscription info
     try:
         await invalidate_user_context_cache(account_id)
         logger.debug(f"🗑️ Also invalidated user context cache for tier change: {account_id}")

@@ -8,18 +8,16 @@ from core.agentpress.thread_manager.services.execution.llm_executor import LLMEx
 from core.agentpress.prompt_caching import add_cache_control
 from core.agents.pipeline.ux_streaming import stream_context_usage, stream_summarizing
 from core.agents.pipeline.stateless.context.manager import ContextManager
+from core.agents.pipeline.stateless.context.archiver import ContextArchiver, format_archive_summary
 from core.agentpress.context_manager import ContextManager as ToolCallValidator
 
 
 class ExecutionEngine:
-    THRESHOLD_MARGINS = {
-        1_000_000: 350_000,
-        400_000: 100_000,
-        200_000: 60_000,
-        100_000: 25_000,
-    }
-    DEFAULT_SAFETY_RATIO = 0.70
-    
+    # Set to a low value (e.g., 10_000) for testing, None for normal operation
+    TEST_THRESHOLD_OVERRIDE = None
+
+    SAFETY_RATIO = 0.70
+
     def __init__(self, state, response_processor):
         self._state = state
         self._response_processor = response_processor
@@ -31,10 +29,7 @@ class ExecutionEngine:
 
     @classmethod
     def get_safety_threshold(cls, context_window: int) -> int:
-        for window_size, margin in sorted(cls.THRESHOLD_MARGINS.items(), reverse=True):
-            if context_window >= window_size:
-                return context_window - margin
-        return int(context_window * cls.DEFAULT_SAFETY_RATIO)
+        return int(context_window * cls.SAFETY_RATIO)
 
     async def _check_and_compress_if_needed(
         self,
@@ -43,10 +38,10 @@ class ExecutionEngine:
         system_prompt: Dict[str, Any]
     ) -> Tuple[List[Dict[str, Any]], int, bool]:
         from core.ai_models import model_manager
-        
+
         context_window = model_manager.get_context_window(self._state.model_name)
-        safety_threshold = self.get_safety_threshold(context_window)
-        
+        safety_threshold = self.TEST_THRESHOLD_OVERRIDE or self.get_safety_threshold(context_window)
+
         if tokens < safety_threshold:
             return messages, tokens, False
         
@@ -59,41 +54,100 @@ class ExecutionEngine:
         
         try:
             MIN_TO_COMPRESS = 3
-            MAX_WORKING_MEMORY = 8
+            MAX_WORKING_MEMORY = 6
             MIN_WORKING_MEMORY = 2
-            
+
             total_messages = len(messages)
-            
+
             if total_messages <= MIN_TO_COMPRESS + MIN_WORKING_MEMORY:
                 logger.debug(f"[ExecutionEngine] Skipping compression: only {total_messages} messages, need >{MIN_TO_COMPRESS + MIN_WORKING_MEMORY}")
                 return messages, tokens, False
-            
+
             working_memory_size = min(MAX_WORKING_MEMORY, total_messages - MIN_TO_COMPRESS)
             working_memory_size = max(working_memory_size, MIN_WORKING_MEMORY)
-            
-            working_memory = messages[-working_memory_size:]
-            to_compress = messages[:-working_memory_size]
-            
+
+            # Adjust split to avoid breaking assistant+tool pairs
+            split_idx = total_messages - working_memory_size
+            while split_idx > MIN_TO_COMPRESS and messages[split_idx].get('role') == 'tool':
+                split_idx -= 1
+
+            working_memory = messages[split_idx:]
+            to_compress = messages[:split_idx]
+
             logger.debug(f"[ExecutionEngine] Compression split: {len(to_compress)} to compress, {len(working_memory)} working memory")
-            
-            result = await ContextManager.compress_history(
-                messages=to_compress,
-                working_memory_size=2,
-                model="gpt-4o-mini"
+
+            # Extract previous summary before filtering it out
+            previous_summary = None
+            for m in to_compress:
+                if m.get('_is_summary_inline'):
+                    previous_summary = m.get('content', '')
+
+            # Filter out previous archive summaries - don't re-archive them
+            to_compress = [m for m in to_compress if not m.get('_is_summary_inline')]
+
+            if not to_compress:
+                logger.debug("[ExecutionEngine] Nothing to compress after filtering summaries")
+                return messages, tokens, False
+
+            # Archive messages to sandbox filesystem for on-demand retrieval
+            from core.services.supabase import DBConnection
+            db_client = await DBConnection().client
+
+            archiver = ContextArchiver(
+                project_id=self._state.project_id,
+                account_id=self._state.account_id,
+                thread_id=self._state.thread_id,
+                db_client=db_client
             )
-            
+            result = await archiver.archive_messages(to_compress, previous_summary=previous_summary)
+
             summary_msg = {
-                "role": "user", 
-                "content": f"[CONVERSATION HISTORY SUMMARY]\n\n{result.summary}\n\n{ContextManager._format_facts_inline(result.facts)}",
-                "_is_summary_inline": True
+                "role": "user",
+                "content": format_archive_summary(result),
+                "_is_summary_inline": True,
+                "_archive_batch": result.batch_number,
+                "_db_type": "summary",
             }
-            
+
+            # Persist the summary message to database so subsequent runs can load it
+            self._state.add_message(summary_msg, metadata={
+                "_is_summary_inline": True,
+                "_archive_batch": result.batch_number,
+                "archived_message_count": result.message_count,
+                "is_archived_summary": True,
+            })
+
             new_messages = [summary_msg] + working_memory
+
+            # Update the Redis cache with the new compressed message list
+            from core.cache.runtime_cache import set_cached_message_history
+            await set_cached_message_history(self._state.thread_id, new_messages)
+            logger.debug(f"[ExecutionEngine] Updated message cache with {len(new_messages)} messages")
+
             new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
-            
+            logger.info(f"[ExecutionEngine] After archival: {new_tokens} tokens, {len(new_messages)} messages")
+
+            # Always compress working memory to maximize headroom for new messages
+            new_messages = self._compress_working_memory(new_messages, safety_threshold)
+            new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+            logger.info(f"[ExecutionEngine] After working memory compression: {new_tokens} tokens")
+
+            # Emergency fallback if STILL over threshold
+            if new_tokens >= safety_threshold:
+                logger.warning(
+                    f"[ExecutionEngine] Still over threshold ({new_tokens} >= {safety_threshold}), "
+                    f"applying emergency truncation..."
+                )
+                new_messages = self._emergency_truncate(new_messages)
+                new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+                logger.info(f"[ExecutionEngine] After emergency truncation: {new_tokens} tokens")
+
+            # Update cache with the compressed messages
+            await set_cached_message_history(self._state.thread_id, new_messages)
+
             logger.info(f"✨ [ExecutionEngine] Summarized: {tokens} -> {new_tokens} tokens "
                        f"({len(messages)} -> {len(new_messages)} messages)")
-            
+
             await stream_summarizing(
                 self._state.stream_key,
                 status="completed",
@@ -123,19 +177,143 @@ class ExecutionEngine:
             
             return messages, tokens, False
 
+    @staticmethod
+    def _safe_truncate_content(content: str, max_length: int) -> str:
+        """Truncate content by keeping start and end, removing the middle."""
+        if len(content) <= max_length:
+            return content
+        keep = max_length - 100  # Reserve space for indicator
+        start = keep // 2
+        end = keep - start
+        return (
+            content[:start]
+            + f"\n\n... ({len(content) - keep} chars truncated) ...\n\n"
+            + content[-end:]
+        )
+
+    @staticmethod
+    def _get_content_str(msg: Dict[str, Any]) -> str:
+        """Extract content as a string from a message, handling list/dict forms."""
+        content = msg.get('content', '')
+        if isinstance(content, list):
+            parts = []
+            for block in content:
+                if isinstance(block, dict):
+                    parts.append(block.get('text', '') or block.get('content', '') or str(block))
+                else:
+                    parts.append(str(block))
+            return '\n'.join(parts)
+        elif isinstance(content, dict):
+            import json
+            return json.dumps(content)
+        return str(content)
+
+    @staticmethod
+    def _set_content_str(msg: Dict[str, Any], new_content: str) -> Dict[str, Any]:
+        """Return a copy of msg with content replaced by new_content string."""
+        result = dict(msg)
+        result['content'] = new_content
+        return result
+
+    def _compress_working_memory(
+        self,
+        messages: List[Dict[str, Any]],
+        safety_threshold: int,
+    ) -> List[Dict[str, Any]]:
+        """Apply tiered in-memory compression to working memory messages.
+
+        Tiers:
+          1. Tool outputs: truncate ALL to 2000 chars (last 2 get 3000)
+          2. User messages (not summary): truncate > 4000 chars
+          3. Assistant messages: truncate > 2000 chars
+        """
+        result = list(messages)
+
+        # --- Tier 1: Truncate tool result messages ---
+        tool_indices = [i for i, m in enumerate(result) if m.get('role') == 'tool']
+        for idx, i in enumerate(tool_indices):
+            content_str = self._get_content_str(result[i])
+            # Last 2 tool outputs get slightly more room
+            limit = 3000 if idx >= len(tool_indices) - 2 else 2000
+            if len(content_str) > limit:
+                result[i] = self._set_content_str(
+                    result[i],
+                    self._safe_truncate_content(content_str, limit)
+                )
+                logger.debug(f"[ExecutionEngine] Tier 1: truncated tool message {i} from {len(content_str)} to ~{limit} chars")
+
+        # --- Tier 2: Truncate large user messages (skip summary) ---
+        for i, msg in enumerate(result):
+            if msg.get('role') == 'user' and not msg.get('_is_summary_inline'):
+                content_str = self._get_content_str(msg)
+                if len(content_str) > 4000:
+                    result[i] = self._set_content_str(
+                        msg,
+                        self._safe_truncate_content(content_str, 4000)
+                    )
+                    logger.debug(f"[ExecutionEngine] Tier 2: truncated user message {i} from {len(content_str)} to ~4000 chars")
+
+        # --- Tier 3: Truncate large assistant messages ---
+        for i, msg in enumerate(result):
+            if msg.get('role') == 'assistant':
+                content_str = self._get_content_str(msg)
+                if len(content_str) > 2000:
+                    result[i] = self._set_content_str(
+                        msg,
+                        self._safe_truncate_content(content_str, 2000)
+                    )
+                    logger.debug(f"[ExecutionEngine] Tier 3: truncated assistant message {i} from {len(content_str)} to ~2000 chars")
+
+        return result
+
+    @staticmethod
+    def _emergency_truncate(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        """Aggressively truncate the largest messages (keep 500+500 chars)."""
+        result = list(messages)
+        # Sort indices by content length descending, truncate greedily
+        indexed = [
+            (i, len(ExecutionEngine._get_content_str(m)))
+            for i, m in enumerate(result)
+            if not m.get('_is_summary_inline')
+        ]
+        indexed.sort(key=lambda x: x[1], reverse=True)
+
+        for i, length in indexed:
+            if length > 1200:
+                result[i] = ExecutionEngine._set_content_str(
+                    result[i],
+                    ExecutionEngine._safe_truncate_content(
+                        ExecutionEngine._get_content_str(result[i]), 1200
+                    )
+                )
+                logger.warning(f"[ExecutionEngine] Emergency truncate: message {i} from {length} to ~1200 chars")
+        return result
+
     async def execute_step(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = self._state.get_messages()
-        
-        context_manager = ToolCallValidator()
-        if context_manager.needs_tool_ordering_repair(messages):
-            logger.warning("[ExecutionEngine] Tool ordering issue detected, repairing...")
-            messages = context_manager.repair_tool_call_pairing(messages)
-            is_ordered, out_of_order_ids, _ = context_manager.validate_tool_call_ordering(messages)
-            if not is_ordered:
-                messages = context_manager.remove_out_of_order_tool_pairs(messages, out_of_order_ids)
-                messages = context_manager.repair_tool_call_pairing(messages)
-        
+
         system = self._state.system_prompt or {"role": "system", "content": "You are a helpful assistant."}
+
+        has_archive = any(m.get('_is_summary_inline') for m in messages)
+        if has_archive:
+            archive_preamble = (
+                "[ARCHIVED CONTEXT ACTIVE] Earlier messages were compressed into a summary. "
+                "The summary does NOT contain specific data (numbers, URLs, statistics, findings). "
+                "When the user asks for specific details from earlier work, you MUST read the archived "
+                "files at /workspace/.kortix/context/ BEFORE answering. Do NOT guess or use general knowledge.\n\n"
+            )
+            archive_hint = (
+                "\n\n## Archived Context — Retrieval Instructions\n"
+                "How to retrieve specific data from archived messages:\n"
+                "```bash\n"
+                "grep -ri \"keyword\" /workspace/.kortix/context/\n"
+                "ls /workspace/.kortix/context/messages/batch_001/\n"
+                "cat /workspace/.kortix/context/messages/batch_001/MSG-003_tool.md\n"
+                "```\n"
+                "The files are in your sandbox — just read them."
+            )
+            content = system.get("content", "")
+            system = {**system, "content": archive_preamble + content + archive_hint}
 
         layers = ContextManager.extract_layers(messages)
         processed_messages = layers.to_messages()

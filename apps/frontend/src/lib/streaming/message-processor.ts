@@ -11,6 +11,7 @@ import type {
   DegradationEvent,
   ThinkingEvent,
   ErrorEvent,
+  SummarizingEvent,
 } from './types';
 import type { UnifiedMessage } from '@/components/thread/types';
 import { 
@@ -43,6 +44,7 @@ export interface ProcessedMessage {
         'ux_degradation' |
         'ux_thinking' |
         'ux_error' |
+        'ux_summarizing' |
         'context_usage' |
         'ignore';
   content?: string;
@@ -58,6 +60,7 @@ export interface ProcessedMessage {
   uxDegradation?: DegradationEvent;
   uxThinking?: ThinkingEvent;
   uxError?: ErrorEvent;
+  uxSummarizing?: SummarizingEvent;
   current_tokens?: number;
   message_count?: number;
   compressed?: boolean;
@@ -141,8 +144,15 @@ export function processStreamData(
   }
   
   if (jsonData.type === 'summarizing context') {
-    console.log('🗜️ [SUMMARIZING CONTEXT]', jsonData.status, jsonData);
-    return { type: 'ignore' };
+    return {
+      type: 'ux_summarizing',
+      uxSummarizing: {
+        status: jsonData.status as 'started' | 'completed' | 'failed',
+        tokens_before: jsonData.tokens_before as number | undefined,
+        tokens_after: jsonData.tokens_after as number | undefined,
+        timestamp: jsonData.timestamp as string,
+      },
+    };
   }
   
   if (jsonData.type === 'ping' && !jsonData.content) {

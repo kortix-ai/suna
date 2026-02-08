@@ -618,16 +618,30 @@ async def _memory_watchdog():
                 # === NEW: Cleanup state tracking ===
                 from core.agents.api import _cancellation_events
                 try:
-                    from core.utils.lifecycle_tracker import get_active_runs
+                    from core.utils.lifecycle_tracker import get_active_runs, evict_stale_runs
                     active_runs = get_active_runs()
                     stale_runs = [
-                        rid for rid, start in active_runs.items() 
+                        rid for rid, start in active_runs.items()
                         if (time_module.time() - start) > 3600  # > 1 hour
                     ]
+                    # Actively evict zombie entries older than 2 hours
+                    evicted = evict_stale_runs(max_age_seconds=7200)
+                    if evicted:
+                        logger.warning(f"[WATCHDOG] Evicted {evicted} zombie entries from _active_runs")
                 except ImportError:
                     active_runs = {}
                     stale_runs = []
                 
+                # Evict orphaned cancellation events (run finished but event wasn't popped)
+                stale_event_ids = [
+                    rid for rid in _cancellation_events
+                    if rid not in active_runs
+                ]
+                for rid in stale_event_ids:
+                    _cancellation_events.pop(rid, None)
+                if stale_event_ids:
+                    logger.warning(f"[WATCHDOG] Evicted {len(stale_event_ids)} orphaned cancellation events")
+
                 cancellation_count = len(_cancellation_events)
                 active_count = len(active_runs)
                 stale_count = len(stale_runs)

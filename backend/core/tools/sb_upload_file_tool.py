@@ -161,8 +161,8 @@ class SandboxUploadFileTool(SandboxToolsBase):
                 message += f"⏰ URL expires: {url_expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
                 if file_upload_id:
                     message += f"📋 File ID: {file_upload_id}\n"
-                message += f"\n🔐 This file is stored in private, secure storage with account isolation."
-                
+                message += "\n🔐 This file is stored in private, secure storage with account isolation."
+
                 return self.success_response(message)
                 
             except Exception as e:

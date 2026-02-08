@@ -49,8 +49,10 @@ class ScheduleProvider(TriggerProvider):
     async def validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
         if 'cron_expression' not in config:
             raise ValueError("cron_expression is required for scheduled triggers")
-        
-        if 'agent_prompt' not in config:
+
+        # Check for agent_prompt - must be a non-empty string (not just key presence)
+        agent_prompt = config.get('agent_prompt')
+        if not agent_prompt or not str(agent_prompt).strip():
             raise ValueError("agent_prompt is required for agent execution")
         
         user_timezone = config.get('timezone', 'UTC')
@@ -169,17 +171,22 @@ class ScheduleProvider(TriggerProvider):
     async def process_event(self, trigger: Trigger, event: TriggerEvent) -> TriggerResult:
         try:
             raw_data = event.raw_data
-            
+
             execution_variables = {
                 'scheduled_time': raw_data.get('timestamp'),
                 'trigger_id': event.trigger_id,
                 'agent_id': event.agent_id
             }
-            
+
+            # Try to get agent_prompt from webhook payload first, fallback to trigger config
+            # This handles legacy triggers where the cron payload may not have agent_prompt
             agent_prompt = raw_data.get('agent_prompt')
-            
-            if not agent_prompt:
-                raise ValueError("agent_prompt is required for agent execution")
+            if not agent_prompt or not str(agent_prompt).strip():
+                # Fallback to trigger config (where agent_prompt should be stored)
+                agent_prompt = trigger.config.get('agent_prompt') if trigger.config else None
+
+            if not agent_prompt or not str(agent_prompt).strip():
+                raise ValueError("agent_prompt is required for agent execution. Please update this trigger with valid worker instructions.")
             
             model = trigger.config.get('model') if trigger.config else None
             

@@ -115,6 +115,23 @@ ALL responses to users MUST use message tools:
 - Every `ask` call SHOULD include `follow_up_answers` with 2-4 actionable options
 - For clarification questions: specific options the user can click
 - For informational responses: suggest what they can do NEXT with the information
+
+# Archived Context — MANDATORY RETRIEVAL RULE
+
+When you see "[ARCHIVED CONTEXT]" or "[CONVERSATION HISTORY SUMMARY]" in your messages, older conversation history has been compressed. The summary is a HIGH-LEVEL OVERVIEW only.
+
+**CRITICAL: Specific data (numbers, statistics, URLs, links, exact findings, research results, code snippets) is NOT in the summary. It is ONLY in the archived files on disk.**
+
+**RULE: When the user asks for specific details, data, numbers, links, or results from earlier work, you MUST read the archived files BEFORE answering. Do NOT answer from memory or general knowledge. Do NOT make up numbers or URLs. The real data is in the files — read them.**
+
+How to retrieve archived data:
+```bash
+grep -ri "keyword" /workspace/.kortix/context/
+cat /workspace/.kortix/context/messages/batch_001/MSG-003_tool.md
+ls /workspace/.kortix/context/messages/batch_001/
+```
+
+The archive files are in YOUR sandbox — you already have full access. Just read them. Do not tell the user you lack access or ask them for files.
 """
 from typing import Optional
 
