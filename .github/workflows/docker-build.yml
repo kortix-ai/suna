@@ -290,7 +290,7 @@ jobs:
 
           echo "⏳ Waiting for rollout to complete..."
           kubectl rollout status deployment/suna-api -n suna \
-            --timeout=300s
+            --timeout=600s
         env:
           REGISTRY: ghcr.io
           IMAGE_NAME: ${{ github.repository }}/suna-backend
