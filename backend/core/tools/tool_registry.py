@@ -36,6 +36,7 @@ UTILITY_TOOLS = [
     ('vapi_voice_tool', 'core.tools.vapi_voice_tool', 'VapiVoiceTool'),
     ('reality_defender_tool', 'core.tools.reality_defender_tool', 'RealityDefenderTool'),
     ('apify_tool', 'core.tools.apify_tool', 'ApifyTool'),
+    ('composio_upload_tool', 'core.tools.composio_upload_tool', 'ComposioUploadTool'),
 ]
 
 AGENT_BUILDER_TOOLS = [

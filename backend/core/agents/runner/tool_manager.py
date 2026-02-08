@@ -27,6 +27,7 @@ DEFAULT_CORE_TOOLS = [
     'sb_upload_file_tool',  # File uploads
     'sb_expose_tool',       # Port exposure
     'sb_kb_tool',           # Knowledge base operations
+    'composio_upload_tool', # Composio S3 uploads for email attachments
     'agent_config_tool',
     'agent_creation_tool',
     'mcp_search_tool',
@@ -143,6 +144,7 @@ class ToolManager:
             'sb_upload_file_tool',
             'sb_expose_tool',
             'sb_kb_tool',  # Knowledge base operations
+            'composio_upload_tool',  # Composio S3 uploads for email attachments
         ]
         tools_needing_thread_id = {'sb_vision_tool', 'sb_image_edit_tool', 'sb_design_tool'}
         

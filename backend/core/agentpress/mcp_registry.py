@@ -7,6 +7,21 @@ from enum import Enum
 from core.utils.logger import logger
 from core.agentpress.tool import ToolResult
 
+_GMAIL_ATTACHMENT_TOOLS = {"GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT", "GMAIL_REPLY_TO_THREAD"}
+_GMAIL_ATTACHMENT_HINT = (
+    "\n\nTo attach files: first use composio_upload to upload the file to Composio storage. "
+    "The response includes attachment data (s3key, mimetype, name). "
+    "Pass these to the attachment parameter as: "
+    '{"s3key": "<s3key>", "mimetype": "<mimetype>", "name": "<name>"}. '
+    "Tip: For presentations, export as .pptx rather than .pdf for best compatibility, unless user asks for a specific file format."
+)
+
+
+def _enrich_description(tool_name: str, description: str) -> str:
+    if tool_name.upper() in _GMAIL_ATTACHMENT_TOOLS:
+        return description + _GMAIL_ATTACHMENT_HINT
+    return description
+
 
 class MCPToolStatus(Enum):
     DISCOVERED = "discovered"
@@ -340,7 +355,7 @@ class MCPRegistry:
                             "type": "function",
                             "function": {
                                 "name": tool_name,
-                                "description": discovered_tool.get('description', f"Execute {tool_name}"),
+                                "description": _enrich_description(tool_name, discovered_tool.get('description', f"Execute {tool_name}")),
                                 "parameters": discovered_tool.get('inputSchema', {
                                     "type": "object",
                                     "properties": {},
@@ -415,7 +430,7 @@ class MCPRegistry:
                                 "type": "function",
                                 "function": {
                                     "name": tool.name,
-                                    "description": tool.description or f"Execute {tool.name}",
+                                    "description": _enrich_description(tool.name, tool.description or f"Execute {tool.name}"),
                                     "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
                                         "type": "object",
                                         "properties": {},
@@ -424,7 +439,7 @@ class MCPRegistry:
                                 }
                             }
                             schemas[tool.name] = schema
-                        
+
                         logger.debug(f"⚡ [MCP REGISTRY] Discovered {len(schemas)} SSE schemas")
             except TypeError as e:
                 if "unexpected keyword argument" in str(e):
@@ -439,7 +454,7 @@ class MCPRegistry:
                                     "type": "function",
                                     "function": {
                                         "name": tool.name,
-                                        "description": tool.description or f"Execute {tool.name}",
+                                        "description": _enrich_description(tool.name, tool.description or f"Execute {tool.name}"),
                                         "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
                                             "type": "object",
                                             "properties": {},
@@ -481,7 +496,7 @@ class MCPRegistry:
                             "type": "function",
                             "function": {
                                 "name": tool.name,
-                                "description": tool.description or f"Execute {tool.name}",
+                                "description": _enrich_description(tool.name, tool.description or f"Execute {tool.name}"),
                                 "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
                                     "type": "object",
                                     "properties": {},
@@ -490,7 +505,7 @@ class MCPRegistry:
                             }
                         }
                         schemas[tool.name] = schema
-                    
+
                     logger.debug(f"⚡ [MCP REGISTRY] Discovered {len(schemas)} HTTP schemas")
         except Exception as e:
             logger.error(f"❌ [MCP REGISTRY] Failed to load HTTP schemas: {e}")
@@ -527,7 +542,7 @@ class MCPRegistry:
                             "type": "function",
                             "function": {
                                 "name": tool.name,
-                                "description": tool.description or f"Execute {tool.name}",
+                                "description": _enrich_description(tool.name, tool.description or f"Execute {tool.name}"),
                                 "parameters": tool.inputSchema if hasattr(tool, 'inputSchema') else {
                                     "type": "object",
                                     "properties": {},
@@ -536,7 +551,7 @@ class MCPRegistry:
                             }
                         }
                         schemas[tool.name] = schema
-                    
+
                     logger.debug(f"⚡ [MCP REGISTRY] Discovered {len(schemas)} JSON/stdio schemas")
         except Exception as e:
             logger.error(f"❌ [MCP REGISTRY] Failed to load JSON/stdio schemas: {e}")
