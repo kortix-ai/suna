@@ -6,7 +6,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "Kortix",
       "options": {
-        "baseURL": "{env:KORTIX_LLM_URL}",
+        "baseURL": "{env:KORTIX_API_URL}/v1",
         "apiKey": "{env:KORTIX_TOKEN}"
       },
       "models": {

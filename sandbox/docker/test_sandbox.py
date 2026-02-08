@@ -6,22 +6,20 @@ async def main():
     daytona = AsyncDaytona(config)
 
     # Your ngrok URL pointing to kortix-router (localhost:8008)
-    KORTIX_LLM_URL = "https://4448-95-85-157-6.ngrok-free.app/v1"
     KORTIX_API_URL = "https://4448-95-85-157-6.ngrok-free.app"
-    KORTIX_TOKEN = "sk_XVENRFj2DMmSFs0ydRChyCNqg5tG5XlV"  # Your API key
+    KORTIX_TOKEN = "sk_XVENRFj2DMmSFs0ydRChyCNqg5tG5XlV"
 
-    print("Creating sandbox with kortix-opencode-v0.2.6...")
-    print(f"LLM URL: {KORTIX_LLM_URL}")
+    print("Creating sandbox with kortix-opencode-v0.2.8...")
+    print(f"API URL: {KORTIX_API_URL}")
     print(f"Token: {KORTIX_TOKEN[:10]}...")
 
     params = CreateSandboxFromSnapshotParams(
-        snapshot="kortix-opencode-v0.2.7",
+        snapshot="kortix-opencode-v0.3.0",
         public=True,
         env_vars={
             "OPENCODE_SERVER_USERNAME": "opencode",
             "OPENCODE_SERVER_PASSWORD": "testpass123",
             "KORTIX_API_URL": KORTIX_API_URL,
-            "KORTIX_LLM_URL": KORTIX_LLM_URL,
             "KORTIX_TOKEN": KORTIX_TOKEN,
         },
         auto_stop_interval=15,

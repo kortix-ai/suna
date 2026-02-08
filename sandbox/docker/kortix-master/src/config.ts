@@ -10,7 +10,6 @@ export const config = {
 
   // Kortix backend
   KORTIX_API_URL: process.env.KORTIX_API_URL || 'https://api.kortix.ai',
-  KORTIX_LLM_URL: process.env.KORTIX_LLM_URL || 'https://api.kortix.ai/v1',
   KORTIX_TOKEN: process.env.KORTIX_TOKEN || '',
 
   // Secret storage

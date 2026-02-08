@@ -98,7 +98,6 @@ async def create_sandbox(password: str, project_id: str = None, kortix_token: st
             "OPENCODE_SERVER_USERNAME": "opencode",
             "OPENCODE_SERVER_PASSWORD": password,
             "KORTIX_API_URL": config.KORTIX_API_URL or "https://api.kortix.ai",
-            "KORTIX_LLM_URL": getattr(config, 'KORTIX_LLM_URL', None) or "https://api.kortix.ai/v1",
             "KORTIX_TOKEN": kortix_token or "00000",  # Token for Kortix router auth (00000 = test mode)
         },
         # resources=Resources(
