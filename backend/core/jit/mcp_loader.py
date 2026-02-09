@@ -437,8 +437,9 @@ class MCPJITLoader:
             
             db = DBConnection()
             profile_service = ComposioProfileService(db)
-            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id)
-            
+            account_id = self.agent_config.get('account_id')
+            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=account_id)
+
             logger.debug(f"⚡ [MCP JIT] Resolved Composio profile {profile_id} to MCP URL for {tool_name}")
             
             async with streamablehttp_client(mcp_url) as (read_stream, write_stream, _):
