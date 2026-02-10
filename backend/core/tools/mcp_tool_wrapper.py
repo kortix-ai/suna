@@ -111,7 +111,7 @@ class MCPToolWrapper(Tool):
         self.account_id = account_id
 
         self.connection_manager = MCPConnectionManager()
-        self.custom_handler = CustomMCPHandler(self.connection_manager)
+        self.custom_handler = CustomMCPHandler(self.connection_manager, account_id=self.account_id)
         self.tool_builder = DynamicToolBuilder()
         self.tool_executor = None
 

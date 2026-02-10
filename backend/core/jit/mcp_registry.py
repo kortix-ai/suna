@@ -118,20 +118,6 @@ class MCPRegistry:
         
         return []
     
-    async def _query_via_mcp_service(self, toolkit_slug: str, profile_id: str, start_time: float) -> List[str]:
-        from core.composio_integration.composio_profile_service import ComposioProfileService
-        from core.services.supabase import DBConnection
-        
-        db = DBConnection()
-        profile_service = ComposioProfileService(db)
-        
-        profile = await profile_service.get_profile_by_id(profile_id)
-        
-        if profile and profile.is_connected and profile.mcp_url:
-            return await self._query_via_mcp_service_with_url(toolkit_slug, profile.mcp_url, start_time)
-        
-        return []
-    
     async def _query_toolkit_service_with_mapping(self, toolkit_slug: str, start_time: float) -> List[str]:
         from core.composio_integration.toolkit_service import ToolkitService
         
