@@ -229,7 +229,7 @@ class JsonImportService:
                 if profile_id:
                     from core.composio_integration.composio_profile_service import ComposioProfileService
                     composio_service = ComposioProfileService(self._db)
-                    mcp_config = await composio_service.get_mcp_config_for_agent(profile_id)
+                    mcp_config = await composio_service.get_mcp_config_for_agent(profile_id, account_id=account_id)
                     if mcp_config:
                         mcp_config['enabledTools'] = req.enabled_tools
                         agent_config['tools']['custom_mcp'].append(mcp_config)
@@ -237,7 +237,7 @@ class JsonImportService:
             elif not req.custom_type:
                 profile_id = request.profile_mappings.get(req.qualified_name) if request.profile_mappings else None
                 if profile_id:
-                    profile = await profile_service.get_profile_by_id(profile_id)
+                    profile = await profile_service.get_profile(account_id, profile_id)
                     if profile:
                         mcp_config = {
                             'name': req.display_name,

@@ -10,8 +10,9 @@ from .mcp_connection_manager import MCPConnectionManager
 
 
 class CustomMCPHandler:
-    def __init__(self, connection_manager: MCPConnectionManager):
+    def __init__(self, connection_manager: MCPConnectionManager, account_id: str = None):
         self.connection_manager = connection_manager
+        self.account_id = account_id
         self.custom_tools = {}
     
     async def initialize_custom_mcps(self, custom_configs: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -70,7 +71,7 @@ class CustomMCPHandler:
             
             db = DBConnection()
             profile_service = ComposioProfileService(db)
-            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id)
+            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=self.account_id)
             
             logger.debug(f"Resolved Composio profile {profile_id} to MCP URL")
 
@@ -137,7 +138,7 @@ class CustomMCPHandler:
             
             result = await supabase.table('user_mcp_credential_profiles').select(
                 'encrypted_config'
-            ).eq('profile_id', profile_id).single().execute()
+            ).eq('profile_id', profile_id).eq('account_id', self.account_id).single().execute()
             
             if result.data:
                 decrypted_config = decrypt_data(result.data['encrypted_config'])

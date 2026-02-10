@@ -451,7 +451,7 @@ async def get_profile_mcp_config(
 ) -> Dict[str, Any]:
     try:
         profile_service = ComposioProfileService(db)
-        mcp_config = await profile_service.get_mcp_config_for_agent(profile_id)
+        mcp_config = await profile_service.get_mcp_config_for_agent(profile_id, account_id=current_user_id)
         
         return {
             "success": True,
@@ -514,7 +514,7 @@ async def discover_composio_tools(
 ) -> Dict[str, Any]:
     try:
         profile_service = ComposioProfileService(db)
-        config = await profile_service.get_profile_config(profile_id)
+        config = await profile_service.get_profile_config(profile_id, account_id=current_user_id)
         
         if config.get('type') != 'composio':
             raise HTTPException(status_code=400, detail="Not a Composio profile")

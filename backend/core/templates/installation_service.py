@@ -671,7 +671,7 @@ class InstallationService:
 
             from core.composio_integration.composio_profile_service import ComposioProfileService
             profile_service = ComposioProfileService(self._db)
-            profile_config = await profile_service.get_profile_config(profile_id)
+            profile_config = await profile_service.get_profile_config(profile_id, account_id=account_id)
             composio_user_id = profile_config.get('user_id')
             if not composio_user_id:
                 return False

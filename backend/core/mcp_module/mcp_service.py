@@ -94,6 +94,7 @@ class MCPConnectionRequest:
     enabled_tools: List[str]
     provider: str = 'custom'
     external_user_id: Optional[str] = None
+    account_id: Optional[str] = None
 
 
 @dataclass
@@ -137,22 +138,23 @@ class MCPService:
     def _connections(self):
         return self._servers
 
-    async def connect_server(self, mcp_config: Dict[str, Any], external_user_id: Optional[str] = None) -> MCPServerInfo:
+    async def connect_server(self, mcp_config: Dict[str, Any], external_user_id: Optional[str] = None, account_id: Optional[str] = None) -> MCPServerInfo:
         """
         Discover and cache an MCP server's tools.
-        
+
         This connects temporarily to fetch tool metadata, then disconnects.
         The metadata is cached for fast tool lookups during execution.
         """
         provider = mcp_config.get('type', mcp_config.get('provider', 'custom'))
-        
+
         request = MCPConnectionRequest(
             qualified_name=mcp_config.get('qualifiedName', mcp_config.get('name', '')),
             name=mcp_config.get('name', ''),
             config=mcp_config.get('config', {}),
             enabled_tools=mcp_config.get('enabledTools', mcp_config.get('enabled_tools', [])),
             provider=provider,
-            external_user_id=external_user_id
+            external_user_id=external_user_id,
+            account_id=account_id
         )
         return await self._discover_and_cache_server(request)
     
@@ -165,7 +167,7 @@ class MCPService:
         self._logger.debug(f"Discovering MCP server: {request.qualified_name}")
         
         try:
-            server_url = await self._get_server_url(request.qualified_name, request.config, request.provider)
+            server_url = await self._get_server_url(request.qualified_name, request.config, request.provider, account_id=request.account_id)
             headers = self._get_headers(request.qualified_name, request.config, request.provider, request.external_user_id)
             
             self._logger.debug(f"MCP discovery - Provider: {request.provider}, URL: {server_url}")
@@ -510,11 +512,11 @@ class MCPService:
                 message=f"Failed to connect: {str(e)}"
             )
 
-    async def _get_server_url(self, qualified_name: str, config: Dict[str, Any], provider: str) -> str:
+    async def _get_server_url(self, qualified_name: str, config: Dict[str, Any], provider: str, account_id: Optional[str] = None) -> str:
         if provider in ['custom', 'http', 'sse']:
             return await self._get_custom_server_url(qualified_name, config)
         elif provider == 'composio':
-            return await self._get_composio_server_url(qualified_name, config)
+            return await self._get_composio_server_url(qualified_name, config, account_id=account_id)
         else:
             raise MCPProviderError(f"Unknown provider type: {provider}")
     
@@ -543,24 +545,24 @@ class MCPService:
         
         return headers
     
-    async def _get_composio_server_url(self, qualified_name: str, config: Dict[str, Any]) -> str:
+    async def _get_composio_server_url(self, qualified_name: str, config: Dict[str, Any], account_id: Optional[str] = None) -> str:
         """Resolve Composio profile_id to actual MCP URL"""
         profile_id = config.get("profile_id")
         if not profile_id:
             raise MCPProviderError(f"profile_id not provided for Composio MCP server: {qualified_name}")
-        
+
         # Import here to avoid circular dependency
         from core.composio_integration.composio_profile_service import ComposioProfileService
         from core.services.supabase import DBConnection
-        
+
         try:
             db = DBConnection()
             profile_service = ComposioProfileService(db)
-            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id)
-            
+            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=account_id)
+
             self._logger.debug(f"Resolved Composio profile {profile_id} to MCP URL {mcp_url}")
             return mcp_url
-            
+
         except Exception as e:
             self._logger.error(f"Failed to resolve Composio profile {profile_id}: {str(e)}")
             raise MCPProviderError(f"Failed to resolve Composio profile: {str(e)}")
