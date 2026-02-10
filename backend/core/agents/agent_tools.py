@@ -24,6 +24,8 @@ async def get_custom_mcp_tools_for_agent(
     request: Request,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ACTIVATE_MCPS_TRIG:
+        raise HTTPException(status_code=403, detail="MCP integrations are not enabled")
     logger.debug(f"Getting custom MCP tools for agent {agent_id}, user {user_id}")
     try:
         from core.agents import repo as agents_repo
@@ -106,8 +108,10 @@ async def update_custom_mcp_tools_for_agent(
     request: dict,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ACTIVATE_MCPS_TRIG:
+        raise HTTPException(status_code=403, detail="MCP integrations are not enabled")
     logger.debug(f"Updating custom MCP tools for agent {agent_id}, user {user_id}")
-    
+
     try:
         from core.agents import repo as agents_repo
         from core.versioning import repo as versioning_repo
@@ -228,8 +232,10 @@ async def update_agent_custom_mcps(
     request: dict,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
+    if not config.ACTIVATE_MCPS_TRIG:
+        raise HTTPException(status_code=403, detail="MCP integrations are not enabled")
     logger.debug(f"Updating agent {agent_id} custom MCPs for user {user_id}")
-    
+
     try:
         from core.agents import repo as agents_repo
         from core.versioning import repo as versioning_repo

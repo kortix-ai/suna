@@ -32,6 +32,10 @@ class ExecutionService:
         
         Reuses the core agent start infrastructure from agent_runs.py.
         """
+        if not config.ACTIVATE_MCPS_TRIG:
+            logger.warning("Trigger execution blocked: ACTIVATE_MCPS_TRIG is disabled")
+            return {"success": False, "error": "Trigger functionality is disabled"}
+
         try:
             logger.debug(f"Executing trigger for agent {agent_id}")
             
@@ -144,9 +148,14 @@ class ExecutionService:
             # Append full context for reference
             if ctx:
                 context_json = _to_json(ctx)
-                rendered = f"{rendered}\n\n---\nContext\n{context_json}"
+                rendered = f"""{rendered}\n\n---\nContext: 
                 
-        except Exception as e:
+                **Important Trigger task execution Reminder:** \n
+                For those tasks whose instructions given by the user aren't clear enough, and you decide to use ask() tool to further clarify any question/aspect before proceeding, send those questions in plain text via email to the personal gmail of the user.
+                
+                \n \n\n{context_json}"""
+                
+        except Exception as e:  
             logger.warning(f"Failed to render prompt variables: {e}")
             # Return original prompt on error
             

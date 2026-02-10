@@ -130,10 +130,11 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to cleanup orphaned agent runs on startup: {e}")
         
-        triggers_api.initialize(db)
-        credentials_api.initialize(db)
+        if config.ACTIVATE_MCPS_TRIG:
+            triggers_api.initialize(db)
+            credentials_api.initialize(db)
+            composio_api.initialize(db)
         template_api.initialize(db)
-        composio_api.initialize(db)
         
         # Start CloudWatch worker metrics publisher (production only)
         if config.ENV_MODE == EnvMode.PRODUCTION:
@@ -380,8 +381,9 @@ from core.credentials import api as credentials_api
 from core.templates import api as template_api
 from core.templates import presentations_api
 
-api_router.include_router(mcp_api.router)
-api_router.include_router(credentials_api.router, prefix="/secure-mcp")
+if config.ACTIVATE_MCPS_TRIG:
+    api_router.include_router(mcp_api.router)
+    api_router.include_router(credentials_api.router, prefix="/secure-mcp")
 api_router.include_router(template_api.router, prefix="/templates")
 api_router.include_router(presentations_api.router, prefix="/presentation-templates")
 
@@ -393,7 +395,8 @@ api_router.include_router(voice_api.router)
 from core.knowledge_base import api as knowledge_base_api
 api_router.include_router(knowledge_base_api.router)
 
-api_router.include_router(triggers_api.router)
+if config.ACTIVATE_MCPS_TRIG:
+    api_router.include_router(triggers_api.router)
 
 api_router.include_router(notifications_api.router)
 
@@ -401,7 +404,8 @@ from core.notifications import presence_api
 api_router.include_router(presence_api.router)
 
 from core.composio_integration import api as composio_api
-api_router.include_router(composio_api.router)
+if config.ACTIVATE_MCPS_TRIG:
+    api_router.include_router(composio_api.router)
 
 from core.google.google_slides_api import router as google_slides_router
 api_router.include_router(google_slides_router)

@@ -42,9 +42,9 @@ UTILITY_TOOLS = [
 AGENT_BUILDER_TOOLS = [
     ('agent_config_tool', 'core.tools.agent_builder_tools.agent_config_tool', 'AgentConfigTool'),
     ('agent_creation_tool', 'core.tools.agent_creation_tool', 'AgentCreationTool'),
-    ('mcp_search_tool', 'core.tools.agent_builder_tools.mcp_search_tool', 'MCPSearchTool'),
+    # ('mcp_search_tool', 'core.tools.agent_builder_tools.mcp_search_tool', 'MCPSearchTool'),
     ('credential_profile_tool', 'core.tools.agent_builder_tools.credential_profile_tool', 'CredentialProfileTool'),
-    ('trigger_tool', 'core.tools.agent_builder_tools.trigger_tool', 'TriggerTool'),
+    # ('trigger_tool', 'core.tools.agent_builder_tools.trigger_tool', 'TriggerTool'),
 ]
 
 ALL_TOOLS = CORE_TOOLS + SANDBOX_TOOLS + SEARCH_TOOLS + UTILITY_TOOLS + AGENT_BUILDER_TOOLS
