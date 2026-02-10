@@ -96,9 +96,10 @@ def is_safe_url(url: str) -> tuple[bool, str]:
 
 
 class MCPToolExecutor:
-    def __init__(self, custom_tools: Dict[str, Dict[str, Any]], tool_wrapper=None, db=None):
+    def __init__(self, custom_tools: Dict[str, Dict[str, Any]], tool_wrapper=None, db=None, account_id: str = None):
         self.mcp_manager = mcp_service
         self.custom_tools = custom_tools
+        self.account_id = account_id
         self.tool_wrapper = tool_wrapper
         self.db = db
     
@@ -144,7 +145,7 @@ class MCPToolExecutor:
                 else:
                     db = self.db
                 profile_service = ComposioProfileService(db)
-                mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id)
+                mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=self.account_id)
                 modified_tool_info = tool_info.copy()
                 modified_tool_info['custom_config'] = {
                     **custom_config,

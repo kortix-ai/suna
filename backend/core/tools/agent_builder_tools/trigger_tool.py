@@ -468,10 +468,11 @@ class TriggerTool(AgentBuilderBaseTool):
             # Extract variables from the prompt
             variables = self._extract_variables(agent_prompt)
 
-            # Get profile config
+            # Get profile config — validate ownership against current account
+            account_id = await self._get_current_account_id()
             profile_service = ComposioProfileService(self.db)
             try:
-                profile_config = await profile_service.get_profile_config(profile_id)
+                profile_config = await profile_service.get_profile_config(profile_id, account_id=account_id)
             except Exception as e:
                 logger.error(f"Failed to get profile config: {e}")
                 return self.fail_response(f"Failed to get profile config: {str(e)}")

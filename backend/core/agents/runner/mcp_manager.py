@@ -71,7 +71,7 @@ class MCPManager:
         if not all_mcps:
             return None
         
-        mcp_wrapper_instance = MCPToolWrapper(mcp_configs=all_mcps)
+        mcp_wrapper_instance = MCPToolWrapper(mcp_configs=all_mcps, account_id=self.account_id)
         try:
             await mcp_wrapper_instance.initialize_and_register_tools()
             

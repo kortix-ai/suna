@@ -227,7 +227,8 @@ async def invalidate_agent_config_cache(agent_id: str) -> None:
         keys = [
             f"agent_config:{agent_id}:current",
             f"agent_mcps:{agent_id}",
-            f"agent_type:{agent_id}"
+            f"agent_type:{agent_id}",
+            f"mcp_version_config:{agent_id}",
         ]
         deleted = await delete_multiple(keys, timeout=5.0)
         logger.info(f"🗑️ Invalidated Redis cache for agent: {agent_id} ({deleted} keys)")

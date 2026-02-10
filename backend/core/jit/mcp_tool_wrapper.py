@@ -5,11 +5,12 @@ from core.utils.logger import logger
 
 class MCPToolExecutor:
 
-    def __init__(self, mcp_config: Dict[str, Any]):
+    def __init__(self, mcp_config: Dict[str, Any], account_id: str = None):
         self.mcp_config = mcp_config
+        self.account_id = account_id
         custom_type = mcp_config.get("customType", mcp_config.get("type", "standard"))
         self.server_type = custom_type
-        
+
         self.tool_info = {
             'custom_type': custom_type,
             'custom_config': mcp_config.get('config', {}),
@@ -51,8 +52,8 @@ class MCPToolExecutor:
         try:
             db = DBConnection()
             profile_service = ComposioProfileService(db)
-            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id)
-            
+            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=self.account_id)
+
             logger.debug(f"⚡ [MCP EXEC] Executing {tool_name} via Composio")
             
             async with streamablehttp_client(mcp_url) as (read, write, _):

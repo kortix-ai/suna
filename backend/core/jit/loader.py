@@ -194,7 +194,8 @@ class JITLoader:
                 schema = tool_info.schema if tool_info else None
                 
                 if schema:
-                    tool_wrapper = await JITLoader._create_mcp_tool_wrapper(tool_name, schema, tool_info)
+                    account_id = getattr(mcp_loader, 'agent_config', {}).get('account_id')
+                    tool_wrapper = await JITLoader._create_mcp_tool_wrapper(tool_name, schema, tool_info, account_id=account_id)
                     
                     from core.agentpress.tool import ToolSchema, SchemaType
                     
@@ -244,16 +245,16 @@ class JITLoader:
             )
     
     @staticmethod
-    async def _create_mcp_tool_wrapper(tool_name: str, schema: Dict, tool_info):
+    async def _create_mcp_tool_wrapper(tool_name: str, schema: Dict, tool_info, account_id: str = None):
         from core.jit.mcp_tool_wrapper import MCPToolExecutor
-        
+
         class MCPToolWrapper:
-            def __init__(self, tool_name: str, schema: Dict, tool_info):
+            def __init__(self, tool_name: str, schema: Dict, tool_info, account_id: str = None):
                 self.tool_name = tool_name
                 self.schema = schema
                 self.tool_info = tool_info
-                self._executor = MCPToolExecutor(tool_info.mcp_config)
-            
+                self._executor = MCPToolExecutor(tool_info.mcp_config, account_id=account_id)
+
             def __getattr__(self, method_name: str):
                 """Handle dynamic method calls for MCP tools (same pattern as legacy MCPToolWrapper)"""
                 if method_name == self.tool_name:
@@ -262,16 +263,16 @@ class JITLoader:
                         return await self._executor.execute_tool(self.tool_name, kwargs)
                     return mcp_method
                 raise AttributeError(f"'MCPToolWrapper' object has no attribute '{method_name}'")
-            
+
             async def execute(self, **kwargs):
                 """Execute the MCP tool with given parameters"""
                 return await self._executor.execute_tool(self.tool_name, kwargs)
-            
+
             def get_schema(self):
                 """Return tool schema for registration"""
                 return self.schema
-        
-        return MCPToolWrapper(tool_name, schema, tool_info)
+
+        return MCPToolWrapper(tool_name, schema, tool_info, account_id=account_id)
     
     @staticmethod
     async def activate_multiple_with_mcp(

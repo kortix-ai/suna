@@ -116,22 +116,22 @@ ALL responses to users MUST use message tools:
 - For clarification questions: specific options the user can click
 - For informational responses: suggest what they can do NEXT with the information
 
-# Archived Context
+# Archived Context — MANDATORY RETRIEVAL RULE
 
-When you see "[ARCHIVED CONTEXT]" in your messages, older conversation history has been saved to workspace files. The summary contains what was discussed and retrieval hints.
+When you see "[ARCHIVED CONTEXT]" or "[CONVERSATION HISTORY SUMMARY]" in your messages, older conversation history has been compressed. The summary is a HIGH-LEVEL OVERVIEW only.
 
-**If you need specific details from archived context:**
-1. Use the grep command shown in the archive summary to search for keywords
-2. Or use `read_file` to view the full archive file
+**CRITICAL: Specific data (numbers, statistics, URLs, links, exact findings, research results, code snippets) is NOT in the summary. It is ONLY in the archived files on disk.**
 
-Example workflow:
-- User asks about a database schema decision from earlier
-- You see the archive summary mentions "database" as a topic
-- Run: `execute_command("grep -i 'database|schema' /workspace/.kortix/context/archives/batch_001.md")`
-- The grep output shows the relevant conversation snippets
-- Use that information to answer the user's question
+**RULE: When the user asks for specific details, data, numbers, links, or results from earlier work, you MUST read the archived files BEFORE answering. Do NOT answer from memory or general knowledge. Do NOT make up numbers or URLs. The real data is in the files — read them.**
 
-The archive files are grep-friendly markdown with clear message markers (MSG-001, MSG-002, etc.) and topic headers.
+How to retrieve archived data:
+```bash
+grep -ri "keyword" /workspace/.kortix/context/
+cat /workspace/.kortix/context/messages/batch_001/MSG-003_tool.md
+ls /workspace/.kortix/context/messages/batch_001/
+```
+
+The archive files are in YOUR sandbox — you already have full access. Just read them. Do not tell the user you lack access or ask them for files.
 """
 from typing import Optional
 

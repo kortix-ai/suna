@@ -176,7 +176,7 @@ async def update_custom_mcp_tools_for_agent(
                     profile_service = ComposioProfileService(DBConnection())
  
                     profile_id = mcp_url
-                    mcp_config = await profile_service.get_mcp_config_for_agent(profile_id)
+                    mcp_config = await profile_service.get_mcp_config_for_agent(profile_id, account_id=user_id)
                     mcp_config['enabledTools'] = enabled_tools
                     custom_mcps.append(mcp_config)
                 except Exception as e:

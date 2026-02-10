@@ -442,7 +442,7 @@ async def get_composio_profiles(
             
             has_mcp_url = False
             try:
-                mcp_url = await composio_service.get_mcp_url_for_runtime(profile.profile_id)
+                mcp_url = await composio_service.get_mcp_url_for_runtime(profile.profile_id, account_id=user_id)
                 has_mcp_url = bool(mcp_url)
             except:
                 has_mcp_url = False
@@ -498,8 +498,8 @@ async def get_composio_mcp_url(
             raise HTTPException(status_code=400, detail="Not a Composio profile")
         
         try:
-            mcp_url = await composio_service.get_mcp_url_for_runtime(profile_id)
-            config = await composio_service.get_profile_config(profile_id)
+            mcp_url = await composio_service.get_mcp_url_for_runtime(profile_id, account_id=user_id)
+            config = await composio_service.get_profile_config(profile_id, account_id=user_id)
             toolkit_name = config.get('toolkit_name', 'Unknown')
         except Exception as e:
             logger.error(f"Failed to decrypt Composio profile {profile_id}: {e}")

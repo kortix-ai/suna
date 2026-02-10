@@ -174,15 +174,16 @@ class ComposioProfileService:
             logger.error(f"Failed to create Composio profile: {e}", exc_info=True)
             raise
 
-    async def get_mcp_config_for_agent(self, profile_id: str) -> Dict[str, Any]:
+    async def get_mcp_config_for_agent(self, profile_id: str, account_id: str) -> Dict[str, Any]:
         try:
             client = await self.db.client
-            result = await client.table('user_mcp_credential_profiles').select('*').eq(
+            query = client.table('user_mcp_credential_profiles').select('*').eq(
                 'profile_id', profile_id
-            ).execute()
-            
+            ).eq('account_id', account_id)
+            result = await query.execute()
+
             if not result.data:
-                raise ValueError(f"Profile {profile_id} not found")
+                raise ValueError(f"Profile {profile_id} not found or does not belong to account {account_id}")
             
             profile_data = result.data[0]
 
@@ -206,48 +207,52 @@ class ComposioProfileService:
             logger.error(f"Failed to get MCP config for profile {profile_id}: {e}", exc_info=True)
             raise
     
-    async def get_mcp_url_for_runtime(self, profile_id: str) -> str:
+    async def get_mcp_url_for_runtime(self, profile_id: str, account_id: str) -> str:
         try:
             client = await self.db.client
-            
-            result = await client.table('user_mcp_credential_profiles').select('*').eq(
+
+            query = client.table('user_mcp_credential_profiles').select('*').eq(
                 'profile_id', profile_id
-            ).execute()
-            
+            ).eq('account_id', account_id)
+
+            result = await query.execute()
+
             if not result.data:
-                raise ValueError(f"Profile {profile_id} not found")
-            
+                raise ValueError(f"Profile {profile_id} not found or does not belong to account {account_id}")
+
             profile_data = result.data[0]
-            
+
             config = self._decrypt_config(profile_data['encrypted_config'])
-            
+
             if config.get('type') != 'composio':
                 raise ValueError(f"Profile {profile_id} is not a Composio profile")
-            
+
             mcp_url = config.get('mcp_url')
             if not mcp_url:
                 raise ValueError(f"Profile {profile_id} has no MCP URL")
-            
+
             logger.debug(f"Retrieved MCP URL for profile {profile_id}")
             return mcp_url
-            
+
         except Exception as e:
             logger.error(f"Failed to get MCP URL for profile {profile_id}: {e}", exc_info=True)
             raise
 
-    async def get_profile_config(self, profile_id: str) -> Dict[str, Any]:
+    async def get_profile_config(self, profile_id: str, account_id: str) -> Dict[str, Any]:
         try:
             client = await self.db.client
-            
-            result = await client.table('user_mcp_credential_profiles').select('encrypted_config').eq(
+
+            query = client.table('user_mcp_credential_profiles').select('encrypted_config').eq(
                 'profile_id', profile_id
-            ).execute()
-            
+            ).eq('account_id', account_id)
+
+            result = await query.execute()
+
             if not result.data:
-                raise ValueError(f"Profile {profile_id} not found")
-            
+                raise ValueError(f"Profile {profile_id} not found or does not belong to account {account_id}")
+
             return self._decrypt_config(result.data[0]['encrypted_config'])
-            
+
         except Exception as e:
             logger.error(f"Failed to get config for profile {profile_id}: {e}", exc_info=True)
             raise
