@@ -19,7 +19,7 @@ from core.utils.logger import logger
     usage_guide="""### COMPOSIO FILE UPLOAD (for email attachments)
 **PURPOSE:** Upload files from sandbox to Composio S3 storage for attachment with Gmail/email tools.
 **WHEN TO USE:** Before sending emails with attachments via Composio Gmail tools (GMAIL_SEND_EMAIL, GMAIL_CREATE_EMAIL_DRAFT, GMAIL_REPLY_TO_THREAD).
-**WORKFLOW:** 1. Create/prepare file in sandbox -> 2. Call composio_upload -> 3. Use returned {s3key, mimetype, name} in the email tool's attachment parameter."""
+**WORKFLOW:** 1. Create/prepare file in sandbox. Preferably export file as pptx when sending presentations over email. -> 2. Call composio_upload -> 3. Use returned {s3key, mimetype, name} in the email tool's attachment parameter."""
 )
 class ComposioUploadTool(SandboxToolsBase):
     """Uploads files from the agent sandbox to Composio's S3 storage.
