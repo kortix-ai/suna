@@ -331,7 +331,7 @@ class MCPRegistry:
                         continue
                     
                     profile = profiles[0]
-                    profile_config = await profile_service.get_profile_config(profile.profile_id)
+                    profile_config = await profile_service.get_profile_config(profile.profile_id, account_id=account_id)
                     mcp_url = profile_config.get('mcp_url')
                     
                     if not mcp_url:

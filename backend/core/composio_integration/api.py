@@ -739,7 +739,7 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
                 raise HTTPException(status_code=402, detail=error_detail)
 
         profile_service = ComposioProfileService(db)
-        profile_config = await profile_service.get_profile_config(req.profile_id)
+        profile_config = await profile_service.get_profile_config(req.profile_id, account_id=current_user_id)
         composio_user_id = profile_config.get("user_id")
         if not composio_user_id:
             raise HTTPException(status_code=400, detail="Composio profile is missing user_id")

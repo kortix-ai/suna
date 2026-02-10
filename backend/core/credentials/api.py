@@ -442,7 +442,7 @@ async def get_composio_profiles(
             
             has_mcp_url = False
             try:
-                mcp_url = await composio_service.get_mcp_url_for_runtime(profile.profile_id)
+                mcp_url = await composio_service.get_mcp_url_for_runtime(profile.profile_id, account_id=user_id)
                 has_mcp_url = bool(mcp_url)
             except:
                 has_mcp_url = False
