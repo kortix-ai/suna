@@ -42,20 +42,18 @@ class MCPToolExecutor:
         from mcp.client.streamable_http import streamablehttp_client
         from mcp import ClientSession
         from core.agentpress.tool import ToolResult
-        
+
         custom_config = self.tool_info['custom_config']
         profile_id = custom_config.get('profile_id')
-        
+
         if not profile_id:
             raise ValueError("Missing profile_id for Composio tool")
-        
+
         try:
             db = DBConnection()
             profile_service = ComposioProfileService(db)
             mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=self.account_id)
 
-            logger.debug(f"⚡ [MCP EXEC] Executing {tool_name} via Composio")
-            
             async with streamablehttp_client(mcp_url) as (read, write, _):
                 async with ClientSession(read, write) as session:
                     await session.initialize()

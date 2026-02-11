@@ -104,12 +104,25 @@ class ComposioIntegrationService:
             
             mcp_url_response = await self.mcp_server_service.generate_mcp_url(
                 mcp_server_id=mcp_server.id,
-                connected_account_ids=[connected_account.id],
+                connected_account_id=[connected_account.id],
                 user_ids=[user_id]
             )
+            
+            
+            
+            
             logger.debug(f"Step 5 complete: Generated MCP URLs")
             
-            final_mcp_url = mcp_url_response.user_ids_url[0] if mcp_url_response.user_ids_url else mcp_url_response.mcp_url
+            # Prefer connected_account URL (pins to exact OAuth credentials) over user_id URL (ambiguous if user has multiple accounts)
+            if mcp_url_response.connected_account_urls:
+                final_mcp_url = mcp_url_response.connected_account_urls[0]
+                logger.info(f"Using connected_account-specific MCP URL for {toolkit_slug} (connected_account_id={connected_account.id})")
+            elif mcp_url_response.user_ids_url:
+                final_mcp_url = mcp_url_response.user_ids_url[0]
+                logger.warning(f"Falling back to user_id-based MCP URL for {toolkit_slug} — connected_account URL not available")
+            else:
+                final_mcp_url = mcp_url_response.mcp_url
+                logger.warning(f"Using base MCP URL for {toolkit_slug} — no user/account-specific URL available")
             
             profile_id = None
             if save_as_profile and self.profile_service:

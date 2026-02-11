@@ -44,11 +44,13 @@ class MCPManager:
                     qualified_name = custom_mcp.get('qualifiedName')
                     if not qualified_name:
                         qualified_name = f"composio.{custom_mcp['name'].replace(' ', '_').lower()}"
-                    
+
+                    mcp_cfg = custom_mcp.get('config', {})
+
                     mcp_config = {
                         'name': custom_mcp['name'],
                         'qualifiedName': qualified_name,
-                        'config': custom_mcp.get('config', {}),
+                        'config': mcp_cfg,
                         'enabledTools': custom_mcp.get('enabledTools', []),
                         'instructions': custom_mcp.get('instructions', ''),
                         'isCustom': True,
