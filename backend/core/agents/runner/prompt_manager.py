@@ -637,21 +637,24 @@ Multiple parallel tool calls:
             logger.debug(f"Added username ({username}) to system prompt for user {user_id}")
 
         if subscription:
+            from core.utils.config import config
             sub = subscription
             tier_info = f"\n\n<user_subscription>\n"
             tier_info += f"Current plan: {sub['display_name']} ({sub['name']})\n"
             if sub['name'] in ('free', 'none'):
                 tier_info += "Tier type: Free\n"
                 tier_info += "Custom workers: 0 (upgrade to Plus or higher)\n"
-                tier_info += "Scheduled triggers: 0 (upgrade to Plus or higher)\n"
-                tier_info += "App triggers: 0 (upgrade to Plus or higher)\n"
+                if config.ACTIVATE_MCPS_TRIG:
+                    tier_info += "Scheduled triggers: 0 (upgrade to Plus or higher)\n"
+                    tier_info += "App triggers: 0 (upgrade to Plus or higher)\n"
                 tier_info += "Concurrent runs: 2\n"
                 tier_info += "Credit purchases: Not available (upgrade to Ultra)\n"
             else:
                 tier_info += "Tier type: Paid\n"
                 tier_info += f"Custom workers limit: {sub['custom_workers_limit']}\n"
-                tier_info += f"Scheduled triggers limit: {sub['scheduled_triggers_limit']}\n"
-                tier_info += f"App triggers limit: {sub['app_triggers_limit']}\n"
+                if config.ACTIVATE_MCPS_TRIG:
+                    tier_info += f"Scheduled triggers limit: {sub['scheduled_triggers_limit']}\n"
+                    tier_info += f"App triggers limit: {sub['app_triggers_limit']}\n"
                 tier_info += f"Concurrent runs: {sub['concurrent_runs']}\n"
                 tier_info += f"Credit purchases: {'Available' if sub['can_purchase_credits'] else 'Not available (Ultra only)'}\n"
             tier_info += "</user_subscription>"
@@ -822,8 +825,6 @@ Multiple parallel tool calls:
 | **Chats** | 10 | Unlimited | Unlimited | Unlimited |
 | **Parallel tasks** | 2 | 3 | 5 | 20 |
 | **Custom agents** | 0 | 5 | 20 | 100 |
-| **Scheduled automations** | 0 | 5 | 10 | 50 |
-| **App triggers** | 0 | 25 | 50 | 200 |
 | **Memory (AI remembers)** | 10 items | 100 items | 500 items | 2,000 items |
 | **Buy extra credits** | No | No | No | Yes |
 

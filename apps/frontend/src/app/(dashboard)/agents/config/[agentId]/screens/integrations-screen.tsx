@@ -6,6 +6,9 @@ import { useUpdateAgentMCPs } from '@/hooks/agents/use-update-agent-mcps';
 import { AgentMCPConfiguration } from '@/components/agents/agent-mcp-configuration';
 import { toast } from '@/lib/toast';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Server } from 'lucide-react';
+
+const MCPS_TRIG_ENABLED = process.env.NEXT_PUBLIC_ACTIVATE_MCPS_TRIG === 'true';
 
 interface IntegrationsScreenProps {
     agentId: string;
@@ -51,6 +54,24 @@ export function IntegrationsScreen({ agentId }: IntegrationsScreenProps) {
             }
         }
     };
+
+    if (!MCPS_TRIG_ENABLED) {
+        return (
+            <div className="flex-1 flex items-center justify-center pb-6">
+                <div className="flex flex-col items-center gap-4 max-w-sm text-center px-4">
+                    <div className="w-12 h-12 rounded-2xl bg-muted/50 border border-border flex items-center justify-center">
+                        <Server className="h-6 w-6 text-muted-foreground" />
+                    </div>
+                    <div>
+                        <h3 className="text-base font-semibold text-foreground mb-1">Integrations Under Maintenance</h3>
+                        <p className="text-sm text-muted-foreground">
+                            Integrations are temporarily unavailable while we make improvements. This feature will be back soon.
+                        </p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     if (isLoading) {
         return (

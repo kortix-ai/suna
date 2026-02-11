@@ -136,15 +136,15 @@ The archive files are in YOUR sandbox — you already have full access. Just rea
 from typing import Optional
 
 
-_STATIC_CORE_PROMPT: Optional[str] = None
-
 def get_core_system_prompt() -> str:
-    global _STATIC_CORE_PROMPT
-    if _STATIC_CORE_PROMPT:
-        return _STATIC_CORE_PROMPT
-    
-    _STATIC_CORE_PROMPT = CORE_SYSTEM_PROMPT
-    return _STATIC_CORE_PROMPT
+    from core.utils.config import config
+    prompt = CORE_SYSTEM_PROMPT
+    if not config.ACTIVATE_MCPS_TRIG:
+        prompt = prompt.replace(
+            "\n## MCP Tools (External Integrations):\nTwo-step workflow: discover_mcp_tools → execute_mcp_tool\nCommon: GMAIL_SEND_EMAIL, TWITTER_CREATION_OF_A_POST, SLACK_SEND_MESSAGE\n",
+            ""
+        )
+    return prompt
 
 
 def get_dynamic_system_prompt(minimal_tool_index: str) -> str:

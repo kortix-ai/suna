@@ -171,6 +171,8 @@ const LoadingSkeleton = () => (
   </div>
 );
 
+const MCPS_TRIG_ENABLED = process.env.NEXT_PUBLIC_ACTIVATE_MCPS_TRIG === 'true';
+
 export function TriggersPage() {
   const { data: triggers = [], isLoading, error } = useAllTriggers();
   const [selectedTrigger, setSelectedTrigger] = useState<TriggerWithAgent | null>(null);
@@ -247,6 +249,24 @@ export function TriggersPage() {
     setTriggerDialogType(null);
     setPendingTriggerId(triggerId);
   };
+
+  if (!MCPS_TRIG_ENABLED) {
+    return (
+      <div className="min-h-[100dvh] flex items-center justify-center">
+        <div className="flex flex-col items-center gap-4 max-w-md text-center px-4">
+          <div className="w-14 h-14 rounded-2xl bg-muted/50 border border-border flex items-center justify-center">
+            <Zap className="h-7 w-7 text-muted-foreground" />
+          </div>
+          <div>
+            <h2 className="text-lg font-semibold text-foreground mb-1">Triggers Under Maintenance</h2>
+            <p className="text-sm text-muted-foreground">
+              Triggers are temporarily unavailable while we make improvements. This feature will be back soon.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (error) {
     return (
