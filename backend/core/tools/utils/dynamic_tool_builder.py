@@ -13,7 +13,7 @@ _GMAIL_ATTACHMENT_HINT = (
     "The response includes attachment data (s3key, mimetype, name). "
     "Pass these to the attachment parameter as: "
     '{"s3key": "<s3key>", "mimetype": "<mimetype>", "name": "<name>"}. '
-    "Tip: For presentations, export as .pptx rather than .pdf for best compatibility, unless user asks for a specific file format."
+    "IMPORTANT: When attaching presentations to emails, you MUST always export and attach the .pptx file (not .pdf), unless the user explicitly requests a different format."
 )
 
 
