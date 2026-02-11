@@ -231,7 +231,17 @@ class ComposioProfileService:
             if not mcp_url:
                 raise ValueError(f"Profile {profile_id} has no MCP URL")
 
-            logger.debug(f"Retrieved MCP URL for profile {profile_id}")
+            connected_account_id = config.get('connected_account_id')
+
+            # Upgrade legacy user_id-based URLs to connected_account-based URLs for deterministic routing
+            if connected_account_id and 'user_id=' in mcp_url and 'connected_account_id=' not in mcp_url:
+                from urllib.parse import urlparse
+                parsed = urlparse(mcp_url)
+                upgraded_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path}?connected_account_id={connected_account_id}"
+                logger.info(f"[MCP URL] Upgraded for profile {profile_id}: {upgraded_url}")
+                return upgraded_url
+
+            logger.info(f"[MCP URL] Using stored URL for profile {profile_id}: {mcp_url}")
             return mcp_url
 
         except Exception as e:

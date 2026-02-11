@@ -17,8 +17,6 @@ import { TriggerCreationDialog } from '@/components/triggers/trigger-creation-di
 import { useAllTriggers } from '@/hooks/triggers/use-all-triggers';
 import Link from 'next/link';
 
-const MCPS_TRIG_ENABLED = process.env.NEXT_PUBLIC_ACTIVATE_MCPS_TRIG === 'true';
-
 export function NavGlobalConfig() {
     const { setOpenMobile, isMobile } = useSidebar();
     const pathname = usePathname();
@@ -37,24 +35,6 @@ export function NavGlobalConfig() {
             setOpenMobile(false);
         }
     };
-
-    if (!MCPS_TRIG_ENABLED) {
-        return (
-            <div className="space-y-1 flex-shrink-0">
-                <div className="py-2 mt-4 first:mt-2">
-                    <div className="text-xs font-medium text-muted-foreground pl-2.5">
-                        Trigger Config
-                    </div>
-                </div>
-                <div className="flex items-center gap-3 p-2.5 text-sm opacity-50 cursor-default">
-                    <div className="flex items-center justify-center w-10 h-10 rounded-2xl bg-card border-[1.5px] border-border flex-shrink-0">
-                        <Zap className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    <span className="flex-1 truncate text-muted-foreground">Under Maintenance</span>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div className="space-y-1 flex-shrink-0">

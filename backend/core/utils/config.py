@@ -294,7 +294,7 @@ class Configuration:
     ENABLE_MEMORY: bool = False
     ENABLE_KNOWLEDGE_BASE: bool = True
     ENABLE_USER_CONTEXT: bool = True
-    ACTIVATE_MCPS_TRIG: bool = False
+    ACTIVATE_MCPS_TRIG: bool = True
     MEMORY_EMBEDDING_PROVIDER: Optional[str] = "openai"
     MEMORY_EMBEDDING_MODEL: Optional[str] = "text-embedding-3-small"
     MEMORY_EXTRACTION_MODEL: Optional[str] = "kortix/basic"

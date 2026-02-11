@@ -137,14 +137,7 @@ from typing import Optional
 
 
 def get_core_system_prompt() -> str:
-    from core.utils.config import config
-    prompt = CORE_SYSTEM_PROMPT
-    if not config.ACTIVATE_MCPS_TRIG:
-        prompt = prompt.replace(
-            "\n## MCP Tools (External Integrations):\nTwo-step workflow: discover_mcp_tools → execute_mcp_tool\nCommon: GMAIL_SEND_EMAIL, TWITTER_CREATION_OF_A_POST, SLACK_SEND_MESSAGE\n",
-            ""
-        )
-    return prompt
+    return CORE_SYSTEM_PROMPT
 
 
 def get_dynamic_system_prompt(minimal_tool_index: str) -> str:

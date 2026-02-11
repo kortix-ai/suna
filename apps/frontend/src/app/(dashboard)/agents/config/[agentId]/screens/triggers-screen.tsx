@@ -32,8 +32,6 @@ import {
 } from '@/hooks/triggers';
 import { TriggerCreationDialog } from '@/components/triggers/trigger-creation-dialog';
 
-const MCPS_TRIG_ENABLED = process.env.NEXT_PUBLIC_ACTIVATE_MCPS_TRIG === 'true';
-
 interface TriggersScreenProps {
     agentId: string;
 }
@@ -113,24 +111,6 @@ export function TriggersScreen({ agentId }: TriggersScreenProps) {
         setEditingTrigger(null);
         toast.success('Trigger updated successfully');
     };
-
-    if (!MCPS_TRIG_ENABLED) {
-        return (
-            <div className="flex-1 flex items-center justify-center pb-6">
-                <div className="flex flex-col items-center gap-4 max-w-sm text-center px-4">
-                    <div className="w-12 h-12 rounded-2xl bg-muted/50 border border-border flex items-center justify-center">
-                        <Zap className="h-6 w-6 text-muted-foreground" />
-                    </div>
-                    <div>
-                        <h3 className="text-base font-semibold text-foreground mb-1">Triggers Under Maintenance</h3>
-                        <p className="text-sm text-muted-foreground">
-                            Triggers are temporarily unavailable while we make improvements. This feature will be back soon.
-                        </p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
 
     return (
         <div className="flex-1 overflow-auto pb-6">

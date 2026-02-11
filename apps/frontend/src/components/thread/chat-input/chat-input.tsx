@@ -42,7 +42,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { VisuallyHidden } from '@radix-ui/react-visually-hidden';
 import { useAccountState, accountStateSelectors } from '@/hooks/billing';
 import { isStagingMode, isLocalMode } from '@/lib/config';
-const MCPS_TRIG_ENABLED = process.env.NEXT_PUBLIC_ACTIVATE_MCPS_TRIG === 'true';
 import { PlanSelectionModal } from '@/components/billing/pricing';
 import { AgentConfigurationDialog } from '@/components/agents/agent-configuration-dialog';
 import { SpotlightCard } from '@/components/ui/spotlight-card';
@@ -372,28 +371,6 @@ const IntegrationsDropdown = memo(function IntegrationsDropdown({
   onOpenPlanModal,
 }: IntegrationsDropdownProps) {
   if (!isLoggedIn) return null;
-
-  if (!MCPS_TRIG_ENABLED) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div className="relative">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-10 w-10 p-0 bg-transparent border-[1.5px] border-border rounded-2xl text-muted-foreground/50 flex items-center justify-center cursor-default"
-              disabled
-            >
-              <Plug className="h-4 w-4" />
-            </Button>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent side="top">
-          <p>Integrations under maintenance</p>
-        </TooltipContent>
-      </Tooltip>
-    );
-  }
 
   return (
     <Tooltip>
@@ -1655,48 +1632,36 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
             <div className="w-full max-w-4xl mx-auto -mt-12 relative z-20">
               <div className="bg-gradient-to-b from-transparent via-transparent to-muted/30 pt-8 pb-2 px-4 rounded-b-3xl border border-t-0 border-border/50 transition-all duration-300 ease-out">
                 <div className="flex items-center justify-between gap-1 overflow-x-auto scrollbar-none relative">
-                  {MCPS_TRIG_ENABLED ? (
-                    <button
-                      onClick={() => setAgentConfigDialog({ open: true, tab: 'integrations' })}
-                      className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
-                    >
-                      <div className="flex items-center -space-x-0.5">
-                        {quickIntegrations.every(int => integrationIcons[int.id as keyof typeof integrationIcons]) ? (
-                          <>
-                            {quickIntegrations.map((integration) => (
-                              <div key={integration.id} className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={integrationIcons[integration.id as keyof typeof integrationIcons]}
-                                  className="w-2.5 h-2.5"
-                                  alt={integration.name}
-                                />
-                              </div>
-                            ))}
-                          </>
-                        ) : (
-                          <>
-                            {quickIntegrations.map((integration) => (
-                              <div key={integration.id} className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
-                                <Skeleton className="w-2.5 h-2.5 rounded" />
-                              </div>
-                            ))}
-                          </>
-                        )}
-                      </div>
-                      <span className="text-xs font-medium">Integrations</span>
-                    </button>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="flex items-center gap-1.5 text-muted-foreground/50 px-2.5 py-1.5 rounded-2xl flex-shrink-0 cursor-default pointer-events-auto">
-                          <Plug className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span className="text-xs font-medium">Integrations</span>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top"><p>Under maintenance</p></TooltipContent>
-                    </Tooltip>
-                  )}
+                  <button
+                    onClick={() => setAgentConfigDialog({ open: true, tab: 'integrations' })}
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                  >
+                    <div className="flex items-center -space-x-0.5">
+                      {quickIntegrations.every(int => integrationIcons[int.id as keyof typeof integrationIcons]) ? (
+                        <>
+                          {quickIntegrations.map((integration) => (
+                            <div key={integration.id} className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={integrationIcons[integration.id as keyof typeof integrationIcons]}
+                                className="w-2.5 h-2.5"
+                                alt={integration.name}
+                              />
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          {quickIntegrations.map((integration) => (
+                            <div key={integration.id} className="w-4 h-4 bg-white dark:bg-muted border border-border rounded-full flex items-center justify-center shadow-sm">
+                              <Skeleton className="w-2.5 h-2.5 rounded" />
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                    <span className="text-xs font-medium">Integrations</span>
+                  </button>
                   <button
                     onClick={() => setAgentConfigDialog({ open: true, tab: 'tools' })}
                     className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
@@ -1719,25 +1684,13 @@ export const ChatInput = memo(forwardRef<ChatInputHandles, ChatInputProps>(
                     <span className="text-xs font-medium">Knowledge</span>
                   </button>
 
-                  {MCPS_TRIG_ENABLED ? (
-                    <button
-                      onClick={() => setAgentConfigDialog({ open: true, tab: 'triggers' })}
-                      className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
-                    >
-                      <Zap className="h-3.5 w-3.5 flex-shrink-0" />
-                      <span className="text-xs font-medium">Triggers</span>
-                    </button>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className="flex items-center gap-1.5 text-muted-foreground/50 px-2.5 py-1.5 rounded-2xl flex-shrink-0 cursor-default pointer-events-auto">
-                          <Zap className="h-3.5 w-3.5 flex-shrink-0" />
-                          <span className="text-xs font-medium">Triggers</span>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent side="top"><p>Under maintenance</p></TooltipContent>
-                    </Tooltip>
-                  )}
+                  <button
+                    onClick={() => setAgentConfigDialog({ open: true, tab: 'triggers' })}
+                    className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-all duration-200 px-2.5 py-1.5 rounded-2xl hover:bg-muted/50 border border-transparent hover:border-border/30 flex-shrink-0 cursor-pointer relative pointer-events-auto"
+                  >
+                    <Zap className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="text-xs font-medium">Triggers</span>
+                  </button>
                 </div>
               </div>
             </div>

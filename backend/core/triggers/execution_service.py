@@ -37,8 +37,6 @@ class ExecutionService:
             return {"success": False, "error": "Trigger functionality is disabled"}
 
         try:
-            logger.debug(f"Executing trigger for agent {agent_id}")
-            
             client = await self._db.client
             agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).single().execute()
             if not agent_result.data:
