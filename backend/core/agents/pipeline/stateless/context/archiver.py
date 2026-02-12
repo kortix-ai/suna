@@ -381,7 +381,7 @@ class ContextArchiver:
                     if len(args_str) > 500:
                         args_str = args_str[:500] + "\n... (truncated)"
                     lines.append(f"```json\n{args_str}\n```")
-                except:
+                except Exception:
                     lines.append(f"```\n{args}\n```")
 
         return "\n".join(lines)
@@ -408,7 +408,7 @@ class ContextArchiver:
             try:
                 parsed = json.loads(content)
                 lines.append(f"```json\n{json.dumps(parsed, indent=2)}\n```")
-            except:
+            except Exception:
                 lines.append(f"```\n{content}\n```")
         else:
             lines.append(f"```json\n{json.dumps(content, indent=2)}\n```")

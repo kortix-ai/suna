@@ -55,13 +55,13 @@ async def update_agent_run_status(
                 try:
                     from core.cache.runtime_cache import invalidate_running_runs_cache
                     await invalidate_running_runs_cache(account_id)
-                except:
+                except Exception:
                     pass
 
                 try:
                     from core.billing.shared.cache_utils import invalidate_account_state_cache
                     await invalidate_account_state_cache(account_id)
-                except:
+                except Exception:
                     pass
 
             logger.info(f"✅ Updated agent run {agent_run_id} status to '{status}'")

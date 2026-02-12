@@ -343,7 +343,7 @@ async def get_metrics_history(
                 entry = json.loads(raw)
                 if entry.get("timestamp", 0) >= cutoff:
                     history.append(entry)
-            except:
+            except Exception:
                 continue
         history.reverse()
     except Exception as e:

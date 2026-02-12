@@ -717,7 +717,7 @@ Multiple parallel tool calls:
                 import json as j
                 try:
                     first_message_content = j.loads(first_message_content)
-                except:
+                except Exception:
                     pass
             
             query_text = ''

@@ -125,7 +125,7 @@ class MessageBuilder:
                 args_str = tc.get("function", {}).get("arguments", "{}")
                 try:
                     args_parsed = json.loads(args_str) if isinstance(args_str, str) else args_str
-                except:
+                except Exception:
                     args_parsed = args_str
                 
                 display_name, display_args = _transform_mcp_tool_call(func_name, args_parsed)
@@ -305,7 +305,7 @@ class MessageBuilder:
         if isinstance(raw_output, str):
             try:
                 output_for_metadata = json.loads(raw_output)
-            except:
+            except Exception:
                 output_for_metadata = raw_output
         
         metadata = {

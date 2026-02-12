@@ -137,5 +137,5 @@ class CreditRepository:
                 "transaction_id": transaction_id,
                 "error_message": error_message
             })
-        except:
+        except Exception:
             pass

@@ -3817,7 +3817,7 @@ async def get_frustrated_conversations(
                 import json as json_lib
                 try:
                     frustration_signals = json_lib.loads(frustration_signals)
-                except:
+                except Exception:
                     frustration_signals = []
 
             items.append(ConversationAnalyticsItem(
@@ -4683,7 +4683,7 @@ async def _build_conversation_items(client, records: List[Dict[str, Any]]) -> Li
             import json as json_lib
             try:
                 frustration_signals = json_lib.loads(frustration_signals)
-            except:
+            except Exception:
                 frustration_signals = []
 
         items.append(ConversationAnalyticsItem(

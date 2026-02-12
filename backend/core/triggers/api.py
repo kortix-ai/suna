@@ -585,7 +585,7 @@ async def trigger_webhook(
         raw_data = {}
         try:
             raw_data = await request.json()
-        except:
+        except Exception:
             pass
         
         # Process trigger event

@@ -67,7 +67,7 @@ async def cleanup_orphaned_agent_runs(db_client) -> int:
             if isinstance(metadata, str):
                 try:
                     metadata = json_lib.loads(metadata)
-                except:
+                except Exception:
                     metadata = {}
             
             run_instance_id = metadata.get('instance_id')
@@ -85,7 +85,7 @@ async def cleanup_orphaned_agent_runs(db_client) -> int:
                             runs_to_cleanup.append(run)
                         else:
                             skipped_recent_legacy += 1
-                    except:
+                    except Exception:
                         # Can't parse date, skip for safety
                         skipped_recent_legacy += 1
                 else:
@@ -120,7 +120,7 @@ async def cleanup_orphaned_agent_runs(db_client) -> int:
                 if isinstance(metadata, str):
                     try:
                         metadata = json_lib.loads(metadata)
-                    except:
+                    except Exception:
                         metadata = {}
                 account_id = metadata.get('actual_user_id')
                 

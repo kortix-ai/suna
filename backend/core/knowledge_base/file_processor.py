@@ -71,7 +71,7 @@ class FileProcessor:
                 # Check if most characters are printable
                 printable_ratio = len([c for c in decoded if c.isprintable() or c.isspace()]) / len(decoded)
                 return printable_ratio > 0.8
-        except:
+        except Exception:
             pass
         return False
     
@@ -457,7 +457,7 @@ Keep it under 200 words and make it actionable for context injection."""
                     # Only return if it seems to be mostly text content
                     if len([c for c in content[:1000] if c.isprintable() or c.isspace()]) > 800:
                         return content
-                except:
+                except Exception:
                     pass
                 
                 # If we can't extract text content, return a placeholder

@@ -134,7 +134,7 @@ class FreeTierService:
                             client = await db.client
                             user_result = await client.auth.admin.get_user_by_id(user_id)
                             email = user_result.user.email if user_result and user_result.user else None
-                        except:
+                        except Exception:
                             pass
 
                         if not email:
