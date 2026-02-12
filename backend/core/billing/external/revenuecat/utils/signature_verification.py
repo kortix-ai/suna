@@ -1,3 +1,5 @@
+import hmac
+
 from core.utils.logger import logger
 from core.utils.config import config
 
@@ -15,7 +17,7 @@ class SignatureVerifier:
         
         if not webhook_secret:
             logger.error(
-                "[REVENUECAT] ❌ No webhook secret configured. "
+                "[REVENUECAT] No webhook secret configured. "
                 "Set REVENUECAT_WEBHOOK_SECRET to enable authorization verification."
             )
             return False
@@ -28,17 +30,12 @@ class SignatureVerifier:
         # Remove "Bearer " prefix if present
         auth_value = authorization_header.replace('Bearer ', '').strip()
         
-        is_valid = auth_value == webhook_secret
+        is_valid = hmac.compare_digest(auth_value, webhook_secret)
         
         if not is_valid:
-            logger.warning(
-                f"[REVENUECAT] ⚠️ Authorization verification failed. "
-                f"Received: {auth_value[:16]}... (length: {len(auth_value)}), "
-                f"Expected: {webhook_secret[:16]}... (length: {len(webhook_secret)}). "
-                f"Config has secret: {bool(webhook_secret)}"
-            )
+            logger.warning("[REVENUECAT] Authorization verification failed")
         else:
-            logger.debug("[REVENUECAT] ✅ Authorization verification successful")
+            logger.debug("[REVENUECAT] Authorization verification successful")
         
         return is_valid
 
