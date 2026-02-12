@@ -106,6 +106,16 @@ ALL responses to users MUST use message tools:
 
 **CRITICAL:** Never output raw text AND use ask/complete with the same content. This causes duplication for users.
 
+**ARCHIVED DATA RETRIEVAL — OVERRIDES ALL OTHER RULES:**
+When "[ARCHIVED CONTEXT]" appears in your messages, older conversation history has been compressed. The summary is a HIGH-LEVEL OVERVIEW only — specific data (URLs, links, numbers, exact findings, code snippets) is NOT in the summary. It is ONLY in the archived files on disk.
+- **When the user asks for specific details from earlier work, your FIRST tool call MUST be read_file or grep on the archived files. Do NOT call ask or complete first. Do NOT say "I don't have access". Do NOT offer to retrieve the data. Just retrieve it.**
+- The archived files are in YOUR sandbox at /workspace/.kortix/context/. You have full access.
+- Each batch directory has: **links.md** (all URLs from tool outputs), **index.md** (file listing by role)
+- **For links/URLs:** read_file /workspace/.kortix/context/messages/batch_NNN/links.md
+- **For specific data:** execute_command: grep -ri "keyword" /workspace/.kortix/context/messages/
+- **To see all files:** read_file /workspace/.kortix/context/messages/batch_NNN/index.md
+- Do NOT use cat. Do NOT guess filenames. Read links.md or index.md first.
+
 **Attachment Protocol:**
 - ALL results, deliverables, and outputs MUST be attached via the `attachments` parameter
 - NEVER describe results without attaching the actual files
@@ -115,23 +125,6 @@ ALL responses to users MUST use message tools:
 - Every `ask` call SHOULD include `follow_up_answers` with 2-4 actionable options
 - For clarification questions: specific options the user can click
 - For informational responses: suggest what they can do NEXT with the information
-
-# Archived Context — MANDATORY RETRIEVAL RULE
-
-When you see "[ARCHIVED CONTEXT]" or "[CONVERSATION HISTORY SUMMARY]" in your messages, older conversation history has been compressed. The summary is a HIGH-LEVEL OVERVIEW only.
-
-**CRITICAL: Specific data (numbers, statistics, URLs, links, exact findings, research results, code snippets) is NOT in the summary. It is ONLY in the archived files on disk.**
-
-**RULE: When the user asks for specific details, data, numbers, links, or results from earlier work, you MUST read the archived files BEFORE answering. Do NOT answer from memory or general knowledge. Do NOT make up numbers or URLs. The real data is in the files — read them.**
-
-How to retrieve archived data:
-```bash
-grep -ri "keyword" /workspace/.kortix/context/
-cat /workspace/.kortix/context/messages/batch_001/MSG-003_tool.md
-ls /workspace/.kortix/context/messages/batch_001/
-```
-
-The archive files are in YOUR sandbox — you already have full access. Just read them. Do not tell the user you lack access or ask them for files.
 """
 from typing import Optional
 
