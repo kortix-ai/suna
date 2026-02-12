@@ -628,16 +628,14 @@ async def _browse_threads_simple(
 ) -> PaginatedResponse[ThreadAnalytics]:
     """Fast path: paginate threads directly from DB, then enrich only the page."""
 
-    # Convert date parameters to Berlin timezone (same as _browse_threads_filtered)
+    # Expand bare date strings to full-day UTC range
     date_from_param = None
     date_to_param = None
 
     if date_from:
-        from_dt = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_from else datetime.fromisoformat(date_from)
-        date_from_param = from_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        date_from_param = f"{date_from}T00:00:00+00:00" if 'T' not in date_from else date_from
     if date_to:
-        to_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_to else datetime.fromisoformat(date_to)
-        date_to_param = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+        date_to_param = f"{date_to}T23:59:59.999999+00:00" if 'T' not in date_to else date_to
 
     # Get total count for pagination
     count_query = client.from_('threads').select('thread_id', count='exact')
@@ -690,16 +688,14 @@ async def _browse_threads_filtered(
 ) -> PaginatedResponse[ThreadAnalytics]:
     """Filtered path: fetch threads with optional category/tier/date filtering using JOINs."""
     
-    # Build date parameters for RPC using Berlin timezone
+    # Expand bare date strings to full-day UTC range
     date_from_param = None
     date_to_param = None
-    
+
     if date_from:
-        from_dt = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_from else datetime.fromisoformat(date_from)
-        date_from_param = from_dt.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        date_from_param = f"{date_from}T00:00:00+00:00" if 'T' not in date_from else date_from
     if date_to:
-        to_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ) if 'T' not in date_to else datetime.fromisoformat(date_to)
-        date_to_param = to_dt.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+        date_to_param = f"{date_to}T23:59:59.999999+00:00" if 'T' not in date_to else date_to
     
     # Calculate offset for pagination
     offset = (params.page - 1) * params.page_size
