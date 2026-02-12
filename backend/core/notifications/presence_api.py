@@ -67,7 +67,7 @@ async def update_presence(
         # Don't log 204 "Missing response" errors - they're handled silently now
         if '204' not in error_str or 'missing response' not in error_str:
             logger.error(f"Error in update_presence endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/clear")
@@ -98,7 +98,7 @@ async def clear_presence(
         raise
     except Exception as e:
         logger.error(f"Error in clear_presence endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to clear presence")
 
 
 @router.get("/thread/{thread_id}/viewers")
@@ -118,7 +118,7 @@ async def get_thread_viewers(
         raise
     except Exception as e:
         logger.error(f"Error getting thread viewers: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve thread viewers")
 
 
 @router.get("/account/threads")
@@ -137,7 +137,7 @@ async def get_account_active_threads(
         raise
     except Exception as e:
         logger.error(f"Error getting account active threads: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve active threads")
 
 
 @router.post("/cleanup")
@@ -156,4 +156,4 @@ async def cleanup_stale_sessions(
         raise
     except Exception as e:
         logger.error(f"Error cleaning up stale sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to clean up stale sessions")
