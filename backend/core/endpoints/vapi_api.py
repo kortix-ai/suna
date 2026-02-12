@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from core.endpoints.vapi_webhooks import VapiWebhookHandler
 from core.utils.logger import logger
 from core.utils.config import config
+from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from typing import Dict, Any
 
 router = APIRouter(tags=["vapi"])
@@ -11,6 +12,11 @@ webhook_handler = VapiWebhookHandler()
 @router.post("/webhooks/vapi", summary="Vapi Webhook Handler", operation_id="vapi_webhook")
 async def handle_vapi_webhook(request: Request):
     try:
+        # Verify webhook signature when a secret is configured
+        vapi_secret = getattr(config, 'VAPI_WEBHOOK_SECRET', None)
+        if not await webhook_handler.verify_signature(request, secret=vapi_secret):
+            raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
         payload = await request.json()
         
         event_type = (
@@ -30,7 +36,7 @@ async def handle_vapi_webhook(request: Request):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/vapi/calls/{call_id}", summary="Get Call Details", operation_id="get_vapi_call")
-async def get_call_details(call_id: str):
+async def get_call_details(call_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     try:
         from core.services.supabase import DBConnection
         db = DBConnection()
@@ -50,7 +56,7 @@ async def get_call_details(call_id: str):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/vapi/calls", summary="List Calls", operation_id="list_vapi_calls")
-async def list_calls(limit: int = 10, thread_id: str = None):
+async def list_calls(limit: int = 10, thread_id: str = None, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     try:
         from core.services.supabase import DBConnection
         db = DBConnection()
