@@ -42,7 +42,6 @@ except ImportError:
     GA_AVAILABLE = False
     logger.warning("Google Analytics SDK not installed. Install with: pip install google-analytics-data")
 
-# Berlin timezone for consistent date handling (UTC+1 / UTC+2 with DST)
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
 
 router = APIRouter(prefix="/admin/analytics", tags=["admin-analytics"])
@@ -561,11 +560,17 @@ async def _browse_threads_by_email(
             items=[], total_count=0, params=params
         )
     
+    # Expand bare date strings to full-day UTC range
+    if date_from and 'T' not in date_from:
+        date_from = f"{date_from}T00:00:00+00:00"
+    if date_to and 'T' not in date_to:
+        date_to = f"{date_to}T23:59:59.999999+00:00"
+
     # Build query for threads by this account (no arbitrary limit!)
     base_query = client.from_('threads').select(
         'thread_id, project_id, account_id, is_public, created_at, updated_at, user_message_count, total_message_count'
     ).eq('account_id', target_account_id)
-    
+
     if date_from:
         base_query = base_query.gte('created_at', date_from)
     if date_to:
