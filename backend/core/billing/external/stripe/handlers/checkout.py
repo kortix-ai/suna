@@ -98,7 +98,7 @@ class CheckoutHandler:
                         status='failed',
                         error_message=str(e)
                     )
-            except:
+            except Exception:
                 pass
             return
         

@@ -40,6 +40,6 @@ class AutoContinueChecker:
         if isinstance(field, str):
             try:
                 return json.loads(field)
-            except:
+            except Exception:
                 return {}
         return field

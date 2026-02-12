@@ -674,7 +674,7 @@ async def get_entry_content(
                 detected = chardet.detect(file_content)
                 encoding = detected.get('encoding', 'utf-8')
                 content_text = file_content.decode(encoding)
-            except:
+            except Exception:
                 content_text = file_content.decode('utf-8', errors='replace')
         elif entry['filename'].endswith('.pdf'):
             try:
@@ -700,7 +700,7 @@ async def get_entry_content(
                 if detected.get('confidence', 0) > 0.7:
                     encoding = detected.get('encoding', 'utf-8')
                     content_text = file_content.decode(encoding)
-            except:
+            except Exception:
                 pass
 
         return {

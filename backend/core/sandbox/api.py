@@ -2467,7 +2467,7 @@ async def websocket_pty_terminal(
         logger.error(f"[PTY WS] Error for sandbox {sandbox_id}: {str(e)}")
         try:
             await websocket.send_json({"type": "error", "message": str(e)})
-        except:
+        except Exception:
             pass
     finally:
         if pty_handle:
@@ -2478,7 +2478,7 @@ async def websocket_pty_terminal(
                 logger.warning(f"[PTY WS] Error killing PTY session: {e}")
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
 
 

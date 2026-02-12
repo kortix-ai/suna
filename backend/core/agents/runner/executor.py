@@ -152,7 +152,7 @@ async def execute_agent_run(
                     try:
                         await asyncio.wait_for(redis.expire(stream_key, REDIS_STREAM_TTL_SECONDS), timeout=2.0)
                         stream_ttl_set = True
-                    except:
+                    except Exception:
                         pass
             except Exception as e:
                 logger.warning(f"Failed to write to stream: {e}")
@@ -186,7 +186,7 @@ async def execute_agent_run(
             completion_msg = {"type": "status", "status": "completed", "message": "Completed successfully"}
             try:
                 await redis.stream_add(stream_key, {'data': json.dumps(completion_msg)}, maxlen=200, approximate=True)
-            except:
+            except Exception:
                 pass
 
             await send_completion_notification(thread_id, agent_config, complete_tool_called)

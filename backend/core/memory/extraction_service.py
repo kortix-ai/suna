@@ -37,7 +37,7 @@ class MemoryExtractionService:
             if isinstance(content, str):
                 try:
                     content = json.loads(content)
-                except:
+                except Exception:
                     pass
             
             if msg_type == 'user':

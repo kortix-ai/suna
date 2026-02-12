@@ -430,7 +430,7 @@ async def get_composio_profiles(
             if toolkit_slug not in toolkit_groups:
                 try:
                     icon_url = await toolkit_service.get_toolkit_icon(toolkit_slug)
-                except:
+                except Exception:
                     icon_url = None
                 
                 toolkit_groups[toolkit_slug] = {
@@ -444,7 +444,7 @@ async def get_composio_profiles(
             try:
                 mcp_url = await composio_service.get_mcp_url_for_runtime(profile.profile_id, account_id=user_id)
                 has_mcp_url = bool(mcp_url)
-            except:
+            except Exception:
                 has_mcp_url = False
             
             profile_summary = ComposioProfileSummary(
