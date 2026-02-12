@@ -10,6 +10,8 @@ Services:
 """
 
 import json
+import hmac
+import hashlib
 import uuid
 import base64
 import os
@@ -279,15 +281,40 @@ class GoogleSlidesService:
         
         logger.info("GoogleSlidesService initialized with database token storage")
 
+    def _get_state_signing_key(self) -> bytes:
+        """Get a signing key for HMAC-signing OAuth state parameters."""
+        # Use the client_secret as a signing key base (always available when OAuth is configured)
+        key_material = (self.client_secret or "") + ":oauth_state_signing"
+        return hashlib.sha256(key_material.encode()).digest()
+
+    def _sign_state(self, payload: str) -> str:
+        """Create an HMAC-signed state parameter to prevent forgery."""
+        key = self._get_state_signing_key()
+        signature = hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()[:16]
+        return f"{payload}:{signature}"
+
+    def _verify_state(self, state: str) -> Optional[str]:
+        """Verify HMAC signature on state parameter. Returns the payload if valid, None otherwise."""
+        parts = state.rsplit(':', 1)
+        if len(parts) != 2:
+            return None
+        payload, signature = parts
+        key = self._get_state_signing_key()
+        expected = hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()[:16]
+        if not hmac.compare_digest(signature, expected):
+            return None
+        return payload
+
     def get_auth_url(self, user_id: str, return_url: Optional[str] = None) -> str:
         """Generate Google OAuth authorization URL for a user."""
-        # Generate state parameter for security, including return URL if provided
+        # Generate state parameter with HMAC signature to prevent CSRF/forgery
+        nonce = uuid.uuid4().hex
         if return_url:
-            # Encode return URL in state: user_id:uuid:base64_encoded_return_url
             encoded_return_url = base64.urlsafe_b64encode(return_url.encode()).decode()
-            state = f"{user_id}:{uuid.uuid4().hex}:{encoded_return_url}"
+            payload = f"{user_id}:{nonce}:{encoded_return_url}"
         else:
-            state = f"{user_id}:{uuid.uuid4().hex}"
+            payload = f"{user_id}:{nonce}"
+        state = self._sign_state(payload)
         
         auth_params = {
             "response_type": "code",
@@ -306,8 +333,13 @@ class GoogleSlidesService:
     async def handle_oauth_callback(self, code: str, state: str) -> tuple[Dict[str, Any], Optional[str]]:
         """Handle OAuth callback and exchange code for tokens."""
         try:
-            # Extract user_id and return_url from state
-            state_parts = state.split(':')
+            # Verify HMAC signature on state parameter to prevent CSRF/forgery
+            payload = self._verify_state(state)
+            if payload is None:
+                raise HTTPException(status_code=400, detail="Invalid OAuth state parameter")
+
+            # Extract user_id and return_url from verified payload
+            state_parts = payload.split(':')
             user_id = state_parts[0]
             
             # Extract return URL if present (3rd part is base64 encoded return URL)
@@ -362,7 +394,7 @@ class GoogleSlidesService:
             
         except Exception as e:
             logger.error(f"OAuth callback error: {e}")
-            raise HTTPException(status_code=500, detail=f"OAuth callback failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="OAuth callback failed. Please try again.")
 
     async def is_user_authenticated(self, user_id: str) -> bool:
         """Check if user has valid authentication."""
@@ -540,7 +572,7 @@ class GoogleSlidesService:
                 raise HTTPException(status_code=500, detail=f"Google API error: {error}")
         except Exception as e:
             logger.error(f"Unexpected error during upload: {e}")
-            raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Upload failed. Please try again later.")
 
     # UNUSED: get_user_auth_status - never called anywhere  
     # async def get_user_auth_status(self, user_id: str) -> Dict[str, Any]:
