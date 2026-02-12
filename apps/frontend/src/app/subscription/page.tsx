@@ -42,7 +42,7 @@ export default function SubscriptionRequiredPage() {
   const router = useRouter();
   const { data: maintenanceNotice, isLoading: maintenanceLoading } = useMaintenanceNoticeQuery();
   const { data: adminRoleData, isLoading: isCheckingAdminRole } = useAdminRole();
-  const { data: accountState, isLoading: isLoadingSubscription, refetch: refetchSubscription } = useAccountState({ enabled: true });
+  const { data: accountState, isLoading: isLoadingSubscription, isError: isSubscriptionError, refetch: refetchSubscription } = useAccountState({ enabled: true });
   const subscriptionData = accountState;
   const isAdmin = adminRoleData?.isAdmin ?? false;
 
@@ -91,6 +91,34 @@ export default function SubscriptionRequiredPage() {
   // Show skeleton during initial load
   if (isLoadingSubscription || maintenanceLoading || isCheckingAdminRole) {
     return <SubscriptionSkeleton />;
+  }
+
+  // Handle error state to avoid infinite loading
+  if (isSubscriptionError && !subscriptionData) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted/20 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md">
+          <CardHeader className="text-center">
+            <KortixLogo />
+            <h2 className="text-xl font-semibold mt-4">Unable to Load Subscription</h2>
+          </CardHeader>
+          <CardContent className="text-center space-y-4">
+            <p className="text-muted-foreground">
+              We couldn&apos;t load your subscription details. This may be a temporary issue.
+            </p>
+            <div className="flex gap-3 justify-center">
+              <Button variant="outline" onClick={() => refetchSubscription()}>
+                Try Again
+              </Button>
+              <Button variant="outline" onClick={handleLogout} className="gap-2">
+                <LogOut className="h-4 w-4" />
+                Log Out
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
   }
 
   const isTrialExpired = (subscriptionData as any)?.trial_status === 'expired' ||
