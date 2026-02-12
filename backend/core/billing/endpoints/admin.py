@@ -31,7 +31,7 @@ async def trigger_reconciliation(
         
     except Exception as e:
         logger.error(f"[RECONCILIATION] Error in admin reconciliation: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/circuit-breaker-status")
 async def get_circuit_breaker_status(
@@ -49,4 +49,4 @@ async def get_circuit_breaker_status(
         }
     except Exception as e:
         logger.error(f"[ADMIN] Error getting circuit breaker status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

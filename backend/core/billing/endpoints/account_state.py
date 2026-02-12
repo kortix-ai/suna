@@ -636,7 +636,7 @@ async def get_minimal_account_state(
 
     except Exception as e:
         logger.error(f"[ACCOUNT_STATE_MINIMAL] Error for {account_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve account state")
 
 
 @router.get("/account-state")
@@ -817,7 +817,7 @@ async def get_account_state(
                 )
         except Exception as e:
             logger.error(f"[ACCOUNT_STATE] Error getting account state for {account_id}: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail="Failed to retrieve account state")
     
     # Should not reach here, but just in case
     logger.error(f"[ACCOUNT_STATE] Unexpected exit from retry loop for {account_id}: {last_error}")
