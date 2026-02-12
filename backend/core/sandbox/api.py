@@ -16,7 +16,7 @@ from daytona_sdk import AsyncSandbox, SessionExecuteRequest
 
 from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox, daytona
 from core.utils.logger import logger
-from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
+from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional, verify_admin_api_key
 from core.services.supabase import DBConnection
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from core.utils.file_name_generator import rename_ugly_files, has_ugly_name
@@ -203,7 +203,7 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
             raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
         # For other errors, return 500
         logger.error(f"Error retrieving sandbox {sandbox_id} after retries: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve sandbox. Please try again later.")
 
 @router.post("/sandboxes/{sandbox_id}/files")
 async def create_file(
@@ -413,7 +413,7 @@ async def list_files(
         raise
     except Exception as e:
         logger.error(f"Error listing files in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list files. Please try again later.")
 
 @router.get("/sandboxes/{sandbox_id}/files/content")
 async def read_file(
@@ -524,7 +524,7 @@ async def read_file(
         raise
     except Exception as e:
         logger.error(f"Error reading file in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to read file. Please try again later.")
 
 @router.delete("/sandboxes/{sandbox_id}/files")
 async def delete_file(
@@ -554,7 +554,7 @@ async def delete_file(
         return {"status": "success", "deleted": True, "path": path}
     except Exception as e:
         logger.error(f"Error deleting file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete file. Please try again later.")
 
 @router.delete("/sandboxes/{sandbox_id}")
 async def delete_sandbox_route(
@@ -576,7 +576,7 @@ async def delete_sandbox_route(
         return {"status": "success", "deleted": True, "sandbox_id": sandbox_id}
     except Exception as e:
         logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete sandbox. Please try again later.")
 
 # Should happen on server-side fully
 @router.post("/project/{project_id}/sandbox/ensure-active")
@@ -2089,7 +2089,7 @@ async def revert_commit_or_files(
                     f"Snapshot revert failed for commit {commit} in sandbox {sandbox_id}: {str(e)}"
                 )
                 raise HTTPException(
-                    status_code=400, detail=f"Snapshot revert failed: {str(e)}"
+                    status_code=400, detail="Snapshot revert failed. Please try again later."
                 )
 
             return {
@@ -2162,9 +2162,9 @@ async def revert_commit_or_files(
             logger.error(
                 f"Snapshot revert of files {safe_paths} to commit {commit} in sandbox {sandbox_id} failed: {str(e)}"
             )
-            raise HTTPException(
-                status_code=400, detail=f"Snapshot file revert failed: {str(e)}"
-            )
+                raise HTTPException(
+                    status_code=400, detail="Snapshot file revert failed. Please try again later."
+                )
 
         return {
             "status": "success",
@@ -2377,7 +2377,7 @@ async def websocket_pty_terminal(
             return
         except Exception as recv_err:
             logger.error(f"[PTY WS] Error receiving auth: {recv_err}")
-            await websocket.send_json({"type": "error", "message": f"Error: {str(recv_err)}"})
+            await websocket.send_json({"type": "error", "message": "Failed to receive authentication message."})
             await websocket.close()
             return
         
@@ -2437,7 +2437,7 @@ async def websocket_pty_terminal(
             logger.info(f"[PTY WS] PTY session created: {session_id}")
         except Exception as e:
             logger.error(f"[PTY WS] Failed to create PTY session: {e}")
-            await websocket.send_json({"type": "error", "message": f"Failed to create terminal: {str(e)}"})
+            await websocket.send_json({"type": "error", "message": "Failed to create terminal session."})
             await websocket.close()
             return
         
@@ -2466,8 +2466,8 @@ async def websocket_pty_terminal(
     except Exception as e:
         logger.error(f"[PTY WS] Error for sandbox {sandbox_id}: {str(e)}")
         try:
-            await websocket.send_json({"type": "error", "message": str(e)})
-        except:
+            await websocket.send_json({"type": "error", "message": "An unexpected terminal error occurred."})
+        except Exception:
             pass
     finally:
         if pty_handle:
@@ -2478,7 +2478,7 @@ async def websocket_pty_terminal(
                 logger.warning(f"[PTY WS] Error killing PTY session: {e}")
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
 
 
@@ -2561,10 +2561,12 @@ async def smart_rename_files(
 
 @router.get("/sandbox-pool/stats")
 async def get_sandbox_pool_stats(
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    _: bool = Depends(verify_admin_api_key)
 ):
     """
     Get sandbox pool statistics (admin only).
+    
+    Requires X-Admin-Api-Key header for authentication.
     
     Returns:
         - pool_size: Current number of available sandboxes in pool
@@ -2577,23 +2579,6 @@ async def get_sandbox_pool_stats(
         - last_cleanup_at: When stale sandboxes were last cleaned
     """
     try:
-        # Check if user is admin
-        client = await db.client
-        
-        # Get user's account role
-        account_user_result = await client.schema('basejump').from_('account_user').select(
-            'account_role'
-        ).eq('user_id', user_id).execute()
-        
-        is_admin = False
-        if account_user_result.data:
-            for row in account_user_result.data:
-                if row.get('account_role') == 'owner':
-                    is_admin = True
-                    break
-        
-        if not is_admin:
-            raise HTTPException(status_code=403, detail="Admin access required")
         
         from core.sandbox.pool_service import get_pool_service
         from core.sandbox.pool_config import get_pool_config
@@ -2624,35 +2609,20 @@ async def get_sandbox_pool_stats(
         raise
     except Exception as e:
         logger.error(f"Error getting sandbox pool stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve pool statistics")
 
 
 @router.post("/sandbox-pool/replenish")
 async def trigger_pool_replenish(
-    user_id: str = Depends(verify_and_get_user_id_from_jwt)
+    _: bool = Depends(verify_admin_api_key)
 ):
     """
     Manually trigger pool replenishment (admin only).
     
+    Requires X-Admin-Api-Key header for authentication.
     Useful for testing or when you need to quickly fill the pool.
     """
     try:
-        # Check if user is admin
-        client = await db.client
-        
-        account_user_result = await client.schema('basejump').from_('account_user').select(
-            'account_role'
-        ).eq('user_id', user_id).execute()
-        
-        is_admin = False
-        if account_user_result.data:
-            for row in account_user_result.data:
-                if row.get('account_role') == 'owner':
-                    is_admin = True
-                    break
-        
-        if not is_admin:
-            raise HTTPException(status_code=403, detail="Admin access required")
         
         from core.sandbox.pool_service import get_pool_service
         from core.sandbox import pool_repo
@@ -2679,4 +2649,4 @@ async def trigger_pool_replenish(
         raise
     except Exception as e:
         logger.error(f"Error triggering pool replenish: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to trigger pool replenishment")
