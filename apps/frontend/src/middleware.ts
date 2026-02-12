@@ -250,8 +250,10 @@ export async function middleware(request: NextRequest) {
   }
 
   // Allow all public routes without any checks
+  // Return supabaseResponse (not NextResponse.next()) to preserve any
+  // session cookie refreshes that occurred during getUser() above
   if (PUBLIC_ROUTES.some(route => pathname === route || pathname.startsWith(route + '/'))) {
-    return NextResponse.next();
+    return supabaseResponse;
   }
 
   // Everything else requires authentication - reuse the user we already fetched
