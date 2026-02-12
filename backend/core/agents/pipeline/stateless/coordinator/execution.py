@@ -82,8 +82,8 @@ class ExecutionEngine:
                 if m.get('_is_summary_inline'):
                     previous_summary = m.get('content', '')
 
-            # Filter out previous archive summaries - don't re-archive them
-            to_compress = [m for m in to_compress if not m.get('_is_summary_inline')]
+            # Filter out previous archive summaries and already-archived working memory
+            to_compress = [m for m in to_compress if not m.get('_is_summary_inline') and not m.get('_already_archived')]
 
             if not to_compress:
                 logger.debug("[ExecutionEngine] Nothing to compress after filtering summaries")
@@ -99,7 +99,11 @@ class ExecutionEngine:
                 thread_id=self._state.thread_id,
                 db_client=db_client
             )
-            result = await archiver.archive_messages(to_compress, previous_summary=previous_summary)
+            result = await archiver.archive_messages(
+                to_compress,
+                previous_summary=previous_summary,
+                working_memory=working_memory
+            )
 
             summary_msg = {
                 "role": "user",
@@ -116,6 +120,10 @@ class ExecutionEngine:
                 "archived_message_count": result.message_count,
                 "is_archived_summary": True,
             })
+
+            # Mark working memory as already archived so the next compression skips them
+            for m in working_memory:
+                m['_already_archived'] = True
 
             new_messages = [summary_msg] + working_memory
 
@@ -304,13 +312,14 @@ class ExecutionEngine:
             )
             archive_hint = (
                 "\n\n## Archived Context — Retrieval Instructions\n"
-                "How to retrieve specific data from archived messages:\n"
-                "```bash\n"
-                "grep -ri \"keyword\" /workspace/.kortix/context/\n"
-                "ls /workspace/.kortix/context/messages/batch_001/\n"
-                "cat /workspace/.kortix/context/messages/batch_001/MSG-003_tool.md\n"
-                "```\n"
-                "The files are in your sandbox — just read them."
+                "When the user asks for specific details from earlier work: "
+                "DO NOT respond first. DO NOT say \"I don't have access\". DO NOT ask permission. "
+                "Your FIRST tool call must be read_file or grep on the archived files, THEN respond with results.\n"
+                "**For links/URLs:** read_file /workspace/.kortix/context/messages/batch_NNN/links.md\n"
+                "**For specific data:** grep -ri \"keyword\" /workspace/.kortix/context/messages/\n"
+                "**To see all files:** read_file /workspace/.kortix/context/messages/batch_NNN/index.md\n"
+                "Do NOT use cat. Do NOT guess filenames. Read links.md or index.md first.\n"
+                "The files are in your sandbox. You have full access. Read them immediately."
             )
             content = system.get("content", "")
             system = {**system, "content": archive_preamble + content + archive_hint}

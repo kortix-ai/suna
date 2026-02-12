@@ -1,10 +1,16 @@
 import asyncio
 import json
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, Any, List
 
 from core.utils.logger import logger
+
+# Max chars to keep in individual MSG files for tool outputs
+_TOOL_OUTPUT_MAX_CHARS = 20_000
+# Regex to extract URLs
+_URL_RE = re.compile(r'https?://[^\s"\'>}\]\\]+', re.IGNORECASE)
 
 
 @dataclass
@@ -57,7 +63,8 @@ class ContextArchiver:
         self,
         messages: List[Dict[str, Any]],
         model: str = "openrouter/openai/gpt-5-mini",
-        previous_summary: str = None
+        previous_summary: str = None,
+        working_memory: List[Dict[str, Any]] = None
     ) -> ArchiveResult:
         """Archive messages to sandbox filesystem with per-file structure."""
         from core.sandbox.resolver import resolve_sandbox
@@ -86,13 +93,15 @@ class ContextArchiver:
         total_before = manifest.get("total_archived", 0)
 
         # Run file writes and LLM summary in parallel
-        file_write_task = self._write_message_files(sandbox, messages, batch_number, total_before)
-        summary_task = self._generate_summary(messages, batch_number, model, previous_summary)
+        # Include working memory in the summary so it covers the full conversation state
+        all_messages = messages + (working_memory or [])
+        file_write_task = self._write_message_files(sandbox, all_messages, batch_number, total_before)
+        summary_task = self._generate_summary(all_messages, batch_number, model, previous_summary)
         tool_results_written, summary_data = await asyncio.gather(file_write_task, summary_task)
 
         # Write summary file + update manifest in parallel
         summary_path = f"{self.WORKSPACE_PATH}/{self.BASE_DIR}/summaries/batch_{batch_number:03d}.md"
-        summary_content = self._format_summary_file(batch_number, messages, summary_data, tool_results_written, total_before)
+        summary_content = self._format_summary_file(batch_number, all_messages, summary_data, tool_results_written, total_before, archived_count=len(messages))
 
         retrieval_hints = self._build_retrieval_hints(summary_data, batch_number, len(messages))
         tokens_archived = sum(len(str(m.get('content', ''))) // 4 for m in messages)
@@ -103,7 +112,7 @@ class ContextArchiver:
                 sandbox=sandbox,
                 manifest=manifest,
                 batch_number=batch_number,
-                message_count=len(messages),
+                message_count=len(all_messages),
                 tool_results=list(tool_results_written.keys()),
                 topics=summary_data.get("topics", []),
                 key_facts=summary_data.get("facts", {})
@@ -188,6 +197,21 @@ class ContextArchiver:
             manifest_path
         )
 
+    @staticmethod
+    def _extract_urls_from_content(content) -> List[str]:
+        """Extract unique URLs from message content."""
+        text = json.dumps(content) if not isinstance(content, str) else content
+        urls = _URL_RE.findall(text)
+        # Deduplicate while preserving order, strip trailing punctuation
+        seen = set()
+        clean = []
+        for url in urls:
+            url = url.rstrip('.,;:)]}')
+            if url not in seen:
+                seen.add(url)
+                clean.append(url)
+        return clean
+
     async def _write_message_files(
         self,
         sandbox,
@@ -195,8 +219,7 @@ class ContextArchiver:
         batch_number: int,
         total_before: int = 0
     ) -> Dict[str, str]:
-        """Write individual message files and tool result files. Returns tool_call_id -> filename mapping."""
-        # Create batch message directory
+        """Write individual message files, links.md, and index. Returns tool_call_id -> filename mapping."""
         batch_dir = f"{self.WORKSPACE_PATH}/{self.BASE_DIR}/messages/batch_{batch_number:03d}"
         try:
             await sandbox.fs.create_folder(batch_dir, "755")
@@ -205,30 +228,100 @@ class ContextArchiver:
 
         tool_results_written = {}
         upload_tasks = []
+        # Collect URLs per tool for links.md
+        all_links: List[dict] = []  # [{tool_name, msg_num, urls}]
 
         for i, msg in enumerate(messages, 1):
             global_num = total_before + i
             role = msg.get('role', 'unknown')
-
-            # Prepare message file
             filename = f"MSG-{global_num:03d}_{role}.md"
             filepath = f"{batch_dir}/{filename}"
+
             msg_content = self._format_message_file(global_num, msg)
+
+            # Truncate large tool outputs so MSG files stay readable
+            if role == 'tool' and len(msg_content) > _TOOL_OUTPUT_MAX_CHARS:
+                truncated_at = _TOOL_OUTPUT_MAX_CHARS
+                msg_content = (
+                    msg_content[:truncated_at]
+                    + f"\n\n... [TRUNCATED — original was {len(msg_content):,} chars. "
+                    + "Full URLs extracted to links.md in this batch directory.]\n"
+                )
+
             upload_tasks.append(sandbox.fs.upload_file(msg_content.encode('utf-8'), filepath))
 
-            # Track tool results for summary reference
+            # Extract URLs from tool outputs
             if role == 'tool':
                 tool_call_id = msg.get('tool_call_id', '')
                 if tool_call_id:
                     tool_results_written[tool_call_id] = filename
+                content = msg.get('content', '')
+                urls = self._extract_urls_from_content(content)
+                if urls:
+                    tool_name = msg.get('name', 'unknown')
+                    all_links.append({
+                        "tool_name": tool_name,
+                        "msg_num": global_num,
+                        "filename": filename,
+                        "urls": urls
+                    })
 
-            # Extract tool calls from assistant messages and note them
             if role == 'assistant':
                 tool_calls = msg.get('tool_calls', [])
                 for tc in tool_calls:
                     tc_id = tc.get('id', '')
                     if tc_id:
                         tool_results_written[tc_id] = f"MSG-{global_num:03d}_assistant.md"
+
+        # Write links.md — compact file with all URLs extracted from tool outputs
+        if all_links:
+            links_lines = [
+                "# Extracted Links & Sources",
+                f"Batch {batch_number:03d} | Messages {total_before+1}-{total_before+len(messages)}",
+                ""
+            ]
+            for entry in all_links:
+                links_lines.append(f"## MSG-{entry['msg_num']:03d} ({entry['tool_name']})")
+                for url in entry["urls"]:
+                    links_lines.append(f"- {url}")
+                links_lines.append("")
+
+            upload_tasks.append(sandbox.fs.upload_file(
+                "\n".join(links_lines).encode('utf-8'),
+                f"{batch_dir}/links.md"
+            ))
+
+        # Write index.md listing all files by role
+        index_lines = ["# File Index", f"Batch {batch_number:03d}", ""]
+        tool_files = []
+        user_files = []
+        for i, msg in enumerate(messages, 1):
+            global_num = total_before + i
+            role = msg.get('role', 'unknown')
+            fname = f"MSG-{global_num:03d}_{role}.md"
+            if role == 'tool':
+                tool_name = msg.get('name', '')
+                tool_files.append(f"- {fname}  ({tool_name})" if tool_name else f"- {fname}")
+            elif role == 'user':
+                preview = str(msg.get('content', ''))[:80].replace('\n', ' ')
+                user_files.append(f"- {fname}  ({preview})")
+
+        if tool_files:
+            index_lines.append("## Tool outputs (search results, data, URLs)")
+            index_lines.extend(tool_files)
+            index_lines.append("")
+        if user_files:
+            index_lines.append("## User messages")
+            index_lines.extend(user_files)
+            index_lines.append("")
+        index_lines.append("## Quick access")
+        index_lines.append("- links.md  (all URLs extracted from tool outputs)")
+        index_lines.append("")
+
+        upload_tasks.append(sandbox.fs.upload_file(
+            "\n".join(index_lines).encode('utf-8'),
+            f"{batch_dir}/index.md"
+        ))
 
         # Upload all files in parallel
         if upload_tasks:
@@ -328,15 +421,20 @@ class ContextArchiver:
         messages: List[Dict[str, Any]],
         summary_data: Dict[str, Any],
         tool_results: Dict[str, str],
-        total_before: int = 0
+        total_before: int = 0,
+        archived_count: int = None
     ) -> str:
         """Format the summary file with conversation flow and references."""
+        if archived_count is None:
+            archived_count = len(messages)
         timestamp = datetime.now(timezone.utc).isoformat()
         topics = ", ".join(summary_data.get("topics", ["general"]))
         msg_start = total_before + 1
-        msg_end = total_before + len(messages)
+        msg_end = total_before + archived_count
 
         lines = [
+            "[ARCHIVED CONTEXT]",
+            "",
             f"# Batch {batch_number:03d} Summary",
             f"Messages: {msg_start}-{msg_end} | Archived: {timestamp}",
             f"Topics: {topics}",
@@ -345,6 +443,21 @@ class ContextArchiver:
             summary_data.get("summary", "No summary available."),
             ""
         ]
+
+        batch_dir = f"/workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}"
+
+        lines.append("## MANDATORY: How to retrieve specific data")
+        lines.append("The full data (URLs, sources, tool outputs, exact content) is saved "
+                      f"at {batch_dir}/.")
+        lines.append("When the user asks for details, numbers, links, or sources from earlier work: "
+                      "DO NOT respond to the user first. DO NOT say \"I don't have access\". "
+                      "DO NOT ask if they want you to retrieve the data. "
+                      "Your FIRST tool call must be read_file or grep — THEN respond with the results.")
+        lines.append(f"**For links/URLs:** read_file {batch_dir}/links.md (compact file with all URLs)")
+        lines.append(f"**For specific data:** grep -ri \"keyword\" {batch_dir}/")
+        lines.append(f"**To see all files:** read_file {batch_dir}/index.md")
+        lines.append("Do NOT use cat. Do NOT guess filenames. Read index.md or links.md first.")
+        lines.append("")
 
         # Key facts
         facts = summary_data.get("facts", {})
@@ -397,6 +510,7 @@ class ContextArchiver:
             global_num = total_before + i
             role = msg.get('role', 'unknown')
             content = msg.get('content', '')
+            is_working_memory = i > archived_count
 
             # Get short preview of content (longer for user messages to preserve intent)
             preview_limit = 500 if role == 'user' else 80
@@ -411,44 +525,23 @@ class ContextArchiver:
             else:
                 preview = "[complex content]"
 
+            wm_tag = " (working memory)" if is_working_memory else ""
+
             # Add tool call references
             tool_ref = ""
             tool_calls = msg.get('tool_calls', [])
             if tool_calls:
                 tc_names = [tc.get('function', {}).get('name', '?') for tc in tool_calls]
-                tc_ids = [tc.get('id', '') for tc in tool_calls]
                 tool_ref = f" → [tool:{','.join(tc_names)}]"
 
             if role == 'tool':
                 tool_call_id = msg.get('tool_call_id', '')
                 tool_name = msg.get('name', 'unknown')
-                lines.append(f"{global_num}. MSG-{global_num:03d} [tool:{tool_name}:{tool_call_id}]")
+                lines.append(f"{global_num}. MSG-{global_num:03d} [tool:{tool_name}:{tool_call_id}]{wm_tag}")
             else:
-                lines.append(f"{global_num}. MSG-{global_num:03d} [{role}]: {preview}{tool_ref}")
+                lines.append(f"{global_num}. MSG-{global_num:03d} [{role}]: {preview}{tool_ref}{wm_tag}")
 
         lines.append("")
-
-        # Archived files access instructions
-        # Find the first tool message number for a useful example
-        first_tool_num = None
-        for i, msg in enumerate(messages, 1):
-            if msg.get('role') == 'tool':
-                first_tool_num = total_before + i
-                break
-        example_file = f"MSG-{first_tool_num:03d}_tool.md" if first_tool_num else f"MSG-{msg_start:03d}_user.md"
-
-        lines.append("## Archived Files (you have full access)")
-        lines.append("Earlier messages were compressed into this summary. The full data "
-                      "(URLs, sources, tool outputs, exact content) is saved in your sandbox "
-                      f"at /workspace/{self.BASE_DIR}/.")
-        lines.append("These files are in YOUR sandbox — you already have full access. "
-                      "If the user asks for details not in this summary, just read the files. "
-                      "Do not ask the user for permission or say you lack access.")
-        lines.append("```bash")
-        lines.append(f"cat /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/{example_file}  # tool outputs with URLs/data")
-        lines.append(f"ls /workspace/{self.BASE_DIR}/messages/batch_{batch_number:03d}/  # list all archived files")
-        lines.append(f"grep -ri \"keyword\" /workspace/{self.BASE_DIR}/  # search across all batches")
-        lines.append("```")
 
         return "\n".join(lines)
 
