@@ -203,7 +203,7 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
             raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
         # For other errors, return 500
         logger.error(f"Error retrieving sandbox {sandbox_id} after retries: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sandbox operation failed")
 
 @router.post("/sandboxes/{sandbox_id}/files")
 async def create_file(
@@ -413,7 +413,7 @@ async def list_files(
         raise
     except Exception as e:
         logger.error(f"Error listing files in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sandbox operation failed")
 
 @router.get("/sandboxes/{sandbox_id}/files/content")
 async def read_file(
@@ -524,7 +524,7 @@ async def read_file(
         raise
     except Exception as e:
         logger.error(f"Error reading file in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Sandbox operation failed")
 
 @router.delete("/sandboxes/{sandbox_id}/files")
 async def delete_file(
@@ -2089,7 +2089,7 @@ async def revert_commit_or_files(
                     f"Snapshot revert failed for commit {commit} in sandbox {sandbox_id}: {str(e)}"
                 )
                 raise HTTPException(
-                    status_code=400, detail=f"Snapshot revert failed: {str(e)}"
+                    status_code=400, detail="Sandbox operation failed"
                 )
 
             return {
@@ -2163,7 +2163,7 @@ async def revert_commit_or_files(
                 f"Snapshot revert of files {safe_paths} to commit {commit} in sandbox {sandbox_id} failed: {str(e)}"
             )
             raise HTTPException(
-                status_code=400, detail=f"Snapshot file revert failed: {str(e)}"
+                status_code=400, detail="Sandbox operation failed"
             )
 
         return {

@@ -14,7 +14,7 @@ def check_notifications_enabled():
     if config.ENV_MODE != EnvMode.STAGING:
         raise HTTPException(
             status_code=403, 
-            detail=f"Notifications are only available in staging mode (current mode: {config.ENV_MODE.value})"
+            detail="Notifications are not available in this environment"
         )
 
 
@@ -59,7 +59,7 @@ async def get_notification_settings(current_user: dict = Depends(get_current_use
         
     except Exception as e:
         logger.error(f"Error getting notification settings: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve notification settings")
 
 
 @router.put("/settings")
@@ -93,7 +93,7 @@ async def update_notification_settings(
         raise
     except Exception as e:
         logger.error(f"Error updating notification settings: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update notification settings")
 
 
 @router.post("/device-token")
@@ -124,7 +124,7 @@ async def register_device_token(
         raise
     except Exception as e:
         logger.error(f"Error registering device token: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to register device token")
 
 
 @router.delete("/device-token/{device_token}")
@@ -155,7 +155,7 @@ async def unregister_device_token(
         raise
     except Exception as e:
         logger.error(f"Error unregistering device token: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to unregister device token")
 
 
 @router.post("/webhooks/novu")
@@ -178,5 +178,5 @@ async def handle_novu_webhook(request: Request):
         
     except Exception as e:
         logger.error(f"Error handling Novu webhook: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Webhook processing failed")
 
