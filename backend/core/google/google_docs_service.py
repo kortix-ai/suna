@@ -1,4 +1,6 @@
 import json
+import hmac
+import hashlib
 import uuid
 import base64
 import os
@@ -38,12 +40,37 @@ class GoogleDocsService:
         
         logger.info("GoogleDocsService initialized with database token storage")
 
+    def _get_state_signing_key(self) -> bytes:
+        """Get a signing key for HMAC-signing OAuth state parameters."""
+        key_material = (self.client_secret or "") + ":oauth_state_signing"
+        return hashlib.sha256(key_material.encode()).digest()
+
+    def _sign_state(self, payload: str) -> str:
+        """Create an HMAC-signed state parameter to prevent forgery."""
+        key = self._get_state_signing_key()
+        signature = hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()[:16]
+        return f"{payload}:{signature}"
+
+    def _verify_state(self, state: str) -> Optional[str]:
+        """Verify HMAC signature on state parameter. Returns the payload if valid, None otherwise."""
+        parts = state.rsplit(':', 1)
+        if len(parts) != 2:
+            return None
+        payload, signature = parts
+        key = self._get_state_signing_key()
+        expected = hmac.new(key, payload.encode(), hashlib.sha256).hexdigest()[:16]
+        if not hmac.compare_digest(signature, expected):
+            return None
+        return payload
+
     def get_auth_url(self, user_id: str, return_url: Optional[str] = None) -> str:
+        nonce = uuid.uuid4().hex
         if return_url:
             encoded_return_url = base64.urlsafe_b64encode(return_url.encode()).decode()
-            state = f"{user_id}:{uuid.uuid4().hex}:{encoded_return_url}"
+            payload = f"{user_id}:{nonce}:{encoded_return_url}"
         else:
-            state = f"{user_id}:{uuid.uuid4().hex}"
+            payload = f"{user_id}:{nonce}"
+        state = self._sign_state(payload)
         
         auth_params = {
             "response_type": "code",
@@ -61,10 +88,13 @@ class GoogleDocsService:
 
     async def handle_oauth_callback(self, code: str, state: str) -> tuple[Dict[str, Any], Optional[str]]:
         try:
-           
-            state_parts = state.split(':')
+            # Verify HMAC signature on state parameter to prevent CSRF/forgery
+            payload = self._verify_state(state)
+            if payload is None:
+                raise HTTPException(status_code=400, detail="Invalid OAuth state parameter")
+
+            state_parts = payload.split(':')
             user_id = state_parts[0]
-            
             
             return_url = None
             if len(state_parts) >= 3:
@@ -117,7 +147,7 @@ class GoogleDocsService:
             
         except Exception as e:
             logger.error(f"OAuth callback error: {e}")
-            raise HTTPException(status_code=500, detail=f"OAuth callback failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="OAuth callback failed. Please try again.")
 
     async def is_user_authenticated(self, user_id: str) -> bool:
         if await self.oauth_service.get_token(user_id):
@@ -258,7 +288,7 @@ class GoogleDocsService:
                 raise HTTPException(status_code=500, detail=f"Google API error: {error}")
         except Exception as e:
             logger.error(f"Unexpected error during upload: {e}")
-            raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Upload failed. Please try again later.")
 
     async def disconnect_user(self, user_id: str) -> Dict[str, Any]:
         success = await self.oauth_service.delete_token(user_id)
