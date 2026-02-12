@@ -83,10 +83,10 @@ def is_safe_url(url: str) -> tuple[bool, str]:
                     continue  # Skip if can't parse as IP
                     
         except socket.gaierror:
-            # DNS resolution failed - could be intentional to bypass checks
-            # Be cautious and allow (some legitimate services may have DNS issues)
-            logger.debug(f"DNS resolution failed for {hostname}, allowing connection")
-            pass
+            # DNS resolution failed - deny to prevent SSRF bypass via
+            # DNS rebinding or hostnames that resolve through non-standard means
+            logger.warning(f"SSRF blocked: DNS resolution failed for {hostname}")
+            return False, "DNS resolution failed for hostname"
         
         return True, ""
         
