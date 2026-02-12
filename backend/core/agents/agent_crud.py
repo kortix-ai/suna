@@ -33,9 +33,7 @@ async def update_agent(
 ):
     logger.debug(f"Updating agent {agent_id} for user: {user_id}")
     
-    # Debug logging for icon fields
-    if config.ENV_MODE == EnvMode.STAGING:
-        print(f"[DEBUG] update_agent: Received icon fields - icon_name={agent_data.icon_name}, icon_color={agent_data.icon_color}, icon_background={agent_data.icon_background}")
+    logger.debug(f"update_agent: Received icon fields - icon_name={agent_data.icon_name}, icon_color={agent_data.icon_color}, icon_background={agent_data.icon_background}")
     
     try:
         from core.agents import repo as agents_repo
@@ -238,9 +236,7 @@ async def update_agent(
         if agent_data.icon_background is not None:
             update_data["icon_background"] = agent_data.icon_background
         
-        # Debug logging for update_data
-        if config.ENV_MODE == EnvMode.STAGING:
-            print(f"[DEBUG] update_agent: Prepared update_data with icon fields - icon_name={update_data.get('icon_name')}, icon_color={update_data.get('icon_color')}, icon_background={update_data.get('icon_background')}")
+        logger.debug(f"update_agent: Prepared update_data with icon fields - icon_name={update_data.get('icon_name')}, icon_color={update_data.get('icon_color')}, icon_background={update_data.get('icon_background')}")
         
         current_system_prompt = agent_data.system_prompt if agent_data.system_prompt is not None else current_version_data.get('system_prompt', '')
         current_model = agent_data.model if agent_data.model is not None else current_version_data.get('model')
@@ -298,11 +294,11 @@ async def update_agent(
                 raise
             except Exception as e:
                 logger.error(f"Error creating new version for agent {agent_id}: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to create new agent version: {str(e)}")
+                raise HTTPException(status_code=500, detail="Failed to create new agent version. Please try again later.")
         
         if update_data:
             try:
-                print(f"[DEBUG] update_agent DB UPDATE: About to update agent {agent_id} with data: {update_data}")
+                logger.debug(f"update_agent DB UPDATE: About to update agent {agent_id} with data: {update_data}")
                 
                 success = await agents_repo.update_agent(
                     agent_id,
@@ -310,16 +306,13 @@ async def update_agent(
                     update_data
                 )
                 
-                if config.ENV_MODE == EnvMode.STAGING:
-                    print(f"[DEBUG] update_agent DB UPDATE SUCCESS: {success is not None}")
+                logger.debug(f"update_agent DB UPDATE SUCCESS: {success is not None}")
                 
                 if not success:
                     raise HTTPException(status_code=500, detail="Failed to update agent - no rows affected")
             except Exception as e:
                 logger.error(f"Error updating agent {agent_id}: {str(e)}")
-                if config.ENV_MODE == EnvMode.STAGING:
-                    print(f"[DEBUG] update_agent DB UPDATE ERROR: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
+                raise HTTPException(status_code=500, detail="Failed to update agent. Please try again later.")
         
         updated_agent = await agents_repo.get_agent_by_id(agent_id, user_id)
         
@@ -386,7 +379,7 @@ async def update_agent(
         raise
     except Exception as e:
         logger.error(f"Error updating agent {agent_id} for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update agent. Please try again later.")
 
 @router.delete("/agents/{agent_id}", summary="Delete Agent", operation_id="delete_agent")
 async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
@@ -529,7 +522,7 @@ async def get_agents(
         raise
     except Exception as e:
         logger.error("Error fetching agents for user", user_id=user_id, error=str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agents: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch agents. Please try again later.")
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse, summary="Get Agent", operation_id="get_agent")
 async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
@@ -547,7 +540,7 @@ async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id
         raise
     except Exception as e:
         logger.error(f"Error fetching agent {agent_id} for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch agent. Please try again later.")
 
 @router.post("/agents", response_model=AgentResponse, summary="Create Agent", operation_id="create_agent")
 async def create_agent(
@@ -578,8 +571,7 @@ async def create_agent(
         if agent_data.is_default:
             await agents_repo.clear_default_agent(user_id)
         
-        if config.ENV_MODE == EnvMode.STAGING:
-            print(f"[DEBUG] create_agent: Creating with icon_name={agent_data.icon_name or 'bot'}, icon_color={agent_data.icon_color or '#000000'}, icon_background={agent_data.icon_background or '#F3F4F6'}")
+        logger.debug(f"create_agent: Creating with icon_name={agent_data.icon_name or 'bot'}, icon_color={agent_data.icon_color or '#000000'}, icon_background={agent_data.icon_background or '#F3F4F6'}")
         
         # Create agent using direct SQL
         agent = await agents_repo.create_agent(
@@ -659,7 +651,7 @@ async def create_agent(
         raise
     except Exception as e:
         logger.error(f"Error creating agent for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create agent. Please try again later.")
 
 @router.post("/agents/generate-icon", response_model=AgentIconGenerationResponse, summary="Generate Agent Icon", operation_id="generate_agent_icon")
 async def generate_agent_icon(
@@ -687,4 +679,4 @@ async def generate_agent_icon(
         
     except Exception as e:
         logger.error(f"Error generating agent icon for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate agent icon: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate agent icon. Please try again later.")

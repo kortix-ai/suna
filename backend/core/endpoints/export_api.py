@@ -14,13 +14,14 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from urllib.parse import quote
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
+from core.utils.logger import logger
 
 try:
     from weasyprint import HTML, CSS
 except (ImportError, OSError) as e:
     weasyprint_available = False
-    print(f"[WARNING] WeasyPrint not available: {e}")
-    print("[INFO] To fix on macOS, run: export DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix)/lib:$DYLD_FALLBACK_LIBRARY_PATH")
+    logger.warning(f"WeasyPrint not available: {e}")
+    logger.info("To fix on macOS, run: export DYLD_FALLBACK_LIBRARY_PATH=$(brew --prefix)/lib:$DYLD_FALLBACK_LIBRARY_PATH")
 else:
     weasyprint_available = True
 
@@ -258,7 +259,7 @@ async def export_to_pdf(
         content = request.content
         file_name = sanitize_filename(request.fileName)
         
-        print(f"[PDF Export] User: {user_id}, File: {file_name}, Content length: {len(content)}")
+        logger.debug(f"PDF Export: user={user_id}, file={file_name}, content_length={len(content)}")
         
         # Preprocess HTML
         preprocessed_html = preprocess_html(content)
@@ -290,12 +291,10 @@ async def export_to_pdf(
         )
                 
     except Exception as e:
-        print(f"❌ PDF export error: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"PDF export error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate PDF: {str(e)}"
+            detail="Failed to generate PDF. Please try again later."
         )
 
 
@@ -320,7 +319,7 @@ async def export_to_docx(
         content = request.content
         file_name = sanitize_filename(request.fileName)
 
-        print(f"[DOCX Export] User: {user_id}, File: {file_name}, Content length: {len(content)}")
+        logger.debug(f"DOCX Export: user={user_id}, file={file_name}, content_length={len(content)}")
 
         # Preprocess HTML to extract body content if it's a full document
         preprocessed_content = preprocess_html(content)
@@ -357,10 +356,10 @@ async def export_to_docx(
         )
         
     except Exception as e:
-        print(f"❌ DOCX export error: {e}")
+        logger.error(f"DOCX export error: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate DOCX: {str(e)}"
+            detail="Failed to generate DOCX. Please try again later."
         )
 
 
