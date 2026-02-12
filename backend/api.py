@@ -468,7 +468,7 @@ async def prewarm_user_caches(user_id: str = Depends(verify_and_get_user_id_from
     return {"status": "accepted", "message": "Prewarming started in background"}
 
 @api_router.get("/metrics", summary="System Metrics", operation_id="metrics", tags=["system"])
-async def metrics_endpoint():
+async def metrics_endpoint(_: str = Depends(verify_and_get_user_id_from_jwt)):
     """
     Get API instance metrics for monitoring.
     
@@ -483,10 +483,10 @@ async def metrics_endpoint():
         return await worker_metrics.get_worker_metrics()
     except Exception as e:
         logger.error(f"Failed to get metrics: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get metrics: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get metrics. Please try again later.")
 
 @api_router.get("/debug", summary="Debug Information", operation_id="debug", tags=["system"])
-async def debug_endpoint():
+async def debug_endpoint(_: str = Depends(verify_and_get_user_id_from_jwt)):
     """Get basic debug information for troubleshooting."""
     from core.agents.api import _cancellation_events
     
@@ -498,7 +498,7 @@ async def debug_endpoint():
     }
 
 @api_router.get("/debug/redis", summary="Redis Health & Diagnostics", operation_id="redis_health", tags=["system"])
-async def redis_health_endpoint():
+async def redis_health_endpoint(_: str = Depends(verify_and_get_user_id_from_jwt)):
     """
     Get detailed Redis health and pool diagnostics.
     
@@ -699,7 +699,7 @@ if __name__ == "__main__":
     import uvicorn
     
     if sys.platform == "win32":
-        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     
     # Enable reload mode for local and staging environments
     is_dev_env = config.ENV_MODE in [EnvMode.LOCAL, EnvMode.STAGING]
