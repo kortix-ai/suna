@@ -323,6 +323,7 @@ async def start_agent_run(
     from core.agents.config import load_agent_config_fast
     from core.agents.pipeline.slot_manager import (
         reserve_slot,
+        release_slot,
         check_thread_limit,
         check_project_limit,
     )
@@ -514,9 +515,14 @@ async def start_agent_run(
                 metadata=metadata
             )
     except Exception:
-        # Clean up cancellation event if setup between event creation
-        # and background task launch fails
+        # Clean up cancellation event and release the reserved slot if
+        # setup between slot reservation and background task launch fails.
+        # Without this, the slot stays locked until it expires in Redis.
         _cancellation_events.pop(agent_run_id, None)
+        try:
+            await release_slot(account_id, agent_run_id)
+        except Exception:
+            pass
         raise
 
     setup_time_ms = round((time.time() - total_start) * 1000, 1)
@@ -841,7 +847,7 @@ async def unified_agent_start(
         raise
     except Exception as e:
         logger.error(f"Error in agent start: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to start agent. Please try again later.")
 
 
 @router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")
@@ -873,7 +879,7 @@ async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_fr
         return {"active_runs": active_runs}
     except Exception as e:
         logger.error(f"Error fetching active runs: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch active runs: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch active runs. Please try again later.")
 
 
 @router.get("/thread/{thread_id}/agent-runs", summary="List Thread Agent Runs", operation_id="list_thread_agent_runs")
@@ -887,6 +893,9 @@ async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_u
     if not thread:
         pending = await get_pending_thread(thread_id)
         if pending:
+            # Verify the requesting user owns this pending thread
+            if pending.get('account_id') != user_id:
+                raise HTTPException(status_code=404, detail="Thread not found")
             logger.debug(f"Thread {thread_id} is pending, returning pending agent run")
             return {
                 "agent_runs": [{
@@ -1123,11 +1132,12 @@ async def stream_agent_run(
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': str(e)})}\n\n"
+                logger.error(f"Stream subscription error for {agent_run_id}: {e}", exc_info=True)
+                yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Stream interrupted. Please reconnect.'})}\n\n"
 
         except Exception as e:
             logger.error(f"Stream error for {agent_run_id}: {e}", exc_info=True)
-            yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'An unexpected error occurred. Please try again.'})}\n\n"
 
     return StreamingResponse(
         stream_generator(agent_run_data, last_id), 
@@ -1137,6 +1147,5 @@ async def stream_agent_run(
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no", 
             "Content-Type": "text/event-stream",
-            "Access-Control-Allow-Origin": "*"
         }
     )
