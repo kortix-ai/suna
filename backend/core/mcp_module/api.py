@@ -46,4 +46,4 @@ async def discover_custom_mcp_tools(request: CustomMCPDiscoverRequest):
         
     except MCPException as e:
         logger.error(f"Error discovering custom MCP tools: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e)) 
+        raise HTTPException(status_code=500, detail="Internal server error") 

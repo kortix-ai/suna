@@ -119,7 +119,7 @@ async def get_google_auth_url(
         
     except Exception as e:
         logger.error(f"Failed to generate auth URL: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @oauth_router.get("/callback")
@@ -190,7 +190,7 @@ async def google_oauth_callback(
 #         
 #     except Exception as e:
 #         logger.error(f"Failed to disconnect user: {e}")
-#         raise HTTPException(status_code=500, detail=str(e))
+#         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ================== PRESENTATION ENDPOINTS ==================

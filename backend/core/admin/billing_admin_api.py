@@ -92,7 +92,7 @@ async def adjust_user_credits(
         raise
     except Exception as e:
         logger.error(f"Failed to adjust credits: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/refund")
 async def process_refund(

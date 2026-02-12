@@ -27,7 +27,7 @@ async def purchase_credits_checkout(
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error creating credit purchase checkout: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/transactions")
 async def get_my_transactions(
@@ -58,7 +58,7 @@ async def get_my_transactions(
         }
     except Exception as e:
         logger.error(f"[BILLING] Error fetching transactions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/transactions/summary")
 async def get_transactions_summary(
@@ -80,7 +80,7 @@ async def get_transactions_summary(
         
     except Exception as e:
         logger.error(f"[BILLING] Error getting transaction summary: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/credit-usage")
 async def get_credit_usage(
@@ -122,7 +122,7 @@ async def get_credit_usage(
         }
     except Exception as e:
         logger.error(f"[BILLING] Error fetching credit usage: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/credit-usage-by-thread")
@@ -211,4 +211,4 @@ async def get_credit_usage_by_thread(
         raise
     except Exception as e:
         logger.error(f"[BILLING] Error getting credit usage by thread: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

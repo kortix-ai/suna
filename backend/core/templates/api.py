@@ -167,13 +167,13 @@ async def create_template_from_agent(
         raise
     except TemplateNotFoundError as e:
         logger.warning(f"Template creation failed - not found: {e}")
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except TemplateAccessDeniedError as e:
         logger.warning(f"Template creation failed - access denied: {e}")
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except SunaDefaultAgentTemplateError as e:
         logger.warning(f"Template creation failed - Suna default agent: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         try:
             error_str = str(e)
@@ -345,10 +345,10 @@ async def install_template(
         raise
     except TemplateInstallationError as e:
         logger.warning(f"Template installation failed: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except InvalidCredentialError as e:
         logger.warning(f"Template installation failed - invalid credentials: {e}")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         try:
             error_str = str(e)

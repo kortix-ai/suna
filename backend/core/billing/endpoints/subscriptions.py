@@ -102,7 +102,7 @@ async def create_checkout_session(
         raise
     except Exception as e:
         logger.error(f"[BILLING] Error creating checkout session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/create-inline-checkout")
@@ -267,7 +267,7 @@ async def create_inline_checkout(
                         raise HTTPException(status_code=402, detail=f"Payment failed: {e.user_message}")
                     except Exception as e:
                         logger.error(f"[INLINE CHECKOUT] Error during upgrade: {e}")
-                        raise HTTPException(status_code=500, detail=str(e))
+                        raise HTTPException(status_code=500, detail="Internal server error")
 
         # Cancel any existing incomplete subscriptions to avoid clutter
         try:
@@ -364,7 +364,7 @@ async def create_inline_checkout(
         raise
     except Exception as e:
         logger.error(f"[BILLING] Error creating inline checkout: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/confirm-inline-checkout")
@@ -496,7 +496,7 @@ async def confirm_inline_checkout(
         raise
     except Exception as e:
         logger.error(f"[BILLING] Error confirming inline checkout: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/create-portal-session")
@@ -511,7 +511,7 @@ async def create_portal_session(
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error creating portal session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/sync-subscription")
@@ -525,7 +525,7 @@ async def sync_subscription(
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error syncing subscription: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/cancel-subscription")
@@ -540,7 +540,7 @@ async def cancel_subscription(
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error cancelling subscription: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/reactivate-subscription")
@@ -554,7 +554,7 @@ async def reactivate_subscription(
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error reactivating subscription: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/schedule-downgrade") 
@@ -580,7 +580,7 @@ async def schedule_downgrade(
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error scheduling downgrade: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/cancel-scheduled-change")
@@ -594,7 +594,7 @@ async def cancel_scheduled_change(
         return result
     except Exception as e:
         logger.error(f"[BILLING] Error cancelling scheduled change: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/proration-preview")
@@ -615,7 +615,7 @@ async def preview_proration(
         }
     except Exception as e:
         logger.error(f"[BILLING] Error previewing proration: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/checkout-session/{session_id}")
@@ -726,4 +726,4 @@ async def get_checkout_session(
         raise HTTPException(status_code=404, detail="Checkout session not found")
     except Exception as e:
         logger.error(f"[BILLING] Error retrieving checkout session: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

@@ -286,9 +286,9 @@ async def convert_document_to_docx(request: ConvertRequest):
         )
         
     except FileNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         print(f"❌ Conversion error: {e}")
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")

@@ -143,7 +143,7 @@ async def store_credential(
         )
         
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         logger.error(f"Error storing credential: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -232,7 +232,7 @@ async def store_credential_profile(
         )
         
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         logger.error(f"Error storing credential profile: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

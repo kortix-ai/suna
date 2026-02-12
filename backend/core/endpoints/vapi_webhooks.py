@@ -93,7 +93,7 @@ class VapiWebhookHandler:
         
         except Exception as e:
             logger.error(f"Error handling webhook event {event_type}: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail="Internal server error")
     
     async def _handle_conversation_update(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         from core.agentpress.thread_manager import ThreadManager

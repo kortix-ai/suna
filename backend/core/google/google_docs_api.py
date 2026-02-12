@@ -143,7 +143,7 @@ async def convert_and_upload_to_google_docs(
     except HTTPException as he:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 main_router.include_router(docs_router)

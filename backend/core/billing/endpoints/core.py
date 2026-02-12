@@ -107,7 +107,7 @@ async def get_credit_breakdown(
         }
     except Exception as e:
         logger.error(f"[BILLING] Error getting credit breakdown: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/usage-history")
@@ -131,7 +131,7 @@ async def get_usage_history(
         }
     except Exception as e:
         logger.error(f"[BILLING] Error getting usage history: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/track-pricing-view")

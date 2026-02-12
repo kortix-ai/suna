@@ -85,4 +85,4 @@ class SyncService:
             raise
         except Exception as e:
             logger.error(f"[REVENUECAT SYNC] Error: {str(e)}", exc_info=True)
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail="Internal server error")
