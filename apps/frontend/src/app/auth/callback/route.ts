@@ -17,7 +17,13 @@ export async function GET(request: NextRequest) {
   const code = searchParams.get('code')
   const token = searchParams.get('token') // Supabase verification token
   const type = searchParams.get('type') // signup, recovery, etc.
-  const next = searchParams.get('returnUrl') || searchParams.get('redirect') || '/dashboard'
+  const rawNext = searchParams.get('returnUrl') || searchParams.get('redirect') || '/dashboard'
+  // Prevent open redirect: only allow relative paths starting with /
+  // Reject protocol-relative URLs (//evil.com), absolute URLs (https://evil.com),
+  // and URLs with @ (http://host@evil.com exploits URL credential syntax)
+  const next = (rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.includes('@'))
+    ? rawNext
+    : '/dashboard'
   const termsAccepted = searchParams.get('terms_accepted') === 'true'
   const email = searchParams.get('email') || '' // Email passed from magic link redirect URL
 
