@@ -841,7 +841,7 @@ async def unified_agent_start(
         raise
     except Exception as e:
         logger.error(f"Error in agent start: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to start agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to start agent")
 
 
 @router.post("/agent-run/{agent_run_id}/stop", summary="Stop Agent Run", operation_id="stop_agent_run")
@@ -873,7 +873,7 @@ async def get_active_agent_runs(user_id: str = Depends(verify_and_get_user_id_fr
         return {"active_runs": active_runs}
     except Exception as e:
         logger.error(f"Error fetching active runs: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch active runs: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch active runs")
 
 
 @router.get("/thread/{thread_id}/agent-runs", summary="List Thread Agent Runs", operation_id="list_thread_agent_runs")

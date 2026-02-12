@@ -181,7 +181,7 @@ async def update_custom_mcp_tools_for_agent(
                     custom_mcps.append(mcp_config)
                 except Exception as e:
                     logger.error(f"Failed to get Composio profile config: {e}")
-                    raise HTTPException(status_code=400, detail=f"Failed to get Composio profile: {str(e)}")
+                    raise HTTPException(status_code=400, detail="Failed to get Composio profile")
             else:
                 new_mcp_config = {
                     "name": f"Custom MCP ({mcp_type.upper()})",
