@@ -26,6 +26,16 @@ def _constant_time_compare(a: str, b: str) -> bool:
 _jwks_cache: Optional[Dict] = None
 _jwks_cache_time: float = 0 
 _jwks_cache_ttl: int = 3600  # Cache for 1 hour
+_jwks_lock: Optional["asyncio.Lock"] = None
+
+
+def _get_jwks_lock() -> "asyncio.Lock":
+    """Lazily create the JWKS lock bound to the current event loop."""
+    global _jwks_lock
+    import asyncio
+    if _jwks_lock is None:
+        _jwks_lock = asyncio.Lock()
+    return _jwks_lock
 
 
 async def _fetch_jwks() -> Dict:
@@ -33,51 +43,60 @@ async def _fetch_jwks() -> Dict:
     Fetch JWKS (JSON Web Key Set) from Supabase for ES256 token verification.
     Caches the result to avoid excessive API calls.
     
+    Uses an asyncio.Lock to prevent thundering herd when the cache expires:
+    only one coroutine fetches while others wait and reuse the refreshed cache.
+    
     Supabase's JWKS endpoint requires the anon key in the 'apikey' header.
     """
     global _jwks_cache, _jwks_cache_time
     
-    # Return cached JWKS if still valid
+    # Fast path: return cached JWKS if still valid (no lock needed)
     if _jwks_cache and (time.time() - _jwks_cache_time) < _jwks_cache_ttl:
         return _jwks_cache
     
-    supabase_url = config.SUPABASE_URL
-    supabase_anon_key = config.SUPABASE_ANON_KEY
-    
-    if not supabase_url:
-        raise ValueError("SUPABASE_URL not configured")
-    if not supabase_anon_key:
-        raise ValueError("SUPABASE_ANON_KEY not configured")
-    
-    # Supabase JWKS endpoint (standard OAuth2/OIDC .well-known path)
-    jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
-    
-    try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            # Supabase requires the anon key in the 'apikey' header
-            response = await client.get(
-                jwks_url,
-                headers={
-                    "apikey": supabase_anon_key,
-                    "Accept": "application/json"
-                }
-            )
-            response.raise_for_status()
-            jwks = response.json()
-            
-            # Cache the result
-            _jwks_cache = jwks
-            _jwks_cache_time = time.time()
-            
-            logger.debug(f"Fetched JWKS from {jwks_url}")
-            return jwks
-    except Exception as e:
-        logger.error(f"Failed to fetch JWKS from {jwks_url}: {e}")
-        # Return cached JWKS if available, even if expired
-        if _jwks_cache:
-            logger.warning("Using expired JWKS cache due to fetch failure")
+    # Slow path: acquire lock so only one coroutine fetches at a time
+    async with _get_jwks_lock():
+        # Re-check cache after acquiring lock (another coroutine may have refreshed it)
+        if _jwks_cache and (time.time() - _jwks_cache_time) < _jwks_cache_ttl:
             return _jwks_cache
-        raise
+        
+        supabase_url = config.SUPABASE_URL
+        supabase_anon_key = config.SUPABASE_ANON_KEY
+        
+        if not supabase_url:
+            raise ValueError("SUPABASE_URL not configured")
+        if not supabase_anon_key:
+            raise ValueError("SUPABASE_ANON_KEY not configured")
+        
+        # Supabase JWKS endpoint (standard OAuth2/OIDC .well-known path)
+        jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                # Supabase requires the anon key in the 'apikey' header
+                response = await client.get(
+                    jwks_url,
+                    headers={
+                        "apikey": supabase_anon_key,
+                        "Accept": "application/json"
+                    }
+                )
+                response.raise_for_status()
+                jwks = response.json()
+                
+                # Cache the result
+                _jwks_cache = jwks
+                _jwks_cache_time = time.time()
+                
+                logger.debug(f"Fetched JWKS from {jwks_url}")
+                return jwks
+        except Exception as e:
+            logger.error(f"Failed to fetch JWKS from {jwks_url}: {e}")
+            # Return cached JWKS if available, even if expired
+            if _jwks_cache:
+                logger.warning("Using expired JWKS cache due to fetch failure")
+                return _jwks_cache
+            raise
 
 
 def _get_public_key_from_jwks(jwks: Dict, kid: str):
@@ -546,7 +565,7 @@ async def get_user_id_from_stream_auth(
         error_msg = str(e)
         if "cannot schedule new futures after shutdown" in error_msg or "connection is closed" in error_msg:
             raise HTTPException(status_code=503, detail="Server is shutting down")
-        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Authentication error. Please try again later.")
 
 async def get_optional_user_id(request: Request) -> Optional[str]:
     auth_header = request.headers.get('Authorization')
@@ -680,7 +699,7 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
         else:
             raise HTTPException(
                 status_code=500,
-                detail=f"Error verifying thread access: {str(e)}"
+                detail="Error verifying thread access. Please try again later."
             )
 
 
