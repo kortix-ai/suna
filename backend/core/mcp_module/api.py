@@ -30,7 +30,7 @@ class CustomMCPDiscoverRequest(BaseModel):
 
 
 @router.post("/mcp/discover-custom-tools", summary="Discover Custom MCP Tools", operation_id="discover_custom_mcp_tools")
-async def discover_custom_mcp_tools(request: CustomMCPDiscoverRequest):
+async def discover_custom_mcp_tools(request: CustomMCPDiscoverRequest, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
     try:
         result = await mcp_service.discover_custom_tools(request.type, request.config)
         
