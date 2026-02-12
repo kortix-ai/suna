@@ -11,6 +11,19 @@ import { threadKeys } from '@/hooks/threads/keys';
 import { backendApi } from '@/lib/api-client';
 
 /**
+ * Escape HTML special characters to prevent XSS when interpolating
+ * dynamic values into HTML strings rendered via dangerouslySetInnerHTML.
+ */
+function escapeHtml(str: string): string {
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+/**
  * Optimistically extract a string field from partial/streaming JSON.
  * Works even when JSON is incomplete (still streaming).
  * 
@@ -620,11 +633,11 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             if (STREAMABLE_TOOLS.COMMAND_TOOLS.has(toolName || '')) {
                 if (parsed.command) {
                     const value = isFieldAnimating ? smoothFieldValue : parsed.command;
-                    return { html: `<strong>command:</strong> ${value}`, plainText: `command: ${value}` };
+                    return { html: `<strong>command:</strong> ${escapeHtml(value)}`, plainText: `command: ${value}` };
                 }
                 if (parsed.arguments?.command) {
                     const value = isFieldAnimating ? smoothFieldValue : parsed.arguments.command;
-                    return { html: `<strong>command:</strong> ${value}`, plainText: `command: ${value}` };
+                    return { html: `<strong>command:</strong> ${escapeHtml(value)}`, plainText: `command: ${value}` };
                 }
             }
 
@@ -632,13 +645,13 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             if (STREAMABLE_TOOLS.BROWSER_TOOLS.has(toolName || '')) {
                 if (parsed.url) {
                     const value = isFieldAnimating ? smoothFieldValue : parsed.url;
-                    return { html: `<strong>url:</strong> ${value}`, plainText: `url: ${value}` };
+                    return { html: `<strong>url:</strong> ${escapeHtml(value)}`, plainText: `url: ${value}` };
                 }
                 if (parsed.action) {
-                    return { html: `<strong>action:</strong> ${parsed.action}`, plainText: `action: ${parsed.action}` };
+                    return { html: `<strong>action:</strong> ${escapeHtml(parsed.action)}`, plainText: `action: ${parsed.action}` };
                 }
                 if (parsed.instruction) {
-                    return { html: `<strong>instruction:</strong> ${parsed.instruction}`, plainText: `instruction: ${parsed.instruction}` };
+                    return { html: `<strong>instruction:</strong> ${escapeHtml(parsed.instruction)}`, plainText: `instruction: ${parsed.instruction}` };
                 }
             }
 
@@ -646,10 +659,10 @@ export const ShowToolStream: React.FC<ShowToolStreamProps> = ({
             if (STREAMABLE_TOOLS.WEB_TOOLS.has(toolName || '')) {
                 if (parsed.query) {
                     const value = isFieldAnimating ? smoothFieldValue : parsed.query;
-                    return { html: `<strong>query:</strong> ${value}`, plainText: `query: ${value}` };
+                    return { html: `<strong>query:</strong> ${escapeHtml(value)}`, plainText: `query: ${value}` };
                 }
                 if (parsed.url) {
-                    return { html: `<strong>url:</strong> ${parsed.url}`, plainText: `url: ${parsed.url}` };
+                    return { html: `<strong>url:</strong> ${escapeHtml(parsed.url)}`, plainText: `url: ${parsed.url}` };
                 }
             }
 
