@@ -203,7 +203,7 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
             raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
         # For other errors, return 500
         logger.error(f"Error retrieving sandbox {sandbox_id} after retries: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve sandbox. Please try again later.")
 
 @router.post("/sandboxes/{sandbox_id}/files")
 async def create_file(
@@ -257,7 +257,7 @@ async def create_file(
         }
     except Exception as e:
         logger.error(f"Error creating file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 @router.put("/sandboxes/{sandbox_id}/files/binary")
 async def update_file_binary(
@@ -289,7 +289,7 @@ async def update_file_binary(
         }
     except Exception as e:
         logger.error(f"Error updating binary file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 @router.put("/sandboxes/{sandbox_id}/files")
 async def update_file(
@@ -321,7 +321,7 @@ async def update_file(
         return {"status": "success", "updated": True, "path": path}
     except Exception as e:
         logger.error(f"Error updating file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 @router.get("/sandboxes/{sandbox_id}/files")
 async def list_files(
@@ -413,7 +413,7 @@ async def list_files(
         raise
     except Exception as e:
         logger.error(f"Error listing files in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list files. Please try again later.")
 
 @router.get("/sandboxes/{sandbox_id}/files/content")
 async def read_file(
@@ -524,7 +524,7 @@ async def read_file(
         raise
     except Exception as e:
         logger.error(f"Error reading file in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to read file. Please try again later.")
 
 @router.delete("/sandboxes/{sandbox_id}/files")
 async def delete_file(
@@ -554,7 +554,7 @@ async def delete_file(
         return {"status": "success", "deleted": True, "path": path}
     except Exception as e:
         logger.error(f"Error deleting file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete file. Please try again later.")
 
 @router.delete("/sandboxes/{sandbox_id}")
 async def delete_sandbox_route(
@@ -576,7 +576,7 @@ async def delete_sandbox_route(
         return {"status": "success", "deleted": True, "sandbox_id": sandbox_id}
     except Exception as e:
         logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete sandbox. Please try again later.")
 
 # Should happen on server-side fully
 @router.post("/project/{project_id}/sandbox/ensure-active")
@@ -644,7 +644,7 @@ async def ensure_project_sandbox_active(
         raise
     except Exception as e:
         logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 @router.get("/project/{project_id}/sandbox")
 async def get_project_sandbox_details(
@@ -728,7 +728,7 @@ async def get_project_sandbox_details(
         raise
     except Exception as e:
         logger.error(f"Error fetching sandbox details for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 # ============================================================================
@@ -1072,7 +1072,7 @@ async def start_project_sandbox(
         raise
     except Exception as e:
         logger.error(f"Error starting sandbox for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 @router.get("/sandboxes/{sandbox_id}/status")
@@ -1202,7 +1202,7 @@ async def start_sandbox_by_id(
 
     except Exception as e:
         logger.error(f"Error starting sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 @router.post("/project/{project_id}/sandbox/stop")
@@ -1267,7 +1267,7 @@ async def stop_project_sandbox(
         raise
     except Exception as e:
         logger.error(f"Error stopping sandbox for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 @router.post("/project/{project_id}/files")
@@ -1357,7 +1357,7 @@ async def create_file_in_project(
         raise
     except Exception as e:
         logger.error(f"Error uploading file to project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 class FileUploadStateRequest(BaseModel):
@@ -1498,7 +1498,7 @@ async def read_file_by_hash(
         logger.error(
             f"Error reading file by hash in sandbox {sandbox_id}, path {path}, commit {commit}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 @router.get("/sandboxes/{sandbox_id}/files/history")
 async def list_file_history(
     sandbox_id: str,
@@ -1632,7 +1632,7 @@ async def list_file_history(
         logger.error(
             f"Error listing file history in sandbox {sandbox_id}, path {path}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 @router.get("/sandboxes/{sandbox_id}/files/commit-info")
 async def get_commit_info(
     sandbox_id: str,
@@ -1874,7 +1874,7 @@ async def get_commit_info(
         logger.error(
             f"Error retrieving commit info in sandbox {sandbox_id}, commit {commit}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 @router.get("/sandboxes/{sandbox_id}/files/tree")
 async def list_files_at_commit(
@@ -2007,7 +2007,7 @@ async def list_files_at_commit(
         logger.error(
             f"Error listing file tree in sandbox {sandbox_id}, path {path}, commit {commit}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 @router.post("/sandboxes/{sandbox_id}/files/revert")
 async def revert_commit_or_files(
@@ -2089,7 +2089,7 @@ async def revert_commit_or_files(
                     f"Snapshot revert failed for commit {commit} in sandbox {sandbox_id}: {str(e)}"
                 )
                 raise HTTPException(
-                    status_code=400, detail=f"Snapshot revert failed: {str(e)}"
+                    status_code=400, detail="Snapshot revert failed. Please try again later."
                 )
 
             return {
@@ -2162,9 +2162,9 @@ async def revert_commit_or_files(
             logger.error(
                 f"Snapshot revert of files {safe_paths} to commit {commit} in sandbox {sandbox_id} failed: {str(e)}"
             )
-            raise HTTPException(
-                status_code=400, detail=f"Snapshot file revert failed: {str(e)}"
-            )
+                raise HTTPException(
+                    status_code=400, detail="Snapshot file revert failed. Please try again later."
+                )
 
         return {
             "status": "success",
@@ -2180,7 +2180,7 @@ async def revert_commit_or_files(
         logger.error(
             f"Error handling snapshot revert in sandbox {sandbox_id}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 class TerminalCommandRequest(BaseModel):
     command: str
@@ -2263,7 +2263,7 @@ async def execute_terminal_command(
         raise
     except Exception as e:
         logger.error(f"Error in terminal command for sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 class SSHAccessRequest(BaseModel):
@@ -2305,7 +2305,7 @@ async def create_ssh_access_token(
         raise
     except Exception as e:
         logger.error(f"Error creating SSH access token for sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 @router.delete("/sandboxes/{sandbox_id}/ssh/token")
@@ -2335,7 +2335,7 @@ async def revoke_ssh_access_token(
         raise
     except Exception as e:
         logger.error(f"Error revoking SSH access for sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 @router.websocket("/sandboxes/{sandbox_id}/terminal/ws")
@@ -2377,7 +2377,7 @@ async def websocket_pty_terminal(
             return
         except Exception as recv_err:
             logger.error(f"[PTY WS] Error receiving auth: {recv_err}")
-            await websocket.send_json({"type": "error", "message": f"Error: {str(recv_err)}"})
+            await websocket.send_json({"type": "error", "message": "Failed to receive authentication message."})
             await websocket.close()
             return
         
@@ -2437,7 +2437,7 @@ async def websocket_pty_terminal(
             logger.info(f"[PTY WS] PTY session created: {session_id}")
         except Exception as e:
             logger.error(f"[PTY WS] Failed to create PTY session: {e}")
-            await websocket.send_json({"type": "error", "message": f"Failed to create terminal: {str(e)}"})
+            await websocket.send_json({"type": "error", "message": "Failed to create terminal session."})
             await websocket.close()
             return
         
@@ -2466,8 +2466,8 @@ async def websocket_pty_terminal(
     except Exception as e:
         logger.error(f"[PTY WS] Error for sandbox {sandbox_id}: {str(e)}")
         try:
-            await websocket.send_json({"type": "error", "message": str(e)})
-        except:
+            await websocket.send_json({"type": "error", "message": "An unexpected terminal error occurred."})
+        except Exception:
             pass
     finally:
         if pty_handle:
@@ -2478,7 +2478,7 @@ async def websocket_pty_terminal(
                 logger.warning(f"[PTY WS] Error killing PTY session: {e}")
         try:
             await websocket.close()
-        except:
+        except Exception:
             pass
 
 
@@ -2552,7 +2552,7 @@ async def smart_rename_files(
         raise
     except Exception as e:
         logger.error(f"Error in smart rename for sandbox {sandbox_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 # ============================================================================
@@ -2624,7 +2624,7 @@ async def get_sandbox_pool_stats(
         raise
     except Exception as e:
         logger.error(f"Error getting sandbox pool stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
 
 
 @router.post("/sandbox-pool/replenish")
@@ -2679,4 +2679,4 @@ async def trigger_pool_replenish(
         raise
     except Exception as e:
         logger.error(f"Error triggering pool replenish: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Operation failed. Please try again later.")
