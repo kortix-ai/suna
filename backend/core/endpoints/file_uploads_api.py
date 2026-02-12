@@ -92,7 +92,7 @@ async def regenerate_signed_link(
         raise
     except Exception as e:
         logger.error(f"Failed to regenerate signed link: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to regenerate link: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to regenerate link")
 
 @router.get("/file-uploads/{file_upload_id}")
 async def get_file_upload(
@@ -124,4 +124,4 @@ async def get_file_upload(
         raise
     except Exception as e:
         logger.error(f"Failed to get file upload: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get file upload: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get file upload")
