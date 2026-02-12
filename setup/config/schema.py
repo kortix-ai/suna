@@ -328,6 +328,8 @@ class SetupConfig(BaseModel):
             "langfuse",
             "braintrust",
             "monitoring",
+            "frontend",
+            "mobile",
         ]:
             config = getattr(self, section)
             flat.update(config.model_dump())
