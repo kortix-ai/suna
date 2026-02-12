@@ -261,7 +261,7 @@ async def list_html_files():
     except Exception as e:
         print(f"❌ Error listing HTML files: {e}")
         from fastapi import HTTPException
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # Health check endpoint - must be defined before catch-all route
 @app.get("/health")

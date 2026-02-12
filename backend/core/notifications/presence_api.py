@@ -98,7 +98,7 @@ async def clear_presence(
         raise
     except Exception as e:
         logger.error(f"Error in clear_presence endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/thread/{thread_id}/viewers")
@@ -118,7 +118,7 @@ async def get_thread_viewers(
         raise
     except Exception as e:
         logger.error(f"Error getting thread viewers: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/account/threads")
@@ -137,7 +137,7 @@ async def get_account_active_threads(
         raise
     except Exception as e:
         logger.error(f"Error getting account active threads: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/cleanup")
@@ -156,4 +156,4 @@ async def cleanup_stale_sessions(
         raise
     except Exception as e:
         logger.error(f"Error cleaning up stale sessions: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

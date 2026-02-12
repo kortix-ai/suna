@@ -16,7 +16,7 @@ async def get_trial_status(
         return status
     except Exception as e:
         logger.error(f"[TRIAL] Error getting trial status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/trial/cancel")
 async def cancel_trial(
@@ -27,7 +27,7 @@ async def cancel_trial(
         return result
     except Exception as e:
         logger.error(f"[TRIAL] Error cancelling trial: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/trial/start")
 async def start_trial(
@@ -43,7 +43,7 @@ async def start_trial(
         return result
     except Exception as e:
         logger.error(f"[TRIAL] Error starting trial: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/trial/create-checkout")
 async def create_trial_checkout(
@@ -61,4 +61,4 @@ async def create_trial_checkout(
         return result
     except Exception as e:
         logger.error(f"[TRIAL] Error creating trial checkout: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

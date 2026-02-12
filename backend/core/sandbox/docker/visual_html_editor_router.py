@@ -151,7 +151,7 @@ async def get_editable_elements(file_path: str):
         
     except Exception as e:
         print(f"Error getting editable elements: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/edit-text")
@@ -195,7 +195,7 @@ async def edit_text(request: EditTextRequest):
         
     except Exception as e:
         print(f"❌ Error editing text: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/delete-element")
@@ -248,7 +248,7 @@ async def delete_element(request: DeleteElementRequest):
         
     except Exception as e:
         print(f"❌ Error deleting element: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/save-content")
@@ -307,7 +307,7 @@ async def save_content(request: SaveContentRequest):
         
     except Exception as e:
         print(f"❌ Error saving content: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{file_path:path}/images/{image_path:path}")
@@ -331,7 +331,7 @@ async def proxy_images(file_path: str, image_path: str):
         
     except Exception as e:
         print(f"❌ Error serving image: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/{file_path:path}/editor")
@@ -352,7 +352,7 @@ async def get_html_editor(file_path: str):
         
     except Exception as e:
         print(f"❌ Error serving editor: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 

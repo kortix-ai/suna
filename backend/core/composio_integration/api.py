@@ -321,10 +321,10 @@ async def integrate_toolkit(
             redirect_url=result.connected_account.redirect_url
         )
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         logger.error(f"Integration failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/profiles", response_model=ProfileResponse)
@@ -376,10 +376,10 @@ async def create_profile(
         return ProfileResponse.from_composio_profile(created_profile)
         
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         logger.error(f"Failed to create profile: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/profiles/check-name-availability")
@@ -416,7 +416,7 @@ async def check_profile_name_availability(
         
     except Exception as e:
         logger.error(f"Failed to check profile name availability: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/profiles")
@@ -504,7 +504,7 @@ async def get_integration_status(
         return {"connected_account_id": connected_account_id, **status}
     except Exception as e:
         logger.error(f"Failed to get status: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/profiles/{profile_id}/discover-tools")
@@ -547,7 +547,7 @@ async def discover_composio_tools(
         raise
     except Exception as e:
         logger.error(f"Failed to discover tools for profile {profile_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/discover-tools/{profile_id}")
@@ -1113,4 +1113,4 @@ async def health_check() -> Dict[str, str]:
         return {"status": "healthy"}
     except Exception as e:
         logger.error(f"Health check failed: {e}")
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail="Service unavailable")

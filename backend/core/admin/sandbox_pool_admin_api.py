@@ -42,7 +42,7 @@ async def get_sandbox_pool_stats(admin: dict = Depends(require_admin)):
         
     except Exception as e:
         logger.error(f"Error getting sandbox pool stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/health")
@@ -84,7 +84,7 @@ async def get_pool_health(admin: dict = Depends(require_admin)):
         
     except Exception as e:
         logger.error(f"Error getting pool health: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/list")
@@ -112,7 +112,7 @@ async def list_pooled_sandboxes(
         
     except Exception as e:
         logger.error(f"Error listing pooled sandboxes: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/replenish")
@@ -135,7 +135,7 @@ async def trigger_pool_replenish(admin: dict = Depends(require_admin)):
         
     except Exception as e:
         logger.error(f"Error triggering pool replenish: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/force-create")
@@ -181,7 +181,7 @@ async def force_create_sandboxes(
         
     except Exception as e:
         logger.error(f"Error force creating sandboxes: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/cleanup")
@@ -204,7 +204,7 @@ async def trigger_pool_cleanup(admin: dict = Depends(require_admin)):
         
     except Exception as e:
         logger.error(f"Error triggering pool cleanup: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/remove")
@@ -252,7 +252,7 @@ async def remove_from_pool(
         
     except Exception as e:
         logger.error(f"Error removing sandboxes from pool: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/restart-service")
@@ -274,4 +274,4 @@ async def restart_pool_service(admin: dict = Depends(require_admin)):
         
     except Exception as e:
         logger.error(f"Error restarting pool service: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

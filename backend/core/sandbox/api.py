@@ -257,7 +257,7 @@ async def create_file(
         }
     except Exception as e:
         logger.error(f"Error creating file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.put("/sandboxes/{sandbox_id}/files/binary")
 async def update_file_binary(
@@ -289,7 +289,7 @@ async def update_file_binary(
         }
     except Exception as e:
         logger.error(f"Error updating binary file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.put("/sandboxes/{sandbox_id}/files")
 async def update_file(
@@ -321,7 +321,7 @@ async def update_file(
         return {"status": "success", "updated": True, "path": path}
     except Exception as e:
         logger.error(f"Error updating file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/sandboxes/{sandbox_id}/files")
 async def list_files(
@@ -554,7 +554,7 @@ async def delete_file(
         return {"status": "success", "deleted": True, "path": path}
     except Exception as e:
         logger.error(f"Error deleting file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.delete("/sandboxes/{sandbox_id}")
 async def delete_sandbox_route(
@@ -576,7 +576,7 @@ async def delete_sandbox_route(
         return {"status": "success", "deleted": True, "sandbox_id": sandbox_id}
     except Exception as e:
         logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 # Should happen on server-side fully
 @router.post("/project/{project_id}/sandbox/ensure-active")
@@ -644,7 +644,7 @@ async def ensure_project_sandbox_active(
         raise
     except Exception as e:
         logger.error(f"Error ensuring sandbox is active for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/project/{project_id}/sandbox")
 async def get_project_sandbox_details(
@@ -728,7 +728,7 @@ async def get_project_sandbox_details(
         raise
     except Exception as e:
         logger.error(f"Error fetching sandbox details for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -1072,7 +1072,7 @@ async def start_project_sandbox(
         raise
     except Exception as e:
         logger.error(f"Error starting sandbox for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/sandboxes/{sandbox_id}/status")
@@ -1202,7 +1202,7 @@ async def start_sandbox_by_id(
 
     except Exception as e:
         logger.error(f"Error starting sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/project/{project_id}/sandbox/stop")
@@ -1267,7 +1267,7 @@ async def stop_project_sandbox(
         raise
     except Exception as e:
         logger.error(f"Error stopping sandbox for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/project/{project_id}/files")
@@ -1357,7 +1357,7 @@ async def create_file_in_project(
         raise
     except Exception as e:
         logger.error(f"Error uploading file to project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class FileUploadStateRequest(BaseModel):
@@ -1498,7 +1498,7 @@ async def read_file_by_hash(
         logger.error(
             f"Error reading file by hash in sandbox {sandbox_id}, path {path}, commit {commit}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 @router.get("/sandboxes/{sandbox_id}/files/history")
 async def list_file_history(
     sandbox_id: str,
@@ -1632,7 +1632,7 @@ async def list_file_history(
         logger.error(
             f"Error listing file history in sandbox {sandbox_id}, path {path}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 @router.get("/sandboxes/{sandbox_id}/files/commit-info")
 async def get_commit_info(
     sandbox_id: str,
@@ -1874,7 +1874,7 @@ async def get_commit_info(
         logger.error(
             f"Error retrieving commit info in sandbox {sandbox_id}, commit {commit}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.get("/sandboxes/{sandbox_id}/files/tree")
 async def list_files_at_commit(
@@ -2007,7 +2007,7 @@ async def list_files_at_commit(
         logger.error(
             f"Error listing file tree in sandbox {sandbox_id}, path {path}, commit {commit}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/sandboxes/{sandbox_id}/files/revert")
 async def revert_commit_or_files(
@@ -2180,7 +2180,7 @@ async def revert_commit_or_files(
         logger.error(
             f"Error handling snapshot revert in sandbox {sandbox_id}: {str(e)}"
         )
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 class TerminalCommandRequest(BaseModel):
     command: str
@@ -2263,7 +2263,7 @@ async def execute_terminal_command(
         raise
     except Exception as e:
         logger.error(f"Error in terminal command for sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 class SSHAccessRequest(BaseModel):
@@ -2305,7 +2305,7 @@ async def create_ssh_access_token(
         raise
     except Exception as e:
         logger.error(f"Error creating SSH access token for sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/sandboxes/{sandbox_id}/ssh/token")
@@ -2335,7 +2335,7 @@ async def revoke_ssh_access_token(
         raise
     except Exception as e:
         logger.error(f"Error revoking SSH access for sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.websocket("/sandboxes/{sandbox_id}/terminal/ws")
@@ -2552,7 +2552,7 @@ async def smart_rename_files(
         raise
     except Exception as e:
         logger.error(f"Error in smart rename for sandbox {sandbox_id}: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ============================================================================
@@ -2624,7 +2624,7 @@ async def get_sandbox_pool_stats(
         raise
     except Exception as e:
         logger.error(f"Error getting sandbox pool stats: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/sandbox-pool/replenish")
@@ -2679,4 +2679,4 @@ async def trigger_pool_replenish(
         raise
     except Exception as e:
         logger.error(f"Error triggering pool replenish: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

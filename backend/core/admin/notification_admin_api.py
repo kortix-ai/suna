@@ -41,7 +41,7 @@ async def list_workflows(
         raise
     except Exception as e:
         logger.error(f"[ADMIN] Error fetching workflows: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/trigger-workflow")
@@ -97,4 +97,4 @@ async def trigger_workflow_admin(
         raise
     except Exception as e:
         logger.error(f"[ADMIN] Error triggering workflow: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

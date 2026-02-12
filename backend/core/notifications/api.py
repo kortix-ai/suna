@@ -59,7 +59,7 @@ async def get_notification_settings(current_user: dict = Depends(get_current_use
         
     except Exception as e:
         logger.error(f"Error getting notification settings: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.put("/settings")
@@ -93,7 +93,7 @@ async def update_notification_settings(
         raise
     except Exception as e:
         logger.error(f"Error updating notification settings: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/device-token")
@@ -124,7 +124,7 @@ async def register_device_token(
         raise
     except Exception as e:
         logger.error(f"Error registering device token: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.delete("/device-token/{device_token}")
@@ -155,7 +155,7 @@ async def unregister_device_token(
         raise
     except Exception as e:
         logger.error(f"Error unregistering device token: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.post("/webhooks/novu")
@@ -178,5 +178,5 @@ async def handle_novu_webhook(request: Request):
         
     except Exception as e:
         logger.error(f"Error handling Novu webhook: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 

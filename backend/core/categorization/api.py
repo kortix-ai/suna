@@ -17,5 +17,5 @@ async def categorize_stale_projects_endpoint(
         return {"success": True, "message": "Categorization job enqueued"}
     except Exception as e:
         logger.error(f"Failed to enqueue categorization: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 

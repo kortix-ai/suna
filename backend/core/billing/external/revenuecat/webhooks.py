@@ -81,7 +81,7 @@ class RevenueCatService:
             
         except Exception as e:
             logger.error(f"[REVENUECAT] Error processing webhook: {str(e)}")
-            raise HTTPException(status_code=500, detail=str(e))
+            raise HTTPException(status_code=500, detail="Internal server error")
     
     def _parse_webhook_body(self, body_bytes: bytes) -> Dict:
         body_str = body_bytes.decode('utf-8')

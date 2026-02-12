@@ -68,9 +68,9 @@ async def get_versions(
         versions = await version_service.get_all_versions(agent_id, user_id)
         return [VersionResponse(**version.to_dict()) for version in versions]
     except UnauthorizedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except AgentNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except Exception as e:
         logger.error(f"Failed to fetch versions: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to fetch versions")
@@ -98,11 +98,11 @@ async def create_version(
         
         return VersionResponse(**version.to_dict())
     except UnauthorizedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except AgentNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         logger.error(f"Failed to create version: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to create version: {str(e)}")
@@ -119,9 +119,9 @@ async def get_version(
         version = await version_service.get_version(agent_id, version_id, user_id)
         return VersionResponse(**version.to_dict())
     except UnauthorizedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except VersionNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except Exception as e:
         logger.error(f"Failed to get version: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to get version")
@@ -138,11 +138,11 @@ async def activate_version(
         await version_service.activate_version(agent_id, version_id, user_id)
         return {"message": "Version activated successfully"}
     except UnauthorizedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except VersionNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except InvalidVersionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail="Bad request")
     except Exception as e:
         logger.error(f"Failed to activate version: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to activate version")
@@ -167,9 +167,9 @@ async def compare_versions(
             differences=comparison['differences']
         )
     except UnauthorizedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except VersionNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except Exception as e:
         logger.error(f"Failed to compare versions: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to compare versions")
@@ -189,9 +189,9 @@ async def rollback_to_version(
         
         return VersionResponse(**new_version.to_dict())
     except UnauthorizedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except VersionNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except Exception as e:
         logger.error(f"Failed to rollback version: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to rollback version")
@@ -216,9 +216,9 @@ async def update_version_details(
         
         return VersionResponse(**updated_version.to_dict())
     except UnauthorizedError as e:
-        raise HTTPException(status_code=403, detail=str(e))
+        raise HTTPException(status_code=403, detail="Forbidden")
     except VersionNotFoundError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail="Not found")
     except Exception as e:
         logger.error(f"Failed to update version details: {str(e)}")
         raise HTTPException(status_code=500, detail="Failed to update version details")
