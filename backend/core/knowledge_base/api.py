@@ -662,7 +662,7 @@ async def get_entry_content(
                 raise HTTPException(status_code=404, detail="File content not found in storage")
         except Exception as e:
             logger.error(f"Error downloading file from S3: {str(e)}")
-            raise HTTPException(status_code=500, detail=f"Failed to download file: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to download file. Please try again later.")
 
         # Try to decode as text
         content_text = None

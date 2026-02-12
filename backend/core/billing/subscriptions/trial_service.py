@@ -153,7 +153,7 @@ class TrialService:
             
         except stripe.error.StripeError as e:
             logger.error(f"[TRIAL CANCEL] Stripe error cancelling subscription: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to cancel subscription: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to cancel subscription. Please try again later.")
 
     async def start_trial(self, account_id: str, success_url: str, cancel_url: str) -> Dict:
         logger.info(f"[TRIAL SECURITY] Trial activation attempt for account {account_id}")

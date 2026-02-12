@@ -334,4 +334,4 @@ Provide your analysis as valid JSON following the exact structure specified."""
         
     except Exception as e:
         logger.error(f"Failed to analyze feedback with LLM: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to analyze feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to analyze feedback. Please try again later.")

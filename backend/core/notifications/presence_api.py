@@ -67,7 +67,7 @@ async def update_presence(
         # Don't log 204 "Missing response" errors - they're handled silently now
         if '204' not in error_str or 'missing response' not in error_str:
             logger.error(f"Error in update_presence endpoint: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error. Please try again later.")
 
 
 @router.post("/clear")

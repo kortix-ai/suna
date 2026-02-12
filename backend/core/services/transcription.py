@@ -74,4 +74,4 @@ async def transcribe_audio(
         
     except Exception as e:
         logger.error(f"Error transcribing audio for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Transcription failed: {str(e)}") 
+        raise HTTPException(status_code=500, detail="Transcription failed. Please try again later.") 

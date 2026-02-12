@@ -390,7 +390,7 @@ async def generate_voice(
 
     except Exception as e:
         logger.error(f"[VOICE] Generation failed for {account_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Voice generation failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Voice generation failed. Please try again later.")
 
 
 @router.post("/voice/generate/stream")

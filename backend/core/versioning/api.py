@@ -105,7 +105,7 @@ async def create_version(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Failed to create version: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create version: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create version. Please try again later.")
 
 
 @router.get("/agents/{agent_id}/versions/{version_id}", response_model=VersionResponse, summary="Get Agent Version", operation_id="get_agent_version")

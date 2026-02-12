@@ -203,7 +203,7 @@ async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
             raise HTTPException(status_code=404, detail=f"Sandbox not found: {sandbox_id}")
         # For other errors, return 500
         logger.error(f"Error retrieving sandbox {sandbox_id} after retries: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to retrieve sandbox: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve sandbox. Please try again later.")
 
 @router.post("/sandboxes/{sandbox_id}/files")
 async def create_file(
@@ -413,7 +413,7 @@ async def list_files(
         raise
     except Exception as e:
         logger.error(f"Error listing files in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to list files. Please try again later.")
 
 @router.get("/sandboxes/{sandbox_id}/files/content")
 async def read_file(
@@ -524,7 +524,7 @@ async def read_file(
         raise
     except Exception as e:
         logger.error(f"Error reading file in sandbox {sandbox_id}, path {path}: {str(e)}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to read file. Please try again later.")
 
 @router.delete("/sandboxes/{sandbox_id}/files")
 async def delete_file(
@@ -554,7 +554,7 @@ async def delete_file(
         return {"status": "success", "deleted": True, "path": path}
     except Exception as e:
         logger.error(f"Error deleting file in sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete file. Please try again later.")
 
 @router.delete("/sandboxes/{sandbox_id}")
 async def delete_sandbox_route(
@@ -576,7 +576,7 @@ async def delete_sandbox_route(
         return {"status": "success", "deleted": True, "sandbox_id": sandbox_id}
     except Exception as e:
         logger.error(f"Error deleting sandbox {sandbox_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete sandbox. Please try again later.")
 
 # Should happen on server-side fully
 @router.post("/project/{project_id}/sandbox/ensure-active")
@@ -2089,7 +2089,7 @@ async def revert_commit_or_files(
                     f"Snapshot revert failed for commit {commit} in sandbox {sandbox_id}: {str(e)}"
                 )
                 raise HTTPException(
-                    status_code=400, detail=f"Snapshot revert failed: {str(e)}"
+                    status_code=400, detail="Snapshot revert failed. Please try again later."
                 )
 
             return {
@@ -2162,9 +2162,9 @@ async def revert_commit_or_files(
             logger.error(
                 f"Snapshot revert of files {safe_paths} to commit {commit} in sandbox {sandbox_id} failed: {str(e)}"
             )
-            raise HTTPException(
-                status_code=400, detail=f"Snapshot file revert failed: {str(e)}"
-            )
+                raise HTTPException(
+                    status_code=400, detail="Snapshot file revert failed. Please try again later."
+                )
 
         return {
             "status": "success",

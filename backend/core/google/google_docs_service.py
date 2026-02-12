@@ -117,7 +117,7 @@ class GoogleDocsService:
             
         except Exception as e:
             logger.error(f"OAuth callback error: {e}")
-            raise HTTPException(status_code=500, detail=f"OAuth callback failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="OAuth callback failed. Please try again.")
 
     async def is_user_authenticated(self, user_id: str) -> bool:
         if await self.oauth_service.get_token(user_id):
@@ -258,7 +258,7 @@ class GoogleDocsService:
                 raise HTTPException(status_code=500, detail=f"Google API error: {error}")
         except Exception as e:
             logger.error(f"Unexpected error during upload: {e}")
-            raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Upload failed. Please try again later.")
 
     async def disconnect_user(self, user_id: str) -> Dict[str, Any]:
         success = await self.oauth_service.delete_token(user_id)

@@ -65,7 +65,7 @@ class SchedulingHandler:
             
         except stripe.error.StripeError as e:
             logger.error(f"Error scheduling downgrade for subscription {subscription_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to schedule downgrade: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to schedule downgrade. Please try again later.")
 
     @staticmethod
     def _determine_downgrade_timing(subscription: Dict, user_commitment_type: str, commitment_end_date: str):
