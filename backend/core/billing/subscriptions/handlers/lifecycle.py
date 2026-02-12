@@ -56,7 +56,7 @@ class SubscriptionLifecycleHandler:
             raise e
         except Exception as e:
             logger.error(f"Error cancelling subscription for {account_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to cancel subscription: {str(e)}")
+            raise HTTPException(status_code=500, detail="Failed to cancel subscription. Please try again later.")
 
     async def _save_cancellation_feedback(self, account_id: str, feedback: str):
         try:

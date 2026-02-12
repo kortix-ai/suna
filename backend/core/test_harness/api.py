@@ -144,7 +144,7 @@ async def start_benchmark_test(
         logger.error(f"Error starting benchmark test: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to start test: {str(e)}"
+            detail="Failed to start test. Please try again later."
         )
 
 
@@ -175,7 +175,7 @@ async def get_test_run(
         
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to retrieve test run: {str(e)}"
+            detail="Failed to retrieve test run. Please try again later."
         )
 
 
@@ -211,7 +211,7 @@ async def list_test_runs(
         logger.error(f"Error listing test runs: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to list test runs: {str(e)}"
+            detail="Failed to list test runs. Please try again later."
         )
 
 
@@ -247,7 +247,7 @@ async def cancel_test_run(
         logger.error(f"Error cancelling test run {run_id}: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to cancel test run: {str(e)}"
+            detail="Failed to cancel test run. Please try again later."
         )
 
 
@@ -410,6 +410,6 @@ async def run_e2e_tests(
         logger.error(f"Error running E2E tests: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to run E2E tests: {str(e)}"
+            detail="Failed to run E2E tests. Please try again later."
         )
 

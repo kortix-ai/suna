@@ -190,7 +190,7 @@ async def delete_account_sandboxes_endpoint(
         }
     except Exception as e:
         logger.error(f"Error in delete_account_sandboxes_endpoint: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete sandboxes: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete sandboxes. Please try again later.")
 
 async def check_and_schedule_subscriptions(account_id: str, cancel_at: datetime, client) -> None:
     try:
@@ -416,4 +416,4 @@ async def delete_account_immediately(
         import traceback
         logger.error(f"Error deleting account immediately: {str(e)}")
         logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete account: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete account. Please try again later.")

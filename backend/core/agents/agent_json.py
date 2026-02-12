@@ -400,7 +400,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         
     except Exception as e:
         logger.error(f"Error exporting agent {agent_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to export agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to export agent. Please try again later.")
 
 @router.post("/agents/json/analyze", response_model=JsonAnalysisResponse, summary="Analyze Agent JSON", operation_id="analyze_agent_json")
 async def analyze_json_for_import(
@@ -420,7 +420,7 @@ async def analyze_json_for_import(
         
     except Exception as e:
         logger.error(f"Error analyzing JSON: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Failed to analyze JSON: {str(e)}")
+        raise HTTPException(status_code=400, detail="Failed to analyze JSON. Please check the input and try again.")
 
 @router.post("/agents/json/import", response_model=JsonImportResponse, summary="Import Agent from JSON", operation_id="import_agent_json")
 async def import_agent_from_json(
@@ -454,4 +454,4 @@ async def import_agent_from_json(
         
     except Exception as e:
         logger.error(f"Error importing agent from JSON: {str(e)}")
-        raise HTTPException(status_code=400, detail=f"Failed to import agent: {str(e)}")
+        raise HTTPException(status_code=400, detail="Failed to import agent. Please check the input and try again.")

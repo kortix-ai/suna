@@ -20,7 +20,7 @@ async def revenuecat_webhook(request: Request) -> Dict:
         return result
     except Exception as e:
         logger.error(f"[REVENUECAT] Error processing webhook: {e}")
-        return {'status': 'error', 'message': str(e)}
+        return {'status': 'error', 'message': 'Failed to process webhook.'}
 
 @router.post("/revenuecat/sync")
 async def sync_revenuecat_customer(
@@ -49,5 +49,5 @@ async def sync_revenuecat_customer(
         logger.error(f"[REVENUECAT] Error syncing customer: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Internal server error. Please try again later."
         )

@@ -262,4 +262,4 @@ async def setup_agent_from_chat(
         raise
     except Exception as e:
         logger.error(f"Error setting up agent from chat: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to setup agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to setup agent. Please try again later.")

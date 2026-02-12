@@ -546,7 +546,7 @@ async def get_user_id_from_stream_auth(
         error_msg = str(e)
         if "cannot schedule new futures after shutdown" in error_msg or "connection is closed" in error_msg:
             raise HTTPException(status_code=503, detail="Server is shutting down")
-        raise HTTPException(status_code=500, detail=f"Authentication error: {str(e)}")
+        raise HTTPException(status_code=500, detail="Authentication error. Please try again later.")
 
 async def get_optional_user_id(request: Request) -> Optional[str]:
     auth_header = request.headers.get('Authorization')
@@ -680,7 +680,7 @@ async def verify_and_authorize_thread_access(client, thread_id: str, user_id: Op
         else:
             raise HTTPException(
                 status_code=500,
-                detail=f"Error verifying thread access: {str(e)}"
+                detail="Error verifying thread access. Please try again later."
             )
 
 

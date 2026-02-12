@@ -295,7 +295,7 @@ async def export_to_pdf(
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate PDF: {str(e)}"
+            detail="Failed to generate PDF. Please try again later."
         )
 
 
@@ -360,7 +360,7 @@ async def export_to_docx(
         print(f"❌ DOCX export error: {e}")
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to generate DOCX: {str(e)}"
+            detail="Failed to generate DOCX. Please try again later."
         )
 
 
