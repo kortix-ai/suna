@@ -362,7 +362,7 @@ class GoogleSlidesService:
             
         except Exception as e:
             logger.error(f"OAuth callback error: {e}")
-            raise HTTPException(status_code=500, detail=f"OAuth callback failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="OAuth callback failed")
 
     async def is_user_authenticated(self, user_id: str) -> bool:
         """Check if user has valid authentication."""
@@ -540,7 +540,7 @@ class GoogleSlidesService:
                 raise HTTPException(status_code=500, detail=f"Google API error: {error}")
         except Exception as e:
             logger.error(f"Unexpected error during upload: {e}")
-            raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
+            raise HTTPException(status_code=500, detail="Upload failed")
 
     # UNUSED: get_user_auth_status - never called anywhere  
     # async def get_user_auth_status(self, user_id: str) -> Dict[str, Any]:

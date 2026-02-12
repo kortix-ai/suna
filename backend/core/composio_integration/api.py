@@ -228,7 +228,7 @@ async def list_categories(
         
     except Exception as e:
         logger.error(f"Failed to fetch categories: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch categories: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch categories")
 
 
 @router.get("/toolkits")
@@ -261,7 +261,7 @@ async def list_toolkits(
         
     except Exception as e:
         logger.error(f"Failed to fetch toolkits: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch toolkits: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch toolkits")
 
 
 @router.get("/toolkits/{toolkit_slug}/details")
@@ -287,7 +287,7 @@ async def get_toolkit_details(
         raise
     except Exception as e:
         logger.error(f"Failed to fetch toolkit details for {toolkit_slug}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch toolkit details: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch toolkit details")
 
 
 @router.post("/integrate", response_model=IntegrationStatusResponse)
@@ -461,7 +461,7 @@ async def get_profile_mcp_config(
         
     except Exception as e:
         logger.error(f"Failed to get MCP config for profile {profile_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get MCP config: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get MCP config")
 
 
 @router.get("/profiles/{profile_id}")
@@ -490,7 +490,7 @@ async def get_profile_info(
         raise
     except Exception as e:
         logger.error(f"Failed to get profile info for {profile_id}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get profile info: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get profile info")
 
 
 @router.get("/integration/{connected_account_id}/status")
@@ -650,7 +650,7 @@ async def list_toolkit_tools(
         
     except Exception as e:
         logger.error(f"Failed to list toolkit tools for {request.toolkit_slug}: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get toolkit tools: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get toolkit tools")
 
 
 @router.get("/triggers/apps")

@@ -291,7 +291,7 @@ async def convert_document_to_docx(request: ConvertRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         print(f"❌ Conversion error: {e}")
-        raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
+        raise HTTPException(status_code=500, detail="Conversion failed")
 
 
 @router.get("/health")

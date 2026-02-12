@@ -126,7 +126,7 @@ async def list_memories(
     
     except Exception as e:
         logger.error(f"Error fetching memories for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch memories: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch memories")
 
 @router.get("/stats", response_model=MemoryStatsResponse)
 async def get_memory_stats(
@@ -179,7 +179,7 @@ async def get_memory_stats(
     
     except Exception as e:
         logger.error(f"Error fetching memory stats for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch memory stats: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch memory stats")
 
 @router.delete("/memories/{memory_id}")
 async def delete_memory(
@@ -207,7 +207,7 @@ async def delete_memory(
         raise
     except Exception as e:
         logger.error(f"Error deleting memory {memory_id} for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete memory: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete memory")
 
 @router.delete("/memories")
 async def delete_all_memories(
@@ -238,7 +238,7 @@ async def delete_all_memories(
         raise
     except Exception as e:
         logger.error(f"Error deleting all memories for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete all memories: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to delete all memories")
 
 @router.post("/memories", response_model=MemoryResponse)
 async def create_memory(
@@ -307,7 +307,7 @@ async def create_memory(
         raise
     except Exception as e:
         logger.error(f"Error creating memory for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create memory: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create memory")
 
 @router.get("/settings", response_model=MemorySettingsResponse)
 async def get_memory_settings(
@@ -327,7 +327,7 @@ async def get_memory_settings(
     
     except Exception as e:
         logger.error(f"Error getting memory settings for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get memory settings: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get memory settings")
 
 @router.put("/settings", response_model=MemorySettingsResponse)
 async def update_memory_settings(
@@ -352,7 +352,7 @@ async def update_memory_settings(
     
     except Exception as e:
         logger.error(f"Error updating memory settings for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update memory settings: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update memory settings")
 
 @router.get("/thread/{thread_id}/settings", response_model=ThreadMemorySettingsResponse)
 async def get_thread_memory_settings(
@@ -373,7 +373,7 @@ async def get_thread_memory_settings(
     
     except Exception as e:
         logger.error(f"Error getting thread memory settings for thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get thread memory settings: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get thread memory settings")
 
 @router.put("/thread/{thread_id}/settings", response_model=ThreadMemorySettingsResponse)
 async def update_thread_memory_settings(
@@ -399,4 +399,4 @@ async def update_thread_memory_settings(
     
     except Exception as e:
         logger.error(f"Error updating thread memory settings for thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update thread memory settings: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update thread memory settings")

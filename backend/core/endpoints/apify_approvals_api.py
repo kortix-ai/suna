@@ -221,7 +221,7 @@ async def approve_apify_request(
                     
                     raise HTTPException(
                         status_code=500,
-                        detail=f"Failed to process approval: {str(e)}"
+                        detail="Failed to process approval"
                     )
             
             # Final status update with credit deduction info (if applicable)
@@ -258,7 +258,7 @@ async def approve_apify_request(
         raise
     except Exception as e:
         logger.error(f"Error approving request: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to approve request: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to approve request")
 
 
 @router.get("/apify/approvals/{approval_id}", summary="Get Approval Status", operation_id="get_apify_approval_status")
@@ -355,5 +355,5 @@ async def get_apify_approval_status(
         raise
     except Exception as e:
         logger.error(f"Error getting approval status: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to get approval status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get approval status")
 

@@ -15,4 +15,4 @@ async def get_user_accounts(
         
     except Exception as e:
         logger.error(f"Error fetching user accounts: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch accounts: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch accounts")

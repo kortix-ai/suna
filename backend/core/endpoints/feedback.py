@@ -106,7 +106,7 @@ async def submit_feedback(
         raise
     except Exception as e:
         logger.error(f"Error submitting feedback: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to submit feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to submit feedback")
 
 
 @router.get("/feedback", response_model=list[FeedbackResponse], summary="Get Feedback", operation_id="get_feedback")
@@ -139,7 +139,7 @@ async def get_feedback(
         raise
     except Exception as e:
         logger.error(f"Error getting feedback: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get feedback")
 
 
 @router.get("/feedback/{feedback_id}", response_model=Optional[FeedbackResponse], summary="Get Feedback by ID", operation_id="get_feedback_by_id")
@@ -161,5 +161,5 @@ async def get_feedback_by_id(
         
     except Exception as e:
         logger.error(f"Error getting feedback {feedback_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get feedback: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get feedback")
 

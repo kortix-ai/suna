@@ -49,5 +49,5 @@ async def sync_revenuecat_customer(
         logger.error(f"[REVENUECAT] Error syncing customer: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail=f"Internal server error: {str(e)}"
+            detail="Internal server error"
         )
