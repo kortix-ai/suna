@@ -137,7 +137,7 @@ class BillingIntegration:
 
         # Handle cache reads and writes separately with actual pricing
         if cache_read_tokens > 0 or cache_creation_tokens > 0:
-            non_cached_prompt_tokens = prompt_tokens - cache_read_tokens - cache_creation_tokens
+            non_cached_prompt_tokens = max(0, prompt_tokens - cache_read_tokens - cache_creation_tokens)
             
             # Calculate costs for each component
             cached_read_cost = Decimal('0')
