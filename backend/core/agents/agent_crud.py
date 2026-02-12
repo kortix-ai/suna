@@ -298,7 +298,7 @@ async def update_agent(
                 raise
             except Exception as e:
                 logger.error(f"Error creating new version for agent {agent_id}: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to create new agent version: {str(e)}")
+                raise HTTPException(status_code=500, detail="Failed to create new agent version")
         
         if update_data:
             try:
@@ -319,7 +319,7 @@ async def update_agent(
                 logger.error(f"Error updating agent {agent_id}: {str(e)}")
                 if config.ENV_MODE == EnvMode.STAGING:
                     print(f"[DEBUG] update_agent DB UPDATE ERROR: {str(e)}")
-                raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
+                raise HTTPException(status_code=500, detail="Failed to update agent")
         
         updated_agent = await agents_repo.get_agent_by_id(agent_id, user_id)
         
@@ -386,7 +386,7 @@ async def update_agent(
         raise
     except Exception as e:
         logger.error(f"Error updating agent {agent_id} for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to update agent")
 
 @router.delete("/agents/{agent_id}", summary="Delete Agent", operation_id="delete_agent")
 async def delete_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
@@ -529,7 +529,7 @@ async def get_agents(
         raise
     except Exception as e:
         logger.error("Error fetching agents for user", user_id=user_id, error=str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agents: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch agents")
 
 @router.get("/agents/{agent_id}", response_model=AgentResponse, summary="Get Agent", operation_id="get_agent")
 async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
@@ -547,7 +547,7 @@ async def get_agent(agent_id: str, user_id: str = Depends(verify_and_get_user_id
         raise
     except Exception as e:
         logger.error(f"Error fetching agent {agent_id} for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to fetch agent")
 
 @router.post("/agents", response_model=AgentResponse, summary="Create Agent", operation_id="create_agent")
 async def create_agent(
@@ -659,7 +659,7 @@ async def create_agent(
         raise
     except Exception as e:
         logger.error(f"Error creating agent for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create agent: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to create agent")
 
 @router.post("/agents/generate-icon", response_model=AgentIconGenerationResponse, summary="Generate Agent Icon", operation_id="generate_agent_icon")
 async def generate_agent_icon(
@@ -687,4 +687,4 @@ async def generate_agent_icon(
         
     except Exception as e:
         logger.error(f"Error generating agent icon for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate agent icon: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate agent icon")
