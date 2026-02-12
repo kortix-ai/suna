@@ -138,6 +138,11 @@ class StreamPreconnectService {
     const bufferedMessages = [...stream.messageBuffer];
     stream.messageBuffer.length = 0;
 
+    // Remove from streams map since ownership is transferred to the consumer.
+    // The consumer manages the connection lifecycle from here.
+    // Listeners remain functional via the separate listeners map.
+    this.streams.delete(agentRunId);
+
     return { stream, bufferedMessages };
   }
 
