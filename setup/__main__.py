@@ -13,8 +13,12 @@ def check_and_install_dependencies():
 
     try:
         import pydantic
+        # The setup package requires Pydantic v2+ (field_validator, model_dump, etc.)
+        major = int(pydantic.VERSION.split(".")[0])
+        if major < 2:
+            missing.append("pydantic>=2.0.0")
     except ImportError:
-        missing.append("pydantic")
+        missing.append("pydantic>=2.0.0")
 
     try:
         import rich
