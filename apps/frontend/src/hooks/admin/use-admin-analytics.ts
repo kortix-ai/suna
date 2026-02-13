@@ -23,6 +23,7 @@ export interface ThreadAnalytics {
   project_id?: string | null;
   project_name?: string | null;
   project_category?: string | null;
+  project_categories?: string[] | null;
   account_id: string;
   user_email?: string | null;
   message_count: number;
@@ -159,6 +160,29 @@ export interface RetentionParams {
   min_weeks_active?: number;
 }
 
+function buildThreadBrowseSearchParams(params: ThreadBrowseParams = {}): URLSearchParams {
+  const searchParams = new URLSearchParams();
+
+  if (params.page) searchParams.append('page', params.page.toString());
+  if (params.page_size) searchParams.append('page_size', params.page_size.toString());
+  if (params.min_messages !== undefined) searchParams.append('min_messages', params.min_messages.toString());
+  if (params.max_messages !== undefined) searchParams.append('max_messages', params.max_messages.toString());
+  if (params.search_email) searchParams.append('search_email', params.search_email);
+  if (params.category) searchParams.append('category', params.category);
+  if (params.tier) searchParams.append('tier', params.tier);
+  if (params.date_from) searchParams.append('date_from', params.date_from);
+  if (params.date_to) searchParams.append('date_to', params.date_to);
+  if (params.sort_by) searchParams.append('sort_by', params.sort_by);
+  if (params.sort_order) searchParams.append('sort_order', params.sort_order);
+
+  return searchParams;
+}
+
+export interface ThreadExportResult {
+  blob: Blob;
+  file_name: string;
+}
+
 // ============================================================================
 // HOOKS
 // ============================================================================
@@ -181,20 +205,7 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
   return useQuery({
     queryKey: ['admin', 'analytics', 'threads', params],
     queryFn: async (): Promise<PaginatedResponse<ThreadAnalytics>> => {
-      const searchParams = new URLSearchParams();
-      
-      if (params.page) searchParams.append('page', params.page.toString());
-      if (params.page_size) searchParams.append('page_size', params.page_size.toString());
-      if (params.min_messages !== undefined) searchParams.append('min_messages', params.min_messages.toString());
-      if (params.max_messages !== undefined) searchParams.append('max_messages', params.max_messages.toString());
-      if (params.search_email) searchParams.append('search_email', params.search_email);
-      if (params.category) searchParams.append('category', params.category);
-      if (params.tier) searchParams.append('tier', params.tier);
-      if (params.date_from) searchParams.append('date_from', params.date_from);
-      if (params.date_to) searchParams.append('date_to', params.date_to);
-      if (params.sort_by) searchParams.append('sort_by', params.sort_by);
-      if (params.sort_order) searchParams.append('sort_order', params.sort_order);
-      
+      const searchParams = buildThreadBrowseSearchParams(params);
       const response = await backendApi.get(`/admin/analytics/threads/browse?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
@@ -202,6 +213,29 @@ export function useThreadBrowser(params: ThreadBrowseParams = {}) {
       return response.data;
     },
     staleTime: 30000, // 30 seconds
+  });
+}
+
+export function useExportThreadsExcel() {
+  return useMutation({
+    mutationFn: async (params: ThreadBrowseParams = {}): Promise<ThreadExportResult> => {
+      const searchParams = buildThreadBrowseSearchParams(params);
+      const shareOrigin = typeof window !== 'undefined' ? window.location.origin : undefined;
+      if (shareOrigin) {
+        searchParams.append('share_origin', shareOrigin);
+      }
+      const response = await backendApi.get(`/admin/analytics/threads/export?${searchParams.toString()}`, {
+        timeout: 300000,
+      });
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      return {
+        blob: response.data as Blob,
+        file_name: `threads-export-${timestamp}.xlsx`,
+      };
+    },
   });
 }
 
