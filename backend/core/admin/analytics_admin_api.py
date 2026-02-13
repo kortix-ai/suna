@@ -8,20 +8,25 @@ Provides analytics data for the admin dashboard including:
 """
 
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.responses import Response
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel
 import asyncio
+import io
 import httpx
 import json
 import os
+from urllib.parse import quote
 from core.auth import require_admin, require_super_admin
 from core.services.supabase import DBConnection
 from core.utils.logger import logger
 from core.utils.pagination import PaginationService, PaginationParams, PaginatedResponse
 from core.utils.config import config
 from core.utils.query_utils import batch_query_in
+from openpyxl import Workbook
+from openpyxl.styles import Font
 import openai
 import stripe
 
@@ -497,39 +502,189 @@ async def browse_threads(
     try:
         db = DBConnection()
         client = await db.client
-        
         pagination_params = PaginationParams(page=page, page_size=page_size)
-        has_message_filter = min_messages is not None or max_messages is not None
-        has_category_filter = category is not None
-        has_tier_filter = tier is not None
-        
-        # EMAIL SEARCH PATH: Query threads directly by account_id (no limit)
-        # This must come first to avoid the 1000 thread limit in filtered path
-        if search_email:
-            return await _browse_threads_by_email(
-                client, pagination_params, search_email,
-                min_messages, max_messages, date_from, date_to, sort_by, sort_order
-            )
-        
-        # If filtering by message count, category, or tier without date range, default to last 7 days
-        if (has_message_filter or has_category_filter or has_tier_filter) and not date_from:
-            date_from = (datetime.now(BERLIN_TZ) - timedelta(days=7)).strftime('%Y-%m-%d')
-        
-        # SIMPLE PATH: No message/email/category/tier filter - paginate directly from DB
-        if not has_message_filter and not has_category_filter and not has_tier_filter:
-            return await _browse_threads_simple(
-                client, pagination_params, date_from, date_to, sort_by, sort_order
-            )
-        
-        # FILTERED PATH: Need to check message counts, category, or tier
-        return await _browse_threads_filtered(
-            client, pagination_params, min_messages, max_messages,
-            None, category, tier, date_from, date_to, sort_by, sort_order  # search_email already handled above
+        return await _browse_threads_paginated(
+            client=client,
+            pagination_params=pagination_params,
+            min_messages=min_messages,
+            max_messages=max_messages,
+            search_email=search_email,
+            category=category,
+            tier=tier,
+            date_from=date_from,
+            date_to=date_to,
+            sort_by=sort_by,
+            sort_order=sort_order,
         )
         
     except Exception as e:
         logger.error(f"Failed to browse threads: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve threads")
+
+
+@router.get("/threads/export")
+async def export_threads(
+    min_messages: Optional[int] = Query(None, description="Minimum user messages"),
+    max_messages: Optional[int] = Query(None, description="Maximum user messages"),
+    search_email: Optional[str] = Query(None, description="Filter by user email"),
+    category: Optional[str] = Query(None, description="Filter by project category"),
+    tier: Optional[str] = Query(None, description="Filter by subscription tier"),
+    date_from: Optional[str] = Query(None, description="Filter from date (YYYY-MM-DD)"),
+    date_to: Optional[str] = Query(None, description="Filter to date (YYYY-MM-DD)"),
+    sort_by: str = Query("created_at", description="Sort field"),
+    sort_order: str = Query("desc", description="Sort order: asc, desc"),
+    share_origin: Optional[str] = Query(None, description="Frontend origin used to build share links"),
+    admin: dict = Depends(require_admin),
+):
+    """Export all matching threads to Excel with a frozen, bold header row."""
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        page = 1
+        all_threads: List[ThreadAnalytics] = []
+        export_page_size = 100
+
+        while True:
+            page_result = await _browse_threads_paginated(
+                client=client,
+                pagination_params=PaginationParams(page=page, page_size=export_page_size),
+                min_messages=min_messages,
+                max_messages=max_messages,
+                search_email=search_email,
+                category=category,
+                tier=tier,
+                date_from=date_from,
+                date_to=date_to,
+                sort_by=sort_by,
+                sort_order=sort_order,
+            )
+
+            if page_result.data:
+                all_threads.extend(page_result.data)
+
+            if not page_result.pagination.has_next:
+                break
+            page += 1
+
+        resolved_origin = _resolve_share_origin(share_origin)
+        workbook_bytes = _build_threads_export_workbook(all_threads, resolved_origin)
+        filename = f"threads-export-{datetime.now(BERLIN_TZ).strftime('%Y%m%d-%H%M%S')}.xlsx"
+        encoded_filename = quote(filename)
+
+        return Response(
+            content=workbook_bytes,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}",
+                "X-Thread-Count": str(len(all_threads)),
+            },
+        )
+    except Exception as e:
+        logger.error(f"Failed to export threads: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to export threads")
+
+
+async def _browse_threads_paginated(
+    client,
+    pagination_params: PaginationParams,
+    min_messages: Optional[int],
+    max_messages: Optional[int],
+    search_email: Optional[str],
+    category: Optional[str],
+    tier: Optional[str],
+    date_from: Optional[str],
+    date_to: Optional[str],
+    sort_by: str,
+    sort_order: str,
+) -> PaginatedResponse[ThreadAnalytics]:
+    """Shared browse logic for paginated API and export."""
+    has_message_filter = min_messages is not None or max_messages is not None
+    has_category_filter = category is not None
+    has_tier_filter = tier is not None
+
+    # EMAIL SEARCH PATH: Query threads directly by account_id (no limit)
+    # This must come first to avoid the 1000 thread limit in filtered path
+    if search_email:
+        return await _browse_threads_by_email(
+            client, pagination_params, search_email,
+            min_messages, max_messages, date_from, date_to, sort_by, sort_order
+        )
+
+    # If filtering by message count, category, or tier without date range, default to last 7 days
+    if (has_message_filter or has_category_filter or has_tier_filter) and not date_from:
+        date_from = (datetime.now(BERLIN_TZ) - timedelta(days=7)).strftime('%Y-%m-%d')
+
+    # SIMPLE PATH: No message/email/category/tier filter - paginate directly from DB
+    if not has_message_filter and not has_category_filter and not has_tier_filter:
+        return await _browse_threads_simple(
+            client, pagination_params, date_from, date_to, sort_by, sort_order
+        )
+
+    # FILTERED PATH: Need to check message counts, category, or tier
+    return await _browse_threads_filtered(
+        client, pagination_params, min_messages, max_messages,
+        None, category, tier, date_from, date_to, sort_by, sort_order
+    )
+
+
+def _resolve_share_origin(share_origin: Optional[str]) -> str:
+    origin = (share_origin or config.FRONTEND_URL or "").strip()
+    if not origin.startswith(("http://", "https://")):
+        origin = config.FRONTEND_URL
+    return origin.rstrip("/")
+
+
+def _build_threads_export_workbook(threads: List[ThreadAnalytics], share_origin: str) -> bytes:
+    workbook = Workbook()
+    worksheet = workbook.active
+    worksheet.title = "Threads"
+    worksheet.freeze_panes = "A2"
+
+    headers = [
+        "Thread ID",
+        "Project ID",
+        "Project Name",
+        "Project Categories",
+        "Account ID",
+        "User Email",
+        "User Message Count",
+        "Total Message Count",
+        "First Prompt",
+        "Created At",
+        "Updated At",
+        "Is Public",
+        "Share URL",
+    ]
+
+    worksheet.append(headers)
+    bold_font = Font(bold=True)
+    for col_idx in range(1, len(headers) + 1):
+        worksheet.cell(row=1, column=col_idx).font = bold_font
+
+    for thread in threads:
+        project_categories = " | ".join(thread.project_categories or [])
+        share_url = f"{share_origin}/share/{thread.thread_id}"
+        worksheet.append([
+            thread.thread_id,
+            thread.project_id or "",
+            thread.project_name or "",
+            project_categories,
+            thread.account_id or "",
+            thread.user_email or "",
+            thread.user_message_count,
+            thread.message_count,
+            thread.first_user_message or "",
+            thread.created_at.isoformat(),
+            thread.updated_at.isoformat(),
+            "true" if thread.is_public else "false",
+            share_url,
+        ])
+
+    output = io.BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output.getvalue()
 
 
 async def _browse_threads_by_email(
