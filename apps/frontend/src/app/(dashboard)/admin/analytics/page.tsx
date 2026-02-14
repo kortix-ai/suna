@@ -45,7 +45,7 @@ import { AdminUserTable } from '@/components/admin/admin-user-table';
 import { AdminUserDetailsDialog } from '@/components/admin/admin-user-details-dialog';
 import { useAdminUserList, useRefreshUserData, type UserSummary } from '@/hooks/admin/use-admin-users';
 
-import { UserEmailLink, MetricCard, ThreadBrowser, RetentionTab, ARRSimulator, ConversationInsightsTab } from './components';
+import { UserEmailLink, MetricCard, ThreadBrowser, TopUsersTab, RetentionTab, ARRSimulator, ConversationInsightsTab } from './components';
 
 // Get current date in Berlin timezone
 function getBerlinToday(): Date {
@@ -288,6 +288,10 @@ export default function AdminAnalyticsPage() {
               <TabsTrigger value="users" className="gap-1.5">
                 <Users className="h-3.5 w-3.5" />
                 Users
+              </TabsTrigger>
+              <TabsTrigger value="top-users" className="gap-1.5">
+                <Activity className="h-3.5 w-3.5" />
+                Top Users
               </TabsTrigger>
               <TabsTrigger value="retention" className="gap-1.5">
                 <UserCheck className="h-3.5 w-3.5" />
@@ -1087,6 +1091,15 @@ export default function AdminAnalyticsPage() {
                 <AdminUserTable onUserSelect={handleUserSelect} />
               </div>
             </div>
+          </TabsContent>
+
+          {/* Top Users Tab */}
+          <TabsContent value="top-users" className="mt-0">
+            <TopUsersTab
+              filterDateFrom={dateFromString}
+              filterDateTo={dateToString}
+              onUserClick={handleUserEmailClick}
+            />
           </TabsContent>
 
           {/* Retention Tab */}

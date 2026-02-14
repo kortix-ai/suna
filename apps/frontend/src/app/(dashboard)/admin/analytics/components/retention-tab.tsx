@@ -1,25 +1,28 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pagination } from '@/components/agents/pagination';
 import { DataTable, DataTableColumn } from '@/components/ui/data-table';
-import { useRetentionData, type RetentionData } from '@/hooks/admin/use-admin-analytics';
+import {
+  useRetentionData,
+  type RetentionData
+} from '@/hooks/admin/use-admin-analytics';
 import { UserEmailLink } from './user-email-link';
 import type { RetentionTabProps } from '../types';
 
 export function RetentionTab({ onUserClick }: RetentionTabProps) {
-  const [params, setParams] = useState({
+  const [retentionParams, setRetentionParams] = useState({
     page: 1,
     page_size: 15,
     weeks_back: 4,
     min_weeks_active: 2,
   });
 
-  const { data: retentionData, isLoading } = useRetentionData(params);
+  const { data: retentionData, isLoading: retentionLoading } = useRetentionData(retentionParams, true);
 
   const formatDate = (dateString: string) => {
     return new Date(dateString).toLocaleDateString('en-US', {
@@ -29,7 +32,7 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
     });
   };
 
-  const columns: DataTableColumn<RetentionData>[] = useMemo(() => [
+  const retentionColumns: DataTableColumn<RetentionData>[] = useMemo(() => [
     {
       id: 'user',
       header: 'User',
@@ -88,9 +91,9 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
       <div className="rounded-xl border bg-card">
         <div className="p-5 border-b flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-medium">Recurring Users</h2>
+            <h2 className="text-sm font-medium">Weekly Retention</h2>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Users active in {params.min_weeks_active}+ different weeks over the past {params.weeks_back} weeks
+              {`Users active in ${retentionParams.min_weeks_active}+ different weeks over the past ${retentionParams.weeks_back} weeks`}
             </p>
           </div>
 
@@ -98,8 +101,8 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
             <div className="flex items-center gap-2">
               <Label className="text-xs text-muted-foreground">Weeks</Label>
               <Select
-                value={params.weeks_back.toString()}
-                onValueChange={(v) => setParams({ ...params, weeks_back: parseInt(v), page: 1 })}
+                value={retentionParams.weeks_back.toString()}
+                onValueChange={(v) => setRetentionParams({ ...retentionParams, weeks_back: parseInt(v), page: 1 })}
               >
                 <SelectTrigger className="w-24 h-8 text-xs">
                   <SelectValue />
@@ -116,8 +119,8 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
             <div className="flex items-center gap-2">
               <Label className="text-xs text-muted-foreground">Min Active</Label>
               <Select
-                value={params.min_weeks_active.toString()}
-                onValueChange={(v) => setParams({ ...params, min_weeks_active: parseInt(v), page: 1 })}
+                value={retentionParams.min_weeks_active.toString()}
+                onValueChange={(v) => setRetentionParams({ ...retentionParams, min_weeks_active: parseInt(v), page: 1 })}
               >
                 <SelectTrigger className="w-24 h-8 text-xs">
                   <SelectValue />
@@ -135,7 +138,7 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
 
         {/* Table */}
         <div className="p-0">
-          {isLoading ? (
+          {retentionLoading ? (
             <div className="p-5 space-y-3">
               {[...Array(5)].map((_, i) => (
                 <Skeleton key={i} className="h-12 w-full" />
@@ -143,7 +146,7 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
             </div>
           ) : (
             <DataTable
-              columns={columns}
+              columns={retentionColumns}
               data={retentionData?.data || []}
               emptyMessage="No recurring users found"
               getItemId={(user) => user.user_id}
@@ -159,7 +162,7 @@ export function RetentionTab({ onUserClick }: RetentionTabProps) {
           totalPages={retentionData.pagination.total_pages}
           totalItems={retentionData.pagination.total_items}
           pageSize={retentionData.pagination.page_size}
-          onPageChange={(page) => setParams({ ...params, page })}
+          onPageChange={(page) => setRetentionParams({ ...retentionParams, page })}
           showPageSizeSelector={false}
         />
       )}
