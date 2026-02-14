@@ -90,7 +90,7 @@ async def search_threads_endpoint(
 
     except Exception as e:
         logger.error(f"Error searching threads for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to search threads: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 
 @router.get("/threads", summary="List User Threads", operation_id="list_user_threads")
@@ -132,7 +132,7 @@ async def get_user_threads(
 
     except Exception as e:
         logger.error(f"Error fetching threads for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch threads: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.get("/projects/{project_id}", summary="Get Project", operation_id="get_project")
 async def get_project(
@@ -194,7 +194,7 @@ async def get_project(
         raise
     except Exception as e:
         logger.error(f"Error fetching project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch project: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.get("/projects/{project_id}/threads", summary="List Project Threads", operation_id="list_project_threads")
 async def get_project_threads(
@@ -248,7 +248,7 @@ async def get_project_threads(
         raise
     except Exception as e:
         logger.error(f"Error fetching threads for project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch project threads: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.post("/projects/{project_id}/threads", response_model=CreateThreadResponse, summary="Create Thread in Project", operation_id="create_thread_in_project")
 async def create_thread_in_project(
@@ -321,7 +321,7 @@ async def create_thread_in_project(
         raise
     except Exception as e:
         logger.error(f"Error creating thread in project {project_id}: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.delete("/projects/{project_id}", summary="Delete Project", operation_id="delete_project")
 async def delete_project(
@@ -406,7 +406,7 @@ async def delete_project(
         raise
     except Exception as e:
         logger.error(f"Error deleting project {project_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete project: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.get("/threads/{thread_id}", summary="Get Thread", operation_id="get_thread")
 async def get_thread(
@@ -519,7 +519,7 @@ async def get_thread(
         raise
     except Exception as e:
         logger.error(f"Error fetching thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch thread: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.post("/threads", response_model=CreateThreadResponse, summary="Create Thread", operation_id="create_thread")
 async def create_thread(
@@ -683,7 +683,7 @@ async def create_thread(
 
     except Exception as e:
         logger.error(f"Error creating thread: {str(e)}\n{traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to create thread: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.get("/threads/{thread_id}/messages", summary="Get Thread Messages", operation_id="get_thread_messages")
 async def get_thread_messages(
@@ -761,7 +761,7 @@ async def get_thread_messages(
         return {"messages": all_messages}
     except Exception as e:
         logger.error(f"Error fetching messages for thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch messages: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.post("/threads/{thread_id}/messages/add", summary="Add Message to Thread", operation_id="add_message_to_thread")
 async def add_message_to_thread(
@@ -802,7 +802,7 @@ async def add_message_to_thread(
         return new_message
     except Exception as e:
         logger.error(f"Error adding message to thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to add message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.post("/threads/{thread_id}/messages", summary="Create Thread Message", operation_id="create_thread_message")
 async def create_message_endpoint(
@@ -844,7 +844,7 @@ async def create_message_endpoint(
         raise
     except Exception as e:
         logger.error(f"Error creating message in thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to create message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.delete("/threads/{thread_id}/messages/{message_id}", summary="Delete Thread Message", operation_id="delete_thread_message")
 async def delete_message_endpoint(
@@ -862,7 +862,7 @@ async def delete_message_endpoint(
         return {"message": "Message deleted successfully"}
     except Exception as e:
         logger.error(f"Error deleting message {message_id} from thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete message: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.patch("/threads/{thread_id}", summary="Update Thread", operation_id="update_thread")
 async def update_thread(
@@ -955,7 +955,7 @@ async def update_thread(
         raise
     except Exception as e:
         logger.error(f"Error updating thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update thread: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
 
 @router.delete("/threads/{thread_id}", summary="Delete Thread", operation_id="delete_thread")
 async def delete_thread(
@@ -1051,4 +1051,4 @@ async def delete_thread(
         raise
     except Exception as e:
         logger.error(f"Error deleting thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete thread: {str(e)}")
+        raise HTTPException(status_code=500, detail="Thread operation failed")
