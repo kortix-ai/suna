@@ -1,5 +1,5 @@
 from typing import Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import asyncio
 import uuid
 import stripe # type: ignore
@@ -68,7 +68,7 @@ class FreeTierService:
                 await billing_repo.upsert_credit_account(account_id, {
                     'tier': 'free',
                     'stripe_subscription_id': mock_subscription_id,
-                    'last_grant_date': datetime.now().isoformat(),
+                    'last_grant_date': datetime.now(timezone.utc).isoformat(),
                     'balance': 0,
                     'expiring_credits': 0,
                     'non_expiring_credits': 0
@@ -93,7 +93,7 @@ class FreeTierService:
                         amount=Decimal(str(FREE_TIER_INITIAL_CREDITS)),
                         is_expiring=True,
                         description="Free tier initial credits (local mode)",
-                        expires_at=datetime.now() + relativedelta(months=1)
+                        expires_at=datetime.now(timezone.utc) + relativedelta(months=1)
                     )
 
                 logger.info(f"[FREE TIER] ✅ LOCAL mode: Created mock subscription {mock_subscription_id} for {account_id}")
@@ -172,7 +172,7 @@ class FreeTierService:
             await billing_repo.upsert_credit_account(account_id, {
                 'tier': 'free',
                 'stripe_subscription_id': subscription.id,
-                'last_grant_date': datetime.now().isoformat(),
+                'last_grant_date': datetime.now(timezone.utc).isoformat(),
                 'balance': 0,
                 'expiring_credits': 0,
                 'non_expiring_credits': 0
@@ -198,7 +198,7 @@ class FreeTierService:
                     amount=Decimal(str(FREE_TIER_INITIAL_CREDITS)),
                     is_expiring=True,
                     description="Free tier initial credits",
-                    expires_at=datetime.now() + relativedelta(months=1)
+                    expires_at=datetime.now(timezone.utc) + relativedelta(months=1)
                 )
                 logger.info(f"[FREE TIER] ✅ Granted {FREE_TIER_INITIAL_CREDITS} credits to new free tier user {account_id}")
             else:
