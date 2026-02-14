@@ -404,7 +404,7 @@ class Configuration:
     KORTIX_ADMIN_API_KEY: Optional[str] = None
 
     # API Keys system configuration
-    API_KEY_SECRET: Optional[str] = "default-secret-key-change-in-production"
+    API_KEY_SECRET: Optional[str] = None
     API_KEY_LAST_USED_THROTTLE_SECONDS: Optional[int] = 900
     
     # MCP (Master Credential Provider) configuration
@@ -554,6 +554,17 @@ class Configuration:
         if not self.KORTIX_ADMIN_API_KEY:
             self.KORTIX_ADMIN_API_KEY = self._generate_admin_api_key()
             logger.info("Auto-generated KORTIX_ADMIN_API_KEY for administrative functions")
+        
+        # Ensure API_KEY_SECRET is set; auto-generate if missing
+        if not self.API_KEY_SECRET:
+            self.API_KEY_SECRET = secrets.token_hex(32)
+            if self.ENV_MODE in (EnvMode.PRODUCTION, EnvMode.STAGING):
+                logger.warning(
+                    "API_KEY_SECRET was not configured - generated a random secret. "
+                    "Set API_KEY_SECRET in environment variables for persistence across restarts."
+                )
+            else:
+                logger.info("Auto-generated API_KEY_SECRET for local development")
         
         # Perform validation
         self._validate()
