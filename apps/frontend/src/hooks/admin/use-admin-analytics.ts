@@ -45,6 +45,16 @@ export interface RetentionData {
   is_recurring: boolean;
 }
 
+export interface DailyTopUserData {
+  user_id: string;
+  email?: string | null;
+  first_activity: string;
+  last_activity: string;
+  threads_in_range: number;
+  agent_runs_in_range: number;
+  active_days: number;
+}
+
 export interface MessageDistribution {
   distribution: {
     '0_messages': number;
@@ -158,6 +168,14 @@ export interface RetentionParams {
   page_size?: number;
   weeks_back?: number;
   min_weeks_active?: number;
+}
+
+export interface DailyTopUsersParams {
+  page?: number;
+  page_size?: number;
+  timezone?: string;
+  date_from?: string;
+  date_to?: string;
 }
 
 function buildThreadBrowseSearchParams(params: ThreadBrowseParams = {}): URLSearchParams {
@@ -390,7 +408,7 @@ export function useUserFunnel(dateFrom?: string, dateTo?: string) {
   });
 }
 
-export function useRetentionData(params: RetentionParams = {}) {
+export function useRetentionData(params: RetentionParams = {}, enabled: boolean = true) {
   return useQuery({
     queryKey: ['admin', 'analytics', 'retention', params],
     queryFn: async (): Promise<PaginatedResponse<RetentionData>> => {
@@ -408,6 +426,64 @@ export function useRetentionData(params: RetentionParams = {}) {
       return response.data;
     },
     staleTime: 300000, // 5 minutes
+    enabled,
+  });
+}
+
+export function useDailyTopUsers(params: DailyTopUsersParams = {}, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'daily-top-users', params],
+    queryFn: async (): Promise<PaginatedResponse<DailyTopUserData>> => {
+      const parseMetric = (value: unknown): number => {
+        if (typeof value === 'number') return value;
+        if (typeof value === 'string') {
+          const parsed = Number(value);
+          return Number.isFinite(parsed) ? parsed : Number.NaN;
+        }
+        return Number.NaN;
+      };
+
+      const searchParams = new URLSearchParams();
+
+      if (params.page) searchParams.append('page', params.page.toString());
+      if (params.page_size) searchParams.append('page_size', params.page_size.toString());
+      if (params.timezone) searchParams.append('timezone', params.timezone);
+      if (params.date_from) searchParams.append('date_from', params.date_from);
+      if (params.date_to) searchParams.append('date_to', params.date_to);
+
+      const response = await backendApi.get(`/admin/analytics/daily-top-users?${searchParams.toString()}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      const payload = response.data as PaginatedResponse<DailyTopUserData>;
+
+      const normalizedData = (payload.data || []).map((item) => {
+        const raw = item as unknown as Record<string, unknown>;
+        const threadsInRange =
+          Number.isFinite(parseMetric(item.threads_in_range))
+            ? parseMetric(item.threads_in_range)
+            : parseMetric(raw.total_threads);
+        const agentRunsInRange =
+          Number.isFinite(parseMetric(item.agent_runs_in_range))
+            ? parseMetric(item.agent_runs_in_range)
+            : (Number.isFinite(parseMetric(raw.total_agent_runs))
+              ? parseMetric(raw.total_agent_runs)
+              : parseMetric(raw.agent_runs));
+
+        return {
+          ...item,
+          threads_in_range: threadsInRange,
+          agent_runs_in_range: agentRunsInRange,
+        };
+      });
+
+      return {
+        ...payload,
+        data: normalizedData,
+      };
+    },
+    staleTime: 300000, // 5 minutes
+    enabled,
   });
 }
 

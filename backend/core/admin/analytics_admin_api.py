@@ -82,6 +82,16 @@ class RetentionData(BaseModel):
     is_recurring: bool
 
 
+class DailyTopUserData(BaseModel):
+    user_id: str
+    email: Optional[str] = None
+    first_activity: datetime
+    last_activity: datetime
+    threads_in_range: int
+    agent_runs_in_range: int
+    active_days: int
+
+
 class AnalyticsSummary(BaseModel):
     total_users: int
     total_threads: int
@@ -1125,6 +1135,61 @@ async def get_retention_data(
     except Exception as e:
         logger.error(f"Failed to get retention data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve retention data")
+
+
+@router.get("/daily-top-users")
+async def get_daily_top_users(
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Items per page"),
+    timezone: str = Query("UTC", description="IANA timezone for day boundaries"),
+    date_from: Optional[str] = Query(None, description="Start date YYYY-MM-DD"),
+    date_to: Optional[str] = Query(None, description="End date YYYY-MM-DD"),
+    admin: dict = Depends(require_admin)
+) -> PaginatedResponse[DailyTopUserData]:
+    """Get top users by thread + agent run volume in range, excluding trigger-originated activity."""
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        pagination_params = PaginationParams(page=page, page_size=page_size)
+
+        start_date, end_date = parse_date_range(None, date_from, date_to)
+        start_of_range = start_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+        end_of_range = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
+
+        rpc_result = await client.rpc('get_daily_top_users', {
+            'p_date_from': start_of_range,
+            'p_date_to': end_of_range,
+            'p_page': page,
+            'p_page_size': page_size,
+            'p_timezone': timezone
+        }).execute()
+
+        rows = rpc_result.data or []
+        total_count = rows[0]['total_count'] if rows else 0
+
+        result = [
+            DailyTopUserData(
+                user_id=row['user_id'],
+                email=row['email'],
+                first_activity=datetime.fromisoformat(row['first_activity'].replace('Z', '+00:00')),
+                last_activity=datetime.fromisoformat(row['last_activity'].replace('Z', '+00:00')),
+                threads_in_range=row['threads_in_range'],
+                agent_runs_in_range=row['agent_runs_in_range'],
+                active_days=row['active_days'],
+            )
+            for row in rows
+        ]
+
+        return await PaginationService.paginate_with_total_count(
+            items=result,
+            total_count=total_count,
+            params=pagination_params
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to get daily top users: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve daily top users")
 
 
 @router.post("/translate")
