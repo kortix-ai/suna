@@ -45,6 +45,30 @@ export interface RetentionData {
   is_recurring: boolean;
 }
 
+export interface CohortRetentionRow {
+  cohort_week_start: string;
+  cohort_week_end: string;
+  cohort_size: number;
+  week_1_pct: number | null;
+  week_2_pct: number | null;
+  week_3_pct: number | null;
+  week_4_pct: number | null;
+  week_5_pct: number | null;
+  week_6_pct: number | null;
+  week_7_pct: number | null;
+  week_8_pct: number | null;
+  week_9_pct: number | null;
+  week_10_pct: number | null;
+  week_11_pct: number | null;
+  week_12_pct: number | null;
+}
+
+export interface CohortRetentionResponse {
+  cohorts_back: number;
+  weeks_to_measure: number;
+  rows: CohortRetentionRow[];
+}
+
 export interface DailyTopUserData {
   user_id: string;
   email?: string | null;
@@ -168,6 +192,11 @@ export interface RetentionParams {
   page_size?: number;
   weeks_back?: number;
   min_weeks_active?: number;
+}
+
+export interface RetentionCohortsParams {
+  cohorts_back?: number;
+  weeks_to_measure?: number;
 }
 
 export interface DailyTopUsersParams {
@@ -420,6 +449,26 @@ export function useRetentionData(params: RetentionParams = {}, enabled: boolean 
       if (params.min_weeks_active) searchParams.append('min_weeks_active', params.min_weeks_active.toString());
       
       const response = await backendApi.get(`/admin/analytics/retention?${searchParams.toString()}`);
+      if (response.error) {
+        throw new Error(response.error.message);
+      }
+      return response.data;
+    },
+    staleTime: 300000, // 5 minutes
+    enabled,
+  });
+}
+
+export function useRetentionCohorts(params: RetentionCohortsParams = {}, enabled: boolean = true) {
+  return useQuery({
+    queryKey: ['admin', 'analytics', 'retention-cohorts', params],
+    queryFn: async (): Promise<CohortRetentionResponse> => {
+      const searchParams = new URLSearchParams();
+
+      if (params.cohorts_back) searchParams.append('cohorts_back', params.cohorts_back.toString());
+      if (params.weeks_to_measure) searchParams.append('weeks_to_measure', params.weeks_to_measure.toString());
+
+      const response = await backendApi.get(`/admin/analytics/retention/cohorts?${searchParams.toString()}`);
       if (response.error) {
         throw new Error(response.error.message);
       }

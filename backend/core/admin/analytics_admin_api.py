@@ -10,7 +10,7 @@ Provides analytics data for the admin dashboard including:
 from fastapi import APIRouter, HTTPException, Depends, Query
 from fastapi.responses import Response
 from typing import Optional, List, Dict, Any, Literal
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 from pydantic import BaseModel
 import asyncio
@@ -80,6 +80,30 @@ class RetentionData(BaseModel):
     total_threads: int
     weeks_active: int
     is_recurring: bool
+
+
+class CohortRetentionRow(BaseModel):
+    cohort_week_start: date
+    cohort_week_end: date
+    cohort_size: int
+    week_1_pct: Optional[int] = None
+    week_2_pct: Optional[int] = None
+    week_3_pct: Optional[int] = None
+    week_4_pct: Optional[int] = None
+    week_5_pct: Optional[int] = None
+    week_6_pct: Optional[int] = None
+    week_7_pct: Optional[int] = None
+    week_8_pct: Optional[int] = None
+    week_9_pct: Optional[int] = None
+    week_10_pct: Optional[int] = None
+    week_11_pct: Optional[int] = None
+    week_12_pct: Optional[int] = None
+
+
+class CohortRetentionResponse(BaseModel):
+    cohorts_back: int
+    weeks_to_measure: int
+    rows: List[CohortRetentionRow]
 
 
 class DailyTopUserData(BaseModel):
@@ -1135,6 +1159,65 @@ async def get_retention_data(
     except Exception as e:
         logger.error(f"Failed to get retention data: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve retention data")
+
+
+@router.get("/retention/cohorts")
+async def get_retention_cohorts(
+    cohorts_back: int = Query(8, ge=1, le=24, description="Number of cohort rows to return"),
+    weeks_to_measure: int = Query(4, ge=1, le=12, description="Number of retention weeks to show"),
+    admin: dict = Depends(require_admin)
+) -> CohortRetentionResponse:
+    """Get weekly cohort retention matrix."""
+    try:
+        db = DBConnection()
+        client = await db.client
+
+        rpc_result = await client.rpc('get_retention_cohorts', {
+            'p_cohorts_back': cohorts_back,
+            'p_weeks_to_measure': weeks_to_measure
+        }).execute()
+
+        rows = rpc_result.data or []
+
+        def _parse_date(value: Any) -> date:
+            if isinstance(value, datetime):
+                return value.date()
+            if isinstance(value, date):
+                return value
+            return date.fromisoformat(str(value))
+
+        def _parse_optional_int(value: Any) -> Optional[int]:
+            return int(value) if value is not None else None
+
+        result_rows = [
+            CohortRetentionRow(
+                cohort_week_start=_parse_date(row['cohort_week_start']),
+                cohort_week_end=_parse_date(row['cohort_week_end']),
+                cohort_size=int(row['cohort_size']),
+                week_1_pct=_parse_optional_int(row.get('week_1_pct')),
+                week_2_pct=_parse_optional_int(row.get('week_2_pct')),
+                week_3_pct=_parse_optional_int(row.get('week_3_pct')),
+                week_4_pct=_parse_optional_int(row.get('week_4_pct')),
+                week_5_pct=_parse_optional_int(row.get('week_5_pct')),
+                week_6_pct=_parse_optional_int(row.get('week_6_pct')),
+                week_7_pct=_parse_optional_int(row.get('week_7_pct')),
+                week_8_pct=_parse_optional_int(row.get('week_8_pct')),
+                week_9_pct=_parse_optional_int(row.get('week_9_pct')),
+                week_10_pct=_parse_optional_int(row.get('week_10_pct')),
+                week_11_pct=_parse_optional_int(row.get('week_11_pct')),
+                week_12_pct=_parse_optional_int(row.get('week_12_pct')),
+            )
+            for row in rows
+        ]
+
+        return CohortRetentionResponse(
+            cohorts_back=cohorts_back,
+            weeks_to_measure=weeks_to_measure,
+            rows=result_rows
+        )
+    except Exception as e:
+        logger.error(f"Failed to get retention cohorts: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to retrieve retention cohorts")
 
 
 @router.get("/daily-top-users")
