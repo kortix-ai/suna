@@ -16,7 +16,8 @@ class VapiWebhookHandler:
     
     async def verify_signature(self, request: Request, secret: Optional[str] = None) -> bool:
         if not secret:
-            return True
+            logger.warning("Vapi webhook rejected: VAPI_WEBHOOK_SECRET is not configured")
+            return False
         
         try:
             signature = request.headers.get("x-vapi-signature")
