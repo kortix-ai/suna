@@ -1284,6 +1284,7 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
           window.history.replaceState({}, '', url.pathname + url.search);
         }
         chatInputRef.current?.setValue('');
+        chatInputRef.current?.clearPendingFiles();
         chatInputRef.current?.clearUploadedFiles();
       } catch (error) {
         console.error('Failed to start agent:', error);
@@ -2183,4 +2184,3 @@ export function ThreadComponent({ projectId, threadId, compact = false, configur
     </>
   );
 }
-
