@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Any, AsyncGenerator, List, Tuple
+from typing import Dict, Any, AsyncGenerator, List, Tuple, Optional
 
 from core.utils.config import config
 from core.utils.logger import logger
@@ -23,19 +23,36 @@ class ExecutionEngine:
         self._response_processor = response_processor
 
     @staticmethod
-    async def fast_token_count(messages: List[Dict[str, Any]], model: str) -> int:
-        import litellm
-        return await asyncio.to_thread(litellm.token_counter, model=model, messages=messages)
+    async def fast_token_count(
+        messages: List[Dict[str, Any]],
+        model: str,
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto",
+    ) -> int:
+        from core.services.llm import estimate_llm_request_tokens
+
+        return await estimate_llm_request_tokens(
+            messages=messages,
+            model_name=model,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
 
     @classmethod
     def get_safety_threshold(cls, context_window: int) -> int:
         return int(context_window * cls.SAFETY_RATIO)
 
+    @staticmethod
+    def _is_context_window_error(response: Dict[str, Any]) -> bool:
+        return response.get("error_type") == "context_window_exceeded"
+
     async def _check_and_compress_if_needed(
         self,
         messages: List[Dict[str, Any]],
         tokens: int,
-        system_prompt: Dict[str, Any]
+        system_prompt: Dict[str, Any],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        tool_choice: str = "auto",
     ) -> Tuple[List[Dict[str, Any]], int, bool]:
         from core.ai_models import model_manager
 
@@ -66,7 +83,12 @@ class ExecutionEngine:
                 )
 
                 new_messages = self._compress_working_memory(messages, safety_threshold)
-                new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+                new_tokens = await self.fast_token_count(
+                    [system_prompt] + new_messages,
+                    self._state.model_name,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                )
 
                 if new_tokens >= safety_threshold:
                     logger.warning(
@@ -74,7 +96,12 @@ class ExecutionEngine:
                         f"({new_tokens} >= {safety_threshold}), applying emergency truncation..."
                     )
                     new_messages = self._emergency_truncate(new_messages)
-                    new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+                    new_tokens = await self.fast_token_count(
+                        [system_prompt] + new_messages,
+                        self._state.model_name,
+                        tools=tools,
+                        tool_choice=tool_choice,
+                    )
 
                 changed = new_messages != messages
                 reduced = new_tokens < tokens
@@ -187,12 +214,22 @@ class ExecutionEngine:
             await set_cached_message_history(self._state.thread_id, new_messages)
             logger.debug(f"[ExecutionEngine] Updated message cache with {len(new_messages)} messages")
 
-            new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+            new_tokens = await self.fast_token_count(
+                [system_prompt] + new_messages,
+                self._state.model_name,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
             logger.info(f"[ExecutionEngine] After archival: {new_tokens} tokens, {len(new_messages)} messages")
 
             # Always compress working memory to maximize headroom for new messages
             new_messages = self._compress_working_memory(new_messages, safety_threshold)
-            new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+            new_tokens = await self.fast_token_count(
+                [system_prompt] + new_messages,
+                self._state.model_name,
+                tools=tools,
+                tool_choice=tool_choice,
+            )
             logger.info(f"[ExecutionEngine] After working memory compression: {new_tokens} tokens")
 
             # Emergency fallback if STILL over threshold
@@ -202,7 +239,12 @@ class ExecutionEngine:
                     f"applying emergency truncation..."
                 )
                 new_messages = self._emergency_truncate(new_messages)
-                new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+                new_tokens = await self.fast_token_count(
+                    [system_prompt] + new_messages,
+                    self._state.model_name,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                )
                 logger.info(f"[ExecutionEngine] After emergency truncation: {new_tokens} tokens")
 
             # Update cache with the compressed messages
@@ -234,7 +276,12 @@ class ExecutionEngine:
                     break
             
             if latest_user_msg:
-                new_tokens = await self.fast_token_count([system_prompt, latest_user_msg], self._state.model_name)
+                new_tokens = await self.fast_token_count(
+                    [system_prompt, latest_user_msg],
+                    self._state.model_name,
+                    tools=tools,
+                    tool_choice=tool_choice,
+                )
                 logger.warning(f"[ExecutionEngine] Fallback: keeping only latest user message ({new_tokens} tokens)")
                 return [latest_user_msg], new_tokens, True
             
@@ -379,6 +426,84 @@ class ExecutionEngine:
         except Exception as e:
             logger.warning(f"[ExecutionEngine] Raw message archival failed (continuing): {e}")
 
+    async def _retry_after_context_window_exceeded(
+        self,
+        processed_messages: List[Dict[str, Any]],
+        cached_system: Dict[str, Any],
+        tokens: int,
+        tools_for_count: Optional[List[Dict[str, Any]]],
+        tool_choice: str,
+        processor_config: ProcessorConfig,
+    ) -> Any:
+        from core.ai_models import model_manager
+
+        logger.warning("[ExecutionEngine] Context window exceeded - attempting one-time forced compression retry")
+
+        context_window = model_manager.get_context_window(self._state.model_name)
+        safety_threshold = self.TEST_THRESHOLD_OVERRIDE or self.get_safety_threshold(context_window)
+        forced_tokens = max(tokens, safety_threshold)
+
+        retry_messages, retry_tokens, did_compress = await self._check_and_compress_if_needed(
+            processed_messages,
+            forced_tokens,
+            cached_system,
+            tools=tools_for_count,
+            tool_choice=tool_choice,
+        )
+
+        if not did_compress:
+            emergency_messages = self._emergency_truncate(processed_messages)
+            if emergency_messages != processed_messages:
+                await self._archive_raw_messages_for_retrieval(
+                    processed_messages,
+                    reason="context_window_retry_emergency_truncation",
+                )
+                from core.cache.runtime_cache import set_cached_message_history
+
+                await set_cached_message_history(self._state.thread_id, emergency_messages)
+                retry_messages = emergency_messages
+                retry_tokens = await self.fast_token_count(
+                    [cached_system] + retry_messages,
+                    self._state.model_name,
+                    tools=tools_for_count,
+                    tool_choice=tool_choice,
+                )
+                did_compress = True
+
+        if not did_compress:
+            logger.error("[ExecutionEngine] Forced retry aborted: unable to reduce context")
+            return None
+
+        prepared_retry = [cached_system] + retry_messages
+        self._state._messages.clear()
+        for msg in retry_messages:
+            self._state._messages.append(msg)
+
+        await stream_context_usage(
+            stream_key=self._state.stream_key,
+            current_tokens=retry_tokens,
+            message_count=len(retry_messages),
+            compressed=True,
+        )
+
+        logger.info(
+            f"[ExecutionEngine] Retrying LLM call after forced compression: "
+            f"{len(prepared_retry)} messages, {retry_tokens} tokens"
+        )
+
+        executor = LLMExecutor()
+        return await executor.execute(
+            prepared_messages=prepared_retry,
+            llm_model=self._state.model_name,
+            llm_temperature=0,
+            llm_max_tokens=None,
+            openapi_tool_schemas=self._state.tool_schemas,
+            tool_choice=tool_choice,
+            native_tool_calling=processor_config.native_tool_calling,
+            xml_tool_calling=processor_config.xml_tool_calling,
+            stream=True,
+        )
+
     async def execute_step(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = self._state.get_messages()
 
@@ -411,10 +536,26 @@ class ExecutionEngine:
         
         logger.debug(f"[ExecutionEngine] Context layers: {layers.total_messages} messages")
 
+        processor_config = ProcessorConfig(
+            xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
+            native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING,
+            execute_tools=True,
+            execute_on_stream=config.AGENT_EXECUTE_ON_STREAM,
+            tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
+        )
+
+        tool_choice = "auto" if processor_config.native_tool_calling else "none"
+        tools_for_count = self._state.tool_schemas
+
         cached_system = add_cache_control(system)
         prepared = [cached_system] + processed_messages
-        
-        tokens = await self.fast_token_count(prepared, self._state.model_name)
+
+        tokens = await self.fast_token_count(
+            prepared,
+            self._state.model_name,
+            tools=tools_for_count,
+            tool_choice=tool_choice,
+        )
         
         await stream_context_usage(
             stream_key=self._state.stream_key,
@@ -424,7 +565,11 @@ class ExecutionEngine:
         )
         
         processed_messages, tokens, did_compress = await self._check_and_compress_if_needed(
-            processed_messages, tokens, cached_system
+            processed_messages,
+            tokens,
+            cached_system,
+            tools=tools_for_count,
+            tool_choice=tool_choice,
         )
         
         if did_compress:
@@ -433,14 +578,6 @@ class ExecutionEngine:
             for msg in processed_messages:
                 self._state._messages.append(msg)
             logger.debug(f"✅ [ExecutionEngine] State updated after compression: {len(self._state._messages)} messages")
-        
-        processor_config = ProcessorConfig(
-            xml_tool_calling=config.AGENT_XML_TOOL_CALLING,
-            native_tool_calling=config.AGENT_NATIVE_TOOL_CALLING,
-            execute_tools=True,
-            execute_on_stream=config.AGENT_EXECUTE_ON_STREAM,
-            tool_execution_strategy=config.AGENT_TOOL_EXECUTION_STRATEGY
-        )
         
         # Pass config to response processor
         self._response_processor._config = processor_config
@@ -483,7 +620,7 @@ class ExecutionEngine:
                 llm_temperature=0,
                 llm_max_tokens=None,
                 openapi_tool_schemas=self._state.tool_schemas,
-                tool_choice="auto",
+                tool_choice=tool_choice,
                 native_tool_calling=processor_config.native_tool_calling,
                 xml_tool_calling=processor_config.xml_tool_calling,
                 stream=True
@@ -496,11 +633,24 @@ class ExecutionEngine:
             return
 
         if isinstance(response, dict) and response.get("status") == "error":
-            error_msg = response.get("message", "unknown LLM error")
-            logger.error(f"[ExecutionEngine] LLM returned error: {error_msg}")
-            self._state._terminate(f"error: {error_msg[:100]}")
-            yield response
-            return
+            if self._is_context_window_error(response):
+                retry_response = await self._retry_after_context_window_exceeded(
+                    processed_messages=processed_messages,
+                    cached_system=cached_system,
+                    tokens=tokens,
+                    tools_for_count=tools_for_count,
+                    tool_choice=tool_choice,
+                    processor_config=processor_config,
+                )
+                if retry_response is not None:
+                    response = retry_response
+
+            if isinstance(response, dict) and response.get("status") == "error":
+                error_msg = response.get("message", "unknown LLM error")
+                logger.error(f"[ExecutionEngine] LLM returned error: {error_msg}")
+                self._state._terminate(f"error: {error_msg[:100]}")
+                yield response
+                return
 
         if hasattr(response, '__aiter__'):
             async for chunk in self._response_processor.process_response(response):

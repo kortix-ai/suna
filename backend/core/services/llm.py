@@ -76,7 +76,9 @@ else:
 
 
 class LLMError(Exception):
-    pass
+    def __init__(self, message: str, error_type: str = "llm_error"):
+        super().__init__(message)
+        self.error_type = error_type
 
 
 def setup_api_keys() -> None:
@@ -143,6 +145,29 @@ def _strip_internal_properties(messages: List[Dict[str, Any]]) -> List[Dict[str,
         cleaned_messages.append(cleaned_msg)
     
     return cleaned_messages
+
+
+async def estimate_llm_request_tokens(
+    messages: List[Dict[str, Any]],
+    model_name: str,
+    tools: Optional[List[Dict[str, Any]]] = None,
+    tool_choice: str = "auto",
+) -> int:
+    """Estimate token usage using the same payload shape as LLM calls.
+
+    This mirrors make_llm_api_call preprocessing by stripping internal-only
+    message fields before counting.
+    """
+    cleaned_messages = _strip_internal_properties(messages)
+    count_kwargs: Dict[str, Any] = {
+        "model": model_name,
+        "messages": cleaned_messages,
+    }
+    if tools:
+        count_kwargs["tools"] = tools
+        count_kwargs["tool_choice"] = tool_choice
+
+    return await asyncio.to_thread(litellm.token_counter, **count_kwargs)
 
 
 async def make_llm_api_call(
@@ -257,7 +282,7 @@ async def make_llm_api_call(
         logger.error(f"[LLM] call error after {total_time:.2f}s for {model_name}: {str(e)[:100]}")
         processed_error = ErrorProcessor.process_llm_error(e, context={"model": model_name})
         ErrorProcessor.log_error(processed_error)
-        raise LLMError(processed_error.message)
+        raise LLMError(processed_error.message, error_type=processed_error.error_type)
 
 
 async def _wrap_streaming_response(response, start_time: float, model_name: str, ttft_seconds: float = None, correlation_id: str = None) -> AsyncGenerator:
