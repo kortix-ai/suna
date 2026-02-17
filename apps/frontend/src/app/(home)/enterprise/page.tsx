@@ -1,470 +1,573 @@
 'use client';
 
-import { useState } from 'react';
-import { FooterSection } from '@/components/home/footer-section';
-import { motion } from 'framer-motion';
-import { 
-  ArrowRight, 
-  Check, 
-  Clock, 
-  Shield, 
-  Users, 
-  Zap,
-  Star,
-  Calendar,
-  Headphones,
-  Settings,
-  TrendingUp,
-  Sparkles
-} from 'lucide-react';
-import Link from 'next/link';
+import { useState, useRef } from 'react';
+import { motion, useScroll, useTransform } from 'framer-motion';
+import { SimpleFooter } from '@/components/home/simple-footer';
 import { Button } from '@/components/ui/button';
 import { KortixEnterpriseModal } from '@/components/sidebar/kortix-enterprise-modal';
-import { KortixLogo } from '@/components/sidebar/kortix-logo';
+import {
+  ArrowRight,
+  ArrowDown,
+  Search,
+  Wrench,
+  RefreshCw,
+  Rocket,
+  ChevronDown,
+} from 'lucide-react';
 
-// Section Header Component
-const SectionHeader = ({ children }: { children: React.ReactNode }) => {
-  return (
-    <div className="p-8 space-y-4">
-      {children}
-    </div>
-  );
+// Shared subtle fade
+const fade = {
+  hidden: { opacity: 0, y: 16 },
+  visible: (i: number) => ({
+    opacity: 1,
+    y: 0,
+    transition: { duration: 0.6, delay: i * 0.08, ease: [0.25, 0.46, 0.45, 0.94] },
+  }),
 };
 
-// Hero Section Component
-const CustomHeroSection = () => {
+const stagger = {
+  hidden: {},
+  visible: { transition: { staggerChildren: 0.06 } },
+};
+
+// --- Hero ---
+function HeroSection() {
   return (
-    <section className="w-full relative overflow-hidden">
-      <div className="relative flex flex-col items-center w-full px-6">
-        <div className="relative z-10 pt-32 mx-auto h-full w-full max-w-6xl flex flex-col items-center justify-center">
-          <div className="flex flex-col items-center justify-center gap-6 pt-12 max-w-4xl mx-auto">
-            {/* Kortix Logo */}
-            <div className="mb-8">
-              <KortixLogo size={48} />
-            </div>
-            
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-primary/10 to-secondary/10 border border-primary/20">
-              <Sparkles className="w-4 h-4 text-primary" />
-              <span className="text-sm font-medium text-primary">Enterprise Implementation Services</span>
-            </div>
-            
-            <h1 className="text-4xl md:text-5xl lg:text-6xl xl:text-7xl font-medium tracking-tighter text-balance text-center">
-              <span className="text-primary">Enterprise AI Workers.</span>
-              <br />
-              <span className="text-secondary">Delivered in days.</span>
-            </h1>
-            
-            <p className="text-lg md:text-xl text-center text-muted-foreground font-medium text-balance leading-relaxed tracking-tight max-w-3xl">
-              Skip the learning curve. Our AI specialists design, develop and deploy enterprise-grade AI workers that integrate seamlessly with your operations.
-            </p>
-            
-            <div className="flex flex-col items-center gap-6 pt-6">
-              <KortixEnterpriseModal>
-                <Button size="lg">
-                  <Calendar className="w-4 h-4 mr-2" />
-                  Schedule Strategy Call
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </KortixEnterpriseModal>
-              <div className="flex flex-col sm:flex-row items-center gap-4 text-sm text-muted-foreground">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-primary"></div>
-                  <span>Free consultation</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-primary"></div>
-                  <span>Custom solution design</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-primary"></div>
-                  <span>Tailored pricing</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="mb-16 sm:mt-32 mx-auto"></div>
+    <section className="relative w-full min-h-[85vh] flex items-center overflow-hidden">
+      <div className="absolute inset-0 bg-pattern-grid opacity-40" />
+      <div className="absolute inset-0 bg-gradient-to-b from-background via-background/80 to-background" />
+
+      <div className="relative z-10 max-w-4xl mx-auto w-full px-6 py-32 md:py-40">
+        <motion.h1
+          className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-medium tracking-tighter text-balance leading-[1.08]"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.25, 0.46, 0.45, 0.94] }}
+        >
+          Your company&apos;s
+          <br />
+          second cortex.
+        </motion.h1>
+
+        <motion.p
+          className="mt-6 md:mt-8 text-base sm:text-lg md:text-xl text-muted-foreground max-w-2xl leading-relaxed text-balance"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.12, ease: [0.25, 0.46, 0.45, 0.94] }}
+        >
+          We embed with your team to design, build, and deploy custom Kortix
+          instances — tailored to your workflows, connected to your tools,
+          running 24/7. From scoping to production in weeks, not months.
+        </motion.p>
+
+        <motion.div
+          className="mt-8 md:mt-10 flex flex-col sm:flex-row items-start sm:items-center gap-4"
+          initial={{ opacity: 0, y: 14 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, delay: 0.24, ease: [0.25, 0.46, 0.45, 0.94] }}
+        >
+          <KortixEnterpriseModal>
+            <Button size="lg" className="text-base px-8 h-12 rounded-full">
+              Schedule a consultation
+              <ArrowRight className="w-4 h-4 ml-1" />
+            </Button>
+          </KortixEnterpriseModal>
+
+          <a
+            href="#how"
+            className="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+          >
+            See how it works
+            <ArrowDown className="w-4 h-4" />
+          </a>
+        </motion.div>
       </div>
     </section>
   );
-};
+}
 
-// Value Proposition Section
-const ValuePropSection = () => {
+// --- Logo Marquee ---
+const logos = [
+  'Y Combinator',
+  'Sequoia',
+  'a16z',
+  'Accel',
+  'Index Ventures',
+  'Greylock',
+  'Benchmark',
+  'Lightspeed',
+];
+
+function LogoMarquee() {
   return (
-    <section className="flex flex-col items-center justify-center w-full relative">
-      <div className="relative w-full px-6">
-        <div className="max-w-6xl mx-auto border-l border-r border-border">
-          <SectionHeader>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              When Standard Solutions Fall Short
-            </h2>
-            <p className="text-muted-foreground text-center text-balance font-medium">
-              Professional implementation services designed for organizations with unique requirements and mission-critical automation needs.
-            </p>
-          </SectionHeader>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 border-t border-border">
-            <div className="p-8 border-r border-border">
-              <div className="space-y-6">
-                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Clock className="w-6 h-6 text-primary" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold mb-3">Accelerate Time-to-Value</h3>
-                  <p className="text-muted-foreground leading-relaxed">
-                    Bypass months of development cycles. Our proven methodology delivers enterprise-ready AI workers in a fraction of the time, letting you focus on strategy instead of implementation.
-                  </p>
-                </div>
-              </div>
+    <section className="w-full border-t border-border overflow-hidden py-8 md:py-10">
+      <p className="text-center text-xs text-muted-foreground/50 uppercase tracking-[0.2em] font-medium mb-6">
+        Trusted by teams backed by
+      </p>
+      <div
+        className="relative overflow-hidden"
+        style={
+          {
+            maskImage:
+              'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+            WebkitMaskImage:
+              'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+          } as React.CSSProperties
+        }
+      >
+        <div
+          className="flex overflow-hidden"
+          style={
+            {
+              '--duration': '25s',
+              '--gap': '3rem',
+              gap: 'var(--gap)',
+            } as React.CSSProperties
+          }
+        >
+          {[0, 1].map((copy) => (
+            <div
+              key={copy}
+              className="flex shrink-0 justify-around animate-marquee"
+              style={{ gap: 'var(--gap)' } as React.CSSProperties}
+              aria-hidden={copy === 1}
+            >
+              {logos.map((name) => (
+                <span
+                  key={`${copy}-${name}`}
+                  className="text-base md:text-lg font-semibold tracking-tight text-muted-foreground/30 whitespace-nowrap select-none"
+                >
+                  {name}
+                </span>
+              ))}
             </div>
-            
-            <div className="p-8">
-              <div className="space-y-6">
-                <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center">
-                  <Settings className="w-6 h-6 text-secondary" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-semibold mb-3">Enterprise Integration</h3>
-                  <p className="text-muted-foreground leading-relaxed">
-                    Designed for sophisticated business processes requiring seamless integration with legacy systems, compliance frameworks, and industry-specific requirements.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </section>
   );
-};
+}
 
-// Implementation Process Section
-const ProcessSection = () => {
-  const steps = [
+// --- What We Do ---
+function WhatWeDoSection() {
+  const pillars = [
     {
-      icon: <Users className="w-8 h-8" />,
-      title: "Strategic Analysis",
-      description: "Solution architects conduct comprehensive business analysis, workflow mapping, and technical requirements gathering to design optimal AI worker architecture for your organization.",
-      phase: "Discovery"
+      icon: <Search className="w-5 h-5" />,
+      title: 'Discover',
+      description:
+        'We audit your operations, map every workflow, and identify where autonomous agents create the most leverage.',
     },
     {
-      icon: <Zap className="w-8 h-8" />,
-      title: "Engineering Excellence", 
-      description: "Full-stack development with enterprise security, scalability design, comprehensive testing, performance optimization, and seamless integration with existing systems.",
-      phase: "Build"
+      icon: <Wrench className="w-5 h-5" />,
+      title: 'Build',
+      description:
+        'We architect your Kortix instance from the ground up — custom agents, your integrations, your data — running 24/7.',
     },
     {
-      icon: <Shield className="w-8 h-8" />,
-      title: "Enterprise Support",
-      description: "Dedicated success management, comprehensive training programs, continuous performance monitoring, optimization services, and satisfaction guarantee with full accountability.",
-      phase: "Scale"
-    }
+      icon: <RefreshCw className="w-5 h-5" />,
+      title: 'Operate',
+      description:
+        "We don't hand off and disappear. Your instance is continuously monitored, optimized, and expanded as your needs evolve.",
+    },
   ];
 
   return (
-    <section className="flex flex-col items-center justify-center w-full relative">
-      <div className="relative w-full px-6">
-        <div className="max-w-6xl mx-auto border-l border-r border-border">
-          <SectionHeader>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Our Implementation Methodology
-            </h2>
-            <p className="text-muted-foreground text-center text-balance font-medium">
-              A proven three-phase approach that transforms your vision into production-ready AI workers
-            </p>
-          </SectionHeader>
+    <section id="how" className="w-full border-t border-border scroll-mt-16">
+      <div className="max-w-4xl mx-auto px-6 py-20 md:py-28">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-60px' }}
+          variants={stagger}
+          className="space-y-4 mb-14"
+        >
+          <motion.h2
+            variants={fade}
+            custom={0}
+            className="text-3xl md:text-4xl lg:text-5xl font-medium tracking-tighter text-balance"
+          >
+            We build your AI workforce.
+          </motion.h2>
+          <motion.p
+            variants={fade}
+            custom={1}
+            className="text-base md:text-lg text-muted-foreground leading-relaxed max-w-3xl"
+          >
+            Kortix Enterprise is a fully managed engagement. Our team works
+            inside your organization to architect, deploy, and maintain a
+            custom Kortix instance — a persistent AI operating system that runs
+            your workflows autonomously.
+          </motion.p>
+        </motion.div>
 
-          <div className="border-t border-border">
-            {steps.map((step, index) => (
-              <motion.div
-                key={index}
-                className={`flex flex-col md:flex-row gap-8 p-8 ${index !== steps.length - 1 ? 'border-b border-border' : ''}`}
-                initial={{ opacity: 0, y: 20 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.6, delay: index * 0.1 }}
-                viewport={{ once: true }}
-              >
-                <div className="flex-shrink-0">
-                  <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-primary/20 to-secondary/20 flex items-center justify-center text-primary border border-primary/20">
-                    {step.icon}
-                  </div>
-                </div>
-                
-                <div className="flex-1 space-y-3">
-                  <div className="flex items-center gap-3">
-                    <h3 className="text-xl font-semibold">{step.title}</h3>
-                    <span className="px-3 py-1 text-xs font-medium bg-secondary/10 text-secondary rounded-full">
-                      {step.phase}
-                    </span>
-                  </div>
-                  <p className="text-muted-foreground leading-relaxed">
-                    {step.description}
-                  </p>
-                </div>
-              </motion.div>
+        <motion.div
+          className="grid grid-cols-1 md:grid-cols-3 gap-px bg-border rounded-2xl overflow-hidden border border-border"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-40px' }}
+          variants={stagger}
+        >
+          {pillars.map((pillar, i) => (
+            <motion.div
+              key={pillar.title}
+              variants={fade}
+              custom={i}
+              className="bg-background p-8 space-y-3"
+            >
+              <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-foreground">
+                {pillar.icon}
+              </div>
+              <h3 className="text-lg font-semibold tracking-tight">
+                {pillar.title}
+              </h3>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {pillar.description}
+              </p>
+            </motion.div>
+          ))}
+        </motion.div>
+      </div>
+    </section>
+  );
+}
+
+// --- Timeline with IG-story progress dashes ---
+const timelineSteps = [
+  {
+    week: 'Week 1–2',
+    phase: 'Discovery',
+    icon: <Search className="w-5 h-5" />,
+    description:
+      'We map your workflows, integrations, and team structure. We identify the highest-leverage agent deployments and define the architecture.',
+    details: ['Workflow audit', 'Integration mapping', 'Architecture definition'],
+  },
+  {
+    week: 'Week 3–5',
+    phase: 'Build & Configure',
+    icon: <Wrench className="w-5 h-5" />,
+    description:
+      'We build your Kortix instance — agents, skills, triggers, integrations, secrets management. Everything configured and tested against real workflows.',
+    details: ['Agent development', 'Integration wiring', 'End-to-end testing'],
+  },
+  {
+    week: 'Week 6+',
+    phase: 'Deploy & Scale',
+    icon: <Rocket className="w-5 h-5" />,
+    description:
+      'Your Kortix goes live. We monitor, iterate, and expand. New agents and skills get added as your needs grow.',
+    details: ['Production deployment', 'Monitoring', 'Ongoing expansion'],
+  },
+];
+
+function StoryDash({
+  index,
+  scrollYProgress,
+  count,
+}: {
+  index: number;
+  scrollYProgress: ReturnType<typeof useScroll>['scrollYProgress'];
+  count: number;
+}) {
+  const segStart = index / count;
+  const segEnd = (index + 1) / count;
+  const fill = useTransform(scrollYProgress, [segStart, segEnd], ['0%', '100%']);
+
+  return (
+    <div className="flex-1 h-[3px] rounded-full bg-foreground/8 overflow-hidden">
+      <motion.div
+        className="h-full rounded-full bg-foreground/30"
+        style={{ width: fill }}
+      />
+    </div>
+  );
+}
+
+function TimelineSection() {
+  const count = timelineSteps.length;
+  const sectionRef = useRef<HTMLElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: sectionRef,
+    offset: ['start start', 'end end'],
+  });
+
+  return (
+    <section
+      ref={sectionRef}
+      className="relative border-t border-border"
+      style={{ height: `${count * 100}vh` }}
+    >
+      <div className="sticky top-0 h-screen flex flex-col overflow-hidden max-w-4xl mx-auto w-full px-6">
+        {/* Heading */}
+        <div className="flex-shrink-0 pt-16 md:pt-20">
+          <h2 className="text-3xl md:text-4xl lg:text-5xl font-medium tracking-tighter text-balance">
+            Live in weeks. Not quarters.
+          </h2>
+        </div>
+
+        {/* Card area */}
+        <div className="flex-1 relative mt-6 mb-6 flex items-center">
+          {timelineSteps.map((step, i) => (
+            <StepCard
+              key={step.phase}
+              step={step}
+              index={i}
+              count={count}
+              scrollYProgress={scrollYProgress}
+            />
+          ))}
+        </div>
+
+        {/* Story dashes */}
+        <div className="flex-shrink-0 pb-10 md:pb-12">
+          <div className="flex gap-2">
+            {timelineSteps.map((step, i) => (
+              <StoryDash
+                key={step.phase}
+                index={i}
+                scrollYProgress={scrollYProgress}
+                count={count}
+              />
             ))}
           </div>
         </div>
       </div>
     </section>
   );
-};
+}
 
-// Benefits Section
-const BenefitsSection = () => {
-  const benefits = [
-    "Dedicated solution architect and technical lead for your project",
-    "Enterprise-grade AI worker design with scalability considerations",
-    "White-glove support with dedicated success manager", 
-    "Comprehensive team training and knowledge transfer",
-    "Quarterly business reviews and performance optimization",
-    "Deep integration with existing technology stack and workflows"
+function StepCard({
+  step,
+  index,
+  count,
+  scrollYProgress,
+}: {
+  step: (typeof timelineSteps)[number];
+  index: number;
+  count: number;
+  scrollYProgress: ReturnType<typeof useScroll>['scrollYProgress'];
+}) {
+  const segStart = index / count;
+  const segEnd = (index + 1) / count;
+  const mid = segStart + 0.03;
+  const fadeOut = segEnd - 0.03;
+
+  const opacity =
+    index === 0
+      ? useTransform(scrollYProgress, [0, fadeOut, segEnd], [1, 1, 0])
+      : index === count - 1
+        ? useTransform(scrollYProgress, [segStart, mid, 1], [0, 1, 1])
+        : useTransform(scrollYProgress, [segStart, mid, fadeOut, segEnd], [0, 1, 1, 0]);
+
+  const y =
+    index === 0
+      ? useTransform(scrollYProgress, [0, 0.01], [0, 0])
+      : useTransform(scrollYProgress, [segStart, mid], [24, 0]);
+
+  return (
+    <motion.div
+      className="absolute inset-x-0 top-1/2 -translate-y-1/2"
+      style={{ opacity, y }}
+    >
+      <div className="rounded-2xl border border-border bg-background px-8 py-8 md:px-10 md:py-10 space-y-5">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-accent flex items-center justify-center text-foreground flex-shrink-0">
+            {step.icon}
+          </div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.15em] text-muted-foreground/60">
+            {step.week}
+          </span>
+        </div>
+
+        <h3 className="text-2xl md:text-3xl font-semibold tracking-tight">
+          {step.phase}
+        </h3>
+
+        <p className="text-base md:text-lg text-muted-foreground leading-relaxed max-w-2xl">
+          {step.description}
+        </p>
+
+        <div className="flex flex-wrap gap-2 pt-2">
+          {step.details.map((d) => (
+            <span
+              key={d}
+              className="text-xs font-medium text-foreground/60 bg-accent/60 px-3 py-1.5 rounded-lg"
+            >
+              {d}
+            </span>
+          ))}
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+// --- FAQ ---
+function FAQItem({
+  question,
+  answer,
+  index,
+}: {
+  question: string;
+  answer: string;
+  index: number;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <motion.div variants={fade} custom={index} className="border-b border-border">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex items-center justify-between w-full py-5 text-left group cursor-pointer"
+      >
+        <span className="text-base font-medium tracking-tight pr-4 group-hover:text-foreground transition-colors">
+          {question}
+        </span>
+        <ChevronDown
+          className={`w-4 h-4 text-muted-foreground flex-shrink-0 transition-transform duration-200 ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+      <div
+        className={`overflow-hidden transition-all duration-300 ease-out ${
+          open ? 'max-h-96 pb-5' : 'max-h-0'
+        }`}
+      >
+        <p className="text-sm text-muted-foreground leading-relaxed pr-8">
+          {answer}
+        </p>
+      </div>
+    </motion.div>
+  );
+}
+
+function FAQSection() {
+  const faqs = [
+    {
+      question: 'How long does a typical engagement take?',
+      answer:
+        'Most companies are live within 4–6 weeks. Discovery takes 1–2 weeks, build takes 2–3 weeks, and deployment is ongoing with continuous optimization.',
+    },
+    {
+      question: 'What does it cost?',
+      answer:
+        'Every engagement is scoped based on complexity, number of agents, and integration depth. We work on monthly retainers. Get in touch for a quote.',
+    },
+    {
+      question: 'Do we need technical staff on our end?',
+      answer:
+        'No. We handle everything — architecture, deployment, integration, and maintenance. Your team just needs to show us how the company operates.',
+    },
+    {
+      question: 'Can we self-host?',
+      answer:
+        'Yes. Kortix instances can run in our cloud or on your own infrastructure. We configure either path.',
+    },
+    {
+      question: 'What AI models does Kortix use?',
+      answer:
+        'Kortix is built on Claude Code architecture. Agents run on the latest Anthropic models with full tool use, file system access, and persistent memory.',
+    },
   ];
 
   return (
-    <section className="flex flex-col items-center justify-center w-full relative">
-      <div className="relative w-full px-6">
-        <div className="max-w-6xl mx-auto border-l border-r border-border">
-          <SectionHeader>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Enterprise-Grade Implementation
-            </h2>
-            <p className="text-muted-foreground text-center text-balance font-medium">
-              Premium service tier with dedicated resources and tailored solutions for complex organizational needs
-            </p>
-          </SectionHeader>
-
-          <div className="border-t border-border p-8">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {benefits.map((benefit, index) => (
-                <motion.div
-                  key={index}
-                  className="flex items-start gap-3 p-4 rounded-lg hover:bg-accent/20 transition-colors"
-                  initial={{ opacity: 0, x: -20 }}
-                  whileInView={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.5, delay: index * 0.1 }}
-                  viewport={{ once: true }}
-                >
-                  <div className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/20 flex items-center justify-center mt-0.5">
-                    <Check className="w-3 h-3 text-primary" />
-                  </div>
-                  <p className="text-sm font-medium leading-relaxed">{benefit}</p>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </div>
+    <section className="w-full border-t border-border">
+      <div className="max-w-3xl mx-auto px-6 py-20 md:py-28">
+        <motion.h2
+          className="text-3xl md:text-4xl font-medium tracking-tighter text-balance mb-10"
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-40px' }}
+          variants={fade}
+          custom={0}
+        >
+          Frequently asked questions
+        </motion.h2>
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-40px' }}
+          variants={stagger}
+        >
+          {faqs.map((faq, i) => (
+            <FAQItem
+              key={i}
+              question={faq.question}
+              answer={faq.answer}
+              index={i}
+            />
+          ))}
+        </motion.div>
       </div>
     </section>
   );
-};
+}
 
-// Testimonials Section
-const TestimonialsSection = () => {
-  const testimonials = [
-    {
-      quote: "The implementation team transformed our entire workflow. Their expertise in enterprise AI deployment is unmatched.",
-      author: "Sarah Chen",
-      company: "TechFlow Industries",
-      avatar: "🚀"
-    },
-    {
-      quote: "ROI was evident within the first month. The AI workers handle our most complex processes flawlessly.",
-      author: "Marcus Rodriguez", 
-      company: "Global Manufacturing Corp",
-      avatar: "💡"
-    },
-    {
-      quote: "Outstanding technical depth and business understanding. They delivered exactly what we envisioned.",
-      author: "Dr. Amanda Foster",
-      company: "Research Dynamics LLC",
-      avatar: "⭐"
-    },
-    {
-      quote: "Professional, reliable, and innovative. The custom solution exceeded our expectations completely.",
-      author: "James Wellington",
-      company: "Strategic Ventures Group", 
-      avatar: "🎯"
-    }
-  ];
-
+// --- CTA ---
+function CTASection() {
   return (
-    <section className="flex flex-col items-center justify-center w-full relative">
-      <div className="relative w-full px-6">
-        <div className="max-w-6xl mx-auto border-l border-r border-border">
-          <SectionHeader>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Client Success Stories
-            </h2>
-            <p className="text-muted-foreground text-center text-balance font-medium">
-              Organizations that have transformed their operations with our enterprise implementation services
+    <section className="w-full border-t border-border">
+      <div className="max-w-3xl mx-auto px-6 py-24 md:py-32 text-center">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: '-60px' }}
+          variants={stagger}
+          className="space-y-6"
+        >
+          <motion.h2
+            variants={fade}
+            custom={0}
+            className="text-3xl md:text-4xl lg:text-5xl font-medium tracking-tighter text-balance"
+          >
+            Let&apos;s build your second cortex.
+          </motion.h2>
+          <motion.p
+            variants={fade}
+            custom={1}
+            className="text-base md:text-lg text-muted-foreground max-w-2xl mx-auto leading-relaxed"
+          >
+            Every engagement starts with a conversation. Tell us about your
+            company, your workflows, and where you need leverage — we&apos;ll
+            show you what Kortix can do.
+          </motion.p>
+          <motion.div
+            variants={fade}
+            custom={2}
+            className="pt-4 flex flex-col items-center gap-4"
+          >
+            <KortixEnterpriseModal>
+              <Button size="lg" className="text-base px-8 h-12 rounded-full">
+                Schedule a consultation
+                <ArrowRight className="w-4 h-4 ml-1" />
+              </Button>
+            </KortixEnterpriseModal>
+            <p className="text-sm text-muted-foreground">
+              Or email us directly at{' '}
+              <a
+                href="mailto:enterprise@kortix.ai"
+                className="text-foreground hover:underline underline-offset-4 transition-colors"
+              >
+                enterprise@kortix.ai
+              </a>
             </p>
-          </SectionHeader>
-
-          <div className="border-t border-border">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-0">
-              {testimonials.map((testimonial, index) => (
-                <motion.div
-                  key={index}
-                  className={`p-8 ${index % 2 === 0 ? 'md:border-r border-border' : ''} ${index < 2 ? 'border-b border-border' : ''}`}
-                  initial={{ opacity: 0, y: 20 }}
-                  whileInView={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.6, delay: index * 0.1 }}
-                  viewport={{ once: true }}
-                >
-                  <div className="space-y-4">
-                    <div className="flex items-center gap-1">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} className="w-4 h-4 fill-primary text-primary" />
-                      ))}
-                    </div>
-                    
-                    <blockquote className="text-lg font-medium leading-relaxed">
-                      "{testimonial.quote}"
-                    </blockquote>
-                    
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-accent flex items-center justify-center text-lg">
-                        {testimonial.avatar}
-                      </div>
-                      <div>
-                        <p className="font-semibold">{testimonial.author}</p>
-                        <p className="text-sm text-muted-foreground">{testimonial.company}</p>
-                      </div>
-                    </div>
-                  </div>
-                </motion.div>
-              ))}
-            </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       </div>
     </section>
   );
-};
+}
 
-// Self-Service Alternative Section
-const SelfServiceSection = () => {
+// --- Page ---
+export default function EnterprisePage() {
   return (
-    <section className="flex flex-col items-center justify-center w-full relative">
-      <div className="relative w-full px-6">
-        <div className="max-w-6xl mx-auto border-l border-r border-border">
-          <SectionHeader>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Self-Service Alternative
-            </h2>
-            <p className="text-muted-foreground text-center text-balance font-medium">
-              Explore our platform independently with comprehensive resources and community support
-            </p>
-          </SectionHeader>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 border-t border-border">
-            <div className="p-8 border-r border-border space-y-6">
-              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6 text-primary" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-3">Learning Center</h3>
-                <p className="text-muted-foreground leading-relaxed mb-4">
-                  Master AI worker development through structured courses, detailed documentation, and hands-on tutorials.
-                </p>
-                <Button variant="outline" className="rounded-full">
-                  Start Learning
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-            </div>
-            
-            <div className="p-8 space-y-6">
-              <div className="w-12 h-12 rounded-full bg-secondary/10 flex items-center justify-center">
-                <Headphones className="w-6 h-6 text-secondary" />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold mb-3">Developer Community</h3>
-                <p className="text-muted-foreground leading-relaxed mb-4">
-                  Connect with engineers, solution architects, and other professionals building enterprise AI solutions.
-                </p>
-                <Button variant="outline" className="rounded-full">
-                  Join Community
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// Final CTA Section
-const FinalCTASection = () => {
-  return (
-    <section className="flex flex-col items-center justify-center w-full relative">
-      <div className="relative w-full px-6">
-        <div className="max-w-6xl mx-auto border-l border-r border-border">
-          <SectionHeader>
-            <h2 className="text-3xl md:text-4xl font-medium tracking-tighter text-center text-balance pb-1">
-              Ready to Transform Your Operations?
-            </h2>
-            <p className="text-muted-foreground text-center text-balance font-medium">
-              Let's discuss your specific requirements and design a custom AI implementation strategy for your organization.
-            </p>
-          </SectionHeader>
-
-          <div className="border-t border-border p-8">
-            <div className="text-center space-y-6">
-              <div className="space-y-4">
-                <div className="space-y-6">
-                  <KortixEnterpriseModal>
-                    <Button size="lg">
-                      <Calendar className="w-4 h-4 mr-2" />
-                      Book Your Strategy Session
-                      <ArrowRight className="w-4 h-4 ml-2" />
-                    </Button>
-                  </KortixEnterpriseModal>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center max-w-2xl mx-auto">
-                    <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-accent/20">
-                      <Shield className="w-6 h-6 text-primary" />
-                      <span className="text-sm font-medium">100% Satisfaction</span>
-                      <span className="text-xs text-muted-foreground">Guarantee</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-accent/20">
-                      <Users className="w-6 h-6 text-primary" />
-                      <span className="text-sm font-medium">Enterprise Support</span>
-                      <span className="text-xs text-muted-foreground">Dedicated team</span>
-                    </div>
-                    <div className="flex flex-col items-center gap-2 p-4 rounded-lg bg-accent/20">
-                      <Settings className="w-6 h-6 text-primary" />
-                      <span className="text-sm font-medium">Custom Pricing</span>
-                      <span className="text-xs text-muted-foreground">Tailored to needs</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-};
-
-// Main Page Component
-export default function CustomImplementationPage() {
-  return (
-    <main className="flex flex-col items-center justify-center min-h-screen w-full">
-      <div className="w-full divide-y divide-border">
-        <CustomHeroSection />
-        <ValuePropSection />
-        <ProcessSection />
-        <BenefitsSection />
-        {/* <TestimonialsSection /> */}
-        {/* <SelfServiceSection /> */}
-        <FinalCTASection />
-        <FooterSection />
-      </div>
+    <main className="min-h-screen bg-background">
+      <HeroSection />
+      <LogoMarquee />
+      <WhatWeDoSection />
+      <TimelineSection />
+      <FAQSection />
+      <CTASection />
+      <SimpleFooter />
     </main>
   );
 }
