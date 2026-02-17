@@ -233,7 +233,12 @@ class LLMExecutor:
             
         except LLMError as e:
             logger.error(f"❌ LLMError: {e}")
-            return {"type": "status", "status": "error", "message": str(e)}
+            return {
+                "type": "status",
+                "status": "error",
+                "message": str(e),
+                "error_type": getattr(e, "error_type", "llm_error"),
+            }
     
     @staticmethod
     def update_generation_tracking(

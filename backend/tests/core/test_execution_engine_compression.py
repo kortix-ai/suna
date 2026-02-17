@@ -301,6 +301,97 @@ class TestOrphanToolDontCrashAgent:
                 assert has_parent, f"Orphan tool {tid} sent to LLM — would cause API error"
 
 
+class TestContextWindowRetry:
+    @pytest.mark.asyncio
+    async def test_retries_once_after_context_window_error(self):
+        from core.agents.pipeline.stateless.context.manager import ContextManager
+
+        state = MagicMock()
+        state.model_name = "test-model"
+        state.thread_id = "test-thread"
+        state.stream_key = "test-stream"
+        state.tool_schemas = [{"type": "function", "function": {"name": "web_search", "parameters": {}}}]
+        state.system_prompt = {"role": "system", "content": "You are helpful."}
+
+        messages = [
+            make_user("Find companies"),
+            make_assistant("Running search", [make_tool_call("web_search")]),
+            make_tool(big_content(40_000), "call_1", name="web_search"),
+            make_assistant("Got results"),
+        ]
+        state.get_messages.return_value = messages
+        state._messages = list(messages)
+
+        mock_layers = MagicMock()
+        mock_layers.to_messages.return_value = messages
+        mock_layers.total_messages = len(messages)
+
+        async def mock_llm_stream():
+            yield {"choices": [{"delta": {"content": "done"}}]}
+
+        context_error = {
+            "status": "error",
+            "message": "Context window exceeded: prompt is too long",
+            "error_type": "context_window_exceeded",
+        }
+
+        mock_executor = MagicMock()
+        mock_executor.execute = AsyncMock(side_effect=[context_error, mock_llm_stream()])
+
+        processor = MagicMock()
+
+        async def mock_process_response(response):
+            async for chunk in response:
+                yield chunk
+
+        processor.process_response = mock_process_response
+
+        engine = ExecutionEngine(state, processor)
+
+        delayed_tc = make_tool_call("web_search")
+        delayed_tc_id = delayed_tc["id"]
+
+        compressed_messages = [
+            make_user("[ARCHIVED CONTEXT ACTIVE] summary"),
+            make_assistant("Continue", [delayed_tc]),
+            make_user("interrupting user message"),
+            make_tool("late tool result", delayed_tc_id, name="web_search"),
+            make_tool("orphan tool result", "orphan_call", name="web_search"),
+        ]
+
+        with patch.object(ContextManager, "extract_layers", return_value=mock_layers), \
+             patch.object(engine, "fast_token_count", new_callable=AsyncMock, return_value=120_000), \
+             patch("core.agents.pipeline.ux_streaming.stream_context_usage", new_callable=AsyncMock), \
+             patch.object(engine, "_check_and_compress_if_needed", new_callable=AsyncMock, side_effect=[
+                 (messages, 120_000, False),
+                 (compressed_messages, 95_000, True),
+             ]), \
+             patch("core.agents.pipeline.stateless.coordinator.execution.add_cache_control", side_effect=lambda x: x), \
+             patch("core.agents.pipeline.stateless.coordinator.execution.LLMExecutor", return_value=mock_executor), \
+             patch("core.ai_models.model_manager.get_context_window", return_value=200_000):
+
+            chunks = []
+            async for chunk in engine.execute_step():
+                chunks.append(chunk)
+
+        # First call fails with context error, second call succeeds
+        assert mock_executor.execute.await_count == 2
+
+        # Retry path should validate/repair tool pairing before send
+        from core.agentpress.context_manager import ContextManager as ToolCallValidator
+
+        retry_prepared = mock_executor.execute.await_args_list[1].kwargs["prepared_messages"]
+        is_valid, _, _ = ToolCallValidator().validate_tool_call_pairing(retry_prepared)
+        assert is_valid, "Retry payload should not contain orphan tool messages"
+        order_valid, _, _ = ToolCallValidator().validate_tool_call_ordering(retry_prepared)
+        assert order_valid, "Retry payload should not contain out-of-order tool pairs"
+        assert state._messages == retry_prepared[1:], "State should store repaired retry messages"
+
+        # Ensure successful streamed content after retry
+        text_deltas = [c for c in chunks if isinstance(c, dict) and c.get("choices")]
+        assert text_deltas, "Expected streamed response chunks after retry"
+
+
 class TestLowMessageFallbackCompression:
     """When there are too few messages for archival split, engine should still
     trim oversized message content to reduce token pressure.
@@ -348,6 +439,29 @@ class TestLowMessageFallbackCompression:
         user_msgs = [m for m in result_msgs if m.get("role") == "user"]
         long_user = user_msgs[-1]["content"]
         assert "chars truncated" in long_user, "Expected oversized user content to be truncated"
+
+
+class TestTokenCountingIncludesTools:
+    @pytest.mark.asyncio
+    async def test_fast_token_count_passes_tools_and_choice(self):
+        messages = [{"role": "user", "content": "hello"}]
+        tools = [{"type": "function", "function": {"name": "web_search", "parameters": {"type": "object"}}}]
+
+        with patch("core.services.llm.estimate_llm_request_tokens", new_callable=AsyncMock, return_value=123) as mock_estimate:
+            tokens = await ExecutionEngine.fast_token_count(
+                messages,
+                "test-model",
+                tools=tools,
+                tool_choice="auto",
+            )
+
+        assert tokens == 123
+        mock_estimate.assert_awaited_once_with(
+            messages=messages,
+            model_name="test-model",
+            tools=tools,
+            tool_choice="auto",
+        )
 
 
 @pytest.mark.skipif(not HAS_ARCHIVER, reason="ContextArchiver not available")
