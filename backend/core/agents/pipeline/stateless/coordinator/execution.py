@@ -46,6 +46,60 @@ class ExecutionEngine:
     def _is_context_window_error(response: Dict[str, Any]) -> bool:
         return response.get("error_type") == "context_window_exceeded"
 
+    @staticmethod
+    def _repair_tool_message_structure(
+        prepared_messages: List[Dict[str, Any]],
+        log_prefix: str,
+    ) -> List[Dict[str, Any]]:
+        validator = ToolCallValidator()
+        prepared = prepared_messages
+
+        is_valid, orphaned_ids, unanswered_ids = validator.validate_tool_call_pairing(prepared)
+        if not is_valid:
+            logger.warning(
+                f"⚠️ [ExecutionEngine] {log_prefix}: pairing issues - repairing "
+                f"(orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)})"
+            )
+            prepared = validator.repair_tool_call_pairing(prepared)
+
+            is_valid_after, orphans_after, unanswered_after = validator.validate_tool_call_pairing(prepared)
+            if not is_valid_after:
+                logger.error(
+                    f"🚨 [ExecutionEngine] {log_prefix}: pairing repair failed - applying fallback "
+                    f"(orphaned: {len(orphans_after)}, unanswered: {len(unanswered_after)})"
+                )
+                prepared = validator.strip_all_tool_content_as_fallback(prepared)
+            else:
+                logger.debug(f"✅ [ExecutionEngine] {log_prefix}: pairing repaired")
+
+        if validator.needs_tool_ordering_repair(prepared):
+            order_ok, out_of_order_call_ids, _ = validator.validate_tool_call_ordering(prepared)
+            if not order_ok:
+                logger.warning(
+                    f"⚠️ [ExecutionEngine] {log_prefix}: ordering issues - removing delayed tool pairs "
+                    f"({len(out_of_order_call_ids)} tool_call_ids)"
+                )
+                prepared = validator.remove_out_of_order_tool_pairs(prepared, out_of_order_call_ids)
+
+                # Ensure ordering repair didn't leave pairing issues.
+                valid_after_order, orphaned_after_order, unanswered_after_order = validator.validate_tool_call_pairing(prepared)
+                if not valid_after_order:
+                    logger.warning(
+                        f"⚠️ [ExecutionEngine] {log_prefix}: post-order pairing issues - repairing "
+                        f"(orphaned: {len(orphaned_after_order)}, unanswered: {len(unanswered_after_order)})"
+                    )
+                    prepared = validator.repair_tool_call_pairing(prepared)
+
+                    final_valid, final_orphaned, final_unanswered = validator.validate_tool_call_pairing(prepared)
+                    if not final_valid:
+                        logger.error(
+                            f"🚨 [ExecutionEngine] {log_prefix}: final repair failed - applying fallback "
+                            f"(orphaned: {len(final_orphaned)}, unanswered: {len(final_unanswered)})"
+                        )
+                        prepared = validator.strip_all_tool_content_as_fallback(prepared)
+
+        return prepared
+
     async def _check_and_compress_if_needed(
         self,
         messages: List[Dict[str, Any]],
@@ -475,6 +529,17 @@ class ExecutionEngine:
             return None
 
         prepared_retry = [cached_system] + retry_messages
+
+        prepared_retry = self._repair_tool_message_structure(prepared_retry, log_prefix="Retry path")
+
+        retry_messages = prepared_retry[1:]
+        retry_tokens = await self.fast_token_count(
+            [cached_system] + retry_messages,
+            self._state.model_name,
+            tools=tools_for_count,
+            tool_choice=tool_choice,
+        )
+
         self._state._messages.clear()
         for msg in retry_messages:
             self._state._messages.append(msg)
@@ -590,19 +655,7 @@ class ExecutionEngine:
             yield {"type": "error", "error": "No valid messages to send", "error_code": "NO_MESSAGES"}
             return
         
-        validator = ToolCallValidator()
-        is_valid, orphaned_ids, unanswered_ids = validator.validate_tool_call_pairing(prepared)
-        
-        if not is_valid:
-            logger.warning(f"⚠️ [ExecutionEngine] Found tool call pairing issues - repairing (orphaned: {len(orphaned_ids)}, unanswered: {len(unanswered_ids)})")
-            prepared = validator.repair_tool_call_pairing(prepared)
-            
-            is_valid_after, orphans_after, unanswered_after = validator.validate_tool_call_pairing(prepared)
-            if not is_valid_after:
-                logger.error(f"🚨 [ExecutionEngine] Could not repair - applying fallback (orphaned: {len(orphans_after)}, unanswered: {len(unanswered_after)})")
-                prepared = validator.strip_all_tool_content_as_fallback(prepared)
-            else:
-                logger.debug("✅ [ExecutionEngine] Tool call pairing repaired successfully")
+        prepared = self._repair_tool_message_structure(prepared, log_prefix="Main path")
         
         if did_compress:
             await stream_context_usage(

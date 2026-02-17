@@ -348,9 +348,15 @@ class TestContextWindowRetry:
 
         engine = ExecutionEngine(state, processor)
 
+        delayed_tc = make_tool_call("web_search")
+        delayed_tc_id = delayed_tc["id"]
+
         compressed_messages = [
             make_user("[ARCHIVED CONTEXT ACTIVE] summary"),
-            make_assistant("Continue"),
+            make_assistant("Continue", [delayed_tc]),
+            make_user("interrupting user message"),
+            make_tool("late tool result", delayed_tc_id, name="web_search"),
+            make_tool("orphan tool result", "orphan_call", name="web_search"),
         ]
 
         with patch.object(ContextManager, "extract_layers", return_value=mock_layers), \
@@ -370,6 +376,16 @@ class TestContextWindowRetry:
 
         # First call fails with context error, second call succeeds
         assert mock_executor.execute.await_count == 2
+
+        # Retry path should validate/repair tool pairing before send
+        from core.agentpress.context_manager import ContextManager as ToolCallValidator
+
+        retry_prepared = mock_executor.execute.await_args_list[1].kwargs["prepared_messages"]
+        is_valid, _, _ = ToolCallValidator().validate_tool_call_pairing(retry_prepared)
+        assert is_valid, "Retry payload should not contain orphan tool messages"
+        order_valid, _, _ = ToolCallValidator().validate_tool_call_ordering(retry_prepared)
+        assert order_valid, "Retry payload should not contain out-of-order tool pairs"
+        assert state._messages == retry_prepared[1:], "State should store repaired retry messages"
 
         # Ensure successful streamed content after retry
         text_deltas = [c for c in chunks if isinstance(c, dict) and c.get("choices")]
