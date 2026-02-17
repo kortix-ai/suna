@@ -3,7 +3,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from core.utils.logger import logger
 
@@ -59,12 +59,74 @@ class ContextArchiver:
         self.thread_id = thread_id
         self.db_client = db_client
 
+    @staticmethod
+    def _collect_archived_message_ids(manifest: Dict[str, Any]) -> set[str]:
+        archived_ids: set[str] = set()
+        for batch in manifest.get("batches", []):
+            for msg_id in batch.get("message_ids", []):
+                if isinstance(msg_id, str) and msg_id:
+                    archived_ids.add(msg_id)
+        return archived_ids
+
+    @staticmethod
+    def _filter_unarchived_messages(
+        messages: List[Dict[str, Any]],
+        archived_ids: set[str],
+    ) -> tuple[List[Dict[str, Any]], List[str]]:
+        """Return only new messages based on message_id.
+
+        Messages without message_id are preserved because they cannot be reliably
+        deduplicated across runs.
+        """
+        filtered: List[Dict[str, Any]] = []
+        message_ids: List[str] = []
+        seen_in_call: set[str] = set()
+
+        for msg in messages:
+            msg_id = msg.get("message_id")
+            if isinstance(msg_id, str) and msg_id:
+                if msg_id in archived_ids or msg_id in seen_in_call:
+                    continue
+                seen_in_call.add(msg_id)
+                message_ids.append(msg_id)
+            filtered.append(msg)
+
+        return filtered, message_ids
+
+    def _build_noop_result(self, manifest: Dict[str, Any], reason: str) -> ArchiveResult:
+        batches = manifest.get("batches", [])
+        last_batch = batches[-1].get("batch", 0) if batches else 0
+        summary_path = (
+            f"{self.WORKSPACE_PATH}/{self.BASE_DIR}/summaries/batch_{last_batch:03d}.md"
+            if last_batch
+            else ""
+        )
+        summary = f"No new messages archived ({reason}); all message_ids already stored."
+        full_summary_content = (
+            "[ARCHIVED CONTEXT]\n\n"
+            "# Archive Reuse\n"
+            f"{summary}\n\n"
+            "Use existing archive files in /workspace/.kortix/context/messages/."
+        )
+
+        return ArchiveResult(
+            batch_number=last_batch,
+            summary_path=summary_path,
+            summary=summary,
+            retrieval_hints=[],
+            message_count=0,
+            tool_results_count=0,
+            tokens_archived=0,
+            key_facts=manifest.get("key_facts", {}),
+            full_summary_content=full_summary_content,
+        )
+
     async def archive_messages(
         self,
         messages: List[Dict[str, Any]],
         model: str = "openrouter/openai/gpt-5-mini",
-        previous_summary: str = None,
-        working_memory: List[Dict[str, Any]] = None
+        previous_summary: Optional[str] = None,
+        working_memory: Optional[List[Dict[str, Any]]] = None
     ) -> ArchiveResult:
         """Archive messages to sandbox filesystem with per-file structure."""
         from core.sandbox.resolver import resolve_sandbox
@@ -81,6 +143,7 @@ class ContextArchiver:
 
         # Get current manifest (also tells us if dirs exist)
         manifest = await self._get_manifest(sandbox)
+        archived_ids = self._collect_archived_message_ids(manifest)
 
         # Only create directories on first batch (manifest has no batches yet)
         if not manifest.get("batches"):
@@ -92,9 +155,28 @@ class ContextArchiver:
         # Write individual message and tool result files
         total_before = manifest.get("total_archived", 0)
 
+        # Delta mode: archive only messages that are not yet archived by message_id
+        all_messages = messages + (working_memory or [])
+        all_messages, message_ids = self._filter_unarchived_messages(all_messages, archived_ids)
+
+        if not all_messages:
+            logger.info("[ContextArchiver] Delta archive noop: no new messages")
+            return self._build_noop_result(manifest, reason="delta_no_new_messages")
+
+        # Determine how many newly-archived messages come from the to_compress segment
+        messages_count = len(messages)
+        to_compress_ids = {
+            m.get("message_id")
+            for m in messages
+            if isinstance(m.get("message_id"), str) and m.get("message_id")
+        }
+        archived_from_to_compress = sum(
+            1 for m in all_messages
+            if isinstance(m.get("message_id"), str) and m.get("message_id") in to_compress_ids
+        )
+
         # Run file writes and LLM summary in parallel
         # Include working memory in the summary so it covers the full conversation state
-        all_messages = messages + (working_memory or [])
         file_write_task = self._write_message_files(sandbox, all_messages, batch_number, total_before)
         summary_task = self._generate_summary(all_messages, batch_number, model, previous_summary)
         tool_results_written, summary_data = await asyncio.gather(file_write_task, summary_task)
@@ -104,7 +186,7 @@ class ContextArchiver:
         summary_content = self._format_summary_file(batch_number, all_messages, summary_data, tool_results_written, total_before, archived_count=len(messages))
 
         retrieval_hints = self._build_retrieval_hints(summary_data, batch_number, len(messages))
-        tokens_archived = sum(len(str(m.get('content', ''))) // 4 for m in messages)
+        tokens_archived = sum(len(str(m.get('content', ''))) // 4 for m in all_messages)
 
         await asyncio.gather(
             sandbox.fs.upload_file(summary_content.encode('utf-8'), summary_path),
@@ -113,6 +195,7 @@ class ContextArchiver:
                 manifest=manifest,
                 batch_number=batch_number,
                 message_count=len(all_messages),
+                message_ids=message_ids,
                 tool_results=list(tool_results_written.keys()),
                 topics=summary_data.get("topics", []),
                 key_facts=summary_data.get("facts", {})
@@ -126,10 +209,106 @@ class ContextArchiver:
             summary_path=summary_path,
             summary=summary_data.get("summary", ""),
             retrieval_hints=retrieval_hints,
-            message_count=len(messages),
+            message_count=archived_from_to_compress,
             tool_results_count=len(tool_results_written),
             tokens_archived=tokens_archived,
             key_facts=summary_data.get("facts", {}),
+            full_summary_content=summary_content,
+        )
+
+    async def archive_messages_snapshot(
+        self,
+        messages: List[Dict[str, Any]],
+        reason: str = "snapshot"
+    ) -> ArchiveResult:
+        """Archive full raw messages without an extra summary LLM call.
+
+        Used for low-message overflow cases where prompt content is truncated for
+        safety but exact raw tool output must remain retrievable from disk.
+        """
+        from core.sandbox.resolver import resolve_sandbox
+
+        sandbox_info = await resolve_sandbox(
+            self.project_id,
+            self.account_id,
+            self.db_client
+        )
+
+        if not sandbox_info:
+            raise RuntimeError(f"Could not resolve sandbox for project {self.project_id}")
+
+        sandbox = sandbox_info.sandbox
+        manifest = await self._get_manifest(sandbox)
+        archived_ids = self._collect_archived_message_ids(manifest)
+
+        if not manifest.get("batches"):
+            await self._ensure_directories(sandbox)
+
+        batch_number = len(manifest.get("batches", [])) + 1
+        total_before = manifest.get("total_archived", 0)
+
+        delta_messages, message_ids = self._filter_unarchived_messages(messages, archived_ids)
+        if not delta_messages:
+            logger.info("[ContextArchiver] Snapshot archive noop: no new messages")
+            return self._build_noop_result(manifest, reason=reason)
+
+        tool_results_written = await self._write_message_files(
+            sandbox,
+            delta_messages,
+            batch_number,
+            total_before
+        )
+
+        summary_data = {
+            "summary": (
+                "Raw conversation snapshot saved before low-message context truncation. "
+                f"Reason: {reason}."
+            ),
+            "topics": ["snapshot", "low-message-overflow"],
+            "key_decisions": [],
+            "facts": {},
+        }
+
+        summary_path = f"{self.WORKSPACE_PATH}/{self.BASE_DIR}/summaries/batch_{batch_number:03d}.md"
+        summary_content = self._format_summary_file(
+            batch_number=batch_number,
+            messages=delta_messages,
+            summary_data=summary_data,
+            tool_results=tool_results_written,
+            total_before=total_before,
+            archived_count=len(delta_messages),
+        )
+
+        await asyncio.gather(
+            sandbox.fs.upload_file(summary_content.encode('utf-8'), summary_path),
+            self._update_manifest(
+                sandbox=sandbox,
+                manifest=manifest,
+                batch_number=batch_number,
+                message_count=len(delta_messages),
+                message_ids=message_ids,
+                tool_results=list(tool_results_written.keys()),
+                topics=summary_data["topics"],
+                key_facts=summary_data["facts"],
+            )
+        )
+
+        tokens_archived = sum(len(str(m.get('content', ''))) // 4 for m in delta_messages)
+
+        logger.info(
+            f"[ContextArchiver] Wrote snapshot batch {batch_number}: "
+            f"{len(messages)} messages, {len(tool_results_written)} tool results"
+        )
+
+        return ArchiveResult(
+            batch_number=batch_number,
+            summary_path=summary_path,
+            summary=summary_data["summary"],
+            retrieval_hints=[],
+            message_count=len(delta_messages),
+            tool_results_count=len(tool_results_written),
+            tokens_archived=tokens_archived,
+            key_facts={},
             full_summary_content=summary_content,
         )
 
@@ -166,6 +345,7 @@ class ContextArchiver:
         manifest: Dict[str, Any],
         batch_number: int,
         message_count: int,
+        message_ids: List[str],
         tool_results: List[str],
         topics: List[str],
         key_facts: Dict[str, Any]
@@ -177,6 +357,7 @@ class ContextArchiver:
             "batch": batch_number,
             "messages": f"{total_before + 1}-{total_before + message_count}",
             "message_count": message_count,
+            "message_ids": message_ids,
             "tool_results": tool_results,
             "topics": topics,
             "archived_at": datetime.now(timezone.utc).isoformat()
@@ -422,7 +603,7 @@ class ContextArchiver:
         summary_data: Dict[str, Any],
         tool_results: Dict[str, str],
         total_before: int = 0,
-        archived_count: int = None
+        archived_count: Optional[int] = None
     ) -> str:
         """Format the summary file with conversation flow and references."""
         if archived_count is None:
@@ -550,7 +731,7 @@ class ContextArchiver:
         messages: List[Dict[str, Any]],
         batch_number: int,
         model: str,
-        previous_summary: str = None
+        previous_summary: Optional[str] = None
     ) -> Dict[str, Any]:
         """Generate summary via LLM."""
         from core.agentpress.thread_manager.services.execution.llm_executor import make_llm_api_call
@@ -600,8 +781,12 @@ Return ONLY valid JSON."""
             )
 
             # Non-streaming: extract content from ModelResponse
-            if hasattr(response, 'choices') and response.choices:
-                full_response = response.choices[0].message.content or ""
+            choices = getattr(response, 'choices', None)
+            if choices:
+                first_choice = choices[0]
+                message = getattr(first_choice, 'message', None)
+                full_response = getattr(message, 'content', "") if message is not None else ""
+                full_response = full_response or ""
             elif isinstance(response, dict):
                 full_response = response.get("content", str(response))
             elif isinstance(response, str):
