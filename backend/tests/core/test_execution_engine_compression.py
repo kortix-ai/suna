@@ -299,3 +299,98 @@ class TestOrphanToolDontCrashAgent:
                     for m in sent_messages if m.get("role") == "assistant"
                 )
                 assert has_parent, f"Orphan tool {tid} sent to LLM — would cause API error"
+
+
+class TestLowMessageFallbackCompression:
+    """When there are too few messages for archival split, engine should still
+    trim oversized message content to reduce token pressure.
+    """
+
+    @pytest.mark.asyncio
+    async def test_low_message_high_token_still_compresses(self):
+        engine = ExecutionEngine(MagicMock(), MagicMock())
+        engine._state.model_name = "test-model"
+        engine._state.thread_id = "test-thread"
+        engine._state.project_id = "test-project"
+        engine._state.account_id = "test-account"
+        engine._state.stream_key = "test-stream"
+        engine.TEST_THRESHOLD_OVERRIDE = 100  # Force threshold branch
+
+        tc = make_tool_call("web_search")
+        msgs = [
+            make_user("Find founders and contact info"),
+            make_assistant("I'll run the searches.", [tc]),
+            make_tool(big_content(80_000), tc["id"]),
+            make_assistant("Got results, summarizing."),
+            make_user(big_content(60_000)),
+        ]
+        system = {"role": "system", "content": "You are helpful."}
+
+        with patch.object(engine, "fast_token_count", new_callable=AsyncMock, return_value=80), \
+             patch.object(engine, "_archive_raw_messages_for_retrieval", new_callable=AsyncMock) as mock_archive_raw, \
+             patch("core.ai_models.model_manager.get_context_window", return_value=200_000), \
+             patch("core.cache.runtime_cache.set_cached_message_history", new_callable=AsyncMock), \
+             patch("core.agents.pipeline.ux_streaming.stream_summarizing", new_callable=AsyncMock):
+
+            result_msgs, result_tokens, did_compress = await engine._check_and_compress_if_needed(
+                msgs, tokens=200_000, system_prompt=system
+            )
+
+        assert did_compress is True
+        assert result_tokens == 80
+        assert len(result_msgs) == len(msgs), "Low-message fallback should not drop message count"
+        mock_archive_raw.assert_called_once()
+
+        tool_msgs = [m for m in result_msgs if m.get("role") == "tool"]
+        assert tool_msgs, "Expected tool messages in fallback compression result"
+        assert "chars truncated" in tool_msgs[0]["content"], "Expected tool content to be truncated"
+
+        user_msgs = [m for m in result_msgs if m.get("role") == "user"]
+        long_user = user_msgs[-1]["content"]
+        assert "chars truncated" in long_user, "Expected oversized user content to be truncated"
+
+
+@pytest.mark.skipif(not HAS_ARCHIVER, reason="ContextArchiver not available")
+class TestSnapshotArchiverDelta:
+    @pytest.mark.asyncio
+    async def test_snapshot_archiver_skips_already_archived_message_ids(self):
+        from core.agents.pipeline.stateless.context.archiver import ContextArchiver as _ContextArchiver
+
+        sandbox, files = _mock_sandbox()
+        mock_sandbox_info = MagicMock()
+        mock_sandbox_info.sandbox = sandbox
+
+        archiver = _ContextArchiver(
+            project_id="test-project",
+            account_id="test-account",
+            thread_id="test-thread",
+            db_client=MagicMock(),
+        )
+
+        msgs = [
+            {
+                "role": "user",
+                "message_id": "m1",
+                "content": "Initial request",
+            },
+            {
+                "role": "tool",
+                "message_id": "m2",
+                "tool_call_id": "call_1",
+                "name": "web_search",
+                "content": "{\"results\": [\"https://example.com/a\"]}",
+            },
+        ]
+
+        with patch("core.sandbox.resolver.resolve_sandbox", new_callable=AsyncMock, return_value=mock_sandbox_info):
+            first = await archiver.archive_messages_snapshot(msgs, reason="first")
+            second = await archiver.archive_messages_snapshot(msgs, reason="second")
+
+        assert first.message_count == 2
+        assert second.message_count == 0, "Second archive should be delta-noop for same message_ids"
+
+        manifest_path = "/workspace/.kortix/context/manifest.json"
+        assert manifest_path in files
+        manifest = json.loads(files[manifest_path].decode("utf-8"))
+        assert len(manifest["batches"]) == 1, "No new batch should be created for duplicate snapshot"
+        assert manifest["total_archived"] == 2

@@ -60,7 +60,62 @@ class ExecutionEngine:
             total_messages = len(messages)
 
             if total_messages <= MIN_TO_COMPRESS + MIN_WORKING_MEMORY:
-                logger.debug(f"[ExecutionEngine] Skipping compression: only {total_messages} messages, need >{MIN_TO_COMPRESS + MIN_WORKING_MEMORY}")
+                logger.info(
+                    f"[ExecutionEngine] Low-message fallback compression: only {total_messages} messages "
+                    f"(need >{MIN_TO_COMPRESS + MIN_WORKING_MEMORY} for archival split)"
+                )
+
+                new_messages = self._compress_working_memory(messages, safety_threshold)
+                new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+
+                if new_tokens >= safety_threshold:
+                    logger.warning(
+                        f"[ExecutionEngine] Low-message fallback still over threshold "
+                        f"({new_tokens} >= {safety_threshold}), applying emergency truncation..."
+                    )
+                    new_messages = self._emergency_truncate(new_messages)
+                    new_tokens = await self.fast_token_count([system_prompt] + new_messages, self._state.model_name)
+
+                changed = new_messages != messages
+                reduced = new_tokens < tokens
+
+                if changed or reduced:
+                    await self._archive_raw_messages_for_retrieval(
+                        messages,
+                        reason="low_message_threshold_fallback"
+                    )
+
+                    from core.cache.runtime_cache import set_cached_message_history
+
+                    await set_cached_message_history(self._state.thread_id, new_messages)
+                    logger.info(
+                        f"✨ [ExecutionEngine] Low-message compression applied: {tokens} -> {new_tokens} tokens "
+                        f"({len(messages)} messages kept)"
+                    )
+
+                    await stream_summarizing(
+                        self._state.stream_key,
+                        status="completed",
+                        tokens_before=tokens,
+                        tokens_after=new_tokens,
+                        messages_before=len(messages),
+                        messages_after=len(new_messages)
+                    )
+
+                    return new_messages, new_tokens, True
+
+                logger.debug(
+                    f"[ExecutionEngine] Low-message fallback made no effective reduction "
+                    f"({tokens} -> {new_tokens}); proceeding without compression"
+                )
+                await stream_summarizing(
+                    self._state.stream_key,
+                    status="completed",
+                    tokens_before=tokens,
+                    tokens_after=tokens,
+                    messages_before=len(messages),
+                    messages_after=len(messages)
+                )
                 return messages, tokens, False
 
             working_memory_size = min(MAX_WORKING_MEMORY, total_messages - MIN_TO_COMPRESS)
@@ -296,6 +351,33 @@ class ExecutionEngine:
                 )
                 logger.warning(f"[ExecutionEngine] Emergency truncate: message {i} from {length} to ~1200 chars")
         return result
+
+    async def _archive_raw_messages_for_retrieval(
+        self,
+        messages: List[Dict[str, Any]],
+        reason: str,
+    ) -> None:
+        """Best-effort archive of full messages before in-memory truncation."""
+        try:
+            from core.services.supabase import DBConnection
+
+            db_client = await DBConnection().client
+            archiver = ContextArchiver(
+                project_id=self._state.project_id,
+                account_id=self._state.account_id,
+                thread_id=self._state.thread_id,
+                db_client=db_client,
+            )
+            result = await archiver.archive_messages_snapshot(messages=messages, reason=reason)
+            if result.message_count > 0:
+                logger.info(
+                    f"[ExecutionEngine] Archived raw low-message context to "
+                    f"batch {result.batch_number} at {result.summary_path}"
+                )
+            else:
+                logger.info("[ExecutionEngine] Raw low-message context already archived (delta noop)")
+        except Exception as e:
+            logger.warning(f"[ExecutionEngine] Raw message archival failed (continuing): {e}")
 
     async def execute_step(self) -> AsyncGenerator[Dict[str, Any], None]:
         messages = self._state.get_messages()
