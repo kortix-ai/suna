@@ -85,6 +85,7 @@ class CustomMCPHandler:
             
         except Exception as e:
             logger.error(f"Failed to initialize Composio MCP {server_name}: {str(e)}")
+            raise
     
     async def _initialize_sse_mcp(self, server_name: str, server_config: Dict[str, Any], enabled_tools: List[str]):
         if 'url' not in server_config:

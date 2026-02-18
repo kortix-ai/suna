@@ -288,7 +288,10 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                     'customType': 'composio'
                 }
                 
-                mcp_wrapper_instance = MCPToolWrapper(mcp_configs=[mcp_config_for_wrapper])
+                mcp_wrapper_instance = MCPToolWrapper(
+                    mcp_configs=[mcp_config_for_wrapper],
+                    account_id=account_id,
+                )
                 await mcp_wrapper_instance.initialize_and_register_tools()
                 updated_schemas = mcp_wrapper_instance.get_schemas()
                 
