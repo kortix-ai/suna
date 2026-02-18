@@ -49,7 +49,7 @@ class ComposioIntegrationService:
             logger.debug(f"Starting Composio integration for toolkit: {toolkit_slug}")
             logger.debug(f"Initiation fields: {initiation_fields}")
             logger.debug(f"Custom auth: {use_custom_auth}, Custom auth config: {bool(custom_auth_config)}")
-            
+
             toolkit = await self.toolkit_service.get_toolkit_by_slug(toolkit_slug)
             if not toolkit:
                 raise ValueError(f"Toolkit '{toolkit_slug}' not found")
@@ -104,7 +104,7 @@ class ComposioIntegrationService:
             
             mcp_url_response = await self.mcp_server_service.generate_mcp_url(
                 mcp_server_id=mcp_server.id,
-                connected_account_id=[connected_account.id],
+                connected_account_ids=[connected_account.id],
                 user_ids=[user_id]
             )
             

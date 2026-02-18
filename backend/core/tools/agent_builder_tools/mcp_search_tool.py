@@ -45,13 +45,13 @@ class MCPSearchTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "search_mcp_servers",
-            "description": "Search for Composio toolkits based on user requirements. Use this when the user wants to add MCP tools to their agent.",
+            "description": "Search for Composio toolkits and return exact toolkit_slug values. This must be the first tool call before any create_credential_profile call.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
                         "type": "string",
-                        "description": "Search query for finding relevant Composio toolkits (e.g., 'linear', 'github', 'database', 'search')"
+                        "description": "Search query for finding relevant Composio toolkits (e.g., 'gmail', 'google calendar', 'googledrive', 'github', 'linear')."
                     },
                     "limit": {
                         "type": "integer",
