@@ -690,7 +690,7 @@ class AgentCreationTool(Tool):
         "type": "function",
         "function": {
             "name": "create_credential_profile_for_agent",
-            "description": "Create a credential profile for external service integration with a newly created agent. This generates an authentication link that the user must complete.",
+            "description": "Create a credential profile for external service integration with a newly created agent. Always call search_mcp_servers_for_agent first and pass the exact toolkit_slug from that result. This generates an authentication link that the user must complete.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -762,8 +762,8 @@ class AgentCreationTool(Tool):
             })
             
         except Exception as e:
-            logger.error(f"Failed to create credential profile: {e}")
-            return self.fail_response("Failed to create credential profile")
+            logger.error(f"Failed to create credential profile for '{toolkit_slug}': {e}", exc_info=True)
+            return self.fail_response(f"Failed to create credential profile: {str(e)}")
 
     @openapi_schema({
         "type": "function",

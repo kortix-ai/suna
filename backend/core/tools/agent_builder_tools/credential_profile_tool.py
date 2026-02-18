@@ -93,7 +93,7 @@ class CredentialProfileTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "create_credential_profile",
-            "description": "Create a new Composio credential profile for a specific toolkit. This will create the integration and return an authentication link that the user needs to visit to connect their account.",
+            "description": "Create a new Composio credential profile for a specific toolkit. Always run search_mcp_servers first and pass the exact toolkit_slug from those results. This creates the integration and returns an authentication link that the user needs to visit to connect their account.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -164,7 +164,8 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             return self.success_response(response_data)
             
         except Exception as e:
-            return self.fail_response("Error creating credential profile")
+            logger.error(f"Error creating credential profile for '{toolkit_slug}': {e}", exc_info=True)
+            return self.fail_response(f"Error creating credential profile: {str(e)}")
 
     @openapi_schema({
         "type": "function",
