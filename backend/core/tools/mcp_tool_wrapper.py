@@ -237,9 +237,16 @@ class MCPToolWrapper(Tool):
     
     async def _initialize_single_custom_mcp(self, config: Dict[str, Any]):
         try:
-            logger.debug(f"Initializing custom MCP: {config.get('name', 'Unknown')}")
+            config_name = config.get('name', 'Unknown')
+            logger.debug(f"Initializing custom MCP: {config_name}")
+            tools_before = len(self.custom_handler.get_custom_tools())
+
             await self.custom_handler._initialize_single_custom_mcp(config)
-            logger.debug(f"✓ Initialized custom MCP: {config.get('name', 'Unknown')}")
+            tools_after = len(self.custom_handler.get_custom_tools())
+            if tools_after <= tools_before:
+                raise RuntimeError(f"No tools registered for custom MCP '{config_name}'")
+
+            logger.debug(f"✓ Initialized custom MCP: {config_name}")
             
             custom_tools = self.custom_handler.get_custom_tools()
             return {'tools': custom_tools, 'type': 'custom', 'timestamp': time.time(), 'success': True}

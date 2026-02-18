@@ -864,7 +864,7 @@ class AgentCreationTool(Tool):
                 "properties": {
                     "agent_id": {
                         "type": "string",
-                        "description": "The ID of the agent to add the integration to"
+                        "description": "Optional. Agent ID to add the integration to. Use 'default' (or omit) to target the account's default agent."
                     },
                     "profile_name": {
                         "type": "string",
@@ -880,24 +880,25 @@ class AgentCreationTool(Tool):
                         "description": "Optional custom display name for this integration"
                     }
                 },
-                "required": ["agent_id", "profile_name", "enabled_tools"]
+                "required": ["profile_name", "enabled_tools"]
             }
         }
     })
     async def configure_agent_integration(
         self,
-        agent_id: str,
         profile_name: str,
         enabled_tools: List[str],
+        agent_id: Optional[str] = "default",
         display_name: Optional[str] = None
     ) -> ToolResult:
         try:
             account_id = self.account_id
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
-            
-            actual_agent_id = agent_id
-            if agent_id == "default":
+
+            requested_agent_id = (agent_id.strip() or "default") if isinstance(agent_id, str) else "default"
+            actual_agent_id = requested_agent_id
+            if requested_agent_id == "default":
                 from core.agents import repo as agents_repo
                 actual_agent_id = await agents_repo.get_default_agent_id(account_id)
                 if not actual_agent_id:
@@ -1005,7 +1006,10 @@ class AgentCreationTool(Tool):
                     'customType': 'composio'
                 }
                 
-                mcp_wrapper_instance = MCPToolWrapper(mcp_configs=[mcp_config_for_wrapper])
+                mcp_wrapper_instance = MCPToolWrapper(
+                    mcp_configs=[mcp_config_for_wrapper],
+                    account_id=account_id,
+                )
                 await mcp_wrapper_instance.initialize_and_register_tools()
                 
             except Exception as e:
@@ -1024,7 +1028,7 @@ class AgentCreationTool(Tool):
             
             return self.success_response({
                 "message": success_message,
-                "agent_id": agent_id,
+                "agent_id": actual_agent_id,
                 "profile_name": profile_name,
                 "integration_name": profile.toolkit_name,
                 "enabled_tools": enabled_tools,

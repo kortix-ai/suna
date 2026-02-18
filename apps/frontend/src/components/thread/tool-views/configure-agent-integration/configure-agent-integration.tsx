@@ -36,6 +36,7 @@ export function ConfigureAgentIntegrationToolView({
   const extractedData = toolCall ? extractConfigureAgentIntegrationData(
     null, // assistantContent - legacy format
     toolResult?.output || null, // toolContent - extract from toolResult
+    toolCall.arguments || {},
     isSuccess,
     toolTimestamp,
     assistantTimestamp
@@ -109,7 +110,7 @@ export function ConfigureAgentIntegrationToolView({
             filePath={integration_name ? `"${integration_name}"` : undefined}
             showProgress={true}
           />
-        ) : actualIsSuccess && integration_name ? (
+        ) : actualIsSuccess ? (
           <ScrollArea className="h-full w-full">
             <div className="p-4 space-y-4">
               <div className="border rounded-xl p-4 space-y-4">

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 import os
 
 from core.services.supabase import DBConnection
@@ -209,6 +209,9 @@ class ComposioProfileService:
     
     async def get_mcp_url_for_runtime(self, profile_id: str, account_id: str) -> str:
         try:
+            if not account_id:
+                raise ValueError("account_id is required to load Composio runtime profile")
+
             client = await self.db.client
 
             query = client.table('user_mcp_credential_profiles').select('*').eq(
@@ -282,7 +285,23 @@ class ComposioProfileService:
             
             profiles = []
             for row in result.data:
-                config = self._decrypt_config(row['encrypted_config'])
+                try:
+                    config = self._decrypt_config(row['encrypted_config'])
+                except InvalidToken:
+                    logger.warning(
+                        "Skipping undecryptable Composio profile %s for account %s (encryption key mismatch)",
+                        row.get('profile_id'),
+                        account_id,
+                    )
+                    continue
+                except Exception as decrypt_error:
+                    logger.warning(
+                        "Skipping invalid Composio profile %s for account %s: %s",
+                        row.get('profile_id'),
+                        account_id,
+                        decrypt_error,
+                    )
+                    continue
                 
                 profile = ComposioProfile(
                     profile_id=row['profile_id'],
