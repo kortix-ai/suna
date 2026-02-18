@@ -31,40 +31,6 @@ class ComposioIntegrationService:
         self.connected_account_service = ConnectedAccountService(api_key)
         self.mcp_server_service = MCPServerService(api_key)
         self.profile_service = ComposioProfileService(db_connection) if db_connection else None
-
-    async def _resolve_toolkit_slug(
-        self,
-        requested_toolkit_slug: str,
-    ) -> tuple[Optional[ToolkitInfo], str, List[ToolkitInfo]]:
-        """Resolve a user-provided toolkit slug via search-first validation."""
-        normalized_slug = requested_toolkit_slug.strip()
-        search_candidates: List[ToolkitInfo] = []
-
-        if not normalized_slug:
-            return None, normalized_slug, search_candidates
-
-        try:
-            search_response = await self.toolkit_service.search_toolkits(
-                normalized_slug,
-                limit=5,
-            )
-            search_candidates = search_response.get("items", [])[:5]
-        except Exception as search_error:
-            logger.debug(
-                "Search-first toolkit validation failed for %s: %s",
-                normalized_slug,
-                search_error,
-            )
-
-        for candidate in search_candidates:
-            if candidate.slug.lower() == normalized_slug.lower():
-                return candidate, candidate.slug, search_candidates
-
-        toolkit = await self.toolkit_service.get_toolkit_by_slug(normalized_slug)
-        if toolkit:
-            return toolkit, toolkit.slug, search_candidates
-
-        return None, normalized_slug, search_candidates
     
     async def integrate_toolkit(
         self, 
@@ -84,29 +50,9 @@ class ComposioIntegrationService:
             logger.debug(f"Initiation fields: {initiation_fields}")
             logger.debug(f"Custom auth: {use_custom_auth}, Custom auth config: {bool(custom_auth_config)}")
 
-            toolkit, resolved_toolkit_slug, search_candidates = await self._resolve_toolkit_slug(
-                toolkit_slug
-            )
+            toolkit = await self.toolkit_service.get_toolkit_by_slug(toolkit_slug)
             if not toolkit:
-                suggested_slugs = [candidate.slug for candidate in search_candidates]
-                suggestion_text = (
-                    f" Closest matches: {', '.join(suggested_slugs)}."
-                    if suggested_slugs
-                    else ""
-                )
-                raise ValueError(
-                    f"Toolkit '{toolkit_slug}' not found. "
-                    "Please run search_mcp_servers first and use an exact toolkit_slug from the results."
-                    f"{suggestion_text}"
-                )
-
-            if resolved_toolkit_slug != toolkit_slug:
-                logger.info(
-                    "Resolved toolkit slug '%s' to canonical slug '%s'",
-                    toolkit_slug,
-                    resolved_toolkit_slug,
-                )
-            toolkit_slug = resolved_toolkit_slug
+                raise ValueError(f"Toolkit '{toolkit_slug}' not found")
             
             logger.debug(f"Step 1 complete: Verified toolkit {toolkit_slug}")
             

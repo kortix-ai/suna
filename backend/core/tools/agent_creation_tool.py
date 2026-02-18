@@ -325,9 +325,9 @@ Call `configure_profile_for_agent` with the `profile_id` and array of selected t
 1. **MCP SERVER SEARCH LIMIT**: NEVER search for more than 5 MCP servers. Always use `limit=5` parameter.
 2. **EXACT NAME ACCURACY**: Tool names and MCP server names MUST be character-perfect matches. Even minor spelling errors will cause complete system failure.
 3. **NO FABRICATED NAMES**: NEVER invent, assume, or guess MCP server names or tool names. Only use names explicitly returned from tool calls.
-4. **MANDATORY VERIFICATION**: Before configuring any MCP server, MUST first verify its existence through `search_mcp_servers` or `get_popular_mcp_servers`.
+4. **MANDATORY VERIFICATION**: Before configuring any MCP server, MUST first verify its existence through `search_mcp_servers_for_agent` or `get_popular_mcp_servers`.
 5. **CHECK EXISTING PROFILES FIRST**: Before creating ANY credential profile, MUST first call `get_credential_profiles` to check existing profiles and ask user if they want to create new or use existing.
-6. **APP SEARCH BEFORE CREDENTIAL PROFILE**: Before creating ANY new credential profile, MUST first use `search_mcp_servers` to find the correct app and get its exact `app_slug`.
+6. **APP SEARCH BEFORE CREDENTIAL PROFILE**: Before creating ANY new credential profile, MUST first use `search_mcp_servers_for_agent` to find the correct app and get its exact `toolkit_slug`.
 7. **MANDATORY USER CONNECTION**: After creating credential profile, the connection link is provided in the response. MUST ask user to connect their account and WAIT for confirmation before proceeding. Do NOT continue until user confirms connection.
 8. **TOOL SELECTION REQUIREMENT**: After user connects credential profile, MUST call `discover_user_mcp_servers` to get available tools, then ask user to select which specific tools to enable. This is CRITICAL - never skip tool selection.
 9. **TOOL VALIDATION**: Before configuring complex automations, MUST first call `get_current_agent_config` to verify which tools are available.
@@ -565,7 +565,7 @@ class AgentCreationTool(Tool):
         "type": "function",
         "function": {
             "name": "search_mcp_servers_for_agent",
-            "description": "Search for available MCP servers/integrations that can be added to a newly created agent. Use this to find integrations for services like Gmail, Slack, GitHub, etc.",
+            "description": "Search MCP integrations and return exact toolkit slugs for agent setup. This must be the first tool call before any create_credential_profile_for_agent call.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -690,13 +690,13 @@ class AgentCreationTool(Tool):
         "type": "function",
         "function": {
             "name": "create_credential_profile_for_agent",
-            "description": "Create a credential profile for external service integration with a newly created agent. Always call search_mcp_servers_for_agent first and pass the exact toolkit_slug from that result. This generates an authentication link that the user must complete.",
+            "description": "Create a credential profile for external service integration with a newly created agent. Call this ONLY after search_mcp_servers_for_agent in the same request flow, even if the slug seems obvious. Pass an exact toolkit_slug from search results and never generic values like 'google'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "toolkit_slug": {
                         "type": "string",
-                        "description": "The toolkit/app slug (e.g., 'github', 'gmail', 'slack', 'linear')"
+                        "description": "Exact toolkit slug from search results (e.g., 'gmail', 'googlecalendar', 'googledrive', 'github', 'linear'). Do not use generic names like 'google'."
                     },
                     "profile_name": {
                         "type": "string",
@@ -718,10 +718,10 @@ class AgentCreationTool(Tool):
                 return self.fail_response("Unable to determine current account ID")
             
             from core.composio_integration.composio_service import get_integration_service
+            integration_service = get_integration_service(db_connection=self.db)
             
             integration_user_id = str(uuid4())
 
-            integration_service = get_integration_service(db_connection=self.db)
             result = await integration_service.integrate_toolkit(
                 toolkit_slug=toolkit_slug,
                 account_id=account_id,

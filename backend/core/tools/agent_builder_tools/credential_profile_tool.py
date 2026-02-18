@@ -26,11 +26,13 @@ from core.utils.logger import logger
 - Configure profiles for agents
 
 **CRITICAL AUTHENTICATION PROTOCOL:**
-1. create_credential_profile() - Generates auth link
-2. **SEND LINK TO USER IMMEDIATELY** - Authentication is MANDATORY
-3. **WAIT FOR USER CONFIRMATION** - "Have you completed authentication?"
-4. discover_mcp_tools - Get actual available tools after auth
-5. configure_profile_for_agent() - Add to agent
+1. search_mcp_servers() - First action for any integration request, even if you think you already know the slug
+2. Use exact toolkit_slug from search results (never guess generic values like 'google')
+3. create_credential_profile() - Generates auth link
+4. **SEND LINK TO USER IMMEDIATELY** - Authentication is MANDATORY
+5. **WAIT FOR USER CONFIRMATION** - "Have you completed authentication?"
+6. discover_mcp_tools - Get actual available tools after auth
+7. configure_profile_for_agent() - Add to agent
 
 **AUTHENTICATION IS NON-NEGOTIABLE:**
 - Without authentication, integration is COMPLETELY INVALID
@@ -93,13 +95,13 @@ class CredentialProfileTool(AgentBuilderBaseTool):
         "type": "function",
         "function": {
             "name": "create_credential_profile",
-            "description": "Create a new Composio credential profile for a specific toolkit. Always run search_mcp_servers first and pass the exact toolkit_slug from those results. This creates the integration and returns an authentication link that the user needs to visit to connect their account.",
+            "description": "Create a new Composio credential profile for a specific toolkit. Call this ONLY after search_mcp_servers in the same request flow, even when the slug seems obvious. Always pass an exact toolkit_slug from search results and never generic values like 'google'.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "toolkit_slug": {
                         "type": "string",
-                        "description": "The toolkit slug to create the profile for (e.g., 'github', 'linear', 'slack')"
+                        "description": "Exact toolkit slug from search results (e.g., 'gmail', 'googlecalendar', 'googledrive', 'github', 'linear'). Do not use generic names like 'google'."
                     },
                     "profile_name": {
                         "type": "string",
@@ -122,10 +124,10 @@ class CredentialProfileTool(AgentBuilderBaseTool):
     ) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
+            integration_service = get_integration_service(db_connection=self.db)
             integration_user_id = str(uuid4())
             logger.debug(f"Generated integration user_id: {integration_user_id} for account: {account_id}")
 
-            integration_service = get_integration_service(db_connection=self.db)
             result = await integration_service.integrate_toolkit(
                 toolkit_slug=toolkit_slug,
                 account_id=account_id,
