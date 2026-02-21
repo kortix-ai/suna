@@ -45,6 +45,28 @@ class ExpandMessageTool(Tool):
         self.thread_manager = thread_manager
         self.thread_id = thread_id
 
+    @staticmethod
+    def _mcp_registry_out_of_sync(mcp_registry, mcp_loader) -> bool:
+        if not mcp_loader:
+            return False
+
+        loader_tool_map = mcp_loader.tool_map or {}
+        if not mcp_registry._initialized or len(loader_tool_map) != len(mcp_registry._tools):
+            return True
+
+        for tool_name, loader_info in loader_tool_map.items():
+            registry_info = mcp_registry._tools.get(tool_name)
+            if not registry_info:
+                return True
+
+            loader_profile_id = (loader_info.mcp_config.get('config', {}) or {}).get('profile_id')
+            registry_profile_id = (registry_info.mcp_config.get('config', {}) or {}).get('profile_id')
+
+            if loader_profile_id != registry_profile_id:
+                return True
+
+        return False
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -297,7 +319,7 @@ class ExpandMessageTool(Tool):
             loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
             registry_tool_count = len(mcp_registry._tools)
             
-            if not mcp_registry._initialized or loader_tool_count > registry_tool_count:
+            if self._mcp_registry_out_of_sync(mcp_registry, mcp_loader):
                 from core.agentpress.mcp_registry import init_mcp_registry_from_loader
                 logger.info(f"🔄 [MCP REGISTRY] Syncing registry: loader has {loader_tool_count} tools, registry has {registry_tool_count}")
                 init_mcp_registry_from_loader(mcp_loader)
@@ -380,7 +402,7 @@ class ExpandMessageTool(Tool):
             loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
             registry_tool_count = len(mcp_registry._tools)
             
-            if not mcp_registry._initialized or loader_tool_count > registry_tool_count:
+            if self._mcp_registry_out_of_sync(mcp_registry, mcp_loader):
                 from core.agentpress.mcp_registry import init_mcp_registry_from_loader
                 logger.info(f"🔄 [MCP REGISTRY] Syncing registry for execute: loader has {loader_tool_count} tools, registry has {registry_tool_count}")
                 init_mcp_registry_from_loader(mcp_loader)

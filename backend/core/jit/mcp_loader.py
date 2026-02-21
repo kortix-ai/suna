@@ -115,7 +115,14 @@ class MCPJITLoader:
         if enabled_tools:
             for tool_name in enabled_tools:
                 if tool_name in self.tool_map:
-                    continue
+                    previous_profile_id = (self.tool_map[tool_name].mcp_config.get('config', {}) or {}).get('profile_id')
+                    next_profile_id = (mcp_config.get('config', {}) or {}).get('profile_id')
+                    logger.info(
+                        "⚡ [MCP JIT] Overriding duplicate tool mapping for %s (old profile=%s, new profile=%s)",
+                        tool_name,
+                        previous_profile_id,
+                        next_profile_id,
+                    )
                 
                 self.tool_map[tool_name] = MCPToolInfo(
                     tool_name=tool_name,
@@ -134,7 +141,14 @@ class MCPJITLoader:
         
         for tool_name in available_tools:
             if tool_name in self.tool_map:
-                continue
+                previous_profile_id = (self.tool_map[tool_name].mcp_config.get('config', {}) or {}).get('profile_id')
+                next_profile_id = (mcp_config.get('config', {}) or {}).get('profile_id')
+                logger.info(
+                    "⚡ [MCP JIT] Overriding duplicate discovered tool mapping for %s (old profile=%s, new profile=%s)",
+                    tool_name,
+                    previous_profile_id,
+                    next_profile_id,
+                )
             
             self.tool_map[tool_name] = MCPToolInfo(
                 tool_name=tool_name,

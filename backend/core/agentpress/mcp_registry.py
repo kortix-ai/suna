@@ -16,7 +16,6 @@ _GMAIL_ATTACHMENT_HINT = (
     "IMPORTANT: When attaching presentations to emails, you MUST always export and attach the .pptx file (not .pdf), unless the user explicitly requests a different format."
 )
 
-
 def _enrich_description(tool_name: str, description: str) -> str:
     if tool_name.upper() in _GMAIL_ATTACHMENT_TOOLS:
         return description + _GMAIL_ATTACHMENT_HINT
@@ -324,14 +323,27 @@ class MCPRegistry:
                         logger.warning(f"⚠️  [MCP REGISTRY] No account_id available for {toolkit_slug}")
                         continue
                     
-                    profiles = await profile_service.get_profiles(account_id, toolkit_slug=toolkit_slug)
-                    
-                    if not profiles or len(profiles) == 0:
-                        logger.warning(f"⚠️  [MCP REGISTRY] No profile found for {toolkit_slug}")
-                        continue
-                    
-                    profile = profiles[0]
-                    profile_config = await profile_service.get_profile_config(profile.profile_id, account_id=account_id)
+                    selected_profile_id = None
+                    for tool_name in tools:
+                        bound_tool_info = self._tools.get(tool_name)
+                        if not bound_tool_info:
+                            continue
+
+                        selected_profile_id = (bound_tool_info.mcp_config.get('config', {}) or {}).get('profile_id')
+                        if selected_profile_id:
+                            break
+
+                    if selected_profile_id:
+                        profile_config = await profile_service.get_profile_config(selected_profile_id, account_id=account_id)
+                    else:
+                        profiles = await profile_service.get_profiles(account_id, toolkit_slug=toolkit_slug)
+                        if not profiles or len(profiles) == 0:
+                            logger.warning(f"⚠️  [MCP REGISTRY] No profile found for {toolkit_slug}")
+                            continue
+
+                        profile = profiles[0]
+                        profile_config = await profile_service.get_profile_config(profile.profile_id, account_id=account_id)
+
                     mcp_url = profile_config.get('mcp_url')
                     
                     if not mcp_url:
@@ -557,7 +569,6 @@ class MCPRegistry:
             logger.error(f"❌ [MCP REGISTRY] Failed to load JSON/stdio schemas: {e}")
         
         return schemas
-    
 
     async def execute_tool(self, tool_name: str, args: Dict[str, Any], 
                           context: MCPExecutionContext) -> ToolResult:
@@ -711,6 +722,11 @@ def init_mcp_registry_from_loader(mcp_loader) -> None:
         return
     
     registry = get_mcp_registry()
+
+    # Rebuild from source-of-truth loader snapshot to avoid stale tool/profile mappings.
+    registry._tools.clear()
+    registry._toolkit_mapping.clear()
+    registry._status_index = {status: set() for status in MCPToolStatus}
     
     # Register all discovered tools
     for tool_name, tool_info in mcp_loader.tool_map.items():
