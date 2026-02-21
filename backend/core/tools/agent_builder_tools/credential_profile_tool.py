@@ -1,5 +1,5 @@
 from typing import Optional, List
-from uuid import uuid4
+from uuid import UUID, uuid4
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
 from .base_tool import AgentBuilderBaseTool
@@ -44,6 +44,13 @@ class CredentialProfileTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
         self.composio_search = MCPSearchTool(thread_manager, db_connection, agent_id)
+
+    @staticmethod
+    def _normalize_profile_id(profile_id: str) -> Optional[str]:
+        try:
+            return str(UUID(str(profile_id).strip()))
+        except (ValueError, AttributeError, TypeError):
+            return None
 
     @openapi_schema({
         "type": "function",
@@ -139,7 +146,9 @@ class CredentialProfileTool(AgentBuilderBaseTool):
 
             response_data = {
                 "message": f"Successfully created credential profile '{profile_name}' for {result.toolkit.name}",
+                "profile_id": result.profile_id,
                 "profile": {
+                    "profile_id": result.profile_id,
                     "profile_name": profile_name,
                     "display_name": display_name or profile_name,
                     "toolkit_slug": toolkit_slug,
@@ -158,6 +167,8 @@ class CredentialProfileTool(AgentBuilderBaseTool):
 Please authenticate your {result.toolkit.name} account by clicking the link below:
 
 [toolkit:{toolkit_slug}:{result.toolkit.name}] Authentication: {result.connected_account.redirect_url}
+
+Use this exact profile_id when configuring the worker: {result.profile_id}
 
 After connecting, you'll be able to use {result.toolkit.name} tools in your agent."""
             else:
@@ -179,7 +190,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                 "properties": {
                     "profile_id": {
                         "type": "string",
-                        "description": "The ID of the connected credential profile"
+                        "description": "Exact UUID of the connected credential profile (from get_credential_profiles)"
                     },
                     "enabled_tools": {
                         "type": "array",
@@ -205,12 +216,19 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             account_id = await self._get_current_account_id()
             client = await self.db.client
 
+            normalized_profile_id = self._normalize_profile_id(profile_id)
+            if not normalized_profile_id:
+                return self.fail_response(
+                    "Invalid profile_id format. Expected UUID. "
+                    "Use get_credential_profiles to copy the exact profile_id."
+                )
+
             profile_service = ComposioProfileService(self.db)
             profiles = await profile_service.get_profiles(account_id)
             
             profile = None
             for p in profiles:
-                if p.profile_id == profile_id:
+                if p.profile_id == normalized_profile_id:
                     profile = p
                     break
             
@@ -243,7 +261,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                 'toolkit_slug': profile.toolkit_slug,
                 'mcp_qualified_name': profile.mcp_qualified_name,
                 'config': {
-                    'profile_id': profile_id,
+                    'profile_id': normalized_profile_id,
                     'toolkit_slug': profile.toolkit_slug,
                     'mcp_qualified_name': profile.mcp_qualified_name
                 },
@@ -251,7 +269,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
             }
             
             updated_mcps = [mcp for mcp in current_custom_mcps 
-                          if mcp.get('config', {}).get('profile_id') != profile_id]
+                          if mcp.get('config', {}).get('profile_id') != normalized_profile_id]
             
             updated_mcps.append(new_mcp_config)
             
@@ -278,7 +296,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                     'name': profile.toolkit_name,
                     'qualifiedName': f"composio.{profile.toolkit_slug}",
                     'config': {
-                        'profile_id': profile_id,
+                        'profile_id': normalized_profile_id,
                         'toolkit_slug': profile.toolkit_slug,
                         'mcp_qualified_name': profile.mcp_qualified_name
                     },
@@ -307,6 +325,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
 
             return self.success_response({
                 "message": f"Profile '{profile.profile_name}' configured with {len(enabled_tools)} tools and registered in current runtime",
+                "profile_id": normalized_profile_id,
                 "enabled_tools": enabled_tools,
                 "total_tools": len(enabled_tools),
                 "runtime_registration": "success"
@@ -326,7 +345,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                 "properties": {
                     "profile_id": {
                         "type": "string",
-                        "description": "The ID of the credential profile to delete"
+                        "description": "Exact UUID of the credential profile to delete"
                     }
                 },
                 "required": ["profile_id"]
@@ -337,13 +356,20 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
         try:
             account_id = await self._get_current_account_id()
             client = await self.db.client
+
+            normalized_profile_id = self._normalize_profile_id(profile_id)
+            if not normalized_profile_id:
+                return self.fail_response(
+                    "Invalid profile_id format. Expected UUID. "
+                    "Use get_credential_profiles to copy the exact profile_id."
+                )
             
             profile_service = ComposioProfileService(self.db)
             profiles = await profile_service.get_profiles(account_id)
             
             profile = None
             for p in profiles:
-                if p.profile_id == profile_id:
+                if p.profile_id == normalized_profile_id:
                     profile = p
                     break
             
@@ -364,7 +390,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                     current_tools = current_config.get('tools', {})
                     current_custom_mcps = current_tools.get('custom_mcp', [])
                     
-                    updated_mcps = [mcp for mcp in current_custom_mcps if mcp.get('config', {}).get('profile_id') != profile_id]
+                    updated_mcps = [mcp for mcp in current_custom_mcps if mcp.get('config', {}).get('profile_id') != normalized_profile_id]
                     
                     if len(updated_mcps) != len(current_custom_mcps):
                         from core.versioning.version_service import get_version_service
@@ -386,7 +412,7 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                             return self.fail_response("Failed to update agent config")
             
             # Delete the profile
-            await profile_service.delete_profile(profile_id)
+            await profile_service.delete_profile(normalized_profile_id)
             
             return self.success_response({
                 "message": f"Successfully deleted credential profile '{profile.display_name}' for {profile.toolkit_name}",
