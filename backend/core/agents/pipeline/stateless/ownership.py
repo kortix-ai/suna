@@ -91,7 +91,7 @@ class RunOwnership:
             
             if claimed:
                 try:
-                    await client.sadd("runs:active", run_id)
+                    await redis.sadd("runs:active", run_id)
                 except Exception as e:
                     logger.warning(f"[Ownership] Failed to add {run_id} to runs:active: {e}")
 
@@ -135,9 +135,9 @@ class RunOwnership:
                 await client.set(f"run:{{{run_id}}}:status", status, ex=self.CLAIM_TTL)
                 await client.delete(f"run:{{{run_id}}}:owner")
 
-            if status in ("completed", "failed", "cancelled"):
+            if status in ("completed", "failed", "cancelled", "stopped", "error"):
                 try:
-                    await client.srem("runs:active", run_id)
+                    await redis.srem("runs:active", run_id)
                 except Exception as e:
                     logger.warning(f"[Ownership] Failed to remove {run_id} from runs:active: {e}")
             self._owned.pop(run_id, None)

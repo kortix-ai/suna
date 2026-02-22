@@ -51,6 +51,20 @@ async def update_agent_run_status(
         )
 
         if success:
+            if status in {"completed", "failed", "stopped", "cancelled", "error"}:
+                try:
+                    from core.agents.pipeline.stateless.ownership import ownership
+                    await ownership.release(agent_run_id, status)
+                except Exception as e:
+                    logger.warning(f"Failed to release ownership for {agent_run_id}: {e}")
+
+                if account_id:
+                    try:
+                        from core.agents.pipeline.slot_manager import release_slot
+                        await release_slot(account_id, agent_run_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to release slot for {agent_run_id}: {e}")
+
             if account_id:
                 try:
                     from core.cache.runtime_cache import invalidate_running_runs_cache

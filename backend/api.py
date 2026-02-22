@@ -176,6 +176,7 @@ async def lifespan(app: FastAPI):
         # ===== CRITICAL: Stop all running agent runs on this instance =====
         from core.agents.api import _cancellation_events
         from core.agents.runner import update_agent_run_status
+        from core.agents import repo as agents_repo
         
         active_run_ids = list(_cancellation_events.keys())
         if active_run_ids:
@@ -197,11 +198,20 @@ async def lifespan(app: FastAPI):
             # Force update DB status for any runs that didn't clean up
             for agent_run_id in active_run_ids:
                 try:
+                    account_id = None
+                    try:
+                        run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
+                        if run_data:
+                            account_id = run_data.get('thread_account_id')
+                    except Exception as lookup_err:
+                        logger.warning(f"Failed to lookup account for {agent_run_id} during shutdown: {lookup_err}")
+
                     # Update status to stopped with shutdown message
                     await update_agent_run_status(
                         agent_run_id,
                         "stopped",
-                        error=f"Instance shutdown: {instance_id}"
+                        error=f"Instance shutdown: {instance_id}",
+                        account_id=account_id,
                     )
                     logger.info(f"✅ Marked agent run {agent_run_id} as stopped (instance shutdown)")
                     

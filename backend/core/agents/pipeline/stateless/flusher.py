@@ -261,7 +261,7 @@ class WriteBuffer:
         return evicted
 
     async def finalize(self, state: 'RunState') -> Dict[str, Any]:
-        from core.agents import repo as agents_repo
+        from core.agents.runner import update_agent_run_status
 
         result = {"run_id": state.run_id, "flushed": 0, "updated": False}
 
@@ -271,7 +271,12 @@ class WriteBuffer:
             status = "completed" if state.termination_reason == "completed" else "failed"
             error = None if status == "completed" else state.termination_reason
 
-            await agents_repo.update_agent_run_status(state.run_id, status, error)
+            await update_agent_run_status(
+                state.run_id,
+                status,
+                error=error,
+                account_id=state.account_id,
+            )
             result["updated"] = True
 
             self.unregister(state.run_id)

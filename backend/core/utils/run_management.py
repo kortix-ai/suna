@@ -24,8 +24,16 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     logger.warning(f"🛑 Stopping agent run: {agent_run_id} (source: {stop_source}, error: {error_message or 'none'})")
     
     # Import here to avoid circular dependency
-    from core.services.supabase import DBConnection
+    from core.agents import repo as agents_repo
     from core.agents.api import _cancellation_events
+
+    account_id = None
+    try:
+        run_data = await agents_repo.get_agent_run_with_thread(agent_run_id)
+        if run_data:
+            account_id = run_data.get('thread_account_id')
+    except Exception as e:
+        logger.warning(f"Failed to fetch run account_id for {agent_run_id}: {e}")
     
     # Set in-memory cancellation event (if run is on this instance)
     if agent_run_id in _cancellation_events:
@@ -43,7 +51,10 @@ async def stop_agent_run_with_helpers(agent_run_id: str, error_message: Optional
     final_status = "failed" if error_message else "stopped"
     
     update_success = await update_agent_run_status(
-        agent_run_id, final_status, error=error_message
+        agent_run_id,
+        final_status,
+        error=error_message,
+        account_id=account_id,
     )
 
     if not update_success:

@@ -331,6 +331,7 @@ async def check_concurrent_runs_limit(
 async def notify_setup_error(
     agent_run_id: str,
     error: Exception,
+    account_id: Optional[str] = None,
 ) -> None:
     stream_key = f"agent_run:{agent_run_id}:stream"
     
@@ -352,7 +353,7 @@ async def notify_setup_error(
         pass
     
     try:
-        from core.agents import repo as agents_repo
-        await agents_repo.update_agent_run_status(agent_run_id, "failed")
+        from core.agents.runner import update_agent_run_status
+        await update_agent_run_status(agent_run_id, "failed", account_id=account_id)
     except Exception:
         pass

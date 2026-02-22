@@ -734,7 +734,7 @@ async def _background_setup_and_execute(
         except Exception:
             pass
         _cancellation_events.pop(agent_run_id, None)
-        await notify_setup_error(agent_run_id, e)
+        await notify_setup_error(agent_run_id, e, account_id=account_id)
 
 
 @router.post("/agent/start", response_model=UnifiedAgentStartResponse, summary="Start Agent", operation_id="unified_agent_start")
@@ -1108,10 +1108,16 @@ async def stream_agent_run(
                                 # Check for dead worker if no data received
                                 if not received_data and ping_count >= MAX_PINGS_WITHOUT_DATA:
                                     from core.agents import repo as agents_repo
+                                    from core.agents.runner import update_agent_run_status
                                     run_check = await agents_repo.get_agent_run_status(agent_run_id)
                                     status = run_check.get('status') if run_check else None
                                     if status == 'running':
-                                        await agents_repo.update_agent_run_status(agent_run_id, 'failed', error='Worker timeout')
+                                        await update_agent_run_status(
+                                            agent_run_id,
+                                            'failed',
+                                            error='Worker timeout',
+                                            account_id=account_id,
+                                        )
                                         yield f"data: {json.dumps({'type': 'status', 'status': 'error', 'message': 'Worker timeout'})}\n\n"
                                         return
                                     elif status in ['completed', 'failed', 'stopped']:

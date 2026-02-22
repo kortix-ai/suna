@@ -35,6 +35,14 @@ def _slot_key(account_id: str) -> str:
     return f"slots:{account_id}"
 
 
+def _slot_reservation_key(agent_run_id: str) -> str:
+    return f"slot_reservation:{agent_run_id}"
+
+
+def _slot_release_tombstone_key(agent_run_id: str) -> str:
+    return f"slot_release_done:{agent_run_id}"
+
+
 def _thread_count_key(account_id: str) -> str:
     return f"thread_count:{account_id}"
 
@@ -79,7 +87,7 @@ async def get_tier_limits(account_id: str) -> Dict[str, Any]:
         from core.billing import subscription_service
         tier_info = await subscription_service.get_user_subscription_tier(account_id, skip_cache=False)
         tier_name = tier_info.get('name', 'free')
-        
+
         return _get_tier_from_config(tier_name)
         
     except Exception as e:
@@ -95,6 +103,34 @@ async def invalidate_tier_cache(account_id: str) -> None:
         logger.warning(f"[TIER] Failed to invalidate cache for {account_id}: {e}")
 
 
+async def _try_reserve_slot_once(account_id: str, agent_run_id: str, limit: int) -> tuple[bool, int, str]:
+    key = _slot_key(account_id)
+    reservation_key = _slot_reservation_key(agent_run_id)
+    tombstone_key = _slot_release_tombstone_key(agent_run_id)
+
+    marker_set = await asyncio.wait_for(
+        redis.set(reservation_key, account_id, nx=True, ex=SLOT_KEY_TTL),
+        timeout=SLOT_OP_TIMEOUT,
+    )
+
+    if not marker_set:
+        current_val = await asyncio.wait_for(redis.get(key), timeout=SLOT_OP_TIMEOUT)
+        current_count = int(current_val) if current_val else 0
+        return True, current_count, "already_reserved"
+
+    await asyncio.wait_for(redis.delete(tombstone_key), timeout=SLOT_OP_TIMEOUT)
+
+    count = await asyncio.wait_for(redis.incr(key), timeout=SLOT_OP_TIMEOUT)
+    asyncio.create_task(_set_ttl(key))
+
+    if count <= limit:
+        return True, count, "ok"
+
+    await asyncio.wait_for(redis.decr(key), timeout=SLOT_OP_TIMEOUT)
+    await asyncio.wait_for(redis.delete(reservation_key), timeout=SLOT_OP_TIMEOUT)
+    return False, count - 1, "limit"
+
+
 async def reserve_slot(account_id: str, agent_run_id: str, skip: bool = False) -> SlotReservation:
     if skip or config.ENV_MODE == EnvMode.LOCAL:
         return SlotReservation(True, 0, 999, "skipped")
@@ -105,25 +141,28 @@ async def reserve_slot(account_id: str, agent_run_id: str, skip: bool = False) -
     try:
         tier = await get_tier_limits(account_id)
         limit = tier['concurrent_runs']
-        
-        count = await asyncio.wait_for(
-            redis.incr(key),
-            timeout=SLOT_OP_TIMEOUT
-        )
-        
-        asyncio.create_task(_set_ttl(key))
+
+        acquired, count, reason = await _try_reserve_slot_once(account_id, agent_run_id, limit)
         latency = (time.time() - start) * 1000
-        
-        if count <= limit:
+
+        if acquired:
             logger.debug(f"[SLOT] Reserved {agent_run_id}: {count}/{limit} ({latency:.1f}ms)")
-            return SlotReservation(True, count, limit, "ok", latency_ms=latency)
-        
-        await asyncio.wait_for(redis.decr(key), timeout=SLOT_OP_TIMEOUT)
-        
-        logger.info(f"[SLOT] Rejected {agent_run_id}: {count}/{limit}")
+            return SlotReservation(True, count, limit, reason, latency_ms=latency)
+
+        sync_result = await sync_slots_from_db(account_id)
+        acquired_retry, count_retry, _ = await _try_reserve_slot_once(account_id, agent_run_id, limit)
+
+        if acquired_retry:
+            logger.warning(
+                f"[SLOT] Recovered stale slot count for {agent_run_id} after sync "
+                f"(sync={sync_result})"
+            )
+            return SlotReservation(True, count_retry, limit, "recovered_after_sync", latency_ms=latency)
+
+        logger.info(f"[SLOT] Rejected {agent_run_id}: {count_retry}/{limit}")
         return SlotReservation(
             acquired=False,
-            slot_count=count - 1,
+            slot_count=count_retry,
             limit=limit,
             message=f"Concurrent limit reached ({limit})",
             error_code="AGENT_RUN_LIMIT_EXCEEDED",
@@ -143,8 +182,31 @@ async def release_slot(account_id: str, agent_run_id: str) -> bool:
         return True
     
     try:
-        key = _slot_key(account_id)
+        reservation_key = _slot_reservation_key(agent_run_id)
+        tombstone_key = _slot_release_tombstone_key(agent_run_id)
+        marker_owner = await asyncio.wait_for(redis.get(reservation_key), timeout=SLOT_OP_TIMEOUT)
+
+        target_account_id = marker_owner or account_id
+        key = _slot_key(target_account_id)
+
+        if marker_owner:
+            removed_marker = await asyncio.wait_for(redis.delete(reservation_key), timeout=SLOT_OP_TIMEOUT)
+            if not removed_marker:
+                logger.debug(f"[SLOT] Release skipped for {agent_run_id}: reservation already removed")
+                return True
+        else:
+            tombstone_exists = await asyncio.wait_for(redis.get(tombstone_key), timeout=SLOT_OP_TIMEOUT)
+            if tombstone_exists:
+                logger.debug(f"[SLOT] Release skipped for {agent_run_id}: already released (tombstone)")
+                return True
+
+            logger.warning(
+                f"[SLOT] Missing reservation marker for {agent_run_id}; "
+                f"using legacy decrement for account {account_id}"
+            )
+
         count = await asyncio.wait_for(redis.decr(key), timeout=SLOT_OP_TIMEOUT)
+        await asyncio.wait_for(redis.set(tombstone_key, "1", ex=SLOT_KEY_TTL), timeout=SLOT_OP_TIMEOUT)
         
         if count < 0:
             await redis.set(key, "0", ex=SLOT_KEY_TTL)
@@ -174,10 +236,10 @@ async def sync_from_db(account_id: str) -> dict:
         key = _slot_key(account_id)
         
         redis_val = await redis.get(key)
-        redis_count = int(redis_val) if redis_val else 0
+        redis_count = int(redis_val) if redis_val is not None else 0
         
         db_result = await count_running_agent_runs(account_id)
-        db_count = db_result.get('running_count', 0)
+        db_count = int(db_result.get('running_count') or 0)
         
         if redis_count != db_count:
             await redis.set(key, str(db_count), ex=SLOT_KEY_TTL)
@@ -443,10 +505,10 @@ async def sync_slots_from_db(account_id: str) -> dict:
         key = _slot_key(account_id)
         
         redis_val = await redis.get(key)
-        redis_count = int(redis_val) if redis_val else 0
+        redis_count = int(redis_val) if redis_val is not None else 0
         
         db_result = await count_running_agent_runs(account_id)
-        db_count = db_result.get('running_count', 0)
+        db_count = int(db_result.get('running_count') or 0)
         
         if redis_count != db_count:
             await redis.set(key, str(db_count), ex=SLOT_KEY_TTL)
@@ -465,6 +527,7 @@ async def reconcile_all_active() -> dict:
     
     try:
         from core.services.db import execute
+        client = await redis.get_client()
         
         sql = """
         SELECT DISTINCT t.account_id 
@@ -473,25 +536,53 @@ async def reconcile_all_active() -> dict:
         WHERE ar.status = 'running'
         """
         rows = await execute(sql, {})
-        
-        if not rows:
+
+        account_ids: set[str] = set()
+        for row in rows or []:
+            account_id = row.get('account_id') if isinstance(row, dict) else None
+            if account_id:
+                account_ids.add(str(account_id))
+
+        cursor = 0
+        while True:
+            cursor, keys = await client.scan(cursor=cursor, match='slots:*', count=500)
+            if keys:
+                values = await client.mget(keys)
+                for key, value in zip(keys, values):
+                    key_str = key.decode() if isinstance(key, bytes) else str(key)
+                    value_str = value.decode() if isinstance(value, bytes) else value
+                    try:
+                        slot_count = int(value_str) if value_str is not None else 0
+                    except Exception:
+                        continue
+                    if slot_count > 0 and key_str.startswith('slots:'):
+                        account_ids.add(key_str.split(':', 1)[1])
+
+            if cursor == 0:
+                break
+
+        if not account_ids:
             return {"reconciled": 0}
         
         reconciled = 0
-        for row in rows:
-            result = await sync_slots_from_db(row['account_id'])
+        for account_id in sorted(account_ids):
+            result = await sync_slots_from_db(account_id)
             if result.get('synced'):
                 reconciled += 1
         
-        logger.info(f"[SLOT] Reconciled {reconciled}/{len(rows)} accounts")
-        return {"reconciled": reconciled, "total": len(rows)}
+        logger.info(f"[SLOT] Reconciled {reconciled}/{len(account_ids)} accounts")
+        return {"reconciled": reconciled, "total": len(account_ids)}
         
     except Exception as e:
         logger.error(f"[SLOT] Reconcile all failed: {e}")
         return {"reconciled": 0, "error": str(e)}
 
 
-async def warm_all_caches(account_id: str, thread_count: int = None, project_count: int = None) -> None:
+async def warm_all_caches(
+    account_id: str,
+    thread_count: Optional[int] = None,
+    project_count: Optional[int] = None,
+) -> None:
     if config.ENV_MODE == EnvMode.LOCAL:
         return
     
