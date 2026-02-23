@@ -341,7 +341,7 @@ async def start_agent_run(
     elif agent_config and agent_config.get('model'):
         effective_model = agent_config['model']
     else:
-        effective_model = "anthropic/claude-sonnet-4-20250514"
+        effective_model = "kortix/basic"
     
     if not is_new_thread and not project_id:
         from core.threads import repo as threads_repo
