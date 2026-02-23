@@ -1066,6 +1066,10 @@ class AgentCreationTool(Tool):
                     "agent_prompt": {
                         "type": "string",
                         "description": "Prompt to send to the agent when triggered"
+                    },
+                    "model": {
+                        "type": "string",
+                        "description": "Model to use for scheduled runs. Defaults to 'kortix/basic'."
                     }
                 },
                 "required": ["agent_id", "name", "cron_expression", "agent_prompt"]
@@ -1078,7 +1082,8 @@ class AgentCreationTool(Tool):
         name: str,
         cron_expression: str,
         agent_prompt: str,
-        description: Optional[str] = None
+        description: Optional[str] = None,
+        model: Optional[str] = None
     ) -> ToolResult:
         try:
             account_id = self.account_id
@@ -1094,10 +1099,13 @@ class AgentCreationTool(Tool):
             if not agent_prompt:
                 return self.fail_response("agent_prompt is required")
             
+            selected_model = model or "kortix/basic"
+
             trigger_config = {
                 "cron_expression": cron_expression,
                 "provider_id": "schedule",
-                "agent_prompt": agent_prompt
+                "agent_prompt": agent_prompt,
+                "model": selected_model
             }
             
             from core.triggers import get_trigger_service
@@ -1116,6 +1124,7 @@ class AgentCreationTool(Tool):
                 success_message += f"**Trigger Details:**\n"
                 success_message += f"- Name: {name}\n"
                 success_message += f"- Schedule: `{cron_expression}`\n"
+                success_message += f"- Model: {selected_model}\n"
                 success_message += f"- Type: Worker execution\n"
                 success_message += f"- Prompt: {agent_prompt[:50]}{'...' if len(agent_prompt) > 50 else ''}\n"
                 success_message += f"- Status: **Active**\n\n"
@@ -1129,6 +1138,7 @@ class AgentCreationTool(Tool):
                         "name": trigger.name,
                         "description": trigger.description,
                         "cron_expression": cron_expression,
+                        "model": selected_model,
                         "is_active": trigger.is_active,
                         "created_at": trigger.created_at.isoformat()
                     }
