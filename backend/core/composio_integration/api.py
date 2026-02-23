@@ -17,6 +17,7 @@ import hashlib
 import time
 import re
 import base64
+import httpx
 
 from .composio_service import (
     get_integration_service,
