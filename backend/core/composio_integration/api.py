@@ -724,7 +724,12 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
 
         if config.ENV_MODE != EnvMode.LOCAL:
             from core.utils.limits_checker import check_trigger_limit
-            limit_check = await check_trigger_limit(client_db, current_user_id, req.agent_id, 'app')
+            limit_check = await check_trigger_limit(
+                account_id=current_user_id,
+                agent_id=req.agent_id,
+                trigger_type='app',
+                client=client_db,
+            )
             
             if not limit_check['can_create']:
                 error_detail = {
