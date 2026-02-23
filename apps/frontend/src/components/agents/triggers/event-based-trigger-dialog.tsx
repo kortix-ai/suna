@@ -521,6 +521,15 @@ export const EventBasedTriggerDialog: React.FC<EventBasedTriggerDialogProps> = (
 
             onOpenChange(false);
         } catch (e: any) {
+            const detail = e?.details?.detail;
+            const message =
+                e?.detail?.message ||
+                (typeof detail === 'string' ? detail : detail?.message) ||
+                e?.message ||
+                'Failed to create trigger';
+
+            toast.error(message);
+            console.error('Error creating event trigger:', e);
         }
     };
 
