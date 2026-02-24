@@ -104,6 +104,6 @@ class WebhookService:
             if event and hasattr(event, 'id'):
                 await WebhookLock.mark_webhook_failed(event.id, error_message)
             
-            return {'status': 'success', 'error': 'processed_with_errors', 'message': 'Webhook logged as failed internally'}
+            raise HTTPException(status_code=500, detail="Webhook processing failed")
         
 webhook_service = WebhookService() 
