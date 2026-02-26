@@ -70,6 +70,7 @@ import { DiscoverMcpToolsForAgentToolView } from '../discover-mcp-tools-for-agen
 import { DiscoverUserMcpServersToolView } from '../discover-user-mcp-servers/discover-user-mcp-servers';
 import { ListAppEventTriggersToolView } from '../list-app-event-triggers/list-app-event-triggers';
 import { CreateEventTriggerToolView } from '../create-event-trigger/create-event-trigger';
+import { ListAccountWorkersToolView } from '../list-account-workers/list-account-workers';
 import { ConfigureAgentIntegrationToolView } from '../configure-agent-integration/configure-agent-integration';
 import CreateAgentScheduledTriggerToolView from '../create-agent-scheduled-trigger/create-agent-scheduled-trigger';
 import { MakeCallToolView } from '../vapi-call/MakeCallToolView';
@@ -269,6 +270,7 @@ const defaultRegistry: ToolViewRegistryType = {
   'discover-user-mcp-servers': DiscoverUserMcpServersToolView,
   'list-app-event-triggers': ListAppEventTriggersToolView,
   'create-event-trigger': CreateEventTriggerToolView,
+  'list-account-workers': ListAccountWorkersToolView,
   'configure-agent-integration': ConfigureAgentIntegrationToolView,
   'create-agent-scheduled-trigger': CreateAgentScheduledTriggerToolView,
 
