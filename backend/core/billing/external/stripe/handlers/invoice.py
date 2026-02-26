@@ -105,27 +105,32 @@ class InvoiceHandler:
                         
                         subscription = await StripeAPIWrapper.retrieve_subscription(subscription_id)
                         price_id = subscription['items']['data'][0]['price']['id'] if subscription.get('items') else None
-                        
-                        if price_id:
-                            tier_info = get_tier_by_price_id(price_id) 
-                            existing_tier_result = await billing_repo.get_credit_account_tier(account_id)
-                            
-                            if tier_info and existing_tier_result:
-                                existing_tier_name = existing_tier_result.get('tier')
-                                existing_tier = get_tier_by_name(existing_tier_name)
-                                
-                                if existing_tier and tier_info.name != existing_tier.name and float(tier_info.monthly_credits) > float(existing_tier.monthly_credits):
-                                    logger.info(f"[RENEWAL] Prorated upgrade detected ({existing_tier.name} -> {tier_info.name}) - credits handled by subscription.updated, updating metadata only")
-                                    
-                                    await billing_repo.update_credit_account(account_id, {
-                                        'tier': tier_info.name,
-                                        'last_processed_invoice_id': invoice_id,
-                                        'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
-                                    })
-                                    
-                                    return
-                        logger.debug(f"[RENEWAL] No price_id found, returning")
-                        return
+
+                        if not price_id:
+                            logger.debug(f"[RENEWAL] No price_id found, returning")
+                            return
+
+                        tier_info = get_tier_by_price_id(price_id)
+                        existing_tier_result = await billing_repo.get_credit_account_tier(account_id)
+
+                        if tier_info and existing_tier_result:
+                            existing_tier_name = existing_tier_result.get('tier')
+                            existing_tier = get_tier_by_name(existing_tier_name) if existing_tier_name else None
+
+                            if existing_tier and tier_info.name != existing_tier.name and float(tier_info.monthly_credits) > float(existing_tier.monthly_credits):
+                                logger.info(f"[RENEWAL] Prorated upgrade detected ({existing_tier.name} -> {tier_info.name}) - credits handled by subscription.updated, updating metadata only")
+
+                                await billing_repo.update_credit_account(account_id, {
+                                    'tier': tier_info.name,
+                                    'last_processed_invoice_id': invoice_id,
+                                    'last_grant_date': datetime.fromtimestamp(period_start, tz=timezone.utc).isoformat()
+                                })
+
+                                return
+
+                        logger.info(
+                            f"[RENEWAL] Proration invoice for {account_id} without higher tier change; continuing full-cycle evaluation"
+                        )
                     
                     if not has_full_cycle_charge:
                         logger.info(f"[RENEWAL] subscription_update without full cycle charge - skipping (likely mid-period change)")
