@@ -89,6 +89,7 @@ export function getToolTitle(toolName: string): string {
     'list-available-integrations': 'List Available Integrations',
     'list-app-event-triggers': 'List Event Triggers',
     'create-event-trigger': 'Create Event Trigger',
+    'list-account-workers': 'List Account Workers',
     'create-agent-scheduled-trigger': 'Create Scheduled Trigger',
     'list-agent-scheduled-triggers': 'List Scheduled Triggers',
     'delete-agent-scheduled-trigger': 'Delete Scheduled Trigger',
@@ -1139,6 +1140,8 @@ export function getToolComponent(toolName: string): string {
       return 'ListAppEventTriggersToolView';
     case 'create-event-trigger':
       return 'CreateEventTriggerToolView';
+    case 'list-account-workers':
+      return 'ListAccountWorkersToolView';
 
 
     // Upload operations
@@ -1359,4 +1362,3 @@ export const getFileIconAndColor = (filename: string) => {
       return { icon: File, ...grayStyle };
   }
 };
-
