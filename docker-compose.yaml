@@ -54,6 +54,9 @@ services:
       - REDIS_PORT=6379
       - REDIS_PASSWORD=
       - REDIS_SSL=False
+      # Convex Configuration (optional - for Convex backend migration)
+      - CONVEX_URL=${CONVEX_URL:-}
+      - CONVEX_API_KEY=${CONVEX_API_KEY:-}
     # DNS configuration to reduce DNS lookup latency for third-party services
     # Using Google and Cloudflare DNS for reliability
     dns:
