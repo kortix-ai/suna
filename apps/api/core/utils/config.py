@@ -321,7 +321,20 @@ class Configuration:
     SUPABASE_ANON_KEY: str
     SUPABASE_SERVICE_ROLE_KEY: str
     SUPABASE_JWT_SECRET: str
-    
+
+    # Convex configuration (alternative to Supabase for data layer)
+    CONVEX_URL: Optional[str] = None
+    CONVEX_API_KEY: Optional[str] = None
+
+    @property
+    def USE_CONVEX(self) -> bool:
+        """Check if Convex should be used as the data layer.
+
+        Returns True if both CONVEX_URL and CONVEX_API_KEY are configured.
+        Falls back to Supabase if Convex is not fully configured.
+        """
+        return bool(self.CONVEX_URL and self.CONVEX_API_KEY)
+
     REDIS_HOST: Optional[str] = "localhost"
     REDIS_PORT: Optional[int] = 6379
     REDIS_PASSWORD: Optional[str] = None
