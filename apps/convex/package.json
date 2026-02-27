@@ -3,15 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "convex dev --url http://127.0.0.1:3210 --admin-key \"$(cat ../keys/admin_key.txt)\"",
-    "deploy": "convex deploy --url http://127.0.0.1:3210 --admin-key \"$(cat ../keys/admin_key.txt)\"",
+    "dev": "convex dev",
+    "deploy": "convex deploy",
     "logs": "docker-compose -f ../docker-compose.yml logs -f"
   },
   "dependencies": {
     "@convex-dev/better-auth": "^0.10.9",
-    "@cortexmemory/sdk": "^0.20.0",
     "better-auth": "^1.4.9",
-    "convex": "^1.31.0",
+    "convex": "^1.32.0",
     "convex-ents": "^0.16.0",
     "neo4j-driver": "^6.0.0"
   },
