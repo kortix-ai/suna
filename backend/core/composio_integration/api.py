@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from typing import Dict, Any, Optional
 from pydantic import BaseModel
-from uuid import uuid4
+from uuid import uuid4, UUID
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_current_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
@@ -749,6 +749,35 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         composio_user_id = profile_config.get("user_id")
         if not composio_user_id:
             raise HTTPException(status_code=400, detail="Composio profile is missing user_id")
+
+        derived_connected_account_id = profile_config.get("connected_account_id")
+        resolved_connected_account_id: Optional[str] = None
+        provided_connected_account_id = (req.connected_account_id or "").strip() or None
+
+        if provided_connected_account_id:
+            if provided_connected_account_id.startswith("ca_"):
+                resolved_connected_account_id = provided_connected_account_id
+            else:
+                try:
+                    UUID(provided_connected_account_id)
+                    logger.warning(
+                        "Ignoring UUID passed as connected_account_id for profile %s; using profile-derived connected account",
+                        req.profile_id,
+                    )
+                except (ValueError, AttributeError, TypeError):
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid connected_account_id format. Expected value like 'ca_...'.",
+                    )
+
+        if not resolved_connected_account_id:
+            resolved_connected_account_id = derived_connected_account_id
+
+        if not resolved_connected_account_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Connected account is missing for this profile. Reconnect the integration and try again.",
+            )
         
         toolkit_slug = req.toolkit_slug
         if not toolkit_slug:
@@ -812,9 +841,8 @@ async def create_composio_trigger(req: CreateComposioTriggerRequest, current_use
         body = {
             "user_id": composio_user_id,
             "trigger_config": coerced_config,
+            "connected_account_id": resolved_connected_account_id,
         }
-        if req.connected_account_id:
-            body["connected_account_id"] = req.connected_account_id
 
         async with get_http_client() as http_client:
             resp = await http_client.post(url, headers=headers, json=body, timeout=20.0)
