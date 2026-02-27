@@ -22,11 +22,22 @@ class AgentBuilderBaseTool(Tool):
     async def _get_current_account_id(self) -> str:
         """Get account_id from current thread context."""
         context_vars = structlog.contextvars.get_contextvars()
+        account_id = context_vars.get('account_id')
+        if account_id:
+            return str(account_id)
+
         thread_id = context_vars.get('thread_id')
-        
+        if not thread_id and self.thread_manager:
+            thread_id = getattr(self.thread_manager, 'thread_id', None)
+
+        if not thread_id and self.thread_manager:
+            manager_account_id = getattr(self.thread_manager, 'account_id', None)
+            if manager_account_id:
+                return str(manager_account_id)
+
         if not thread_id:
-            raise ValueError("No thread_id available from execution context")
-        
+            raise ValueError("No thread_id/account_id available from execution context")
+
         from core.utils.auth_utils import get_account_id_from_thread
         return await get_account_id_from_thread(thread_id, self.db)
 

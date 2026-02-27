@@ -1,6 +1,7 @@
 import json
 import re
 from typing import Optional, Dict, Any, List
+from uuid import UUID
 import httpx
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
@@ -133,6 +134,20 @@ class TriggerTool(AgentBuilderBaseTool):
             raise ValueError("Unable to resolve target worker")
 
         return target_worker
+
+    @staticmethod
+    def _is_uuid_like(value: Optional[str]) -> bool:
+        if not value:
+            return False
+        try:
+            UUID(str(value).strip())
+            return True
+        except (ValueError, TypeError, AttributeError):
+            return False
+
+    @staticmethod
+    def _is_connected_account_id(value: Optional[str]) -> bool:
+        return bool(value and isinstance(value, str) and value.strip().startswith("ca_"))
     
     def _extract_variables(self, text: str) -> List[str]:
         """Extract variable names from a text containing {{variable}} patterns"""
@@ -627,11 +642,11 @@ class TriggerTool(AgentBuilderBaseTool):
                         "description": "Optional target worker name. Exact name preferred; partial names are supported when unique."
                     },
                     "slug": {"type": "string", "description": "Trigger type slug, e.g. 'GMAIL_NEW_GMAIL_MESSAGE'"},
-                    "profile_id": {"type": "string", "description": "Composio profile_id to use (must be connected)"},
+                    "profile_id": {"type": "string", "description": "Composio profile_id (UUID) to use. Preferred input from get_credential_profiles."},
                     "trigger_config": {"type": "object", "description": "Trigger configuration object per trigger schema", "additionalProperties": True},
                     "name": {"type": "string", "description": "Optional friendly name for the trigger"},
                     "agent_prompt": {"type": "string", "description": "Prompt to pass to the agent when triggered. Can include variables like {{variable_name}} that will be replaced when users install the template. For example: 'New email received for {{company_name}}...'"},
-                    "connected_account_id": {"type": "string", "description": "Connected account id; if omitted we try to derive from profile"},
+                    "connected_account_id": {"type": "string", "description": "Optional Composio connected account id (format: ca_...). If omitted, it is auto-derived from profile_id when possible. Do not pass profile UUID here."},
                     "model": {"type": "string", "description": "Model to use for the event execution. Options: 'kortix/basic' (default, free tier) or 'kortix/power' (requires paid subscription). If not specified, defaults to 'kortix/basic'."}
                 },
                 "required": ["slug", "profile_id", "agent_prompt"]
@@ -641,8 +656,8 @@ class TriggerTool(AgentBuilderBaseTool):
     async def create_event_trigger(
         self,
         slug: str,
-        profile_id: str,
-        agent_prompt: str,
+        profile_id: Optional[str] = None,
+        agent_prompt: Optional[str] = None,
         trigger_config: Optional[Dict[str, Any]] = None,
         name: Optional[str] = None,
         connected_account_id: Optional[str] = None,
@@ -651,6 +666,8 @@ class TriggerTool(AgentBuilderBaseTool):
         worker_name: Optional[str] = None,
     ) -> ToolResult:
         try:
+            if not slug:
+                return self.fail_response("slug is required")
             if not agent_prompt:
                 return self.fail_response("agent_prompt is required")
 
@@ -665,15 +682,44 @@ class TriggerTool(AgentBuilderBaseTool):
             # Extract variables from the prompt
             variables = self._extract_variables(agent_prompt)
 
-            # Get profile config — validate ownership against current account
+            # Resolve profile/account identifiers. The model can confuse profile_id and connected_account_id.
             account_id = await self._get_current_account_id()
             profile_service = ComposioProfileService(self.db)
+
+            resolved_profile_id = (profile_id or "").strip() or None
+            resolved_connected_account_id = (connected_account_id or "").strip() or None
+
+            # Recovery path: profile UUID passed in connected_account_id and profile_id omitted
+            if not resolved_profile_id and self._is_uuid_like(resolved_connected_account_id):
+                logger.warning("Received UUID in connected_account_id; treating it as profile_id")
+                resolved_profile_id = resolved_connected_account_id
+                resolved_connected_account_id = None
+
+            if not resolved_profile_id:
+                return self.fail_response(
+                    "profile_id is required. Use get_credential_profiles and pass the profile UUID."
+                )
+
+            if resolved_connected_account_id and not self._is_connected_account_id(resolved_connected_account_id):
+                return self.fail_response(
+                    "Invalid connected_account_id format. Expected value like 'ca_...'. Do not pass profile UUID as connected_account_id."
+                )
+
             try:
-                profile_config = await profile_service.get_profile_config(profile_id, account_id=account_id)
+                profile_config = await profile_service.get_profile_config(resolved_profile_id, account_id=account_id)
             except Exception as e:
                 logger.error(f"Failed to get profile config: {e}")
                 return self.fail_response(f"Failed to get profile config: {str(e)}")
-                
+
+            derived_connected_account_id = profile_config.get("connected_account_id")
+            if not resolved_connected_account_id:
+                resolved_connected_account_id = derived_connected_account_id
+
+            if not resolved_connected_account_id:
+                return self.fail_response(
+                    "Connected account is missing for this profile. Reconnect the integration and try again."
+                )
+                 
             composio_user_id = profile_config.get("user_id")
             if not composio_user_id:
                 return self.fail_response("Composio profile is missing user_id")
@@ -735,9 +781,8 @@ class TriggerTool(AgentBuilderBaseTool):
             body = {
                 "user_id": composio_user_id,
                 "trigger_config": coerced_config,
+                "connected_account_id": resolved_connected_account_id,
             }
-            if connected_account_id:
-                body["connected_account_id"] = connected_account_id
 
             # Upsert trigger instance
             upsert_url = f"{api_base}/api/v3/trigger_instances/{slug}/upsert"
@@ -790,7 +835,8 @@ class TriggerTool(AgentBuilderBaseTool):
                 "composio_trigger_id": composio_trigger_id,
                 "trigger_slug": slug,
                 "qualified_name": qualified_name,
-                "profile_id": profile_id,
+                "profile_id": resolved_profile_id,
+                "connected_account_id": resolved_connected_account_id,
                 "agent_prompt": agent_prompt,
                 "model": model or "kortix/basic"
             }
@@ -821,6 +867,7 @@ class TriggerTool(AgentBuilderBaseTool):
 
             message = f"Event trigger '{trigger.name}' created successfully.\n"
             message += f"**Worker**: {target_worker_name}\n"
+            message += f"**Profile ID**: {resolved_profile_id}\n"
             message += f"**Model**: {suna_config['model']}\n"
             message += "Worker execution configured."
             if variables:
@@ -834,6 +881,8 @@ class TriggerTool(AgentBuilderBaseTool):
                     "slug": slug,
                     "agent_id": target_agent_id,
                     "worker_name": target_worker_name,
+                    "profile_id": resolved_profile_id,
+                    "connected_account_id": resolved_connected_account_id,
                     "model": suna_config['model'],
                     "is_active": trigger.is_active,
                     "variables": variables if variables else []
