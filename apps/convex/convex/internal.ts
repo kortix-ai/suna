@@ -4,8 +4,9 @@
  * These functions are called by HTTP actions to perform database operations.
  */
 
-import { internalMutation, internalQuery, ConvexError } from "./_generated/server";
+import { internalMutation, internalQuery } from "./_generated/server";
 import { v } from "convex/values";
+import { ConvexError } from "convex/values";
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // THREAD OPERATIONS
