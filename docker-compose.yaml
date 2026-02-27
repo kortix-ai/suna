@@ -31,7 +31,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-      - ./backend/services/docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - ./apps/api/services/docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
     command: redis-server /usr/local/etc/redis/redis.conf --save 60 1 --loglevel warning
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -39,16 +39,16 @@ services:
       timeout: 5s
       retries: 3
 
-  backend:
+  api:
     image: ghcr.io/suna-ai/suna-backend:latest
     platform: linux/amd64
     build:
-      context: ./backend
+      context: ./apps/api
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
     volumes:
-      - ./backend/.env:/app/.env:ro
+      - ./apps/api/.env:/app/.env:ro
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -82,7 +82,24 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      - api
+
+  neo4j:
+    image: neo4j:5.15-community
+    container_name: suna-neo4j
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    environment:
+      - NEO4J_AUTH=neo4j/suna_password
+      - NEO4J_PLUGINS=["apoc"]
+      - NEO4J_dbms_memory_pagecache_size=256M
+      - NEO4J_dbms_memory_heap_initial__size=512M
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
 
 volumes:
   redis_data:
+  neo4j_data:
+  neo4j_logs:

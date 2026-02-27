@@ -1,0 +1,6 @@
+{
+  "functions": "convex/",
+  "node": {
+    "externalPackages": ["neo4j-driver"]
+  }
+}

@@ -1,10 +1,19 @@
 {
   "name": "agentpress",
   "private": true,
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
     "dev:frontend": "pnpm --filter Kortix dev",
     "dev:mobile": "pnpm --filter kortix dev",
     "build:frontend": "pnpm --filter Kortix build"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0"
   },
   "pnpm": {
     "overrides": {
