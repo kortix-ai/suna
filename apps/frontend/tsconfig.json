@@ -26,6 +26,9 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "convex/*": [
+        "../convex/convex/*"
       ]
     }
   },
