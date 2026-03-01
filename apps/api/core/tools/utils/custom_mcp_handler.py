@@ -67,10 +67,11 @@ class CustomMCPHandler:
         
         try:
             from core.composio_integration.composio_profile_service import ComposioProfileService
-            from core.services.supabase import DBConnection
+            from core.services.convex_client import get_convex_client
             
-            db = DBConnection()
-            profile_service = ComposioProfileService(db)
+            # TODO: Convex migration - ComposioProfileService needs Convex client adaptation
+            convex = get_convex_client()
+            profile_service = ComposioProfileService(convex)
             mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=self.account_id)
             
             logger.debug(f"Resolved Composio profile {profile_id} to MCP URL")
@@ -131,17 +132,20 @@ class CustomMCPHandler:
             return external_user_id
         
         try:
-            from core.services.supabase import DBConnection
+            from core.services.convex_client import get_convex_client
             from core.utils.encryption import decrypt_data
+
+            # TODO: Convex migration - need user_mcp_credential_profiles query method
+            convex = get_convex_client()
+            # supabase = await db.client
+
+            # TODO: Convex migration - need user_mcp_credential_profiles query method
+            # result = await supabase.table('user_mcp_credential_profiles').select(
+            #     'encrypted_config'
+            # ).eq('profile_id', profile_id).eq('account_id', self.account_id).single().execute()
+            result = None  # Placeholder until Convex method is implemented
             
-            db = DBConnection()
-            supabase = await db.client
-            
-            result = await supabase.table('user_mcp_credential_profiles').select(
-                'encrypted_config'
-            ).eq('profile_id', profile_id).eq('account_id', self.account_id).single().execute()
-            
-            if result.data:
+            if result and result.data:
                 decrypted_config = decrypt_data(result.data['encrypted_config'])
                 config_data = json.loads(decrypted_config)
                 profile_external_user_id = config_data.get('external_user_id')

@@ -11,6 +11,7 @@ from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 from core.utils.config import config
+from core.services.convex_client import get_convex_client
 
 @tool_metadata(
     display_name="File Upload",
@@ -55,9 +56,10 @@ from core.utils.config import config
 class SandboxUploadFileTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
-        from core.utils.db_helpers import get_initialized_db
-        self.db = get_initialized_db()
-        
+        # MIGRATED: Using Convex client instead of Supabase
+        # Old: from core.utils.db_helpers import get_initialized_db; self.db = get_initialized_db()
+        self.convex = get_convex_client()
+
     @openapi_schema({
         "type": "function",
         "function": {
@@ -87,30 +89,30 @@ class SandboxUploadFileTool(SandboxToolsBase):
     ) -> ToolResult:
         try:
             await self._ensure_sandbox()
-            
+
             file_path = self.clean_path(file_path)
             full_path = f"{self.workspace_path}/{file_path}"
-            
+
             try:
                 file_info = await self.sandbox.fs.get_file_info(full_path)
                 if file_info.size > 50 * 1024 * 1024:  # 50MB limit
                     return self.fail_response(f"File '{file_path}' is too large (>50MB). Please reduce file size before uploading.")
             except Exception:
                 return self.fail_response(f"File '{file_path}' not found in workspace.")
-            
+
             try:
                 file_content = await self.sandbox.fs.download_file(full_path)
             except Exception as e:
                 return self.fail_response(f"Failed to read file '{file_path}': {str(e)}")
 
             account_id = await self._get_current_account_id()
-            
+
             original_filename = os.path.basename(file_path)
             file_extension = Path(original_filename).suffix.lower()
             content_type, _ = mimetypes.guess_type(original_filename)
             if not content_type:
                 content_type = "application/octet-stream"
-            
+
             if custom_filename:
                 storage_filename = custom_filename
             else:
@@ -118,75 +120,44 @@ class SandboxUploadFileTool(SandboxToolsBase):
                 unique_id = str(uuid.uuid4())[:8]
                 name_base = Path(original_filename).stem
                 storage_filename = f"{name_base}_{timestamp}_{unique_id}{file_extension}"
-            
+
             storage_path = f"{account_id}/{storage_filename}"
             bucket_name = "file-uploads"  # Always use file-uploads bucket
 
-            try:
-                client = await self.db.client
-                storage_response = await client.storage.from_(bucket_name).upload(
-                    storage_path,
-                    file_content,
-                    {"content-type": content_type}
-                )
+            # NOTE: File storage requires external S3-compatible storage (Supabase Storage, S3, R2, etc.)
+            # Convex does not have native file storage. The database tracking is handled via Convex.
+            # To fully migrate file uploads:
+            # 1. Configure external storage (Supabase Storage, AWS S3, Cloudflare R2)
+            # 2. Use this client for storage operations
+            # 3. Database tracking uses self.convex.create_file_upload()
+            #
+            # Current status: Storage layer not yet migrated, database tracking migrated to Convex.
+            # The _track_upload method now uses Convex for metadata tracking.
 
-                expires_in = 24 * 60 * 60
-                signed_url_response = await client.storage.from_(bucket_name).create_signed_url(
-                    storage_path,
-                    expires_in
-                )
-                
-                signed_url = signed_url_response.get('signedURL')
-                if not signed_url:
-                    return self.fail_response("Failed to generate secure access URL.")
-                
-                url_expires_at = datetime.now() + timedelta(seconds=expires_in)
-                
-                file_upload_id = await self._track_upload(
-                    client,
-                    account_id,
-                    storage_path,
-                    bucket_name,
-                    original_filename,
-                    file_info.size,
-                    content_type,
-                    signed_url,
-                    url_expires_at
-                )
-                
-                message = f"🔒 File '{original_filename}' uploaded securely!\n"
-                message += f"📁 Storage: {bucket_name}/{storage_path}\n"
-                message += f"📏 Size: {self._format_file_size(file_info.size)}\n"
-                message += f"🔗 Secure Access URL: {signed_url}\n"
-                message += f"⏰ URL expires: {url_expires_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n"
-                if file_upload_id:
-                    message += f"📋 File ID: {file_upload_id}\n"
-                message += "\n🔐 This file is stored in private, secure storage with account isolation."
+            logger.warning(f"File upload tool not yet migrated to Convex - storage endpoints needed")
+            return self.fail_response(
+                "File upload to cloud storage is temporarily unavailable during backend migration. "
+                "Please try again later or use alternative file sharing methods."
+            )
 
-                return self.success_response(message)
-                
-            except Exception as e:
-                logger.error(f"Failed to upload file to Supabase: {str(e)}")
-                return self.fail_response(f"Failed to upload file to secure storage: {str(e)}")
-                
         except Exception as e:
             logger.error(f"Unexpected error in upload_file: {str(e)}")
             return self.fail_response(f"Unexpected error during secure file upload: {str(e)}")
-    
+
     async def _get_current_account_id(self) -> str:
         """Get account_id from current thread context."""
         context_vars = structlog.contextvars.get_contextvars()
         thread_id = context_vars.get('thread_id')
-        
+
         if not thread_id:
             raise ValueError("No thread_id available from execution context")
-        
+
         from core.utils.auth_utils import get_account_id_from_thread
-        return await get_account_id_from_thread(thread_id, self.db)
-    
+        # MIGRATED: get_account_id_from_thread now uses Convex directly
+        return await get_account_id_from_thread(thread_id)
+
     async def _track_upload(
         self,
-        client,
         account_id: str,
         storage_path: str,
         bucket_name: str,
@@ -196,62 +167,56 @@ class SandboxUploadFileTool(SandboxToolsBase):
         signed_url: str,
         url_expires_at: datetime
     ):
+        """Track file upload in Convex database."""
         try:
             thread_id = None
             agent_id = None
-            
+
             try:
                 context_vars = structlog.contextvars.get_contextvars()
                 thread_id = context_vars.get('thread_id')
             except Exception:
                 pass
-            
+
             if thread_id:
-                thread_result = await client.table('threads').select('agent_id').eq('thread_id', thread_id).execute()
-                if thread_result.data:
-                    thread_data = thread_result.data[0]
-                    agent_id = thread_data.get('agent_id')
+                try:
+                    thread_data = await self.convex.get_thread(thread_id, account_id)
+                    if thread_data:
+                        agent_id = thread_data.get('agentId')
+                except Exception:
+                    pass
+
+            upload_id = str(uuid.uuid4())
             
-            user_id = None
-            try:
-                account_result = await client.schema("basejump").table('account_user').select('user_id').eq('account_id', account_id).limit(1).execute()
-                if account_result.data:
-                    user_id = account_result.data[0].get('user_id')
-            except Exception:
-                pass
-            
-            upload_data = {
-                'project_id': self.project_id,
-                'thread_id': thread_id,
-                'agent_id': agent_id,
-                'account_id': account_id,
-                'user_id': user_id,
-                'bucket_name': bucket_name,
-                'storage_path': storage_path,
-                'original_filename': original_filename,
-                'file_size': file_size,
-                'content_type': content_type,
-                'signed_url': signed_url,
-                'url_expires_at': url_expires_at.isoformat(),
-                'metadata': {
+            await self.convex.create_file_upload(
+                upload_id=upload_id,
+                account_id=account_id,
+                storage_path=storage_path,
+                bucket_name=bucket_name,
+                original_filename=original_filename,
+                file_size=file_size,
+                content_type=content_type,
+                signed_url=signed_url,
+                url_expires_at=url_expires_at.isoformat(),
+                project_id=self.project_id,
+                thread_id=thread_id,
+                agent_id=agent_id,
+                metadata={
                     'uploaded_from': 'sandbox',
                     'tool': 'upload_file',
                     'secure_upload': True
                 }
-            }
-            
-            result = await client.table('file_uploads').insert(upload_data).execute()
-            file_upload_id = result.data[0]['id'] if result.data else None
-            
-            return file_upload_id
-            
+            )
+
+            return upload_id
+
         except Exception as e:
             logger.warning(f"Failed to track file upload in database: {str(e)}")
             return None
-    
+
     def _format_file_size(self, size_bytes: int) -> str:
         for unit in ['B', 'KB', 'MB', 'GB']:
             if size_bytes < 1024.0:
                 return f"{size_bytes:.1f} {unit}"
             size_bytes /= 1024.0
-        return f"{size_bytes:.1f} TB" 
+        return f"{size_bytes:.1f} TB"

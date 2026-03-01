@@ -89,13 +89,11 @@ class AgentConfigTool(AgentBuilderBaseTool):
         try:
             account_id = await self._get_current_account_id()
             
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', self.agent_id).execute()
-            if not agent_result.data:
+            agent_result = await self.convex.get_agent(self.agent_id, account_id=account_id)
+            if not agent_result:
                 return self.fail_response("Worker not found")
             
-            current_agent = agent_result.data[0]
+            current_agent = agent_result
 
             metadata = current_agent.get('metadata', {})
             is_suna_default = metadata.get('is_suna_default', False)
@@ -126,8 +124,12 @@ class AgentConfigTool(AgentBuilderBaseTool):
                 return self.fail_response("No fields provided to update")
             
             if agent_update_fields:
-                result = await client.table('agents').update(agent_update_fields).eq('agent_id', self.agent_id).execute()
-                if not result.data:
+                result = await self.convex.update_agent(
+                    agent_id=self.agent_id,
+                    account_id=account_id,
+                    **agent_update_fields
+                )
+                if not result:
                     return self.fail_response("Failed to update agent")
             
             version_created = False
@@ -228,9 +230,9 @@ class AgentConfigTool(AgentBuilderBaseTool):
                 except Exception as e:
                     logger.error(f"Failed to create new version: {str(e)}")
                     return self.fail_response("Failed to create new version")
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', self.agent_id).execute()
-            updated_agent = agent_result.data[0] if agent_result.data else current_agent
+
+            updated_agent_result = await self.convex.get_agent(self.agent_id, account_id=account_id)
+            updated_agent = updated_agent_result if updated_agent_result else current_agent
 
             updated_fields = list(agent_update_fields.keys())
             if version_created:
@@ -317,4 +319,4 @@ class AgentConfigTool(AgentBuilderBaseTool):
             
         except Exception as e:
             logger.error(f"Error getting agent configuration: {str(e)}")
-            return self.fail_response("Error getting agent configuration") 
+            return self.fail_response("Error getting agent configuration")

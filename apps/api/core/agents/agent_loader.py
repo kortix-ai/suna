@@ -3,11 +3,18 @@ Unified agent loading and transformation.
 
 This module consolidates all agent data loading logic into one place,
 eliminating duplication across agent_crud, agent_service, and agent_runs.
+
+MIGRATION NOTES:
+- All Supabase DBConnection usage has been replaced with Convex client
+- The AgentLoader class no longer requires a db parameter
+- Database operations use repo pattern (agents_repo, versioning_repo)
+- Template marketplace operations still use Supabase for basejump account info
+  (marked with TODO for future migration)
 """
 from typing import Dict, Any, Optional
 from dataclasses import dataclass
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 
 
 @dataclass
@@ -165,10 +172,13 @@ class AgentLoader:
     - Single agent: loads full config
     - List operations: loads metadata only (fast)
     - Batch loading: efficient version fetching
+    
+    MIGRATED: No longer requires db parameter - uses Convex client singleton
     """
     
-    def __init__(self, db: Optional[DBConnection] = None):
-        self.db = db or DBConnection()
+    # MIGRATED: __init__ no longer needs db parameter - uses convex client singleton
+    def __init__(self):
+        pass  # Convex client is accessed via get_convex_client() singleton
     
     async def load_agent(
         self, 
@@ -261,69 +271,67 @@ class AgentLoader:
     ) -> AgentData:
         """
         Load a template as AgentData.
-        
-        Templates are basically agents with pre-configured settings.
-        
-        Args:
-            template_row: Template database row
-            fetch_creator_name: Whether to fetch creator name
-            
-        Returns:
-            AgentData representing the template
+
+        Templates are basically agents with pre-configured settings
+        ready to publish to the agents marketplace.
+
+        MIGRATED: Uses Convex client for creator/version lookups
         """
         metadata = template_row.get('metadata', {}) or {}
-        
+
         # Fetch creator name if requested (template marketplace operation)
         creator_name = None
         if fetch_creator_name and template_row.get('creator_id'):
             try:
-                # Keep this on Supabase for template marketplace operations
-                client = await self.db.client
-                creator_result = await client.schema('basejump').from_('accounts').select(
-                    'name, slug'
-                ).eq('id', template_row['creator_id']).single().execute()
-                if creator_result.data:
-                    creator_name = creator_result.data.get('name') or creator_result.data.get('slug')
+                convex = get_convex_client()
+                # Get creator account info via Convex
+                creator_info = await convex.admin_rpc(
+                    "admin:getAccountById",
+                    {"account_id": template_row.get('creator_id')}
+                )
+                if creator_info:
+                    creator_name = creator_info.get('name')
             except Exception as e:
-                logger.warning(f"Failed to fetch creator name: {e}")
-        
-        # Update metadata
-        metadata['is_template'] = True
+                logger.warning(f"Could not get creator info for template {template_row.get('template_id')}: {e}")
+
+        # Load version info if available
+        if template_row.get('current_version_id'):
+            try:
+                convex = get_convex_client()
+                version = await convex.admin_rpc(
+                    "admin:getAgentVersion",
+                    {"version_id": template_row.get('current_version_id')}
+                )
+                if version:
+                    metadata['version_name'] = version.get('version_name', 'v1')
+                    metadata['version_created_at'] = version.get('created_at')
+            except Exception as e:
+                logger.warning(f"Could not get version info for template {template_row.get('template_id')}: {e}")
+
+        # Add creator name to metadata if we got it
         if creator_name:
             metadata['creator_name'] = creator_name
-        
-        # Create AgentData from template
-        agent_data = AgentData(
-            agent_id=template_row.get('template_id', ''),
-            name=template_row.get('name', ''),
+
+        # Convert template row to AgentData using the standard pattern
+        return AgentData(
+            agent_id=template_row['agent_id'],
+            name=template_row['name'],
             description=template_row.get('description'),
-            account_id=template_row.get('creator_id', ''),
-            is_default=False,
+            account_id=template_row['account_id'],
+            is_default=template_row.get('is_default', False),
             is_public=template_row.get('is_public', False),
             tags=template_row.get('tags', []),
             icon_name=template_row.get('icon_name'),
             icon_color=template_row.get('icon_color'),
             icon_background=template_row.get('icon_background'),
-            created_at=template_row.get('created_at', ''),
-            updated_at=template_row.get('updated_at'),
-            current_version_id=None,
-            version_count=0,
+            created_at=template_row['created_at'],
+            updated_at=template_row.get('updated_at', template_row['created_at']),
+            current_version_id=template_row.get('current_version_id'),
+            version_count=template_row.get('version_count', 1),
             metadata=metadata,
-            # Template config is directly available
-            system_prompt=template_row.get('system_prompt', ''),
-            model=metadata.get('model'),
-            configured_mcps=template_row.get('mcp_requirements', []),
-            custom_mcps=[],
-            agentpress_tools=template_row.get('agentpress_tools', {}),
-            triggers=[],
-            version_name='template',
-            is_suna_default=False,
-            centrally_managed=False,
-            config_loaded=True,  # Templates have config built-in
-            restrictions={}
+            is_suna_default=metadata.get('is_suna_default', False),
+            config_loaded=False
         )
-        
-        return agent_data
     
     def _dict_to_agent_data(self, data: Dict[str, Any]) -> AgentData:
         """Convert cached dict back to AgentData."""
@@ -639,9 +647,12 @@ class AgentLoader:
 _loader = None
 
 async def get_agent_loader() -> AgentLoader:
-    """Get the global agent loader instance."""
+    """Get the global agent loader instance.
+    
+    MIGRATED: No longer requires db parameter - uses Convex client singleton
+    """
     global _loader
     if _loader is None:
-        _loader = AgentLoader()
+        _loader = AgentLoader()  # MIGRATED: No longer needs db parameter
     return _loader
 

@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Dict, Any, Optional, List
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 
 
@@ -49,8 +49,10 @@ class Trigger:
 
 
 class TriggerService:
-    def __init__(self, db_connection: DBConnection):
-        self._db = db_connection
+    def __init__(self, db_connection=None):
+        # db_connection is kept for backward compatibility but not used
+        # We now use the Convex client singleton
+        pass
     
     async def create_trigger(
         self,
@@ -64,7 +66,7 @@ class TriggerService:
         now = datetime.now(timezone.utc)
         
         from .provider_service import get_provider_service
-        provider_service = get_provider_service(self._db)
+        provider_service = get_provider_service()
         validated_config = await provider_service.validate_trigger_config(provider_id, config)
         
         trigger_type = await provider_service.get_provider_trigger_type(provider_id)
@@ -94,19 +96,20 @@ class TriggerService:
         return trigger
     
     async def get_trigger(self, trigger_id: str) -> Optional[Trigger]:
-        client = await self._db.client
-        result = await client.table('agent_triggers').select('*').eq('trigger_id', trigger_id).execute()
-        
-        if not result.data:
-            return None
-        
-        return self._map_to_trigger(result.data[0])
+        convex = get_convex_client()
+        try:
+            data = await convex.get_trigger(trigger_id)
+            if data:
+                return self._map_to_trigger(data)
+        except Exception as e:
+            logger.warning(f"Failed to get trigger {trigger_id}: {e}")
+        return None
     
     async def get_agent_triggers(self, agent_id: str) -> List[Trigger]:
-        client = await self._db.client
-        result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
+        convex = get_convex_client()
+        triggers_data = await convex.list_triggers(agent_id)
         
-        return [self._map_to_trigger(data) for data in result.data]
+        return [self._map_to_trigger(data) for data in triggers_data]
     
     async def update_trigger(
         self,
@@ -125,7 +128,7 @@ class TriggerService:
 
         if config is not None:
             from .provider_service import get_provider_service
-            provider_service = get_provider_service(self._db)
+            provider_service = get_provider_service()
             config = await provider_service.validate_trigger_config(trigger.provider_id, config)
         
         if name is not None:
@@ -149,7 +152,7 @@ class TriggerService:
 
         if config_changed or activation_toggled:
             from .provider_service import get_provider_service
-            provider_service = get_provider_service(self._db)
+            provider_service = get_provider_service()
 
             if config_changed:
                 # For config changes, fully teardown and (re)setup if active
@@ -174,17 +177,17 @@ class TriggerService:
         trigger = await self.get_trigger(trigger_id)
         if not trigger:
             return False
-        
-        # DELETE FROM DATABASE FIRST so provider methods see correct state  
-        client = await self._db.client
-        result = await client.table('agent_triggers').delete().eq('trigger_id', trigger_id).execute()
-        
-        success = len(result.data) > 0
-        if not success:
+
+        # DELETE FROM DATABASE FIRST so provider methods see correct state
+        convex = get_convex_client()
+        try:
+            await convex.delete_trigger(trigger_id)
+        except Exception as e:
+            logger.error(f"Failed to delete trigger {trigger_id} from Convex: {e}")
             return False
-        
+
         from .provider_service import get_provider_service
-        provider_service = get_provider_service(self._db)
+        provider_service = get_provider_service()
         # Now disable remotely so webhooks stop quickly
         try:
             await provider_service.teardown_trigger(trigger)
@@ -195,8 +198,8 @@ class TriggerService:
             await provider_service.delete_remote_trigger(trigger)
         except Exception:
             pass
-        
-        return success
+
+        return True
     
     async def process_trigger_event(self, trigger_id: str, raw_data: Dict[str, Any]) -> TriggerResult:
         trigger = await self.get_trigger(trigger_id)
@@ -214,7 +217,7 @@ class TriggerService:
         )
         
         from .provider_service import get_provider_service
-        provider_service = get_provider_service(self._db)
+        provider_service = get_provider_service()
         result = await provider_service.process_event(trigger, event)
         
         try:
@@ -225,39 +228,37 @@ class TriggerService:
         return result
     
     async def _save_trigger(self, trigger: Trigger) -> None:
-        client = await self._db.client
+        convex = get_convex_client()
         
         config_with_provider = {**trigger.config, "provider_id": trigger.provider_id}
         
-        await client.table('agent_triggers').insert({
-            'trigger_id': trigger.trigger_id,
-            'agent_id': trigger.agent_id,
-            'trigger_type': trigger.trigger_type.value,
-            'name': trigger.name,
-            'description': trigger.description,
-            'is_active': trigger.is_active,
-            'config': config_with_provider,
-            'created_at': trigger.created_at.isoformat(),
-            'updated_at': trigger.updated_at.isoformat()
-        }).execute()
+        await convex.create_trigger(
+            trigger_id=trigger.trigger_id,
+            agent_id=trigger.agent_id,
+            trigger_type=trigger.trigger_type.value,
+            name=trigger.name,
+            description=trigger.description,
+            is_active=trigger.is_active,
+            config=config_with_provider,
+            account_id=None  # Account ID will be derived from agent ownership
+        )
     
     async def _update_trigger(self, trigger: Trigger) -> None:
-        client = await self._db.client
-        
+        convex = get_convex_client()
+
         config_with_provider = {**trigger.config, "provider_id": trigger.provider_id}
-        
-        await client.table('agent_triggers').update({
-            'trigger_type': trigger.trigger_type.value,
-            'name': trigger.name,
-            'description': trigger.description,
-            'is_active': trigger.is_active,
-            'config': config_with_provider,
-            'updated_at': trigger.updated_at.isoformat()
-        }).eq('trigger_id', trigger.trigger_id).execute()
+
+        await convex.update_trigger(
+            trigger_id=trigger.trigger_id,
+            name=trigger.name,
+            description=trigger.description,
+            is_active=trigger.is_active,
+            config=config_with_provider
+        )
     
     def _map_to_trigger(self, data: Dict[str, Any]) -> Trigger:
         config_data = data.get('config', {})
-        # Prefer explicit provider_id saved in config; otherwise infer for backwards compatibility
+        # Prefer explicit provider_id saved in config; otherwise Infer for backwards compatibility
         provider_id = config_data.get('provider_id')
         if not provider_id:
             # Older event-based Composio triggers didn't persist provider_id. Infer from config.
@@ -284,9 +285,8 @@ class TriggerService:
         )
     
     async def _log_trigger_event(self, event: TriggerEvent, result: TriggerResult) -> None:
-        client = await self._db.client
-        
-        
+        convex = get_convex_client()
+
         # Ensure raw_data is JSON serializable
         try:
             if isinstance(event.raw_data, bytes):
@@ -298,22 +298,21 @@ class TriggerService:
         except Exception as e:
             logger.warning(f"Failed to serialize raw_data: {e}")
             event_data = str(event.raw_data) if event.raw_data else "{}"
-        
-        await client.table('trigger_event_logs').insert({
-            'log_id': str(uuid.uuid4()),
-            'trigger_id': event.trigger_id,
-            'agent_id': event.agent_id,
-            'trigger_type': event.trigger_type.value,
-            'event_data': event_data,
-            'success': result.success,
-            'should_execute_agent': result.should_execute_agent,
-            'agent_prompt': result.agent_prompt,
-            'execution_variables': result.execution_variables,
-            'error_message': result.error_message,
-            'event_timestamp': event.timestamp.isoformat(),
-            'logged_at': datetime.now(timezone.utc).isoformat()
-        }).execute()
+
+        await convex.log_trigger_event(
+            log_id=str(uuid.uuid4()),
+            trigger_id=event.trigger_id,
+            agent_id=event.agent_id,
+            trigger_type=event.trigger_type.value,
+            event_data=event_data,
+            success=result.success,
+            should_execute_agent=result.should_execute_agent,
+            agent_prompt=result.agent_prompt,
+            execution_variables=result.execution_variables,
+            error_message=result.error_message,
+            event_timestamp=event.timestamp.isoformat()
+        )
 
 
-def get_trigger_service(db_connection: DBConnection) -> TriggerService:
-    return TriggerService(db_connection) 
+def get_trigger_service(db_connection=None) -> TriggerService:
+    return TriggerService(db_connection)

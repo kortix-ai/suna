@@ -1,20 +1,35 @@
+"""
+Retry utilities with exponential backoff and connection management.
+
+CONVEX MIGRATION STATUS: FULLY MIGRATED
+=======================================
+This module provides generic retry utilities that work with any backend:
+- Generic retry() function - works with any async operation
+- retry_db_operation() - kept for backward compatibility, uses generic retry
+
+Key differences from Supabase version:
+- No connection pool management needed (Convex uses stateless HTTP)
+- Simplified error handling for HTTP-based operations
+
+For all operations, use the generic retry() function.
+"""
 import asyncio
-import os
 import random
 from typing import TypeVar, Callable, Awaitable, Optional, Tuple, Type
 import httpx
 
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import ConvexError
 
 T = TypeVar("T")
 
-DB_DEFAULT_MAX_RETRIES = 6
-DB_RETRY_INITIAL_DELAY = 0.5
-DB_RETRY_MAX_DELAY = 10.0
-DB_RETRY_JITTER_FACTOR = 0.3
+DEFAULT_MAX_RETRIES = 5
+DEFAULT_INITIAL_DELAY = 0.5
+DEFAULT_MAX_DELAY = 10.0
+DEFAULT_JITTER_FACTOR = 0.3
 
-DB_RETRYABLE_EXCEPTIONS: Tuple[Type[Exception], ...] = (
+# Common retryable exceptions for HTTP operations
+RETRYABLE_EXCEPTIONS: Tuple[Type[Exception], ...] = (
     httpx.ConnectTimeout,
     httpx.ReadTimeout,
     httpx.PoolTimeout,
@@ -22,10 +37,11 @@ DB_RETRYABLE_EXCEPTIONS: Tuple[Type[Exception], ...] = (
     httpx.NetworkError,
     ConnectionError,
     TimeoutError,
+    ConvexError,
 )
 
 
-def _add_jitter(delay: float, jitter_factor: float = DB_RETRY_JITTER_FACTOR) -> float:
+def _add_jitter(delay: float, jitter_factor: float = DEFAULT_JITTER_FACTOR) -> float:
     """Add random jitter to delay to prevent thundering herd."""
     jitter = delay * jitter_factor * random.random()
     return delay + jitter
@@ -112,70 +128,56 @@ async def retry_db_operation(
     initial_delay: Optional[float] = None,
     max_delay: Optional[float] = None,
     backoff_factor: float = 2.0,
-    reset_connection_on_error: bool = True,
-    reset_on_pool_timeout: bool = True,
+    reset_connection_on_error: bool = True,  # Kept for API compatibility, no-op
+    reset_on_pool_timeout: bool = True,  # Kept for API compatibility, no-op
 ) -> T:
     """
-    Retry a database operation with exponential backoff, jitter, and connection reset.
-    
-    Designed for high-concurrency production workloads with:
-    - Configurable retry limits (default: 5 attempts via DB_DEFAULT_MAX_RETRIES)
-    - Jitter to prevent thundering herd on retries
-    - Automatic connection pool reset on timeouts
-    - Handles ConnectTimeout, ReadTimeout, PoolTimeout, network errors, 
-      client-closed errors, and route-not-found errors
+    Retry an operation with exponential backoff and jitter.
+
+    This is a simplified version for Convex/HTTP operations.
+    Connection reset parameters are kept for backward compatibility but are no-ops
+    since Convex uses stateless HTTP connections.
 
     Args:
-        operation: The async database operation to retry
+        operation: The async operation to retry
         operation_name: Name for logging purposes (optional)
-        max_retries: Maximum retry attempts (default: DB_DEFAULT_MAX_RETRIES=5)
-        initial_delay: Initial delay in seconds (default: DB_RETRY_INITIAL_DELAY=0.5)
-        max_delay: Maximum delay between retries (default: DB_RETRY_MAX_DELAY=15.0)
+        max_retries: Maximum retry attempts (default: DEFAULT_MAX_RETRIES=5)
+        initial_delay: Initial delay in seconds (default: DEFAULT_INITIAL_DELAY=0.5)
+        max_delay: Maximum delay between retries (default: DEFAULT_MAX_DELAY=10.0)
         backoff_factor: Multiplier for exponential backoff (default: 2.0)
-        reset_connection_on_error: Reset DB connection on connection errors (default: True)
-        reset_on_pool_timeout: Reset connection specifically on PoolTimeout (default: True)
+        reset_connection_on_error: No-op, kept for backward compatibility
+        reset_on_pool_timeout: No-op, kept for backward compatibility
 
     Returns:
         The result of the operation
 
     Raises:
-        The last exception if all retries are exhausted, or immediately for non-retryable errors
+        The last exception if all retries are exhausted
     """
     if max_retries is None:
-        max_retries = DB_DEFAULT_MAX_RETRIES
+        max_retries = DEFAULT_MAX_RETRIES
     if initial_delay is None:
-        initial_delay = DB_RETRY_INITIAL_DELAY
+        initial_delay = DEFAULT_INITIAL_DELAY
     if max_delay is None:
-        max_delay = DB_RETRY_MAX_DELAY
-    
+        max_delay = DEFAULT_MAX_DELAY
+
     last_exception: Optional[Exception] = None
-    # Use singleton - already initialized at startup
-    db = DBConnection()
-    op_name = operation_name or "Database operation"
-    
+    op_name = operation_name or "Operation"
+
     for attempt in range(max_retries):
         try:
             return await operation()
-        except DB_RETRYABLE_EXCEPTIONS as e:
+        except RETRYABLE_EXCEPTIONS as e:
             last_exception = e
-            is_pool_timeout = isinstance(e, httpx.PoolTimeout)
-            is_connect_timeout = isinstance(e, httpx.ConnectTimeout)
-            
+
             if attempt < max_retries - 1:
-                should_reset = reset_connection_on_error or (reset_on_pool_timeout and is_pool_timeout)
-                if should_reset:
-                    try:
-                        await db.force_reconnect()
-                        logger.debug(f"🔄 Reconnected DB after {type(e).__name__}")
-                    except Exception as reset_error:
-                        logger.warning(f"Failed to reconnect: {reset_error}")
-                
                 base_delay = min(initial_delay * (backoff_factor ** attempt), max_delay)
                 delay = _add_jitter(base_delay)
-                
-                if is_pool_timeout or is_connect_timeout:
+
+                # Add extra delay for timeout errors
+                if isinstance(e, (httpx.PoolTimeout, httpx.ConnectTimeout)):
                     delay = min(delay * 1.5, max_delay)
-                
+
                 logger.warning(
                     f"{op_name} failed (attempt {attempt + 1}/{max_retries}): {type(e).__name__}. "
                     f"Retrying in {delay:.2f}s..."
@@ -183,31 +185,17 @@ async def retry_db_operation(
                 await asyncio.sleep(delay)
             else:
                 logger.error(
-                    f"{op_name} failed after {max_retries} attempts: {type(e).__name__}. "
-                    f"Consider increasing DB_DEFAULT_MAX_RETRIES or SUPABASE_MAX_CONNECTIONS."
+                    f"{op_name} failed after {max_retries} attempts: {type(e).__name__}"
                 )
         except Exception as e:
-            # Check if this is a recoverable connection error (client-closed, route-not-found)
-            if DBConnection.is_recoverable_connection_error(e):
-                last_exception = e
-                if attempt < max_retries - 1:
-                    error_type = "client-closed" if DBConnection.is_client_closed_error(e) else "route-not-found"
-                    logger.warning(f"🔄 Recoverable {error_type} error in {op_name} (attempt {attempt + 1}/{max_retries}), reconnecting...")
-                    try:
-                        await db.force_reconnect()
-                    except Exception as reconnect_err:
-                        logger.warning(f"Failed to reconnect: {reconnect_err}")
-                    
-                    base_delay = min(initial_delay * (backoff_factor ** attempt), max_delay)
-                    delay = _add_jitter(base_delay)
-                    await asyncio.sleep(delay)
-                else:
-                    logger.error(f"{op_name} failed after {max_retries} attempts with {error_type} error")
-            else:
-                logger.error(f"{op_name} failed with non-retryable error: {type(e).__name__}: {str(e)}")
-                raise
-    
+            logger.error(f"{op_name} failed with non-retryable error: {type(e).__name__}: {str(e)}")
+            raise
+
     if last_exception:
         raise last_exception
-    
+
     raise RuntimeError("Unexpected: retry loop completed without exception")
+
+
+# Alias for Convex-specific retry
+retry_convex_operation = retry_db_operation

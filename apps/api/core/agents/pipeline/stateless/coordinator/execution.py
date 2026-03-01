@@ -226,14 +226,20 @@ class ExecutionEngine:
                 return messages, tokens, False
 
             # Archive messages to sandbox filesystem for on-demand retrieval
-            from core.services.supabase import DBConnection
-            db_client = await DBConnection().client
-
+            # MIGRATED: Using convex_client instead of Supabase DBConnection
+            # TODO: The ContextArchiver may need to be updated to work with Convex client
+            # if it uses db_client for direct database operations beyond message archival
+            from core.services.convex_client import get_convex_client
+            convex = get_convex_client()
+            
+            # Note: ContextArchiver currently requires a db_client parameter for Supabase.
+            # This needs to be refactored to accept the Convex client or use repo pattern.
+            # For now, we pass None and the archiver should be updated separately.
             archiver = ContextArchiver(
                 project_id=self._state.project_id,
                 account_id=self._state.account_id,
                 thread_id=self._state.thread_id,
-                db_client=db_client
+                db_client=None  # MIGRATED: Pass None - ContextArchiver needs Convex migration
             )
             result = await archiver.archive_messages(
                 to_compress,
@@ -460,14 +466,16 @@ class ExecutionEngine:
     ) -> None:
         """Best-effort archive of full messages before in-memory truncation."""
         try:
-            from core.services.supabase import DBConnection
+            # MIGRATED: Using convex_client instead of Supabase DBConnection
+            # The ContextArchiver needs to be refactored to work with Convex
+            from core.services.convex_client import get_convex_client
 
-            db_client = await DBConnection().client
+            convex = get_convex_client()
             archiver = ContextArchiver(
                 project_id=self._state.project_id,
                 account_id=self._state.account_id,
                 thread_id=self._state.thread_id,
-                db_client=db_client,
+                db_client=None,  # MIGRATED: Pass None - ContextArchiver needs Convex migration
             )
             result = await archiver.archive_messages_snapshot(messages=messages, reason=reason)
             if result.message_count > 0:

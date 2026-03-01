@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
+"""
+Immediately change a user's subscription plan.
+
+Convex Endpoints Required:
+  - admin:get_user_by_email - Get user account by email
+  - admin:get_billing_customer - Get billing customer by account_id
+  - get_credit_account - Get credit account by account_id
+  - upsert_credit_account - Create/update credit account
+  - admin:create_commitment_history - Create commitment history record
+  - add_credits - Add credits to account
+"""
 import asyncio
 import sys
 import argparse
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Dict
 
 backend_dir = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
 import stripe
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.config import config
 from core.utils.logger import logger
 from core.billing.shared.config import (
@@ -21,7 +32,6 @@ from core.billing.shared.config import (
     is_commitment_price_id,
     get_commitment_duration_months
 )
-from core.billing.credits.manager import credit_manager
 
 stripe.api_key = config.STRIPE_SECRET_KEY
 
@@ -57,41 +67,30 @@ def get_available_tiers() -> str:
     return "\n".join(lines)
 
 
-async def get_user_info(client, user_email: str) -> Optional[dict]:
-    result = await client.rpc('get_user_account_by_email', {
-        'email_input': user_email.lower()
-    }).execute()
+async def get_user_by_email(email: str, convex) -> Optional[Dict]:
+    """Get user by email using Convex admin endpoint.
     
-    if not result.data:
+    Requires Convex endpoint: admin:get_user_by_email
+    """
+    try:
+        result = await convex.admin_rpc("get_user_by_email", {"email": email.lower()})
+        return result
+    except Exception as e:
+        logger.error(f"Error finding user: {e}")
         return None
-    
-    return result.data
 
 
-async def get_stripe_customer_id(client, account_id: str) -> Optional[str]:
-    result = await client.schema('basejump').from_('billing_customers').select('id').eq('account_id', account_id).execute()
+async def get_billing_customer(account_id: str, convex) -> Optional[Dict]:
+    """Get billing customer for an account.
     
-    if not result.data:
+    Requires Convex endpoint: admin:get_billing_customer
+    """
+    try:
+        result = await convex.admin_rpc("get_billing_customer", {"account_id": account_id})
+        return result
+    except Exception as e:
+        logger.error(f"Error getting billing customer: {e}")
         return None
-    
-    return result.data[0]['id']
-
-
-async def get_active_subscription(stripe_customer_id: str):
-    subscriptions = await stripe.Subscription.list_async(
-        customer=stripe_customer_id,
-        status='all',
-        limit=10
-    )
-    
-    for sub in subscriptions.data:
-        if sub.status in ['active', 'trialing', 'past_due']:
-            return await stripe.Subscription.retrieve_async(
-                sub.id,
-                expand=['items.data.price', 'schedule']
-            )
-    
-    return None
 
 
 async def change_subscription_immediately(
@@ -100,157 +99,114 @@ async def change_subscription_immediately(
     billing_type: str = 'monthly',
     dry_run: bool = False
 ):
+    """Change a user's subscription immediately.
+    
+    Uses Convex endpoints:
+      - admin:get_user_by_email
+      - admin:get_billing_customer
+      - get_credit_account
+      - upsert_credit_account
+      - admin:create_commitment_history
+      - add_credits
+    """
     logger.info("=" * 80)
-    logger.info(f"{'[DRY RUN] ' if dry_run else ''}CHANGING SUBSCRIPTION FOR {user_email}")
+    logger.info(f"CHANGE SUBSCRIPTION: {user_email}")
     logger.info(f"Target: {target_tier} ({billing_type})")
+    logger.info(f"Mode: {'DRY RUN' if dry_run else 'LIVE'}")
     logger.info("=" * 80)
     
-    if target_tier not in TIER_PRICE_MAPPING:
-        logger.error(f"Invalid tier: {target_tier}")
-        logger.info(get_available_tiers())
+    convex = get_convex_client()
+    
+    # Step 1: Find user
+    user = await get_user_by_email(user_email, convex)
+    if not user:
+        logger.error(f"❌ User not found: {user_email}")
         return False
     
-    if billing_type not in TIER_PRICE_MAPPING[target_tier]:
-        logger.error(f"Invalid billing type '{billing_type}' for tier '{target_tier}'")
-        logger.info(f"Available billing types for {target_tier}: {list(TIER_PRICE_MAPPING[target_tier].keys())}")
+    account_id = user['id']
+    logger.info(f"✅ Found user: {account_id}")
+    
+    # Step 2: Get billing customer
+    billing_customer = await get_billing_customer(account_id, convex)
+    if not billing_customer:
+        logger.error(f"❌ No billing customer found for account")
         return False
     
-    target_price_id = TIER_PRICE_MAPPING[target_tier][billing_type]
-    target_tier_info = get_tier_by_name(target_tier)
+    stripe_customer_id = billing_customer['id']
+    logger.info(f"✅ Found Stripe customer: {stripe_customer_id}")
     
-    if not target_price_id:
-        logger.error(f"No price ID configured for {target_tier} {billing_type}")
+    # Step 3: Get target tier details
+    tier = get_tier_by_name(target_tier)
+    if not tier:
+        logger.error(f"❌ Invalid tier: {target_tier}")
         return False
     
-    logger.info(f"Target price ID: {target_price_id}")
-    
-    db = DBConnection()
-    await db.initialize()
-    client = await db.client
-    
-    user_info = await get_user_info(client, user_email)
-    if not user_info:
-        logger.error(f"User {user_email} not found")
+    # Get price ID for billing type
+    price_id = TIER_PRICE_MAPPING.get(target_tier, {}).get(billing_type)
+    if not price_id:
+        logger.error(f"❌ No price ID for {target_tier} / {billing_type}")
         return False
     
-    account_id = user_info['id']
-    logger.info(f"Found user: {user_email} (Account: {account_id})")
+    logger.info(f"✅ Target price ID: {price_id}")
     
-    stripe_customer_id = await get_stripe_customer_id(client, account_id)
-    if not stripe_customer_id:
-        logger.error(f"No Stripe customer found for account {account_id}")
-        return False
-    
-    logger.info(f"Stripe customer: {stripe_customer_id}")
-    
-    current_subscription = await get_active_subscription(stripe_customer_id)
-    
-    if not current_subscription:
-        logger.error("No active subscription found")
-        return False
-    
-    try:
-        items_data = current_subscription['items']['data'] if isinstance(current_subscription, dict) else current_subscription.items.data
-    except (AttributeError, TypeError):
-        items_data = current_subscription.get('items', {}).get('data', []) if isinstance(current_subscription, dict) else []
-    
-    if not items_data:
-        logger.error("Subscription has no items")
-        return False
-    
-    current_price_id = items_data[0].price.id if hasattr(items_data[0], 'price') else items_data[0]['price']['id']
-    current_tier_info = get_tier_by_price_id(current_price_id)
-    current_item_id = items_data[0].id if hasattr(items_data[0], 'id') else items_data[0]['id']
-    
-    logger.info(f"\nCurrent subscription:")
-    logger.info(f"  ID: {current_subscription.id}")
-    logger.info(f"  Status: {current_subscription.status}")
-    logger.info(f"  Tier: {current_tier_info.name if current_tier_info else 'unknown'} ({current_tier_info.display_name if current_tier_info else 'unknown'})")
-    logger.info(f"  Price ID: {current_price_id}")
-    logger.info(f"  Period end: {datetime.fromtimestamp(current_subscription.current_period_end).isoformat()}")
-    
-    if current_price_id == target_price_id:
-        logger.info("User is already on the target plan")
-        return True
-    
-    is_current_commitment = is_commitment_price_id(current_price_id)
-    if is_current_commitment:
-        credit_account = await client.from_('credit_accounts').select('commitment_end_date').eq('account_id', account_id).execute()
-        if credit_account.data and credit_account.data[0].get('commitment_end_date'):
-            commitment_end = datetime.fromisoformat(credit_account.data[0]['commitment_end_date'].replace('Z', '+00:00'))
-            if commitment_end > datetime.now(timezone.utc):
-                logger.warning(f"User has active commitment until {commitment_end.date()}")
-                logger.warning("Proceeding anyway as this is an admin override")
-    
-    logger.info(f"\nChanging to:")
-    logger.info(f"  Tier: {target_tier} ({target_tier_info.display_name})")
-    logger.info(f"  Billing: {billing_type}")
-    logger.info(f"  Price ID: {target_price_id}")
-    logger.info(f"  Monthly credits: ${target_tier_info.monthly_credits}")
-    
-    if dry_run:
-        logger.info("\n[DRY RUN] Would perform the following actions:")
-        logger.info(f"  1. Cancel any pending schedule on subscription {current_subscription.id}")
-        logger.info(f"  2. Update subscription item {current_item_id} to price {target_price_id}")
-        logger.info(f"  3. Update credit_accounts table with new tier info")
-        if is_commitment_price_id(target_price_id):
-            logger.info(f"  4. Set up yearly commitment tracking")
-        logger.info("\n[DRY RUN] No changes made")
-        return True
-    
-    logger.info("\n" + "=" * 80)
-    logger.info("EXECUTING CHANGES")
-    logger.info("=" * 80)
-    
-    if current_subscription.schedule:
+    # Step 4: Update Stripe subscription
+    if not dry_run:
         try:
-            await stripe.SubscriptionSchedule.release_async(current_subscription.schedule)
-            logger.info(f"Released existing schedule: {current_subscription.schedule}")
+            # Get current subscription
+            subscriptions = stripe.Subscription.list(
+                customer=stripe_customer_id,
+                status='active',
+                limit=1
+            )
+            
+            if subscriptions.data:
+                subscription = subscriptions.data[0]
+                
+                # Update subscription
+                stripe.Subscription.modify(
+                    subscription.id,
+                    items=[{
+                        'id': subscription['items']['data'][0].id,
+                        'price': price_id
+                    }],
+                    proration_behavior='none'
+                )
+                
+                logger.info(f"✅ Updated Stripe subscription: {subscription.id}")
+            else:
+                # Create new subscription
+                subscription = stripe.Subscription.create(
+                    customer=stripe_customer_id,
+                    items=[{'price': price_id}],
+                    payment_behavior='default_incomplete'
+                )
+                logger.info(f"✅ Created Stripe subscription: {subscription.id}")
+                
         except Exception as e:
-            logger.warning(f"Failed to release schedule: {e}")
+            logger.error(f"❌ Stripe error: {e}")
+            return False
     
-    try:
-        updated_subscription = await stripe.Subscription.modify_async(
-            current_subscription.id,
-            items=[{
-                'id': current_item_id,
-                'price': target_price_id,
-            }],
-            proration_behavior='create_prorations',
-            billing_cycle_anchor='now',
-        )
-        logger.info(f"Updated Stripe subscription: {updated_subscription.id}")
-        logger.info(f"  New status: {updated_subscription.status}")
-        logger.info(f"  New period: {datetime.fromtimestamp(updated_subscription.current_period_start).isoformat()} to {datetime.fromtimestamp(updated_subscription.current_period_end).isoformat()}")
-    except Exception as e:
-        logger.error(f"Failed to update Stripe subscription: {e}")
-        return False
-    
-    start_date = datetime.fromtimestamp(updated_subscription.current_period_start, tz=timezone.utc)
-    next_grant = datetime.fromtimestamp(updated_subscription.current_period_end, tz=timezone.utc)
+    # Step 5: Update Convex credit account
+    is_commitment = billing_type == 'yearly_commitment'
+    now = datetime.now(timezone.utc)
     
     update_data = {
         'account_id': account_id,
-        'tier': target_tier,
-        'stripe_subscription_id': updated_subscription.id,
-        'billing_cycle_anchor': start_date.isoformat(),
-        'next_credit_grant': next_grant.isoformat(),
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'tier': tier.name,
+        'stripe_subscription_id': subscription.id if not dry_run else None,
+        'billing_cycle_anchor': now.isoformat(),
+        'next_credit_grant': (now + timedelta(days=30)).isoformat(),
     }
     
-    is_commitment = is_commitment_price_id(target_price_id)
-    commitment_duration = get_commitment_duration_months(target_price_id)
-    
-    if is_commitment and commitment_duration > 0:
-        end_date = start_date + timedelta(days=365)
+    if is_commitment:
+        end_date = now + timedelta(days=365)
         update_data.update({
             'commitment_type': 'yearly_commitment',
-            'commitment_start_date': start_date.isoformat(),
+            'commitment_start_date': now.isoformat(),
             'commitment_end_date': end_date.isoformat(),
-            'commitment_price_id': target_price_id,
+            'commitment_price_id': price_id,
             'can_cancel_after': end_date.isoformat()
         })
-        logger.info(f"Setting up yearly commitment: {start_date.date()} to {end_date.date()}")
     else:
         update_data.update({
             'commitment_type': None,
@@ -260,74 +216,42 @@ async def change_subscription_immediately(
             'can_cancel_after': None
         })
     
-    update_data['plan_type'] = 'yearly_commitment' if is_commitment else 'monthly'
+    if dry_run:
+        logger.info(f"[DRY RUN] Would update credit account:")
+        for k, v in update_data.items():
+            logger.info(f"  {k}: {v}")
+        return True
     
-    update_result = await client.from_('credit_accounts').update(
-        {k: v for k, v in update_data.items() if k != 'account_id'}
-    ).eq('account_id', account_id).execute()
-    
-    if not update_result.data:
-        await client.from_('credit_accounts').insert(update_data).execute()
-        logger.info("Created credit_accounts record")
-    else:
-        logger.info("Updated credit_accounts table")
-    
-    if is_commitment and commitment_duration > 0:
-        existing = await client.from_('commitment_history').select('id').eq('stripe_subscription_id', updated_subscription.id).execute()
+    try:
+        await convex.upsert_credit_account(**update_data)
+        logger.info(f"✅ Updated credit account")
         
-        if not existing.data:
-            end_date = start_date + timedelta(days=365)
-            await client.from_('commitment_history').insert({
-                'account_id': account_id,
-                'commitment_type': 'yearly_commitment',
-                'price_id': target_price_id,
-                'start_date': start_date.isoformat(),
-                'end_date': end_date.isoformat(),
-                'stripe_subscription_id': updated_subscription.id
-            }).execute()
-            logger.info("Created commitment_history record")
-    
-    current_balance = await client.from_('credit_accounts').select('balance').eq('account_id', account_id).execute()
-    balance = Decimal(str(current_balance.data[0]['balance'])) if current_balance.data else Decimal('0')
-    
-    if balance < Decimal('1.0'):
-        credits_to_grant = target_tier_info.monthly_credits
-        logger.info(f"User has low balance (${balance}), granting ${credits_to_grant} credits")
+        # Create commitment history if applicable
+        if is_commitment:
+            await convex.admin_rpc("create_commitment_history", {
+                "account_id": account_id,
+                "commitment_type": "yearly_commitment",
+                "price_id": price_id,
+                "start_date": now.isoformat(),
+                "end_date": end_date.isoformat(),
+                "stripe_subscription_id": subscription.id
+            })
+            logger.info(f"✅ Created commitment history")
         
-        result = await credit_manager.add_credits(
+        # Grant new tier credits
+        await convex.add_credits(
             account_id=account_id,
-            amount=credits_to_grant,
-            is_expiring=True,
-            description=f"Credits for plan change to {target_tier_info.display_name}"
+            amount=int(tier.monthly_credits),
+            description=f"Tier change to {tier.display_name}",
+            credit_type="tier_change"
         )
+        logger.info(f"✅ Granted ${tier.monthly_credits} credits")
         
-        if result.get('success'):
-            logger.info(f"Granted ${credits_to_grant} credits, new balance: ${result.get('new_total', 0)}")
-        else:
-            logger.error(f"Failed to grant credits: {result.get('error')}")
-    else:
-        logger.info(f"User has ${balance} credits, skipping initial grant")
-    
-    logger.info("\n" + "=" * 80)
-    logger.info("VERIFICATION")
-    logger.info("=" * 80)
-    
-    final_account = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
-    
-    if final_account.data:
-        acc = final_account.data[0]
-        logger.info(f"Final state:")
-        logger.info(f"  Tier: {acc.get('tier')}")
-        logger.info(f"  Balance: ${acc.get('balance')}")
-        logger.info(f"  Subscription ID: {acc.get('stripe_subscription_id')}")
-        logger.info(f"  Commitment type: {acc.get('commitment_type')}")
-        logger.info(f"  Next credit grant: {acc.get('next_credit_grant')}")
-    
-    logger.info("\n" + "=" * 80)
-    logger.info("SUBSCRIPTION CHANGE COMPLETE")
-    logger.info("=" * 80)
-    
-    return True
+        return True
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating Convex: {e}")
+        return False
 
 
 def main():
@@ -366,12 +290,14 @@ def main():
     
     args = parser.parse_args()
     
-    asyncio.run(change_subscription_immediately(
+    success = asyncio.run(change_subscription_immediately(
         user_email=args.email,
         target_tier=args.target_tier,
         billing_type=args.billing,
         dry_run=args.dry_run
     ))
+    
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

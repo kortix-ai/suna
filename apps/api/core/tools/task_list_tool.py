@@ -1,6 +1,7 @@
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.utils.logger import logger
+from core.services.convex_client import get_convex_client
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
 from enum import Enum
@@ -118,30 +119,35 @@ class TaskListTool(SandboxToolsBase):
         super().__init__(project_id, thread_manager)
         self.thread_id = thread_id
         self.task_list_message_type = "task_list"
+        self.convex = get_convex_client()
     
     async def _load_data(self) -> tuple[List[Section], List[Task]]:
         """Load sections and tasks from storage"""
         try:
-            client = await self.thread_manager.db.client
-            result = await client.table('messages').select('*')\
-                .eq('thread_id', self.thread_id)\
-                .eq('type', self.task_list_message_type)\
-                .order('created_at', desc=True).limit(1).execute()
-            
-            if result.data and result.data[0].get('content'):
-                content = result.data[0]['content']
+            # Use Convex client to get messages by type
+            messages = await self.convex.get_messages_by_type(
+                thread_id=self.thread_id,
+                message_type=self.task_list_message_type,
+                limit=1
+            )
+
+            if messages and len(messages) > 0:
+                content = messages[0].get('content', {})
                 if isinstance(content, str):
-                    content = json.loads(content)
-                
+                    try:
+                        content = json.loads(content)
+                    except json.JSONDecodeError:
+                        content = {}
+
                 sections = [Section(**s) for s in content.get('sections', [])]
                 tasks = [Task(**t) for t in content.get('tasks', [])]
-                
+
                 # Handle migration from old format
                 if not sections and 'sections' in content:
                     for old_section in content['sections']:
                         section = Section(title=old_section['title'])
                         sections.append(section)
-                        
+
                         for old_task in old_section.get('tasks', []):
                             task = Task(
                                 content=old_task['content'],
@@ -151,11 +157,11 @@ class TaskListTool(SandboxToolsBase):
                             if 'id' in old_task:
                                 task.id = old_task['id']
                             tasks.append(task)
-                
+
                 return sections, tasks
-            
+
             return [], []
-            
+
         except Exception as e:
             logger.error(f"Error loading data: {e}")
             return [], []
@@ -163,29 +169,43 @@ class TaskListTool(SandboxToolsBase):
     async def _save_data(self, sections: List[Section], tasks: List[Task]):
         """Save sections and tasks to storage"""
         try:
-            client = await self.thread_manager.db.client
-            
             content = {
                 'sections': [section.model_dump() for section in sections],
                 'tasks': [task.model_dump() for task in tasks]
             }
-            
-            result = await client.table('messages').select('message_id')\
-                .eq('thread_id', self.thread_id)\
-                .eq('type', self.task_list_message_type)\
-                .order('created_at', desc=True).limit(1).execute()
-            
-            if result.data:
-                await client.table('messages').update({'content': content})\
-                    .eq('message_id', result.data[0]['message_id']).execute()
+
+            # Get existing task list message
+            messages = await self.convex.get_messages_by_type(
+                thread_id=self.thread_id,
+                message_type=self.task_list_message_type,
+                account_id=self.account_id,
+                limit=1
+            )
+
+            if messages and len(messages) > 0:
+                # Update existing message
+                existing_message = messages[0]
+                await self.convex.update_message(
+                    message_id=existing_message['message_id'],
+                    content=content,
+                    account_id=self.account_id
+                )
             else:
-                await client.table('messages').insert({
-                    'thread_id': self.thread_id,
-                    'type': self.task_list_message_type,
-                    'content': content,
-                    'is_llm_message': False,
-                    'metadata': {}
-                }).execute()
+                # Create new task list message
+                import uuid
+                await self.convex.add_message(
+                    message_id=str(uuid.uuid4()),
+                    thread_id=self.thread_id,
+                    message_type=self.task_list_message_type,
+                    content=content,
+                    is_llm_message=False,
+                    metadata={},
+                    account_id=self.account_id
+                )
+        except Exception as e:
+            logger.error(f"Error saving data: {e}")
+            # Temporary: Log warning until Convex endpoint is available
+            logger.warning("TaskListTool._save_data: Convex endpoint not yet implemented for task lists")
             
         except Exception as e:
             logger.error(f"Error saving data: {e}")

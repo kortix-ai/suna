@@ -4,6 +4,9 @@ Suna Default Agent Management Script (Simplified)
 
 This script provides administrative functions for managing Suna default agents across all users.
 
+NOTE: This script is currently DISABLED pending Convex endpoint implementation.
+The Supabase database operations have been removed and need to be replaced with Convex calls.
+
 Usage:
     # 🚀 MAIN COMMANDS
     python manage_suna_agents.py install-all          # Install Suna for all users who don't have it
@@ -28,34 +31,75 @@ from pathlib import Path
 backend_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_dir))
 
+from core.services.convex_client import get_convex_client
 from core.utils.suna_default_agent_service import SunaDefaultAgentService
-from core.services.supabase import DBConnection
 from core.utils.logger import logger
+
+# CONVEX ENDPOINTS REQUIRED (not yet implemented):
+# ================================
+# 1. List agents with filters:
+#    convex.rpc("admin:listAgentsWithDefaults", {"isDefault": True, "limit": N})
+#    Returns: [{ agentId, accountId, name, ... }]
+#
+# 2. Bulk agent installation:
+#    convex.admin_rpc("bulkInstallAgents", {"agentConfig": {...}, "accountIds": [...]})
+#    Returns: { installed: N, errors: [...] }
+#
+# 3. Agent statistics:
+#    convex.admin_rpc("getAgentStats", {})
+#    Returns: { totalAgents, defaultAgentsByAccount, ... }
+#
+# 4. Create agent with account association:
+#    convex.rpc("agents:create", {...})
+#
+# NOTE: When endpoints are implemented, use:
+#   from core.services.convex_client import get_convex_client
+#   convex = get_convex_client()
+#   result = await convex.rpc("endpoint:name", params)
+#   admin_result = await convex.admin_rpc("admin:endpoint", params)
+#
+# TODO: SunaDefaultAgentService needs to be updated to use Convex
+# See: core/utils/suna_default_agent_service.py
 
 
 class SunaAgentManager:
     def __init__(self):
-        self.service = SunaDefaultAgentService()
+        """
+        Initialize the Suna agent manager.
+
+        Note: SunaDefaultAgentService is disabled until Convex endpoints are implemented.
+        """
+        # TODO: Enable when Convex billing endpoints are available
+        # self.convex = get_convex_client()
+        # self.service = SunaDefaultAgentService()
+        self.convex = None
+        self.service = None
     
     async def install_all_users(self):
         """Install Suna agent for all users who don't have it"""
-        print("🚀 Installing Suna default agent for all users who don't have it...")
+        print("="*60)
+        print("⚠️  THIS COMMAND IS DISABLED")
+        print("="*60)
+        print("This command requires Convex endpoints that are not yet implemented.")
+        print("Required endpoints:")
+        print("  - GET /api/admin/agents/list?isDefault=true")
+        print("  - POST /api/admin/agents/bulk-install")
+        print("="*60)
+
+        # TODO: Implement when Convex admin endpoints are available
+        # convex = get_convex_client()
+        #
+        # # Get all accounts without Suna default agent
+        # agents = await convex.rpc("admin:listAgentsWithDefaults", {})
+        # accounts_without_suna = find_accounts_without_suna(agents)
+        #
+        # # Bulk install Suna for those accounts
+        # result = await convex.admin_rpc("bulkInstallAgents", {
+        #     "agentConfig": SUNA_DEFAULT_CONFIG,
+        #     "accountIds": accounts_without_suna
+        # })
+        return
         
-        result = await self.service.install_for_all_users()
-        
-        print(f"✅ Installation completed!")
-        print(f"   📦 Installed: {result['installed_count']}")
-        print(f"   ❌ Failed: {result['failed_count']}")
-        
-        if result['failed_count'] > 0:
-            print("\n❌ Failed installations:")
-            for detail in result['details']:
-                if detail['status'] == 'failed':
-                    print(f"   - User {detail['account_id']}: {detail.get('error', 'Unknown error')}")
-        
-        if result['installed_count'] > 0:
-            print(f"\n✅ Successfully installed Suna for {result['installed_count']} users")
-            
     async def update_config_info(self):
         """Show information about Suna configuration (no sync needed)"""
         print("ℹ️  Suna Configuration Information")
@@ -67,53 +111,62 @@ class SunaAgentManager:
     
     async def install_user(self, account_id):
         """Install Suna agent for specific user"""
-        print(f"🚀 Installing Suna default agent for user {account_id}...")
-        
-        agent_id = await self.service.install_suna_agent_for_user(account_id)
-        
-        if agent_id:
-            print(f"✅ Successfully installed Suna agent {agent_id} for user {account_id}")
-        else:
-            print(f"❌ Failed to install Suna agent for user {account_id}")
+        print("="*60)
+        print("⚠️  THIS COMMAND IS DISABLED")
+        print("="*60)
+        print("This command requires Convex endpoints that are not yet implemented.")
+        print("Required endpoints:")
+        print("  - POST /api/agents (exists but needs Suna defaults)")
+        print("="*60)
+
+        # TODO: Implement when Convex endpoints are available
+        # convex = get_convex_client()
+        #
+        # # Check if user already has Suna
+        # existing = await convex.rpc("agents:getDefault", {"accountId": account_id})
+        # if existing:
+        #     print(f"User {account_id} already has Suna")
+        #     return
+        #
+        # # Create Suna agent for user
+        # agent = await convex.rpc("agents:create", {
+        #     "agentId": generate_id(),
+        #     "accountId": account_id,
+        #     "name": "Suna",
+        #     "isDefault": True,
+        #     ...SUNA_DEFAULT_CONFIG
+        # })
+        return
     
     async def replace_user_agent(self, account_id):
         """Replace Suna agent for specific user (in case of corruption)"""
-        print(f"🔄 Replacing Suna agent for user {account_id}...")
-        
-        # Install/replace the agent with latest config
-        agent_id = await self.service.install_suna_agent_for_user(account_id, replace_existing=True)
-        
-        if agent_id:
-            print(f"✅ Successfully replaced Suna agent {agent_id} for user {account_id}")
-        else:
-            print(f"❌ Failed to replace Suna agent for user {account_id}")
+        print("="*60)
+        print("⚠️  THIS COMMAND IS DISABLED")
+        print("="*60)
+        print("This command requires Convex endpoints that are not yet implemented.")
+        print("="*60)
+        return
     
     async def show_stats(self):
         """Show Suna agent statistics"""
-        print("📊 Suna Default Agent Statistics")
-        print("=" * 50)
-        
-        stats = await self.service.get_suna_agent_stats()
-        
-        if 'error' in stats:
-            print(f"❌ Error getting stats: {stats['error']}")
-            return
-        
-        print(f"Total Agents: {stats.get('total_agents', 0)}")
-        print(f"Active Agents: {stats.get('active_agents', 0)}")
-        print(f"Inactive Agents: {stats.get('inactive_agents', 0)}")
-        
-        version_dist = stats.get('version_distribution', {})
-        if version_dist:
-            print(f"\nVersion Distribution:")
-            for version, count in version_dist.items():
-                print(f"  {version}: {count} agents")
-        
-        creation_dates = stats.get('creation_dates', {})
-        if creation_dates:
-            print(f"\nCreation Dates (Last 12 months):")
-            for month, count in sorted(creation_dates.items(), reverse=True):
-                print(f"  {month}: {count} agents")
+        print("="*60)
+        print("⚠️  THIS COMMAND IS DISABLED")
+        print("="*60)
+        print("This command requires Convex endpoints that are not yet implemented.")
+        print("Required endpoints:")
+        print("  - GET /api/admin/agents/stats")
+        print("="*60)
+
+        # TODO: Implement when Convex admin endpoints are available
+        # convex = get_convex_client()
+        #
+        # stats = await convex.admin_rpc("getAgentStats", {})
+        # print("📊 Suna Default Agent Statistics")
+        # print("=" * 50)
+        # print(f"Total agents: {stats['totalAgents']}")
+        # print(f"Default (Suna) agents: {stats['defaultAgents']}")
+        # print(f"Accounts with Suna: {stats['accountsWitSuna']}")
+        return
 
 
 async def main():
@@ -167,4 +220,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main()) 
+    asyncio.run(main())

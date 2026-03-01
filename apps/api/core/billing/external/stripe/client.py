@@ -6,7 +6,7 @@ from enum import Enum
 from functools import wraps
 import stripe
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.config import config
 from ..interfaces import CircuitBreakerInterface
 
@@ -26,16 +26,16 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
     - In-memory state caching with configurable TTL (avoids DB reads on every call)
     - NO DB writes on success - only writes when state changes (failure/recovery)
     - No global lock - uses atomic in-memory counters for high concurrency
-    - DB is used for persistence across restarts and multi-instance coordination
+    - Convex is used for persistence across restarts and multi-instance coordination
     
     Memory state is authoritative for fast-path (closed circuit).
-    DB state is checked periodically and on failures for cross-instance coordination.
+    Convex state is checked periodically and on failures for cross-instance coordination.
     """
     
     # Class-level cache shared across all instances (per worker process)
     _memory_state: Optional[Dict] = None
     _memory_state_time: float = 0
-    _memory_state_ttl: float = 10.0  # Check DB every 10 seconds max
+    _memory_state_ttl: float = 10.0  # Check Convex every 10 seconds max
     _state_lock: Optional[asyncio.Lock] = None
     
     def __init__(
@@ -49,7 +49,14 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
-        self.db = DBConnection()
+        self._convex_client = None
+    
+    @property
+    def convex_client(self):
+        """Lazy initialization of Convex client."""
+        if self._convex_client is None:
+            self._convex_client = get_convex_client()
+        return self._convex_client
     
     @classmethod
     def _get_lock(cls) -> asyncio.Lock:
@@ -69,10 +76,10 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
         state_info = self._get_memory_state()
         
         if state_info and state_info['state'] == CircuitState.CLOSED:
-            # Circuit is closed - execute without any DB calls or locks
+            # Circuit is closed - execute without any Convex calls or locks
             try:
                 result = await func(*args, **kwargs)
-                # Success on closed circuit - no DB write needed
+                # Success on closed circuit - no Convex write needed
                 return result
             except self.expected_exception as e:
                 # Failure - need to record it (this path is rare)
@@ -116,47 +123,44 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
         StripeCircuitBreaker._memory_state_time = time.time()
     
     async def _get_circuit_state_with_refresh(self) -> Dict:
-        """Get circuit state, refreshing from DB if cache expired."""
+        """Get circuit state, refreshing from Convex if cache expired."""
         cached = self._get_memory_state()
         if cached:
             return cached
         
-        # Cache miss - fetch from DB (with lock to prevent thundering herd)
+        # Cache miss - fetch from Convex (with lock to prevent thundering herd)
         async with self._get_lock():
             # Double-check after acquiring lock
             cached = self._get_memory_state()
             if cached:
                 return cached
             
-            state_info = await self._fetch_state_from_db()
+            state_info = await self._fetch_state_from_convex()
             self._set_memory_state(state_info)
             return state_info
     
-    async def _fetch_state_from_db(self) -> Dict:
-        """Fetch circuit state from database."""
+    async def _fetch_state_from_convex(self) -> Dict:
+        """
+        Fetch circuit state from Convex.
+        
+        TODO: Requires Convex endpoint for circuit_breaker_state table operations.
+        The following Convex endpoints need to be created:
+        - GET /api/circuit-breaker/state?circuitName=stripe_api
+        - POST /api/circuit-breaker/state (upsert)
+        
+        For now, returns default CLOSED state.
+        """
         try:
-            client = await self.db.client
-            result = await client.from_('circuit_breaker_state').select('*').eq(
-                'circuit_name', self.circuit_name
-            ).execute()
+            # TODO: Implement Convex circuit breaker state endpoint
+            # The Supabase implementation queried the 'circuit_breaker_state' table:
+            #   result = await client.from_('circuit_breaker_state').select('*').eq(
+            #       'circuit_name', self.circuit_name
+            #   ).execute()
+            #
+            # For now, we'll use in-memory state only and log a warning
+            logger.debug(f"[CIRCUIT BREAKER] Using in-memory state only - Convex endpoint not yet implemented for {self.circuit_name}")
             
-            if result.data and len(result.data) > 0:
-                state_data = result.data[0]
-                
-                last_failure_time = None
-                if state_data.get('last_failure_time'):
-                    last_failure_time = datetime.fromisoformat(
-                        state_data['last_failure_time'].replace('Z', '+00:00')
-                    )
-                
-                return {
-                    'state': CircuitState(state_data['state']),
-                    'failure_count': state_data['failure_count'],
-                    'last_failure_time': last_failure_time
-                }
-            
-            # No state exists - initialize it
-            await self._initialize_circuit_state()
+            # Return default closed state
             return {
                 'state': CircuitState.CLOSED,
                 'failure_count': 0,
@@ -164,7 +168,7 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
             }
             
         except Exception as e:
-            logger.error(f"[CIRCUIT BREAKER] Error reading state from DB: {e}, defaulting to CLOSED")
+            logger.error(f"[CIRCUIT BREAKER] Error reading state from Convex: {e}, defaulting to CLOSED")
             return {
                 'state': CircuitState.CLOSED,
                 'failure_count': 0,
@@ -207,7 +211,7 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
     async def _record_success_async(self):
         """
         Record success - only called when recovering from non-CLOSED state.
-        Updates both memory and DB to transition back to CLOSED.
+        Updates both memory and Convex to transition back to CLOSED.
         """
         try:
             new_state = {
@@ -219,17 +223,16 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
             # Update memory immediately
             self._set_memory_state(new_state)
             
-            # Persist to DB for cross-instance coordination
-            client = await self.db.client
-            await client.from_('circuit_breaker_state').upsert({
-                'circuit_name': self.circuit_name,
-                'state': CircuitState.CLOSED.value,
-                'failure_count': 0,
-                'last_failure_time': None,
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).execute()
-            
-            logger.info(f"[CIRCUIT BREAKER] Circuit recovered to CLOSED for {self.circuit_name}")
+            # TODO: Persist to Convex for cross-instance coordination
+            # The Supabase implementation was:
+            #   await client.from_('circuit_breaker_state').upsert({
+            #       'circuit_name': self.circuit_name,
+            #       'state': CircuitState.CLOSED.value,
+            #       'failure_count': 0,
+            #       'last_failure_time': None,
+            #       'updated_at': datetime.now(timezone.utc).isoformat()
+            #   }).execute()
+            logger.debug(f"[CIRCUIT BREAKER] Circuit recovered to CLOSED for {self.circuit_name} (in-memory only)")
             
         except Exception as e:
             logger.error(f"[CIRCUIT BREAKER] Failed to record success: {e}")
@@ -238,10 +241,10 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
         """Record failure - increments counter and may open circuit."""
         try:
             async with self._get_lock():
-                # Get current state (prefer memory, fall back to DB)
+                # Get current state (prefer memory, fall back to Convex)
                 state_info = self._get_memory_state()
                 if not state_info:
-                    state_info = await self._fetch_state_from_db()
+                    state_info = await self._fetch_state_from_convex()
                 
                 new_failure_count = state_info['failure_count'] + 1
                 new_state = CircuitState.OPEN if new_failure_count >= self.failure_threshold else state_info['state']
@@ -260,15 +263,15 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
                 # Update memory immediately
                 self._set_memory_state(updated_state)
                 
-                # Persist to DB
-                client = await self.db.client
-                await client.from_('circuit_breaker_state').upsert({
-                    'circuit_name': self.circuit_name,
-                    'state': new_state.value,
-                    'failure_count': new_failure_count,
-                    'last_failure_time': now.isoformat(),
-                    'updated_at': now.isoformat()
-                }).execute()
+                # TODO: Persist to Convex
+                # The Supabase implementation was:
+                #   await client.from_('circuit_breaker_state').upsert({
+                #       'circuit_name': self.circuit_name,
+                #       'state': new_state.value,
+                #       'failure_count': new_failure_count,
+                #       'last_failure_time': now.isoformat(),
+                #       'updated_at': now.isoformat()
+                #   }).execute()
                 
                 if new_state == CircuitState.OPEN:
                     logger.warning(f"[CIRCUIT BREAKER] Circuit OPENED due to {new_failure_count} failures: {error_message}")
@@ -290,36 +293,33 @@ class StripeCircuitBreaker(CircuitBreakerInterface):
             # Update memory
             self._set_memory_state(half_open_state)
             
-            # Persist to DB
-            client = await self.db.client
-            await client.from_('circuit_breaker_state').upsert({
-                'circuit_name': self.circuit_name,
-                'state': CircuitState.HALF_OPEN.value,
-                'failure_count': 0,
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).execute()
+            # TODO: Persist to Convex
+            # The Supabase implementation was:
+            #   await client.from_('circuit_breaker_state').upsert({
+            #       'circuit_name': self.circuit_name,
+            #       'state': CircuitState.HALF_OPEN.value,
+            #       'failure_count': 0,
+            #       'updated_at': datetime.now(timezone.utc).isoformat()
+            #   }).execute()
             
-            logger.info(f"[CIRCUIT BREAKER] Circuit transitioned to HALF_OPEN for {self.circuit_name}")
+            logger.info(f"[CIRCUIT BREAKER] Circuit transitioned to HALF_OPEN for {self.circuit_name} (in-memory only)")
             
         except Exception as e:
             logger.error(f"[CIRCUIT BREAKER] Failed to transition to half-open: {e}")
     
     async def _initialize_circuit_state(self):
-        """Initialize circuit state in DB if it doesn't exist."""
-        try:
-            client = await self.db.client
-            await client.from_('circuit_breaker_state').insert({
-                'circuit_name': self.circuit_name,
-                'state': CircuitState.CLOSED.value,
-                'failure_count': 0,
-                'last_failure_time': None,
-                'updated_at': datetime.now(timezone.utc).isoformat(),
-                'created_at': datetime.now(timezone.utc).isoformat()
-            }).execute()
-            logger.info(f"[CIRCUIT BREAKER] Initialized circuit state for {self.circuit_name}")
-        except Exception as e:
-            # May fail due to race condition (another worker initialized it) - that's OK
-            logger.debug(f"[CIRCUIT BREAKER] Init state (may already exist): {e}")
+        """Initialize circuit state in Convex if it doesn't exist."""
+        # TODO: Implement Convex circuit breaker state initialization
+        # The Supabase implementation was:
+        #   await client.from_('circuit_breaker_state').insert({
+        #       'circuit_name': self.circuit_name,
+        #       'state': CircuitState.CLOSED.value,
+        #       'failure_count': 0,
+        #       'last_failure_time': None,
+        #       'updated_at': datetime.now(timezone.utc).isoformat(),
+        #       'created_at': datetime.now(timezone.utc).isoformat()
+        #   }).execute()
+        logger.debug(f"[CIRCUIT BREAKER] Using in-memory state for {self.circuit_name} - Convex persistence not yet implemented")
 
 
 class StripeAPIWrapper:

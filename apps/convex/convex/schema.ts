@@ -780,7 +780,7 @@ export default defineSchema({
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   agentRuns: defineTable({
     // Identity
-    id: v.string(), // Unique run ID (was UUID)
+    runId: v.string(), // Unique run ID (was UUID)
 
     // Thread association
     threadId: v.string(), // Parent thread
@@ -802,7 +802,7 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
   })
-    .index("by_id", ["id"]) // Unique lookup
+    .index("by_runId", ["runId"]) // Unique lookup
     .index("by_thread", ["threadId"]) // Thread's runs
     .index("by_thread_created", ["threadId", "createdAt"]) // Chronological in thread
     .index("by_status", ["status"]) // Filter by status
@@ -971,7 +971,7 @@ export default defineSchema({
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   creditLedger: defineTable({
     // Identity
-    id: v.string(), // Unique transaction ID (was UUID)
+    transactionId: v.string(), // Unique transaction ID (was UUID)
 
     // User association
     userId: v.string(), // User ID
@@ -995,7 +995,7 @@ export default defineSchema({
     // Timestamp
     createdAt: v.number(),
   })
-    .index("by_id", ["id"]) // Unique lookup
+    .index("by_transactionId", ["transactionId"]) // Unique lookup
     .index("by_user", ["userId"]) // User's transactions
     .index("by_user_created", ["userId", "createdAt"]) // Chronological per user
     .index("by_type", ["type"]) // Filter by type
@@ -1007,7 +1007,7 @@ export default defineSchema({
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   creditGrants: defineTable({
     // Identity
-    id: v.string(), // Unique grant ID (was UUID)
+    grantId: v.string(), // Unique grant ID (was UUID)
 
     // User association
     userId: v.string(), // User ID
@@ -1026,7 +1026,7 @@ export default defineSchema({
     periodStart: v.number(), // Start of billing period
     periodEnd: v.number(), // End of billing period
   })
-    .index("by_id", ["id"]) // Unique lookup
+    .index("by_grantId", ["grantId"]) // Unique lookup
     .index("by_user", ["userId"]) // User's grants
     .index("by_user_period", ["userId", "periodStart", "periodEnd"]) // Grants in period
     .index("by_expires", ["expiresAt"]), // Find expiring grants
@@ -1155,4 +1155,98 @@ export default defineSchema({
   })
     .index("by_identifier_endpoint", ["identifier", "endpoint"])
     .index("by_expiresAt", ["expiresAt"]),
+
+  // ═══════════════════════════════════════════════════════════════════════════════
+  // KNOWLEDGE BASE TABLES
+  // ═══════════════════════════════════════════════════════════════════════════════
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Knowledge Base Folders - Organization for knowledge entries
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  knowledgeBaseFolders: defineTable({
+    // Identity
+    folderId: v.string(), // Unique folder ID
+
+    // Ownership
+    accountId: v.string(), // Reference to account
+
+    // Content
+    name: v.string(),
+    description: v.optional(v.string()),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_folderId", ["folderId"]) // Unique lookup
+    .index("by_account", ["accountId"]) // Account's folders
+    .index("by_account_created", ["accountId", "createdAt"]), // Chronological
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Knowledge Base Entries - Files and documents in knowledge base
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  knowledgeBaseEntries: defineTable({
+    // Identity
+    entryId: v.string(), // Unique entry ID
+
+    // Ownership
+    accountId: v.string(), // Reference to account
+
+    // Folder association
+    folderId: v.string(), // Parent folder
+
+    // File info
+    filename: v.string(),
+    fileType: v.optional(v.string()), // MIME type
+    fileSize: v.number(), // Size in bytes
+
+    // Storage
+    storagePath: v.string(), // Path in storage (S3/Convex storage)
+
+    // Content
+    summary: v.optional(v.string()), // AI-generated summary
+
+    // Processing status
+    status: v.string(), // 'pending', 'processing', 'completed', 'failed'
+    processingError: v.optional(v.string()),
+
+    // Active flag for soft delete
+    isActive: v.boolean(),
+
+    // Timestamps
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_entryId", ["entryId"]) // Unique lookup
+    .index("by_account", ["accountId"]) // Account's entries
+    .index("by_folder", ["folderId"]) // Folder's entries
+    .index("by_account_folder", ["accountId", "folderId"]) // Account + folder
+    .index("by_account_active", ["accountId", "isActive"]) // Active entries
+    .index("by_status", ["status"]) // Filter by status
+    .searchIndex("by_summary", {
+      searchField: "summary",
+      filterFields: ["accountId", "folderId", "isActive"],
+    }),
+
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  // Agent Knowledge Entry Assignments - Links agents to KB entries
+  // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  agentKnowledgeEntryAssignments: defineTable({
+    // Identity
+    assignmentId: v.string(), // Unique assignment ID
+
+    // Associations
+    agentId: v.string(), // Agent reference
+    entryId: v.string(), // KB entry reference
+
+    // Ownership (for efficient queries)
+    accountId: v.string(),
+
+    // Timestamps
+    createdAt: v.number(),
+  })
+    .index("by_assignmentId", ["assignmentId"]) // Unique lookup
+    .index("by_agent", ["agentId"]) // Agent's assignments
+    .index("by_entry", ["entryId"]) // Entry's assignments
+    .index("by_agent_entry", ["agentId", "entryId"]), // Check specific assignment
 });

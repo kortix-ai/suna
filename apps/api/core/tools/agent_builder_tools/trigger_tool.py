@@ -9,10 +9,14 @@ from .base_tool import AgentBuilderBaseTool
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 from datetime import datetime
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services.http_client import get_http_client
 from core.triggers import get_trigger_service
 import os
+from fastapi import HTTPException
+
+# TODO: ComposioProfileService needs migration to use Convex endpoints
+# Currently uses internal Supabase queries for encrypted profile config retrieval
 from core.composio_integration.composio_profile_service import ComposioProfileService
 from core.composio_integration.composio_trigger_service import ComposioTriggerService
 
@@ -52,6 +56,8 @@ from core.composio_integration.composio_trigger_service import ComposioTriggerSe
 class TriggerTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
+        # Use Convex client where available while retaining db-backed fallback paths.
+        self._convex = get_convex_client()
 
     async def _get_account_workers(self) -> List[Dict[str, Any]]:
         account_id = await self._get_current_account_id()
@@ -352,7 +358,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 trigger_config["trigger_variables"] = variables
                 logger.debug(f"Found variables in trigger prompt: {variables}")
             
-            trigger_svc = get_trigger_service(self.db)
+            trigger_svc = get_trigger_service()
             
             try:
                 trigger = await trigger_svc.create_trigger(
@@ -419,7 +425,7 @@ class TriggerTool(AgentBuilderBaseTool):
         try:
             from core.triggers import TriggerType
             
-            trigger_svc = get_trigger_service(self.db)
+            trigger_svc = get_trigger_service()
             
             triggers = await trigger_svc.get_agent_triggers(self.agent_id)
             
@@ -472,7 +478,7 @@ class TriggerTool(AgentBuilderBaseTool):
     })
     async def delete_scheduled_trigger(self, trigger_id: str) -> ToolResult:
         try:
-            trigger_svc = get_trigger_service(self.db)
+            trigger_svc = get_trigger_service()
             
             trigger_config = await trigger_svc.get_trigger(trigger_id)
             
@@ -524,7 +530,7 @@ class TriggerTool(AgentBuilderBaseTool):
     })
     async def toggle_scheduled_trigger(self, trigger_id: str, is_active: bool) -> ToolResult:
         try:
-            trigger_svc = get_trigger_service(self.db)
+            trigger_svc = get_trigger_service()
             
             trigger_config = await trigger_svc.get_trigger(trigger_id)
             
@@ -706,7 +712,21 @@ class TriggerTool(AgentBuilderBaseTool):
                 )
 
             try:
-                profile_config = await profile_service.get_profile_config(resolved_profile_id, account_id=account_id)
+                try:
+                    profile_config = await self._convex.get_composio_profile(
+                        profile_id=resolved_profile_id,
+                        account_id=account_id,
+                    )
+                except Exception as convex_error:
+                    logger.warning(
+                        "Convex profile lookup failed for %s, falling back to legacy profile service: %s",
+                        resolved_profile_id,
+                        convex_error,
+                    )
+                    profile_config = await profile_service.get_profile_config(
+                        resolved_profile_id,
+                        account_id=account_id,
+                    )
             except Exception as e:
                 logger.error(f"Failed to get profile config: {e}")
                 return self.fail_response(f"Failed to get profile config: {str(e)}")
@@ -790,7 +810,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 resp = await http_client.post(upsert_url, headers=headers, json=body, timeout=20.0)
                 try:
                     resp.raise_for_status()
-                except httpx.HTTPStatusError as e:
+                except Exception as e:
                     ct = resp.headers.get("content-type", "")
                     detail = resp.json() if "application/json" in ct else resp.text
                     logger.error(f"Composio upsert error - status: {resp.status_code}, detail: {detail}")
@@ -846,7 +866,7 @@ class TriggerTool(AgentBuilderBaseTool):
                 logger.debug(f"Found variables in event trigger prompt: {variables}")
             
             # Create Suna trigger
-            trigger_svc = get_trigger_service(self.db)
+            trigger_svc = get_trigger_service()
             try:
                 trigger = await trigger_svc.create_trigger(
                     agent_id=target_agent_id,

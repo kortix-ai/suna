@@ -64,6 +64,12 @@ sys.path.insert(0, str(backend_dir))
 from dotenv import load_dotenv
 load_dotenv(backend_dir / '.env')
 
+# TODO: Convex endpoint needed for: projects table operations (select, upsert)
+# TODO: Convex endpoint needed for: threads table operations (select, upsert) - Available via ConvexClient
+# TODO: Convex endpoint needed for: messages table operations (select, upsert) - Available via ConvexClient
+# TODO: Convex endpoint needed for: agent_runs table operations (select, upsert)
+# The Convex client supports threads and messages but not projects or agent_runs.
+# Currently using Supabase for project migration between environments.
 from supabase import create_async_client, AsyncClient
 from core.utils.logger import logger
 

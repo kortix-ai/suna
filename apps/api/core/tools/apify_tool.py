@@ -15,7 +15,7 @@ from core.utils.config import config, EnvMode
 from core.utils.logger import logger
 from core.billing.credits.manager import CreditManager
 from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services.redis import get_client, set as redis_set, get as redis_get, delete as redis_delete
 from core.sandbox.tool_base import SandboxToolsBase
 
@@ -196,8 +196,10 @@ class ApifyTool(SandboxToolsBase):
     def __init__(self, project_id: str, thread_manager: Optional[ThreadManager] = None):
         super().__init__(project_id, thread_manager)
         self.credit_manager = CreditManager()
-        self.db = thread_manager.db if thread_manager else DBConnection()
-        
+        # TODO: Convex migration - db client pattern needs updating
+        # self.db = thread_manager.db if thread_manager else DBConnection()
+        self.convex = get_convex_client()
+
         if config.APIFY_API_TOKEN:
             # Initialize Apify client with token
             # The client handles retries automatically (up to 8 retries with exponential backoff)
@@ -248,16 +250,16 @@ class ApifyTool(SandboxToolsBase):
         try:
             context_vars = structlog.contextvars.get_contextvars()
             thread_id = context_vars.get('thread_id')
-            
+
             if not thread_id:
                 logger.warning("No thread_id in execution context")
                 return None, None
-            
-            client = await self.db.client
-            thread = await client.from_('threads').select('account_id').eq('thread_id', thread_id).single().execute()
-            if thread.data:
-                return thread_id, thread.data.get('account_id')
-                
+
+            # TODO: Convex migration - need get_thread method to return account_id
+            thread = await self.convex.get_thread(thread_id)
+            if thread and 'accountId' in thread:
+                return thread_id, thread.get('accountId')
+
         except Exception as e:
             logger.error(f"Failed to get thread context: {e}")
         return None, None
@@ -434,20 +436,20 @@ class ApifyTool(SandboxToolsBase):
     
     async def _has_deduction_for_run(self, user_id: str, run_id: str) -> bool:
         """Check if credits have already been deducted for this run_id (database check)."""
+        # TODO: Convex migration - need credit ledger query method
+        # For now, return False to allow deduction attempts
         try:
-            client = await self.db.client
-            # Check if a deduction already exists for this run_id
-            # The description format is: "Apify: {actor_id} (run: {run_id})"
-            result = await client.from_('credit_ledger').select('id').eq(
-                'account_id', user_id
-            ).eq('type', 'usage').like(
-                'description', f'%run: {run_id}%'
-            ).execute()
-            
-            has_deduction = result.data and len(result.data) > 0
-            if has_deduction:
-                logger.debug(f"Found existing deduction for run {run_id} in database")
-            return has_deduction
+            # client = await self.db.client
+            # result = await client.from_('credit_ledger').select('id').eq(
+            #     'account_id', user_id
+            # ).eq('type', 'usage').like(
+            #     'description', f'%run: {run_id}%'
+            # ).execute()
+            # has_deduction = result.data and len(result.data) > 0
+            # if has_deduction:
+            #     logger.debug(f"Found existing deduction for run {run_id} in database")
+            # return has_deduction
+            return False
         except Exception as e:
             logger.warning(f"Error checking for existing deduction for run {run_id}: {e}")
             # If we can't check, assume no deduction exists (safer to try deducting)

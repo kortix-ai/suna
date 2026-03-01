@@ -9,7 +9,9 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from cryptography.fernet import Fernet
 
-from core.services.supabase import DBConnection
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for data operations
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 
 
@@ -100,8 +102,19 @@ class EncryptionService:
 
 
 class CredentialService:
-    def __init__(self, db_connection: DBConnection):
-        self._db = db_connection
+    """Service for managing MCP credentials.
+
+    Uses Convex client for all data operations via HTTP endpoints:
+    - POST /api/credentials - Store credential
+    - GET /api/credentials - List credentials
+    - GET /api/credentials/get - Get credential by account and MCP name
+    - DELETE /api/credentials - Delete credential
+    """
+    
+    def __init__(self, db_connection=None):
+        # db_connection is kept for backward compatibility but not used
+        # We now use the Convex client singleton
+        self._convex = get_convex_client()
         self._encryption = EncryptionService()
     
     async def store_credential(
@@ -112,88 +125,85 @@ class CredentialService:
         config: Dict[str, Any]
     ) -> str:
         logger.debug(f"Storing credential for {mcp_qualified_name}")
-        
+
         credential_id = str(uuid.uuid4())
         encrypted_config, config_hash = self._encryption.encrypt_config(config)
         encoded_config = base64.b64encode(encrypted_config).decode('utf-8')
-        
-        client = await self._db.client
-        
-        existing = await client.table('user_mcp_credentials').select('credential_id')\
-            .eq('account_id', account_id)\
-            .eq('mcp_qualified_name', mcp_qualified_name)\
-            .eq('is_active', True)\
-            .execute()
-        
-        if existing.data:
-            await client.table('user_mcp_credentials').update({
-                'is_active': False,
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).eq('credential_id', existing.data[0]['credential_id']).execute()
-        
-        result = await client.table('user_mcp_credentials').insert({
-            'credential_id': credential_id,
-            'account_id': account_id,
-            'mcp_qualified_name': mcp_qualified_name,
-            'display_name': display_name,
-            'encrypted_config': encoded_config,
-            'config_hash': config_hash,
-            'is_active': True,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }).execute()
-        
+
+        # Check for existing credential first
+        try:
+            existing = await self._convex.get_credential(account_id, mcp_qualified_name)
+            if existing:
+                # Update existing credential
+                await self._convex.update_credential(
+                    credential_id=existing['credential_id'],
+                    account_id=account_id,
+                    display_name=display_name,
+                    encrypted_config=encoded_config,
+                    config_hash=config_hash,
+                    is_active=True
+                )
+                logger.debug(f"Updated existing credential {existing['credential_id']} for {mcp_qualified_name}")
+                return existing['credential_id']
+        except Exception:
+            # No existing credential, create new
+            pass
+
+        # Store new credential via Convex client
+        await self._convex.store_credential(
+            credential_id=credential_id,
+            account_id=account_id,
+            mcp_qualified_name=mcp_qualified_name,
+            display_name=display_name,
+            encrypted_config=encoded_config,
+            config_hash=config_hash,
+            is_active=True
+        )
+
         logger.debug(f"Stored credential {credential_id} for {mcp_qualified_name}")
         return credential_id
     
     async def get_credential(
-        self, 
-        account_id: str, 
+        self,
+        account_id: str,
         mcp_qualified_name: str
     ) -> Optional[MCPCredential]:
-        client = await self._db.client
-        result = await client.table('user_mcp_credentials').select('*')\
-            .eq('account_id', account_id)\
-            .eq('mcp_qualified_name', mcp_qualified_name)\
-            .eq('is_active', True)\
-            .execute()
-        
-        if not result.data:
+        # Retrieve credential via Convex client
+        try:
+            result = await self._convex.get_credential(account_id, mcp_qualified_name)
+            if not result:
+                return None
+            return self._map_to_credential(result)
+        except Exception as e:
+            logger.error(f"Error getting credential: {e}")
             return None
-        
-        return self._map_to_credential(result.data[0])
     
     async def get_user_credentials(self, account_id: str) -> List[MCPCredential]:
-        client = await self._db.client
-        result = await client.table('user_mcp_credentials').select('*')\
-            .eq('account_id', account_id)\
-            .eq('is_active', True)\
-            .order('created_at', desc=True)\
-            .execute()
-        
-        return [self._map_to_credential(data) for data in result.data]
+        # List credentials via Convex client
+        try:
+            rows = await self._convex.list_credentials(account_id)
+            return [self._map_to_credential(data) for data in rows]
+        except Exception as e:
+            logger.error(f"Error listing credentials: {e}")
+            return []
     
     async def delete_credential(
-        self, 
-        account_id: str, 
+        self,
+        account_id: str,
         mcp_qualified_name: str
     ) -> bool:
         logger.debug(f"Deleting credential for {mcp_qualified_name}")
-        
-        client = await self._db.client
-        result = await client.table('user_mcp_credentials').update({
-            'is_active': False,
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }).eq('account_id', account_id)\
-          .eq('mcp_qualified_name', mcp_qualified_name)\
-          .eq('is_active', True)\
-          .execute()
-        
-        success = len(result.data) > 0
-        if success:
-            logger.debug(f"Deleted credential for {mcp_qualified_name}")
-        
-        return success
+
+        # Delete credential via Convex client
+        try:
+            result = await self._convex.delete_credential(account_id, mcp_qualified_name)
+            success = result.get('success', False)
+            if success:
+                logger.debug(f"Deleted credential for {mcp_qualified_name}")
+            return success
+        except Exception as e:
+            logger.error(f"Error deleting credential: {e}")
+            return False
     
     async def get_missing_credentials(
         self, 
@@ -259,5 +269,5 @@ class CredentialService:
         )
 
 
-def get_credential_service(db_connection: DBConnection) -> CredentialService:
-    return CredentialService(db_connection) 
+def get_credential_service(db_connection=None) -> CredentialService:
+    return CredentialService(db_connection)

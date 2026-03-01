@@ -36,7 +36,7 @@ def check_imports():
     print("🔍 Step 1: Checking critical imports...")
     
     imports = [
-        "from core.services.supabase import DBConnection",
+        "from core.services.convex_client import get_convex_client",
         "from core.agents.api import router",
         "from core.threads.api import router",
         "from core.memory.background_jobs import start_memory_extraction",
@@ -154,10 +154,10 @@ def test_api_import():
 import sys
 sys.path.insert(0, '.')
 try:
-    from core.services.supabase import DBConnection
-    print('✅ DBConnection imports successfully')
+    from core.services.convex_client import get_convex_client
+    print('✅ convex_client imports successfully')
 except Exception as e:
-    print(f'❌ DBConnection import failed: {e}')
+    print(f'❌ convex_client import failed: {e}')
     sys.exit(1)
 """)
         temp_file = f.name

@@ -2,7 +2,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, Tuple, Any, Dict, List
 from core.utils.logger import logger
 from core.utils.config import config
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 import uuid
 
 # Namespace UUID for generating deterministic UUIDs from non-UUID session IDs
@@ -11,7 +11,7 @@ PRESENCE_SESSION_NAMESPACE = uuid.UUID('a1b2c3d4-e5f6-7890-abcd-ef1234567890')
 
 class PresenceService:
     def __init__(self):
-        self.db = DBConnection()
+        self.convex = get_convex_client()
         self.activity_threshold_minutes = 2
         self.stale_session_threshold_minutes = 5
     
@@ -252,9 +252,11 @@ class PresenceService:
             return []
         
         try:
-            client = await self.db.client
-            result = await client.rpc('get_thread_viewers', {'thread_id_param': thread_id}).execute()
-            return result.data if result.data else []
+            # TODO: Migrate to Convex - need presence session endpoints
+            # Old Supabase code used RPC: get_thread_viewers
+            # Need to add presence session management to Convex http.ts
+            logger.warning("get_thread_viewers needs Convex presence endpoints")
+            return []
         except Exception as e:
             logger.error(f"Error getting thread viewers: {str(e)}")
             return []
@@ -264,9 +266,11 @@ class PresenceService:
             return []
         
         try:
-            client = await self.db.client
-            result = await client.rpc('get_account_active_threads', {'account_id_param': account_id}).execute()
-            return result.data if result.data else []
+            # TODO: Migrate to Convex - need presence session endpoints
+            # Old Supabase code used RPC: get_account_active_threads
+            # Need to add presence session management to Convex http.ts
+            logger.warning("get_account_active_threads needs Convex presence endpoints")
+            return []
         except Exception as e:
             logger.error(f"Error getting account active threads: {str(e)}")
             return []

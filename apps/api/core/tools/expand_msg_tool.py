@@ -1,5 +1,6 @@
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
+from core.services.convex_client import get_convex_client
 from typing import List, Optional
 import asyncio
 import json
@@ -55,6 +56,7 @@ class ExpandMessageTool(Tool):
         super().__init__()
         self.thread_manager = thread_manager
         self.thread_id = thread_id
+        self.convex = get_convex_client()
 
     @staticmethod
     def _mcp_registry_out_of_sync(mcp_registry, mcp_loader) -> bool:
@@ -98,13 +100,14 @@ class ExpandMessageTool(Tool):
     })
     async def expand_message(self, message_id: str) -> ToolResult:
         try:
-            client = await self.thread_manager.db.client
-            message = await client.table('messages').select('*').eq('message_id', message_id).eq('thread_id', self.thread_id).execute()
+            account_id = getattr(self.thread_manager, 'account_id', None)
 
-            if not message.data or len(message.data) == 0:
-                return self.fail_response(f"Message with ID {message_id} not found in thread {self.thread_id}")
+            # Use the get_message method for direct lookup
+            message_data = await self.convex.get_message(message_id, account_id=account_id)
 
-            message_data = message.data[0]
+            if not message_data:
+                return self.fail_response(f"Message with ID {message_id} not found")
+
             message_content = message_data['content']
             final_content = message_content
             if isinstance(message_content, dict) and 'content' in message_content:
@@ -455,29 +458,28 @@ class ExpandMessageTool(Tool):
         from core.utils.logger import logger
         
         try:
-            client = await self.thread_manager.db.client
+            account_id = getattr(self.thread_manager, 'account_id', None)
             
-            result = await client.table('threads')\
-                .select('metadata')\
-                .eq('thread_id', self.thread_id)\
-                .single()\
-                .execute()
+            # Get current thread metadata using Convex
+            thread = await self.convex.get_thread(self.thread_id, account_id=account_id)
             
-            if not result.data:
+            if not thread:
                 logger.warning(f"⚠️  [DYNAMIC TOOLS] Thread {self.thread_id} not found, cannot save tools")
                 return
             
-            metadata = result.data.get('metadata') or {}
+            metadata = thread.get('metadata') or {}
             
             existing_tools = set(metadata.get('dynamic_tools', []))
             updated_tools = list(existing_tools | set(new_tool_names))
             
             metadata['dynamic_tools'] = updated_tools
             
-            await client.table('threads')\
-                .update({'metadata': metadata})\
-                .eq('thread_id', self.thread_id)\
-                .execute()
+            # Update thread metadata using Convex
+            await self.convex.update_thread(
+                thread_id=self.thread_id,
+                account_id=account_id,
+                metadata=metadata
+            )
             
             logger.info(f"💾 [DYNAMIC TOOLS] Saved {len(new_tool_names)} tools to thread metadata (total: {len(updated_tools)})")
             

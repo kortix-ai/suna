@@ -6,7 +6,7 @@ from uuid import uuid4, UUID
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, get_optional_current_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services.http_client import get_http_client
 from datetime import datetime
 import os
@@ -33,12 +33,10 @@ from core.triggers.api import sync_triggers_to_version_config
 
 router = APIRouter(prefix="/composio", tags=["composio"])
 
-db: Optional[DBConnection] = None
+# NOTE: DBConnection instance removed - migrated to Convex
+# The credential_service and profile_service still use DBConnection internally
+# until their full migration to Convex is complete
 
-def initialize(database: DBConnection):
-    global db
-    db = database
-    
 COMPOSIO_API_BASE = os.getenv("COMPOSIO_API_BASE", "https://backend.composio.dev")
 
 def verify_std_webhook(wid: str, wts: str, wsig: str, raw: bytes, hex_secret: str, max_skew: int = 300) -> bool:
@@ -300,7 +298,7 @@ async def integrate_toolkit(
         integration_user_id = str(uuid4())
         logger.debug(f"Generated integration user_id: {integration_user_id} for account: {current_user_id}")
         
-        service = get_integration_service(db_connection=db)
+        service = get_integration_service()
         result = await service.integrate_toolkit(
             toolkit_slug=request.toolkit_slug,
             account_id=current_user_id,
@@ -345,7 +343,7 @@ async def create_profile(
             integration_user_id = str(uuid4())
             logger.debug(f"Generated integration user_id: {integration_user_id} for account: {current_user_id}")
         
-        service = get_integration_service(db_connection=db)
+        service = get_integration_service()
         result = await service.integrate_toolkit(
             toolkit_slug=request.toolkit_slug,
             account_id=current_user_id,

@@ -139,16 +139,17 @@ async def track_pricing_view(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     """Track when a user views the pricing modal (for funnel analytics)."""
-    from core.services.supabase import DBConnection
-
+    # NOTE: Convex endpoint for analytics tracking pending
+    # The Supabase RPC 'track_pricing_view' needs to be migrated to Convex
+    # For now, we'll use the billing repo if available, otherwise no-op
     try:
-        db = DBConnection()
-        client = await db.client
-
-        await client.rpc('track_pricing_view', {
-            'p_user_id': account_id
-        }).execute()
-
+        # Attempt to use billing repo for tracking (if implemented)
+        from core.billing import repo as billing_repo
+        if hasattr(billing_repo, 'track_pricing_view'):
+            await billing_repo.track_pricing_view(account_id)
+        else:
+            logger.debug(f"[BILLING] Pricing view tracking not yet implemented in Convex for {account_id}")
+        
         return {'success': True}
     except Exception as e:
         logger.error(f"[BILLING] Error tracking pricing view: {e}")
@@ -162,17 +163,17 @@ async def track_checkout_click(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ) -> Dict:
     """Track when a user clicks subscribe/checkout (before going to Stripe)."""
-    from core.services.supabase import DBConnection
-
+    # NOTE: Convex endpoint for analytics tracking pending
+    # The Supabase RPC 'track_checkout_click' needs to be migrated to Convex
+    # For now, we'll use the billing repo if available, otherwise no-op
     try:
-        db = DBConnection()
-        client = await db.client
-
-        await client.rpc('track_checkout_click', {
-            'p_user_id': account_id,
-            'p_tier': tier
-        }).execute()
-
+        # Attempt to use billing repo for tracking (if implemented)
+        from core.billing import repo as billing_repo
+        if hasattr(billing_repo, 'track_checkout_click'):
+            await billing_repo.track_checkout_click(account_id, tier)
+        else:
+            logger.debug(f"[BILLING] Checkout click tracking not yet implemented in Convex for {account_id}, tier={tier}")
+        
         return {'success': True}
     except Exception as e:
         logger.error(f"[BILLING] Error tracking checkout click: {e}")

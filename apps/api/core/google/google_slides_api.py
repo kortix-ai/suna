@@ -22,7 +22,7 @@ from pydantic import BaseModel, Field
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services.http_client import get_http_client
 from .google_slides_service import GoogleSlidesService, OAuthTokenService
 
@@ -63,16 +63,10 @@ class ConvertToSlidesResponse(BaseModel):
 
 # ================== DEPENDENCY INJECTION ==================
 
-async def get_db_connection() -> DBConnection:
-    """Get database connection."""
-    # Use singleton - already initialized at startup
-    db = DBConnection()
-    return db
-
-
-async def get_oauth_service(db: DBConnection = Depends(get_db_connection)) -> OAuthTokenService:
-    """Get OAuth token service with database connection."""
-    return OAuthTokenService(db)
+async def get_oauth_service() -> OAuthTokenService:
+    """Get OAuth token service with Convex client."""
+    convex = get_convex_client()
+    return OAuthTokenService(convex)
 
 
 async def get_google_slides_service(oauth_service: OAuthTokenService = Depends(get_oauth_service)) -> GoogleSlidesService:

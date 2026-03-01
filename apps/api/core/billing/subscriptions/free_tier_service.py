@@ -127,18 +127,15 @@ class FreeTierService:
                 if account_details:
                     user_id = account_details.get('primary_owner_user_id')
                     if user_id:
-                        # Try auth.admin first (requires Supabase client for auth operations)
-                        try:
-                            from core.services.supabase import DBConnection
-                            db = DBConnection()
-                            client = await db.client
-                            user_result = await client.auth.admin.get_user_by_id(user_id)
-                            email = user_result.user.email if user_result and user_result.user else None
-                        except:
-                            pass
+                        # Try to get email from billing repo first (Convex)
+                        email = await billing_repo.get_user_email(user_id)
 
+                        # NOTE: Auth admin API migration pending
+                        # If billing repo doesn't have email, we need a Convex endpoint
+                        # equivalent to Supabase's auth.admin.get_user_by_id
+                        # For now, fallback to checking if email was retrieved
                         if not email:
-                            email = await billing_repo.get_user_email(user_id)
+                            logger.warning(f"[FREE TIER] Could not get email via billing repo for user {user_id}, auth admin API not yet migrated to Convex")
 
             if not email:
                 logger.error(f"[FREE TIER] Could not get email for account {account_id}")

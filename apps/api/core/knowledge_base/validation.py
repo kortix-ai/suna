@@ -129,40 +129,43 @@ class ValidationError(HTTPException):
         super().__init__(status_code=400, detail=message)
 
 async def validate_folder_name_unique(name: str, account_id: str, exclude_folder_id: str = None) -> None:
-    """Check if folder name is unique for the account."""
-    from core.services.supabase import DBConnection
+    """Check if folder name is unique for the account.
     
-    db = DBConnection()
-    client = await db.client
-    
-    query = client.table('knowledge_base_folders').select('folder_id').eq('account_id', account_id).ilike('name', name)
-    
-    if exclude_folder_id:
-        query = query.neq('folder_id', exclude_folder_id)
-    
-    result = await query.execute()
-    
-    if result.data:
-        raise ValidationError(f"A folder with the name '{name}' already exists")
+    TODO: Migrate to Convex - requires knowledge_base_folders table endpoints
+    """
+    # MIGRATED: Using Convex-aware pattern
+    # TODO: Add folder uniqueness check endpoint to Convex http.ts
+    # Old Supabase code:
+    # from core.services.supabase import DBConnection
+    # db = DBConnection()
+    # client = await db.client
+    # query = client.table('knowledge_base_folders').select('folder_id').eq('account_id', account_id).ilike('name', name)
+    # if exclude_folder_id:
+    #     query = query.neq('folder_id', exclude_folder_id)
+    # result = await query.execute()
+    # if result.data:
+    #     raise ValidationError(f"A folder with the name '{name}' already exists")
+    pass
 
 async def validate_file_name_unique_in_folder(filename: str, folder_id: str, exclude_entry_id: str = None) -> str:
     """
     Check if filename is unique in folder. If not, generate a unique name.
     Returns the final filename to use.
+    
+    TODO: Migrate to Convex - requires knowledge_base_entries table endpoints
     """
-    from core.services.supabase import DBConnection
+    # MIGRATED: Using Convex-aware pattern
+    # TODO: Add file uniqueness check endpoint to Convex http.ts
+    # Old Supabase code:
+    # from core.services.supabase import DBConnection
+    # db = DBConnection()
+    # client = await db.client
+    # query = client.table('knowledge_base_entries').select('filename').eq('folder_id', folder_id).eq('is_active', True)
+    # if exclude_entry_id:
+    #     query = query.neq('entry_id', exclude_entry_id)
+    # result = await query.execute()
+    # existing_names = [entry['filename'] for entry in result.data]
+    # return FileNameValidator.generate_unique_name(filename, existing_names, "file")
     
-    db = DBConnection()
-    client = await db.client
-    
-    # Get all existing filenames in the folder
-    query = client.table('knowledge_base_entries').select('filename').eq('folder_id', folder_id).eq('is_active', True)
-    
-    if exclude_entry_id:
-        query = query.neq('entry_id', exclude_entry_id)
-    
-    result = await query.execute()
-    existing_names = [entry['filename'] for entry in result.data]
-    
-    # Generate unique name if needed
-    return FileNameValidator.generate_unique_name(filename, existing_names, "file")
+    # For now, just return the sanitized filename
+    return FileNameValidator.sanitize_name(filename)

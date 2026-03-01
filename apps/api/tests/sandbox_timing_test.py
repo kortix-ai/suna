@@ -215,47 +215,34 @@ async def test_get_sandbox_state() -> TimingResult:
 
 
 async def test_check_pool_sandbox_states():
-    """Check the current state of sandboxes in the pool."""
+    """Check the current state of sandboxes in the pool.
+
+    MIGRATED: Uses Convex client for database access
+    """
     print("\n" + "="*60)
     print("CHECKING CURRENT POOL SANDBOX STATES")
     print("="*60)
-    
+
     try:
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        client = await db.client
-        
-        # Get all pooled sandboxes
-        result = await client.table('resources').select(
-            'id, external_id, status, created_at, pooled_at'
-        ).eq('type', 'sandbox').eq('status', 'pooled').execute()
-        
-        if not result.data:
+        from core.services.convex_client import get_convex_client
+
+        convex = get_convex_client()
+
+        # Query pooled sandboxes via Convex admin RPC
+        pool_sandboxes = await convex.admin_rpc(
+            "admin:getPooledSandboxes",
+            {}
+        )
+
+        if not pool_sandboxes:
             print("No pooled sandboxes found in database")
             return
-        
-        print(f"\nFound {len(result.data)} pooled sandboxes in database")
-        print("-" * 60)
-        
-        states = {'STARTED': 0, 'STOPPED': 0, 'ARCHIVED': 0, 'OTHER': 0, 'ERROR': 0}
-        
-        for resource in result.data[:10]:  # Check first 10
-            sandbox_id = resource['external_id']
-            try:
-                sandbox = await daytona.get(sandbox_id)
-                state = str(sandbox.state).replace('SandboxState.', '')
-                if state in states:
-                    states[state] += 1
-                else:
-                    states['OTHER'] += 1
-                print(f"  {sandbox_id[:8]}... -> {state}")
-            except Exception as e:
-                states['ERROR'] += 1
-                print(f"  {sandbox_id[:8]}... -> ERROR: {e}")
-        
-        print("-" * 60)
-        print(f"Summary (first 10): {states}")
-        
+
+        print(f"Found {len(pool_sandboxes)} pooled sandboxes:")
+        for sb in pool_sandboxes:
+            print(f"  - ID: {sb.get('external_id')}, Status: {sb.get('status')}, "
+                  f"Created: {sb.get('created_at')}, Pooled: {sb.get('pooled_at')}")
+
     except Exception as e:
         print(f"Error checking pool: {e}")
 

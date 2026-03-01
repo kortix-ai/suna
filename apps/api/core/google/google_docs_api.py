@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services.http_client import get_http_client
 from .google_docs_service import GoogleDocsService
 from .google_slides_service import OAuthTokenService
@@ -27,14 +27,10 @@ class ConvertToDocsResponse(BaseModel):
     is_api_enabled: bool = Field(default=True, description="Whether Google API is enabled")
 
 
-async def get_db_connection() -> DBConnection:
-    # Use singleton - already initialized at startup
-    db = DBConnection()
-    return db
-
-
-async def get_oauth_service(db: DBConnection = Depends(get_db_connection)) -> OAuthTokenService:
-    return OAuthTokenService(db)
+async def get_oauth_service() -> OAuthTokenService:
+    """Get OAuth token service with Convex client."""
+    convex = get_convex_client()
+    return OAuthTokenService(convex)
 
 
 async def get_google_docs_service(oauth_service: OAuthTokenService = Depends(get_oauth_service)) -> GoogleDocsService:

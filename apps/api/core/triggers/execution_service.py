@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services import redis
 from core.utils.logger import logger, structlog
 from core.utils.config import config, EnvMode
@@ -16,10 +16,12 @@ from .trigger_service import TriggerEvent, TriggerResult
 
 
 class ExecutionService:
-    """Executes agents when triggers fire, reusing core agent_runs infrastructure."""
+    """Executes agents when triggers fire, reusing the core agent_runs infrastructure."""
 
-    def __init__(self, db_connection: DBConnection):
-        self._db = db_connection
+    def __init__(self, db_connection=None):
+        # db_connection is kept for backward compatibility but not used
+        # We now use the Convex client singleton
+        pass
     
     async def execute_trigger_result(
         self,
@@ -37,15 +39,17 @@ class ExecutionService:
             return {"success": False, "error": "Trigger functionality is disabled"}
 
         try:
-            client = await self._db.client
-            agent_result = await client.table('agents').select('account_id').eq('agent_id', agent_id).single().execute()
-            if not agent_result.data:
+            convex = get_convex_client()
+
+            # Get agent to retrieve account_id
+            agent_data = await convex.get_agent(agent_id)
+            if not agent_data:
                 return {
                     "success": False,
                     "error": f"Agent {agent_id} not found",
                     "message": "Failed to execute trigger"
                 }
-            account_id = agent_result.data['account_id']
+            account_id = agent_data.get('account_id')
             
             if config.ENV_MODE != EnvMode.LOCAL:
                 from core.utils.limits_checker import check_project_count_limit, check_thread_limit
@@ -160,6 +164,6 @@ class ExecutionService:
         return rendered
 
 
-def get_execution_service(db_connection: DBConnection) -> ExecutionService:
+def get_execution_service(db_connection=None) -> ExecutionService:
     """Factory function for ExecutionService."""
     return ExecutionService(db_connection)

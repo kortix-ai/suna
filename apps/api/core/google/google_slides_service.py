@@ -27,7 +27,7 @@ from googleapiclient.errors import HttpError
 from googleapiclient.http import MediaFileUpload
 
 from core.credentials.credential_service import EncryptionService
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 
 
@@ -59,11 +59,11 @@ class OAuthTokenAccessDeniedError(Exception):
 
 class OAuthTokenService:
     """Service for managing OAuth tokens with encryption and secure storage."""
-    
-    def __init__(self, db_connection: DBConnection):
-        self._db = db_connection
+
+    def __init__(self, convex_client):
+        self._convex = convex_client
         self._encryption = EncryptionService()
-        logger.debug("OAuthTokenService initialized")
+        logger.debug("OAuthTokenService initialized with Convex client")
     
     async def store_token(
         self,
@@ -83,33 +83,20 @@ class OAuthTokenService:
             Token ID
         """
         logger.debug(f"Storing Google OAuth token for user {user_id}")
-        
+
         # Encrypt the token data
         encrypted_token, token_hash = self._encryption.encrypt_config(token_data)
         encoded_token = base64.b64encode(encrypted_token).decode('utf-8')
-        
-        client = await self._db.client
-        
-        # Delete existing tokens for this user (hard delete for OAuth tokens)
-        await client.table('google_oauth_tokens').delete()\
-            .eq('user_id', user_id)\
-            .execute()
-        
-        # Insert new token
-        token_row = {
-            'user_id': user_id,
-            'encrypted_token': encoded_token,
-            'token_hash': token_hash,
-            'expires_at': expires_at.isoformat() if expires_at else None,
-            'created_at': datetime.now(timezone.utc).isoformat(),
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }
-        
-        result = await client.table('google_oauth_tokens').insert(token_row).execute()
-        
-        token_id = result.data[0]['id']
-        logger.debug(f"Stored Google OAuth token {token_id} for user {user_id}")
-        return token_id
+
+        # TODO: Convex client does not yet support google_oauth_tokens table operations
+        # The following operations need to be added to the Convex backend:
+        # - Delete existing tokens for user
+        # - Insert new token
+        # For now, we raise a NotImplementedError
+        raise NotImplementedError(
+            "OAuth token storage not yet migrated to Convex. "
+            "Need to add google_oauth_tokens table operations to Convex backend."
+        )
     
     async def get_token(
         self,
@@ -117,24 +104,19 @@ class OAuthTokenService:
     ) -> Optional[OAuthToken]:
         """
         Retrieve Google OAuth token for a user.
-        
+
         Args:
             user_id: User identifier
-            
+
         Returns:
             OAuthToken if found, None otherwise
         """
-        client = await self._db.client
-        result = await client.table('google_oauth_tokens').select('*')\
-            .eq('user_id', user_id)\
-            .order('created_at', desc=True)\
-            .limit(1)\
-            .execute()
-        
-        if not result.data:
-            return None
-        
-        return self._map_to_oauth_token(result.data[0])
+        # TODO: Convex client does not yet support google_oauth_tokens table operations
+        # Need to add google_oauth_tokens query to Convex backend
+        raise NotImplementedError(
+            "OAuth token retrieval not yet migrated to Convex. "
+            "Need to add google_oauth_tokens table operations to Convex backend."
+        )
     
     # UNUSED: get_user_tokens - never called anywhere
     # async def get_user_tokens(self, user_id: str) -> List[OAuthToken]:
@@ -161,27 +143,21 @@ class OAuthTokenService:
     ) -> bool:
         """
         Delete Google OAuth token for a user.
-        
+
         Args:
             user_id: User identifier
-            
+
         Returns:
             True if token was found and deleted, False otherwise
         """
         logger.debug(f"Deleting Google OAuth token for user {user_id}")
-        
-        client = await self._db.client
-        result = await client.table('google_oauth_tokens').delete()\
-            .eq('user_id', user_id)\
-            .execute()
-        
-        success = len(result.data) > 0
-        if success:
-            logger.debug(f"Deleted Google OAuth token for user {user_id}")
-        else:
-            logger.debug(f"No Google OAuth token found for user {user_id}")
-        
-        return success
+
+        # TODO: Convex client does not yet support google_oauth_tokens table operations
+        # Need to add google_oauth_tokens delete to Convex backend
+        raise NotImplementedError(
+            "OAuth token deletion not yet migrated to Convex. "
+            "Need to add google_oauth_tokens table operations to Convex backend."
+        )
     
     async def is_token_valid(
         self,

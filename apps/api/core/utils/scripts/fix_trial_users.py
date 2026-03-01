@@ -1,91 +1,86 @@
 #!/usr/bin/env python3
+"""
+Fix trial users with incorrect credit classification.
+
+NOTE: This script is currently DISABLED pending Convex endpoint implementation.
+
+Convex Endpoints Required:
+==========================
+1. admin:listCreditAccounts - List credit accounts by trial status
+   Params: { trialStatus?: string[] }
+   Returns: [{ accountId, trialStatus, nonExpiringCredits, ... }]
+
+2. admin:updateCreditAccount - Update credit account
+   Params: { accountId, nonExpiringCredits?, expiringCredits?, balance?, trialStatus? }
+   Returns: { success: boolean }
+
+3. admin:createLedgerEntry - Insert credit ledger entry
+   Params: { accountId, amount, type, description, ... }
+   Returns: { entryId }
+"""
 import asyncio
 import sys
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from decimal import Decimal
 
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
-from core.billing.credits.manager import credit_manager
 
 async def fix_trial_users():
-    """Fix users who incorrectly have trial credits as non-expiring"""
-    db = DBConnection()
-    await db.initialize()
-    client = await db.client
-    
+    """
+    Fix users who incorrectly have trial credits as non-expiring.
+
+    Requires Convex admin endpoints:
+    - admin:listCreditAccounts
+    - admin:updateCreditAccount
+    - admin:createLedgerEntry
+    """
+    convex = get_convex_client()
+
     print("\n" + "="*60)
-    print("FIXING TRIAL USERS WITH INCORRECT NON-EXPIRING CREDITS")
+    print("⚠️  THIS SCRIPT IS DISABLED")
     print("="*60)
-    
-    # Find users on trial or recently converted from trial
-    result = await client.from_('credit_accounts')\
-        .select('*')\
-        .in_('trial_status', ['active', 'converted'])\
-        .execute()
-    
-    if not result.data:
-        print("No trial users found")
-        return
-    
+    print("This script requires Convex admin endpoints that are not yet implemented.")
+    print("Required endpoints:")
+    print("  - admin:listCreditAccounts (with trialStatus filter)")
+    print("  - admin:updateCreditAccount")
+    print("  - admin:createLedgerEntry")
+    print("="*60)
+
+    # Find users on trial or recently converted from trial via Convex admin RPC
+    accounts = await convex.admin_rpc("listCreditAccounts", {
+        "trialStatus": ["active", "converted"]
+    })
+
     fixed_count = 0
-    
-    for account in result.data:
-        account_id = account['account_id']
-        tier = account.get('tier', 'none')
-        trial_status = account.get('trial_status')
-        non_expiring = Decimal(str(account.get('non_expiring_credits', 0)))
-        expiring = Decimal(str(account.get('expiring_credits', 0)))
-        balance = Decimal(str(account.get('balance', 0)))
-        
+    for account in accounts:
+        non_expiring = Decimal(str(account.get('nonExpiringCredits', 0)))
+        trial_status = account.get('trialStatus')
 
         if non_expiring >= Decimal('5') and trial_status in ['active', 'converted']:
-            print(f"\nUser {account_id[:8]}... has incorrect trial credits:")
-            print(f"  Trial Status: {trial_status}")
-            print(f"  Current Balance: ${balance}")
-            print(f"  Non-expiring: ${non_expiring} (INCORRECT - includes trial credits)")
-            print(f"  Expiring: ${expiring}")
-            
-            # Calculate the correction
-            trial_amount = Decimal('5')
-            corrected_non_expiring = non_expiring - trial_amount
-            corrected_expiring = expiring + trial_amount
-            
-            # The total balance should remain the same
-            print(f"\n  Correcting to:")
-            print(f"  Non-expiring: ${corrected_non_expiring} (removed trial credits)")
-            print(f"  Expiring: ${corrected_expiring} (added trial credits)")
-            print(f"  Total Balance: ${balance} (unchanged)")
-            
-            # Update the credit account
-            update_result = await client.from_('credit_accounts').update({
-                'non_expiring_credits': float(corrected_non_expiring),
-                'expiring_credits': float(corrected_expiring),
-                'updated_at': datetime.now(timezone.utc).isoformat()
-            }).eq('account_id', account_id).execute()
-            
-            if update_result.data:
-                # Add ledger entry for audit trail
-                await client.from_('credit_ledger').insert({
-                    'account_id': account_id,
-                    'amount': 0,  # No balance change, just reclassification
-                    'balance_after': float(balance),
-                    'type': 'adjustment',
-                    'description': 'Fixed trial credits: moved $5 from non-expiring to expiring'
-                }).execute()
-                
-                print(f"  ✅ Fixed credits for user {account_id[:8]}...")
-                fixed_count += 1
-            else:
-                print(f"  ❌ Failed to fix user {account_id[:8]}...")
-    
-    print(f"\n{'='*60}")
+            # Convert non-expiring to expiring via Convex admin RPC
+            await convex.admin_rpc("updateCreditAccount", {
+                "accountId": account['accountId'],
+                "nonExpiringCredits": 0,
+                "expiringCredits": float(non_expiring),
+                "trialStatus": "converted"
+            })
+
+            # Log to ledger via Convex admin RPC
+            await convex.admin_rpc("createLedgerEntry", {
+                "accountId": account['accountId'],
+                "amount": float(-non_expiring),
+                "type": "trial_conversion",
+                "description": "Converted trial credits to expiring"
+            })
+            fixed_count += 1
+
     print(f"COMPLETED: Fixed {fixed_count} users")
-    print("="*60)
+    return
 
 if __name__ == "__main__":
-    asyncio.run(fix_trial_users()) 
+    asyncio.run(fix_trial_users())

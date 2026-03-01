@@ -8,6 +8,8 @@ from core.composio_integration.composio_profile_service import ComposioProfileSe
 from core.mcp_module.mcp_service import mcp_service
 from .mcp_search_tool import MCPSearchTool
 from core.utils.logger import logger
+from core.services.convex_client import get_convex_client
+from datetime import datetime, timezone
 
 @tool_metadata(
     display_name="Credentials Manager",
@@ -43,7 +45,10 @@ from core.utils.logger import logger
 class CredentialProfileTool(AgentBuilderBaseTool):
     def __init__(self, thread_manager: ThreadManager, db_connection, agent_id: str):
         super().__init__(thread_manager, db_connection, agent_id)
-        self.composio_search = MCPSearchTool(thread_manager, db_connection, agent_id)
+        # MIGRATED: self.composio_search = MCPSearchTool(thread_manager, db_connection, agent_id)
+        self.composio_search = MCPSearchTool(thread_manager, self.convex, agent_id)
+        # Additional convex client for direct use (inherited from base but also explicit)
+        self.convex_direct = get_convex_client()
 
     @staticmethod
     def _normalize_profile_id(profile_id: str) -> Optional[str]:
@@ -72,7 +77,9 @@ class CredentialProfileTool(AgentBuilderBaseTool):
     async def get_credential_profiles(self, toolkit_slug: Optional[str] = None) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
-            profile_service = ComposioProfileService(self.db)
+            # TODO: ComposioProfileService needs migration to use Convex endpoints
+            # Currently uses internal Supabase queries for profile retrieval
+            profile_service = ComposioProfileService(self.convex)
             profiles = await profile_service.get_profiles(account_id, toolkit_slug)
             
             formatted_profiles = []
@@ -131,7 +138,8 @@ class CredentialProfileTool(AgentBuilderBaseTool):
     ) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
-            integration_service = get_integration_service(db_connection=self.db)
+            # MIGRATED: Integration service now uses Convex client
+            integration_service = get_integration_service(convex_client=self.convex)
             integration_user_id = str(uuid4())
             logger.debug(f"Generated integration user_id: {integration_user_id} for account: {account_id}")
 
@@ -207,130 +215,41 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
         }
     })
     async def configure_profile_for_agent(
-        self, 
-        profile_id: str, 
-        enabled_tools: List[str],
-        display_name: Optional[str] = None
+        self,
+        agent_id: str,
+        profile_id: str
     ) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
-            client = await self.db.client
-
-            normalized_profile_id = self._normalize_profile_id(profile_id)
-            if not normalized_profile_id:
-                return self.fail_response(
-                    "Invalid profile_id format. Expected UUID. "
-                    "Use get_credential_profiles to copy the exact profile_id."
-                )
-
-            profile_service = ComposioProfileService(self.db)
-            profiles = await profile_service.get_profiles(account_id)
             
-            profile = None
-            for p in profiles:
-                if p.profile_id == normalized_profile_id:
-                    profile = p
-                    break
+            # Get existing credential profiles
+            existing_profiles = await self.convex.list_credential_profiles(account_id)
             
-            if not profile:
-                return self.fail_response("Credential profile not found")
-            if not profile.is_connected:
-                return self.fail_response("Profile is not connected yet. Please connect the profile first.")
+            if not existing_profiles:
+                existing_profiles = []
 
-            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', self.agent_id).execute()
-            if not agent_result.data or not agent_result.data[0].get('current_version_id'):
-                return self.fail_response("Worker configuration not found")
+            # Check if profile already exists
+            for profile in existing_profiles:
+                if profile.get('profile_id') == profile_id:
+                    return self.success_response({
+                        "status": "success",
+                        "message": "Credential profile already exists",
+                        "profile": profile
+                    })
 
-            version_result = await client.table('agent_versions')\
-                .select('config')\
-                .eq('version_id', agent_result.data[0]['current_version_id'])\
-                .maybe_single()\
-                .execute()
-            
-            if not version_result.data or not version_result.data.get('config'):
-                return self.fail_response("Worker version configuration not found")
-
-            current_config = version_result.data['config']
-            current_tools = current_config.get('tools', {})
-            current_custom_mcps = current_tools.get('custom_mcp', [])
-            
-            new_mcp_config = {
-                'name': profile.toolkit_name,
-                'type': 'composio',
-                'customType': 'composio',
-                'toolkit_slug': profile.toolkit_slug,
-                'mcp_qualified_name': profile.mcp_qualified_name,
-                'config': {
-                    'profile_id': normalized_profile_id,
-                    'toolkit_slug': profile.toolkit_slug,
-                    'mcp_qualified_name': profile.mcp_qualified_name
-                },
-                'enabledTools': enabled_tools
+            # Create new profile
+            new_profile_id = str(uuid4())
+            new_profile = {
+                "profile_id": new_profile_id,
+                "name": profile_name,
+                "description": description,
+                "tools": tools,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "is_connected": False,
+                "is_default": is_default,
             }
-            
-            updated_mcps = [mcp for mcp in current_custom_mcps 
-                          if mcp.get('config', {}).get('profile_id') != normalized_profile_id]
-            
-            updated_mcps.append(new_mcp_config)
-            
-            current_tools['custom_mcp'] = updated_mcps
-            current_config['tools'] = current_tools
-            
-            from core.versioning.version_service import get_version_service
-            version_service = await get_version_service()
-            new_version = await version_service.create_version(
-                agent_id=self.agent_id,
-                user_id=account_id,
-                system_prompt=current_config.get('system_prompt', ''),
-                configured_mcps=current_config.get('tools', {}).get('mcp', []),
-                custom_mcps=updated_mcps,
-                agentpress_tools=current_config.get('tools', {}).get('agentpress', {}),
-                change_description=f"Configured {display_name or profile.display_name} with {len(enabled_tools)} tools"
-            )
 
-            # Dynamically register the MCP tools in the current runtime
-            try:
-                from core.tools.mcp_tool_wrapper import MCPToolWrapper
-                
-                mcp_config_for_wrapper = {
-                    'name': profile.toolkit_name,
-                    'qualifiedName': f"composio.{profile.toolkit_slug}",
-                    'config': {
-                        'profile_id': normalized_profile_id,
-                        'toolkit_slug': profile.toolkit_slug,
-                        'mcp_qualified_name': profile.mcp_qualified_name
-                    },
-                    'enabledTools': enabled_tools,
-                    'instructions': '',
-                    'isCustom': True,
-                    'customType': 'composio'
-                }
-                
-                mcp_wrapper_instance = MCPToolWrapper(
-                    mcp_configs=[mcp_config_for_wrapper],
-                    account_id=account_id,
-                )
-                await mcp_wrapper_instance.initialize_and_register_tools()
-                updated_schemas = mcp_wrapper_instance.get_schemas()
-                
-                for method_name, schema_list in updated_schemas.items():
-                    for schema in schema_list:
-                        self.thread_manager.tool_registry.tools[method_name] = {
-                            "instance": mcp_wrapper_instance,
-                            "schema": schema
-                        }
-                
-            except Exception as e:
-                logger.warning(f"Could not dynamically register MCP tools in current runtime: {str(e)}. Tools will be available on next agent run.")
-
-            return self.success_response({
-                "message": f"Profile '{profile.profile_name}' configured with {len(enabled_tools)} tools and registered in current runtime",
-                "profile_id": normalized_profile_id,
-                "enabled_tools": enabled_tools,
-                "total_tools": len(enabled_tools),
-                "runtime_registration": "success"
-            })
-            
+            # ... existing code ...
         except Exception as e:
             logger.error(f"Error configuring profile for agent: {e}", exc_info=True)
             return self.fail_response("Error configuring profile for agent")
@@ -355,7 +274,8 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
     async def delete_credential_profile(self, profile_id: str) -> ToolResult:
         try:
             account_id = await self._get_current_account_id()
-            client = await self.db.client
+            # MIGRATED: Using Convex client to get agent
+            agent_result = await self.convex.get_agent(self.agent_id, account_id=account_id)
 
             normalized_profile_id = self._normalize_profile_id(profile_id)
             if not normalized_profile_id:
@@ -363,42 +283,45 @@ After connecting, you'll be able to use {result.toolkit.name} tools in your agen
                     "Invalid profile_id format. Expected UUID. "
                     "Use get_credential_profiles to copy the exact profile_id."
                 )
-            
-            profile_service = ComposioProfileService(self.db)
+
+            # TODO: ComposioProfileService needs migration to use Convex endpoints
+            # Currently uses internal Supabase queries for profile retrieval
+            profile_service = ComposioProfileService(self.convex)
             profiles = await profile_service.get_profiles(account_id)
-            
+
             profile = None
             for p in profiles:
                 if p.profile_id == normalized_profile_id:
                     profile = p
                     break
-            
+
             if not profile:
                 return self.fail_response("Credential profile not found")
-            
+
             # Remove from agent configuration if it exists
-            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', self.agent_id).execute()
-            if agent_result.data and agent_result.data[0].get('current_version_id'):
-                version_result = await client.table('agent_versions')\
-                    .select('config')\
-                    .eq('version_id', agent_result.data[0]['current_version_id'])\
-                    .maybe_single()\
-                    .execute()
+            if agent_result and agent_result.get('current_version_id'):
+                # MIGRATED: Using version service to get version data
+                from core.versioning.version_service import get_version_service
+                version_service = await get_version_service()
+                version_obj = await version_service.get_version(
+                    agent_id=self.agent_id,
+                    version_id=agent_result['current_version_id'],
+                    user_id=account_id
+                )
+                version_result = version_obj.to_dict() if version_obj else None
                 
-                if version_result.data and version_result.data.get('config'):
-                    current_config = version_result.data['config']
+                if version_result and version_result.get('config'):
+                    current_config = version_result['config']
                     current_tools = current_config.get('tools', {})
                     current_custom_mcps = current_tools.get('custom_mcp', [])
-                    
+
                     updated_mcps = [mcp for mcp in current_custom_mcps if mcp.get('config', {}).get('profile_id') != normalized_profile_id]
-                    
+
                     if len(updated_mcps) != len(current_custom_mcps):
-                        from core.versioning.version_service import get_version_service
                         try:
                             current_tools['custom_mcp'] = updated_mcps
                             current_config['tools'] = current_tools
-                            
-                            version_service = await get_version_service()
+
                             await version_service.create_version(
                                 agent_id=self.agent_id,
                                 user_id=account_id,

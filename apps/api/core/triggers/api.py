@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import json
 import hmac
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
@@ -26,9 +26,6 @@ from .utils import get_next_run_time, get_human_readable_schedule
 # ===== ROUTERS =====
 
 router = APIRouter(prefix="/triggers", tags=["triggers"])
-
-# Global database connection
-db: Optional[DBConnection] = None
 
 
 # ===== REQUEST/RESPONSE MODELS =====
@@ -88,64 +85,45 @@ class UpcomingRunsResponse(BaseModel):
     total_count: int
 
 
-def initialize(database: DBConnection):
-    global db
-    db = database
+def initialize(database):
+    # Database parameter kept for backward compatibility but not used
+    # We now use the Convex client singleton
+    pass
 
 
 async def verify_and_authorize_trigger_agent_access(agent_id: str, user_id: str):
-    client = await db.client
-    result = await client.table('agents').select('agent_id').eq('agent_id', agent_id).eq('account_id', user_id).execute()
-    
-    if not result.data:
+    convex = get_convex_client()
+    agent = await convex.get_agent(agent_id)
+    if not agent or agent.get('account_id') != user_id:
         raise HTTPException(status_code=404, detail="Worker not found or access denied")
 
 
 async def sync_triggers_to_version_config(agent_id: str):
+    """Sync triggers to version config.
+
+    NOTE: This functionality requires agent version management which is not
+    yet available in Convex. Keeping this as a no-op for now until version
+    management is migrated.
+
+    TODO: Implement version config sync once agent_versions is migrated to Convex.
+    """
     try:
-        client = await db.client
-        
-        agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).single().execute()
-        if not agent_result.data or not agent_result.data.get('current_version_id'):
-            logger.warning(f"No current version found for agent {agent_id}")
-            return
-        
-        current_version_id = agent_result.data['current_version_id']
-        
-        triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
-        triggers = []
-        if triggers_result.data:
-            import json
-            for trigger in triggers_result.data:
-                trigger_copy = trigger.copy()
-                if 'config' in trigger_copy and isinstance(trigger_copy['config'], str):
-                    try:
-                        trigger_copy['config'] = json.loads(trigger_copy['config'])
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse trigger config for {trigger_copy.get('trigger_id')}")
-                        trigger_copy['config'] = {}
-                triggers.append(trigger_copy)
-        
-        version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
-        if not version_result.data:
-            logger.warning(f"Version {current_version_id} not found")
-            return
-        
-        config = version_result.data.get('config', {})
-        
-        config['triggers'] = triggers
-        
-        await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
-        
-        logger.debug(f"Synced {len(triggers)} triggers to version config for agent {agent_id}")
-        
+        # Get triggers from Convex
+        convex = get_convex_client()
+        triggers = await convex.list_triggers(agent_id)
+
+        # Version config sync is disabled during migration phase
+        # This will be reimplemented when agent_versions is migrated to Convex
+        logger.debug(f"Skipping version config sync for agent {agent_id} (not yet migrated)")
+
+        # Still invalidate cache if available
         try:
             from core.cache.runtime_cache import invalidate_agent_config_cache
             await invalidate_agent_config_cache(agent_id)
-            logger.debug(f"🗑️ Invalidated cache for agent {agent_id} after trigger sync")
+            logger.debug(f"Invalidated cache for agent {agent_id} after trigger sync")
         except Exception as cache_error:
-            logger.warning(f"Cache invalidation failed for agent {agent_id}: {cache_error}")
-        
+            logger.debug(f"Cache invalidation skipped for agent {agent_id}: {cache_error}")
+
     except Exception as e:
         logger.error(f"Failed to sync triggers to version config: {e}")
 
@@ -154,7 +132,7 @@ async def sync_triggers_to_version_config(agent_id: str):
 async def get_providers():
     
     try:
-        provider_service = get_provider_service(db)
+        provider_service = get_provider_service()
         providers = await provider_service.get_available_providers()
         
         return [ProviderResponse(**provider) for provider in providers]
@@ -172,7 +150,7 @@ async def get_agent_triggers(
     await verify_and_authorize_trigger_agent_access(agent_id, user_id)
     
     try:
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         triggers = await trigger_service.get_agent_triggers(agent_id)
         
         responses = []
@@ -221,7 +199,7 @@ async def get_agent_upcoming_runs(
     await verify_and_authorize_trigger_agent_access(agent_id, user_id)
     
     try:
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         triggers = await trigger_service.get_agent_triggers(agent_id)
         
         # Filter for active schedule triggers
@@ -290,15 +268,14 @@ async def create_agent_trigger(
     
     try:
         if config.ENV_MODE != EnvMode.LOCAL:
-            client = await db.client
-            
-            provider_service = get_provider_service(db)
+            provider_service = get_provider_service()
             provider_trigger_type = await provider_service.get_provider_trigger_type(request.provider_id)
             trigger_type_str = 'scheduled' if provider_trigger_type.value == 'schedule' else 'app'
-            
+
+            # Use billing integration for limit checking
             from core.utils.limits_checker import check_trigger_limit
             limit_check = await check_trigger_limit(user_id, agent_id, trigger_type_str)
-            
+
             if not limit_check['can_create']:
                 error_detail = {
                     "message": f"Maximum of {limit_check['limit']} {trigger_type_str} triggers allowed for your current plan. You have {limit_check['current_count']} {trigger_type_str} triggers.",
@@ -311,7 +288,7 @@ async def create_agent_trigger(
                 logger.warning(f"Trigger limit exceeded for account {user_id}: {limit_check['current_count']}/{limit_check['limit']} {trigger_type_str} triggers")
                 raise HTTPException(status_code=402, detail=error_detail)
         
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         
         trigger = await trigger_service.create_trigger(
             agent_id=agent_id,
@@ -354,7 +331,7 @@ async def get_trigger(
     """Get a trigger by ID"""
     
     try:
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         trigger = await trigger_service.get_trigger(trigger_id)
         
         if not trigger:
@@ -390,7 +367,7 @@ async def update_trigger(
     """Update a trigger"""
     
     try:
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         
         trigger = await trigger_service.get_trigger(trigger_id)
         if not trigger:
@@ -438,7 +415,7 @@ async def delete_trigger(
     """Delete a trigger"""
     
     try:
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         trigger = await trigger_service.get_trigger(trigger_id)
         if not trigger:
             raise HTTPException(status_code=404, detail="Trigger not found")
@@ -493,33 +470,27 @@ async def get_trigger_executions(
     """Get execution history for a trigger (past runs and next scheduled run)"""
     
     try:
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         trigger = await trigger_service.get_trigger(trigger_id)
-        
+
         if not trigger:
             raise HTTPException(status_code=404, detail="Trigger not found")
-        
-        await verify_and_authorize_trigger_agent_access(trigger.agent_id, user_id)
-        
-        client = await db.client
 
-        runs_result = await client.table('agent_runs').select(
-            'id, thread_id, agent_id, status, created_at, completed_at, error, metadata'
-        ).eq(
-            'metadata->>trigger_id', trigger_id
-        ).order(
-            'created_at', desc=True
-        ).limit(limit).execute()
-        
+        await verify_and_authorize_trigger_agent_access(trigger.agent_id, user_id)
+
+        # Query agent runs via Convex
+        convex = get_convex_client()
+        runs = await convex.list_agent_runs(trigger_id=trigger_id, limit=limit)
+
         executions = []
-        for run in runs_result.data or []:
+        for run in runs:
             executions.append(TriggerExecution(
-                execution_id=run['id'],
-                thread_id=run['thread_id'],
+                execution_id=run.get('id') or run.get('_id'),
+                thread_id=run.get('thread_id'),
                 trigger_id=trigger_id,
-                agent_id=run['agent_id'],
-                status=run['status'],
-                started_at=run['created_at'],
+                agent_id=run.get('agent_id'),
+                status=run.get('status'),
+                started_at=run.get('created_at'),
                 completed_at=run.get('completed_at'),
                 error_message=run.get('error')
             ))
@@ -589,7 +560,7 @@ async def trigger_webhook(
             pass
         
         # Process trigger event
-        trigger_service = get_trigger_service(db)
+        trigger_service = get_trigger_service()
         result = await trigger_service.process_trigger_event(trigger_id, raw_data)
         
         if not result.success:
@@ -612,7 +583,7 @@ async def trigger_webhook(
                     raw_data=raw_data
                 )
                 
-                execution_service = get_execution_service(db)
+                execution_service = get_execution_service()
                 execution_result = await execution_service.execute_trigger_result(
                     agent_id=trigger.agent_id,
                     trigger_result=result,

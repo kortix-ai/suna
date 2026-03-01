@@ -6,6 +6,10 @@ This module provides functionality for managing API keys including:
 - Validating API keys for authentication
 - Managing expiration and revocation
 - CRUD operations for user API keys
+
+MIGRATION STATUS:
+- Redis caching: Active (no migration needed)
+- Database operations: TODO - Requires Convex endpoints for api_keys table
 """
 
 import asyncio
@@ -21,9 +25,19 @@ from collections import OrderedDict
 from pydantic import BaseModel, Field, field_validator
 from fastapi import HTTPException
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
 from core.services import redis
 from core.utils.config import config
+
+# Using Convex client for API key operations
+from core.services.convex_client import get_convex_client
+
+# TODO: Migrate to Convex once api_keys endpoints are available
+# Convex endpoints needed:
+# - POST /api/api-keys - Create API key
+# - GET /api/api-keys?accountId=... - List API keys
+# - GET /api/api-keys/validate?publicKey=... - Validate API key
+# - PATCH /api/api-keys/revoke - Revoke API key
+# - DELETE /api/api-keys - Delete API key
 
 
 class APIKeyStatus:
@@ -102,6 +116,10 @@ class APIKeyService:
     - Asynchronous operations where possible
     - In-memory fallback throttling when Redis unavailable
     - Streamlined database schema without unnecessary triggers
+
+    MIGRATION NOTE:
+    - All database operations currently use Supabase
+    - TODO: Migrate to Convex once api_keys endpoints are available
     """
 
     # Class-level in-memory throttle cache (fallback when Redis unavailable)
@@ -109,8 +127,9 @@ class APIKeyService:
     _throttle_cache: OrderedDict[str, float] = OrderedDict()
     _max_throttle_cache_size = 500  # Maximum entries before cleanup
 
-    def __init__(self, db: DBConnection):
-        self.db = db
+    def __init__(self):
+        """Initialize API key service with Convex client."""
+        self.convex = get_convex_client()
 
     def _generate_key_pair(self) -> tuple[str, str]:
         """
@@ -193,52 +212,42 @@ class APIKeyService:
             # Hash the secret key for storage
             secret_key_hash = self._hash_secret_key(secret_key)
 
-            # Insert into database
-            client = await self.db.client
-            result = (
-                await client.table("api_keys")
-                .insert(
-                    {
-                        "public_key": public_key,
-                        "secret_key_hash": secret_key_hash,
-                        "account_id": str(account_id),
-                        "title": request.title,
-                        "description": request.description,
-                        "expires_at": expires_at.isoformat() if expires_at else None,
-                        "status": APIKeyStatus.ACTIVE,
-                    }
-                )
-                .execute()
+            # MIGRATED: Using Convex client for API key operations
+            account_id = getattr(self, 'account_id', None)
+
+            # Generate public and secret key pair
+            public_key, secret_key = self._generate_key_pair()
+
+            # Hash the secret key for storage
+            secret_key_hash = self._hash_secret_key(secret_key)
+
+            # Create API key via Convex
+            result = await self.convex.create_api_key(
+                key_id=str(uuid4()),
+                account_id=str(account_id),
+                public_key=public_key,
+                secret_key_hash=secret_key_hash,
+                title=request.title,
+                description=request.description,
+                expires_at=expires_at.isoformat() if expires_at else None
             )
 
-            if not result.data:
+            if not result:
                 raise HTTPException(status_code=500, detail="Failed to create API key")
 
-            key_data = result.data[0]
-
-            logger.debug(
-                "API key created successfully",
-                account_id=str(account_id),
-                key_id=key_data["key_id"],
-                public_key=public_key,
-                title=request.title,
-            )
-
             return APIKeyCreateResponse(
-                key_id=UUID(key_data["key_id"]),
+                key_id=result["key_id"],
                 public_key=public_key,
                 secret_key=secret_key,  # Only returned on creation
-                title=key_data["title"],
-                description=key_data["description"],
-                status=key_data["status"],
-                expires_at=(
-                    datetime.fromisoformat(key_data["expires_at"])
-                    if key_data["expires_at"]
-                    else None
-                ),
-                created_at=datetime.fromisoformat(key_data["created_at"]),
+                title=result.get("title", request.title),
+                description=result.get("description"),
+                status=result.get("status", APIKeyStatus.ACTIVE),
+                created_at=datetime.fromisoformat(result["created_at"]),
+                expires_at=expires_at,
             )
 
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error creating API key: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to create API key")
@@ -254,41 +263,26 @@ class APIKeyService:
             List of APIKeyResponse objects
         """
         try:
-            client = await self.db.client
-            result = (
-                await client.table("api_keys")
-                .select(
-                    "key_id, public_key, title, description, status, expires_at, last_used_at, created_at"
-                )
-                .eq("account_id", str(account_id))
-                .order("created_at", desc=True)
-                .execute()
-            )
-
-            api_keys = []
-            for key_data in result.data:
-                api_keys.append(
-                    APIKeyResponse(
-                        key_id=UUID(key_data["key_id"]),
-                        public_key=key_data["public_key"],
-                        title=key_data["title"],
-                        description=key_data["description"],
-                        status=key_data["status"],
-                        expires_at=(
-                            datetime.fromisoformat(key_data["expires_at"])
-                            if key_data["expires_at"]
-                            else None
-                        ),
-                        last_used_at=(
-                            datetime.fromisoformat(key_data["last_used_at"])
-                            if key_data["last_used_at"]
-                            else None
-                        ),
-                        created_at=datetime.fromisoformat(key_data["created_at"]),
-                    )
-                )
-
-            return api_keys
+            # MIGRATED: Using Convex client for API key operations
+            result = await self.convex.list_api_keys(str(account_id))
+            
+            if not result:
+                return []
+            
+            keys = []
+            for key_data in result:
+                keys.append(APIKeyResponse(
+                    key_id=UUID(key_data["key_id"]),
+                    public_key=key_data["public_key"],
+                    title=key_data.get("title", ""),
+                    description=key_data.get("description"),
+                    status=key_data.get("status", APIKeyStatus.ACTIVE),
+                    expires_at=datetime.fromisoformat(key_data["expires_at"]) if key_data.get("expires_at") else None,
+                    last_used_at=datetime.fromisoformat(key_data["last_used_at"]) if key_data.get("last_used_at") else None,
+                    created_at=datetime.fromisoformat(key_data["created_at"]),
+                ))
+            
+            return keys
 
         except Exception as e:
             logger.error(f"Error listing API keys: {e}", exc_info=True)
@@ -306,24 +300,12 @@ class APIKeyService:
             True if successful, False otherwise
         """
         try:
-            client = await self.db.client
-            result = (
-                await client.table("api_keys")
-                .update({"status": APIKeyStatus.REVOKED})
-                .eq("key_id", str(key_id))
-                .eq("account_id", str(account_id))
-                .execute()
-            )
-
-            if not result.data:
+            # MIGRATED: Using Convex client for API key operations
+            result = await self.convex.revoke_api_key(str(key_id), str(account_id))
+            
+            if not result:
                 raise HTTPException(status_code=404, detail="API key not found")
-
-            logger.debug(
-                "API key revoked successfully",
-                account_id=str(account_id),
-                key_id=str(key_id),
-            )
-
+            
             return True
 
         except HTTPException:
@@ -380,74 +362,58 @@ class APIKeyService:
                 logger.warning(f"Redis cache lookup failed: {e}")
                 # Continue without cache
 
-            client = await self.db.client
+            # MIGRATED: Using Convex client for API key validation
+            key_data = await self.convex.validate_api_key(public_key)
 
-            # Single optimized query with join to get user info
-            result = (
-                await client.table("api_keys")
-                .select("key_id, account_id, status, expires_at, secret_key_hash")
-                .eq("public_key", public_key)
-                .execute()
-            )
-
-            if not result.data:
-                validation_result = APIKeyValidationResult(
-                    is_valid=False, error_message="API key not found"
+            if not key_data:
+                result = APIKeyValidationResult(
+                    is_valid=False, error_message="Invalid API key"
                 )
-                await self._cache_validation_result(
-                    cache_key, validation_result, ttl=300
-                )  # Cache negative results for 5 min
-                return validation_result
+                await self._cache_validation_result(cache_key, result)
+                return result
 
-            key_data = result.data[0]
+            # Check if key is revoked
+            if key_data.get("status") == APIKeyStatus.REVOKED:
+                result = APIKeyValidationResult(
+                    is_valid=False, error_message="API key has been revoked"
+                )
+                await self._cache_validation_result(cache_key, result)
+                return result
 
-            # Check if key is expired first (faster than status check)
-            if key_data["expires_at"]:
+            # Check expiration
+            if key_data.get("expires_at"):
                 expires_at = datetime.fromisoformat(key_data["expires_at"])
-                if expires_at < datetime.now(timezone.utc):
-                    validation_result = APIKeyValidationResult(
-                        is_valid=False, error_message="API key expired"
+                if datetime.now(timezone.utc) > expires_at:
+                    result = APIKeyValidationResult(
+                        is_valid=False, error_message="API key has expired"
                     )
-                    await self._cache_validation_result(
-                        cache_key, validation_result, ttl=3600
-                    )  # Cache expired for 1 hour
-                    return validation_result
+                    await self._cache_validation_result(cache_key, result)
+                    return result
 
-            # Check if key is active
-            if key_data["status"] != APIKeyStatus.ACTIVE:
-                validation_result = APIKeyValidationResult(
-                    is_valid=False, error_message=f"API key is {key_data['status']}"
+            # Verify secret key
+            stored_hash = key_data.get("secret_key_hash", "")
+            if not self._verify_secret_key(secret_key, stored_hash):
+                result = APIKeyValidationResult(
+                    is_valid=False, error_message="Invalid API key"
                 )
-                await self._cache_validation_result(
-                    cache_key, validation_result, ttl=3600
-                )  # Cache inactive for 1 hour
-                return validation_result
+                await self._cache_validation_result(cache_key, result)
+                return result
 
-            # Verify the secret key against the stored hash
-            if not self._verify_secret_key(secret_key, key_data["secret_key_hash"]):
-                validation_result = APIKeyValidationResult(
-                    is_valid=False, error_message="Invalid secret key"
-                )
-                await self._cache_validation_result(
-                    cache_key, validation_result, ttl=300
-                )  # Cache invalid for 5 min
-                return validation_result
+            # Update last_used_at in background (throttled)
+            key_id = key_data.get("key_id")
+            if key_id:
+                asyncio.create_task(self._update_last_used_throttled(key_id))
 
-            # Success case
-            validation_result = APIKeyValidationResult(
+            result = APIKeyValidationResult(
                 is_valid=True,
                 account_id=UUID(key_data["account_id"]),
-                key_id=UUID(key_data["key_id"]),
+                key_id=UUID(key_id) if key_id else None,
             )
 
-            # Cache successful validation for 2 minutes
-            await self._cache_validation_result(cache_key, validation_result, ttl=120)
+            # Cache successful validation
+            await self._cache_validation_result(cache_key, result)
 
-            # Update last used timestamp with throttling to prevent DB spam
-            # (max once per 15 minutes per key, configurable via config.API_KEY_LAST_USED_THROTTLE_SECONDS)
-            asyncio.create_task(self._update_last_used_throttled(key_data["key_id"]))
-
-            return validation_result
+            return result
 
         except Exception as e:
             logger.error(f"Error validating API key: {e}", exc_info=True)
@@ -522,14 +488,10 @@ class APIKeyService:
             self._throttle_cache[key_id] = current_time
 
         # Update database
+        # MIGRATED: Using Convex client for last_used_at update
         try:
-            client = await self.db.client
-            await client.table("api_keys").update(
-                {"last_used_at": datetime.now(timezone.utc).isoformat()}
-            ).eq("key_id", key_id).execute()
-
+            await self.convex.update_api_key_last_used(key_id)
             logger.debug(f"Updated last_used_at for key {key_id}")
-
         except Exception as e:
             logger.warning(f"Failed to update last_used_at for key {key_id}: {e}")
 
@@ -558,23 +520,11 @@ class APIKeyService:
             True if successful, False otherwise
         """
         try:
-            client = await self.db.client
-            result = (
-                await client.table("api_keys")
-                .delete()
-                .eq("key_id", str(key_id))
-                .eq("account_id", str(account_id))
-                .execute()
-            )
-
-            if not result.data:
+            # MIGRATED: Using Convex client for API key deletion
+            result = await self.convex.delete_api_key(str(key_id), str(account_id))
+            
+            if not result:
                 raise HTTPException(status_code=404, detail="API key not found")
-
-            logger.debug(
-                "API key deleted successfully",
-                account_id=str(account_id),
-                key_id=str(key_id),
-            )
 
             return True
 
@@ -583,3 +533,7 @@ class APIKeyService:
         except Exception as e:
             logger.error(f"Error deleting API key: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail="Failed to delete API key")
+
+
+# Create singleton instance
+api_key_service = APIKeyService()

@@ -5,9 +5,7 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any
 
 from core.utils.logger import logger, structlog
-from core.services.supabase import DBConnection
-
-_db = DBConnection()
+from core.services.convex_client import get_convex_client
 
 
 async def run_memory_extraction(
@@ -35,26 +33,34 @@ async def run_memory_extraction(
         from core.billing import subscription_service
         from core.billing.shared.config import is_memory_enabled
         
-        client = await _db.client
+        # Use Convex client
+        convex = get_convex_client()
         
         tier_info = await subscription_service.get_user_subscription_tier(account_id)
         if not is_memory_enabled(tier_info['name']):
             logger.debug(f"Memory disabled for tier {tier_info['name']}")
             return
         
-        messages_result = await client.table('messages').select('*').in_('message_id', message_ids).execute()
-        if not messages_result.data:
-            return
+        # TODO: Need to add message retrieval endpoint to Convex API
+        # For now, we'll need to fetch messages from Convex
+        # messages_result = await convex.get_messages(thread_id, account_id)
+        # if not messages_result:
+        #     return
+        
+        # Temporary: Skip message fetching for now, the extraction service
+        # will need to be updated to work with Convex message format
+        logger.warning("Memory extraction temporarily disabled during Convex migration - needs message endpoint")
+        return
         
         extraction_service = MemoryExtractionService()
-        if not await extraction_service.should_extract(messages_result.data):
-            return
+        # if not await extraction_service.should_extract(messages_result):
+        #     return
         
-        extracted = await extraction_service.extract_memories(
-            messages=messages_result.data,
-            account_id=account_id,
-            thread_id=thread_id
-        )
+        # extracted = await extraction_service.extract_memories(
+        #     messages=messages_result,
+        #     account_id=account_id,
+        #     thread_id=thread_id
+        # )
         
         if extracted:
             asyncio.create_task(run_memory_embedding(
@@ -94,40 +100,54 @@ async def run_memory_embedding(
         from core.billing import subscription_service
         from core.billing.shared.config import get_memory_config
         
-        client = await _db.client
+        # Use Convex client
+        convex = get_convex_client()
         embedding_service = EmbeddingService()
         
         tier_info = await subscription_service.get_user_subscription_tier(account_id)
         memory_config = get_memory_config(tier_info['name'])
         max_memories = memory_config.get('max_memories', 0)
         
-        current_count_result = await client.table('user_memories').select('memory_id', count='exact').eq('account_id', account_id).execute()
-        current_count = current_count_result.count or 0
+        # Count existing memories via Convex
+        existing_memories = await convex.list_memories(
+            memory_space_id=account_id,
+            account_id=account_id,
+            limit=1000
+        )
+        current_count = len(existing_memories) if existing_memories else 0
         
         texts = [m['content'] for m in extracted_memories]
         embeddings = await embedding_service.embed_texts(texts)
         
-        to_insert = []
+        # Handle memory limit - delete oldest/lowest confidence if needed
+        if current_count + len(extracted_memories) > max_memories:
+            overflow = (current_count + len(extracted_memories)) - max_memories
+            # TODO: Need to add delete_memories_by_confidence endpoint to Convex API
+            # For now, skip overflow deletion and log warning
+            logger.warning(f"Memory limit overflow: {overflow} memories over limit. Need delete endpoint in Convex.")
+        
+        # Store memories in Convex
+        stored_count = 0
         for i, mem in enumerate(extracted_memories):
-            to_insert.append({
-                'account_id': account_id,
-                'content': mem['content'],
-                'memory_type': mem['memory_type'],
-                'embedding': embeddings[i],
-                'source_thread_id': thread_id,
-                'confidence_score': mem.get('confidence_score', 0.8),
-                'metadata': mem.get('metadata', {})
-            })
+            try:
+                await convex.store_memory(
+                    memory_space_id=account_id,
+                    content=mem['content'],
+                    source_type="conversation",
+                    embedding=embeddings[i],
+                    metadata={
+                        'memory_type': mem['memory_type'],
+                        'confidence_score': mem.get('confidence_score', 0.8),
+                        'source_thread_id': thread_id,
+                        **mem.get('metadata', {})
+                    },
+                    account_id=account_id
+                )
+                stored_count += 1
+            except Exception as e:
+                logger.error(f"Failed to store memory: {e}")
         
-        if current_count + len(to_insert) > max_memories:
-            overflow = (current_count + len(to_insert)) - max_memories
-            old = await client.table('user_memories').select('memory_id').eq('account_id', account_id).order('confidence_score', desc=False).limit(overflow).execute()
-            if old.data:
-                ids_to_delete = [m['memory_id'] for m in old.data]
-                await client.table('user_memories').delete().in_('memory_id', ids_to_delete).execute()
-        
-        await client.table('user_memories').insert(to_insert).execute()
-        logger.info(f"✅ Stored {len(to_insert)} memories")
+        logger.info(f"✅ Stored {stored_count} memories")
         
     except Exception as e:
         logger.error(f"Memory embedding failed: {e}", exc_info=True)

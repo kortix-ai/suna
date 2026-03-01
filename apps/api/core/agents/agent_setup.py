@@ -14,9 +14,12 @@ from core.utils.core_tools_helper import ensure_core_tools_enabled
 from core.config.config_helper import _get_default_agentpress_tools
 from core.ai_models import model_manager
 
-from core.services.supabase import DBConnection
+# MIGRATED: All database operations now use repo pattern instead of direct Supabase client
+# - agents_repo.create_agent() for agent creation
+# - agents_repo.update_agent_fields() for agent updates
+# - agents_repo.delete_agent() for agent cleanup
+# The model_manager.get_default_model_for_user may need separate migration if it uses Supabase
 
-db = DBConnection()
 from core.api_models import AgentResponse
 
 router = APIRouter(tags=["agents"])
@@ -170,7 +173,9 @@ async def setup_agent_from_chat(
     if not request.description.strip():
         raise HTTPException(status_code=400, detail="Description cannot be empty")
     
-    client = await db.client
+    # MIGRATED: No longer need Supabase client here
+    # The model_manager.get_default_model_for_user previously used `client` parameter
+    # which was obtained from `await db.client`. This needs separate migration.
     
     from core.utils.limits_checker import check_agent_count_limit
     limit_check = await check_agent_count_limit(user_id)
@@ -220,7 +225,9 @@ async def setup_agent_from_chat(
         try:
             version_service = await _get_version_service()
             agentpress_tools = ensure_core_tools_enabled(_get_default_agentpress_tools())
-            default_model = await model_manager.get_default_model_for_user(client, user_id)
+            # TODO: Migrate model_manager.get_default_model_for_user to not require Supabase client
+            # For now, passing None as the function signature may need updating
+            default_model = await model_manager.get_default_model_for_user(None, user_id)
             
             version = await version_service.create_version(
                 agent_id=agent_id,

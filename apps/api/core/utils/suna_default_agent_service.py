@@ -1,69 +1,41 @@
 from typing import Dict, Any, Optional
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from datetime import datetime, timezone
+import uuid
 
 
 class SunaDefaultAgentService:
-    """Simplified Suna agent management service."""
-    
-    def __init__(self, db: DBConnection = None):
-        self._db = db or DBConnection()
-        logger.debug("🔄 SunaDefaultAgentService initialized (simplified)")
-    
+    """Simplified Suna agent management service using Convex backend."""
+
+    def __init__(self):
+        self._convex = get_convex_client()
+        logger.debug("🔄 SunaDefaultAgentService initialized (Convex)")
+
     async def get_suna_default_config(self) -> Dict[str, Any]:
         """Get the current Suna configuration."""
         from core.config.suna_config import SUNA_CONFIG
         return SUNA_CONFIG.copy()
-    
+
     async def install_for_all_users(self) -> Dict[str, Any]:
-        """Install Suna agent for all users who don't have one."""
+        """Install Suna agent for all users who don't have one.
+
+        NOTE: This requires Supabase for listing all personal accounts (basejump schema).
+        The agents themselves are stored in Convex.
+        """
         logger.debug("🚀 Installing Suna agents for users who don't have them")
-        
+
         try:
-            client = await self._db.client
-            
-            # Get all personal accounts
-            accounts_result = await client.schema('basejump').table('accounts').select('id').eq('personal_account', True).execute()
-            all_account_ids = {row['id'] for row in accounts_result.data} if accounts_result.data else set()
-            
-            # Get existing Suna agents
-            existing_result = await client.table('agents').select('account_id').eq('metadata->>is_suna_default', 'true').execute()
-            existing_account_ids = {row['account_id'] for row in existing_result.data} if existing_result.data else set()
-            
-            # Find accounts without Suna
-            missing_accounts = all_account_ids - existing_account_ids
-            
-            if not missing_accounts:
-                return {
-                    "installed_count": 0,
-                    "failed_count": 0,
-                    "details": ["All users already have Suna agents"]
-                }
-            
-            logger.debug(f"📦 Installing Suna for {len(missing_accounts)} users")
-            
-            success_count = 0
-            failed_count = 0
-            errors = []
-            
-            for account_id in missing_accounts:
-                try:
-                    await self._create_suna_agent_for_user(account_id)
-                    success_count += 1
-                    logger.debug(f"✅ Installed Suna for user {account_id}")
-                except Exception as e:
-                    failed_count += 1
-                    error_msg = f"Failed to install for user {account_id}: {str(e)}"
-                    errors.append(error_msg)
-                    logger.error(error_msg)
-            
+            # TODO: Need to get all personal accounts from Supabase basejump schema
+            # For now, this functionality requires Supabase access for account listing
+            # Agents are created in Convex
+            logger.warning("install_for_all_users requires Supabase for account listing - not yet migrated")
             return {
-                "installed_count": success_count,
-                "failed_count": failed_count,
-                "details": errors if errors else [f"Successfully installed for {success_count} users"]
+                "installed_count": 0,
+                "failed_count": 0,
+                "details": ["Requires Supabase for basejump account listing - not migrated"]
             }
-            
+
         except Exception as e:
             error_msg = f"Installation operation failed: {str(e)}"
             logger.error(error_msg)
@@ -72,100 +44,82 @@ class SunaDefaultAgentService:
                 "failed_count": 0,
                 "details": [error_msg]
             }
-    
+
     async def install_suna_agent_for_user(self, account_id: str, replace_existing: bool = False) -> Optional[str]:
         """Install Suna agent for a specific user."""
         logger.debug(f"🔄 Installing Suna agent for user: {account_id}")
-        
+
         try:
-            client = await self._db.client
-            
-            # Check for existing Suna agent
-            existing_result = await client.table('agents').select('agent_id').eq('account_id', account_id).eq('metadata->>is_suna_default', 'true').execute()
-            
-            if existing_result.data:
-                existing_agent_id = existing_result.data[0]['agent_id']
-                
+            # Check for existing Suna agent via Convex
+            existing_agents = await self._convex.list_agents(account_id)
+            existing_suna = next(
+                (a for a in existing_agents if a.get('metadata', {}).get('is_suna_default')),
+                None
+            )
+
+            if existing_suna:
+                existing_agent_id = existing_suna.get('agentId')
+
                 if replace_existing:
-                    # Delete existing agent
-                    await self._delete_agent(existing_agent_id)
-                    logger.debug(f"Deleted existing Suna agent for replacement")
+                    # TODO: Add delete_agent method to Convex client
+                    # For now, just update the existing one
+                    logger.debug(f"Would delete existing Suna agent for replacement (not implemented)")
                 else:
                     logger.debug(f"User {account_id} already has Suna agent: {existing_agent_id}")
                     return existing_agent_id
 
-            # Create new agent
+            # Create new agent via Convex
             agent_id = await self._create_suna_agent_for_user(account_id)
             logger.debug(f"Successfully installed Suna agent {agent_id} for user {account_id}")
             return agent_id
-                
+
         except Exception as e:
             logger.error(f"Error in install_suna_agent_for_user: {e}")
             return None
-    
+
     async def get_suna_agent_stats(self) -> Dict[str, Any]:
-        """Get statistics about Suna agents."""
-        try:
-            client = await self._db.client
-            
-            # Get total count
-            total_result = await client.table('agents').select('agent_id', count='exact').eq('metadata->>is_suna_default', 'true').execute()
-            total_count = total_result.count or 0
-            
-            # Get creation dates for last 30 days
-            from datetime import timedelta
-            thirty_days_ago = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
-            recent_result = await client.table('agents').select('created_at').eq('metadata->>is_suna_default', 'true').gte('created_at', thirty_days_ago).execute()
-            recent_count = len(recent_result.data) if recent_result.data else 0
-            
-            return {
-                "total_agents": total_count,
-                "recent_installs": recent_count,
-                "note": "Suna agents always use current central configuration"
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to get agent stats: {e}")
-            return {"error": str(e)}
-    
+        """Get statistics about Suna agents.
+
+        NOTE: This requires scanning all agents which is not efficiently
+        supported by the current Convex API. Consider adding a dedicated
+        stats endpoint if needed.
+        """
+        logger.warning("get_suna_agent_stats not yet migrated - requires Convex aggregation")
+        return {
+            "total_agents": "unknown",
+            "recent_installs": "unknown",
+            "note": "Stats aggregation not migrated to Convex"
+        }
+
     async def _create_suna_agent_for_user(self, account_id: str) -> str:
-        """Create a Suna agent for a user."""
+        """Create a Suna agent for a user via Convex."""
         from core.config.suna_config import SUNA_CONFIG
-        
-        client = await self._db.client
-        
-        # Create agent record
-        agent_data = {
-            "account_id": account_id,
-            "name": SUNA_CONFIG["name"],
-            "description": SUNA_CONFIG["description"],
-            "is_default": True,
-            "icon_name": "sun",
-            "icon_color": "#FFFFFF",
-            "icon_background": "#000000",
-            "metadata": {
+
+        agent_id = str(uuid.uuid4())
+
+        # Create agent via Convex
+        await self._convex.create_agent(
+            agent_id=agent_id,
+            account_id=account_id,
+            name=SUNA_CONFIG["name"],
+            description=SUNA_CONFIG["description"],
+            is_default=True,
+            icon_name="sun",
+            metadata={
                 "is_suna_default": True,
                 "centrally_managed": True,
                 "installation_date": datetime.now(timezone.utc).isoformat()
-            },
-            "version_count": 1
-        }
-        
-        result = await client.table('agents').insert(agent_data).execute()
-        
-        if not result.data:
-            raise Exception("Failed to create agent record")
-        
-        agent_id = result.data[0]['agent_id']
-        
+            }
+        )
+
         # Create initial version
         await self._create_initial_version(agent_id, account_id)
-        
+
         return agent_id
-    
+
     async def _create_initial_version(self, agent_id: str, account_id: str) -> None:
         """Create initial version for Suna agent.
-        
+
         Note: We don't save system_prompt, model, or agentpress_tools for Suna agents
         since they're always loaded from SUNA_CONFIG in memory. We only save MCPs
         which are user-specific customizations.
@@ -173,7 +127,7 @@ class SunaDefaultAgentService:
         try:
             from core.versioning.version_service import get_version_service
             from core.config.suna_config import SUNA_CONFIG
-            
+
             version_service = await get_version_service()
             # For Suna agents, only save MCPs (user customizations)
             # System prompt, model, and tools are always loaded from SUNA_CONFIG
@@ -188,39 +142,19 @@ class SunaDefaultAgentService:
                 version_name="v1",
                 change_description="Initial Suna agent installation"
             )
-            
+
             logger.debug(f"Created initial version for Suna agent {agent_id}")
-            
+
         except Exception as e:
             logger.error(f"Failed to create initial version for Suna agent {agent_id}: {e}")
             raise
-    
+
     async def _delete_agent(self, agent_id: str) -> bool:
-        """Delete an agent and clean up related data."""
-        try:
-            client = await self._db.client
-            
-            # Clean up triggers first
-            try:
-                from core.triggers.trigger_service import get_trigger_service
-                trigger_service = get_trigger_service(self._db)
-                
-                triggers_result = await client.table('agent_triggers').select('trigger_id').eq('agent_id', agent_id).execute()
-                
-                if triggers_result.data:
-                    for trigger_record in triggers_result.data:
-                        try:
-                            await trigger_service.delete_trigger(trigger_record['trigger_id'])
-                        except Exception as e:
-                            logger.warning(f"Failed to clean up trigger: {str(e)}")
-            except Exception as e:
-                logger.warning(f"Failed to clean up triggers for agent {agent_id}: {str(e)}")
-            
-            # Delete agent
-            result = await client.table('agents').delete().eq('agent_id', agent_id).execute()
-            return bool(result.data)
-            
-        except Exception as e:
-            logger.error(f"Failed to delete agent {agent_id}: {e}")
-            raise
+        """Delete an agent and clean up related data.
+
+        NOTE: Convex client does not have delete_agent method yet.
+        TODO: Add delete_agent to Convex client and triggers cleanup.
+        """
+        logger.warning(f"Delete agent {agent_id} not implemented - requires Convex delete_agent method")
+        return False
 

@@ -5,7 +5,9 @@ import urllib.parse
 
 from core.utils.logger import logger
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
-from core.services.supabase import DBConnection
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client via service getters
+from core.services.convex_client import get_convex_client
 
 from .credential_service import (
     get_credential_service
@@ -18,7 +20,6 @@ from .utils import validate_config_not_empty, decode_mcp_qualified_name, extract
 
 router = APIRouter(tags=["credentials"])
 
-db: Optional[DBConnection] = None
 
 class StoreCredentialRequest(BaseModel):
     mcp_qualified_name: str
@@ -108,18 +109,15 @@ class ComposioMcpUrlResponse(BaseModel):
     warning: str
 
 
-def initialize(database: DBConnection):
-    global db
-    db = database
-
-
 @router.post("/credentials", response_model=CredentialResponse)
 async def store_credential(
     request: StoreCredentialRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        credential_service = get_credential_service(db)
+        # MIGRATED: Using Convex-aware service pattern
+        # Services use Convex client singleton internally
+        credential_service = get_credential_service()
         
         credential_id = await credential_service.store_credential(
             account_id=user_id,
@@ -154,7 +152,7 @@ async def get_user_credentials(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        credential_service = get_credential_service(db)
+        credential_service = get_credential_service()
         credentials = await credential_service.get_user_credentials(user_id)
         
         return [
@@ -183,7 +181,7 @@ async def delete_credential(
     try:
         decoded_name = decode_mcp_qualified_name(mcp_qualified_name)
         
-        credential_service = get_credential_service(db)
+        credential_service = get_credential_service()
         success = await credential_service.delete_credential(user_id, decoded_name)
         
         if not success:
@@ -204,7 +202,7 @@ async def store_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service()
         
         profile_id = await profile_service.store_profile(
             account_id=user_id,
@@ -243,7 +241,7 @@ async def get_user_credential_profiles(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service()
         profiles = await profile_service.get_all_user_profiles(user_id)
         
         return [
@@ -274,7 +272,7 @@ async def get_credential_profiles_for_mcp(
     try:
         decoded_name = decode_mcp_qualified_name(mcp_qualified_name)
         
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service()
         profiles = await profile_service.get_profiles(user_id, decoded_name)
         
         return [
@@ -303,7 +301,7 @@ async def get_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service()
         profile = await profile_service.get_profile(user_id, profile_id)
         
         if not profile:
@@ -334,7 +332,7 @@ async def set_default_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service()
         success = await profile_service.set_default_profile(user_id, profile_id)
         
         if not success:
@@ -353,7 +351,7 @@ async def delete_credential_profile(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service()
         success = await profile_service.delete_profile(user_id, profile_id)
         
         if not success:
@@ -372,7 +370,7 @@ async def bulk_delete_credential_profiles(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
+        profile_service = get_profile_service()
         deleted_count = 0
         failed_profiles = []
         for profile_id in request.profile_ids:
@@ -402,20 +400,19 @@ async def get_composio_profiles(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        profile_service = get_profile_service(db)
-        from core.composio_integration.composio_profile_service import ComposioProfileService
-        composio_service = ComposioProfileService(db)
-        
+        profile_service = get_profile_service()
+        convex_client = get_convex_client()
+
         all_profiles = await profile_service.get_all_user_profiles(user_id)
-        
+
         composio_profiles = [
-            profile for profile in all_profiles 
+            profile for profile in all_profiles
             if profile.mcp_qualified_name.startswith('composio.')
         ]
-        
+
         from core.composio_integration.toolkit_service import ToolkitService
         toolkit_service = ToolkitService()
-        
+
         toolkit_groups = {}
         for profile in composio_profiles:
             mcp_parts = profile.mcp_qualified_name.split('.')
@@ -426,27 +423,31 @@ async def get_composio_profiles(
                 config = profile.config
                 toolkit_slug = config.get('toolkit_slug', 'unknown')
                 toolkit_name = config.get('toolkit_name', toolkit_slug.title())
-            
+
             if toolkit_slug not in toolkit_groups:
                 try:
                     icon_url = await toolkit_service.get_toolkit_icon(toolkit_slug)
                 except:
                     icon_url = None
-                
+
                 toolkit_groups[toolkit_slug] = {
                     'toolkit_slug': toolkit_slug,
                     'toolkit_name': toolkit_name,
                     'icon_url': icon_url,
                     'profiles': []
                 }
-            
+
+            # Check for MCP URL via Convex client
             has_mcp_url = False
             try:
-                mcp_url = await composio_service.get_mcp_url_for_runtime(profile.profile_id, account_id=user_id)
-                has_mcp_url = bool(mcp_url)
-            except:
+                mcp_url_result = await convex_client.get_composio_profile_mcp_url(
+                    profile_id=profile.profile_id,
+                    account_id=user_id
+                )
+                has_mcp_url = bool(mcp_url_result.get('mcp_url'))
+            except Exception:
                 has_mcp_url = False
-            
+
             profile_summary = ComposioProfileSummary(
                 profile_id=profile.profile_id,
                 profile_name=profile.profile_name,
@@ -458,22 +459,22 @@ async def get_composio_profiles(
                 created_at=profile.created_at.isoformat() if profile.created_at else "",
                 has_mcp_url=has_mcp_url
             )
-            
+
             toolkit_groups[toolkit_slug]['profiles'].append(profile_summary)
-        
+
         toolkits = []
         for group_data in toolkit_groups.values():
             group_data['profiles'].sort(key=lambda p: p.created_at, reverse=True)
             toolkits.append(ComposioToolkitGroup(**group_data))
-        
+
         toolkits.sort(key=lambda t: t.toolkit_name)
-        
+
         return ComposioCredentialsResponse(
             success=True,
             toolkits=toolkits,
             total_profiles=len(composio_profiles)
         )
-        
+
     except Exception as e:
         logger.error(f"Error getting Composio profiles: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -485,36 +486,45 @@ async def get_composio_mcp_url(
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     try:
-        from core.composio_integration.composio_profile_service import ComposioProfileService
-        composio_service = ComposioProfileService(db)
-
-        profile_service = get_profile_service(db)
-        profile = await profile_service.get_profile(user_id, profile_id)
+        convex_client = get_convex_client()
+        profile_service = get_profile_service()
         
+        # Verify profile exists and belongs to user
+        profile = await profile_service.get_profile(user_id, profile_id)
         if not profile:
             raise HTTPException(status_code=404, detail="Profile not found")
-        
+
         if not profile.mcp_qualified_name.startswith('composio.'):
             raise HTTPException(status_code=400, detail="Not a Composio profile")
-        
+
+        # Get MCP URL via Convex client
         try:
-            mcp_url = await composio_service.get_mcp_url_for_runtime(profile_id, account_id=user_id)
-            config = await composio_service.get_profile_config(profile_id, account_id=user_id)
-            toolkit_name = config.get('toolkit_name', 'Unknown')
+            mcp_url_result = await convex_client.get_composio_profile_mcp_url(
+                profile_id=profile_id,
+                account_id=user_id
+            )
+            mcp_url = mcp_url_result.get('mcp_url')
+            
+            if not mcp_url:
+                raise HTTPException(status_code=404, detail="MCP URL not found for this profile")
         except Exception as e:
-            logger.error(f"Failed to decrypt Composio profile {profile_id}: {e}")
-            raise HTTPException(status_code=404, detail="MCP URL not found or could not be decrypted")
-        
+            logger.error(f"Error getting MCP URL: {e}")
+            raise HTTPException(status_code=500, detail="Failed to retrieve MCP URL")
+
+        # Extract toolkit name from profile
+        mcp_parts = profile.mcp_qualified_name.split('.')
+        toolkit_name = mcp_parts[1].replace('_', ' ').title() if len(mcp_parts) >= 2 else "Unknown"
+
         return ComposioMcpUrlResponse(
             success=True,
             mcp_url=mcp_url,
             profile_name=profile.profile_name,
             toolkit_name=toolkit_name,
-            warning="This MCP URL contains sensitive authentication information. Never share it publicly or include it in code repositories. Anyone with access to this URL can perform actions on your behalf."
+            warning="This URL contains sensitive credentials. Do not share it publicly."
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting Composio MCP URL: {e}")
-        raise HTTPException(status_code=500, detail="Internal server error") 
+        raise HTTPException(status_code=500, detail="Internal server error")

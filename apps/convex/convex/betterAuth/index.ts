@@ -17,6 +17,8 @@ import { query, mutation, action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 
+import { ConvexError } from "convex/values";
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // TYPES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -66,9 +68,10 @@ export const getSession = query({
     sessionToken: v.string(),
   },
   handler: async (ctx, args): Promise<AuthSession | null> => {
+    // Use filter instead of reserved by_id index
     const session = await ctx.db
       .query("sessions")
-      .withIndex("by_id", (q) => q.eq("id", args.sessionToken))
+      .filter((q) => q.eq(q.field("id"), args.sessionToken))
       .first();
 
     if (!session) {
@@ -103,7 +106,7 @@ export const getUserBySession = query({
   handler: async (ctx, args): Promise<AuthUser | null> => {
     const session = await ctx.db
       .query("sessions")
-      .withIndex("by_id", (q) => q.eq("id", args.sessionToken))
+      .filter((q) => q.eq(q.field("id"), args.sessionToken))
       .first();
 
     if (!session || session.expiresAt < Date.now()) {
@@ -112,7 +115,7 @@ export const getUserBySession = query({
 
     const user = await ctx.db
       .query("users")
-      .withIndex("by_id", (q) => q.eq("id", session.userId))
+      .filter((q) => q.eq(q.field("id"), session.userId))
       .first();
 
     if (!user) {
@@ -185,7 +188,7 @@ export const deleteSession = mutation({
   handler: async (ctx, args): Promise<{ success: boolean }> => {
     const session = await ctx.db
       .query("sessions")
-      .withIndex("by_id", (q) => q.eq("id", args.sessionToken))
+      .filter((q) => q.eq(q.field("id"), args.sessionToken))
       .first();
 
     if (session) {
@@ -231,7 +234,7 @@ export const getUser = query({
   handler: async (ctx, args): Promise<AuthUser | null> => {
     const user = await ctx.db
       .query("users")
-      .withIndex("by_id", (q) => q.eq("id", args.userId))
+      .filter((q) => q.eq(q.field("id"), args.userId))
       .first();
 
     if (!user) {
@@ -351,7 +354,7 @@ export const updateUser = mutation({
   handler: async (ctx, args): Promise<AuthUser | null> => {
     const user = await ctx.db
       .query("users")
-      .withIndex("by_id", (q) => q.eq("id", args.userId))
+      .filter((q) => q.eq(q.field("id"), args.userId))
       .first();
 
     if (!user) {
@@ -450,7 +453,6 @@ export const linkAccount = mutation({
       createdAt: now,
       updatedAt: now,
     });
-
     return { success: true, linked: true };
   },
 });
@@ -564,7 +566,6 @@ export const verifyToken = mutation({
       usedAt: Date.now(),
       updatedAt: Date.now(),
     });
-
     return { valid: true, type: verification.type };
   },
 });
@@ -605,7 +606,7 @@ export const validateCsrf = query({
   handler: async (ctx, args): Promise<{ valid: boolean }> => {
     const session = await ctx.db
       .query("sessions")
-      .withIndex("by_id", (q) => q.eq("id", args.sessionToken))
+      .filter((q) => q.eq(q.field("id"), args.sessionToken))
       .first();
 
     if (!session || session.expiresAt < Date.now()) {
@@ -627,7 +628,7 @@ export const regenerateCsrf = mutation({
   handler: async (ctx, args): Promise<{ success: boolean }> => {
     const session = await ctx.db
       .query("sessions")
-      .withIndex("by_id", (q) => q.eq("id", args.sessionToken))
+      .filter((q) => q.eq(q.field("id"), args.sessionToken))
       .first();
 
     if (!session) {
@@ -724,7 +725,7 @@ export const revokeApiKey = mutation({
   handler: async (ctx, args): Promise<{ success: boolean }> => {
     const apiKey = await ctx.db
       .query("apiKeys")
-      .withIndex("by_id", (q) => q.eq("id", args.keyId))
+      .filter((q) => q.eq(q.field("id"), args.keyId))
       .first();
 
     if (!apiKey) {

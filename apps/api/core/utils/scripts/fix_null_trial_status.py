@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+Fix NULL trial status values.
+
+NOTE: This script is currently DISABLED pending Convex endpoint implementation.
+"""
+
 import asyncio
 import sys
 from pathlib import Path
@@ -7,93 +13,72 @@ from datetime import datetime, timezone
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 
+# CONVEX ENDPOINTS REQUIRED (not yet implemented):
+# ================================
+# 1. List credit accounts with NULL filter:
+#    convex.rpc("billing:listCreditAccounts", {"trialStatus": None})
+#    Returns: [{ accountId, tier, trialStatus, ... }]
+#
+# 2. Batch update credit accounts:
+#    convex.rpc("billing:batchUpdateCreditAccounts", {"accounts": [...]})
+#    Body: { accounts: [{ accountId, trialStatus, ... }] }
+#
+# NOTE: When endpoints are implemented, use:
+#   from core.services.convex_client import get_convex_client
+#   convex = get_convex_client()
+#   result = await convex.rpc("endpoint:name", params)
+
 async def fix_null_trial_status():
+    """
+    Fix NULL trial_status values in credit_accounts.
+
+    Requires Convex endpoints:
+    - billing:listCreditAccounts with trialStatus filter
+    - billing:batchUpdateCreditAccounts
+    """
     print("\n" + "="*60)
-    print("FIX NULL TRIAL STATUS VALUES")
+    print("THIS SCRIPT IS DISABLED")
     print("="*60)
-    
-    db = DBConnection()
-    await db.initialize()
-    client = await db.client
-    
-    print("\n🔧 Finding users with NULL trial_status...")
-    
-    offset = 0
-    batch_size = 500
-    total_fixed = 0
-    
-    while True:
-        result = await client.from_('credit_accounts')\
-            .select('account_id, tier, stripe_subscription_id, trial_status')\
-            .is_('trial_status', 'null')\
-            .range(offset, offset + batch_size - 1)\
-            .execute()
-        
-        if not result.data:
-            break
-        
-        print(f"\nProcessing batch with {len(result.data)} users...")
-        
-        none_status_users = []
-        converted_status_users = []
-        
-        for user in result.data:
-            account_id = user['account_id']
-            tier = user.get('tier')
-            has_stripe = bool(user.get('stripe_subscription_id'))
-            
-            paid_tiers = ['tier_2_20', 'tier_6_50', 'tier_12_100', 'tier_25_200', 'tier_50_400', 'tier_150_1200']
-            
-            if tier in paid_tiers or has_stripe:
-                converted_status_users.append(account_id)
-                print(f"  - {account_id}: tier={tier}, has_stripe={has_stripe} -> 'converted'")
-            else:
-                none_status_users.append(account_id)
-                print(f"  - {account_id}: tier={tier}, has_stripe={has_stripe} -> 'none'")
-        
-        if none_status_users:
-            try:
-                await client.from_('credit_accounts')\
-                    .update({
-                        'trial_status': 'none',
-                        'updated_at': datetime.now(timezone.utc).isoformat()
-                    })\
-                    .in_('account_id', none_status_users)\
-                    .execute()
-                
-                print(f"  ✅ Fixed {len(none_status_users)} users to 'none'")
-                total_fixed += len(none_status_users)
-            except Exception as e:
-                logger.error(f"Error fixing 'none' status batch: {e}")
-                print(f"  ❌ Error: {e}")
-        
-        if converted_status_users:
-            try:
-                await client.from_('credit_accounts')\
-                    .update({
-                        'trial_status': 'converted',
-                        'updated_at': datetime.now(timezone.utc).isoformat()
-                    })\
-                    .in_('account_id', converted_status_users)\
-                    .execute()
-                
-                print(f"  ✅ Fixed {len(converted_status_users)} users to 'converted'")
-                total_fixed += len(converted_status_users)
-            except Exception as e:
-                logger.error(f"Error fixing 'converted' status batch: {e}")
-                print(f"  ❌ Error: {e}")
-        
-        offset += batch_size
-        
-        if len(result.data) < batch_size:
-            break
-    
-    print("\n" + "="*60)
-    print(f"✅ COMPLETE: Fixed {total_fixed} users with NULL trial_status")
+    print("This script requires Convex endpoints that are not yet implemented.")
+    print("Required endpoints:")
+    print("  - convex.rpc('billing:listCreditAccounts', {'trialStatus': None})")
+    print("  - convex.rpc('billing:batchUpdateCreditAccounts', {'accounts': [...]})")
     print("="*60)
+
+    # TODO: Implement when Convex billing endpoints are available
+    # convex = get_convex_client()
+    #
+    # # Find all accounts with NULL trial_status
+    # accounts = await convex.rpc("billing:listCreditAccounts", {
+    #     "trialStatus": None  # NULL filter
+    # })
+    #
+    # print(f"Found {len(accounts)} accounts with NULL trial_status")
+    #
+    # # Prepare batch update
+    # updates = []
+    # for account in accounts:
+    #     # Determine appropriate trial_status based on tier
+    #     if account['tier'] == 'none':
+    #         new_status = 'not_started'
+    #     elif account['tier'] in ['pro', 'team', 'enterprise']:
+    #         new_status = 'converted'
+    #     else:
+    #         new_status = 'not_started'
+    #
+    #     updates.append({
+    #         "accountId": account['accountId'],
+    #         "trialStatus": new_status
+    #     })
+    #
+    # # Batch update
+    # if updates:
+    #     await convex.rpc("billing:batchUpdateCreditAccounts", {"accounts": updates})
+    #     print(f"Fixed {len(updates)} accounts")
+    return
 
 async def main():
     try:
@@ -105,4 +90,4 @@ async def main():
 
 if __name__ == "__main__":
     print("Starting fix for NULL trial_status values...")
-    asyncio.run(main()) 
+    asyncio.run(main())

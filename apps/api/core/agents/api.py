@@ -29,12 +29,12 @@ from core.utils.config import config, EnvMode
 from core.services import redis
 from core.ai_models import model_manager
 from core.api_models import UnifiedAgentStartResponse
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 
 # Import from new modules
 from core.agents.runner import execute_agent_run
 
-db = DBConnection()
+# MIGRATED: db = DBConnection() - using Convex client singleton
 router = APIRouter(tags=["agent-runs"])
 
 # Store cancellation events for stop mechanism (in-memory, per instance)
@@ -61,8 +61,11 @@ async def _get_agent_run_with_access_check(agent_run_id: str, user_id: str, requ
     if actual_user_id == user_id or account_id == user_id:
         return agent_run_data
     
-    client = await db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=require_write_access)
+    # MIGRATED: Use Convex client instead of Supabase client
+    # Old: client = await db.client
+    # TODO: verify_and_authorize_thread_access may need migration if it uses Supabase-specific features
+    convex = get_convex_client()
+    await verify_and_authorize_thread_access(convex, thread_id, user_id, require_write_access=require_write_access)
     return agent_run_data
 
 
@@ -250,13 +253,14 @@ async def _check_concurrent_runs_limit(account_id: str):
         })
 
 
-async def _get_effective_model(model_name: Optional[str], agent_config: Optional[dict], client, account_id: str) -> str:
+async def _get_effective_model(model_name: Optional[str], agent_config: Optional[dict], convex, account_id: str) -> str:
     if model_name:
         return model_name
     elif agent_config and agent_config.get('model'):
         return agent_config['model']
     else:
-        return await model_manager.get_default_model_for_user(client, account_id)
+        # TODO: Migrate model_manager.get_default_model_for_user to work with Convex client
+        return await model_manager.get_default_model_for_user(convex, account_id)
 
 
 async def _create_agent_run_record(
@@ -389,7 +393,9 @@ async def start_agent_run(
     sandbox_id = None
     from core.threads import repo as threads_repo
     from core.sandbox.resolver import resolve_sandbox
-    client = await db.client
+    # MIGRATED: Use Convex client instead of Supabase client
+    # Old: client = await db.client
+    convex = get_convex_client()
     
     has_files = files_data and len(files_data) > 0
     
@@ -412,7 +418,7 @@ async def start_agent_run(
                 logger.debug(f"Project check/creation skipped: {e}")
         
         # Resolve sandbox (creates if needed, starts it) - BLOCKING
-        sandbox_info = await resolve_sandbox(project_id, account_id, client, require_started=True)
+        sandbox_info = await resolve_sandbox(project_id, account_id, convex, require_started=True)
         sandbox_id = sandbox_info.sandbox_id if sandbox_info else None
         
         if sandbox_id:
@@ -427,7 +433,7 @@ async def start_agent_run(
     elif is_new_thread:
         # NO FILES but NEW THREAD: Start sandbox creation in background (non-blocking)
         # This ensures sandbox is ready by the time user checks Files tab
-        async def create_sandbox_background(proj_id: str, acc_id: str, db_client):
+        async def create_sandbox_background(proj_id: str, acc_id: str, convex_client):
             try:
                 # First ensure project exists
                 placeholder_name = f"{prompt[:30]}..." if len(prompt) > 30 else prompt if prompt else "Untitled"
@@ -437,7 +443,7 @@ async def start_agent_run(
                     pass  # May already exist
                 
                 # Then create sandbox
-                sandbox_info = await resolve_sandbox(proj_id, acc_id, db_client, require_started=True)
+                sandbox_info = await resolve_sandbox(proj_id, acc_id, convex_client, require_started=True)
                 if sandbox_info:
                     logger.info(f"✅ [BACKGROUND] Created sandbox {sandbox_info.sandbox_id} for project {proj_id}")
                 else:
@@ -446,7 +452,7 @@ async def start_agent_run(
                 logger.error(f"❌ [BACKGROUND] Error creating sandbox for project {proj_id}: {e}")
         
         # Fire and forget - don't wait for sandbox creation
-        asyncio.create_task(create_sandbox_background(project_id, account_id, client))
+        asyncio.create_task(create_sandbox_background(project_id, account_id, convex))
         logger.info(f"🚀 [AGENT_START] Started background sandbox creation for new project {project_id}")
     
     slot_reservation = await reserve_slot(
@@ -751,7 +757,9 @@ async def unified_agent_start(
     files: List[UploadFile] = File(default=[]),
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    client = await db.client
+    # MIGRATED: Use Convex client instead of Supabase client
+    # Old: client = await db.client
+    convex = get_convex_client()
     account_id = user_id
     is_optimistic = optimistic and optimistic.lower() == 'true'
     
@@ -770,7 +778,7 @@ async def unified_agent_start(
         raise HTTPException(status_code=400, detail="prompt required when creating new thread")
     
     if model_name is None:
-        model_name = await model_manager.get_default_model_for_user(client, account_id)
+        model_name = await model_manager.get_default_model_for_user(convex, account_id)
     elif model_name != "mock-ai":
         model_name = model_manager.resolve_model_id(model_name)
 
@@ -801,7 +809,7 @@ async def unified_agent_start(
                 raise HTTPException(status_code=404, detail="Thread not found")
             project_id = thread_data['project_id']
             if thread_data['account_id'] != user_id:
-                await verify_and_authorize_thread_access(client, thread_id, user_id, require_write_access=True)
+                await verify_and_authorize_thread_access(convex, thread_id, user_id, require_write_access=True)
         
         # Parse files if present
         files_data = []
@@ -858,7 +866,6 @@ async def stop_agent(agent_run_id: str, user_id: str = Depends(verify_and_get_us
 
 @router.get("/agent-runs/{agent_run_id}/status", summary="Get Agent Run Status", operation_id="get_agent_run_status")
 async def get_agent_run_status(agent_run_id: str, user_id: str = Depends(verify_and_get_user_id_from_jwt)):
-    """Get agent run status."""
     agent_run_data = await _get_agent_run_with_access_check(agent_run_id, user_id)
     return {"status": agent_run_data['status'], "error": agent_run_data.get('error')}
 
@@ -899,8 +906,9 @@ async def get_agent_runs(thread_id: str, user_id: str = Depends(verify_and_get_u
             }
         raise HTTPException(status_code=404, detail="Thread not found")
     
-    client = await db.client
-    await verify_and_authorize_thread_access(client, thread_id, user_id)
+    # MIGRATED: Use Convex client instead of Supabase client
+    convex = get_convex_client()
+    await verify_and_authorize_thread_access(convex, thread_id, user_id)
     agent_runs = await repo_get_thread_runs(thread_id)
     return {"agent_runs": agent_runs}
 
@@ -919,8 +927,9 @@ async def get_agent_run(agent_run_id: str, user_id: str = Depends(verify_and_get
     actual_user_id = metadata.get('actual_user_id')
     
     if not (actual_user_id == user_id or thread_account_id == user_id):
-        client = await db.client
-        await verify_and_authorize_thread_access(client, agent_run_data['thread_id'], user_id)
+        # MIGRATED: Use Convex client instead of Supabase client
+        convex = get_convex_client()
+        await verify_and_authorize_thread_access(convex, agent_run_data['thread_id'], user_id)
     
     return {
         "id": agent_run_data['id'],

@@ -2,7 +2,7 @@
 API instance metrics service for tracking active agent runs.
 
 Provides:
-- Active agent run counts (from DB - source of truth)
+- Active agent run counts (from Convex DB - source of truth)
 - Redis stream counts (real-time tracking)
 - CloudWatch publishing for monitoring
 """
@@ -13,6 +13,8 @@ from typing import Optional, Dict, List
 
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
+
+from core.services.convex_client import get_convex_client
 
 # CloudWatch client (lazy initialized)
 _cloudwatch_client = None
@@ -39,27 +41,20 @@ def _get_cloudwatch_client():
 async def get_worker_metrics() -> dict:
     """
     Get active agent run metrics.
-    
+
     Returns:
         dict with:
-        - active_agent_runs: Total active runs across all instances (from DB)
+        - active_agent_runs: Total active runs across all instances (from Convex DB)
         - active_redis_streams: Active Redis stream keys (real-time tracking)
         - orphaned_streams: Streams without DB records (should be 0)
     """
-    from core.services.supabase import DBConnection
     from core.services import redis
-    
-    db = DBConnection()
-    
+
     try:
-        # Count active agent runs from database (source of truth across all instances)
-        client = await db.client
-        active_runs_result = await client.table('agent_runs')\
-            .select('id', count='exact')\
-            .eq('status', 'running')\
-            .execute()
-        active_agent_runs = active_runs_result.count or 0
-        
+        # Get active agent run count from Convex (source of truth)
+        convex = get_convex_client()
+        active_agent_runs = await convex.count_active_agent_runs()
+
         # Count active Redis stream keys (real-time tracking)
         active_redis_streams = 0
         try:
@@ -76,11 +71,11 @@ async def get_worker_metrics() -> dict:
             logger.warning(f"Failed to count Redis stream keys: {e}")
             # Fallback: use DB count if Redis fails
             active_redis_streams = active_agent_runs
-        
+
         # Orphaned streams = Redis streams without corresponding 'running' DB record
         # Should be 0 in healthy state - non-zero indicates cleanup issues
         orphaned_streams = max(0, active_redis_streams - active_agent_runs)
-        
+
         return {
             "active_agent_runs": active_agent_runs,
             "active_redis_streams": active_redis_streams,

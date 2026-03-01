@@ -140,11 +140,12 @@ class MCPToolExecutor:
                 from core.composio_integration.composio_profile_service import ComposioProfileService
                 
                 if self.db is None:
-                    from core.services.supabase import DBConnection
-                    db = DBConnection()
+                    from core.services.convex_client import get_convex_client
+                    convex = get_convex_client()
                 else:
-                    db = self.db
-                profile_service = ComposioProfileService(db)
+                    convex = self.convex if hasattr(self, 'convex') else get_convex_client()
+                # TODO: Convex migration - ComposioProfileService needs Convex client
+                profile_service = ComposioProfileService(None)  # placeholder
                 mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=self.account_id)
                 modified_tool_info = tool_info.copy()
                 modified_tool_info['custom_config'] = {
@@ -247,17 +248,20 @@ class MCPToolExecutor:
             from core.utils.encryption import decrypt_data
             
             if self.db is None:
-                from core.services.supabase import DBConnection
-                db = DBConnection()
+                from core.services.convex_client import get_convex_client
+                convex = get_convex_client()
             else:
-                db = self.db
-            supabase = await db.client
-            
-            result = await supabase.table('user_mcp_credential_profiles').select(
-                'encrypted_config'
-            ).eq('profile_id', profile_id).single().execute()
-            
-            if result.data:
+                convex = self.convex if hasattr(self, 'convex') else get_convex_client()
+            # TODO: Convex migration - need user_mcp_credential_profiles query
+            # supabase = await db.client
+
+            # TODO: Implement profile query in Convex client
+            # result = await supabase.table('user_mcp_credential_profiles').select(
+            #     'encrypted_config'
+            # ).eq('profile_id', profile_id).single().execute()
+            result = None  # Placeholder
+
+            if result and result.data:
                 decrypted_config = decrypt_data(result.data['encrypted_config'])
                 config_data = json.loads(decrypted_config)
                 return config_data.get('external_user_id', external_user_id)

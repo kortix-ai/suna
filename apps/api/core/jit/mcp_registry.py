@@ -6,6 +6,9 @@ from datetime import timedelta
 
 from core.utils.logger import logger
 from core.services import redis as redis_service
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for database operations
+from core.services.convex_client import get_convex_client
 
 
 class MCPRegistry:
@@ -45,21 +48,22 @@ class MCPRegistry:
     
     async def _query_composio_toolkit(self, toolkit_slug: str, account_id: Optional[str] = None, sample_profile_id: Optional[str] = None) -> List[str]:
         start_time = time.time()
-        
+
         try:
             from core.composio_integration.composio_profile_service import ComposioProfileService
             from core.services.supabase import DBConnection
-            
+
+            # MIGRATED: ComposioProfileService now uses Convex client internally
             db = DBConnection()
             profile_service = ComposioProfileService(db)
-            
+
             try:
                 if account_id:
                     connected_profiles = await self._find_connected_profiles_for_toolkit(profile_service, toolkit_slug, account_id)
                 else:
                     logger.warning(f"⚠️  [MCP DYNAMIC] No account_id provided, cannot find profiles for {toolkit_slug}")
                     connected_profiles = []
-                
+
                 if connected_profiles:
                     for profile in connected_profiles:
                         if profile.is_connected and profile.mcp_url:
@@ -68,7 +72,7 @@ class MCPRegistry:
                             )
                             if real_tools:
                                 return real_tools
-                
+
             except Exception as profile_err:
                 logger.debug(f"⚡ [MCP DYNAMIC] No connected profiles found for {toolkit_slug}: {profile_err}")
 

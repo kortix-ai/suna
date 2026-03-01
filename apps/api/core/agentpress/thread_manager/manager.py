@@ -8,7 +8,16 @@ from core.agentpress.tool import Tool
 from core.agentpress.tool_registry import ToolRegistry
 from core.agentpress.processor_config import ProcessorConfig
 from core.agentpress.error_processor import ErrorProcessor
-from core.services.supabase import DBConnection
+
+# MIGRATION NOTES:
+# ThreadManager has been fully migrated from Supabase to Convex:
+# - Thread creation: threads_repo.insert_thread() -> uses Convex client
+# - Message operations: threads_repo.insert_message() -> uses Convex client
+# - Message fetching: MessageFetcher uses threads_repo -> uses Convex client
+# - Thread state: ThreadState uses threads_repo -> uses Convex client
+# - Billing: BillingHandler uses threads_repo -> uses Convex client
+# No direct Supabase DBConnection is needed in this class.
+
 from core.utils.logger import logger
 from langfuse.client import StatefulGenerationClient, StatefulTraceClient
 from core.services.langfuse import langfuse
@@ -24,10 +33,18 @@ from core.agentpress.thread_manager.services import (
 ToolChoice = Literal["auto", "required", "none"]
 
 class ThreadManager:
-    def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None, 
+    """
+    Thread manager for agent conversations.
+    
+    MIGRATED: This class no longer requires Supabase DBConnection.
+    All database operations are handled by repo modules that use Convex client.
+    """
+    
+    def __init__(self, trace: Optional[StatefulTraceClient] = None, agent_config: Optional[dict] = None,
                  project_id: Optional[str] = None, thread_id: Optional[str] = None, account_id: Optional[str] = None,
                  jit_config: Optional['JITConfig'] = None):
-        self.db = DBConnection()
+        # MIGRATED: self.db = DBConnection() - no longer needed, repo handles DB access
+        # All database operations now use repo pattern with Convex client
         self.tool_registry = ToolRegistry()
         
         self.project_id = project_id
@@ -215,7 +232,7 @@ class ThreadManager:
                 get_llm_messages_func=self.get_llm_messages,
                 thread_has_images_func=self.thread_has_images,
                 response_processor=self.response_processor,
-                db=self.db
+                db=None  # MIGRATED: db=self.db - no longer needed, repo handles DB access
             )
         except Exception as e:
             processed_error = ErrorProcessor.process_system_error(e, context={"thread_id": thread_id})

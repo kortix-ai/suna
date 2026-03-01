@@ -251,9 +251,20 @@ def create_system_prompt(tokens: int = 6000) -> Dict[str, Any]:
 # ============================================================================
 
 class MockDBConnection:
-    """Mock database connection for testing."""
+    """Mock database connection for testing.
+
+    MIGRATED: Uses Convex mock client - see conftest.py for fixtures.
+    This mock provides a client attribute for backwards compatibility
+    with tests that expect the old Supabase DBConnection pattern.
+    """
     def __init__(self):
         self.client = MagicMock()
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc_val, exc_tb):
+        pass
 
 
 class MockThreadsRepo:

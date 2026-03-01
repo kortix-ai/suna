@@ -440,18 +440,18 @@ class MCPJITLoader:
         try:
             config = mcp_config.get('config', {})
             profile_id = config.get('profile_id')
-            
+
             if not profile_id:
                 raise ValueError(f"Missing profile_id for Composio tool {tool_name}")
-            
+
             from core.composio_integration.composio_profile_service import ComposioProfileService
             from core.services.supabase import DBConnection
             from mcp.client.streamable_http import streamablehttp_client
             from mcp import ClientSession
-            
+
+            # MIGRATED: ComposioProfileService now uses Convex client internally
             db = DBConnection()
             profile_service = ComposioProfileService(db)
-            account_id = self.agent_config.get('account_id')
             mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=account_id)
 
             logger.debug(f"⚡ [MCP JIT] Resolved Composio profile {profile_id} to MCP URL for {tool_name}")

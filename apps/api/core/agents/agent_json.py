@@ -8,9 +8,7 @@ from core.utils.logger import logger
 from core.templates.template_service import MCPRequirementValue, ConfigType, ProfileId, QualifiedName
 
 from core.api_models import JsonAnalysisRequest, JsonAnalysisResponse, JsonImportRequestModel, JsonImportResponse
-from core.services.supabase import DBConnection
-
-db = DBConnection()
+from core.services.convex_client import get_convex_client
 
 router = APIRouter(tags=["agents"])
 
@@ -18,8 +16,8 @@ class JsonImportError(Exception):
     pass
 
 class JsonImportService:
-    def __init__(self, db_connection):
-        self._db = db_connection
+    def __init__(self):
+        pass  # Convex client accessed via get_convex_client() singleton
     
     async def analyze_json(self, json_data: Dict[str, Any], account_id: str) -> JsonAnalysisResponse:
         logger.debug(f"Analyzing imported JSON for user {account_id}")
@@ -184,7 +182,7 @@ class JsonImportService:
         missing_configs = []
         
         from core.templates.installation_service import InstallationService
-        installation_service = InstallationService(self._db)
+        installation_service = InstallationService()
         
         return await installation_service._validate_installation_requirements(
             requirements,
@@ -221,14 +219,14 @@ class JsonImportService:
         }
         
         from core.credentials import get_profile_service
-        profile_service = get_profile_service(self._db)
+        profile_service = get_profile_service()
         
         for req in requirements:
             if req.custom_type == 'composio':
                 profile_id = request.profile_mappings.get(req.qualified_name) if request.profile_mappings else None
                 if profile_id:
                     from core.composio_integration.composio_profile_service import ComposioProfileService
-                    composio_service = ComposioProfileService(self._db)
+                    composio_service = ComposioProfileService()
                     mcp_config = await composio_service.get_mcp_config_for_agent(profile_id, account_id=account_id)
                     if mcp_config:
                         mcp_config['enabledTools'] = req.enabled_tools
@@ -271,36 +269,26 @@ class JsonImportService:
         agent_config: Dict[str, Any]
     ) -> str:
         
-        client = await self._db.client
+        # MIGRATED: Use Convex client instead of Supabase
+        # Old: client = await self._db.client
+        convex = get_convex_client()
         
         agent_name = request.instance_name or json_data.get('name', 'Imported Agent')
         
-        insert_data = {
-            "account_id": account_id,
-            "name": agent_name,
-            "description": json_data.get('description', ''),
-            "icon_name": json_data.get('icon_name', 'brain'),
-            "icon_color": json_data.get('icon_color', '#000000'),
-            "icon_background": json_data.get('icon_background', '#F3F4F6'),
-            "is_default": False,
-            "tags": json_data.get('tags', []),
-            "version_count": 1,
-            "metadata": {
-                "imported_from_json": True,
-                "import_date": datetime.now(timezone.utc).isoformat()
-            }
-        }
-        
+        # Use agents_repo which handles the database operations
         from core.agents import repo as agents_repo
         
         agent = await agents_repo.create_agent(
             account_id=account_id,
             name=agent_name,
-            icon_name=insert_data.get("icon_name", "bot"),
-            icon_color=insert_data.get("icon_color", "#000000"),
-            icon_background=insert_data.get("icon_background", "#F3F4F6"),
-            is_default=insert_data.get("is_default", False),
-            metadata=insert_data.get("metadata", {})
+            icon_name=json_data.get('icon_name', 'brain'),
+            icon_color=json_data.get('icon_color', '#000000'),
+            icon_background=json_data.get('icon_background', '#F3F4F6'),
+            is_default=False,
+            metadata={
+                "imported_from_json": True,
+                "import_date": datetime.now(timezone.utc).isoformat()
+            }
         )
         
         if not agent:
@@ -365,7 +353,7 @@ async def export_agent(agent_id: str, user_id: str = Depends(verify_and_get_user
         config = extract_agent_config(agent, current_version)
         
         from core.templates.template_service import TemplateService
-        template_service = TemplateService(db)
+        template_service = TemplateService()
         
         full_config = {
             'system_prompt': config.get('system_prompt', ''),
@@ -410,9 +398,9 @@ async def analyze_json_for_import(
     """Analyze imported JSON to determine required credentials and configurations"""
     logger.debug(f"Analyzing JSON for import - user: {user_id}")
     
-    
     try:
-        import_service = JsonImportService(db)
+        # MIGRATED: JsonImportService no longer needs db parameter
+        import_service = JsonImportService()
         
         analysis = await import_service.analyze_json(request.json_data, user_id)
         
@@ -429,8 +417,9 @@ async def import_agent_from_json(
 ):
     logger.debug(f"Importing agent from JSON - user: {user_id}")
     
+    # MIGRATED: No longer need Supabase client
+    # Old: client = await db.client
     
-    client = await db.client
     from core.utils.limits_checker import check_agent_count_limit
     limit_check = await check_agent_count_limit(user_id)
     
@@ -446,7 +435,8 @@ async def import_agent_from_json(
         raise HTTPException(status_code=402, detail=error_detail)
     
     try:
-        import_service = JsonImportService(db)
+        # MIGRATED: JsonImportService no longer needs db parameter
+        import_service = JsonImportService()
         
         result = await import_service.import_json(request, user_id)
         

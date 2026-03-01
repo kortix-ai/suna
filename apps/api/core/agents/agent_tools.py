@@ -8,13 +8,11 @@ from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config, EnvMode
 
-from core.services.supabase import DBConnection
-
-db = DBConnection()
-async def _get_version_service():
-    """Get the version service instance."""
-    from core.versioning.version_service import get_version_service
-    return await get_version_service()
+# MIGRATED: All database operations now use repo pattern instead of direct Supabase client
+# - agents_repo.get_agent_by_id() for agent retrieval
+# - versioning_repo.get_agent_version_by_id() for version data
+# - version_service.create_version() for version creation
+# No direct Supabase DBConnection needed in this file
 
 router = APIRouter(tags=["agent-tools"])
 
@@ -172,8 +170,7 @@ async def update_custom_mcp_tools_for_agent(
             if mcp_type == 'composio':
                 try:
                     from core.composio_integration.composio_profile_service import ComposioProfileService
-                    from core.services.supabase import DBConnection
-                    profile_service = ComposioProfileService(DBConnection())
+                    profile_service = ComposioProfileService()
  
                     profile_id = mcp_url
                     mcp_config = await profile_service.get_mcp_config_for_agent(profile_id, account_id=user_id)

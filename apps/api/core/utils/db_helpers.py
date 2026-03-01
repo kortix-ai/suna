@@ -2,57 +2,46 @@
 Centralized database dependency helpers.
 
 This module provides reusable FastAPI dependencies for database connections,
-reducing duplication across 50+ files.
+supporting Convex for the new data layer.
+
+Architecture:
+- Convex: Used for threads, agents, messages, memories, triggers
+
+CONVEX MIGRATION STATUS: FULLY MIGRATED
+- All Supabase imports removed
+- get_convex(), get_initialized_convex() - Convex (for data layer)
 """
-from typing import AsyncGenerator
-from core.services.supabase import DBConnection
+from typing import AsyncGenerator, Optional
+from core.services.convex_client import ConvexClient, get_convex_client
 from core.utils.logger import logger
 
 
-_db_instance: DBConnection | None = None
+_convex_instance: ConvexClient | None = None
 
 
-async def get_db() -> DBConnection:
+async def get_convex() -> ConvexClient:
     """
-    FastAPI dependency for database connection.
-    
-    Returns initialized DBConnection singleton.
-    Use as: db = Depends(get_db)
+    FastAPI dependency for Convex client.
+
+    Returns the Convex client for threads, agents, messages, memories, triggers.
+    Use as: convex = Depends(get_convex)
+
+    This is the preferred client for all data layer operations.
     """
-    global _db_instance
-    
-    if _db_instance is None:
-        _db_instance = DBConnection()
-        await _db_instance.initialize()
-        logger.debug("Database connection initialized via dependency")
-    
-    return _db_instance
+    return get_convex_client()
 
 
-async def get_db_client():
+def get_initialized_convex() -> ConvexClient:
     """
-    FastAPI dependency that returns the actual Supabase client.
-    
-    Use as: client = Depends(get_db_client)
+    Get the Convex client for module-level usage.
+
+    Modules should use this for Convex operations:
+    - threads, agents, messages, memories, triggers
     """
-    db = await get_db()
-    return await db.client
+    return get_convex_client()
 
 
-# For modules that need to set a module-level db variable
-def get_initialized_db() -> DBConnection:
-    """
-    Get or create initialized DBConnection for module-level usage.
-    
-    This is for backward compatibility with modules using global db variables.
-    New code should use get_db() dependency instead.
-    """
-    global _db_instance
-    
-    if _db_instance is None:
-        _db_instance = DBConnection()
-        # Note: Cannot await here, caller must call initialize() separately
-        logger.debug("Created DBConnection instance (needs initialization)")
-    
-    return _db_instance
-
+# Legacy compatibility aliases
+get_db = get_convex
+get_db_client = get_convex
+get_initialized_db = get_initialized_convex

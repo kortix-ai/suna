@@ -12,7 +12,7 @@ from core.utils.logger import logger
 from core.utils.config import config
 from core.billing.subscriptions import free_tier_service
 from core.utils.suna_default_agent_service import SunaDefaultAgentService
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services.email import email_service
 
 # Main setup router (prefix="/setup")
@@ -62,27 +62,28 @@ def verify_webhook_secret(x_webhook_secret: str = Header(...)):
 async def initialize_user_account(account_id: str, email: Optional[str] = None, user_record: Optional[dict] = None) -> Dict:
     try:
         logger.info(f"[SETUP] Initializing account for {account_id}")
-        
-        # Use singleton - already initialized at startup
-        db = DBConnection()
+
+        # TODO: Convex migration - DBConnection replaced with get_convex_client
+        # The Convex client currently does not support all user account operations
+        convex = get_convex_client()
         user_name = None
         if user_record and email:
             user_name = _extract_user_name(user_record, email)
-        
+
 
         from core.notifications.notification_service import notification_service
 
         logger.info(f"[SETUP] Sending welcome email to {email} with name {user_name}")
         try:
             await notification_service.send_welcome_email(account_id)
-            
+
         except Exception as ex:
             logger.error(f"[SETUP] Error sending welcome notification: {ex}")
             if email and user_name:
                 _send_welcome_email_async(email, user_name)
-        
+
         result = await free_tier_service.auto_subscribe_to_free_tier(account_id, email)
-        
+
         if not result.get('success'):
             error_msg = result.get('error') or result.get('message', 'Unknown error')
             if 'Already subscribed' in error_msg or 'already' in error_msg.lower():
@@ -94,43 +95,44 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
                     'message': f"Failed to initialize free tier: {error_msg}",
                     'error': error_msg
                 }
-        
+
         logger.info(f"[SETUP] Installing Suna agent for {account_id}")
         try:
-            suna_service = SunaDefaultAgentService(db)
+            # TODO: Convex migration - SunaDefaultAgentService needs to be updated to use Convex
+            suna_service = SunaDefaultAgentService()
             agent_id = await suna_service.install_suna_agent_for_user(account_id)
             if not agent_id:
                 logger.warning(f"[SETUP] Failed to install Suna agent for {account_id}")
         except Exception as e:
             logger.error(f"[SETUP] Error installing Suna agent for {account_id}: {e}")
             agent_id = None
-        
+
         if user_record:
             raw_user_metadata = user_record.get('raw_user_meta_data', {})
             referral_code = raw_user_metadata.get('referral_code')
-            
+
             logger.info(f"[SETUP] User metadata: {raw_user_metadata}")
             logger.info(f"[SETUP] Referral code from metadata: {referral_code}")
-            
+
             if referral_code:
                 logger.info(f"[SETUP] Processing referral code for {account_id}: {referral_code}")
                 try:
                     from core.referrals.service import ReferralService
-                    
-                    referral_service = ReferralService(db)
+
+                    referral_service = ReferralService()
                     referrer_id = await referral_service.validate_referral_code(referral_code)
                     logger.info(f"[SETUP] Validated referral code {referral_code} -> referrer_id: {referrer_id}")
-                    
+
                     if referrer_id and referrer_id != account_id:
                         referral_result = await referral_service.process_referral(
                             referrer_id=referrer_id,
                             referred_account_id=account_id,
                             referral_code=referral_code
                         )
-                        
+
                         if referral_result.get('success'):
                             logger.info(
-                                f"[SETUP] ✅ Referral processed: {referrer_id} referred {account_id}, "
+                                f"[SETUP] Referral processed: {referrer_id} referred {account_id}, "
                                 f"awarded {referral_result.get('credits_awarded')} credits"
                             )
                         else:
@@ -142,16 +144,16 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
                         )
                 except Exception as ref_error:
                     logger.error(f"[SETUP] Error processing referral: {ref_error}", exc_info=True)
-        
-        logger.info(f"[SETUP] ✅ Account initialization complete for {account_id}")
-        
+
+        logger.info(f"[SETUP] Account initialization complete for {account_id}")
+
         return {
             'success': True,
             'message': 'Account initialized successfully',
             'subscription_id': result.get('subscription_id'),
             'agent_id': agent_id
         }
-        
+
     except Exception as e:
         logger.error(f"[SETUP] Error initializing account {account_id}: {e}")
         return {
@@ -188,31 +190,22 @@ def _send_welcome_email_async(email: str, user_name: str):
 async def initialize_account(
     account_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
-    # Use singleton - already initialized at startup
-    db = DBConnection()
-    client = await db.client
-    
+    # TODO: Convex migration - user lookup needs Convex auth integration
+    # The Convex client currently does not support auth.admin.get_user_by_id
+    convex = get_convex_client()
+
     email = None
     user_record = None
-    
-    try:
-        user_response = await client.auth.admin.get_user_by_id(account_id)
-        if user_response and hasattr(user_response, 'user') and user_response.user:
-            user = user_response.user
-            email = user.email
-            user_record = {
-                'id': user.id,
-                'email': user.email,
-                'raw_user_meta_data': user.user_metadata or {}
-            }
-    except Exception as e:
-        logger.warning(f"[SETUP] Could not fetch user for initialization: {e}")
-    
+
+    # TODO: Convex migration - need to implement user lookup via Convex
+    # For now, we proceed without user details
+    logger.warning(f"[SETUP] User lookup not yet migrated to Convex for {account_id}")
+
     result = await initialize_user_account(account_id, email, user_record)
-    
+
     if not result.get('success'):
         raise HTTPException(status_code=500, detail=result.get('message', 'Failed to initialize account'))
-    
+
     return result
 
 # ============================================================================
@@ -314,7 +307,7 @@ async def receive_vercel_drain(
     Receives pageview events and stores device IDs for unique visitor counting.
     """
     body = await request.body()
-    
+
     # Verify signature if secret is configured
     drain_secret = config.VERCEL_DRAIN_SECRET
     if drain_secret:
@@ -322,20 +315,20 @@ async def receive_vercel_drain(
             raise HTTPException(status_code=401, detail="Missing signature")
         if not verify_vercel_signature(body, x_vercel_signature, drain_secret):
             raise HTTPException(status_code=401, detail="Invalid signature")
-    
+
     try:
         # Parse the payload - Vercel sends NDJSON (newline-delimited JSON)
         payload_str = body.decode('utf-8')
-        
+
         # Log payload length and sample
         logger.debug(f"Vercel drain payload: {payload_str}")
-        
+
         # Parse all lines
         parsed_items = []
         for line in payload_str.strip().split('\n'):
             if line:
                 parsed_items.append(json.loads(line))
-        
+
         # Flatten: each line could be a dict (single event) or list (array of events)
         events = []
         for item in parsed_items:
@@ -343,53 +336,13 @@ async def receive_vercel_drain(
                 events.extend(item)
             elif isinstance(item, dict):
                 events.append(item)
-        
-        db = DBConnection()
-        client = await db.client
-        
-        # Process each event
-        processed = 0
-        skipped = 0
-        for event in events:
-            if not isinstance(event, dict):
-                continue
-            
-            # Only track pageview events
-            if event.get('eventType') != 'pageview':
-                skipped += 1
-                continue
-            
-            # Use deviceId for unique visitor tracking (it's numeric, convert to string)
-            raw_device_id = event.get('deviceId')
-            if raw_device_id is None:
-                continue
-            
-            device_id = str(raw_device_id)
-            
-            if not device_id:
-                continue
-            
-            # Get timestamp and convert to date
-            timestamp = event.get('timestamp') or event.get('time') or event.get('ts')
-            if timestamp:
-                if isinstance(timestamp, (int, float)):
-                    dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
-                else:
-                    dt = datetime.fromisoformat(str(timestamp).replace('Z', '+00:00'))
-                event_date = dt.strftime('%Y-%m-%d')
-            else:
-                event_date = datetime.now(timezone.utc).strftime('%Y-%m-%d')
-            
-            # Upsert the pageview (add device_id to array if not exists)
-            await client.rpc('upsert_vercel_pageview', {
-                'p_date': event_date,
-                'p_device_id': device_id
-            }).execute()
-            processed += 1
-        
-        logger.info(f"Vercel drain: {processed} pageviews processed, {skipped} non-pageview skipped, {len(events)} total events")
-        return {"status": "ok", "processed": processed}
-        
+
+        # TODO: Convex migration - need to implement upsert_vercel_pageview RPC equivalent
+        # The Convex client currently does not support Vercel analytics storage
+        logger.warning(f"Vercel drain webhook not yet migrated to Convex - {len(events)} events received but not stored")
+
+        return {"status": "ok", "processed": 0, "message": "Vercel drain not yet migrated to Convex"}
+
     except json.JSONDecodeError as e:
         logger.error(f"Failed to parse Vercel drain payload: {e}")
         raise HTTPException(status_code=400, detail="Invalid JSON payload")

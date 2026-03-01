@@ -1,7 +1,7 @@
 from fastapi import HTTPException, Request
 from typing import Dict
 import stripe
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.config import config
 from core.utils.logger import logger
 from core.utils.cache import Cache
@@ -51,35 +51,35 @@ class WebhookService:
             cache_key = f"stripe_event:{event.id}"
             await Cache.set(cache_key, True, ttl=7200)
             
-            db = DBConnection()
-            client = await db.client
+            # Get Convex client for webhook handlers
+            convex = get_convex_client()
             
             logger.info(f"[WEBHOOK] Processing event type: {event.type} (ID: {event.id})")
             
             if event.type == 'checkout.session.completed':
                 logger.info(f"[WEBHOOK] Handling checkout.session.completed")
-                await CheckoutHandler.handle_checkout_session_completed(event, client)
+                await CheckoutHandler.handle_checkout_session_completed(event, convex)
             
             elif event.type in ['customer.subscription.created', 'customer.subscription.updated']:
-                await SubscriptionHandler.handle_subscription_created_or_updated(event, client)
+                await SubscriptionHandler.handle_subscription_created_or_updated(event, convex)
             
             elif event.type == 'customer.subscription.deleted':
-                await SubscriptionHandler.handle_subscription_deleted(event, client)
+                await SubscriptionHandler.handle_subscription_deleted(event, convex)
             
             elif event.type in ['invoice.payment_succeeded', 'invoice.paid', 'invoice_payment.paid']:
-                await InvoiceHandler.handle_invoice_payment_succeeded(event, client)
+                await InvoiceHandler.handle_invoice_payment_succeeded(event, convex)
             
             elif event.type == 'invoice.payment_failed':
-                await InvoiceHandler.handle_invoice_payment_failed(event, client)
+                await InvoiceHandler.handle_invoice_payment_failed(event, convex)
             
             elif event.type == 'customer.subscription.trial_will_end':
-                await SubscriptionHandler.handle_trial_will_end(event, client)
+                await SubscriptionHandler.handle_trial_will_end(event, convex)
             
             elif event.type in ['subscription_schedule.updated', 'subscription_schedule.completed', 'subscription_schedule.released']:
-                await ScheduleHandler.handle_subscription_schedule_event(event, client)
+                await ScheduleHandler.handle_subscription_schedule_event(event, convex)
             
             elif event.type in ['charge.refunded', 'payment_intent.refunded']:
-                await RefundHandler.handle_refund(event, client)
+                await RefundHandler.handle_refund(event, convex)
             
             else:
                 logger.info(f"[WEBHOOK] Unhandled event type: {event.type}")

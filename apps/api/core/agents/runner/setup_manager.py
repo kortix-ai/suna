@@ -90,29 +90,32 @@ async def prewarm_user_context(account_id: str) -> None:
         if cached is not None:
             return
         
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        client = await db.client
+        # MIGRATED: Use Convex client instead of Supabase
+        # All operations now use repo pattern or Convex client directly
+        from core.services.convex_client import get_convex_client
+        convex = get_convex_client()
         
         async def fetch_locale():
             try:
                 from core.utils.user_locale import get_user_locale
-                return await get_user_locale(account_id, client)
+                # TODO: Migrate get_user_locale to work with Convex client
+                # The function signature may need updating to use Convex instead of Supabase
+                return await get_user_locale(account_id, None)
             except Exception:
                 return None
         
         async def fetch_username():
+            # MIGRATED: This function previously used Supabase auth.admin.get_user_by_id
+            # which is specific to Supabase authentication.
+            # TODO: Implement username fetching with new auth system (Better Auth)
+            # The old code was:
+            # user = await client.auth.admin.get_user_by_id(account_id)
+            # if user and user.user:
+            #     user_metadata = user.user.user_metadata or {}
+            #     email = user.user.email
+            #     return (user_metadata.get('full_name') or ...)
             try:
-                user = await client.auth.admin.get_user_by_id(account_id)
-                if user and user.user:
-                    user_metadata = user.user.user_metadata or {}
-                    email = user.user.email
-                    return (
-                        user_metadata.get('full_name') or
-                        user_metadata.get('name') or
-                        user_metadata.get('display_name') or
-                        (email.split('@')[0] if email else None)
-                    )
+                # Placeholder - needs auth system integration
                 return None
             except Exception:
                 return None

@@ -35,9 +35,9 @@ def check_imports_directly():
     """Directly test critical imports."""
     backend_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     test_imports = [
-        "from core.services.supabase import DBConnection",
+        "from core.services.convex_client import get_convex_client",
         "from core.agents.api import router",
-        "from core.threads.api import router", 
+        "from core.threads.api import router",
         "from core.memory.background_jobs import start_memory_extraction",
         "from core.agents.api import _load_agent_config",
     ]

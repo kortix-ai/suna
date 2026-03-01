@@ -6,13 +6,16 @@ from typing import Optional, List, Tuple, Dict, Any
 from fastapi import UploadFile
 
 from core.services import redis
-from core.services.supabase import DBConnection
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for database operations
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from core.utils.files_utils import normalize_filename
 from core.sandbox.resolver import resolve_sandbox
 
-db = DBConnection()
+# Convex client for database operations
+convex = get_convex_client()
 
 
 async def fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:
@@ -80,46 +83,46 @@ async def upload_files_to_sandbox(
 ):
     if not files_data:
         return
-    
+
     logger.info(f"[UPLOAD] Uploading files for project {project_id} ({len(files_data)} files)")
-    
+
     try:
-        client = await db.client
-        
         if not account_id:
-            result = await client.table('projects').select('account_id').eq('project_id', project_id).execute()
-            if result.data:
-                account_id = str(result.data[0].get('account_id'))
-        
+            logger.warning(f"[UPLOAD] account_id required for project {project_id} - cannot resolve sandbox without it")
+            return
+
+        # NOTE: resolve_sandbox still requires db_client parameter for now.
+        # The sandbox resolver needs migration to use Convex for project lookups.
+        # This is tracked separately - sandbox operations are independent of file storage.
         sandbox_info = await resolve_sandbox(
             project_id=project_id,
             account_id=account_id,
-            db_client=client,
+            db_client=None,  # TODO: Migrate resolve_sandbox to use Convex
             require_started=True
         )
-        
+
         if not sandbox_info:
             logger.info(f"[UPLOAD] No sandbox for project {project_id} - files cached in Redis only")
             return
-        
+
         logger.info(f"[UPLOAD] Sandbox {sandbox_info.sandbox_id} ready, uploading {len(files_data)} files...")
         uploads_dir = get_uploads_directory()
         uploaded_count = 0
-        
+
         for filename, content_bytes, mime_type, _ in files_data:
             try:
                 unique_filename = await generate_unique_filename(sandbox_info.sandbox, uploads_dir, filename)
                 target_path = f"{uploads_dir}/{unique_filename}"
-                
+
                 if hasattr(sandbox_info.sandbox, 'fs') and hasattr(sandbox_info.sandbox.fs, 'upload_file'):
                     await sandbox_info.sandbox.fs.upload_file(content_bytes, target_path)
                     uploaded_count += 1
                     logger.debug(f"[UPLOAD] Complete: {filename} -> {target_path}")
             except Exception as e:
                 logger.warning(f"[UPLOAD] Failed for {filename}: {str(e)}")
-        
+
         logger.info(f"[UPLOAD] Complete: {uploaded_count}/{len(files_data)} files to sandbox {sandbox_info.sandbox_id}")
-                
+
     except Exception as e:
         logger.warning(f"[UPLOAD] Error for project {project_id}: {str(e)}")
 
@@ -189,26 +192,9 @@ async def handle_file_uploads_fast(
 
 
 async def ensure_sandbox_for_thread(client, project_id: str, files: Optional[List[Any]] = None):
-    result = await client.table('projects').select('account_id').eq('project_id', project_id).execute()
-    
-    if not result.data:
-        logger.warning(f"Project {project_id} not found")
-        return None, None
-    
-    account_id = str(result.data[0].get('account_id')) if result.data[0].get('account_id') else None
-    
-    if not files or len(files) == 0:
-        logger.debug(f"No files to upload for project {project_id}")
-        return None, None
-    
-    sandbox_info = await resolve_sandbox(
-        project_id=project_id,
-        account_id=account_id,
-        db_client=client,
-        require_started=True
-    )
-    
-    if sandbox_info:
-        return sandbox_info.sandbox, sandbox_info.sandbox_id
-    
+    # NOTE: Sandbox resolution requires project lookup.
+    # The resolve_sandbox function needs migration to use Convex for project lookups.
+    # This is tracked separately - sandbox operations are independent of file storage.
+    # When resolve_sandbox is migrated, this function can use convex.get_thread() etc.
+    logger.warning(f"ensure_sandbox_for_thread needs Convex project endpoint for {project_id}")
     return None, None

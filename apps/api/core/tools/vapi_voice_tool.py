@@ -12,6 +12,7 @@ from core.utils.logger import logger
 from core.services.http_client import get_http_client
 from core.config.vapi_config import vapi_config, DEFAULT_SYSTEM_PROMPT, DEFAULT_FIRST_MESSAGE
 from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
+from core.services.convex_client import get_convex_client
 
 def normalize_phone_number(raw_number: str, default_region: str = "US") -> tuple[str, str, str]:
     import re
@@ -78,7 +79,7 @@ def normalize_phone_number(raw_number: str, default_region: str = "US") -> tuple
         for length in range(1, 5):
             if len(digits_only) > length:
                 test_with_plus = '+' + digits_only
-                parsing_strategies.append((f"Testing with + prefix added", test_with_plus, None))
+                parsing_strategies.append(("Testing with + prefix added", test_with_plus, None))
                 break
         
         for region in sorted_regions[:50]:
@@ -310,6 +311,8 @@ class VapiVoiceTool(Tool):
     def __init__(self, thread_manager: ThreadManager):
         super().__init__()
         self.thread_manager = thread_manager
+        # MIGRATED: self.db access was via thread_manager.db
+        self.convex = get_convex_client()
         self.api_key = config.VAPI_PRIVATE_KEY
         self.base_url = "https://api.vapi.ai"
         
@@ -345,11 +348,16 @@ class VapiVoiceTool(Tool):
 
             if not user_id and thread_id:
                 try:
-                    client = await self.thread_manager.db.client
-                    thread = await client.from_('threads').select('account_id').eq('thread_id', thread_id).single().execute()
-                    if thread.data:
-                        user_id = thread.data.get('account_id')
-                        logger.info(f"[VapiVoiceTool] Found account_id from database: {user_id}")
+                    # MIGRATED: Using Convex get_thread method
+                    # Old Supabase code:
+                    # client = await self.thread_manager.db.client
+                    # thread = await client.from_('threads').select('account_id').eq('thread_id', thread_id).single().execute()
+                    # if thread.data:
+                    #     user_id = thread.data.get('account_id')
+                    thread = await self.convex.get_thread(thread_id)
+                    if thread and thread.get("accountId"):
+                        user_id = thread.get("accountId")
+                        logger.info(f"[VapiVoiceTool] Found account_id from Convex: {user_id}")
                 except Exception as e:
                     logger.warning(f"[VapiVoiceTool] Failed to get account_id from thread: {e}")
             
@@ -448,45 +456,25 @@ class VapiVoiceTool(Tool):
                 response.raise_for_status()
                 call_data = response.json()
             
-            client = await self.thread_manager.db.client
-            
             call_id = call_data.get("id")
-            
+
             logger.info(f"[VapiVoiceTool] Creating call record - call_id: {call_id}, thread_id: {thread_id}, agent_id: {agent_id}")
 
-            call_record = {
-                "call_id": call_id,
-                "agent_id": agent_id,
-                "thread_id": thread_id,
-                "phone_number": normalized_phone,
-                "direction": "outbound",
-                "status": call_data.get("status", "queued"),
-                "transcript": [],
-                "started_at": call_data.get("createdAt")
-            }
-            
-            try:
-                result = await client.table("vapi_calls").upsert(call_record, on_conflict="call_id").execute()
-                if result.data:
-                    logger.info(f"Successfully created/updated call record in database for {call_id}")
-                    logger.info(f"Initial call record: {result.data[0] if result.data else 'No data returned'}")
-                else:
-                    logger.warning(f"Upsert returned no data for {call_id}")
-            except Exception as e:
-                logger.error(f"Failed to save call record to database: {str(e)}")
-                try:
-                    minimal_record = {
-                        "call_id": call_id,
-                        "status": "queued",
-                        "phone_number": normalized_phone,
-                        "thread_id": thread_id,
-                        "agent_id": agent_id,
-                        "transcript": []
-                    }
-                    fallback_result = await client.table("vapi_calls").upsert(minimal_record).execute()
-                    logger.info(f"Created minimal call record via fallback for {call_id} with thread_id: {thread_id}")
-                except Exception as e2:
-                    logger.error(f"Even minimal record failed for {call_id}: {str(e2)}")
+            # Create call record in Convex
+            await self.convex.upsert_vapi_call(
+                call_id=call_id,
+                thread_id=thread_id,
+                agent_id=agent_id,
+                account_id=user_id,
+                status=call_data.get("status", "queued"),
+                metadata={
+                    "phone_number": normalized_phone,
+                    "direction": "outbound",
+                    "transcript": [],
+                    "started_at": call_data.get("createdAt")
+                }
+            )
+            logger.info(f"[VapiVoiceTool] Call record created in Convex for call_id: {call_id}")
             
             if thread_id:
                 try:
@@ -568,13 +556,13 @@ class VapiVoiceTool(Tool):
                 )
                 
                 response.raise_for_status()
-            
-            client = await self.thread_manager.db.client
-            
-            await client.table("vapi_calls").update({
-                "status": "ended",
-                "ended_at": "now()"
-            }).eq("call_id", call_id).execute()
+
+            # Update call record in Convex
+            await self.convex.update_vapi_call(
+                call_id=call_id,
+                status="ended"
+            )
+            logger.info(f"[VapiVoiceTool] Call {call_id} ended and status updated in Convex")
             
             return self.success_response({
                 "call_id": call_id,
@@ -675,8 +663,6 @@ class VapiVoiceTool(Tool):
             return self.fail_response("VAPI_PRIVATE_KEY not configured")
         
         try:
-            client = await self.thread_manager.db.client
-            
             thread_id, user_id, agent_id = await self._get_current_thread_and_user()
             
             logger.info(f"[wait_for_call_completion] Starting to monitor call {call_id}")
@@ -698,11 +684,12 @@ class VapiVoiceTool(Tool):
             last_transcript_count = 0
             
             while total_wait < max_wait_time:
-                result = await client.table("vapi_calls").select("*").eq("call_id", call_id).single().execute()
+                # Get call record from Convex
+                result = await self.convex.get_vapi_call(call_id)
                 
-                if result.data:
-                    status = result.data.get("status", "unknown")
-                    transcript = result.data.get("transcript", [])
+                if result:
+                    status = result.get("status", "unknown")
+                    transcript = result.get("transcript", [])
                     
                     if isinstance(transcript, str):
                         try:
@@ -738,8 +725,8 @@ class VapiVoiceTool(Tool):
                         
                         if thread_id:
                             try:
-                                duration = result.data.get("duration_seconds", 0)
-                                cost = result.data.get("cost", 0)
+                                duration = result.get("duration_seconds", 0)
+                                cost = result.get("cost", 0)
                                 credits_deducted = float(cost) * float(TOKEN_PRICE_MULTIPLIER) if cost else 0
                                 
                                 summary_msg = f"""📞 **Call Completed**
@@ -768,10 +755,10 @@ The voice call has ended. You can continue with any follow-up actions."""
                         return self.success_response({
                             "call_id": call_id,
                             "final_status": status,
-                            "duration_seconds": result.data.get("duration_seconds"),
+                            "duration_seconds": result.get("duration_seconds"),
                             "transcript_messages": transcript_count,
-                            "cost": result.data.get("cost"),
-                            "message": f"Call completed with status: {status}. Duration: {result.data.get('duration_seconds', 0)} seconds."
+                            "cost": result.get("cost"),
+                            "message": f"Call completed with status: {status}. Duration: {result.get('duration_seconds', 0)} seconds."
                         })
                     
                     logger.debug(f"[wait_for_call_completion] Call {call_id} still active with status: {status}, checking again in {check_interval}s")
@@ -811,18 +798,15 @@ The voice call has ended. You can continue with any follow-up actions."""
         
         try:
             thread_id, user_id, agent_id = await self._get_current_thread_and_user()
-            
-            client = await self.thread_manager.db.client
-            
-            query = client.table("vapi_calls").select("*").order("created_at", desc=True).limit(limit)
-            
+
+            # List calls from Convex
             if thread_id:
-                query = query.eq("thread_id", thread_id)
-            
-            result = await query.execute()
-            
+                result = await self.convex.list_vapi_calls(thread_id=thread_id, limit=limit)
+            else:
+                result = []
+
             calls = []
-            for call in result.data:
+            for call in result:
                 calls.append({
                     "call_id": call.get("call_id"),
                     "phone_number": call.get("phone_number"),

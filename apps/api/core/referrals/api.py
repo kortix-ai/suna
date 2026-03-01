@@ -6,7 +6,7 @@ from datetime import datetime
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from .service import ReferralService
 from .config import MAX_EARNABLE_CREDITS_FROM_REFERRAL
 from core.utils.config import config
@@ -57,8 +57,7 @@ class ReferralEmailResponse(BaseModel):
     results: Optional[List[Dict[str, Any]]] = None
 
 def get_referral_service() -> ReferralService:
-    db = DBConnection()
-    return ReferralService(db)
+    return ReferralService()
 
 
 @router.post("/code/refresh", response_model=ReferralCodeResponse)

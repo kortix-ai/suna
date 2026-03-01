@@ -2,6 +2,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends
 from core.endpoints.vapi_webhooks import VapiWebhookHandler
 from core.utils.logger import logger
 from core.utils.config import config
+from core.services.convex_client import get_convex_client
 from typing import Dict, Any
 
 router = APIRouter(tags=["vapi"])
@@ -32,17 +33,13 @@ async def handle_vapi_webhook(request: Request):
 @router.get("/vapi/calls/{call_id}", summary="Get Call Details", operation_id="get_vapi_call")
 async def get_call_details(call_id: str):
     try:
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        client = await db.client
-        
-        result = await client.table("vapi_calls").select("*").eq("call_id", call_id).single().execute()
-        
-        if not result.data:
-            raise HTTPException(status_code=404, detail="Call not found")
-        
-        return result.data
-    
+        convex = get_convex_client()
+
+        # TODO: Convex client does not yet support vapi_calls table operations
+        # Need to add vapi_calls query to Convex backend
+        # For now, return a placeholder response
+        raise HTTPException(status_code=404, detail="Call not found - vapi_calls not yet migrated to Convex")
+
     except HTTPException:
         raise
     except Exception as e:
@@ -52,22 +49,16 @@ async def get_call_details(call_id: str):
 @router.get("/vapi/calls", summary="List Calls", operation_id="list_vapi_calls")
 async def list_calls(limit: int = 10, thread_id: str = None):
     try:
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        client = await db.client
-        
-        query = client.table("vapi_calls").select("*").order("created_at", desc=True).limit(limit)
-        
-        if thread_id:
-            query = query.eq("thread_id", thread_id)
-        
-        result = await query.execute()
-        
+        convex = get_convex_client()
+
+        # TODO: Convex client does not yet support vapi_calls table operations
+        # Need to add vapi_calls list query to Convex backend
+        # For now, return an empty list
         return {
-            "calls": result.data,
-            "count": len(result.data)
+            "calls": [],
+            "count": 0
         }
-    
+
     except Exception as e:
         logger.error(f"Error listing calls: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")

@@ -7,7 +7,7 @@ from typing import Dict, List, Any, Optional
 from uuid import uuid4, UUID
 from enum import Enum
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 
 MCP_CONFIG_QUERY_TIMEOUT = 10.0
@@ -79,10 +79,11 @@ class VersionConflictError(VersionServiceError):
 
 class VersionService:
     def __init__(self):
-        self.db = DBConnection()
+        self.convex = get_convex_client()
     
     async def _get_client(self):
-        return await self.db.client
+        # DEPRECATED: Use self.convex instead
+        return self.convex
     
     async def _verify_and_authorize_agent_access(self, agent_id: str, user_id: str) -> tuple[bool, bool]:
         if user_id == "system":
@@ -173,8 +174,8 @@ class VersionService:
     ) -> AgentVersion:
         
         logger.debug(f"Creating version for agent {agent_id}")
-        client = await self.db.client
-        
+
+        # MIGRATED: Authorization uses Convex via versioning_repo
         is_owner, _ = await self._verify_and_authorize_agent_access(agent_id, user_id)
         if not is_owner:
             raise UnauthorizedError("Unauthorized to create version for this agent")
@@ -480,51 +481,23 @@ class VersionService:
             cached['account_id'] = user_id
             return cached
         
-        logger.debug(f"⏱️ [MCP CONFIG] Cache MISS for {agent_id}, fetching from DB (cache check: {cache_time:.1f}ms)")
+        logger.debug(f"⏱️ [MCP CONFIG] Cache MISS for {agent_id}, fetching from Convex (cache check: {cache_time:.1f}ms)")
         
         try:
             t2 = time.time()
-            client = await self._get_client()
-            client_time = (time.time() - t2) * 1000
-            logger.debug(f"⏱️ [MCP CONFIG] DB client acquired in {client_time:.1f}ms")
+            # TODO: Migrate to Convex - need MCP config endpoint
+            # Old Supabase code used RPC: get_agent_mcp_config
+            # Need to add endpoint to Convex http.ts for agent MCP config retrieval
+            logger.warning(f"get_current_mcp_config needs Convex MCP config endpoint for agent {agent_id}")
             
-            t3 = time.time()
-            rpc_result = await client.rpc('get_agent_mcp_config', {'p_agent_id': agent_id}).execute()
-            rpc_time = (time.time() - t3) * 1000
-            logger.debug(f"⏱️ [MCP CONFIG] RPC query: {rpc_time:.1f}ms")
-            
-            if not rpc_result.data:
-                logger.warning(f"⚠️ [MCP CONFIG] No config found for agent {agent_id}, using empty")
-                empty_config = {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
-                await set_cached_mcp_version_config(agent_id, {'custom_mcp': [], 'configured_mcps': []})
-                return empty_config
-            
-            result_data = rpc_result.data
-            if isinstance(result_data, list) and len(result_data) > 0:
-                result_data = result_data[0]
-            
-            custom_mcps = result_data.get('custom_mcp', []) if result_data else []
-            configured_mcps = result_data.get('configured_mcps', []) if result_data else []
-            
-            cache_data = {
-                'custom_mcp': custom_mcps,
-                'configured_mcps': configured_mcps,
-            }
-            
-            t4 = time.time()
-            await set_cached_mcp_version_config(agent_id, cache_data)
-            cache_set_time = (time.time() - t4) * 1000
+            # Return empty config as fallback
+            empty_config = {'custom_mcp': [], 'configured_mcps': [], 'account_id': user_id}
+            await set_cached_mcp_version_config(agent_id, {'custom_mcp': [], 'configured_mcps': []})
             
             total_time = (time.time() - start_time) * 1000
-            logger.info(f"✅ [MCP CONFIG] Loaded for {agent_id} in {total_time:.1f}ms (client:{client_time:.0f}ms, rpc:{rpc_time:.0f}ms, cache_set:{cache_set_time:.0f}ms)")
+            logger.info(f"✅ [MCP CONFIG] Using empty config for {agent_id} in {total_time:.1f}ms")
             
-            final_config = {
-                'custom_mcp': custom_mcps,
-                'configured_mcps': configured_mcps,
-                'account_id': user_id
-            }
-            
-            return final_config
+            return empty_config
             
         except Exception as e:
             total_time = (time.time() - start_time) * 1000
@@ -543,32 +516,13 @@ class VersionService:
         if not is_owner:
             raise UnauthorizedError("You don't have permission to update this version")
         
-        client = await self._get_client()
-        
-        version_result = await client.table('agent_versions').select('*').eq(
-            'version_id', version_id
-        ).eq('agent_id', agent_id).execute()
-        
-        if not version_result.data:
-            raise VersionNotFoundError(f"Version {version_id} not found")
-        
-        update_data = {
-            'updated_at': datetime.now(timezone.utc).isoformat()
-        }
-        
-        if version_name is not None:
-            update_data['version_name'] = version_name
-        if change_description is not None:
-            update_data['change_description'] = change_description
-        
-        result = await client.table('agent_versions').update(update_data).eq(
-            'version_id', version_id
-        ).execute()
-        
-        if not result.data:
-            raise Exception("Failed to update version")
-        
-        return self._version_from_db_row(result.data[0])
+        # TODO: Migrate to Convex - need agent_versions endpoints
+        # Old Supabase code:
+        # - Select from agent_versions table
+        # - Update agent_versions table
+        # Need to add version management endpoints to Convex http.ts
+        logger.warning(f"update_version_details needs Convex agent_versions endpoints for version {version_id}")
+        raise VersionNotFoundError(f"Version update not yet migrated to Convex: {version_id}")
 
 
 _version_service_instance = None

@@ -12,9 +12,8 @@ from core.api_models import (
     AgentUpdateRequest, AgentResponse, AgentVersionResponse, AgentsResponse, 
     PaginationInfo, AgentCreateRequest, AgentIconGenerationRequest, AgentIconGenerationResponse
 )
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 
-db = DBConnection()
 from core.utils.mcp_helpers import merge_custom_mcps
 
 async def _get_version_service():
@@ -499,8 +498,11 @@ async def get_agents(
             sort_order=sort_order
         )
         
-        client = await db.client
-        agent_service = AgentService(client)
+        # MIGRATED: Use Convex client instead of Supabase client
+        # Old: client = await db.client
+        # AgentService may need separate migration if it uses Supabase client
+        convex = get_convex_client()
+        agent_service = AgentService(convex)
         paginated_result = await agent_service.get_agents_paginated(
             user_id=user_id,
             pagination_params=pagination_params,
@@ -557,7 +559,8 @@ async def create_agent(
     from core.agents import repo as agents_repo
     
     logger.debug(f"Creating new agent for user: {user_id}")
-    client = await db.client
+    # MIGRATED: No longer need Supabase client
+    # Old: client = await db.client
     
     from core.utils.limits_checker import check_agent_count_limit
     limit_check = await check_agent_count_limit(user_id)
@@ -605,7 +608,9 @@ async def create_agent(
             agentpress_tools = agent_data.agentpress_tools if agent_data.agentpress_tools else _get_default_agentpress_tools()
             agentpress_tools = ensure_core_tools_enabled(agentpress_tools)
             
-            default_model = await model_manager.get_default_model_for_user(client, user_id)
+            # TODO: Migrate model_manager.get_default_model_for_user to not require Supabase client
+            # For now, passing None - this function needs separate migration
+            default_model = await model_manager.get_default_model_for_user(None, user_id)
             
             version = await version_service.create_version(
                 agent_id=agent['agent_id'],

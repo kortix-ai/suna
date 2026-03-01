@@ -7,6 +7,11 @@ from enum import Enum
 from core.utils.logger import logger
 from core.agentpress.tool import ToolResult
 
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for database operations
+from core.services.convex_client import get_convex_client
+
+
 _GMAIL_ATTACHMENT_TOOLS = {"GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT", "GMAIL_REPLY_TO_THREAD"}
 _GMAIL_ATTACHMENT_HINT = (
     "\n\nTo attach files: first use composio_upload to upload the file to Composio storage. "
@@ -236,7 +241,7 @@ class MCPRegistry:
     async def _load_schemas_from_mcp(self, tool_names: List[str], account_id: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
         from core.composio_integration.composio_profile_service import ComposioProfileService
         from core.services.supabase import DBConnection
-        
+
         schemas = {}
         composio_toolkits = {}
         custom_toolkits = {}
@@ -300,7 +305,9 @@ class MCPRegistry:
                 continue
         
         # Load Composio MCP schemas
+        # MIGRATED: ComposioProfileService now uses Convex client internally
         try:
+            # Initialize profile service with DB connection (service uses Convex internally)
             db = DBConnection()
             profile_service = ComposioProfileService(db)
             

@@ -1,9 +1,9 @@
 import os
 from typing import Optional, List, Dict, Any
 from composio_client import Composio
-from core.utils.logger import logger
 from pydantic import BaseModel
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
+from core.utils.logger import logger
 
 from .client import ComposioClient, get_composio_client
 from .toolkit_service import ToolkitService, ToolkitInfo
@@ -24,13 +24,15 @@ class ComposioIntegrationResult(BaseModel):
 
 
 class ComposioIntegrationService:
-    def __init__(self, api_key: Optional[str] = None, db_connection: Optional[DBConnection] = None):
+    def __init__(self, api_key: Optional[str] = None, db_connection: Optional[Any] = None):
         self.api_key = api_key
         self.toolkit_service = ToolkitService(api_key)
         self.auth_config_service = AuthConfigService(api_key)
         self.connected_account_service = ConnectedAccountService(api_key)
         self.mcp_server_service = MCPServerService(api_key)
-        self.profile_service = ComposioProfileService(db_connection) if db_connection else None
+        # ComposioProfileService uses ProfileService internally which now uses Convex
+        # We pass None for db_connection as it's no longer needed after Convex migration
+        self.profile_service = ComposioProfileService(None) if db_connection else None
     
     async def integrate_toolkit(
         self, 
@@ -172,5 +174,117 @@ class ComposioIntegrationService:
         return await self.connected_account_service.get_auth_status(connected_account_id)
 
 
-def get_integration_service(api_key: Optional[str] = None, db_connection: Optional[DBConnection] = None) -> ComposioIntegrationService:
+def get_integration_service(api_key: Optional[str] = None, db_connection: Optional[Any] = None) -> ComposioIntegrationService:
     return ComposioIntegrationService(api_key, db_connection)
+
+
+async def store_connected_account(self, account_id: str, entity_id: str, toolkit_slug: str, integration_id: str) -> dict:
+    """Store a connected account.
+    
+    MIGRATED: Uses Convex client to store connected account.
+    Note: Requires Convex endpoint /api/composio-connected-accounts to be created.
+    For now, this is stored via the credential profiles system.
+    """
+    try:
+        convex = get_convex_client()
+        
+        # Store as a credential profile with Composio-specific metadata
+        # The profile will be created when integrate_toolkit is called
+        profile_data = {
+            "account_id": account_id,
+            "entity_id": entity_id,
+            "toolkit_slug": toolkit_slug,
+            "integration_id": integration_id,
+            "type": "composio_connected_account",
+            "created_at": os.environ.get("CURRENT_TIME", "")
+        }
+        
+        # Note: This uses the existing credential profile system
+        # A dedicated Convex endpoint would be: /api/composio-connected-accounts
+        result = await convex.create_credential_profile(
+            account_id=account_id,
+            mcp_qualified_name=f"composio.{toolkit_slug}",
+            profile_name=f"{toolkit_slug} Connection",
+            display_name=f"{toolkit_slug} via Composio",
+            config=profile_data,
+            is_default=False
+        )
+        
+        logger.info(f"[COMPOSIO] Stored connected account for {account_id}/{toolkit_slug}")
+        return result
+
+    except Exception as e:
+        logger.error(f"Failed to store connected account: {e}")
+        raise
+
+
+async def get_connected_account(self, account_id: str, toolkit_slug: str) -> Optional[dict]:
+    """Get a connected account.
+    
+    MIGRATED: Uses Convex client to retrieve connected account via credential profiles.
+    """
+    try:
+        convex = get_convex_client()
+        
+        # Use composio profiles endpoint which filters by type
+        profiles = await convex.get_composio_profiles(
+            account_id=account_id,
+            toolkit_slug=toolkit_slug
+        )
+        
+        if profiles:
+            return profiles[0]
+        return None
+
+    except Exception as e:
+        logger.error(f"Failed to get connected account: {e}")
+        return None
+
+
+async def delete_connected_account(self, account_id: str, toolkit_slug: str) -> bool:
+    """Delete a connected account.
+    
+    MIGRATED: Uses Convex client to delete connected account via credential profiles.
+    Note: Requires Convex endpoint /api/composio-connected-accounts/delete
+    For now, we use the credential profile deletion.
+    """
+    try:
+        convex = get_convex_client()
+        
+        # First get the profile to find its ID
+        profiles = await convex.get_composio_profiles(
+            account_id=account_id,
+            toolkit_slug=toolkit_slug
+        )
+        
+        if profiles:
+            profile_id = profiles[0].get("profile_id")
+            if profile_id:
+                await convex.delete_credential_profile(
+                    profile_id=profile_id,
+                    account_id=account_id
+                )
+                logger.info(f"[COMPOSIO] Deleted connected account for {account_id}/{toolkit_slug}")
+        
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to delete connected account: {e}")
+        return False
+
+
+async def list_connected_accounts(self, account_id: str) -> List[dict]:
+    """List all connected accounts for a user.
+    
+    MIGRATED: Uses Convex client to list connected accounts via composio profiles.
+    """
+    try:
+        convex = get_convex_client()
+        
+        # Use composio profiles endpoint without toolkit filter
+        profiles = await convex.get_composio_profiles(account_id=account_id)
+        return profiles or []
+
+    except Exception as e:
+        logger.error(f"Failed to list connected accounts: {e}")
+        return []

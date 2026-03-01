@@ -3,6 +3,12 @@ Context Management for AgentPress Threads.
 
 This module handles token counting and thread summarization to prevent
 reaching the context window limitations of LLM models.
+
+MIGRATION NOTES:
+- All Supabase DBConnection usage has been removed
+- Database operations use repo pattern (threads_repo)
+- The `db` constructor parameter is deprecated and no longer used
+- Message compression state is saved via threads_repo.save_compressed_messages_batch()
 """
 
 import json
@@ -12,7 +18,7 @@ from typing import List, Dict, Any, Optional, Union
 
 from litellm.utils import token_counter
 from anthropic import Anthropic
-from core.services.supabase import DBConnection
+# MIGRATED: from core.services.supabase import DBConnection - no longer needed, repo handles DB access
 from core.utils.logger import logger
 from core.ai_models import model_manager
 from core.agentpress.prompt_caching import apply_anthropic_caching_strategy, supports_prompt_caching
@@ -50,16 +56,21 @@ def _get_bedrock_client_singleton():
 
 
 class ContextManager:
-    """Manages thread context including token counting and summarization."""
+    """Manages thread context including token counting and summarization.
     
+    MIGRATED: This class no longer requires Supabase DBConnection.
+    All database operations are handled by threads_repo which handles Convex client internally.
+    """
+
     def __init__(self, token_threshold: int = DEFAULT_TOKEN_THRESHOLD, db=None):
         """Initialize the ContextManager.
-        
+
         Args:
             token_threshold: Token count threshold to trigger summarization
-            db: Optional DBConnection instance to reuse (avoids creating new ones)
+            db: Optional DBConnection instance (DEPRECATED: no longer used, repo handles DB access)
         """
-        self.db = db if db is not None else DBConnection()
+        # MIGRATED: self.db = db if db is not None else DBConnection() - no longer needed
+        # All database operations now use threads_repo which handles Convex client internally
         self.token_threshold = token_threshold
         # Tool output management
         self.keep_recent_tool_outputs = 5  # Number of recent tool outputs to preserve

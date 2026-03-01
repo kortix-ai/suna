@@ -21,7 +21,7 @@ from core.utils.logger import logger
 from core.agentpress.thread_manager import ThreadManager
 from core.billing.credits.manager import CreditManager
 from core.billing.shared.config import TOKEN_PRICE_MULTIPLIER
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 
 @tool_metadata(
     display_name="Company Research",
@@ -71,10 +71,12 @@ class CompanySearchTool(Tool):
         super().__init__()
         self.thread_manager = thread_manager
         self.api_key = config.EXA_API_KEY
-        self.db = thread_manager.db if thread_manager else DBConnection()
+        # TODO: Convex migration - db client pattern needs updating
+        # self.db = thread_manager.db if thread_manager else DBConnection()
+        self.convex = get_convex_client()
         self.credit_manager = CreditManager()
         self.exa_client = None
-        
+
         if self.api_key:
             self.exa_client = Exa(self.api_key)
             logger.info("Company Search Tool initialized.")
@@ -85,16 +87,16 @@ class CompanySearchTool(Tool):
         try:
             context_vars = structlog.contextvars.get_contextvars()
             thread_id = context_vars.get('thread_id')
-            
+
             if not thread_id:
                 logger.warning("No thread_id in execution context")
                 return None, None
-            
-            client = await self.db.client
-            thread = await client.from_('threads').select('account_id').eq('thread_id', thread_id).single().execute()
-            if thread.data:
-                return thread_id, thread.data.get('account_id')
-                
+
+            # TODO: Convex migration - need get_thread method to return account_id
+            thread = await self.convex.get_thread(thread_id)
+            if thread and 'accountId' in thread:
+                return thread_id, thread.get('accountId')
+
         except Exception as e:
             logger.error(f"Failed to get thread context: {e}")
         return None, None

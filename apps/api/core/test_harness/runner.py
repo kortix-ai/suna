@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from core.utils.logger import logger
 from core.utils.config import config
+from core.services.convex_client import get_convex_client
 
 from .prompts import TEST_PROMPTS, get_prompt, get_all_prompt_ids
 from .metrics import MetricsCollector, BenchmarkResult
@@ -54,6 +55,7 @@ class TestHarnessRunner:
         self._tasks: Dict[str, asyncio.Task] = {}  # run_id -> background task (prevent GC)
         self._jwt_token: Optional[str] = None
         self._test_user_initialized = False
+        self._convex = get_convex_client()
     
     async def _ensure_test_user(self) -> str:
         """
@@ -69,65 +71,26 @@ class TestHarnessRunner:
         
         TEST_USER_EMAIL = "testuser@kortix.ai"
         
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        await db.initialize()
-        client = await db.client
+        # TODO: Migrate to Convex - need user/account management endpoints
+        # Old Supabase code:
+        # 1. Queried profiles table for existing test user
+        # 2. Used auth.admin.create_user to create user if not found
+        # 3. Created profile record
+        # Need to add user management endpoints to Convex http.ts
         
-        try:
-            # Try to find existing test user
-            result = await client.table('profiles').select('user_id, email').eq('email', TEST_USER_EMAIL).maybe_single().execute()
-            
-            if result.data:
-                self.test_account_id = result.data['user_id']
-                logger.info(f"✅ Using existing test user: {TEST_USER_EMAIL} (ID: {self.test_account_id})")
-            else:
-                # Create test user in auth.users
-                logger.info(f"Creating test user: {TEST_USER_EMAIL}")
-                
-                # Use admin client to create user
-                user_response = await client.auth.admin.create_user({
-                    'email': TEST_USER_EMAIL,
-                    'password': 'test_password_for_e2e_testing_12345',
-                    'email_confirm': True,
-                    'user_metadata': {
-                        'test_user': True,
-                        'created_by': 'e2e_test_harness'
-                    }
-                })
-                
-                self.test_account_id = user_response.user.id
-                logger.info(f"✅ Created test user: {TEST_USER_EMAIL} (ID: {self.test_account_id})")
-                
-                # Create profile
-                try:
-                    await client.table('profiles').insert({
-                        'user_id': self.test_account_id,
-                        'email': TEST_USER_EMAIL,
-                        'full_name': 'E2E Test User',
-                    }).execute()
-                    logger.debug("Created profile for test user")
-                except Exception as profile_error:
-                    # Profile might already exist (trigger-created), that's fine
-                    logger.debug(f"Profile creation skipped (may already exist): {profile_error}")
-            
+        logger.warning(f"_ensure_test_user needs Convex user management endpoints for {TEST_USER_EMAIL}")
+        
+        # Fallback to SYSTEM_ADMIN_USER_ID if configured
+        if config.SYSTEM_ADMIN_USER_ID:
+            logger.warning(f"Falling back to SYSTEM_ADMIN_USER_ID: {config.SYSTEM_ADMIN_USER_ID}")
+            self.test_account_id = config.SYSTEM_ADMIN_USER_ID
             self._test_user_initialized = True
             return self.test_account_id
-            
-        except Exception as e:
-            logger.error(f"Error ensuring test user: {e}", exc_info=True)
-            
-            # Fallback to SYSTEM_ADMIN_USER_ID if configured
-            if config.SYSTEM_ADMIN_USER_ID:
-                logger.warning(f"Falling back to SYSTEM_ADMIN_USER_ID: {config.SYSTEM_ADMIN_USER_ID}")
-                self.test_account_id = config.SYSTEM_ADMIN_USER_ID
-                self._test_user_initialized = True
-                return self.test_account_id
-            
-            raise ValueError(
-                f"Could not create or find test user '{TEST_USER_EMAIL}'. "
-                "Please set SYSTEM_ADMIN_USER_ID in .env or check Supabase permissions."
-            )
+        
+        raise ValueError(
+            f"Could not create or find test user '{TEST_USER_EMAIL}'. "
+            "Please set SYSTEM_ADMIN_USER_ID in .env or add Convex user management endpoints."
+        )
     
     def _generate_jwt_token(self) -> str:
         """Generate a JWT token for the test user"""
@@ -170,20 +133,17 @@ class TestHarnessRunner:
         
         logger.info(f"Cleaning up {len(thread_ids)} test threads for run {run_id}")
         
-        from core.services.supabase import DBConnection
-        db = DBConnection()
-        await db.initialize()
-        client = await db.client
-        
+        # TODO: Migrate to Convex - need thread deletion endpoint
+        # Old Supabase code:
+        # 1. Deleted agent_runs for each thread
+        # 2. Deleted threads
+        # Convex client has delete_thread but we need to handle agent_runs too
         try:
-            # Delete agent_runs first (to avoid FK constraint violations), then threads
             for thread_id in thread_ids:
                 try:
-                    # Delete agent_runs first
-                    await client.table('agent_runs').delete().eq('thread_id', thread_id).execute()
-                    # Then delete the thread
-                    await client.table('threads').delete().eq('thread_id', thread_id).execute()
-                    logger.debug(f"Deleted test thread and its agent_runs: {thread_id}")
+                    # Use Convex delete_thread
+                    await self._convex.delete_thread(thread_id)
+                    logger.debug(f"Deleted test thread: {thread_id}")
                 except Exception as e:
                     logger.warning(f"Failed to delete thread {thread_id}: {e}")
             
@@ -573,22 +533,10 @@ class TestHarnessRunner:
         # Fetch tool calls from final assistant message in database
         if status == 'completed' and thread_id and not tool_calls:
             try:
-                await self.metrics.db.initialize()
-                client = await self.metrics.db.client
-                messages_response = await client.table('messages').select('metadata').eq('thread_id', thread_id).eq('type', 'assistant').eq('is_llm_message', True).order('created_at', desc=True).limit(1).execute()
-                
-                if messages_response.data and len(messages_response.data) > 0:
-                    msg_metadata = messages_response.data[0].get('metadata', {})
-                    db_tool_calls = msg_metadata.get('tool_calls', [])
-                    if db_tool_calls:
-                        logger.debug(f"Fetched {len(db_tool_calls)} tool calls from DB for thread {thread_id}")
-                        for tc in db_tool_calls:
-                            tool_calls.append({
-                                'tool_name': tc.get('function_name', tc.get('name')),
-                                'tool_call_id': tc.get('tool_call_id'),
-                                'timestamp': time.time(),  # Use current time as proxy
-                                'input': tc.get('arguments', {}),
-                            })
+                # TODO: Migrate to Convex - need message metadata lookup
+                # Old Supabase code queried messages table for tool_calls in metadata
+                # Convex client has get_messages but need to check metadata format
+                logger.warning(f"Tool call fetching from DB needs Convex message metadata lookup for thread {thread_id}")
             except Exception as e:
                 logger.warning(f"Failed to fetch tool calls from DB: {e}")
         

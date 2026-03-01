@@ -247,14 +247,14 @@ async def warm_up_suna_config_cache() -> None:
 async def prewarm_user_agents(user_id: str) -> dict:
     import asyncio
     t_start = time.time()
-    
+
     try:
         from core.agents import repo as agents_repo
         from core.agents.agent_loader import get_agent_loader
-        from core.services.supabase import DBConnection
-        
+        from core.services.convex_client import get_convex_client
+
         agent_ids = await agents_repo.get_user_agent_ids(user_id)
-        
+
         if not agent_ids:
             try:
                 from core.utils.ensure_suna import ensure_suna_installed
@@ -264,44 +264,45 @@ async def prewarm_user_agents(user_id: str) -> dict:
                     logger.info(f"[PREWARM] Installed Suna for new user {user_id[:8]}...")
             except Exception as e:
                 logger.debug(f"[PREWARM] Could not ensure Suna for {user_id[:8]}...: {e}")
-        
+
         if not agent_ids:
             logger.debug(f"[PREWARM] No agents for user {user_id[:8]}...")
             return {"prewarmed": 0, "errors": 0, "skipped": 0}
-        
+
         loader = await get_agent_loader()
-        db = DBConnection()
-        client = await db.client
+        # TODO: Convex migration - warm_kb_context_for_agent needs Convex client support
+        # For now, we skip the KB warming until Convex functions are implemented
         prewarmed = 0
         errors = 0
         skipped = 0
-        
+
         async def prewarm_single(agent_id: str) -> bool:
             try:
                 agent_type = await get_cached_agent_type(agent_id)
                 if agent_type == "suna":
                     mcps = await get_cached_user_mcps(agent_id)
                     if mcps is not None:
-                        return None 
+                        return None
                 elif agent_type == "custom":
                     cached = await get_cached_agent_config(agent_id)
                     if cached:
-                        return None 
-                
+                        return None
+
                 agent_data = await loader.load_agent(agent_id, user_id, load_config=True)
                 if agent_data:
-                    asyncio.create_task(warm_kb_context_for_agent(agent_id, client))
+                    # TODO: Convex migration - KB warming needs Convex support
+                    # asyncio.create_task(warm_kb_context_for_agent(agent_id, client))
                     return True
                 return False
             except Exception as e:
                 logger.warning(f"[PREWARM] Failed for agent {agent_id}: {e}")
                 return False
-        
+
         batch_size = 5
         for i in range(0, len(agent_ids), batch_size):
             batch = agent_ids[i:i + batch_size]
             results = await asyncio.gather(*[prewarm_single(aid) for aid in batch], return_exceptions=True)
-            
+
             for result in results:
                 if result is None:
                     skipped += 1
@@ -309,12 +310,12 @@ async def prewarm_user_agents(user_id: str) -> dict:
                     prewarmed += 1
                 else:
                     errors += 1
-        
+
         elapsed = (time.time() - t_start) * 1000
-        logger.info(f"✅ [PREWARM] User {user_id[:8]}...: {prewarmed} loaded, {skipped} cached, {errors} errors ({elapsed:.0f}ms)")
-        
+        logger.info(f"[PREWARM] User {user_id[:8]}...: {prewarmed} loaded, {skipped} cached, {errors} errors ({elapsed:.0f}ms)")
+
         return {"prewarmed": prewarmed, "errors": errors, "skipped": skipped}
-        
+
     except Exception as e:
         elapsed = (time.time() - t_start) * 1000
         logger.error(f"[PREWARM] User {user_id[:8]}... failed after {elapsed:.0f}ms: {e}")
@@ -534,13 +535,10 @@ async def warm_kb_context_for_agent(agent_id: str, client) -> None:
         if entry_count == 0:
             await set_cached_kb_context(agent_id, "")
             return
-        kb_result = await client.rpc("get_agent_knowledge_base_context", {"p_agent_id": agent_id}).execute()
-        kb_data = kb_result.data if kb_result and kb_result.data else None
-        if kb_data and kb_data.strip():
-            await set_cached_kb_context(agent_id, kb_data)
-            logger.debug(f"✅ [PREWARM] Warmed KB cache for agent {agent_id} ({len(kb_data)} chars)")
-        else:
-            await set_cached_kb_context(agent_id, "")
+        # TODO: Convex migration - need to implement get_agent_knowledge_base_context RPC equivalent
+        # The Convex client currently does not support knowledge base context RPC calls
+        logger.debug(f"[PREWARM] KB warm skipped for {agent_id} (Convex migration pending)")
+        await set_cached_kb_context(agent_id, "")
     except Exception as e:
         logger.debug(f"[PREWARM] KB warm skipped for {agent_id}: {e}")
 

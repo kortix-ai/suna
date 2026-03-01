@@ -1,17 +1,12 @@
 /**
  * Kortix Suna - Better Auth Component Configuration
  *
- * This configures the Better Auth component for Convex.
- * The component provides authentication tables and functions.
+ * This file exports Better Auth helper functions from betterAuth/index.ts
+ * For the actual auth implementation, see betterAuth/index.ts
  *
- * @see https://github.com/convex-dev/better-auth-convex
+ * Note: The Better Auth Convex adapter functions are exported from index.ts
+ * This config file is kept for future component-based auth integration.
  */
 
-import { defineComponent } from "convex/server";
-
-// Local install component definition for Convex + Better Auth.
-// This allows customizing the Better Auth schema (e.g. organizations plugin).
-const component = defineComponent("betterAuth")
-  .api(require("./index"));
-
-export default component;
+// Re-export all auth functions from index.ts
+export * from "./index";

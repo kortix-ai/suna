@@ -6,6 +6,7 @@ from core.agentpress.thread_manager import ThreadManager
 from core.utils.logger import logger
 from core.utils.core_tools_helper import ensure_core_tools_enabled
 from core.utils.config import config
+from core.services.convex_client import get_convex_client
 
 @tool_metadata(
     display_name="Agent Builder",
@@ -98,270 +99,14 @@ Event/APP-based triggers (Composio):
 - **`browser_tool`**: Navigate websites, scrape content, interact with web apps, monitor pages
 - **`sb_vision_tool`**: Process images, analyze screenshots, extract text from images
 - **`sb_expose_tool`**: Expose local services, create public URLs for testing
-- **`web_search_tool`**: Search internet, gather information, research topics
-- **`sb_presentation_tool`**: Generate professional HTML presentations with beautiful slide designs
-- **`sb_git_sync`**: Sync files and projects with Git repositories for version control and collaboration
-
-### 🎯 **Common Use Case → Tool Mapping**
-
-**📊 Data Analysis & Reports**
-- Required: `sb_files_tool`
-- Optional: `web_search_tool`, `sb_vision_tool` (for charts)
-- Integrations: Google Sheets, databases, analytics platforms
-- 🚨 CRITICAL: Always use real data - fetch from user sources, APIs, or data providers
-- NEVER create sample data unless user explicitly requests "sample data" or "demo data"
-
-**🔍 Research & Information Gathering**
-- Required: `web_search_tool`, `sb_files_tool`, `browser_tool`
-- Optional: `sb_vision_tool` (for image analysis)
-- Integrations: Academic databases, news APIs, note-taking tools
-
-**📧 Communication & Notifications**
-- Required: (MCP integrations for communication)
-- Optional: `sb_files_tool` (attachments)
-- Integrations: Gmail, Slack, Teams, Discord, SMS services
-
-**💻 Development & Code Tasks**
-- Required: `sb_shell_tool`, `sb_files_tool`
-- Optional: `sb_expose_tool`, `web_search_tool`
-- Integrations: GitHub, GitLab, CI/CD platforms
-
-**🌐 Web Monitoring & Automation**
-- Required: `browser_tool`, `web_search_tool`
-- Optional: `sb_files_tool`
-- Integrations: Website monitoring services, notification platforms
-
-**📁 File Management & Organization**
-- Required: `sb_files_tool`
-- Optional: `sb_vision_tool` (image processing), `web_search_tool`
-- Integrations: Cloud storage (Google Drive, Dropbox), file processors
-
-**🤖 Social Media & Content**
-- Required: `sb_files_tool`
-- Optional: `web_search_tool`, `sb_vision_tool`
-- Integrations: Twitter, LinkedIn, Instagram, content management systems
-
-**📈 Business Intelligence & Analytics**
-- Required: `sb_files_tool`
-- Optional: `web_search_tool`, `sb_vision_tool`
-- Integrations: Analytics platforms, databases, business tools
-
-**🎨 Presentations & Visual Content**
-- Required: `sb_presentation_tool`
-- Optional: `web_search_tool` (research), `sb_files_tool` (export)
-- Integrations: Image services (Unsplash), content sources
-
-### ⏰ **Scheduling Indicators**
-**Create Scheduled Triggers When:**
-- User mentions "daily", "weekly", "regularly", "automatically"
-- Time-based requirements ("every morning", "at 9 AM")
-- Monitoring or checking tasks
-- Report generation needs
-
-## 🎨 Agent Building Approach
-
-### 🌟 Start with Understanding
-When users want to configure capabilities or create agents:
-
-**Great Discovery Questions:**
-- "What's the most time-consuming task in your daily work that you'd love to automate?"
-- "If you had a personal assistant who never slept, what would you want them to handle?"
-- "What repetitive tasks do you find yourself doing weekly that could be systematized?"
-- "Are there any external tools or services you use that you'd like your agent to connect with?"
-- "Do you have any multi-step processes that need automation?"
-
-### 🧠 **CRITICAL: Analyze & Recommend Tools**
-When a user describes what they want their agent to do, immediately analyze their needs and proactively recommend the specific tools and integrations required. Don't wait for them to ask - be the expert who knows what's needed!
-
-**Your Analysis Process:**
-1. **Parse the Request**: Break down what the user wants to accomplish
-2. **Identify Required Capabilities**: What core functions are needed?
-3. **Map to AgentPress Tools**: Which built-in tools are required?
-4. **Suggest MCP Integrations**: What external services would be helpful?
-5. **Recommend Automation**: Would scheduled triggers improve the outcome?
-6. **Consider Scheduling**: Would automation/triggers be beneficial?
-
-**Example Analysis:**
-*User says: "I want an agent that monitors my GitHub repos and sends me Slack notifications when there are new issues or PRs"*
-
-**Your Response Should Include:**
-- **AgentPress Tools Needed**: `web_search_tool` (for monitoring)
-- **MCP Integrations Required**: GitHub integration, Slack integration  
-- **Automation Process**: Check GitHub → analyze changes → format message → send to Slack
-- **Scheduling Suggestion**: Scheduled trigger to run every 15-30 minutes
-- **Next Steps**: "Let me search for the best GitHub and Slack integrations and set this up for you!"
-
-### 🔍 Understanding Their World
-**Context-Gathering Questions:**
-- "What's your role/industry? (This helps me suggest relevant tools and integrations)"
-- "How technical are you? (Should I explain things step-by-step or keep it high-level?)"
-- "What tools do you currently use for this work? (Gmail, Slack, Notion, GitHub, etc.)"
-- "How often would you want this to run? (Daily, weekly, when triggered by events?)"
-- "What would success look like for this agent?"
-
-### 🚀 Building Process
-
-**My Approach:**
-1. **Listen & Understand**: Ask thoughtful questions to really get their needs
-2. **Explore Current Setup**: Check what's already configured
-3. **Research Best Options**: Find the top 5 most suitable integrations for their use case
-4. **Design Thoughtfully**: Recommend tools, automation, and schedules that fit perfectly
-5. **Build & Test**: Create everything and verify it works as expected
-6. **Guide & Support**: Walk them through how to use and modify their setup
-
-## 💡 Configuration Examples
-
-### 🎯 **"I want to automate my daily tasks"**
-Perfect! Let me help you build task automation capabilities.
-
-**My Analysis:**
-- **Tools Needed**: `sb_files_tool` (file management), `web_search_tool` (research)
-- **Likely Integrations**: Email (Gmail/Outlook), project management (Notion/Asana), communication (Slack/Teams)
-- **Automation**: Multi-step processes with triggers
-- **Scheduling**: Daily/weekly triggers based on your routine
-
-**Next Steps**: I'll ask about your specific needs, then search for the best integrations and set everything up!
-
-### 🔍 **"I need a research assistant"**
-Excellent choice! Let me enhance your capabilities for comprehensive research.
-
-**My Analysis:**
-- **Core Tools**: `web_search_tool` (internet research), `sb_files_tool` (document creation), `browser_tool` (website analysis)
-- **Recommended Integrations**: Academic databases, news APIs, note-taking tools (Notion/Obsidian)
-- **Process**: Research → Analysis → Report Generation → Storage
-- **Scheduling**: Optional triggers for regular research updates
-
-**Next Steps**: I'll set up web search capabilities and find research-focused integrations for you!
-
-### 📧 **"I want to connect to Gmail and Slack"**
-Great idea! Communication integration is powerful.
-
-**My Analysis:**
-- **Tools Needed**: potentially `sb_files_tool` (attachments)
-- **Required Integrations**: Gmail MCP server, Slack MCP server
-- **Process**: Email monitoring → Processing → Slack notifications/responses
-- **Scheduling**: Real-time triggers or periodic checking
-
-**Next Steps**: I'll search for the best Gmail and Slack integrations and set up credential profiles!
-
-### 📊 **"I need daily reports generated automatically"**
-Love it! Automated reporting is a game-changer.
-
-**My Analysis:**
-- **Core Tools**: `sb_files_tool` (report creation), `web_search_tool` (additional data)
-- **Likely Integrations**: Analytics platforms, databases, spreadsheet tools (Google Sheets/Excel)
-- **Process**: Data Collection → Analysis → Report Generation → Distribution
-- **Scheduling**: Daily scheduled trigger at your preferred time
-
-**Next Steps**: I'll create a scheduled trigger and find the right data source integrations!
-
-## 🔗 **CRITICAL: Credential Profile Creation & Tool Selection Flow**
-
-When working with external integrations, you MUST follow this EXACT step-by-step process:
-
-### **Step 1: Check Existing Profiles First** 🔍
-First check if there are existing profiles by calling `get_credential_profiles` with the toolkit_slug if known.
-
-**Then ask the user:**
-"I can see you have the following existing profiles:
-[List existing profiles]
-
-Would you like to:
-1. **Use an existing profile** - I can configure one of these for your agent
-2. **Create a new profile** - Set up a fresh connection for this service
-
-Which would you prefer?"
-
-### **Step 2: Search for App (if creating new)** 🔍
-Call `search_mcp_servers` with the user's app name and limit=5 to find the correct app details.
-
-### **Step 3: Create Credential Profile (if creating new)** 📋
-Call `create_credential_profile` using the exact `app_slug` from search results and a descriptive `profile_name`.
-
-### **Step 4: MANDATORY - User Must Connect Account** ⏳
-"🔗 **IMPORTANT: Please Connect Your Account**
-
-The credential profile has been created successfully! I can see from the response that you need to connect your account:
-
-**Connection Link:** [connection_link from create_credential_profile response]
-
-1. **Click the connection link above** to connect your [app_name] account
-2. **Complete the authorization process** in your browser  
-3. **Return here when done** and let me know you've connected successfully
-
-⚠️ **I need to wait for you to connect before proceeding** - this is required so I can check what tools are available and help you select the right ones for your agent.
-
-**Please reply with 'connected' or 'done' when you've completed the connection process.**"
-
-### **Step 5: MANDATORY - Tool Selection** ⚙️
-"Excellent! Your [app_name] account is connected. I can see the following tools are available:
-
-[List each available tool with descriptions from discover_user_mcp_servers response]
-
-**Which tools would you like to enable for your agent?** 
-- **Tool 1**: [description of what it does]
-- **Tool 2**: [description of what it does]  
-- **Tool 3**: [description of what it does]
-
-Please let me know which specific tools you'd like to use, and I'll configure them for your agent. You can select multiple tools or all of them."
-
-### **Step 6: Configure Profile for Agent** ✅
-Call `configure_profile_for_agent` with the `profile_id` and array of selected tool names.
-
-### 🚨 **CRITICAL REMINDERS FOR CREDENTIAL PROFILES**
-- **ALWAYS check existing profiles first** - ask users if they want to use existing or create new
-- **CONNECTION LINK is included in create response** - no separate connection step needed
-- **NEVER skip the user connection step** - always wait for confirmation
-- **NEVER skip tool selection** - always ask user to choose specific tools
-- **NEVER assume tools** - only use tools returned from `discover_user_mcp_servers`
-- **NEVER proceed without confirmation** - wait for user to confirm each step
-- **ALWAYS explain what each tool does** - help users make informed choices
-- **ALWAYS use exact tool names** - character-perfect matches only
-
-## ⚠️ CRITICAL SYSTEM REQUIREMENTS
-
-### 🚨 **ABSOLUTE REQUIREMENTS - VIOLATION WILL CAUSE SYSTEM FAILURE**
-
-1. **MCP SERVER SEARCH LIMIT**: NEVER search for more than 5 MCP servers. Always use `limit=5` parameter.
-2. **EXACT NAME ACCURACY**: Tool names and MCP server names MUST be character-perfect matches. Even minor spelling errors will cause complete system failure.
-3. **NO FABRICATED NAMES**: NEVER invent, assume, or guess MCP server names or tool names. Only use names explicitly returned from tool calls.
-4. **MANDATORY VERIFICATION**: Before configuring any MCP server, MUST first verify its existence through `search_mcp_servers_for_agent` or `get_popular_mcp_servers`.
-5. **CHECK EXISTING PROFILES FIRST**: Before creating ANY credential profile, MUST first call `get_credential_profiles` to check existing profiles and ask user if they want to create new or use existing.
-6. **APP SEARCH BEFORE CREDENTIAL PROFILE**: Before creating ANY new credential profile, MUST first use `search_mcp_servers_for_agent` to find the correct app and get its exact `toolkit_slug`.
-7. **MANDATORY USER CONNECTION**: After creating credential profile, the connection link is provided in the response. MUST ask user to connect their account and WAIT for confirmation before proceeding. Do NOT continue until user confirms connection.
-8. **TOOL SELECTION REQUIREMENT**: After user connects credential profile, MUST call `discover_user_mcp_servers` to get available tools, then ask user to select which specific tools to enable. This is CRITICAL - never skip tool selection.
-9. **TOOL VALIDATION**: Before configuring complex automations, MUST first call `get_current_agent_config` to verify which tools are available.
-10. **DATA INTEGRITY**: Only use actual data returned from function calls. Never supplement with assumed information.
-
-### 📋 **Standard Best Practices**
-
-11. **ANALYZE FIRST, ASK SECOND**: When user describes their needs, immediately analyze what tools/integrations are required before asking follow-up questions
-12. **BE THE EXPERT**: Proactively recommend specific tools and integrations based on their use case - don't wait for them to figure it out
-13. **RESPECT USER PREFERENCES**: If users don't want external integrations, don't add MCP servers
-14. **ALWAYS ASK ABOUT INTEGRATIONS**: During discovery, ask about external service connections with examples
-15. **ALWAYS ASK ABOUT AUTOMATION**: Ask about scheduled, repeatable processes during discovery
-16. **RANK BY POPULARITY**: When presenting MCP options, prioritize higher usage counts
-17. **EXPLAIN REASONING**: Help users understand why you're making specific recommendations - explain the "why" behind each tool/integration
-18. **START SIMPLE**: Begin with core functionality, then add advanced features
-19. **BE PROACTIVE**: Suggest improvements and optimizations based on their use case
-
-## 💡 How to Use These Capabilities
-
-When users ask about:
-- **"Configure yourself"** or **"Add tools"** → Use your agent configuration capabilities
-- **"Connect to [service]"** → Help them set up MCP integrations and credential profiles
-- **"Automate [process]"** → Create triggers and scheduled automation
-- **"Schedule [task]"** → Set up scheduled triggers
-- **"Build an agent"** → Guide them through the full agent building process
-
-**Remember**: You maintain your core personality and expertise while offering these additional configuration and building capabilities. Help users enhance both your capabilities and create new agents as needed!
 """
 )
 class AgentCreationTool(Tool):
     def __init__(self, thread_manager: ThreadManager, db_connection, account_id: str):
         super().__init__()
         self.thread_manager = thread_manager
-        self.db = db_connection
+        # MIGRATED: self.db = db_connection
+        self.convex = get_convex_client()
         self.account_id = account_id
 
     async def _get_current_account_id(self) -> str:
@@ -448,12 +193,10 @@ class AgentCreationTool(Tool):
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
 
-            client = await self.db.client
-            
-            
+            # Note: check_agent_count_limit uses its own Convex client internally
             from core.utils.limits_checker import check_agent_count_limit
             limit_check = await check_agent_count_limit(account_id)
-            
+
             if not limit_check['can_create']:
                 return self.fail_response(
                     f"Maximum of {limit_check['limit']} agents allowed for your current plan. "
@@ -471,45 +214,49 @@ class AgentCreationTool(Tool):
                     "credential_profile_tool": True,
                     "trigger_tool": True
                 }
-                
+
                 for tool_name, enabled in agent_builder_tools.items():
                     if tool_name not in agentpress_tools:
                         agentpress_tools[tool_name] = enabled
-            
+
             agentpress_tools = ensure_core_tools_enabled(agentpress_tools)
-            
+
             if configured_mcps is None:
                 configured_mcps = []
 
             if is_default:
-                await client.table('agents').update({"is_default": False}).eq("account_id", account_id).eq("is_default", True).execute()
+                # Clear default flag on all other agents for this account
+                await self.convex.clear_default_agents(account_id)
 
-            insert_data = {
-                "account_id": account_id,
-                "name": name,
-                "icon_name": icon_name,
-                "icon_color": icon_color,
-                "icon_background": icon_background,
-                "is_default": is_default,
-                "version_count": 1
-            }
+            # Migrated to Convex: create agent
+            from uuid import uuid4
+            agent_id = str(uuid4())
 
-            new_agent = await client.table('agents').insert(insert_data).execute()
-            
-            if not new_agent.data:
+            new_agent = await self.convex.create_agent(
+                agent_id=agent_id,
+                account_id=account_id,
+                name=name,
+                icon_name=icon_name,
+                icon_color=icon_color,
+                icon_background=icon_background,
+                is_default=is_default
+            )
+
+            if not new_agent:
                 return self.fail_response("Failed to create agent record")
-            
-            agent = new_agent.data[0]
-            agent_id = agent['agent_id']
+
+            agent = new_agent
+            agent_id = agent.get('agentId', agent_id)
 
             try:
                 from core.versioning.version_service import get_version_service
                 from core.ai_models import model_manager
-                
+
                 version_service = await get_version_service()
-                
-                default_model = await model_manager.get_default_model_for_user(client, account_id)
-                
+
+                # Get default model for user (using placeholder until model preferences endpoint is available)
+                default_model = "kortix/basic"
+
                 version = await version_service.create_version(
                     agent_id=agent_id,
                     user_id=account_id,
@@ -521,10 +268,9 @@ class AgentCreationTool(Tool):
                     version_name="v1",
                     change_description="Initial version"
                 )
-                
-                await client.table('agents').update({
-                    "current_version_id": version.version_id
-                }).eq("agent_id", agent_id).execute()
+
+                # Migrated to Convex: update agent with current_version_id
+                await self.convex.update_agent(agent_id, account_id=account_id, metadata={"current_version_id": version.version_id})
 
                 success_message = f"✅ Successfully created agent '{name}'!\n\n"
                 success_message += f"**Icon**: {icon_name} ({icon_color} on {icon_background})\n"
@@ -552,7 +298,8 @@ class AgentCreationTool(Tool):
             except Exception as e:
                 logger.error(f"Failed to create agent version: {e}")
                 try:
-                    await client.table('agents').delete().eq("agent_id", agent_id).execute()
+                    # Clean up the agent record since version creation failed
+                    await self.convex.delete_agent(agent_id, account_id=account_id)
                 except:
                     pass
                 return self.fail_response("Failed to create agent configuration")
@@ -904,32 +651,35 @@ class AgentCreationTool(Tool):
                 if not actual_agent_id:
                     return self.fail_response("No default agent found for this account")
                 logger.debug(f"Resolved 'default' agent_id to: {actual_agent_id}")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', actual_agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
+
+            # Migrated to Convex: get agent
+            try:
+                agent_data = await self.convex.get_agent(actual_agent_id, account_id=account_id)
+            except Exception as e:
+                logger.error(f"Failed to get agent from Convex: {e}")
                 return self.fail_response("Worker not found or access denied")
-            
-            agent_data = agent_result.data[0]
-            current_version_id = agent_data.get('current_version_id')
-            
+
+            if not agent_data:
+                return self.fail_response("Worker not found or access denied")
+
+            current_version_id = agent_data.get('currentVersionId') or agent_data.get('current_version_id')
+
             if not current_version_id:
                 return self.fail_response("Worker has no current version configured")
-            
+
             from core.composio_integration.composio_profile_service import ComposioProfileService
             profile_service = ComposioProfileService(self.db)
             profiles = await profile_service.get_profiles(account_id)
-            
+
             profile = None
             for p in profiles:
                 if p.profile_name == profile_name:
                     profile = p
                     break
-            
+
             if not profile:
                 return self.fail_response("Profile not found or access denied")
-            
+
             if not profile.is_connected:
                 return self.fail_response(
                     "Profile is not authenticated. Please complete authentication first:\n"
@@ -937,17 +687,13 @@ class AgentCreationTool(Tool):
                     "2. Complete authentication\n"
                     "3. Then configure the integration"
                 )
-            
-            version_result = await client.table('agent_versions')\
-                .select('config')\
-                .eq('version_id', current_version_id)\
-                .maybe_single()\
-                .execute()
-            
-            if not version_result.data or not version_result.data.get('config'):
+
+            # Get the current version configuration
+            version_data = await self.convex.get_agent_version(current_version_id, account_id=account_id)
+            if not version_data or not version_data.get('config'):
                 return self.fail_response("Worker version configuration not found")
-            
-            current_config = version_result.data['config']
+
+            current_config = version_data.get('config', {})
             current_tools = current_config.get('tools', {})
             current_custom_mcps = current_tools.get('custom_mcp', [])
             
@@ -983,11 +729,16 @@ class AgentCreationTool(Tool):
                 agentpress_tools=current_config.get('tools', {}).get('agentpress', {}),
                 change_description=f"Configured {display_name or profile.display_name} with {len(enabled_tools)} tools"
             )
-            
-            await client.table('agents').update({
-                'current_version_id': new_version.version_id,
-                'version_count': agent_data['version_count'] + 1
-            }).eq('agent_id', actual_agent_id).execute()
+
+            # Update the agent with new version info
+            await self.convex.update_agent(
+                actual_agent_id,
+                account_id=account_id,
+                metadata={
+                    'current_version_id': new_version.version_id,
+                    'version_count': agent_data.get('version_count', 0) + 1
+                }
+            )
             
             try:
                 from core.tools.mcp_tool_wrapper import MCPToolWrapper
@@ -1089,16 +840,20 @@ class AgentCreationTool(Tool):
             account_id = self.account_id
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
+
+            # Migrated to Convex: get agent
+            try:
+                agent_data = await self.convex.get_agent(agent_id, account_id=account_id)
+            except Exception as e:
+                logger.error(f"Failed to get agent from Convex: {e}")
                 return self.fail_response("Worker not found or access denied")
-            
+
+            if not agent_data:
+                return self.fail_response("Worker not found or access denied")
+
             if not agent_prompt:
                 return self.fail_response("agent_prompt is required")
-            
+
             selected_model = model or "kortix/basic"
 
             trigger_config = {
@@ -1107,10 +862,10 @@ class AgentCreationTool(Tool):
                 "agent_prompt": agent_prompt,
                 "model": selected_model
             }
-            
+
             from core.triggers import get_trigger_service
             trigger_svc = get_trigger_service(self.db)
-            
+
             try:
                 trigger = await trigger_svc.create_trigger(
                     agent_id=agent_id,
@@ -1128,7 +883,7 @@ class AgentCreationTool(Tool):
                 success_message += f"- Type: Worker execution\n"
                 success_message += f"- Prompt: {agent_prompt[:50]}{'...' if len(agent_prompt) > 50 else ''}\n"
                 success_message += f"- Status: **Active**\n\n"
-                success_message += f"The trigger is now active and will run according to the schedule."
+                success_message += "The trigger is now active and will run according to the schedule."
                 
                 return self.success_response({
                     "message": success_message,
@@ -1175,20 +930,24 @@ class AgentCreationTool(Tool):
             account_id = self.account_id
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
+
+            # Migrated to Convex: get agent
+            try:
+                agent_data = await self.convex.get_agent(agent_id, account_id=account_id)
+            except Exception as e:
+                logger.error(f"Failed to get agent from Convex: {e}")
                 return self.fail_response("Worker not found or access denied")
-            
+
+            if not agent_data:
+                return self.fail_response("Worker not found or access denied")
+
             from core.triggers import get_trigger_service, TriggerType
             trigger_svc = get_trigger_service(self.db)
-            
+
             triggers = await trigger_svc.get_agent_triggers(agent_id)
-            
+
             schedule_triggers = [t for t in triggers if t.trigger_type == TriggerType.SCHEDULE]
-            
+
             if not schedule_triggers:
                 return self.success_response({
                     "message": "No scheduled triggers found for this worker.",
@@ -1196,7 +955,7 @@ class AgentCreationTool(Tool):
                     "triggers": [],
                     "total_count": 0
                 })
-            
+
             formatted_triggers = []
             for trigger in schedule_triggers:
                 formatted = {
@@ -1253,13 +1012,17 @@ class AgentCreationTool(Tool):
             account_id = self.account_id
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
+
+            # Migrated to Convex: get agent
+            try:
+                agent_data = await self.convex.get_agent(agent_id, account_id=account_id)
+            except Exception as e:
+                logger.error(f"Failed to get agent from Convex: {e}")
                 return self.fail_response("Worker not found or access denied")
-            
+
+            if not agent_data:
+                return self.fail_response("Worker not found or access denied")
+
             from core.triggers import get_trigger_service
             trigger_svc = get_trigger_service(self.db)
             
@@ -1333,13 +1096,17 @@ class AgentCreationTool(Tool):
             account_id = self.account_id
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
-            
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
+
+            # Migrated to Convex: get agent
+            try:
+                agent_data = await self.convex.get_agent(agent_id, account_id=account_id)
+            except Exception as e:
+                logger.error(f"Failed to get agent from Convex: {e}")
                 return self.fail_response("Worker not found or access denied")
-            
+
+            if not agent_data:
+                return self.fail_response("Worker not found or access denied")
+
             from core.triggers import get_trigger_service
             trigger_svc = get_trigger_service(self.db)
             
@@ -1449,23 +1216,22 @@ class AgentCreationTool(Tool):
             if not account_id:
                 return self.fail_response("Unable to determine current account ID")
 
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).eq('account_id', account_id).execute()
-            if not agent_result.data:
+            # Get the agent
+            agent_data = await self.convex.get_agent(agent_id, account_id=account_id)
+            if not agent_data:
                 return self.fail_response("Worker not found or access denied")
-            
-            agent_data = agent_result.data[0]
-            current_version_id = agent_data.get('current_version_id')
-            
+
+            current_version_id = agent_data.get('currentVersionId') or agent_data.get('current_version_id')
+
             if not current_version_id:
                 return self.fail_response("Worker has no current version configured")
-            
-            version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
-            if not version_result.data:
+
+            # Get the current version configuration
+            version_data = await self.convex.get_agent_version(current_version_id, account_id=account_id)
+            if not version_data:
                 return self.fail_response("Current agent version not found")
-            
-            current_config = version_result.data.get('config', {})
+
+            current_config = version_data.get('config', {})
             
             updates = []
             agent_updates = {}
@@ -1485,46 +1251,47 @@ class AgentCreationTool(Tool):
             if icon_color is not None:
                 agent_updates['icon_color'] = icon_color
                 updates.append("Icon color updated")
-                
+
             if icon_background is not None:
                 agent_updates['icon_background'] = icon_background
                 updates.append("Icon background updated")
-                
+
             if is_default is not None:
                 if is_default:
-                    await client.table('agents').update({"is_default": False}).eq("account_id", account_id).eq("is_default", True).execute()
+                    # Clear default flag on all other agents for this account
+                    await self.convex.clear_default_agents(account_id)
                 agent_updates['is_default'] = is_default
                 updates.append(f"Default agent: {'Yes' if is_default else 'No'}")
-            
+
             if agent_updates:
-                await client.table('agents').update(agent_updates).eq('agent_id', agent_id).execute()
-            
+                await self.convex.update_agent(agent_id, account_id=account_id, **agent_updates)
+
             version_changes = False
             new_system_prompt = system_prompt if system_prompt is not None else current_config.get('system_prompt', '')
             new_model = model if model is not None else current_config.get('model')
             new_agentpress_tools = agentpress_tools if agentpress_tools is not None else current_config.get('tools', {}).get('agentpress', {})
-            
+
             if system_prompt is not None:
                 updates.append("System prompt updated")
                 version_changes = True
-                
+
             if model is not None:
                 updates.append(f"Model: {model}")
                 version_changes = True
-                
+
             if agentpress_tools is not None:
                 updates.append("Tool configuration updated")
                 version_changes = True
-            
+
             if version_changes:
                 from core.versioning.version_service import get_version_service
-                
+
                 version_service = await get_version_service()
-                
+
                 current_tools = current_config.get('tools', {})
                 configured_mcps = current_tools.get('mcp', [])
                 custom_mcps = current_tools.get('custom_mcp', [])
-                
+
                 new_version = await version_service.create_version(
                     agent_id=agent_id,
                     user_id=account_id,
@@ -1535,19 +1302,26 @@ class AgentCreationTool(Tool):
                     agentpress_tools=new_agentpress_tools,
                     change_description=change_description or f"Updated: {', '.join(updates)}"
                 )
-                
-                await client.table('agents').update({
-                    'current_version_id': new_version.version_id,
-                    'version_count': agent_data['version_count'] + 1
-                }).eq('agent_id', agent_id).execute()
-                
+
+                # Update the agent with new version info
+                await self.convex.update_agent(
+                    agent_id,
+                    account_id=account_id,
+                    metadata={
+                        'current_version_id': new_version.version_id,
+                        'version_count': agent_data.get('version_count', 0) + 1
+                    }
+                )
+
                 try:
                     await self._sync_triggers_to_version_config(agent_id)
                 except Exception as e:
                     logger.warning(f"Failed to sync triggers to new version: {e}")
-            
-            updated_agent_result = await client.table('agents').select('*').eq('agent_id', agent_id).execute()
-            updated_agent = updated_agent_result.data[0] if updated_agent_result.data else agent_data
+
+            # Get the updated agent data
+            updated_agent = await self.convex.get_agent(agent_id, account_id=account_id)
+            if not updated_agent:
+                updated_agent = agent_data
             
             success_message = f"✅ Successfully updated agent '{updated_agent['name']}'!\n\n"
             success_message += f"**Changes Made:**\n"
@@ -1585,20 +1359,33 @@ class AgentCreationTool(Tool):
     async def _sync_triggers_to_version_config(self, agent_id: str) -> None:
         """Sync triggers to the current version config."""
         try:
-            client = await self.db.client
-            
-            agent_result = await client.table('agents').select('current_version_id').eq('agent_id', agent_id).single().execute()
-            if not agent_result.data or not agent_result.data.get('current_version_id'):
+            # Migrated to Convex: get agent
+            try:
+                agent_result = await self.convex.get_agent(agent_id)
+            except Exception as e:
+                logger.warning(f"Failed to get agent from Convex: {e}")
+                return
+
+            if not agent_result:
+                logger.warning(f"No agent found for {agent_id}")
+                return
+
+            current_version_id = agent_result.get('currentVersionId') or agent_result.get('current_version_id')
+            if not current_version_id:
                 logger.warning(f"No current version found for agent {agent_id}")
                 return
-            
-            current_version_id = agent_result.data['current_version_id']
-            
-            triggers_result = await client.table('agent_triggers').select('*').eq('agent_id', agent_id).execute()
+
+            # Migrated to Convex: list triggers
+            try:
+                triggers_result = await self.convex.list_triggers(agent_id)
+            except Exception as e:
+                logger.warning(f"Failed to list triggers from Convex: {e}")
+                triggers_result = []
+
             triggers = []
-            if triggers_result.data:
+            if triggers_result:
                 import json
-                for trigger in triggers_result.data:
+                for trigger in triggers_result:
                     trigger_copy = trigger.copy()
                     if 'config' in trigger_copy and isinstance(trigger_copy['config'], str):
                         try:
@@ -1607,19 +1394,21 @@ class AgentCreationTool(Tool):
                             logger.warning(f"Failed to parse trigger config for {trigger_copy.get('trigger_id')}")
                             trigger_copy['config'] = {}
                     triggers.append(trigger_copy)
-            
-            version_result = await client.table('agent_versions').select('config').eq('version_id', current_version_id).single().execute()
-            if not version_result.data:
+
+            # Get the current version and update its config with triggers
+            version_data = await self.convex.get_agent_version(current_version_id)
+            if not version_data:
                 logger.warning(f"Version {current_version_id} not found")
                 return
-            
-            config = version_result.data.get('config', {})
+
+            config = version_data.get('config', {})
             config['triggers'] = triggers
-            
-            await client.table('agent_versions').update({'config': config}).eq('version_id', current_version_id).execute()
-            
-            logger.debug(f"Synced {len(triggers)} triggers to version config for agent {agent_id}")
-            
+
+            # Update the version with the new config
+            await self.convex.update_agent_version(current_version_id, config=config)
+
+            logger.debug(f"Synced {len(triggers)} triggers for agent {agent_id} to version {current_version_id}")
+
         except Exception as e:
             logger.error(f"Failed to sync triggers to version config: {e}")
     

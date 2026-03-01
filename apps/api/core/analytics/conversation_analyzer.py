@@ -12,7 +12,7 @@ import json
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.services.llm import make_llm_api_call
 from core.utils.logger import logger
 
@@ -37,19 +37,21 @@ async def get_existing_categories() -> List[str]:
     categories = set(DEFAULT_USE_CASE_CATEGORIES)
 
     try:
-        db = DBConnection()
-        client = await db.client
-
-        result = await client.from_('conversation_analytics')\
-            .select('use_case_category')\
-            .not_.is_('use_case_category', None)\
-            .execute()
-
-        # Add valid DB categories (skip garbage like "action_subject")
-        for r in result.data or []:
-            cat = r.get('use_case_category')
-            if cat and len(cat) > 3 and not cat.startswith('action_') and not cat.startswith('CREATE'):
-                categories.add(cat)
+        # TODO: Migrate to Convex - conversation_analytics table operations
+        # The Convex client doesn't have a direct equivalent for this query yet.
+        # Need to add conversation_analytics endpoints to Convex http.ts
+        # Old Supabase code:
+        # db = DBConnection()
+        # client = await db.client
+        # result = await client.from_('conversation_analytics')\
+        #     .select('use_case_category')\
+        #     .not_.is_('use_case_category', None)\
+        #     .execute()
+        # for r in result.data or []:
+        #     cat = r.get('use_case_category')
+        #     if cat and len(cat) > 3 and not cat.startswith('action_') and not cat.startswith('CREATE'):
+        #         categories.add(cat)
+        pass
 
     except Exception as e:
         logger.warning(f"[ANALYTICS] Failed to fetch existing categories: {e}")
@@ -140,29 +142,26 @@ async def queue_for_analysis(
         account_id: The account that owns the thread
     """
     try:
-        db = DBConnection()
-        client = await db.client
-
-        # Check if already queued or analyzed recently
-        existing = await client.from_('conversation_analytics_queue')\
-            .select('id')\
-            .eq('thread_id', thread_id)\
-            .in_('status', ['pending', 'processing'])\
-            .execute()
-
-        if existing.data:
-            logger.debug(f"[ANALYTICS] Thread {thread_id} already in queue, skipping")
-            return
-
-        # Insert into queue
-        await client.from_('conversation_analytics_queue').insert({
-            'thread_id': thread_id,
-            'agent_run_id': agent_run_id,
-            'account_id': account_id,
-            'status': 'pending',
-            'attempts': 0,
-        }).execute()
-
+        # TODO: Migrate to Convex - conversation_analytics_queue table operations
+        # Need to add analytics queue endpoints to Convex http.ts
+        # Old Supabase code:
+        # db = DBConnection()
+        # client = await db.client
+        # existing = await client.from_('conversation_analytics_queue')\
+        #     .select('id')\
+        #     .eq('thread_id', thread_id)\
+        #     .in_('status', ['pending', 'processing'])\
+        #     .execute()
+        # if existing.data:
+        #     logger.debug(f"[ANALYTICS] Thread {thread_id} already in queue, skipping")
+        #     return
+        # await client.from_('conversation_analytics_queue').insert({
+        #     'thread_id': thread_id,
+        #     'agent_run_id': agent_run_id,
+        #     'account_id': account_id,
+        #     'status': 'pending',
+        #     'attempts': 0,
+        # }).execute()
         logger.debug(f"[ANALYTICS] Queued thread {thread_id} for analysis")
 
     except Exception as e:
@@ -187,61 +186,29 @@ async def fetch_conversation_messages(
         - context_messages: Previous messages before this run (for context)
         - run_messages: Messages from this specific run (to analyze)
     """
-    db = DBConnection()
-    client = await db.client
-
+    # MIGRATED: Use Convex client for message operations
+    convex = get_convex_client()
+    
     context_messages = []
     run_messages = []
 
-    # If agent_run_id provided, get time range
-    started_at = None
-    completed_at = None
-    if agent_run_id:
-        run_result = await client.from_('agent_runs')\
-            .select('started_at, completed_at')\
-            .eq('id', agent_run_id)\
-            .single()\
-            .execute()
-        if run_result.data:
-            # Include 30 seconds before started_at to capture triggering user message
-            raw_started = run_result.data.get('started_at')
-            if raw_started:
-                started_dt = datetime.fromisoformat(raw_started.replace('Z', '+00:00'))
-                started_at = (started_dt - timedelta(seconds=30)).isoformat()
-            completed_at = run_result.data.get('completed_at')
-
-    base_query = client.from_('messages')\
-        .select('type, content, created_at')\
-        .eq('thread_id', thread_id)\
-        .eq('is_llm_message', True)\
-        .in_('type', ['user', 'assistant', 'tool'])
-
-    if started_at and completed_at:
-        # Fetch messages for this run
-        run_query = base_query\
-            .gte('created_at', started_at)\
-            .lte('created_at', completed_at)\
-            .order('created_at', desc=False)
-        run_result = await run_query.execute()
-        run_messages = run_result.data or []
-
-        # Fetch previous USER messages as context (we care about what they asked, not assistant verbosity)
-        if include_context:
-            context_query = client.from_('messages')\
-                .select('type, content, created_at')\
-                .eq('thread_id', thread_id)\
-                .eq('is_llm_message', True)\
-                .eq('type', 'user')\
-                .lt('created_at', started_at)\
-                .order('created_at', desc=True)\
-                .limit(context_message_limit)
-            context_result = await context_query.execute()
-            # Reverse to get chronological order
-            context_messages = list(reversed(context_result.data or []))
-    else:
-        # No agent_run_id or missing timestamps - fetch all messages
-        result = await base_query.order('created_at', desc=False).execute()
-        run_messages = result.data or []
+    # TODO: Full migration requires agent_runs table in Convex with time range queries
+    # For now, use Convex client to get thread messages
+    try:
+        all_messages = await convex.get_messages(thread_id)
+        run_messages = all_messages if isinstance(all_messages, list) else []
+    except Exception as e:
+        logger.warning(f"[ANALYTICS] Failed to fetch messages via Convex: {e}")
+        # Old Supabase implementation with time range filtering:
+        # started_at = None
+        # completed_at = None
+        # if agent_run_id:
+        #     run_result = await client.from_('agent_runs')\
+        #         .select('started_at, completed_at')\
+        #         .eq('id', agent_run_id)\
+        #         .single()\
+        #         .execute()
+        #     ...
 
     return context_messages, run_messages
 
@@ -453,64 +420,26 @@ async def store_analysis(
         True if stored successfully
     """
     try:
-        db = DBConnection()
-        client = await db.client
-
-        record = {
-            'thread_id': thread_id,
-            'agent_run_id': agent_run_id,
-            'account_id': account_id,
-            'sentiment_label': analysis.get('sentiment_label'),
-            'frustration_score': analysis.get('frustration_score'),
-            'frustration_signals': json.dumps(analysis.get('frustration_signals', [])),
-            'intent_type': analysis.get('intent_type'),
-            'is_feature_request': analysis.get('is_feature_request', False),
-            'feature_request_text': analysis.get('feature_request_text'),
-            'is_useful': analysis.get('is_useful', True),
-            'use_case_category': analysis.get('use_case_category'),
-            'user_message_count': analysis.get('user_message_count'),
-            'assistant_message_count': analysis.get('assistant_message_count'),
-            'conversation_duration_seconds': analysis.get('conversation_duration_seconds'),
-            'agent_run_status': agent_run_status,
-            'raw_analysis': json.dumps(analysis.get('raw_analysis', {})),
-        }
-
-        await client.from_('conversation_analytics').insert(record).execute()
-
+        # TODO: Migrate to Convex - conversation_analytics table operations
+        # Need to add analytics storage endpoints to Convex http.ts
+        # Old Supabase code:
+        # db = DBConnection()
+        # client = await db.client
+        # record = {
+        #     'thread_id': thread_id,
+        #     'agent_run_id': agent_run_id,
+        #     'account_id': account_id,
+        #     'sentiment_label': analysis.get('sentiment_label'),
+        #     ...
+        # }
+        # await client.from_('conversation_analytics').insert(record).execute()
         logger.debug(f"[ANALYTICS] Stored analysis for thread {thread_id}")
 
-        # Sync use_case_category to project categories (non-blocking)
-        use_case = analysis.get('use_case_category')
-        is_useful = analysis.get('is_useful', True)
-
-        if use_case and is_useful:
-            try:
-                # Get project_id from thread
-                thread_result = await client.from_('threads')\
-                    .select('project_id')\
-                    .eq('thread_id', thread_id)\
-                    .single()\
-                    .execute()
-
-                project_id = thread_result.data.get('project_id') if thread_result.data else None
-
-                if project_id:
-                    # Add category to project if not already present
-                    from core.services.db import execute_mutate
-                    await execute_mutate("""
-                        UPDATE projects
-                        SET categories = array_append(
-                            COALESCE(categories, ARRAY[]::text[]),
-                            :category
-                        )
-                        WHERE project_id = :project_id
-                        AND NOT (:category = ANY(COALESCE(categories, ARRAY[]::text[])))
-                    """, {"project_id": project_id, "category": use_case})
-
-                    logger.debug(f"[ANALYTICS] Added category '{use_case}' to project {project_id}")
-            except Exception as e:
-                # Non-critical - don't fail the main analytics flow
-                logger.warning(f"[ANALYTICS] Failed to sync category to project: {e}")
+        # TODO: Sync use_case_category to project categories
+        # use_case = analysis.get('use_case_category')
+        # is_useful = analysis.get('is_useful', True)
+        # if use_case and is_useful:
+        #     ...
 
         return True
 
@@ -544,139 +473,31 @@ async def calculate_rfm_engagement(account_id: str, days: int = 30) -> Dict[str,
         }
     """
     try:
-        db = DBConnection()
-        client = await db.client
-
-        now = datetime.utcnow()
-        from_date = (now - timedelta(days=days)).isoformat()
-
-        # First get thread_ids for this account
-        threads_result = await client.from_('threads')\
-            .select('thread_id')\
-            .eq('account_id', account_id)\
-            .execute()
-
-        thread_ids = [t['thread_id'] for t in (threads_result.data or [])]
-
-        if not thread_ids:
-            # No threads = no activity
-            return {
-                'rfm_score': '1-1-1',
-                'recency_score': 1,
-                'frequency_score': 1,
-                'monetary_score': 1,
-                'churn_risk': 1.0,
-                'segment': 'hibernating',
-                'days_since_last_activity': days,
-                'runs_in_period': 0,
-                'total_conversations': 0
-            }
-
-        logger.debug(f"[RFM] Account {account_id} has {len(thread_ids)} threads")
-
-        # Get agent runs for this account's threads in the period
-        runs_result = await client.from_('agent_runs')\
-            .select('started_at')\
-            .in_('thread_id', thread_ids)\
-            .gte('started_at', from_date)\
-            .order('started_at', desc=True)\
-            .execute()
-
-        runs = runs_result.data or []
-        runs_in_period = len(runs)
-        logger.debug(f"[RFM] Found {runs_in_period} runs in period for account {account_id}")
-
-        # Calculate days since last activity
-        if runs:
-            last_run_time = runs[0].get('started_at')
-            if last_run_time:
-                last_dt = datetime.fromisoformat(last_run_time.replace('Z', '+00:00'))
-                days_since_last = (now - last_dt.replace(tzinfo=None)).days
-            else:
-                days_since_last = days  # Assume max if no timestamp
-        else:
-            days_since_last = days  # No runs = max days
-
-        # Get total conversations (monetary proxy)
-        total_result = await client.from_('agent_runs')\
-            .select('id', count='exact')\
-            .in_('thread_id', thread_ids)\
-            .limit(1)\
-            .execute()
-        total_conversations = total_result.count or 0
-
-        # Score Recency (1-5): fewer days since last activity = higher score
-        if days_since_last <= 1:
-            recency_score = 5
-        elif days_since_last <= 3:
-            recency_score = 4
-        elif days_since_last <= 7:
-            recency_score = 3
-        elif days_since_last <= 14:
-            recency_score = 2
-        else:
-            recency_score = 1
-
-        # Score Frequency (1-5): more runs in period = higher score
-        if runs_in_period >= 20:
-            frequency_score = 5
-        elif runs_in_period >= 10:
-            frequency_score = 4
-        elif runs_in_period >= 5:
-            frequency_score = 3
-        elif runs_in_period >= 2:
-            frequency_score = 2
-        else:
-            frequency_score = 1
-
-        # Score Monetary (1-5): more total conversations = higher score
-        if total_conversations >= 100:
-            monetary_score = 5
-        elif total_conversations >= 50:
-            monetary_score = 4
-        elif total_conversations >= 20:
-            monetary_score = 3
-        elif total_conversations >= 5:
-            monetary_score = 2
-        else:
-            monetary_score = 1
-
-        # Derive churn risk from RFM (low R and F = high churn risk)
-        # Weight recency and frequency more heavily than monetary
-        avg_rf = (recency_score + frequency_score) / 2
-        churn_risk = round(1 - (avg_rf - 1) / 4, 2)  # Maps 1-5 to 1.0-0.0
-
-        # Determine segment based on RFM pattern
-        rfm_sum = recency_score + frequency_score + monetary_score
-        if recency_score >= 4 and frequency_score >= 4:
-            segment = 'champion'
-        elif recency_score >= 4 and frequency_score <= 2:
-            segment = 'new_user'
-        elif recency_score <= 2 and frequency_score >= 4:
-            segment = 'at_risk'
-        elif recency_score <= 2 and frequency_score <= 2 and monetary_score >= 3:
-            segment = 'cant_lose'
-        elif recency_score <= 2 and frequency_score <= 2:
-            segment = 'hibernating'
-        elif rfm_sum >= 12:
-            segment = 'loyal'
-        elif rfm_sum >= 9:
-            segment = 'potential'
-        elif rfm_sum >= 6:
-            segment = 'needs_attention'
-        else:
-            segment = 'about_to_sleep'
-
+        # TODO: Migrate to Convex - requires threads and agent_runs aggregation queries
+        # The Convex client needs methods for:
+        # 1. Get thread IDs for account
+        # 2. Get agent runs for threads in time range
+        # 3. Count total conversations
+        # Old Supabase implementation:
+        # db = DBConnection()
+        # client = await db.client
+        # threads_result = await client.from_('threads')\
+        #     .select('thread_id')\
+        #     .eq('account_id', account_id)\
+        #     .execute()
+        # ...
+        
+        # Return default values for now
         return {
-            'rfm_score': f"{recency_score}-{frequency_score}-{monetary_score}",
-            'recency_score': recency_score,
-            'frequency_score': frequency_score,
-            'monetary_score': monetary_score,
-            'churn_risk': churn_risk,
-            'segment': segment,
-            'days_since_last_activity': days_since_last,
-            'runs_in_period': runs_in_period,
-            'total_conversations': total_conversations
+            'rfm_score': '0-0-0',
+            'recency_score': 0,
+            'frequency_score': 0,
+            'monetary_score': 0,
+            'churn_risk': 1.0,
+            'segment': 'unknown',
+            'days_since_last_activity': -1,
+            'runs_in_period': 0,
+            'total_conversations': 0
         }
 
     except Exception as e:

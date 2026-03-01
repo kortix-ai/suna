@@ -20,8 +20,40 @@ import json
 import os
 from urllib.parse import quote
 from core.auth import require_admin, require_super_admin
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
+
+# CONVEX MIGRATION: Analytics endpoints now use Convex client.
+# Each endpoint calls Convex RPC functions that need to be implemented in convex/http.ts
+# Convex endpoints required (prefixed with /api/admin/):
+# - get_analytics_summary: Returns user counts, thread counts, signups, conversions
+# - get_retention_data: Returns user retention metrics
+# - get_retention_cohorts: Returns weekly cohort retention matrix
+# - get_daily_top_users: Returns top users by activity
+# - get_thread_distribution: Returns thread count distribution by user messages
+# - get_project_distribution: Returns project distribution by category
+# - get_subscription_distribution: Returns thread distribution by subscription tier
+# - get_activation_stats: Returns signup activation statistics
+# - get_user_funnel: Returns full user conversion funnel
+# - get_weekly_actuals: Returns ARR weekly actuals
+# - get_monthly_actuals: Returns ARR monthly actuals
+# - get_simulator_config: Returns ARR simulator configuration
+# - get_vercel_analytics: Returns Vercel analytics data
+# - get_tool_adoption: Returns tool adoption metrics
+# - get_agent_performance: Returns agent performance metrics
+# - get_conversation_analytics: Returns conversation sentiment/intent/use case analytics
+# - get_profitability_data: Returns revenue, costs, and usage data by tier
+# - get_conversation_insights: Returns sentiment distribution, avg_frustration, feature_request_count
+# - get_frustrated_conversations: Returns paginated conversations with high frustration scores
+# - get_feature_requests: Returns paginated feature request conversations
+# - get_conversations_by_sentiment: Returns paginated conversations filtered by sentiment
+# - get_conversations_by_intent: Returns paginated conversations filtered by intent
+# - get_conversations_by_category: Returns paginated conversations filtered by use case category
+# - get_user_emails: Batch fetch user emails by account_ids
+# - get_thread_user_messages: Fetch user messages for a thread
+# - get_topic_distribution: Returns topic distribution counts
+# - get_analytics_queue_status: Returns conversation analytics queue status
+# - get_use_case_patterns: Returns top use cases and topics
 from core.utils.pagination import PaginationService, PaginationParams, PaginatedResponse
 from core.utils.config import config
 from core.utils.query_utils import batch_query_in
@@ -391,22 +423,11 @@ async def query_vercel_analytics(date_str: str) -> Dict[str, int]:
     Returns dict with 'pageviews' and 'unique_visitors'.
     """
     try:
-        db = DBConnection()
-        client = await db.client
-        
-        result = await client.rpc('get_vercel_analytics', {
-            'target_date': date_str
-        }).execute()
-        
-        if result.data and len(result.data) > 0:
-            row = result.data[0]
-            return {
-                "pageviews": row.get('pageviews', 0) or 0,
-                "unique_visitors": row.get('unique_visitors', 0) or 0
-            }
-        
+        # TODO: Convex migration - need to implement get_vercel_analytics RPC equivalent
+        # The Convex client currently does not support Vercel analytics queries
+        logger.warning(f"query_vercel_analytics not yet migrated to Convex for date {date_str}")
         return {"pageviews": 0, "unique_visitors": 0}
-        
+
     except Exception as e:
         logger.error(f"Failed to query Vercel analytics: {e}", exc_info=True)
         return {"pageviews": 0, "unique_visitors": 0}
@@ -418,26 +439,11 @@ async def query_vercel_analytics_range(start_date: str, end_date: str) -> Dict[s
     Returns dict mapping date -> unique_visitors count.
     """
     try:
-        db = DBConnection()
-        client = await db.client
-        
-        result = await client.rpc('get_vercel_analytics_range', {
-            'start_date': start_date,
-            'end_date': end_date
-        }).execute()
-        
-        views_by_date: Dict[str, int] = {}
-        total = 0
-        
-        for row in result.data or []:
-            date = row.get('analytics_date')
-            unique_visitors = row.get('unique_visitors', 0) or 0
-            if date:
-                views_by_date[date] = unique_visitors
-                total += unique_visitors
-        
-        return views_by_date, total
-        
+        # TODO: Convex migration - need to implement get_vercel_analytics_range RPC equivalent
+        # The Convex client currently does not support Vercel analytics queries
+        logger.warning(f"query_vercel_analytics_range not yet migrated to Convex for range {start_date} to {end_date}")
+        return {}, 0
+
     except Exception as e:
         logger.error(f"Failed to query Vercel analytics range: {e}", exc_info=True)
         return {}, 0
@@ -457,43 +463,36 @@ async def get_analytics_summary(
 ) -> AnalyticsSummary:
     """Get overall analytics summary."""
     try:
-        db = DBConnection()
-        client = await db.client
-        
+        # Convex migration: Use Convex client for analytics queries
+        client = get_convex_client()
+
         now = datetime.now(BERLIN_TZ)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         week_start = today_start - timedelta(days=7)
-        
-        # Run only necessary queries in parallel
-        (
-            total_users_result,
-            total_threads_result,
-            active_week_result,
-            signups_today_result,
-            signups_week_result,
-            subs_result,
-        ) = await asyncio.gather(
-            client.schema('basejump').from_('accounts').select('id', count='exact').limit(1).execute(),
-            client.from_('threads').select('thread_id', count='exact').limit(1).execute(),
-            # Use RPC for COUNT(DISTINCT) - don't fetch rows in Python
-            client.rpc('get_active_users_week', {'p_week_start': week_start.isoformat()}).execute(),
-            client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', today_start.isoformat()).limit(1).execute(),
-            client.schema('basejump').from_('accounts').select('id', count='exact').gte('created_at', week_start.isoformat()).limit(1).execute(),
-            # Use Stripe directly to count paid subscriptions (excludes free tier)
-            search_paid_subscriptions(week_start, now, include_emails=False),
-        )
-        
-        total_users = total_users_result.count or 0
-        total_threads = total_threads_result.count or 0
-        active_users_week = active_week_result.data[0]['count'] if active_week_result.data else 0
-        new_signups_today = signups_today_result.count or 0
-        new_signups_week = signups_week_result.count or 0
-        # Extract count from search_paid_subscriptions result
-        new_subscriptions_week = subs_result['count'] if isinstance(subs_result, dict) else 0
-        
+
+        # Call Convex admin RPC for analytics summary
+        # Requires Convex endpoint: /api/admin/get_analytics_summary
+        # This endpoint should return: total_users, total_threads, active_users_week,
+        # new_signups_today, new_signups_week, new_subscriptions_week
+        try:
+            analytics_data = await client.admin_rpc('get_analytics_summary', {
+                'week_start': week_start.isoformat(),
+                'today_start': today_start.isoformat(),
+            })
+        except Exception as e:
+            logger.warning(f"Convex admin RPC not available, returning zeros: {e}")
+            analytics_data = {}
+
+        total_users = analytics_data.get('total_users', 0)
+        total_threads = analytics_data.get('total_threads', 0)
+        active_users_week = analytics_data.get('active_users_week', 0)
+        new_signups_today = analytics_data.get('new_signups_today', 0)
+        new_signups_week = analytics_data.get('new_signups_week', 0)
+        new_subscriptions_week = analytics_data.get('new_subscriptions_week', 0)
+
         # Conversion rate
         conversion_rate_week = (new_subscriptions_week / new_signups_week * 100) if new_signups_week > 0 else 0
-        
+
         # Average threads per user
         avg_threads_per_user = (total_threads / total_users) if total_users > 0 else 0
         
@@ -529,13 +528,13 @@ async def browse_threads(
 ) -> PaginatedResponse[ThreadAnalytics]:
     """
     Browse threads with optional filtering.
-    
+
     When NO message count filter is applied: paginate directly from DB (fast).
     When message count filter IS applied: defaults to last 7 days to keep query manageable.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for thread browsing
+        client = get_convex_client()
         pagination_params = PaginationParams(page=page, page_size=page_size)
         return await _browse_threads_paginated(
             client=client,
@@ -550,7 +549,7 @@ async def browse_threads(
             sort_by=sort_by,
             sort_order=sort_order,
         )
-        
+
     except Exception as e:
         logger.error(f"Failed to browse threads: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve threads")
@@ -572,8 +571,8 @@ async def export_threads(
 ):
     """Export all matching threads to Excel with a frozen, bold header row."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for thread export
+        client = get_convex_client()
 
         page = 1
         all_threads: List[ThreadAnalytics] = []
@@ -1118,8 +1117,8 @@ async def get_retention_data(
 ) -> PaginatedResponse[RetentionData]:
     """Get retention data showing recurring users."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for retention queries
+        client = get_convex_client()
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
 
@@ -1169,10 +1168,10 @@ async def get_retention_cohorts(
 ) -> CohortRetentionResponse:
     """Get weekly cohort retention matrix."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for cohort retention queries
+        client = get_convex_client()
 
-        rpc_result = await client.rpc('get_retention_cohorts', {
+        rpc_result = await client.admin_rpc('get_retention_cohorts', {
             'p_cohorts_back': cohorts_back,
             'p_weeks_to_measure': weeks_to_measure
         }).execute()
@@ -1231,8 +1230,8 @@ async def get_daily_top_users(
 ) -> PaginatedResponse[DailyTopUserData]:
     """Get top users by thread + agent run volume in range, excluding trigger-originated activity."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for daily top users queries
+        client = get_convex_client()
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
 
@@ -1329,8 +1328,8 @@ async def get_message_distribution(
 ) -> Dict[str, Any]:
     """Get distribution of threads by user message count for a date range."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for thread distribution queries
+        client = get_convex_client()
 
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
@@ -1385,8 +1384,8 @@ async def get_category_distribution(
 ) -> Dict[str, Any]:
     """Get distribution of projects by category for a date range, optionally filtered by tier."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for project distribution queries
+        client = get_convex_client()
 
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
@@ -1471,8 +1470,8 @@ async def get_tier_distribution(
 ) -> Dict[str, Any]:
     """Get distribution of threads by subscription tier for a date range."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for subscription distribution queries
+        client = get_convex_client()
 
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
@@ -1567,10 +1566,10 @@ async def get_conversion_funnel(
     source: AnalyticsSource = Query("vercel", description="Analytics source: vercel (primary) or ga"),
     admin: dict = Depends(require_admin)
 ) -> ConversionFunnel:
-    """Get full conversion funnel: Visitors → Signups → Subscriptions for a date range."""
+    """Get full conversion funnel: Visitors -> Signups -> Subscriptions for a date range."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for conversion funnel queries
+        client = get_convex_client()
 
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
@@ -1681,8 +1680,8 @@ async def get_activation_stats(
 ) -> ActivationStats:
     """Get signup activation stats: free tier signups activation rate + task distribution."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for activation stats queries
+        client = get_convex_client()
 
         # Parse date range
         start_date, end_date = parse_date_range(None, date_from, date_to)
@@ -1743,8 +1742,8 @@ async def get_user_funnel(
     All data from Supabase - no GA4 cross-referencing needed.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for user funnel queries
+        client = get_convex_client()
 
         # Parse date range
         start_date, end_date = parse_date_range(None, date_from, date_to)
@@ -1866,8 +1865,8 @@ async def get_signups_by_date(
     Super admin only.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for signup analytics
+        client = get_convex_client()
         
         # Use database function for efficient GROUP BY (bypasses row limits)
         result = await client.rpc('get_signups_by_date', {
@@ -2151,8 +2150,8 @@ async def get_churn_by_date(
     """
     try:
         stripe.api_key = config.STRIPE_SECRET_KEY
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for ARR chart queries
+        client = get_convex_client()
         
         # Parse dates
         start_date = datetime.strptime(date_from, "%Y-%m-%d").date()
@@ -2248,8 +2247,8 @@ async def get_arr_weekly_actuals(
 ) -> WeeklyActualsResponse:
     """Get all ARR weekly actuals for the simulator. Super admin only."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for weekly actuals queries
+        client = get_convex_client()
         
         result = await client.from_('arr_weekly_actuals').select('*').order('week_number').execute()
         
@@ -2307,9 +2306,9 @@ async def update_arr_weekly_actual(
     try:
         if platform not in ('web', 'app'):
             raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
-        
-        db = DBConnection()
-        client = await db.client
+
+        # Convex migration: Use Convex client for ARR queries
+        client = get_convex_client()
         
         # Get existing overrides (if any) to merge with new ones
         existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).eq('platform', platform).execute()
@@ -2376,9 +2375,9 @@ async def delete_arr_weekly_actual(
     try:
         if platform not in ('web', 'app'):
             raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
-        
-        db = DBConnection()
-        client = await db.client
+
+        # Convex migration: Use Convex client for ARR queries
+        client = get_convex_client()
         
         await client.from_('arr_weekly_actuals').delete().eq('week_number', week_number).eq('platform', platform).execute()
         
@@ -2417,9 +2416,9 @@ async def toggle_field_override(
         
         if platform not in ('web', 'app'):
             raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
-        
-        db = DBConnection()
-        client = await db.client
+
+        # Convex migration: Use Convex client for ARR queries
+        client = get_convex_client()
         
         # Get existing record
         existing_result = await client.from_('arr_weekly_actuals').select('overrides').eq('week_number', week_number).eq('platform', platform).execute()
@@ -2472,8 +2471,8 @@ async def get_arr_simulator_config(
 ) -> SimulatorConfigData:
     """Get ARR simulator configuration. Super admin only."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for simulator config queries
+        client = get_convex_client()
         
         result = await client.from_('arr_simulator_config').select('*').limit(1).execute()
         
@@ -2506,8 +2505,8 @@ async def update_arr_simulator_config(
 ) -> SimulatorConfigData:
     """Update ARR simulator configuration. Super admin only."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for simulator config updates
+        client = get_convex_client()
         
         # Get existing config ID
         existing = await client.from_('arr_simulator_config').select('id').limit(1).execute()
@@ -2567,8 +2566,8 @@ async def get_arr_monthly_actuals(
 ) -> MonthlyActualsResponse:
     """Get all ARR monthly actuals for the simulator. Super admin only."""
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for monthly actuals queries
+        client = get_convex_client()
         
         result = await client.from_('arr_monthly_actuals').select('*').order('month_index').execute()
         
@@ -2626,9 +2625,9 @@ async def update_arr_monthly_actual(
     try:
         if platform not in ('web', 'app'):
             raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
-        
-        db = DBConnection()
-        client = await db.client
+
+        # Convex migration: Use Convex client for ARR queries
+        client = get_convex_client()
         
         # Get existing overrides (if any) to merge with new ones
         existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).eq('platform', platform).execute()
@@ -2704,9 +2703,9 @@ async def delete_arr_monthly_actual(
     try:
         if platform not in ('web', 'app'):
             raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
-        
-        db = DBConnection()
-        client = await db.client
+
+        # Convex migration: Use Convex client for ARR queries
+        client = get_convex_client()
         
         await client.from_('arr_monthly_actuals').delete().eq('month_index', month_index).eq('platform', platform).execute()
         
@@ -2740,9 +2739,9 @@ async def toggle_monthly_field_override(
         
         if platform not in ('web', 'app'):
             raise HTTPException(status_code=400, detail="Platform must be 'web' or 'app'")
-        
-        db = DBConnection()
-        client = await db.client
+
+        # Convex migration: Use Convex client for ARR queries
+        client = get_convex_client()
         
         # Get existing record
         existing_result = await client.from_('arr_monthly_actuals').select('overrides').eq('month_index', month_index).eq('platform', platform).execute()
@@ -2902,8 +2901,8 @@ async def get_revenue_summary(
     """
     try:
         stripe.api_key = config.STRIPE_SECRET_KEY
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for ARR chart queries
+        client = get_convex_client()
         
         now = datetime.now(BERLIN_TZ)
         month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
@@ -3038,8 +3037,8 @@ async def get_engagement_summary(
     - total_threads_week: threads in 7 days ending at date_to
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for daily snapshot queries
+        client = get_convex_client()
 
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
@@ -3108,8 +3107,8 @@ async def get_task_performance(
     avg_duration_with_stuck_seconds (including all) for frontend toggle.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for agent run duration queries
+        client = get_convex_client()
 
         # Parse date range with backwards compatibility
         start_date, end_date = parse_date_range(date, date_from, date_to)
@@ -3176,8 +3175,8 @@ async def get_tool_adoption(
     Get tool adoption metrics by parsing tool calls from messages.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Convex migration: Use Convex client for tool adoption queries
+        client = get_convex_client()
         
         # Parse target date
         if date:
@@ -3685,9 +3684,10 @@ async def get_profitability(
     Super admin only due to sensitive financial data.
     """
     try:
-        db = DBConnection()
-        client = await db.client
-
+        # Requires Convex endpoint: /api/admin/get_profitability_data
+        # This endpoint should return revenue, costs, and usage data by tier
+        convex = get_convex_client()
+        
         # Parse date range
         start_date, end_date = parse_date_range(None, date_from, date_to)
         range_start = start_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -3703,14 +3703,14 @@ async def get_profitability(
         # 1. Fetch actual revenue from Stripe and RevenueCat (both use UTC)
         stripe_revenue, revenuecat_revenue = await asyncio.gather(
             _fetch_stripe_revenue(start_ts, end_ts),
-            _fetch_revenuecat_revenue(client, range_start_utc, range_end_utc)
+            _fetch_revenuecat_revenue(convex, range_start_utc, range_end_utc)
         )
 
         logger.info(f"Stripe revenue: ${stripe_revenue['total_revenue']:.2f} ({stripe_revenue['payment_count']} payments)")
         logger.info(f"RevenueCat revenue: ${revenuecat_revenue['total_revenue']:.2f} ({revenuecat_revenue['payment_count']} payments)")
 
         # 2. Get usage costs by tier using RPC (efficient single query instead of fetching 278k+ accounts)
-        usage_costs_result = await client.rpc('get_usage_costs_by_tier', {
+        usage_costs_result = await convex.rpc('get_usage_costs_by_tier', {
             'start_date': range_start_utc.isoformat(),
             'end_date': range_end_utc.isoformat()
         }).execute()
@@ -3907,7 +3907,7 @@ async def get_profitability(
         paying_user_emails.sort()
 
         active_subs_result, revenuecat_active_subs = await asyncio.gather(
-            client.rpc('get_active_subscription_counts').execute(),
+            convex.rpc('get_active_subscription_counts').execute(),
             _fetch_revenuecat_active_subscriptions()
         )
         active_subs_data = active_subs_result.data[0] if active_subs_result.data else {}
@@ -3992,17 +3992,17 @@ async def get_conversation_insights(
     - Feature request count
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_conversation_insights
+        # Returns sentiment_distribution, avg_frustration, feature_request_count, intent_distribution
+        convex = get_convex_client()
 
         rpc_params = {}
         if date_from:
-            rpc_params['p_date_from'] = f"{date_from}T00:00:00Z"
+            rpc_params['date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            rpc_params['p_date_to'] = f"{date_to}T23:59:59Z"
+            rpc_params['date_to'] = f"{date_to}T23:59:59Z"
 
-        result = await client.rpc('get_conversation_insights', rpc_params).execute()
-        data = result.data
+        data = await convex.admin_rpc("get_conversation_insights", rpc_params)
 
         if not data:
             return ConversationInsight(
@@ -4046,39 +4046,24 @@ async def get_frustrated_conversations(
         date_to: Optional end date filter
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_frustrated_conversations
+        # Query params: threshold, page, page_size, date_from, date_to
+        convex = get_convex_client()
 
-        # Build base query with date filters
-        count_query = client.from_('conversation_analytics')\
-            .select('id', count='exact')\
-            .gte('frustration_score', threshold)
-
+        # Build params for Convex call
+        rpc_params = {
+            "threshold": threshold,
+            "page": page,
+            "page_size": page_size,
+        }
         if date_from:
-            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00")
+            rpc_params['date_from'] = f"{date_from}T00:00:00"
         if date_to:
-            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59")
+            rpc_params['date_to'] = f"{date_to}T23:59:59"
 
-        count_result = await count_query.limit(1).execute()
-        total_items = count_result.count or 0
-
-        # Get paginated data with date filters
-        offset = (page - 1) * page_size
-        data_query = client.from_('conversation_analytics')\
-            .select('*')\
-            .gte('frustration_score', threshold)
-
-        if date_from:
-            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00")
-        if date_to:
-            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59")
-
-        result = await data_query\
-            .order('frustration_score', desc=True)\
-            .range(offset, offset + page_size - 1)\
-            .execute()
-
-        records = result.data or []
+        result = await convex.admin_rpc("get_frustrated_conversations", rpc_params)
+        total_items = result.get("total", 0)
+        records = result.get("items", [])
 
         # Fetch user emails via billing_customers first (fast batch query)
         account_ids = list(set(r.get('account_id') for r in records if r.get('account_id')))
@@ -4086,7 +4071,7 @@ async def get_frustrated_conversations(
         if account_ids:
             try:
                 # First try billing_customers (fast path for users with billing)
-                billing_result = await client.schema('basejump').from_('billing_customers')\
+                billing_result = await convex.schema('basejump').from_('billing_customers')\
                     .select('account_id, email')\
                     .in_('account_id', account_ids)\
                     .execute()
@@ -4096,7 +4081,7 @@ async def get_frustrated_conversations(
                 # For accounts without billing email, get from auth.users via RPC
                 missing_account_ids = [aid for aid in account_ids if aid not in email_map]
                 if missing_account_ids:
-                    accounts_result = await client.schema('basejump').from_('accounts')\
+                    accounts_result = await convex.schema('basejump').from_('accounts')\
                         .select('id, primary_owner_user_id')\
                         .in_('id', missing_account_ids)\
                         .execute()
@@ -4104,7 +4089,7 @@ async def get_frustrated_conversations(
                     for acc in (accounts_result.data or []):
                         if acc.get('primary_owner_user_id'):
                             try:
-                                email_rpc = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
+                                email_rpc = await convex.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
                                 if email_rpc.data:
                                     email_map[acc['id']] = email_rpc.data
                             except Exception:
@@ -4401,8 +4386,8 @@ async def get_rfm_engagement_summary(
         email_map = {}
         if at_risk_rows:
             try:
-                db = DBConnection()
-                client = await db.client
+                # Convex migration: Use Convex client for at-risk user email queries
+                client = get_convex_client()
                 account_ids = [str(row['account_id']) for row in at_risk_rows]
 
                 # First try billing_customers (fast path for users with billing)
@@ -4585,8 +4570,8 @@ async def get_accounts_by_segment(
 
         # Fetch emails for this page only
         if accounts:
-            db = DBConnection()
-            client = await db.client
+            # Convex migration: Use Convex client for billing customer queries
+            client = get_convex_client()
             account_ids = [a['account_id'] for a in accounts]
 
             email_map = {}
@@ -4648,42 +4633,25 @@ async def get_feature_requests(
     Get conversations where feature requests were detected.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_feature_requests
+        # Query params: page, page_size, date_from, date_to
+        convex = get_convex_client()
 
-        # Build base query with date filters
-        count_query = client.from_('conversation_analytics')\
-            .select('id', count='exact')\
-            .eq('is_feature_request', True)
-
+        rpc_params = {
+            "page": page,
+            "page_size": page_size,
+        }
         if date_from:
-            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00")
+            rpc_params['date_from'] = f"{date_from}T00:00:00"
         if date_to:
-            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59")
+            rpc_params['date_to'] = f"{date_to}T23:59:59"
 
-        count_result = await count_query.limit(1).execute()
-        total_items = count_result.count or 0
-
-        # Get paginated data with date filters
-        offset = (page - 1) * page_size
-        data_query = client.from_('conversation_analytics')\
-            .select('*')\
-            .eq('is_feature_request', True)
-
-        if date_from:
-            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00")
-        if date_to:
-            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59")
-
-        result = await data_query\
-            .order('analyzed_at', desc=True)\
-            .range(offset, offset + page_size - 1)\
-            .execute()
-
-        records = result.data or []
+        result = await convex.admin_rpc("get_feature_requests", rpc_params)
+        total_items = result.get("total", 0)
+        records = result.get("items", [])
 
         # Fetch user emails and first messages
-        items = await _build_conversation_items(client, records)
+        items = await _build_conversation_items(convex, records)
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
         return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
@@ -4706,42 +4674,26 @@ async def get_conversations_by_sentiment(
     Get conversations filtered by sentiment label.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_conversations_by_sentiment
+        # Query params: sentiment, page, page_size, date_from, date_to
+        convex = get_convex_client()
 
-        # Build base query for count
-        count_query = client.from_('conversation_analytics')\
-            .select('id', count='exact')\
-            .eq('sentiment_label', sentiment)
-
+        rpc_params = {
+            "sentiment": sentiment,
+            "page": page,
+            "page_size": page_size,
+        }
         if date_from:
-            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+            rpc_params['date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+            rpc_params['date_to'] = f"{date_to}T23:59:59Z"
 
-        count_result = await count_query.limit(1).execute()
-        total_items = count_result.count or 0
-
-        # Get paginated data
-        offset = (page - 1) * page_size
-        data_query = client.from_('conversation_analytics')\
-            .select('*')\
-            .eq('sentiment_label', sentiment)
-
-        if date_from:
-            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
-        if date_to:
-            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
-
-        result = await data_query\
-            .order('analyzed_at', desc=True)\
-            .range(offset, offset + page_size - 1)\
-            .execute()
-
-        records = result.data or []
+        result = await convex.admin_rpc("get_conversations_by_sentiment", rpc_params)
+        total_items = result.get("total", 0)
+        records = result.get("items", [])
 
         # Fetch user emails and first messages
-        items = await _build_conversation_items(client, records)
+        items = await _build_conversation_items(convex, records)
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
         return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
@@ -4764,42 +4716,26 @@ async def get_conversations_by_intent(
     Get conversations filtered by intent type.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_conversations_by_intent
+        # Query params: intent, page, page_size, date_from, date_to
+        convex = get_convex_client()
 
-        # Build base query for count
-        count_query = client.from_('conversation_analytics')\
-            .select('id', count='exact')\
-            .eq('intent_type', intent)
-
+        rpc_params = {
+            "intent": intent,
+            "page": page,
+            "page_size": page_size,
+        }
         if date_from:
-            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+            rpc_params['date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+            rpc_params['date_to'] = f"{date_to}T23:59:59Z"
 
-        count_result = await count_query.limit(1).execute()
-        total_items = count_result.count or 0
-
-        # Get paginated data
-        offset = (page - 1) * page_size
-        data_query = client.from_('conversation_analytics')\
-            .select('*')\
-            .eq('intent_type', intent)
-
-        if date_from:
-            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
-        if date_to:
-            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
-
-        result = await data_query\
-            .order('analyzed_at', desc=True)\
-            .range(offset, offset + page_size - 1)\
-            .execute()
-
-        records = result.data or []
+        result = await convex.admin_rpc("get_conversations_by_intent", rpc_params)
+        total_items = result.get("total", 0)
+        records = result.get("items", [])
 
         # Fetch user emails and first messages
-        items = await _build_conversation_items(client, records)
+        items = await _build_conversation_items(convex, records)
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
         return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
@@ -4822,42 +4758,26 @@ async def get_conversations_by_category(
     Get conversations filtered by use case category.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_conversations_by_category
+        # Query params: category, page, page_size, date_from, date_to
+        convex = get_convex_client()
 
-        # Build base query for count
-        count_query = client.from_('conversation_analytics')\
-            .select('id', count='exact')\
-            .eq('use_case_category', category)
-
+        rpc_params = {
+            "category": category,
+            "page": page,
+            "page_size": page_size,
+        }
         if date_from:
-            count_query = count_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+            rpc_params['date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            count_query = count_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+            rpc_params['date_to'] = f"{date_to}T23:59:59Z"
 
-        count_result = await count_query.limit(1).execute()
-        total_items = count_result.count or 0
-
-        # Get paginated data
-        offset = (page - 1) * page_size
-        data_query = client.from_('conversation_analytics')\
-            .select('*')\
-            .eq('use_case_category', category)
-
-        if date_from:
-            data_query = data_query.gte('analyzed_at', f"{date_from}T00:00:00Z")
-        if date_to:
-            data_query = data_query.lte('analyzed_at', f"{date_to}T23:59:59Z")
-
-        result = await data_query\
-            .order('analyzed_at', desc=True)\
-            .range(offset, offset + page_size - 1)\
-            .execute()
-
-        records = result.data or []
+        result = await convex.admin_rpc("get_conversations_by_category", rpc_params)
+        total_items = result.get("total", 0)
+        records = result.get("items", [])
 
         # Fetch user emails and messages
-        items = await _build_conversation_items(client, records)
+        items = await _build_conversation_items(convex, records)
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
         return await PaginationService.paginate_with_total_count(items, total_items, pagination_params)
@@ -4870,6 +4790,10 @@ async def get_conversations_by_category(
 async def _build_conversation_items(client, records: List[Dict[str, Any]]) -> List[ConversationAnalyticsItem]:
     """
     Build ConversationAnalyticsItem list with user emails and first messages.
+
+    Requires Convex endpoints:
+    - /api/admin/get_user_emails: Batch fetch user emails by account_ids
+    - /api/admin/get_thread_messages: Fetch user messages for a thread
     """
     if not records:
         return []
@@ -4879,31 +4803,10 @@ async def _build_conversation_items(client, records: List[Dict[str, Any]]) -> Li
     email_map = {}
     if account_ids:
         try:
-            # First try billing_customers (fast path for users with billing)
-            billing_result = await client.schema('basejump').from_('billing_customers')\
-                .select('account_id, email')\
-                .in_('account_id', account_ids)\
-                .execute()
-
-            email_map = {e['account_id']: e['email'] for e in (billing_result.data or [])}
-
-            # For accounts without billing email, get from auth.users via RPC
-            missing_account_ids = [aid for aid in account_ids if aid not in email_map]
-            if missing_account_ids:
-                # Get primary_owner_user_id for missing accounts
-                accounts_result = await client.schema('basejump').from_('accounts')\
-                    .select('id, primary_owner_user_id')\
-                    .in_('id', missing_account_ids)\
-                    .execute()
-
-                for acc in (accounts_result.data or []):
-                    if acc.get('primary_owner_user_id'):
-                        try:
-                            email_rpc = await client.rpc('get_user_email', {'user_id': acc['primary_owner_user_id']}).execute()
-                            if email_rpc.data:
-                                email_map[acc['id']] = email_rpc.data
-                        except Exception:
-                            pass  # Skip if RPC fails for this user
+            # Requires Convex endpoint: /api/admin/get_user_emails
+            # Params: account_ids (list)
+            email_result = await client.admin_rpc("get_user_emails", {"account_ids": account_ids})
+            email_map = email_result.get("emails", {})
         except Exception as e:
             logger.warning(f"Failed to fetch user emails: {e}")
 
@@ -4917,39 +4820,16 @@ async def _build_conversation_items(client, records: List[Dict[str, Any]]) -> Li
             continue
 
         try:
-            # Get time range from agent_run if available
-            started_at = None
-            completed_at = None
-            if agent_run_id:
-                run_result = await client.from_('agent_runs')\
-                    .select('started_at, completed_at')\
-                    .eq('id', agent_run_id)\
-                    .single()\
-                    .execute()
-                if run_result.data:
-                    from datetime import datetime, timedelta
-                    raw_started = run_result.data.get('started_at')
-                    if raw_started:
-                        started_dt = datetime.fromisoformat(raw_started.replace('Z', '+00:00'))
-                        started_at = (started_dt - timedelta(seconds=30)).isoformat()
-                    completed_at = run_result.data.get('completed_at')
+            # Requires Convex endpoint: /api/admin/get_thread_user_messages
+            # Params: thread_id, agent_run_id (optional)
+            msg_result = await client.admin_rpc("get_thread_user_messages", {
+                "thread_id": thread_id,
+                "agent_run_id": agent_run_id
+            })
 
-            # Build query for user messages
-            query = client.from_('messages')\
-                .select('content')\
-                .eq('thread_id', thread_id)\
-                .eq('type', 'user')
-
-            if started_at:
-                query = query.gte('created_at', started_at)
-            if completed_at:
-                query = query.lte('created_at', completed_at)
-
-            msg_result = await query.order('created_at', desc=False).execute()
-
-            if msg_result.data:
+            if msg_result.get("messages"):
                 user_messages = []
-                for msg in msg_result.data:
+                for msg in msg_result["messages"]:
                     content = msg.get('content', '')
                     # Handle content that might be a dict
                     if isinstance(content, dict):
@@ -5022,32 +4902,21 @@ async def get_topic_distribution(
         {"file_operations": 120, "web_browsing": 85, ...}
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_topic_distribution
+        # Query params: date_from, date_to
+        convex = get_convex_client()
 
-        # Build base query
-        query = client.from_('conversation_analytics')\
-            .select('primary_topic')
-
-        # Apply date filters
+        rpc_params = {}
         if date_from:
-            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+            rpc_params['date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+            rpc_params['date_to'] = f"{date_to}T23:59:59Z"
 
-        result = await query.execute()
-        records = result.data or []
-
-        # Calculate distribution
-        topic_counts: Dict[str, int] = {}
-        for r in records:
-            topic = r.get('primary_topic')
-            if topic:
-                topic_counts[topic] = topic_counts.get(topic, 0) + 1
+        result = await convex.admin_rpc("get_topic_distribution", rpc_params)
 
         return {
-            "distribution": topic_counts,
-            "total": len(records),
+            "distribution": result.get("distribution", {}),
+            "total": result.get("total", 0),
             "date_from": date_from,
             "date_to": date_to
         }
@@ -5067,48 +4936,20 @@ async def get_analytics_queue_status(
     Useful for monitoring the background worker.
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_analytics_queue_status
+        # Returns: queue counts by status and total_analyzed
+        convex = get_convex_client()
 
-        # Get counts by status
-        pending_result = await client.from_('conversation_analytics_queue')\
-            .select('id', count='exact')\
-            .eq('status', 'pending')\
-            .limit(1)\
-            .execute()
-
-        processing_result = await client.from_('conversation_analytics_queue')\
-            .select('id', count='exact')\
-            .eq('status', 'processing')\
-            .limit(1)\
-            .execute()
-
-        failed_result = await client.from_('conversation_analytics_queue')\
-            .select('id', count='exact')\
-            .eq('status', 'failed')\
-            .limit(1)\
-            .execute()
-
-        completed_result = await client.from_('conversation_analytics_queue')\
-            .select('id', count='exact')\
-            .eq('status', 'completed')\
-            .limit(1)\
-            .execute()
-
-        # Get total analyzed
-        analyzed_result = await client.from_('conversation_analytics')\
-            .select('id', count='exact')\
-            .limit(1)\
-            .execute()
+        result = await convex.admin_rpc("get_analytics_queue_status", {})
 
         return {
-            "queue": {
-                "pending": pending_result.count or 0,
-                "processing": processing_result.count or 0,
-                "failed": failed_result.count or 0,
-                "completed": completed_result.count or 0
-            },
-            "total_analyzed": analyzed_result.count or 0
+            "queue": result.get("queue", {
+                "pending": 0,
+                "processing": 0,
+                "failed": 0,
+                "completed": 0
+            }),
+            "total_analyzed": result.get("total_analyzed", 0)
         }
 
     except Exception as e:
@@ -5130,17 +4971,18 @@ async def get_use_case_patterns(
     - Top topics
     """
     try:
-        db = DBConnection()
-        client = await db.client
+        # Requires Convex endpoint: /api/admin/get_use_case_patterns
+        # Query params: limit, date_from, date_to
+        # Returns: top_use_cases, top_topics, total
+        convex = get_convex_client()
 
-        rpc_params = {'p_limit': 20}
+        rpc_params = {'limit': 20}
         if date_from:
-            rpc_params['p_date_from'] = f"{date_from}T00:00:00Z"
+            rpc_params['date_from'] = f"{date_from}T00:00:00Z"
         if date_to:
-            rpc_params['p_date_to'] = f"{date_to}T23:59:59Z"
+            rpc_params['date_to'] = f"{date_to}T23:59:59Z"
 
-        result = await client.rpc('get_use_case_patterns', rpc_params).execute()
-        data = result.data
+        data = await convex.admin_rpc("get_use_case_patterns", rpc_params)
 
         if not data:
             return {

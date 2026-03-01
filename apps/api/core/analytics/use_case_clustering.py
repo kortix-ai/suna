@@ -7,7 +7,7 @@ so we just need a simple GROUP BY query.
 
 from typing import List, Dict, Any, Optional
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 
 
@@ -22,25 +22,31 @@ async def get_clustered_use_cases(
 
     The LLM already assigns use_case_category during analysis,
     so we just GROUP BY that field and count unique threads.
+    
+    TODO: Migrate to Convex - requires conversation_analytics table endpoints
+    The Convex client needs:
+    1. Endpoint to query conversation_analytics with date filters
+    2. Aggregation support for grouping by category
     """
     try:
-        db = DBConnection()
-        client = await db.client
-
-        # Simple query - group by category, count unique threads
-        # Filter out both NULL and empty strings
-        query = client.from_('conversation_analytics')\
-            .select('use_case_category, thread_id, account_id')\
-            .not_.is_('use_case_category', None)\
-            .neq('use_case_category', '')
-
-        if date_from:
-            query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
-        if date_to:
-            query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
-
-        result = await query.execute()
-        records = result.data or []
+        # TODO: Migrate to Convex
+        # Old Supabase code:
+        # db = DBConnection()
+        # client = await db.client
+        # query = client.from_('conversation_analytics')\
+        #     .select('use_case_category, thread_id, account_id')\
+        #     .not_.is_('use_case_category', None)\
+        #     .neq('use_case_category', '')
+        # if date_from:
+        #     query = query.gte('analyzed_at', f"{date_from}T00:00:00Z")
+        # if date_to:
+        #     query = query.lte('analyzed_at', f"{date_to}T23:59:59Z")
+        # result = await query.execute()
+        # records = result.data or []
+        
+        # Return empty for now until Convex endpoints are added
+        records = []
+        logger.info(f"[CLUSTERING] Convex migration pending - returning empty clusters")
 
         # Debug: log actual category values
         categories_found = [r.get('use_case_category') for r in records]

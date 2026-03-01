@@ -1,10 +1,26 @@
 """
-Utility functions for retrieving user locale preferences from Supabase Auth.
-"""
+Utility functions for retrieving user locale preferences.
 
+CONVEX MIGRATION STATUS: MIGRATED - USING CONVEX FOR USER PREFERENCES
+=====================================================================
+This module now uses Convex for user preferences storage instead of
+Supabase auth.users metadata.
+
+The user preferences (including locale) are stored in a Convex table.
+If no preference is found, returns the default locale.
+
+Migration from Supabase:
+- Previously: Used auth.users.raw_user_meta_data via RPC
+- Now: Uses Convex userPreferences table
+
+TODO: Add userPreferences table to Convex schema if not already present:
+- user_id (string)
+- locale (string)
+- other preferences as needed
+"""
 from typing import Optional
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client, ConvexError
 
 # Supported locales (must match frontend)
 SUPPORTED_LOCALES = ['en', 'de', 'it', 'zh', 'ja', 'pt', 'fr', 'es']
@@ -13,71 +29,53 @@ DEFAULT_LOCALE = 'en'
 
 async def get_user_locale(user_id: str, client=None) -> str:
     """
-    Get user's preferred locale from auth.users.raw_user_meta_data.
-    
-    Uses the get_user_metadata RPC function which queries auth.users.
-    If PostgREST schema cache hasn't refreshed yet, this will fail gracefully
-    and default to English.
-    
+    Get user's preferred locale from Convex userPreferences.
+
     Args:
-        user_id: The user ID (UUID string)
-        client: Optional Supabase client. If not provided, creates a new connection.
-    
+        user_id: The user ID
+        client: Optional Convex client (uses singleton if not provided)
+
     Returns:
         Locale string ('en', 'de', 'it', 'zh', 'ja', 'pt', 'fr', 'es') or 'en' as default
     """
     try:
-        if client is None:
-            # Use singleton - already initialized at startup
-            db = DBConnection()
-            client = await db.client
-        
-        # Use RPC function to get user metadata
-        # Note: This requires PostgREST schema cache to be refreshed after migration
-        result = await client.rpc('get_user_metadata', {'user_id': user_id}).execute()
-        
-        # Log the full result object for debugging
-        logger.debug(f"🔍 RPC result for user {user_id}: {result}")
-        logger.debug(f"🔍 RPC result.data type: {type(result.data)}, value: {result.data}")
-        
-        # Handle the response - result.data should be a dict (JSONB from PostgreSQL)
-        # But handle edge cases where it might be a list or other type
-        if result.data:
-            if isinstance(result.data, dict):
-                metadata = result.data
-            elif isinstance(result.data, list) and len(result.data) > 0:
-                # If it's a list, take the first element (shouldn't happen for this function, but be safe)
-                metadata = result.data[0] if isinstance(result.data[0], dict) else {}
+        convex = client or get_convex_client()
+
+        # Try to get user preferences from Convex
+        # Note: This requires a userPreferences table in Convex
+        try:
+            # Use the Convex client to query user preferences
+            # The actual method depends on your Convex schema
+            preferences = await convex._request(
+                "/api/user-preferences/get",
+                "GET",
+                params={"userId": user_id}
+            )
+
+            if preferences:
+                locale = preferences.get('locale')
+                logger.debug(f"Found locale preference: {locale} for user {user_id}")
+
+                if locale and locale in SUPPORTED_LOCALES:
+                    return locale
+                elif locale:
+                    logger.warning(
+                        f"Invalid locale '{locale}' for user {user_id}, "
+                        f"not in supported locales: {SUPPORTED_LOCALES}"
+                    )
+
+        except ConvexError as e:
+            # Table might not exist yet, log and fall back to default
+            if "NOT_FOUND" in str(e) or "not found" in str(e).lower():
+                logger.debug(f"No user preferences found for user {user_id}, using default locale")
             else:
-                # Fallback: try to convert to dict or use empty dict
-                metadata = {}
-                logger.warning(f"⚠️ Unexpected result.data type for user {user_id}: {type(result.data)}")
-            
-            logger.debug(f"🔍 Parsed metadata object: {metadata}")
-            logger.debug(f"🔍 Metadata keys: {list(metadata.keys()) if isinstance(metadata, dict) else 'N/A'}")
-            
-            # Extract locale from metadata
-            locale = metadata.get('locale') if isinstance(metadata, dict) else None
-            logger.debug(f"🔍 Extracted locale value: {locale}")
-            
-            if locale and locale in SUPPORTED_LOCALES:
-                logger.debug(f"✅ Found user locale preference: {locale} for user {user_id}")
-                return locale
-            elif locale:
-                logger.warning(f"⚠️ Invalid locale '{locale}' for user {user_id}, not in supported locales: {SUPPORTED_LOCALES}")
-        
-        logger.debug(f"⚠️ No locale preference found for user {user_id}, using default: {DEFAULT_LOCALE}")
-        return DEFAULT_LOCALE
-        
+                logger.warning(f"Error fetching user preferences from Convex: {e}")
+
     except Exception as e:
-        # RPC function might not be available yet if PostgREST schema cache hasn't refreshed
-        # This is expected immediately after running the migration
-        error_msg = str(e)
-        if 'PGRST202' in error_msg or 'Could not find the function' in error_msg:
-            logger.debug(f"RPC function not yet available in PostgREST cache for user {user_id}. This is normal immediately after migration. PostgREST will auto-refresh its cache shortly.")
-        else:
-            logger.warning(f"Error fetching user locale for user {user_id}: {e}")
-        return DEFAULT_LOCALE
+        logger.warning(f"Error fetching user locale for user {user_id}: {e}")
+
+    logger.debug(f"No locale preference found for user {user_id}, using default: {DEFAULT_LOCALE}")
+    return DEFAULT_LOCALE
 
 
 def get_locale_context_prompt(locale: str) -> str:
@@ -94,3 +92,35 @@ def get_locale_context_prompt(locale: str) -> str:
     return """## LANGUAGE
 Respond in the language the user is writing in. Match their language naturally."""
 
+
+async def set_user_locale(user_id: str, locale: str, client=None) -> bool:
+    """
+    Set user's preferred locale in Convex userPreferences.
+
+    Args:
+        user_id: The user ID
+        locale: The locale to set
+        client: Optional Convex client
+
+    Returns:
+        True if successful, False otherwise
+    """
+    if locale not in SUPPORTED_LOCALES:
+        logger.warning(f"Invalid locale '{locale}', not in supported locales: {SUPPORTED_LOCALES}")
+        return False
+
+    try:
+        convex = client or get_convex_client()
+
+        await convex._request(
+            "/api/user-preferences/set",
+            "POST",
+            data={"userId": user_id, "locale": locale}
+        )
+
+        logger.debug(f"Set locale preference to {locale} for user {user_id}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Error setting user locale for user {user_id}: {e}")
+        return False

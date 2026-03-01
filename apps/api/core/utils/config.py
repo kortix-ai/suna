@@ -315,14 +315,15 @@ class Configuration:
     
     # AWS Bedrock authentication
     AWS_BEARER_TOKEN_BEDROCK: Optional[str] = None
-    
-    # Supabase configuration
-    SUPABASE_URL: str
-    SUPABASE_ANON_KEY: str
-    SUPABASE_SERVICE_ROLE_KEY: str
-    SUPABASE_JWT_SECRET: str
 
-    # Convex configuration (alternative to Supabase for data layer)
+    # Supabase configuration (DEPRECATED - migrated to Convex)
+    # These fields are kept for backward compatibility but are optional
+    SUPABASE_URL: Optional[str] = None
+    SUPABASE_ANON_KEY: Optional[str] = None
+    SUPABASE_SERVICE_ROLE_KEY: Optional[str] = None
+    SUPABASE_JWT_SECRET: Optional[str] = None
+
+    # Convex configuration (primary data layer - migrated from Supabase)
     CONVEX_URL: Optional[str] = None
     CONVEX_API_KEY: Optional[str] = None
 

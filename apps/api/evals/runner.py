@@ -168,24 +168,18 @@ class AgentEvalRunner:
             # Create project if not provided (needed for sandbox tools like web_search)
             project_id = self.project_id
             if not project_id:
-                from core.services.supabase import DBConnection
+                from core.services.convex_client import get_convex_client
                 from datetime import timezone
                 import uuid
-                
-                db = DBConnection()
-                client = await db.client
-                
+
+                convex = get_convex_client()
+
                 project_id = str(uuid.uuid4())
                 placeholder_name = f"[Eval] {case.input[:30]}..." if len(case.input) > 30 else f"[Eval] {case.input}"
-                
-                await client.table('projects').insert({
-                    "project_id": project_id,
-                    "account_id": account_id,
-                    "name": placeholder_name,
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }).execute()
-                
-                logger.info(f"✅ Created eval project: {project_id}")
+
+                # TODO: Convex client does not yet support projects table operations
+                # Need to add projects insert to Convex backend
+                logger.warning(f"Projects table operations not yet migrated to Convex - using placeholder project_id: {project_id}")
             
             # Store for use in run_agent
             self._current_project_id = project_id
@@ -195,25 +189,23 @@ class AgentEvalRunner:
             
             # Create a new thread for this test case (linked to project)
             try:
-                from core.services.supabase import DBConnection
+                from core.services.convex_client import get_convex_client
                 import uuid
-                
-                db = DBConnection()
-                client = await db.client
-                
+
+                convex = get_convex_client()
+
                 thread_id = str(uuid.uuid4())
-                await client.table('threads').insert({
-                    "thread_id": thread_id,
-                    "project_id": project_id,
-                    "account_id": account_id,
-                    "name": "Eval Test",
-                    "created_at": datetime.now(timezone.utc).isoformat()
-                }).execute()
-                
-                logger.info(f"✅ Created eval thread: {thread_id} (project: {project_id})")
+                await convex.create_thread(
+                    thread_id=thread_id,
+                    account_id=account_id,
+                    project_id=project_id,
+                    metadata={"name": "Eval Test"}
+                )
+
+                logger.info(f"Created eval thread: {thread_id} (project: {project_id})")
             except Exception as e:
                 error = f"Thread creation failed: {e}"
-                logger.error(f"❌ Thread creation failed: {e}")
+                logger.error(f"Thread creation failed: {e}")
                 raise
             
             # Add user message
@@ -347,10 +339,9 @@ class AgentEvalRunner:
             
             # Get final conversation for analysis
             try:
-                # Query ALL messages from database to extract LLM usage metrics
-                client = await thread_manager.db.client
-                all_messages_result = await client.table('messages').select('*').eq('thread_id', thread_id).order('created_at').execute()
-                all_messages_db = all_messages_result.data if all_messages_result and all_messages_result.data else []
+                # Query ALL messages from Convex to extract LLM usage metrics
+                convex = get_convex_client()
+                all_messages_db = await convex.get_messages(thread_id=thread_id)
                 
                 # Extract usage from llm_response_end messages and tools from tool_call messages
                 for msg in all_messages_db:
@@ -734,19 +725,19 @@ def create_agent_task(
         # This prevents "Event loop is closed" errors when running multiple tests
         def reset_singletons():
             """Reset all singleton instances that hold async state."""
-            try:
-                from core.services.supabase import DBConnection
-                DBConnection._instance = None
-            except Exception:
-                pass
-            
+            # MIGRATED: Supabase removed - Convex client doesn't need reset
+            # The Convex HTTP client is stateless and doesn't maintain singleton state
+            pass
+            # except Exception:
+            #     pass
+
             try:
                 from core.services.redis import _redis_client
                 import core.services.redis as redis_module
                 redis_module._redis_client = None
             except Exception:
                 pass
-            
+
             try:
                 from core.utils.db_helpers import _db_instance
                 import core.utils.db_helpers as db_helpers_module

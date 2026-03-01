@@ -1660,25 +1660,71 @@ async def get_project_thread_ids(project_id: str) -> List[str]:
 
 async def delete_project_and_threads(project_id: str) -> bool:
     from core.services.db import execute_mutate
-    
+
     await execute_mutate(
         "DELETE FROM agent_runs WHERE thread_id IN (SELECT thread_id FROM threads WHERE project_id = :project_id)",
         {"project_id": project_id}
     )
-    
+
     await execute_mutate(
         "DELETE FROM messages WHERE thread_id IN (SELECT thread_id FROM threads WHERE project_id = :project_id)",
         {"project_id": project_id}
     )
-    
+
     await execute_mutate(
         "DELETE FROM threads WHERE project_id = :project_id",
         {"project_id": project_id}
     )
-    
+
     result = await execute_mutate(
         "DELETE FROM projects WHERE project_id = :project_id RETURNING project_id",
         {"project_id": project_id}
     )
-    
+
     return len(result) > 0 if result else False
+
+
+# ===========================================
+# CONVEX MIGRATION: Added for Phase 1 migration
+# ===========================================
+
+async def delete_agent_runs_for_thread(thread_id: str) -> int:
+    """Delete all agent runs for a specific thread.
+
+    MIGRATED: This function replaces direct Supabase calls in api.py delete_project.
+    """
+    from core.services.db import execute_mutate
+
+    result = await execute_mutate(
+        "DELETE FROM agent_runs WHERE thread_id = :thread_id RETURNING id",
+        {"thread_id": thread_id}
+    )
+    return len(result) if result else 0
+
+
+async def delete_messages_for_thread(thread_id: str) -> int:
+    """Delete all messages for a specific thread.
+
+    MIGRATED: This function replaces direct Supabase calls in api.py delete_project.
+    """
+    from core.services.db import execute_mutate
+
+    result = await execute_mutate(
+        "DELETE FROM messages WHERE thread_id = :thread_id RETURNING message_id",
+        {"thread_id": thread_id}
+    )
+    return len(result) if result else 0
+
+
+async def delete_threads_by_project(project_id: str) -> int:
+    """Delete all threads for a specific project.
+
+    MIGRATED: This function replaces direct Supabase calls in api.py delete_project.
+    """
+    from core.services.db import execute_mutate
+
+    result = await execute_mutate(
+        "DELETE FROM threads WHERE project_id = :project_id RETURNING thread_id",
+        {"project_id": project_id}
+    )
+    return len(result) if result else 0

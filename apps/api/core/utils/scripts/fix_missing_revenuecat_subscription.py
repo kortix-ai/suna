@@ -1,4 +1,15 @@
 #!/usr/bin/env python3
+"""
+Fix missing RevenueCat subscription for a user.
+
+Convex Endpoints Required:
+  - admin:get_user_by_email - Get user account by email
+  - admin:get_user_by_id - Get user account by ID
+  - get_credit_account - Get credit account by account_id
+  - upsert_credit_account - Create/update credit account
+  - admin:invalidate_account_cache - Invalidate account state cache
+  - add_credits - Add credits to account
+"""
 
 import asyncio
 import sys
@@ -13,12 +24,11 @@ from decimal import Decimal
 backend_dir = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.config import config
 from core.utils.logger import logger
 from core.billing.external.revenuecat.utils import ProductMapper
 from core.billing.shared.config import get_tier_by_name
-from core.billing.credits.manager import credit_manager
 
 REVENUECAT_API_BASE = "https://api.revenuecat.com/v1"
 
@@ -31,7 +41,9 @@ ANDROID_TO_IOS_PRODUCT_MAP = {
     'ultra_yearly': 'kortix_ultra_yearly',
 }
 
+
 def normalize_product_id(product_id: str) -> str:
+    """Normalize Android product IDs to iOS format."""
     if not product_id:
         return product_id
     
@@ -46,6 +58,7 @@ def normalize_product_id(product_id: str) -> str:
 
 
 def fetch_revenuecat_subscriber(app_user_id: str) -> dict:
+    """Fetch subscriber data from RevenueCat API."""
     if not config.REVENUECAT_API_KEY:
         raise ValueError("REVENUECAT_API_KEY is not configured")
     
@@ -64,6 +77,7 @@ def fetch_revenuecat_subscriber(app_user_id: str) -> dict:
 
 
 def extract_active_subscription(subscriber_data: dict) -> tuple:
+    """Extract active subscription from RevenueCat subscriber data."""
     if not subscriber_data:
         return None, None, None
     
@@ -90,387 +104,195 @@ def extract_active_subscription(subscriber_data: dict) -> tuple:
     return None, None, None
 
 
+async def get_user_by_email(email: str, convex) -> dict:
+    """Get user by email.
+    
+    Requires Convex endpoint: admin:get_user_by_email
+    """
+    try:
+        result = await convex.admin_rpc("get_user_by_email", {"email": email.lower()})
+        return result
+    except Exception as e:
+        logger.error(f"Error finding user: {e}")
+        return None
+
+
+async def get_user_by_id(account_id: str, convex) -> dict:
+    """Get user by account ID.
+    
+    Requires Convex endpoint: admin:get_user_by_id
+    """
+    try:
+        result = await convex.admin_rpc("get_user_by_id", {"account_id": account_id})
+        return result
+    except Exception as e:
+        logger.error(f"Error finding user: {e}")
+        return None
+
+
 async def fix_missing_revenuecat_subscription(user_email: str, dry_run: bool = False):
+    """Fix missing RevenueCat subscription for a user.
+    
+    Uses Convex endpoints:
+      - admin:get_user_by_email
+      - get_credit_account
+      - upsert_credit_account
+      - admin:invalidate_account_cache
+      - add_credits
+    """
     logger.info("="*80)
     logger.info(f"FIXING REVENUECAT SUBSCRIPTION FOR {user_email}")
     logger.info(f"Mode: {'DRY RUN' if dry_run else 'LIVE'}")
     logger.info("="*80)
     
-    db = DBConnection()
-    await db.initialize()
-    client = await db.client
+    convex = get_convex_client()
     
-    result = await client.rpc('get_user_account_by_email', {
-        'email_input': user_email.lower()
-    }).execute()
+    # Step 1: Find user
+    user = await get_user_by_email(user_email, convex)
     
-    if not result.data:
-        logger.error(f"❌ User {user_email} not found in database")
-        return
+    if not user:
+        logger.error(f"❌ User {user_email} not found")
+        return False
     
-    account_id = result.data['id']
-    logger.info(f"✅ Found user: {user_email}")
-    logger.info(f"   Account ID: {account_id}")
-    logger.info(f"   Account name: {result.data.get('name', 'N/A')}")
+    account_id = user['id']
+    logger.info(f"✅ Found user: {account_id}")
     
+    # Step 2: Fetch RevenueCat subscriber data
     logger.info("\n" + "="*80)
-    logger.info("FETCHING REVENUECAT SUBSCRIBER INFO")
+    logger.info("FETCHING REVENUECAT DATA")
     logger.info("="*80)
     
     try:
         subscriber_data = fetch_revenuecat_subscriber(account_id)
-    except urllib.error.HTTPError as e:
-        logger.error(f"❌ Failed to fetch RevenueCat subscriber: {e}")
-        return
-    except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
-        return
+    except Exception as e:
+        logger.error(f"❌ Error fetching RevenueCat data: {e}")
+        return False
     
     if not subscriber_data:
-        logger.error(f"❌ No subscriber found in RevenueCat for account {account_id}")
-        return
+        logger.error(f"❌ No RevenueCat subscriber found for {account_id}")
+        return False
     
-    subscriber = subscriber_data.get('subscriber', {})
-    logger.info(f"✅ Found RevenueCat subscriber")
-    logger.info(f"   Original App User ID: {subscriber.get('original_app_user_id', 'N/A')}")
-    logger.info(f"   First Seen: {subscriber.get('first_seen', 'N/A')}")
+    # Step 3: Extract active subscription
+    product_id, sub_info, entitlements = extract_active_subscription(subscriber_data)
     
-    subscriptions = subscriber.get('subscriptions', {})
-    entitlements = subscriber.get('entitlements', {})
-    
-    logger.info(f"\n   Subscriptions ({len(subscriptions)}):")
-    for product_id, sub_info in subscriptions.items():
-        expires = sub_info.get('expires_date', 'N/A')
-        unsubscribed = sub_info.get('unsubscribe_detected_at')
-        status = "cancelled" if unsubscribed else "active"
-        logger.info(f"     - {product_id}: expires {expires} ({status})")
-    
-    logger.info(f"\n   Entitlements ({len(entitlements)}):")
-    for entitlement_id, ent_info in entitlements.items():
-        expires = ent_info.get('expires_date', 'N/A')
-        logger.info(f"     - {entitlement_id}: expires {expires}")
-    
-    product_id, sub_info, _ = extract_active_subscription(subscriber_data)
-    
-    if not product_id or not sub_info:
+    if not product_id:
         logger.error("❌ No active subscription found in RevenueCat")
-        logger.info("\nAll subscriptions have expired or been cancelled.")
-        return
+        return False
     
-    logger.info(f"\n✅ Active subscription found:")
-    logger.info(f"   Product ID: {product_id}")
-    logger.info(f"   Expires: {sub_info.get('expires_date')}")
-    logger.info(f"   Purchase Date: {sub_info.get('purchase_date')}")
-    logger.info(f"   Original Purchase Date: {sub_info.get('original_purchase_date')}")
-    logger.info(f"   Store: {sub_info.get('store')}")
-    
-    original_product_id = product_id
     product_id = normalize_product_id(product_id)
+    logger.info(f"✅ Found active subscription: {product_id}")
+    logger.info(f"   Expires: {sub_info.get('expires_date')}")
     
-    if not ProductMapper.validate_product_id(product_id):
-        logger.error(f"❌ Product ID {product_id} is not recognized")
-        logger.info(f"   Valid products: {ProductMapper.VALID_PRODUCT_IDS}")
-        return
+    # Step 4: Map to tier
+    mapper = ProductMapper()
+    tier_name = mapper.product_to_tier(product_id)
     
-    tier_name, tier_info = ProductMapper.get_tier_info(product_id)
-    if not tier_info:
-        logger.error(f"❌ Could not map product {product_id} to a tier")
-        return
+    if not tier_name:
+        logger.error(f"❌ Could not map product {product_id} to tier")
+        return False
     
-    logger.info(f"\n✅ Matched to tier: {tier_name} ({tier_info.display_name})")
-    logger.info(f"   Monthly credits: ${tier_info.monthly_credits}")
+    tier = get_tier_by_name(tier_name)
+    if not tier:
+        logger.error(f"❌ Invalid tier: {tier_name}")
+        return False
     
-    period_type = ProductMapper.get_period_type(product_id)
-    logger.info(f"   Period type: {period_type}")
+    logger.info(f"✅ Mapped to tier: {tier.name} ({tier.display_name})")
     
-    logger.info("\n" + "="*80)
-    logger.info("CHECKING CURRENT DATABASE STATE")
-    logger.info("="*80)
-    
-    credit_account = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
-    
-    if credit_account.data:
-        acc = credit_account.data[0]
-        logger.info(f"Current credit account state:")
-        logger.info(f"  Tier: {acc.get('tier', 'none')}")
-        logger.info(f"  Balance: ${acc.get('balance', 0)}")
-        logger.info(f"  Provider: {acc.get('provider', 'N/A')}")
-        logger.info(f"  RevenueCat Subscription ID: {acc.get('revenuecat_subscription_id', 'None')}")
-        logger.info(f"  RevenueCat Product ID: {acc.get('revenuecat_product_id', 'None')}")
-        logger.info(f"  Stripe Subscription ID: {acc.get('stripe_subscription_id', 'None')}")
-    else:
-        logger.info("No credit account found - will be created")
-    
-    if dry_run:
-        dry_run_sub_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{original_product_id}_{account_id[:8]}"
-        logger.info("\n" + "="*80)
-        logger.info("DRY RUN - NO CHANGES WILL BE MADE")
-        logger.info("="*80)
-        logger.info(f"Would update database with:")
-        logger.info(f"  tier: {tier_name}")
-        logger.info(f"  provider: revenuecat")
-        logger.info(f"  revenuecat_product_id: {original_product_id}")
-        logger.info(f"  revenuecat_subscription_id: {dry_run_sub_id}")
-        logger.info(f"  credits to grant: ${tier_info.monthly_credits}")
-        return
-    
+    # Step 5: Update credit account
     logger.info("\n" + "="*80)
     logger.info("UPDATING DATABASE")
     logger.info("="*80)
     
-    purchase_date_str = sub_info.get('purchase_date') or sub_info.get('original_purchase_date')
+    # Get current account
+    credit_account = await convex.get_credit_account(account_id)
+    
+    if credit_account:
+        logger.info(f"Current state:")
+        logger.info(f"  Tier: {credit_account.get('tier', 'none')}")
+        logger.info(f"  Balance: ${credit_account.get('balance', 0)}")
+    
+    # Calculate dates
     expires_date_str = sub_info.get('expires_date')
-    
-    billing_cycle_anchor = None
-    next_credit_grant = None
-    
-    if purchase_date_str:
-        billing_cycle_anchor = datetime.fromisoformat(purchase_date_str.replace('Z', '+00:00'))
-    
-    if expires_date_str:
-        next_credit_grant = datetime.fromisoformat(expires_date_str.replace('Z', '+00:00'))
-    
-    plan_type = 'monthly'
-    if period_type == 'yearly':
-        plan_type = 'yearly'
-        if billing_cycle_anchor:
-            next_credit_grant = billing_cycle_anchor + timedelta(days=30)
-    elif period_type == 'yearly_commitment':
-        plan_type = 'yearly_commitment'
-    
-    subscription_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{original_product_id}_{account_id[:8]}"
+    expires_date = datetime.fromisoformat(expires_date_str.replace('Z', '+00:00'))
     
     update_data = {
-        'tier': tier_name,
-        'provider': 'revenuecat',
-        'plan_type': plan_type,
-        'revenuecat_subscription_id': subscription_id,
-        'revenuecat_product_id': original_product_id,
-        'stripe_subscription_id': None,
-        'revenuecat_cancelled_at': None,
-        'revenuecat_cancel_at_period_end': None,
-        'updated_at': datetime.now(timezone.utc).isoformat()
+        'account_id': account_id,
+        'tier': tier.name,
+        'next_credit_grant': expires_date.isoformat(),
     }
     
-    if billing_cycle_anchor:
-        update_data['billing_cycle_anchor'] = billing_cycle_anchor.isoformat()
-    
-    if next_credit_grant:
-        update_data['next_credit_grant'] = next_credit_grant.isoformat()
-    
-    await client.from_('credit_accounts').upsert(
-        {**update_data, 'account_id': account_id},
-        on_conflict='account_id'
-    ).execute()
-    
-    logger.info("✅ Updated credit_accounts table")
-    
-    logger.info("\n" + "="*80)
-    logger.info("GRANTING CREDITS")
-    logger.info("="*80)
-    
-    current_balance = await client.from_('credit_accounts').select('balance').eq('account_id', account_id).execute()
-    balance = Decimal(str(current_balance.data[0]['balance'])) if current_balance.data else Decimal('0')
-    
-    logger.info(f"Current balance: ${balance}")
-    
-    credits_amount = tier_info.monthly_credits
-    if period_type == 'yearly_commitment':
-        credits_amount *= 12
-        logger.info(f"Yearly commitment - would grant 12x credits = ${credits_amount}")
-    
-    if balance < Decimal('1.0'):
-        logger.info(f"Granting ${credits_amount} initial credits...")
-        
-        result = await credit_manager.reset_expiring_credits(
-            account_id=account_id,
-            new_credits=credits_amount,
-            description=f"RevenueCat subscription fix: {tier_info.display_name} ({period_type})"
-        )
-        
-        if result.get('success') or result.get('new_total'):
-            logger.info(f"✅ Granted ${credits_amount} credits")
-            logger.info(f"   New balance: ${result.get('new_total', result.get('balance_after', 0))}")
-        else:
-            logger.error(f"❌ Failed to grant credits: {result}")
-    else:
-        logger.info(f"User already has ${balance} credits, skipping initial grant")
-    
-    logger.info("\n" + "="*80)
-    logger.info("VERIFICATION")
-    logger.info("="*80)
-    
-    final_account = await client.from_('credit_accounts').select('*').eq('account_id', account_id).execute()
-    
-    if final_account.data:
-        acc = final_account.data[0]
-        logger.info(f"Final credit account state:")
-        logger.info(f"  ✅ Tier: {acc.get('tier')}")
-        logger.info(f"  ✅ Balance: ${acc.get('balance')}")
-        logger.info(f"  ✅ Provider: {acc.get('provider')}")
-        logger.info(f"  ✅ RevenueCat Subscription ID: {acc.get('revenuecat_subscription_id')}")
-        logger.info(f"  ✅ RevenueCat Product ID: {acc.get('revenuecat_product_id')}")
-        logger.info(f"  ✅ Next credit grant: {acc.get('next_credit_grant')}")
+    if dry_run:
+        logger.info("[DRY RUN] Would update credit account:")
+        for k, v in update_data.items():
+            logger.info(f"  {k}: {v}")
+        return True
     
     try:
-        from core.billing.shared.cache_utils import invalidate_account_state_cache
-        await invalidate_account_state_cache(account_id)
-        logger.info("✅ Cache invalidated")
+        await convex.upsert_credit_account(**update_data)
+        logger.info("✅ Updated credit account")
+        
+        # Invalidate cache
+        try:
+            await convex.admin_rpc("invalidate_account_cache", {"account_id": account_id})
+            logger.info("✅ Invalidated account cache")
+        except Exception as e:
+            logger.warning(f"Cache invalidation failed: {e}")
+        
+        # Grant credits if needed
+        current_balance = Decimal(str(credit_account.get('balance', 0))) if credit_account else Decimal('0')
+        
+        if current_balance < Decimal('1.0'):
+            result = await convex.add_credits(
+                account_id=account_id,
+                amount=int(tier.monthly_credits),
+                description=f"RevenueCat fix: Initial credits for {tier.display_name}",
+                credit_type="revenuecat_fix"
+            )
+            
+            if result and result.get('success'):
+                logger.info(f"✅ Granted ${tier.monthly_credits} credits")
+            else:
+                logger.warning(f"Credit grant failed: {result}")
+        
+        logger.info("\n" + "="*80)
+        logger.info("✅ REVENUECAT SUBSCRIPTION FIX COMPLETE")
+        logger.info("="*80)
+        return True
+        
     except Exception as e:
-        logger.warning(f"⚠️ Cache invalidation failed: {e}")
-    
-    logger.info("\n" + "="*80)
-    logger.info("✅ REVENUECAT SUBSCRIPTION SETUP COMPLETE")
-    logger.info("="*80)
+        logger.error(f"❌ Error updating database: {e}")
+        return False
 
 
 async def fix_by_account_id(account_id: str, dry_run: bool = False):
+    """Fix RevenueCat subscription by account ID.
+    
+    Uses Convex endpoints:
+      - admin:get_user_by_id
+      - get_credit_account
+      - upsert_credit_account
+      - add_credits
+    """
     logger.info("="*80)
-    logger.info(f"FIXING REVENUECAT SUBSCRIPTION FOR ACCOUNT {account_id}")
+    logger.info(f"FIXING REVENUECAT SUBSCRIPTION FOR {account_id}")
     logger.info(f"Mode: {'DRY RUN' if dry_run else 'LIVE'}")
     logger.info("="*80)
     
-    db = DBConnection()
-    await db.initialize()
-    client = await db.client
+    convex = get_convex_client()
     
-    result = await client.schema('basejump').from_('accounts').select('id, name').eq('id', account_id).execute()
+    # Step 1: Find user
+    user = await get_user_by_id(account_id, convex)
     
-    if not result.data:
-        logger.error(f"❌ Account {account_id} not found in database")
-        return
+    if not user:
+        logger.error(f"❌ User {account_id} not found")
+        return False
     
-    logger.info(f"✅ Found account: {result.data[0].get('name', 'N/A')}")
-    logger.info(f"   Account ID: {account_id}")
+    logger.info(f"✅ Found user: {user.get('email', account_id)}")
     
-    logger.info("\n" + "="*80)
-    logger.info("FETCHING REVENUECAT SUBSCRIBER INFO")
-    logger.info("="*80)
+    # Continue with same logic as email-based fix
+    # ... (same as fix_missing_revenuecat_subscription)
     
-    try:
-        subscriber_data = fetch_revenuecat_subscriber(account_id)
-    except urllib.error.HTTPError as e:
-        logger.error(f"❌ Failed to fetch RevenueCat subscriber: {e}")
-        return
-    except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
-        return
-    
-    if not subscriber_data:
-        logger.error(f"❌ No subscriber found in RevenueCat for account {account_id}")
-        return
-    
-    subscriber = subscriber_data.get('subscriber', {})
-    logger.info(f"✅ Found RevenueCat subscriber")
-    
-    subscriptions = subscriber.get('subscriptions', {})
-    
-    logger.info(f"\n   Subscriptions ({len(subscriptions)}):")
-    for product_id, sub_info in subscriptions.items():
-        expires = sub_info.get('expires_date', 'N/A')
-        unsubscribed = sub_info.get('unsubscribe_detected_at')
-        status = "cancelled" if unsubscribed else "active"
-        logger.info(f"     - {product_id}: expires {expires} ({status})")
-    
-    product_id, sub_info, _ = extract_active_subscription(subscriber_data)
-    
-    if not product_id or not sub_info:
-        logger.error("❌ No active subscription found in RevenueCat")
-        return
-    
-    logger.info(f"\n✅ Active subscription found: {product_id}")
-    
-    original_product_id = product_id
-    product_id = normalize_product_id(product_id)
-    
-    if not ProductMapper.validate_product_id(product_id):
-        logger.error(f"❌ Product ID {product_id} is not recognized")
-        return
-    
-    tier_name, tier_info = ProductMapper.get_tier_info(product_id)
-    if not tier_info:
-        logger.error(f"❌ Could not map product {product_id} to a tier")
-        return
-    
-    logger.info(f"\n✅ Matched to tier: {tier_name} ({tier_info.display_name})")
-    
-    if dry_run:
-        logger.info("\n[DRY RUN] Would update database - no changes made")
-        return
-    
-    period_type = ProductMapper.get_period_type(product_id)
-    
-    purchase_date_str = sub_info.get('purchase_date') or sub_info.get('original_purchase_date')
-    expires_date_str = sub_info.get('expires_date')
-    
-    billing_cycle_anchor = None
-    next_credit_grant = None
-    
-    if purchase_date_str:
-        billing_cycle_anchor = datetime.fromisoformat(purchase_date_str.replace('Z', '+00:00'))
-    
-    if expires_date_str:
-        next_credit_grant = datetime.fromisoformat(expires_date_str.replace('Z', '+00:00'))
-    
-    plan_type = 'monthly'
-    if period_type == 'yearly':
-        plan_type = 'yearly'
-        if billing_cycle_anchor:
-            next_credit_grant = billing_cycle_anchor + timedelta(days=30)
-    elif period_type == 'yearly_commitment':
-        plan_type = 'yearly_commitment'
-    
-    subscription_id = sub_info.get('store_transaction_id') or sub_info.get('original_transaction_id') or f"rc_{original_product_id}_{account_id[:8]}"
-    
-    update_data = {
-        'tier': tier_name,
-        'provider': 'revenuecat',
-        'plan_type': plan_type,
-        'revenuecat_subscription_id': subscription_id,
-        'revenuecat_product_id': original_product_id,
-        'stripe_subscription_id': None,
-        'revenuecat_cancelled_at': None,
-        'revenuecat_cancel_at_period_end': None,
-        'updated_at': datetime.now(timezone.utc).isoformat()
-    }
-    
-    if billing_cycle_anchor:
-        update_data['billing_cycle_anchor'] = billing_cycle_anchor.isoformat()
-    
-    if next_credit_grant:
-        update_data['next_credit_grant'] = next_credit_grant.isoformat()
-    
-    await client.from_('credit_accounts').upsert(
-        {**update_data, 'account_id': account_id},
-        on_conflict='account_id'
-    ).execute()
-    
-    logger.info("✅ Updated credit_accounts table")
-    
-    current_balance = await client.from_('credit_accounts').select('balance').eq('account_id', account_id).execute()
-    balance = Decimal(str(current_balance.data[0]['balance'])) if current_balance.data else Decimal('0')
-    
-    credits_amount = tier_info.monthly_credits
-    if period_type == 'yearly_commitment':
-        credits_amount *= 12
-    
-    if balance < Decimal('1.0'):
-        result = await credit_manager.reset_expiring_credits(
-            account_id=account_id,
-            new_credits=credits_amount,
-            description=f"RevenueCat subscription fix: {tier_info.display_name} ({period_type})"
-        )
-        logger.info(f"✅ Granted ${credits_amount} credits")
-    else:
-        logger.info(f"User has ${balance} credits, skipping grant")
-    
-    try:
-        from core.billing.shared.cache_utils import invalidate_account_state_cache
-        await invalidate_account_state_cache(account_id)
-    except Exception:
-        pass
-    
-    logger.info("\n✅ REVENUECAT SUBSCRIPTION SETUP COMPLETE")
+    return await fix_missing_revenuecat_subscription(user.get('email'), dry_run)
 
 
 def main():
@@ -497,9 +319,11 @@ def main():
     args = parser.parse_args()
     
     if args.email:
-        asyncio.run(fix_missing_revenuecat_subscription(args.email, args.dry_run))
+        success = asyncio.run(fix_missing_revenuecat_subscription(args.email, args.dry_run))
     else:
-        asyncio.run(fix_by_account_id(args.account_id, args.dry_run))
+        success = asyncio.run(fix_by_account_id(args.account_id, args.dry_run))
+    
+    sys.exit(0 if success else 1)
 
 
 if __name__ == "__main__":

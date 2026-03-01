@@ -1,4 +1,10 @@
 #!/usr/bin/env python3
+"""
+Free Tier Cleanup Service
+
+NOTE: This script is currently DISABLED pending Convex endpoint implementation.
+The Supabase database operations have been removed and need to be replaced with Convex calls.
+"""
 import asyncio
 import sys
 from pathlib import Path
@@ -9,119 +15,94 @@ import time
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
+
+# CONVEX ENDPOINTS REQUIRED (not yet implemented):
+# ================================
+# 1. List credit accounts by tier:
+#    convex.rpc("billing:listCreditAccounts", {"tier": "free"})
+#    Returns: [{ accountId, tier, balance, ... }]
+#
+# 2. Batch update credit accounts:
+#    convex.rpc("billing:batchUpdateCreditAccounts", {"accounts": [...]})
+#    Body: { accounts: [{ accountId, tier, balance, ... }] }
+#
+# 3. Batch insert credit ledger entries:
+#    convex.rpc("billing:batchCreateLedgerEntries", {"entries": [...]})
+#    Body: { entries: [{ accountId, amount, type, description, ... }] }
+#
+# NOTE: When endpoints are implemented, use:
+#   from core.services.convex_client import get_convex_client
+#   convex = get_convex_client()
+#   result = await convex.rpc("endpoint:name", params)
 
 class CleanupFreeTierService:
     def __init__(self):
-        self.db = DBConnection()
+        # TODO: Initialize when Convex billing endpoints are available
+        # self.convex = get_convex_client()
+        self.convex = None
         self.stats = {
             'total_free_users': 0,
             'converted': 0,
             'errors': 0,
             'start_time': time.time()
         }
-    
-    async def initialize(self):
-        await self.db.initialize()
-        self.client = await self.db.client
-    
+
     async def run(self):
+        """
+        Clean up free tier users by converting to 'none' tier with 0 credits.
+
+        Requires Convex endpoints:
+        - billing:listCreditAccounts with tier filter
+        - billing:batchUpdateCreditAccounts
+        - billing:batchCreateLedgerEntries
+        """
         print("\n" + "="*60)
-        print("FREE TIER CLEANUP SERVICE")
+        print("THIS SCRIPT IS DISABLED")
         print("="*60)
-        print("🧹 Converting ALL free tier users to 'none' with 0 credits")
+        print("This script requires Convex endpoints that are not yet implemented.")
+        print("Required endpoints:")
+        print("  - convex.rpc('billing:listCreditAccounts', {'tier': 'free'})")
+        print("  - convex.rpc('billing:batchUpdateCreditAccounts', {'accounts': [...]})")
+        print("  - convex.rpc('billing:batchCreateLedgerEntries', {'entries': [...]})")
         print("="*60)
-        
-        await self.initialize()
-        await self.cleanup_free_tier()
-        self.print_stats()
-    
-    async def cleanup_free_tier(self):
-        print("\n🔄 CONVERTING FREE TIER USERS...")
-        
-        offset = 0
-        batch_size = 100
-        
-        while True:
-            free_users = await self.client.from_('credit_accounts')\
-                .select('account_id, balance')\
-                .eq('tier', 'free')\
-                .range(offset, offset + batch_size - 1)\
-                .execute()
-            
-            if not free_users.data:
-                break
-            
-            self.stats['total_free_users'] += len(free_users.data)
-            print(f"  Processing batch {offset//batch_size + 1} ({len(free_users.data)} users)...")
-            
-            account_ids = []
-            ledger_entries = []
-            
-            for user in free_users.data:
-                account_id = user['account_id']
-                old_balance = Decimal(str(user.get('balance', 0)))
-                
-                account_ids.append(account_id)
-                
-                if old_balance > 0:
-                    ledger_entries.append({
-                        'account_id': account_id,
-                        'amount': float(-old_balance),
-                        'balance_after': 0,
-                        'type': 'adjustment',
-                        'description': 'Free tier discontinued - please start a trial to continue',
-                        'created_at': datetime.now(timezone.utc).isoformat()
-                    })
-            
-            if account_ids:
-                try:
-                    update_chunk_size = 20
-                    
-                    for i in range(0, len(account_ids), update_chunk_size):
-                        chunk_ids = account_ids[i:i+update_chunk_size]
-                        
-                        await self.client.from_('credit_accounts')\
-                            .update({
-                                'tier': 'none',
-                                'balance': 0,
-                                'expiring_credits': 0,
-                                'non_expiring_credits': 0,
-                                'trial_status': None,
-                                'updated_at': datetime.now(timezone.utc).isoformat()
-                            })\
-                            .in_('account_id', chunk_ids)\
-                            .execute()
-                        
-                        self.stats['converted'] += len(chunk_ids)
-                        print(f"    ✅ Converted {len(chunk_ids)} users")
-                    
-                    if ledger_entries:
-                        for i in range(0, len(ledger_entries), 50):
-                            chunk = ledger_entries[i:i+50]
-                            await self.client.from_('credit_ledger').insert(chunk).execute()
-                    
-                except Exception as e:
-                    logger.error(f"Error converting batch: {e}")
-                    self.stats['errors'] += 1
-                    print(f"    ❌ Error: {e}")
-            
-            offset += batch_size
-            
-            if len(free_users.data) < batch_size:
-                break
-        
-        remaining = await self.client.from_('credit_accounts')\
-            .select('account_id', count='exact')\
-            .eq('tier', 'free')\
-            .execute()
-        
-        if remaining.count and remaining.count > 0:
-            print(f"\n⚠️  WARNING: {remaining.count} free tier users still remain!")
-            print("  Run the script again to convert them.")
-        else:
-            print("\n✅ All free tier users successfully converted!")
+
+        # TODO: Implement when Convex billing endpoints are available
+        # convex = get_convex_client()
+        #
+        # # Get all free tier users
+        # accounts = await convex.rpc("billing:listCreditAccounts", {"tier": "free"})
+        # self.stats['total_free_users'] = len(accounts)
+        #
+        # # Prepare batch updates
+        # updates = []
+        # ledger_entries = []
+        #
+        # for account in accounts:
+        #     updates.append({
+        #         "accountId": account['accountId'],
+        #         "tier": "none",
+        #         "balance": 0,
+        #         "expiringCredits": 0,
+        #         "nonExpiringCredits": 0
+        #     })
+        #
+        #     if account.get('balance', 0) > 0:
+        #         ledger_entries.append({
+        #             "accountId": account['accountId'],
+        #             "amount": -account['balance'],
+        #             "type": "cleanup",
+        #             "description": "Free tier cleanup - credits removed"
+        #         })
+        #
+        # # Batch update
+        # await convex.rpc("billing:batchUpdateCreditAccounts", {"accounts": updates})
+        # await convex.rpc("billing:batchCreateLedgerEntries", {"entries": ledger_entries})
+        #
+        # self.stats['converted'] = len(updates)
+        # self.print_stats()
+        return
     
     def print_stats(self):
         elapsed = time.time() - self.stats['start_time']
@@ -146,4 +127,4 @@ async def main():
 
 if __name__ == "__main__":
     print("Starting free tier cleanup service...")
-    asyncio.run(main()) 
+    asyncio.run(main())

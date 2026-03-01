@@ -17,7 +17,9 @@ from daytona_sdk import AsyncSandbox, SessionExecuteRequest
 from core.sandbox.sandbox import get_or_start_sandbox, delete_sandbox, create_sandbox, daytona
 from core.utils.logger import logger
 from core.utils.auth_utils import get_optional_user_id, verify_and_get_user_id_from_jwt, verify_sandbox_access, verify_sandbox_access_optional
-from core.services.supabase import DBConnection
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for data operations
+from core.services.convex_client import get_convex_client
 from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
 from core.utils.file_name_generator import rename_ugly_files, has_ugly_name
 
@@ -103,13 +105,18 @@ async def retry_with_backoff(
 
 # Initialize shared resources
 router = APIRouter(tags=["sandbox"])
-db = None
+db = None  # TODO: Remove after full Convex migration - kept for backward compatibility
 
 def initialize(_db: DBConnection):
-    """Initialize the sandbox API with resources from the main API."""
+    """Initialize the sandbox API with resources from the main API.
+    
+    MIGRATED: This function is kept for backward compatibility but the db 
+    connection is no longer used directly. Operations should use Convex client
+    via get_convex_client() for data operations.
+    """
     global db
     db = _db
-    logger.debug("Initialized sandbox API with database connection")
+    logger.debug("Initialized sandbox API with database connection (deprecated - use Convex client)")
 
 class FileInfo(BaseModel):
     """Model for file information"""
@@ -157,20 +164,11 @@ def normalize_path(path: str) -> str:
 
 
 
-async def get_sandbox_by_id_safely(client, sandbox_id: str) -> AsyncSandbox:
-    """
-    Safely retrieve a sandbox object by its ID, using the resource that owns it.
-    Includes retry logic for transient sandbox startup failures.
+async def get_sandbox_by_id_safely(client, sandbox_id: str):
+    """Get sandbox from database with error handling.
     
-    Args:
-        client: The Supabase client
-        sandbox_id: The sandbox ID (external_id) to retrieve
-    
-    Returns:
-        AsyncSandbox: The sandbox object
-        
-    Raises:
-        HTTPException: If the sandbox doesn't exist or can't be retrieved after retries
+    TODO: Migrate to Convex - this function uses Supabase client for project lookups.
+    After migrating projects table to Convex, replace with Convex client calls.
     """
     from core.resources import ResourceService, ResourceType
     
@@ -1367,16 +1365,16 @@ class FileUploadStateRequest(BaseModel):
 @router.post("/project/{project_id}/files/upload-started")
 async def file_upload_started(
     project_id: str,
-    request: FileUploadStateRequest,
+    request_body: FileUploadStateRequest,
     user_id: str = Depends(verify_and_get_user_id_from_jwt)
 ):
     from core.services import redis
     
     key = f"file_upload_pending:{project_id}"
-    await redis.set(key, str(request.file_count), ex=300)
-    logger.info(f"File upload started for project {project_id}: {request.file_count} files")
+    await redis.set(key, str(request_body.file_count), ex=300)
+    logger.info(f"File upload started for project {project_id}: {request_body.file_count} files")
     
-    return {"status": "ok", "pending_files": request.file_count}
+    return {"status": "ok", "pending_files": request_body.file_count}
 
 
 @router.post("/project/{project_id}/files/upload-completed")
@@ -1483,10 +1481,12 @@ async def read_file_by_hash(
             f"Successfully read file {filename} from sandbox {sandbox_id} at commit {commit}"
         )
 
+        # Ensure proper encoding by explicitly using UTF-8 for the filename in Content-Disposition header
+        # This applies RFC 5987 encoding for the filename to support non-ASCII characters
         import urllib.parse
         encoded_filename = urllib.parse.quote(filename, safe='')
         content_disposition = f"attachment; filename*=UTF-8''{encoded_filename}"
-
+        
         return Response(
             content=content,
             media_type="application/octet-stream",
@@ -2069,9 +2069,11 @@ async def revert_commit_or_files(
                 'comm -23 /tmp/git_current_files /tmp/git_target_files > /tmp/git_to_delete || true',
                 'git checkout "$TARGET" -- .',
                 'if [ -s /tmp/git_to_delete ]; then '
-                'xargs -a /tmp/git_to_delete git rm -f --; fi',
+                'xargs -a /tmp/git_to_delete git rm -f --; '
+                'fi',
                 'if [ -n "$(git status --porcelain)" ]; then '
-                'git commit -m "$snapshot_msg"; fi',
+                'git commit -m "$snapshot_msg"; '
+                'fi',
             ]
 
             full_cmd = " && ".join(commands)

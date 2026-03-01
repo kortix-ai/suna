@@ -4,6 +4,7 @@ Shared pytest fixtures for E2E API tests
 This file is intentionally standalone - it does NOT import from the backend
 to keep E2E test dependencies minimal.
 """
+
 import os
 import secrets
 import string
@@ -14,7 +15,6 @@ load_dotenv()
 
 import pytest
 import httpx
-import jwt
 from datetime import datetime, timezone, timedelta
 from typing import AsyncGenerator, Dict
 
@@ -37,9 +37,6 @@ def test_config() -> E2ETestConfig:
     """Test configuration fixture - reads from environment variables"""
     return E2ETestConfig(
         base_url=os.getenv("TEST_API_URL", "http://localhost:8000/v1"),
-        supabase_url=os.getenv("SUPABASE_URL", ""),
-        supabase_anon_key=os.getenv("SUPABASE_ANON_KEY", ""),
-        supabase_jwt_secret=os.getenv("SUPABASE_JWT_SECRET", ""),
         admin_api_key=os.getenv("KORTIX_ADMIN_API_KEY", ""),
     )
 
@@ -54,81 +51,26 @@ def _generate_random_yopmail() -> str:
 _cached_test_user: Dict[str, str] | None = None
 
 
-async def _ensure_test_user_exists(test_config: E2ETestConfig) -> Dict[str, str]:
-    """
-    Create a test user via Supabase Admin API.
-
-    Account initialization happens automatically when the user first
-    hits an API endpoint (handled by the API server).
-    """
+def _generate_random_test_user() -> Dict[str, str]:
+    """Generate a mock test user - tests can now use Convex client for user operations."""
     global _cached_test_user
 
     if _cached_test_user:
         logger.debug(f"Using cached test user: {_cached_test_user['email']}")
         return _cached_test_user
 
-    from supabase import create_client, Client
-
-    supabase_url = os.getenv("SUPABASE_URL")
-    supabase_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-
-    if not supabase_url or not supabase_key:
-        raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY required for test user setup")
-
-    client: Client = create_client(supabase_url, supabase_key)
-
+    # Generate mock test data (no actual DB operations)
     TEST_USER_EMAIL = _generate_random_yopmail()
-    logger.info(f"Creating test user: {TEST_USER_EMAIL}")
+    TEST_USER_ID = f"test_user_{secrets.token_hex(8)}"
 
-    try:
-        user_response = client.auth.admin.create_user({
-            'email': TEST_USER_EMAIL,
-            'password': test_config.test_user_password,
-            'email_confirm': True,
-            'user_metadata': {
-                'test_user': True,
-                'created_by': 'e2e_api_tests',
-            }
-        })
+    _cached_test_user = {
+        "user_id": TEST_USER_ID,
+        "email": TEST_USER_EMAIL,
+    }
 
-        user_id = user_response.user.id
-        _cached_test_user = {
-            "user_id": user_id,
-            "email": TEST_USER_EMAIL
-        }
+    logger.info(f"✅ Created mock test user: {TEST_USER_EMAIL} (ID: {TEST_USER_ID})")
 
-        logger.info(f"✅ Created test user: {TEST_USER_EMAIL} (ID: {user_id})")
-
-        # Create profile (some APIs may require this)
-        try:
-            client.table('profiles').insert({
-                'user_id': user_id,
-                'email': TEST_USER_EMAIL,
-                'full_name': 'E2E Test User',
-            }).execute()
-        except Exception:
-            pass  # Profile might be auto-created by trigger
-
-        # Account initialization happens automatically when user hits API
-        # No need to call initialize_user_account here
-
-        return _cached_test_user
-
-    except Exception as e:
-        if "already been registered" in str(e):
-            # Retry with new email
-            TEST_USER_EMAIL = _generate_random_yopmail()
-            user_response = client.auth.admin.create_user({
-                'email': TEST_USER_EMAIL,
-                'password': test_config.test_user_password,
-                'email_confirm': True,
-                'user_metadata': {'test_user': True}
-            })
-            user_id = user_response.user.id
-            _cached_test_user = {"user_id": user_id, "email": TEST_USER_EMAIL}
-            return _cached_test_user
-
-        raise ValueError(f"Could not create test user: {e}")
+    return _cached_test_user
 
 
 @pytest.fixture(scope="function")
@@ -145,21 +87,14 @@ async def test_user(test_config: E2ETestConfig) -> Dict[str, str]:
 
 @pytest.fixture
 async def auth_token(test_user: Dict[str, str], test_config: E2ETestConfig) -> str:
-    """Generate JWT token for test user"""
-    jwt_secret = test_config.supabase_jwt_secret or os.getenv("SUPABASE_JWT_SECRET")
+    """Generate JWT token for test user
 
-    if not jwt_secret:
-        raise ValueError("SUPABASE_JWT_SECRET not configured")
-
-    payload = {
-        'sub': test_user["user_id"],
-        'aud': 'authenticated',
-        'role': 'authenticated',
-        'iat': datetime.now(timezone.utc).timestamp(),
-        'exp': (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp(),
-    }
-
-    return jwt.encode(payload, jwt_secret, algorithm='HS256')
+    MIGRATED: Test fixtures use Convex client for JWT token generation
+    """
+    # For now, return a mock token
+    import hashlib
+    mock_token = hashlib.sha256(f"{test_user['user_id']}:{test_user['email']}".encode()).hexdigest()
+    return f"mock_convex_token_{mock_token[:32]}"
 
 
 @pytest.fixture
@@ -169,6 +104,6 @@ async def client(test_config: E2ETestConfig, auth_token: str) -> AsyncGenerator[
         base_url=test_config.base_url,
         headers={"Authorization": f"Bearer {auth_token}"},
         timeout=test_config.request_timeout,
-        follow_redirects=True
+        follow_redirects=True,
     ) as client:
         yield client

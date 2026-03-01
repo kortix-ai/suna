@@ -73,22 +73,21 @@ class ManagerInitializer:
         import asyncio
         from core.jit import JITLoader
         from core.jit.result_types import ActivationSuccess
-        
+
         try:
-            client = await thread_manager.db.client
-            
-            result = await client.table('threads')\
-                .select('metadata')\
-                .eq('thread_id', ctx.thread_id)\
-                .single()\
-                .execute()
-            
-            if not result.data:
+            # MIGRATED: Use Convex client to get thread metadata
+            try:
+                thread = await thread_manager.convex.get_thread(ctx.thread_id, account_id=ctx.account_id)
+                if thread:
+                    metadata = thread.get('metadata') or {}
+                    dynamic_tools = metadata.get('dynamic_tools', [])
+                else:
+                    logger.debug(f"Thread {ctx.thread_id} not found")
+                    return
+            except Exception as e:
+                logger.warning(f"Could not fetch thread metadata from Convex: {e}")
                 return
-            
-            metadata = result.data.get('metadata') or {}
-            dynamic_tools = metadata.get('dynamic_tools', [])
-            
+
             if not dynamic_tools:
                 return
             
@@ -120,6 +119,8 @@ class ManagerInitializer:
         from core.agents.pipeline import prep_tasks
 
         # Note: Tool filtering removed - blocking handled at execution time in tool_executor.py
+        # MIGRATED: Pass None for client parameter - prep_tasks should use Convex internally
+        # Old Supabase code passed: client=await thread_manager.db.client if thread_manager else None
         prompt = await prep_tasks.prep_prompt(
             model_name=ctx.model_name,
             agent_config=ctx.agent_config,
@@ -127,7 +128,7 @@ class ManagerInitializer:
             account_id=ctx.account_id,
             tool_registry=tool_registry,
             mcp_loader=getattr(thread_manager, 'mcp_loader', None),
-            client=await thread_manager.db.client if thread_manager else None,
+            client=None,  # MIGRATED: prep_tasks should use Convex internally
             disabled_tools=[]  # Empty - blocking handled at execution time
         )
         if prompt:

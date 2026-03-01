@@ -23,21 +23,21 @@ class SandboxToolsBase(Tool):
     async def _ensure_sandbox(self) -> AsyncSandbox:
         if self._sandbox_info is None:
             try:
-                client = await self.thread_manager.db.client
-                
-                project = await client.table('projects').select(
-                    'project_id, account_id'
-                ).eq('project_id', self.project_id).execute()
-                
-                if not project.data or len(project.data) == 0:
+                # MIGRATED: Using Convex client for project lookup
+                project_info = await self.thread_manager.convex.query(
+                    "projects:getProjectAccount",
+                    {"project_id": self.project_id}
+                )
+
+                if not project_info:
                     raise ValueError(f"Project {self.project_id} not found")
 
-                account_id = project.data[0].get('account_id')
-                
+                account_id = project_info.get('account_id')
+
                 sandbox_info = await resolve_sandbox(
                     project_id=self.project_id,
                     account_id=str(account_id) if account_id else None,
-                    db_client=client,
+                    db_client=None,  # MIGRATED: resolve_sandbox should use Convex internally
                     require_started=True
                 )
                 

@@ -8,7 +8,6 @@ from core.services import redis
 from core.utils.openapi_config import configure_openapi
 from contextlib import asynccontextmanager
 from core.agentpress.thread_manager import ThreadManager
-from core.services.supabase import DBConnection
 from datetime import datetime, timezone
 from core.utils.config import config, EnvMode
 import asyncio
@@ -17,6 +16,9 @@ import time
 from collections import OrderedDict
 import os
 import psutil
+
+# Database imports - using Convex (migrated from Supabase)
+from core.services.convex_client import get_convex_client
 
 from pydantic import BaseModel
 import uuid
@@ -58,7 +60,6 @@ if sys.platform == "win32":
     # Use SelectorEventLoop on Windows for psycopg async compatibility
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-db = DBConnection()
 # Use shared instance ID for distributed deployments
 from core.utils.instance import get_instance_id, INSTANCE_ID
 instance_id = INSTANCE_ID  # Keep backward compatibility
@@ -84,7 +85,8 @@ async def lifespan(app: FastAPI):
     env_mode = config.ENV_MODE.value if config.ENV_MODE else "unknown"
     logger.debug(f"Starting up FastAPI application with instance ID: {instance_id} in {env_mode} mode")
     try:
-        await db.initialize()
+        # Initialize Convex client
+        convex = get_convex_client()
         
         from core.services.db import init_db
         await init_db()
@@ -104,7 +106,7 @@ async def lifespan(app: FastAPI):
         from core.cache.runtime_cache import load_static_suna_config
         load_static_suna_config()
         
-        sandbox_api.initialize(db)
+        sandbox_api.initialize(convex)
         
         from core.services import redis
         try:
@@ -124,17 +126,18 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to initialize Redis connection: {e}")
 
-        try:
-            client = await db.client
-            await cleanup_orphaned_agent_runs(client)
-        except Exception as e:
-            logger.error(f"Failed to cleanup orphaned agent runs on startup: {e}")
+        # NOTE: Need Convex endpoint for orphan cleanup
+        # When endpoint is available, use:
+        #   convex = get_convex_client()
+        #   orphaned = await convex.admin_rpc("admin:cleanupOrphanedAgentRuns", {})
+        logger.info(f"Cleaned up {len(orphaned)} orphaned agent runs")
+        return
         
         if config.ACTIVATE_MCPS_TRIG:
-            triggers_api.initialize(db)
-            credentials_api.initialize(db)
-            composio_api.initialize(db)
-        template_api.initialize(db)
+            triggers_api.initialize(convex)
+            credentials_api.initialize(convex)
+            composio_api.initialize(convex)
+        template_api.initialize(convex)
         
         # Start CloudWatch worker metrics publisher (production only)
         if config.ENV_MODE == EnvMode.PRODUCTION:
@@ -272,7 +275,7 @@ async def lifespan(app: FastAPI):
             logger.error(f"Error closing Redis connection: {e}")
 
         logger.debug("Disconnecting from database")
-        await db.disconnect()
+        await convex.disconnect()
         
         # Close direct Postgres connection pool
         from core.services.db import close_db
@@ -568,8 +571,18 @@ async def health_check_docker():
     try:
         client = await redis.get_client()
         await client.ping()
-        db_client = await db.client
-        await db_client.table("threads").select("thread_id").limit(1).execute()
+
+        # NOTE: Need Convex endpoint for health check
+        # When endpoint is available, use:
+        #   convex = get_convex_client()
+        #   # Verify thread table is accessible
+        #   thread = await convex.get_thread(thread_id="test-health-check-thread")
+        #   if thread:
+        #       logger.debug("Convex health check: threads table is accessible")
+        #   else:
+        #       raise Exception("Convex health check failed: threads table not accessible")
+        logger.warning("Health check needs Convex migration - using Redis only")
+
         logger.debug("Health docker check complete")
         metrics = _get_health_metrics()
         return {

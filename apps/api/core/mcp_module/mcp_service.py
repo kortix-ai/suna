@@ -546,23 +546,48 @@ class MCPService:
         return headers
     
     async def _get_composio_server_url(self, qualified_name: str, config: Dict[str, Any], account_id: Optional[str] = None) -> str:
-        """Resolve Composio profile_id to actual MCP URL"""
+        """Resolve Composio profile_id to actual MCP URL
+
+        NOTE: Requires Convex endpoint /api/credential-profiles/get to be implemented.
+        The convex_client.py has get_credential_profile() ready to call this endpoint.
+        """
         profile_id = config.get("profile_id")
         if not profile_id:
             raise MCPProviderError(f"profile_id not provided for Composio MCP server: {qualified_name}")
 
-        # Import here to avoid circular dependency
-        from core.composio_integration.composio_profile_service import ComposioProfileService
-        from core.services.supabase import DBConnection
-
         try:
-            db = DBConnection()
-            profile_service = ComposioProfileService(db)
-            mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=account_id)
+            # Use Convex client to get profile config and construct MCP URL
+            from core.services.convex_client import get_convex_client
 
-            self._logger.debug(f"Resolved Composio profile {profile_id} to MCP URL {mcp_url}")
+            convex = get_convex_client()
+
+            # Get the credential profile which contains composio config
+            profile = await convex.get_credential_profile(profile_id=profile_id, account_id=account_id)
+
+            if not profile:
+                raise MCPProviderError(f"Composio profile not found: {profile_id}")
+
+            # Extract Composio-specific fields from the profile config
+            config_data = profile.get("config", {})
+            toolkit_slug = config_data.get("toolkit_slug")
+            connected_account_id = config_data.get("connected_account_id")
+
+            if not toolkit_slug or not connected_account_id:
+                raise MCPProviderError(f"Profile {profile_id} missing required Composio fields (toolkit_slug, connected_account_id)")
+
+            # Construct the Composio MCP URL
+            # The Composio API key is stored in environment variables
+            composio_api_key = os.getenv("COMPOSIO_API_KEY")
+            if not composio_api_key:
+                raise MCPProviderError("COMPOSIO_API_KEY environment variable not configured")
+
+            base_url = "https://mcp.composio.dev"
+            mcp_url = f"{base_url}/{composio_api_key}?userId={connected_account_id}&toolkit={toolkit_slug}"
+
             return mcp_url
 
+        except MCPProviderError:
+            raise
         except Exception as e:
             self._logger.error(f"Failed to resolve Composio profile {profile_id}: {str(e)}")
             raise MCPProviderError(f"Failed to resolve Composio profile: {str(e)}")

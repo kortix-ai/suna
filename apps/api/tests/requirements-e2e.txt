@@ -12,8 +12,9 @@ pytest-timeout>=2.3.0
 # JWT token generation
 pyjwt>=2.8.0
 
-# Supabase client (for test user creation via Admin API)
-supabase>=2.0.0
+# Convex client for database operations (migrated from Supabase)
+# The Convex client is included in the main backend dependencies
+# For E2E tests, mock-based testing is used via conftest.py fixtures
 
 # Environment variables
 python-dotenv>=1.0.0

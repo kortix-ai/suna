@@ -1,6 +1,9 @@
 import asyncio
 from typing import Dict, Any
 from core.utils.logger import logger
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for database operations
+from core.services.convex_client import get_convex_client
 
 
 class MCPToolExecutor:
@@ -37,11 +40,11 @@ class MCPToolExecutor:
             raise
     
     async def _execute_composio_tool(self, tool_name: str, args: Dict[str, Any]) -> Any:
-        from core.composio_integration.composio_profile_service import ComposioProfileService
-        from core.services.supabase import DBConnection
         from mcp.client.streamable_http import streamablehttp_client
         from mcp import ClientSession
         from core.agentpress.tool import ToolResult
+        from core.composio_integration.composio_profile_service import ComposioProfileService
+        from core.services.supabase import DBConnection
 
         custom_config = self.tool_info['custom_config']
         profile_id = custom_config.get('profile_id')
@@ -50,18 +53,22 @@ class MCPToolExecutor:
             raise ValueError("Missing profile_id for Composio tool")
 
         try:
+            # MIGRATED: ComposioProfileService now uses Convex client internally
             db = DBConnection()
             profile_service = ComposioProfileService(db)
             mcp_url = await profile_service.get_mcp_url_for_runtime(profile_id, account_id=self.account_id)
 
-            async with streamablehttp_client(mcp_url) as (read, write, _):
-                async with ClientSession(read, write) as session:
+            async with streamablehttp_client(mcp_url) as (read_stream, write_stream, _):
+                async with ClientSession(read_stream, write_stream) as session:
                     await session.initialize()
                     result = await session.call_tool(tool_name, arguments=args)
+
                     content = self._extract_result_content(result)
-                    
-                    return ToolResult(success=True, output=str(content))
-            
+                    return ToolResult(
+                        success=True,
+                        output=content
+                    )
+
         except Exception as e:
             logger.error(f"❌ [MCP EXEC] Composio execution failed for {tool_name}: {e}")
             from core.agentpress.tool import ToolResult

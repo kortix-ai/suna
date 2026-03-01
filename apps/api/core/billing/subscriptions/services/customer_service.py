@@ -41,14 +41,29 @@ class CustomerService:
         return email
     
     async def _try_get_email_from_auth(self, user_id: str) -> Optional[str]:
+        """
+        Try to get user email from auth system.
+
+        NOTE: Auth admin API migration pending.
+        The Supabase auth.admin.get_user_by_id API needs a Convex equivalent.
+
+        For now, this returns None and falls back to billing_repo.get_user_email()
+        which queries the users table directly.
+        """
         try:
-            from core.services.supabase import DBConnection
-            db = DBConnection()
-            client = await db.client
-            user_result = await client.auth.admin.get_user_by_id(user_id)
-            return user_result.user.email if user_result and user_result.user else None
+            # NOTE: Convex auth admin API equivalent not yet implemented
+            # The Supabase implementation was:
+            #   from core.services.supabase import DBConnection
+            #   db = DBConnection()
+            #   client = await db.client
+            #   user_result = await client.auth.admin.get_user_by_id(user_id)
+            #   return user_result.user.email if user_result and user_result.user else None
+
+            # For now, return None to fall back to billing_repo
+            return None
+
         except Exception as e:
-            logger.warning(f"Failed to get user via auth.admin API for user {user_id}: {e}")
+            logger.warning(f"Failed to get user via auth admin API for user {user_id}: {e}")
             return None
     
     async def create_stripe_customer(self, email: str, account_id: str) -> str:

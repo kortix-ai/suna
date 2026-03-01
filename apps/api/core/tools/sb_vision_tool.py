@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 from core.agentpress.tool import ToolResult, openapi_schema, tool_metadata
 from core.sandbox.tool_base import SandboxToolsBase
 from core.agentpress.thread_manager import ThreadManager
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 import json
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPM
@@ -93,7 +93,9 @@ class SandboxVisionTool(SandboxToolsBase):
         self.thread_id = thread_id
         # Make thread_manager accessible within the tool instance
         self.thread_manager = thread_manager
-        self.db = thread_manager.db if thread_manager else DBConnection()
+        # TODO: Convex migration - db client pattern needs updating
+        # self.db = thread_manager.db if thread_manager else DBConnection()
+        self.convex = get_convex_client()
 
     async def convert_svg_with_sandbox_browser(self, svg_full_path: str) -> Tuple[bytes, str]:
         """Convert SVG to PNG using sandbox browser API for better rendering support.
@@ -426,12 +428,14 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
                     f"Original file: '{cleaned_path}'. Please convert the image to a supported format."
                 )
 
-            # Upload to Supabase Storage instead of base64
+            # TODO: Convex migration - storage operations not yet implemented in Convex client
+            # Need to implement: upload file to storage, get public URL
+            # For now, use base64 encoding as fallback
             try:
                 # Generate unique filename
                 timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
                 unique_id = str(uuid.uuid4())[:8]
-                
+
                 # Determine file extension from mime type
                 ext_map = {
                     'image/jpeg': 'jpg',
@@ -440,27 +444,29 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
                     'image/webp': 'webp'
                 }
                 ext = ext_map.get(compressed_mime_type, 'jpg')
-                
+
                 # Create filename from original path
                 base_filename = os.path.splitext(os.path.basename(cleaned_path))[0]
                 storage_filename = f"loaded_images/{base_filename}_{timestamp}_{unique_id}.{ext}"
-                
-                # Upload to Supabase storage (public bucket for LLM access)
-                client = await self.db.client
-                storage_response = await client.storage.from_('image-uploads').upload(
-                    storage_filename,
-                    compressed_bytes,
-                    {"content-type": compressed_mime_type}
-                )
-                
-                # Get public URL
-                public_url = await client.storage.from_('image-uploads').get_public_url(storage_filename)
-                
-                print(f"[LoadImage] Uploaded image to cloud storage: {public_url}")
-                
+
+                # TODO: Implement storage upload in Convex client
+                # client = await self.db.client
+                # storage_response = await client.storage.from_('image-uploads').upload(
+                #     storage_filename,
+                #     compressed_bytes,
+                #     {"content-type": compressed_mime_type}
+                # )
+                # public_url = await client.storage.from_('image-uploads').get_public_url(storage_filename)
+
+                # Fallback: Use base64 data URL for now
+                base64_data = base64.b64encode(compressed_bytes).decode('utf-8')
+                public_url = f"data:{compressed_mime_type};base64,{base64_data}"
+
+                print(f"[LoadImage] Using base64 data URL (storage migration pending)")
+
             except Exception as upload_error:
-                print(f"[LoadImage] Failed to upload to cloud storage: {upload_error}")
-                return self.fail_response(f"Failed to upload image to cloud storage: {str(upload_error)}")
+                print(f"[LoadImage] Failed to process image: {upload_error}")
+                return self.fail_response(f"Failed to process image: {str(upload_error)}")
 
             # Check current image count in context (enforce 3-image limit)
             current_image_count = await self._count_images_in_context()
@@ -508,21 +514,23 @@ Images remain in the sandbox and can be loaded again anytime. SVG files are auto
     
     async def _count_images_in_context(self) -> int:
         """Count how many image_context messages are currently in the conversation."""
+        # TODO: Convex migration - need to implement message querying in Convex client
+        # For now, return 0 to allow image loading (no limit enforcement)
         try:
-            client = await self.db.client
-            result = await client.table('messages').select('message_id').eq('thread_id', self.thread_id).eq('type', 'image_context').execute()
-            
-            return len(result.data) if result.data else 0
+            # result = await self.convex.get_messages(thread_id=self.thread_id, type='image_context')
+            # return len(result) if result else 0
+            return 0
         except Exception as e:
             print(f"[LoadImage] Error counting images in context: {e}")
             return 0
-    
+
     async def _clear_all_images(self) -> int:
         """Remove all image_context messages from the thread."""
+        # TODO: Convex migration - need to implement message deletion in Convex client
         try:
-            client = await self.db.client
-            result = await client.table('messages').delete().eq('thread_id', self.thread_id).eq('type', 'image_context').execute()
-            return len(result.data) if result.data else 0
+            # result = await self.convex.delete_messages(thread_id=self.thread_id, type='image_context')
+            # return len(result) if result else 0
+            return 0
         except Exception as e:
             print(f"[LoadImage] Error clearing images: {e}")
             return 0

@@ -1,7 +1,7 @@
 from typing import List, Dict, Any, Optional
 from core.utils.logger import logger
 from core.utils.cache import Cache
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.billing.shared.config import get_memory_config, is_memory_enabled
 from core.utils.config import config
 from .embedding_service import EmbeddingService
@@ -10,7 +10,6 @@ from .models import MemoryItem, MemoryType
 class MemoryRetrievalService:
     def __init__(self):
         self.embedding_service = EmbeddingService()
-        self.db = DBConnection()
         self.cache_ttl = 60
     
     async def retrieve_memories(
@@ -43,42 +42,45 @@ class MemoryRetrievalService:
                 logger.debug(f"Retrieved memories from cache for {account_id}")
                 return [self._dict_to_memory_item(m) for m in cached]
             
-            from core.memory import repo as memory_repo
+            # Use Convex client
+            convex = get_convex_client()
             
-            total_memories = await memory_repo.count_user_memories(account_id)
+            # Count memories first
+            existing_memories = await convex.list_memories(
+                memory_space_id=account_id,
+                account_id=account_id,
+                limit=1
+            )
             
-            if total_memories == 0:
+            # Check if there are any memories (empty list or None means no memories)
+            if not existing_memories:
                 logger.debug(f"No memories stored for account {account_id}")
                 return []
             
-            # Need Supabase client for embedding-based similarity search RPC
-            await self.db.initialize()
-            client = await self.db.client
-            
+            # Get query embedding
             query_embedding = await self.embedding_service.embed_text(query_text)
             
-            result = await client.rpc(
-                'search_memories_by_similarity',
-                {
-                    'p_account_id': account_id,
-                    'p_query_embedding': query_embedding,
-                    'p_limit': retrieval_limit,
-                    'p_similarity_threshold': similarity_threshold
-                }
-            ).execute()
+            # Search memories using Convex semantic search
+            result = await convex.search_memories(
+                memory_space_id=account_id,
+                query=query_text,
+                embedding=query_embedding,
+                limit=retrieval_limit,
+                account_id=account_id
+            )
             
-            logger.debug(f"Memory retrieval RPC returned {len(result.data) if result.data else 0} results")
+            logger.debug(f"Memory search returned {len(result) if result else 0} results")
             
             memories = []
-            for row in result.data or []:
+            for row in result or []:
                 memory = MemoryItem(
-                    memory_id=row['memory_id'],
+                    memory_id=row.get('memoryId') or row.get('memory_id'),
                     account_id=account_id,
                     content=row['content'],
-                    memory_type=MemoryType(row['memory_type']),
-                    confidence_score=row['confidence_score'],
+                    memory_type=MemoryType(row.get('metadata', {}).get('memory_type', 'fact')),
+                    confidence_score=row.get('metadata', {}).get('confidence_score', 0.8),
                     metadata=row.get('metadata', {}),
-                    created_at=row.get('created_at')
+                    created_at=row.get('createdAt') or row.get('created_at')
                 )
                 memories.append(memory)
             
@@ -110,31 +112,46 @@ class MemoryRetrievalService:
             if not is_memory_enabled(tier_name):
                 return {"memories": [], "total": 0}
             
-            from core.memory import repo as memory_repo
+            # Use Convex client
+            convex = get_convex_client()
             
-            result = await memory_repo.get_all_memories(
-                account_id, limit, offset, 
-                memory_type.value if memory_type else None
+            # TODO: Convex list_memories doesn't support offset/pagination or type filtering
+            # For now, fetch all and filter in memory
+            all_memories = await convex.list_memories(
+                memory_space_id=account_id,
+                account_id=account_id,
+                limit=1000
             )
             
+            # Filter by type if specified
+            if memory_type:
+                all_memories = [
+                    m for m in (all_memories or [])
+                    if m.get('metadata', {}).get('memory_type') == memory_type.value
+                ]
+            
+            # Apply pagination
+            total = len(all_memories) if all_memories else 0
+            paginated = (all_memories or [])[offset:offset + limit]
+            
             memories = []
-            for row in result.get("memories", []):
+            for row in paginated:
                 memory = MemoryItem(
-                    memory_id=row['memory_id'],
-                    account_id=row['account_id'],
+                    memory_id=row.get('memoryId') or row.get('memory_id'),
+                    account_id=account_id,
                     content=row['content'],
-                    memory_type=MemoryType(row['memory_type']),
-                    confidence_score=row.get('confidence_score', 0.8),
-                    source_thread_id=row.get('source_thread_id'),
+                    memory_type=MemoryType(row.get('metadata', {}).get('memory_type', 'fact')),
+                    confidence_score=row.get('metadata', {}).get('confidence_score', 0.8),
+                    source_thread_id=row.get('metadata', {}).get('source_thread_id'),
                     metadata=row.get('metadata', {}),
-                    created_at=row.get('created_at'),
-                    updated_at=row.get('updated_at')
+                    created_at=row.get('createdAt') or row.get('created_at'),
+                    updated_at=row.get('updatedAt') or row.get('updated_at')
                 )
                 memories.append(memory)
             
             return {
                 "memories": memories,
-                "total": result.get("total", 0)
+                "total": total
             }
         
         except Exception as e:
@@ -153,27 +170,42 @@ class MemoryRetrievalService:
                     "newest_memory": None
                 }
             
-            client = await self.db.client
+            # Use Convex client to get memories for stats
+            convex = get_convex_client()
             
-            result = await client.rpc(
-                'get_memory_stats',
-                {'p_account_id': account_id}
-            ).execute()
+            # TODO: Need to add get_memory_stats endpoint to Convex API
+            # For now, calculate stats from list_memories
+            memories = await convex.list_memories(
+                memory_space_id=account_id,
+                account_id=account_id,
+                limit=1000
+            )
             
-            if result.data and len(result.data) > 0:
-                stats = result.data[0]
+            if not memories:
                 return {
-                    "total_memories": stats.get('total_memories', 0),
-                    "memories_by_type": stats.get('memories_by_type') or {},
-                    "oldest_memory": stats.get('oldest_memory'),
-                    "newest_memory": stats.get('newest_memory')
+                    "total_memories": 0,
+                    "memories_by_type": {},
+                    "oldest_memory": None,
+                    "newest_memory": None
                 }
             
+            total = len(memories)
+            memories_by_type: Dict[str, int] = {}
+            
+            for mem in memories:
+                metadata = mem.get('metadata', {})
+                mem_type = metadata.get('memory_type', 'fact')
+                memories_by_type[mem_type] = memories_by_type.get(mem_type, 0) + 1
+            
+            # Get oldest and newest (assuming sorted by creation)
+            oldest = memories[-1].get('createdAt') if memories else None
+            newest = memories[0].get('createdAt') if memories else None
+            
             return {
-                "total_memories": 0,
-                "memories_by_type": {},
-                "oldest_memory": None,
-                "newest_memory": None
+                "total_memories": total,
+                "memories_by_type": memories_by_type,
+                "oldest_memory": oldest,
+                "newest_memory": newest
             }
         
         except Exception as e:
@@ -191,8 +223,12 @@ class MemoryRetrievalService:
                 logger.debug("delete_memory skipped: ENABLE_MEMORY is False")
                 return False
             
-            from core.memory import repo as memory_repo
+            # Use Convex client
+            convex = get_convex_client()
             
+            # TODO: Need to add delete_memory endpoint to Convex API
+            # For now, use the repo module which still has SQL access
+            from core.memory import repo as memory_repo
             success = await memory_repo.delete_memory(account_id, memory_id)
             
             if success:
@@ -212,8 +248,12 @@ class MemoryRetrievalService:
                 logger.debug("delete_all_memories skipped: ENABLE_MEMORY is False")
                 return 0
             
-            from core.memory import repo as memory_repo
+            # Use Convex client
+            convex = get_convex_client()
             
+            # TODO: Need to add delete_all_memories endpoint to Convex API
+            # For now, use the repo module which still has SQL access
+            from core.memory import repo as memory_repo
             deleted_count = await memory_repo.delete_all_memories(account_id)
             
             await self._invalidate_cache(account_id)

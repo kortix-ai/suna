@@ -1,6 +1,10 @@
 """
 Migration script to migrate messages in database for a specific thread.
 
+TODO: Convex migration - This is a legacy migration script that operates on
+Supabase message format. It remains using Supabase for backward compatibility
+with existing data migrations. New migrations should use Convex directly.
+
 Usage:
     python -m core.utils.migrate_thread <thread_id>
     python -m core.utils.migrate_thread <thread_id> --dry-run

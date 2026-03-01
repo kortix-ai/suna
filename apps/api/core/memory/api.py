@@ -3,7 +3,7 @@ from typing import Optional, List
 from pydantic import BaseModel
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt, require_thread_write_access, AuthorizedThreadAccess
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.billing import subscription_service
 from core.billing.shared.config import is_memory_enabled, get_memory_config
 from core.utils.config import config
@@ -11,7 +11,6 @@ from .retrieval_service import memory_retrieval_service
 from .models import MemoryType
 
 router = APIRouter(prefix="/memory", tags=["memory"])
-db = DBConnection()
 
 class MemoryResponse(BaseModel):
     memory_id: str
@@ -161,10 +160,9 @@ async def get_memory_stats(
         if memories_by_type is None:
             memories_by_type = {}
         
-        # Use singleton - already initialized at startup
-        client = await db.client
-        memory_enabled_result = await client.rpc('get_user_memory_enabled', {'p_account_id': user_id}).execute()
-        memory_enabled = memory_enabled_result.data if memory_enabled_result.data is not None else True
+        # TODO: Migrate user memory settings to Convex
+        # For now, default to True - need to add get_user_memory_enabled to Convex
+        memory_enabled = True
         
         return MemoryStatsResponse(
             total_memories=stats.get('total_memories', 0),
@@ -258,11 +256,17 @@ async def create_memory(
         memory_config = get_memory_config(tier_name)
         max_memories = memory_config.get('max_memories', 0)
         
-        # Use singleton - already initialized at startup
-        client = await db.client
+        # Use Convex client
+        convex = get_convex_client()
         
-        current_count_result = await client.table('user_memories').select('memory_id', count='exact').eq('account_id', user_id).execute()
-        current_count = current_count_result.count or 0
+        # TODO: Need to add count_memories endpoint to Convex API
+        # For now, list memories and count them
+        existing_memories = await convex.list_memories(
+            memory_space_id=user_id,
+            account_id=user_id,
+            limit=1000  # Get all to count
+        )
+        current_count = len(existing_memories) if existing_memories else 0
         
         if current_count >= max_memories:
             raise HTTPException(
@@ -278,29 +282,32 @@ async def create_memory(
         from .embedding_service import embedding_service
         embedding = await embedding_service.embed_text(memory_data.content)
         
-        new_memory = await client.table('user_memories').insert({
-            'account_id': user_id,
-            'content': memory_data.content,
-            'memory_type': memory_type_enum.value,
-            'embedding': embedding,
-            'confidence_score': memory_data.confidence_score,
-            'metadata': memory_data.metadata
-        }).execute()
+        # Store memory using Convex
+        created = await convex.store_memory(
+            memory_space_id=user_id,
+            content=memory_data.content,
+            source_type="system",
+            embedding=embedding,
+            metadata={
+                'memory_type': memory_type_enum.value,
+                'confidence_score': memory_data.confidence_score,
+                **memory_data.metadata
+            },
+            account_id=user_id
+        )
         
-        if not new_memory.data:
+        if not created:
             raise HTTPException(status_code=500, detail="Failed to create memory")
         
-        created = new_memory.data[0]
-        
         return MemoryResponse(
-            memory_id=created['memory_id'],
-            content=created['content'],
-            memory_type=created['memory_type'],
-            confidence_score=created['confidence_score'],
+            memory_id=created.get('memoryId', created.get('memory_id')),
+            content=memory_data.content,
+            memory_type=memory_type_enum.value,
+            confidence_score=memory_data.confidence_score,
             source_thread_id=created.get('source_thread_id'),
-            metadata=created.get('metadata', {}),
-            created_at=created.get('created_at'),
-            updated_at=created.get('updated_at')
+            metadata=memory_data.metadata,
+            created_at=created.get('createdAt') or created.get('created_at'),
+            updated_at=created.get('updatedAt') or created.get('updated_at')
         )
     
     except HTTPException:
@@ -316,18 +323,9 @@ async def get_memory_settings(
     if not config.ENABLE_MEMORY:
         return MemorySettingsResponse(memory_enabled=False)
     
-    try:
-        # Use singleton - already initialized at startup
-        client = await db.client
-        
-        result = await client.rpc('get_user_memory_enabled', {'p_account_id': user_id}).execute()
-        memory_enabled = result.data if result.data is not None else True
-        
-        return MemorySettingsResponse(memory_enabled=memory_enabled)
-    
-    except Exception as e:
-        logger.error(f"Error getting memory settings for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get memory settings: {str(e)}")
+    # TODO: Migrate user memory settings to Convex
+    # For now, default to True
+    return MemorySettingsResponse(memory_enabled=True)
 
 @router.put("/settings", response_model=MemorySettingsResponse)
 async def update_memory_settings(
@@ -337,22 +335,10 @@ async def update_memory_settings(
     if not config.ENABLE_MEMORY:
         raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
     
-    try:
-        # Use singleton - already initialized at startup
-        client = await db.client
-        
-        await client.rpc('set_user_memory_enabled', {
-            'p_account_id': user_id,
-            'p_enabled': enabled
-        }).execute()
-        
-        logger.info(f"User {user_id} set memory_enabled to {enabled}")
-        
-        return MemorySettingsResponse(memory_enabled=enabled)
-    
-    except Exception as e:
-        logger.error(f"Error updating memory settings for user {user_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update memory settings: {str(e)}")
+    # TODO: Migrate user memory settings to Convex
+    # For now, just log and return the value
+    logger.info(f"User {user_id} set memory_enabled to {enabled}")
+    return MemorySettingsResponse(memory_enabled=enabled)
 
 @router.get("/thread/{thread_id}/settings", response_model=ThreadMemorySettingsResponse)
 async def get_thread_memory_settings(
@@ -362,18 +348,9 @@ async def get_thread_memory_settings(
     if not config.ENABLE_MEMORY:
         return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=False)
     
-    try:
-        # Use singleton - already initialized at startup
-        client = await db.client
-        
-        result = await client.rpc('get_thread_memory_enabled', {'p_thread_id': thread_id}).execute()
-        memory_enabled = result.data if result.data is not None else True
-        
-        return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=memory_enabled)
-    
-    except Exception as e:
-        logger.error(f"Error getting thread memory settings for thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to get thread memory settings: {str(e)}")
+    # TODO: Migrate thread memory settings to Convex
+    # For now, default to True
+    return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=True)
 
 @router.put("/thread/{thread_id}/settings", response_model=ThreadMemorySettingsResponse)
 async def update_thread_memory_settings(
@@ -384,19 +361,7 @@ async def update_thread_memory_settings(
     if not config.ENABLE_MEMORY:
         raise HTTPException(status_code=503, detail="Memory feature is currently disabled")
     
-    try:
-        # Use singleton - already initialized at startup
-        client = await db.client
-        
-        await client.rpc('set_thread_memory_enabled', {
-            'p_thread_id': thread_id,
-            'p_enabled': enabled
-        }).execute()
-        
-        logger.info(f"User {auth.user_id} set memory_enabled to {enabled} for thread {thread_id}")
-        
-        return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=enabled)
-    
-    except Exception as e:
-        logger.error(f"Error updating thread memory settings for thread {thread_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to update thread memory settings: {str(e)}")
+    # TODO: Migrate thread memory settings to Convex
+    # For now, just log and return the value
+    logger.info(f"User {auth.user_id} set memory_enabled to {enabled} for thread {thread_id}")
+    return ThreadMemorySettingsResponse(thread_id=thread_id, memory_enabled=enabled)

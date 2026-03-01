@@ -9,7 +9,7 @@ import asyncio
 from typing import Optional, List, Dict, Any
 
 from core.utils.logger import logger
-from core.services.supabase import DBConnection
+from core.services.convex_client import get_convex_client
 from core.analytics.conversation_analyzer import analyze_conversation, store_analysis
 
 # Worker configuration
@@ -32,29 +32,31 @@ async def claim_pending_queue_items(limit: int = BATCH_SIZE) -> List[Dict[str, A
 
     Uses FOR UPDATE SKIP LOCKED to prevent race conditions where
     multiple workers grab the same items.
+    
+    TODO: Migrate to Convex - requires atomic queue operations
+    The Convex client needs:
+    1. Endpoint to claim queue items atomically
+    2. Update status to 'processing'
     """
     try:
-        from core.services.db import execute_mutate, serialize_rows
-
-        # Atomic claim: SELECT + UPDATE in one transaction
-        # FOR UPDATE SKIP LOCKED ensures no two workers grab same row
-        # NOTE: Must use execute_mutate (not execute) to COMMIT the status change!
-        result = await execute_mutate("""
-            UPDATE conversation_analytics_queue
-            SET status = 'processing'
-            WHERE id IN (
-                SELECT id
-                FROM conversation_analytics_queue
-                WHERE status = 'pending' AND attempts < :max_attempts
-                ORDER BY created_at
-                LIMIT :limit
-                FOR UPDATE SKIP LOCKED
-            )
-            RETURNING id, thread_id, agent_run_id, account_id, attempts
-        """, {"limit": limit, "max_attempts": MAX_ATTEMPTS})
-
-        # serialize_rows converts UUID objects to strings for JSON compatibility
-        return serialize_rows(result) if result else []
+        # TODO: Migrate to Convex
+        # Old Supabase code used execute_mutate for atomic SELECT + UPDATE:
+        # result = await execute_mutate("""
+        #     UPDATE conversation_analytics_queue
+        #     SET status = 'processing'
+        #     WHERE id IN (
+        #         SELECT id
+        #         FROM conversation_analytics_queue
+        #         WHERE status = 'pending' AND attempts < :max_attempts
+        #         ORDER BY created_at
+        #         LIMIT :limit
+        #         FOR UPDATE SKIP LOCKED
+        #     )
+        #     RETURNING id, thread_id, agent_run_id, account_id, attempts
+        # """, {"limit": limit, "max_attempts": MAX_ATTEMPTS})
+        
+        # Return empty for now until Convex queue endpoints are added
+        return []
 
     except Exception as e:
         logger.error(f"[ANALYTICS] Failed to claim queue items: {e}")
@@ -67,28 +69,28 @@ async def update_queue_status(
     error_message: Optional[str] = None,
     increment_attempts: bool = False
 ) -> None:
-    """Update the status of a queue item."""
+    """Update the status of a queue item.
+    
+    TODO: Migrate to Convex - requires queue status update endpoint
+    """
     try:
-        db = DBConnection()
-        client = await db.client
-
-        update_data = {'status': status}
-
-        if status == 'completed' or status == 'failed':
-            update_data['processed_at'] = 'now()'
-
-        if error_message:
-            update_data['error_message'] = error_message
-
-        query = client.from_('conversation_analytics_queue')\
-            .update(update_data)\
-            .eq('id', queue_id)
-
-        await query.execute()
-
-        # Increment attempts separately if needed
-        if increment_attempts:
-            await client.rpc('increment_analytics_attempts', {'queue_id': queue_id}).execute()
+        # TODO: Migrate to Convex
+        # Old Supabase code:
+        # db = DBConnection()
+        # client = await db.client
+        # update_data = {'status': status}
+        # if status == 'completed' or status == 'failed':
+        #     update_data['processed_at'] = 'now()'
+        # if error_message:
+        #     update_data['error_message'] = error_message
+        # query = client.from_('conversation_analytics_queue')\
+        #     .update(update_data)\
+        #     .eq('id', queue_id)
+        # await query.execute()
+        # if increment_attempts:
+        #     await client.rpc('increment_analytics_attempts', {'queue_id': queue_id}).execute()
+        
+        logger.debug(f"[ANALYTICS] Queue status update pending Convex migration for {queue_id}: {status}")
 
     except Exception as e:
         logger.warning(f"[ANALYTICS] Failed to update queue status for {queue_id}: {e}")
@@ -120,15 +122,18 @@ async def process_queue_item(item: Dict[str, Any]) -> bool:
         agent_run_status = None
         if agent_run_id:
             try:
-                db = DBConnection()
-                client = await db.client
-                run_result = await client.from_('agent_runs')\
-                    .select('status')\
-                    .eq('id', agent_run_id)\
-                    .single()\
-                    .execute()
-                if run_result.data:
-                    agent_run_status = run_result.data.get('status')
+                # TODO: Migrate to Convex - agent_runs status lookup
+                # Old Supabase code:
+                # db = DBConnection()
+                # client = await db.client
+                # run_result = await client.from_('agent_runs')\
+                #     .select('status')\
+                #     .eq('id', agent_run_id)\
+                #     .single()\
+                #     .execute()
+                # if run_result.data:
+                #     agent_run_status = run_result.data.get('status')
+                pass
             except Exception:
                 pass
 
@@ -227,20 +232,25 @@ async def _analytics_processing_loop() -> None:
 
 
 async def cleanup_failed_items() -> None:
-    """Mark items that have exceeded max attempts as failed."""
+    """Mark items that have exceeded max attempts as failed.
+    
+    TODO: Migrate to Convex - requires queue cleanup endpoint
+    """
     try:
-        db = DBConnection()
-        client = await db.client
-
-        await client.from_('conversation_analytics_queue')\
-            .update({
-                'status': 'failed',
-                'processed_at': 'now()',
-                'error_message': f'Exceeded max attempts ({MAX_ATTEMPTS})'
-            })\
-            .eq('status', 'pending')\
-            .gte('attempts', MAX_ATTEMPTS)\
-            .execute()
+        # TODO: Migrate to Convex
+        # Old Supabase code:
+        # db = DBConnection()
+        # client = await db.client
+        # await client.from_('conversation_analytics_queue')\
+        #     .update({
+        #         'status': 'failed',
+        #         'processed_at': 'now()',
+        #         'error_message': f'Exceeded max attempts ({MAX_ATTEMPTS})'
+        #     })\
+        #     .eq('status', 'pending')\
+        #     .gte('attempts', MAX_ATTEMPTS)\
+        #     .execute()
+        pass
 
     except Exception as e:
         logger.warning(f"[ANALYTICS] Failed to cleanup failed items: {e}")

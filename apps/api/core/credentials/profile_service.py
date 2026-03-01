@@ -8,7 +8,9 @@ from typing import Dict, List, Any, Optional, Tuple
 
 from cryptography.fernet import Fernet
 
-from core.services.supabase import DBConnection
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for data operations
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 from .credential_service import EncryptionService
 
@@ -55,8 +57,20 @@ class ProfileAccessDeniedError(Exception):
 
 
 class ProfileService:
-    def __init__(self, db_connection: DBConnection):
-        self._db = db_connection
+    """Service for managing MCP credential profiles.
+
+    Uses Convex client for all data operations via HTTP endpoints:
+    - POST /api/credential-profiles - Store profile
+    - GET /api/credential-profiles - List profiles
+    - GET /api/credential-profiles/get - Get profile by ID
+    - PATCH /api/credential-profiles/set-default - Set default profile
+    - DELETE /api/credential-profiles - Delete profile
+    """
+    
+    def __init__(self, db_connection=None):
+        # db_connection is kept for backward compatibility but not used
+        # We now use the Convex client singleton
+        self._convex = get_convex_client()
         self._encryption = EncryptionService()
     
     async def store_profile(
@@ -74,97 +88,110 @@ class ProfileService:
         encrypted_config, config_hash = self._encryption.encrypt_config(config)
         encoded_config = base64.b64encode(encrypted_config).decode('utf-8')
         
-        client = await self._db.client
-
-        from core.credentials import repo as credentials_repo
-        
-        if is_default:
-            await credentials_repo.set_default_profile(account_id, profile_id, mcp_qualified_name)
-        
-        success = await credentials_repo.create_credential_profile(
-            profile_id, account_id, mcp_qualified_name, 
-            profile_name, display_name, encoded_config
+        # Store profile via Convex client
+        await self._convex.store_credential_profile(
+            profile_id=profile_id,
+            account_id=account_id,
+            mcp_qualified_name=mcp_qualified_name,
+            profile_name=profile_name,
+            display_name=display_name,
+            encrypted_config=encoded_config,
+            config_hash=config_hash,
+            is_default=is_default,
+            is_active=True
         )
-        
-        if not success:
-            raise Exception("Failed to create credential profile")
         
         logger.debug(f"Stored profile {profile_id} '{profile_name}' for {mcp_qualified_name}")
         return profile_id
     
     async def get_profile(self, account_id: str, profile_id: str) -> Optional[MCPCredentialProfile]:
-        from core.credentials import repo as credentials_repo
-        
-        result = await credentials_repo.get_credential_profile_by_id(profile_id)
-        
-        if not result:
+        # Get profile via Convex client
+        try:
+            result = await self._convex.get_credential_profile(profile_id, account_id)
+            if not result:
+                return None
+            
+            profile = self._map_to_profile(result)
+            
+            if profile.account_id != account_id:
+                raise ProfileAccessDeniedError("Access denied to profile")
+            
+            return profile
+        except ProfileAccessDeniedError:
+            raise
+        except Exception as e:
+            logger.error(f"Error getting profile: {e}")
             return None
-        
-        profile = self._map_to_profile(result)
-        
-        if profile.account_id != account_id:
-            raise ProfileAccessDeniedError("Access denied to profile")
-        
-        return profile
     
     async def get_profiles(
         self, 
         account_id: str, 
         mcp_qualified_name: str
     ) -> List[MCPCredentialProfile]:
-        from core.credentials import repo as credentials_repo
-        
-        rows = await credentials_repo.get_profiles_for_mcp(account_id, mcp_qualified_name)
-        
-        return [self._map_to_profile(data) for data in rows]
+        # Get profiles for MCP via Convex client
+        try:
+            rows = await self._convex.list_credential_profiles(
+                account_id, 
+                mcp_qualified_name=mcp_qualified_name
+            )
+            return [self._map_to_profile(data) for data in rows]
+        except Exception as e:
+            logger.error(f"Error getting profiles: {e}")
+            return []
     
     async def get_all_user_profiles(self, account_id: str) -> List[MCPCredentialProfile]:
-        from core.credentials import repo as credentials_repo
-        
-        rows = await credentials_repo.get_user_credential_profiles(account_id)
-        
-        return [self._map_to_profile(data) for data in rows]
+        # Get all user profiles via Convex client
+        try:
+            rows = await self._convex.list_credential_profiles(account_id)
+            return [self._map_to_profile(data) for data in rows]
+        except Exception as e:
+            logger.error(f"Error listing profiles: {e}")
+            return []
     
     async def get_default_profile(
         self, 
         account_id: str, 
         mcp_qualified_name: str
     ) -> Optional[MCPCredentialProfile]:
+        # Get default profile via Convex client
+        try:
+            result = await self._convex.get_default_credential_profile(account_id, mcp_qualified_name)
+            if result:
+                return self._map_to_profile(result)
+        except Exception:
+            pass
+        
+        # Fall back to first available profile
         profiles = await self.find_profiles(account_id, mcp_qualified_name)
-        
-        for profile in profiles:
-            if profile.is_default:
-                return profile
-        
         return profiles[0] if profiles else None
     
     async def set_default_profile(self, account_id: str, profile_id: str) -> bool:
         logger.debug(f"Setting profile {profile_id} as default")
         
-        profile = await self.get_profile(account_id, profile_id)
-        if not profile:
+        # Set default profile via Convex client
+        try:
+            result = await self._convex.set_default_credential_profile(profile_id, account_id)
+            success = result.get('success', False)
+            if success:
+                logger.debug(f"Set profile {profile_id} as default")
+            return success
+        except Exception as e:
+            logger.error(f"Error setting default profile: {e}")
             return False
-        
-        from core.credentials import repo as credentials_repo
-        
-        success = await credentials_repo.set_default_profile(account_id, profile_id, profile.mcp_qualified_name)
-        
-        if success:
-            logger.debug(f"Set profile {profile_id} as default")
-        
-        return success 
     
     async def delete_profile(self, account_id: str, profile_id: str) -> bool:
         logger.debug(f"Deleting profile {profile_id}")
         
-        from core.credentials import repo as credentials_repo
-        
-        success = await credentials_repo.delete_credential_profile(profile_id, account_id)
-        
-        if success:
-            logger.debug(f"Deleted profile {profile_id}")
-        
-        return success
+        # Delete profile via Convex client
+        try:
+            result = await self._convex.delete_credential_profile(profile_id, account_id)
+            success = result.get('success', False)
+            if success:
+                logger.debug(f"Deleted profile {profile_id}")
+            return success
+        except Exception as e:
+            logger.error(f"Error deleting profile: {e}")
+            return False
     
     async def find_profiles(
         self, 
@@ -200,7 +227,7 @@ class ProfileService:
     def _map_to_profile(self, data: Dict[str, Any]) -> MCPCredentialProfile:
         try:
             encrypted_config = base64.b64decode(data['encrypted_config'])
-            config = self._encryption.decrypt_config(encrypted_config, data['config_hash'])
+            config = self._encryption.decrypt_config(encrypted_config, data.get('config_hash', ''))
         except Exception as e:
             logger.error(f"Failed to decrypt profile {data['profile_id']}: {e}")
             config = {}
@@ -220,5 +247,5 @@ class ProfileService:
         )
 
 
-def get_profile_service(db_connection: DBConnection) -> ProfileService:
-    return ProfileService(db_connection) 
+def get_profile_service(db_connection=None) -> ProfileService:
+    return ProfileService(db_connection)
