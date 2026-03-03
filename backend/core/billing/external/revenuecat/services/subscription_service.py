@@ -48,7 +48,6 @@ class SubscriptionService:
         if existing_account:
             logger.info(f"[REVENUECAT] Existing account found, checking for Stripe subscription...")
             logger.info(f"[REVENUECAT] Current account state: tier={existing_account.get('tier')}, provider={existing_account.get('provider')}")
-            await SubscriptionService._cancel_existing_stripe_subscription(existing_account, app_user_id)
         else:
             logger.warning(f"[REVENUECAT] No existing account found for {app_user_id}")
         
@@ -111,7 +110,14 @@ class SubscriptionService:
                     f"tier={final_tier}, expiring=${final_expiring}"
                 )
                 
-                if final_balance == 0 and credits_amount > 0:
+                final_expiring_decimal = Decimal(str(final_expiring or 0))
+
+                if (
+                    tier_info.monthly_refill_enabled
+                    and final_tier == tier_name
+                    and final_expiring_decimal <= 0
+                    and credits_amount > 0
+                ):
                     logger.error(
                         f"[REVENUECAT] ❌ CREDITS WERE CLEARED! Re-granting ${credits_amount}..."
                     )
@@ -123,6 +129,10 @@ class SubscriptionService:
                         type='tier_grant'
                     )
                     logger.info(f"[REVENUECAT] ✅ Credits re-granted successfully")
+
+            if existing_account:
+                logger.info("[REVENUECAT] Step 3: Canceling prior Stripe subscription (if any)...")
+                await SubscriptionService._cancel_existing_stripe_subscription(existing_account, app_user_id)
             
             logger.info(f"[REVENUECAT] ✅ apply_subscription_change COMPLETED for {app_user_id}")
         except Exception as e:
