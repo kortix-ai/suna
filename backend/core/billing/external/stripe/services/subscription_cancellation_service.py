@@ -1,5 +1,4 @@
-from typing import Dict
-from datetime import datetime, timezone
+from typing import Dict, Optional
 
 from core.utils.logger import logger
 from ..repositories.subscription_repository import SubscriptionRepository
@@ -12,7 +11,8 @@ class SubscriptionCancellationService:
         account_id = subscription.get('metadata', {}).get('account_id')
         if not account_id:
             customer_id = subscription.get('customer')
-            account_id = await self.subscription_repo.get_account_from_customer(customer_id)
+            if customer_id:
+                account_id = await self.subscription_repo.get_account_from_customer(str(customer_id))
         
         if not account_id:
             logger.warning("[DELETION] No account_id found for deleted subscription")
@@ -35,9 +35,24 @@ class SubscriptionCancellationService:
         expiring_credits = account_data.get('expiring_credits', 0)
         non_expiring_credits = account_data.get('non_expiring_credits', 0)
         provider = account_data.get('provider', 'stripe')
+        deleted_subscription_id = self._extract_subscription_id(subscription)
+        current_stripe_subscription_id = account_data.get('stripe_subscription_id')
         
         if provider == 'revenuecat' or account_data.get('revenuecat_subscription_id'):
             logger.info(f"[DELETION] Account {account_id} uses RevenueCat - skipping Stripe cleanup")
+            return
+
+        if not deleted_subscription_id:
+            logger.warning(
+                f"[DELETION] Missing deleted subscription ID for {account_id} - skipping destructive cleanup"
+            )
+            return
+
+        if current_stripe_subscription_id != deleted_subscription_id:
+            logger.info(
+                f"[DELETION] Stale Stripe deletion for {account_id}: "
+                f"deleted={deleted_subscription_id}, current={current_stripe_subscription_id} - skipping cleanup"
+            )
             return
         
         if current_tier not in ['none', 'free']:
@@ -79,4 +94,10 @@ class SubscriptionCancellationService:
             )
         
         logger.info(f"[DELETION] ✅ Processed paid subscription cancellation for {account_id}")
+
+    @staticmethod
+    def _extract_subscription_id(subscription: Dict) -> Optional[str]:
+        if isinstance(subscription, dict):
+            return subscription.get('id')
+        return getattr(subscription, 'id', None)
     
