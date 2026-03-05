@@ -750,6 +750,39 @@ export const getFactsBySpace = httpAction(async (ctx, request) => {
 });
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// USER ROUTES
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+/**
+ * GET /api/users/get - Get user by ID
+ */
+export const getUser = httpAction(async (ctx, request) => {
+  if (request.method === "OPTIONS") return handleCors();
+
+  const auth = validateAuth(request);
+  if (!auth.valid) {
+    return errorResponse("UNAUTHORIZED", 401, "Missing or invalid Authorization header");
+  }
+
+  const url = new URL(request.url);
+  const userId = url.searchParams.get("userId") || auth.accountId;
+
+  if (!userId) {
+    return errorResponse("MISSING_ID", 400, "userId is required");
+  }
+
+  try {
+    const user = await ctx.runQuery(internal.internal.getUser, { userId });
+    return jsonResponse(user);
+  } catch (error: any) {
+    if (error.message?.includes("NOT_FOUND")) {
+      return errorResponse("NOT_FOUND", 404, "User not found");
+    }
+    return errorResponse("INTERNAL_ERROR", 500, error.message);
+  }
+});
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AGENT ROUTES
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
@@ -1619,6 +1652,13 @@ http.route({
   path: "/api/facts/list",
   method: "GET",
   handler: getFactsBySpace,
+});
+
+// User routes
+http.route({
+  path: "/api/users/get",
+  method: "GET",
+  handler: getUser,
 });
 
 // Agent routes

@@ -1,0 +1,70 @@
+name: Convex Client Smoke Tests
+
+on:
+  pull_request:
+    paths:
+      - "apps/api/core/services/convex_client.py"
+      - "apps/api/test_convex_client.py"
+      - "apps/convex/**"
+  push:
+    branches:
+      - main
+      - staging
+      - develop
+    paths:
+      - "apps/api/core/services/convex_client.py"
+      - "apps/api/test_convex_client.py"
+      - "apps/convex/**"
+  workflow_dispatch:
+
+jobs:
+  smoke-tests:
+    runs-on: ubuntu-latest
+    env:
+      CONVEX_URL: ${{ secrets.CONVEX_URL }}
+      CONVEX_API_KEY: ${{ secrets.CONVEX_API_KEY }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv
+        run: |
+          curl -LsSf https://astral.sh/uv/install.sh | sh
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check Convex secrets
+        id: convex_secrets
+        run: |
+          if [ -z "${CONVEX_URL}" ] || [ -z "${CONVEX_API_KEY}" ]; then
+            echo "run_tests=false" >> "$GITHUB_OUTPUT"
+            echo "missing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run_tests=true" >> "$GITHUB_OUTPUT"
+            echo "missing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install API dependencies
+        if: steps.convex_secrets.outputs.run_tests == 'true'
+        working-directory: apps/api
+        run: uv sync --frozen
+
+      - name: Run Convex smoke tests
+        if: steps.convex_secrets.outputs.run_tests == 'true'
+        working-directory: apps/api
+        run: uv run python test_convex_client.py
+
+      - name: Write summary when skipped
+        if: steps.convex_secrets.outputs.missing == 'true'
+        run: |
+          echo "## Convex Smoke Tests Skipped" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Missing required repository secrets: \`CONVEX_URL\` and/or \`CONVEX_API_KEY\`." >> "$GITHUB_STEP_SUMMARY"

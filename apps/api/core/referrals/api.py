@@ -6,10 +6,12 @@ from datetime import datetime
 from core.utils.auth_utils import verify_and_get_user_id_from_jwt
 from core.utils.logger import logger
 from core.utils.config import config
-from core.services.convex_client import get_convex_client
-from .service import ReferralService
+from .service import (
+    ReferralService,
+    ReferralMigrationPendingError,
+    REFERRAL_MIGRATION_PENDING_MESSAGE,
+)
 from .config import MAX_EARNABLE_CREDITS_FROM_REFERRAL
-from core.utils.config import config
 
 router = APIRouter(prefix="/referrals", tags=["referrals"])
 
@@ -79,6 +81,8 @@ async def refresh_referral_code(
             referral_code=new_code,
             referral_url=referral_url
         )
+    except ReferralMigrationPendingError:
+        raise HTTPException(status_code=503, detail=REFERRAL_MIGRATION_PENDING_MESSAGE)
     except HTTPException:
         raise
     except Exception as e:
@@ -101,6 +105,8 @@ async def get_referral_code(
             referral_code=referral_code,
             referral_url=referral_url
         )
+    except ReferralMigrationPendingError:
+        raise HTTPException(status_code=503, detail=REFERRAL_MIGRATION_PENDING_MESSAGE)
     except Exception as e:
         logger.error(f"Failed to get referral code: {e}", user_id=user_id)
         raise HTTPException(status_code=500, detail="Failed to get referral code")
@@ -132,6 +138,8 @@ async def validate_referral_code(
                 valid=False,
                 message="Invalid referral code"
             )
+    except ReferralMigrationPendingError:
+        raise HTTPException(status_code=503, detail=REFERRAL_MIGRATION_PENDING_MESSAGE)
     except Exception as e:
         logger.error(f"Failed to validate referral code: {e}")
         raise HTTPException(status_code=500, detail="Failed to validate referral code")
@@ -198,6 +206,9 @@ async def send_referral_email(
 ):
     try:
         result = await service.send_referral_emails(user_id, request.emails)
+
+        if result.get("message") == REFERRAL_MIGRATION_PENDING_MESSAGE:
+            raise HTTPException(status_code=503, detail=REFERRAL_MIGRATION_PENDING_MESSAGE)
         
         return ReferralEmailResponse(
             success=result.get('success', False),

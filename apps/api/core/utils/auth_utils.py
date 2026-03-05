@@ -1,24 +1,21 @@
 """
 Authentication and authorization utilities.
 
-CONVEX MIGRATION STATUS: MIGRATED - AUTH LAYER USES CONVEX FOR DATA LOOKUPS
-===========================================================================
+CONVEX MIGRATION STATUS: PARTIAL
+================================
 This module handles core authentication and authorization:
 
-- JWT verification uses Supabase JWT secrets/keys (HS256/ES256) - CONFIG DRIVEN, NOT CLIENT
-- JWKS fetching from Supabase Auth endpoint - HTTP ONLY, NO SUPABASE CLIENT
-- API key validation uses Convex for account lookups
-- Thread/agent authorization checks use Convex for data lookups
-
-Auth stays configured via Supabase (JWT secrets, JWKS) but NO Supabase client imports.
-Data lookups (threads, agents, accounts) use Convex.
+- JWT verification supports configurable JWKS/secret auth providers
+- Account/user lookups use Convex + Redis cache
+- API key validation path uses Convex-backed services
+- Thread/agent authorization checks use Convex
 """
 import hmac
 from fastapi import HTTPException, Request, Header
 from typing import Optional, Dict
 import jwt
 from jwt.exceptions import PyJWTError
-from core.utils.logger import structlog
+import os
 from core.utils.config import config
 
 # Convex import for data lookups (replaces Supabase client)
@@ -48,14 +45,19 @@ _jwks_cache_time: float = 0
 _jwks_cache_ttl: int = 3600  # Cache for 1 hour
 
 
+def _get_auth_jwt_secret() -> Optional[str]:
+    """Get JWT secret from generic auth env var with Supabase fallback."""
+    return os.getenv("AUTH_JWT_SECRET") or config.SUPABASE_JWT_SECRET
+
+
 async def _fetch_jwks() -> Dict:
     """
-    Fetch JWKS (JSON Web Key Set) from Supabase for ES256 token verification.
+    Fetch JWKS (JSON Web Key Set) for ES256 token verification.
     Caches the result to avoid excessive API calls.
-    
-    Supabase's JWKS endpoint requires the anon key in the 'apikey' header.
-    
-    NOTE: This uses HTTP directly, NOT the Supabase client.
+
+    Resolution order:
+    1. AUTH_JWKS_URL (+ optional AUTH_JWKS_API_KEY)
+    2. Supabase JWKS URL fallback derived from SUPABASE_URL
     """
     global _jwks_cache, _jwks_cache_time
     
@@ -63,26 +65,25 @@ async def _fetch_jwks() -> Dict:
     if _jwks_cache and (time.time() - _jwks_cache_time) < _jwks_cache_ttl:
         return _jwks_cache
     
-    supabase_url = config.SUPABASE_URL
-    supabase_anon_key = config.SUPABASE_ANON_KEY
-    
-    if not supabase_url:
-        raise ValueError("SUPABASE_URL not configured")
-    if not supabase_anon_key:
-        raise ValueError("SUPABASE_ANON_KEY not configured")
-    
-    # Supabase JWKS endpoint (standard OAuth2/OIDC .well-known path)
-    jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+    jwks_url = os.getenv("AUTH_JWKS_URL")
+    jwks_api_key = os.getenv("AUTH_JWKS_API_KEY")
+
+    if not jwks_url:
+        supabase_url = config.SUPABASE_URL
+        if not supabase_url:
+            raise ValueError("AUTH_JWKS_URL or SUPABASE_URL must be configured")
+        jwks_url = f"{supabase_url.rstrip('/')}/auth/v1/.well-known/jwks.json"
+        jwks_api_key = jwks_api_key or config.SUPABASE_ANON_KEY
     
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            # Supabase requires the anon key in the 'apikey' header
+            headers = {"Accept": "application/json"}
+            if jwks_api_key:
+                headers["apikey"] = jwks_api_key
+
             response = await client.get(
                 jwks_url,
-                headers={
-                    "apikey": supabase_anon_key,
-                    "Accept": "application/json"
-                }
+                headers=headers
             )
             response.raise_for_status()
             jwks = response.json()
@@ -239,10 +240,10 @@ async def _decode_jwt_with_verification_async(token: str) -> dict:
     
     # Fallback to HS256 (legacy Supabase JWT secret)
     if algorithm == 'HS256':
-        jwt_secret = config.SUPABASE_JWT_SECRET
+        jwt_secret = _get_auth_jwt_secret()
         
         if not jwt_secret:
-            logger.error("SUPABASE_JWT_SECRET is not configured - JWT verification disabled!")
+            logger.error("No JWT secret configured (AUTH_JWT_SECRET/SUPABASE_JWT_SECRET)")
             raise HTTPException(
                 status_code=500,
                 detail="Server authentication configuration error"
@@ -316,10 +317,10 @@ def _decode_jwt_with_verification(token: str) -> dict:
         )
     
     # For HS256, proceed synchronously
-    jwt_secret = config.SUPABASE_JWT_SECRET
+    jwt_secret = _get_auth_jwt_secret()
     
     if not jwt_secret:
-        logger.error("SUPABASE_JWT_SECRET is not configured - JWT verification disabled!")
+        logger.error("No JWT secret configured (AUTH_JWT_SECRET/SUPABASE_JWT_SECRET)")
         raise HTTPException(
             status_code=500,
             detail="Server authentication configuration error"
@@ -389,10 +390,10 @@ async def get_account_id_from_thread(thread_id: str) -> str:
 
 async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
     """
-    Get user_id from account_id using cache.
-    
-    NOTE: Account-to-user mapping remains in Supabase (Basejump).
-    This function uses direct HTTP calls to Supabase PostgREST, not the client.
+    Resolve user_id from account_id using cache + Convex lookup.
+
+    In Convex-migrated deployments, account IDs are typically user IDs.
+    We still attempt a Convex users lookup for validation and future flexibility.
     """
     cache_key = f"account_user:{account_id}"
     
@@ -403,42 +404,28 @@ async def _get_user_id_from_account_cached(account_id: str) -> Optional[str]:
     except Exception as e:
         structlog.get_logger().warning(f"Redis cache lookup failed for account {account_id}: {e}")
     
-    # Use HTTP directly to query Basejump accounts (no Supabase client)
+    resolved_user_id: Optional[str] = None
+
     try:
-        supabase_url = config.SUPABASE_URL
-        supabase_service_key = config.SUPABASE_SERVICE_ROLE_KEY
-        
-        if not supabase_url or not supabase_service_key:
-            structlog.get_logger().error("Supabase URL or service key not configured")
-            return None
-        
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            response = await client.get(
-                f"{supabase_url}/rest/v1/accounts?id=eq.{account_id}&select=primary_owner_user_id",
-                headers={
-                    "apikey": supabase_service_key,
-                    "Authorization": f"Bearer {supabase_service_key}",
-                    "Content-Type": "application/json"
-                }
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            if data:
-                user_id = data[0].get('primary_owner_user_id')
-                
-                try:
-                    await redis.setex(cache_key, 300, user_id)
-                except Exception as e:
-                    structlog.get_logger().warning(f"Failed to cache user lookup: {e}")
-                    
-                return user_id
-        
-        return None
-        
+        convex = get_convex_client()
+        user = await convex.get_user(account_id)
+        if user:
+            resolved_user_id = user.get("id") or account_id
     except Exception as e:
-        structlog.get_logger().error(f"Database lookup failed for account {account_id}: {e}")
-        return None
+        structlog.get_logger().debug(
+            f"Convex user lookup failed for account_id={account_id}; falling back to identity mapping: {e}"
+        )
+        resolved_user_id = account_id
+
+    if not resolved_user_id:
+        resolved_user_id = account_id
+
+    try:
+        await redis.setex(cache_key, 300, resolved_user_id)
+    except Exception as e:
+        structlog.get_logger().warning(f"Failed to cache user lookup: {e}")
+
+    return resolved_user_id
 
 async def verify_and_get_user_id_from_jwt(request: Request) -> str:
     x_api_key = request.headers.get('x-api-key')
@@ -455,11 +442,7 @@ async def verify_and_get_user_id_from_jwt(request: Request) -> str:
             public_key, secret_key = x_api_key.split(':', 1)
             
             from core.services.api_keys import APIKeyService
-            # API key service still uses Supabase for now - use HTTP client instead
-            # TODO: Migrate API key validation to Convex
-            from core.services.http_client import get_supabase_http_client
-            http_client = await get_supabase_http_client()
-            api_key_service = APIKeyService(http_client)
+            api_key_service = APIKeyService()
             
             validation_result = await api_key_service.validate_api_key(public_key, secret_key)
             

@@ -836,6 +836,23 @@ class ConvexClient:
     # Agent Operations
     # ==========================================
 
+    async def get_user(
+        self,
+        user_id: str,
+        account_id: str = None
+    ) -> dict:
+        """Get a user by ID.
+
+        Args:
+            user_id: User ID to fetch
+            account_id: Optional account ID for request context
+
+        Returns:
+            User data
+        """
+        params = {"userId": user_id}
+        return await self._request("/api/users/get", "GET", params=params, account_id=account_id)
+
     async def create_agent(
         self,
         agent_id: str,

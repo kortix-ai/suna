@@ -54,14 +54,8 @@ def verify_role(required_role: str):
         try:
             client = get_convex_client()
             
-            # Attempt to fetch user from Convex to check their role/tier
-            # NOTE: Requires Convex endpoint GET /api/users/get?userId=...
-            # This endpoint does not exist yet in http.ts
-            user_data = await client._request(
-                "/api/users/get",
-                "GET",
-                params={"userId": user['user_id']}
-            )
+            # Fetch user from Convex to check role/tier metadata.
+            user_data = await client.get_user(user['user_id'])
             
             if user_data:
                 # Map tier to role for now (until proper user_roles table exists)
@@ -87,9 +81,8 @@ def verify_role(required_role: str):
                         user_role = 'super_admin'
                         
         except Exception as e:
-            # If Convex query fails (endpoint not implemented yet), 
-            # log warning and default to user role for security
-            logger.warning(f"Could not fetch user role from Convex (endpoint may not exist): {e}")
+            # If user lookup fails, default to least privilege.
+            logger.warning(f"Could not fetch user role from Convex: {e}")
             user_role = 'user'
 
         role_hierarchy = {'user': 0, 'admin': 1, 'super_admin': 2}

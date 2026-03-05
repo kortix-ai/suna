@@ -117,7 +117,7 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
             if referral_code:
                 logger.info(f"[SETUP] Processing referral code for {account_id}: {referral_code}")
                 try:
-                    from core.referrals.service import ReferralService
+                    from core.referrals.service import ReferralService, ReferralMigrationPendingError
 
                     referral_service = ReferralService()
                     referrer_id = await referral_service.validate_referral_code(referral_code)
@@ -142,6 +142,8 @@ async def initialize_user_account(account_id: str, email: Optional[str] = None, 
                             f"[SETUP] Invalid referral code or self-referral: {referral_code}, "
                             f"referrer_id={referrer_id}, new_user_id={account_id}"
                         )
+                except ReferralMigrationPendingError as migration_error:
+                    logger.info(f"[SETUP] Skipping referral processing: {migration_error}")
                 except Exception as ref_error:
                     logger.error(f"[SETUP] Error processing referral: {ref_error}", exc_info=True)
 

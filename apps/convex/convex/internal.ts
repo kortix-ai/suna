@@ -9,6 +9,27 @@ import { v } from "convex/values";
 import { ConvexError } from "convex/values";
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// USER OPERATIONS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const getUser = internalQuery({
+  args: { userId: v.string() },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const user = await ctx.db
+      .query("users")
+      .filter((q) => q.eq(q.field("id"), args.userId))
+      .first();
+
+    if (!user) {
+      throw new ConvexError({ code: "NOT_FOUND", message: "User not found" });
+    }
+
+    return user;
+  },
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // THREAD OPERATIONS
 // ═══════════════════════════════════════════════════════════════════════════════
 

@@ -1,13 +1,21 @@
 from typing import Dict, Optional, List
 from decimal import Decimal
-from core.services.convex_client import get_convex_client, ConvexError
+from core.services.convex_client import get_convex_client
 from core.utils.logger import logger
 from core.billing.shared.config import CREDITS_PER_DOLLAR
-from .config import REFERRAL_CREDITS, MAX_EARNABLE_CREDITS_FROM_REFERRAL
-import json
-import re
+from .config import MAX_EARNABLE_CREDITS_FROM_REFERRAL
 from core.notifications.notification_service import NotificationService
 from core.utils.config import config
+
+
+REFERRAL_MIGRATION_PENDING_MESSAGE = (
+    "Referral features are temporarily unavailable while Convex migration is in progress."
+)
+
+
+class ReferralMigrationPendingError(RuntimeError):
+    """Raised when referral functionality is not yet implemented for Convex."""
+
 
 class ReferralService:
     def __init__(self):
@@ -22,19 +30,19 @@ class ReferralService:
         # TODO: Convex migration - need to implement expire_referral_code RPC equivalent
         # The Convex client currently does not support referral RPC calls
         logger.warning(f"expire_and_regenerate_code not yet migrated to Convex for user {user_id}")
-        raise Exception("Referral code refresh not yet available (Convex migration pending)")
+        raise ReferralMigrationPendingError(REFERRAL_MIGRATION_PENDING_MESSAGE)
 
     async def get_or_create_referral_code(self, user_id: str) -> str:
         # TODO: Convex migration - need to implement get_or_create_referral_code RPC equivalent
         # The Convex client currently does not support referral RPC calls
         logger.warning(f"get_or_create_referral_code not yet migrated to Convex for user {user_id}")
-        raise Exception("Referral code creation not yet available (Convex migration pending)")
+        raise ReferralMigrationPendingError(REFERRAL_MIGRATION_PENDING_MESSAGE)
 
     async def validate_referral_code(self, code: str) -> Optional[str]:
         # TODO: Convex migration - need to implement validate_referral_code RPC equivalent
         # The Convex client currently does not support referral RPC calls
         logger.warning(f"validate_referral_code not yet migrated to Convex for code {code}")
-        return None
+        raise ReferralMigrationPendingError(REFERRAL_MIGRATION_PENDING_MESSAGE)
 
     async def check_total_earned_credits(self, user_id: str) -> Decimal:
         # TODO: Convex migration - need to implement referral_stats table query
@@ -88,7 +96,6 @@ class ReferralService:
         try:
             referral_code = await self.get_or_create_referral_code(user_id)
             
-            from core.utils.config import config
             frontend_url = config.FRONTEND_URL
             referral_url = f"{frontend_url}/auth?ref={referral_code}"
 
@@ -131,7 +138,6 @@ class ReferralService:
         try:
             referral_code = await self.get_or_create_referral_code(user_id)
             
-            from core.utils.config import config
             frontend_url = config.FRONTEND_URL
             referral_url = f"{frontend_url}/auth?ref={referral_code}"
 

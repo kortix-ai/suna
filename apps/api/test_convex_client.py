@@ -4,7 +4,7 @@ Test script for Convex Python client.
 
 Usage:
     cd /Users/alias/Documents/aeos/suna/apps/api
-    CONVEX_URL=https://disciplined-tiger-449.convex.site CONVEX_API_KEY=dev_suna_api_key_2024 python test_convex_client.py
+    CONVEX_URL=https://<your-convex-deployment>.convex.site CONVEX_API_KEY=<your-api-key> python test_convex_client.py
 """
 
 import asyncio
@@ -16,16 +16,10 @@ from datetime import datetime
 # Add the parent directory to the path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from core.services.convex_client import (
-    ConvexClient,
-    ConvexError,
-    NotFoundError,
-    get_convex_client,
-    close_convex_client
-)
+from core.services.convex_client import ConvexClient
 
-BASE_URL = os.getenv("CONVEX_URL", "https://disciplined-tiger-449.convex.site")
-API_KEY = os.getenv("CONVEX_API_KEY", "dev_suna_api_key_2024")
+BASE_URL = os.getenv("CONVEX_URL")
+API_KEY = os.getenv("CONVEX_API_KEY")
 
 # Test counters
 PASSED = 0
@@ -47,6 +41,10 @@ async def test(name: str, coro):
 
 
 async def main():
+    if not BASE_URL or not API_KEY:
+        print("❌ Missing required environment variables: CONVEX_URL and CONVEX_API_KEY")
+        sys.exit(1)
+
     print("═══════════════════════════════════════════════════════════════")
     print(f"    CONVEX PYTHON CLIENT TEST SUITE - {datetime.now()}")
     print("═══════════════════════════════════════════════════════════════")

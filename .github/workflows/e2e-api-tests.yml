@@ -7,7 +7,8 @@ on:
       - staging     # STAGING environment
       - PRODUCTION  # PRODUCTION environment
     paths:
-      - 'backend/**'
+      - 'apps/api/**'
+      - 'apps/convex/**'
   workflow_dispatch:
     inputs:
       environment:
@@ -109,7 +110,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install E2E test dependencies
-        working-directory: backend
+        working-directory: apps/api
         run: |
           pip install -r tests/requirements-e2e.txt
 
@@ -160,7 +161,7 @@ jobs:
           exit 1
 
       - name: Run E2E tests
-        working-directory: backend
+        working-directory: apps/api
         env:
           TEST_API_URL: ${{ steps.env.outputs.api_url }}
           # Environment-specific Supabase credentials

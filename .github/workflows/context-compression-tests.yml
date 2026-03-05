@@ -3,18 +3,18 @@ name: Context Compression Tests
 on:
   pull_request:
     paths:
-      - 'backend/core/agents/pipeline/stateless/coordinator/execution.py'
-      - 'backend/core/agents/pipeline/stateless/context/**'
-      - 'backend/tests/core/test_execution_engine_compression.py'
-      - 'backend/core/ai_models/**'
+      - 'apps/api/core/agents/pipeline/stateless/coordinator/execution.py'
+      - 'apps/api/core/agents/pipeline/stateless/context/**'
+      - 'apps/api/tests/core/test_execution_engine_compression.py'
+      - 'apps/api/core/ai_models/**'
   push:
     branches:
       - main
       - develop
     paths:
-      - 'backend/core/agents/pipeline/stateless/coordinator/execution.py'
-      - 'backend/core/agents/pipeline/stateless/context/**'
-      - 'backend/tests/core/test_execution_engine_compression.py'
+      - 'apps/api/core/agents/pipeline/stateless/coordinator/execution.py'
+      - 'apps/api/core/agents/pipeline/stateless/context/**'
+      - 'apps/api/tests/core/test_execution_engine_compression.py'
   workflow_dispatch:
 
 jobs:
@@ -35,15 +35,18 @@ jobs:
         run: |
           curl -LsSf https://astral.sh/uv/install.sh | sh
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
           
       - name: Install dependencies
-        working-directory: backend
+        working-directory: apps/api
         run: uv sync --frozen
           
       - name: Run execution engine compression tests
-        working-directory: backend
+        working-directory: apps/api
         env:
-          PYTHONPATH: ${{ github.workspace }}/backend
+          PYTHONPATH: ${{ github.workspace }}/apps/api
         run: |
           uv run pytest tests/core/test_execution_engine_compression.py \
             -v \
