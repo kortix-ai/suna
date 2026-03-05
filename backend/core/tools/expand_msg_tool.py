@@ -1,7 +1,18 @@
 from core.agentpress.tool import Tool, ToolResult, openapi_schema, tool_metadata
 from core.agentpress.thread_manager import ThreadManager
-from typing import List
+from typing import List, Optional
+import asyncio
 import json
+
+
+_mcp_registry_lock: Optional[asyncio.Lock] = None
+
+
+def _get_mcp_registry_lock() -> asyncio.Lock:
+    global _mcp_registry_lock
+    if _mcp_registry_lock is None:
+        _mcp_registry_lock = asyncio.Lock()
+    return _mcp_registry_lock
 
 @tool_metadata(
     display_name="Internal Utilities",
@@ -278,7 +289,10 @@ class ExpandMessageTool(Tool):
                 else:
                     info = registry.get_tool_info(tool_name)
                     logger.warning(f"⚠️  [INIT TOOLS] Tool '{tool_name}' has no detailed guide")
-                    fallback_guide = f"## {info[0]}\n\nNo detailed guide available. Basic description: {info[1]}"
+                    if info:
+                        fallback_guide = f"## {info[0]}\n\nNo detailed guide available. Basic description: {info[1]}"
+                    else:
+                        fallback_guide = f"## {tool_name}\n\nNo detailed guide available."
                     guides.append(fallback_guide)
                     guides_to_cache[tool_name] = fallback_guide
         
@@ -308,30 +322,38 @@ class ExpandMessageTool(Tool):
         
         return result
 
-    async def _discover_tools(self, filter: str = None) -> ToolResult:
-        from core.agentpress.mcp_registry import get_mcp_registry
+    async def _discover_tools(self, filter: Optional[str] = None) -> ToolResult:
+        from core.agentpress.mcp_registry import get_mcp_registry, init_mcp_registry_from_loader
         from core.utils.logger import logger
         
-        mcp_registry = get_mcp_registry()
-        
         mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
-        if mcp_loader:
-            loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
-            registry_tool_count = len(mcp_registry._tools)
-            
-            if self._mcp_registry_out_of_sync(mcp_registry, mcp_loader):
-                from core.agentpress.mcp_registry import init_mcp_registry_from_loader
-                logger.info(f"🔄 [MCP REGISTRY] Syncing registry: loader has {loader_tool_count} tools, registry has {registry_tool_count}")
-                init_mcp_registry_from_loader(mcp_loader)
-                mcp_registry._initialized = True
-                
-                account_id = getattr(self.thread_manager, 'account_id', None)
-                warmed = await mcp_registry.prewarm_schemas(account_id)
-                if warmed > 0:
-                    logger.info(f"⚡ [MCP REGISTRY] Pre-warmed {warmed} schemas from Redis cache")
-        
-        account_id = getattr(self.thread_manager, 'account_id', None)
-        discovery_info = await mcp_registry.get_discovery_info(filter, load_schemas=True, account_id=account_id)
+        loader_tool_map = mcp_loader.tool_map if mcp_loader and mcp_loader.tool_map else {}
+
+        # Fail safe: if this thread has no MCP loader/tools, do not read global registry state.
+        if not loader_tool_map:
+            logger.info(f"🔒 [MCP DISCOVERY] No MCP tools available for thread {self.thread_id}; returning empty discovery")
+            return self.success_response({
+                "available_tools": {},
+                "total_count": 0,
+                "toolkits": [],
+                "filter_applied": filter,
+            })
+
+        mcp_registry = get_mcp_registry()
+
+        async with _get_mcp_registry_lock():
+            logger.info(
+                f"🔄 [MCP REGISTRY] Syncing registry for discover: loader has {len(loader_tool_map)} tools"
+            )
+            init_mcp_registry_from_loader(mcp_loader)
+            mcp_registry._initialized = True
+
+            account_id = getattr(self.thread_manager, 'account_id', None)
+            warmed = await mcp_registry.prewarm_schemas(account_id)
+            if warmed > 0:
+                logger.info(f"⚡ [MCP REGISTRY] Pre-warmed {warmed} schemas from Redis cache")
+
+            discovery_info = await mcp_registry.get_discovery_info(filter, load_schemas=True, account_id=account_id)
         
         logger.info(f"🔍 [MCP DISCOVERY] Found {discovery_info['total_count']} MCP tools across {len(discovery_info['toolkits'])} toolkits with full schemas")
         
@@ -348,7 +370,6 @@ class ExpandMessageTool(Tool):
         
         if isinstance(args, str):
             try:
-                import json
                 args = json.loads(args)
                 logger.info(f"🔧 [ARGS FIX] Converted string args to JSON object for {tool_name}")
             except json.JSONDecodeError:
@@ -358,6 +379,25 @@ class ExpandMessageTool(Tool):
         native_tools = ['web_search', 'image_search', 'create_file', 'read_file', 'edit_file', 'create_slide', 'browser_navigate', 'shell_command', 'scrape_webpage']
         if tool_name in native_tools:
             return self.fail_response(f"Tool '{tool_name}' is a native tool. Use initialize_tools to load {tool_name}_tool first, then use {tool_name} directly.")
+
+        mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
+        loader_tool_map = mcp_loader.tool_map if mcp_loader and mcp_loader.tool_map else {}
+        if not loader_tool_map:
+            logger.warning(
+                f"🔒 [MCP EXEC] Blocked {tool_name}: no MCP tools loaded for thread {self.thread_id}"
+            )
+            return self.fail_response(
+                f"MCP tool '{tool_name}' is not available in this thread context. "
+                "Connect/configure the integration for this account first."
+            )
+
+        if tool_name not in loader_tool_map:
+            logger.warning(
+                f"🔒 [MCP EXEC] Blocked {tool_name}: not present in current thread MCP map"
+            )
+            return self.fail_response(
+                f"MCP tool '{tool_name}' not found in this thread's MCP context"
+            )
 
         integration_labels = {
             'TWITTER_': 'Accessing Twitter',
@@ -394,26 +434,22 @@ class ExpandMessageTool(Tool):
                     break
         
         logger.info(f"🔧 [MCP_ACTION] {friendly_status}")
-        from core.agentpress.mcp_registry import get_mcp_registry, MCPExecutionContext
+        from core.agentpress.mcp_registry import get_mcp_registry, MCPExecutionContext, init_mcp_registry_from_loader
         
         mcp_registry = get_mcp_registry()
-        mcp_loader = getattr(self.thread_manager, 'mcp_loader', None)
-        if mcp_loader:
-            loader_tool_count = len(mcp_loader.tool_map) if mcp_loader.tool_map else 0
-            registry_tool_count = len(mcp_registry._tools)
-            
-            if self._mcp_registry_out_of_sync(mcp_registry, mcp_loader):
-                from core.agentpress.mcp_registry import init_mcp_registry_from_loader
-                logger.info(f"🔄 [MCP REGISTRY] Syncing registry for execute: loader has {loader_tool_count} tools, registry has {registry_tool_count}")
-                init_mcp_registry_from_loader(mcp_loader)
-                mcp_registry._initialized = True
-                
-                account_id = getattr(self.thread_manager, 'account_id', None)
-                await mcp_registry.prewarm_schemas(account_id)
-        
         execution_context = MCPExecutionContext(self.thread_manager)
-        
-        return await mcp_registry.execute_tool(tool_name, args, execution_context)
+
+        async with _get_mcp_registry_lock():
+            logger.info(
+                f"🔄 [MCP REGISTRY] Syncing registry for execute: loader has {len(loader_tool_map)} tools"
+            )
+            init_mcp_registry_from_loader(mcp_loader)
+            mcp_registry._initialized = True
+
+            account_id = getattr(self.thread_manager, 'account_id', None)
+            await mcp_registry.prewarm_schemas(account_id)
+
+            return await mcp_registry.execute_tool(tool_name, args, execution_context)
 
     async def _save_dynamic_tools_to_metadata(self, new_tool_names: List[str]) -> None:
         from core.utils.logger import logger
@@ -447,16 +483,3 @@ class ExpandMessageTool(Tool):
             
         except Exception as e:
             logger.error(f"❌ [DYNAMIC TOOLS] Failed to save tools to metadata: {e}", exc_info=True)
-
-if __name__ == "__main__":
-    import asyncio
-
-    async def test_expand_message_tool():
-        expand_message_tool = ExpandMessageTool()
-
-        expand_message_result = await expand_message_tool.expand_message(
-            message_id="004ab969-ef9a-4656-8aba-e392345227cd"
-        )
-        print("Expand message result:", expand_message_result)
-
-    asyncio.run(test_expand_message_tool())
