@@ -49,7 +49,11 @@ class ManagerInitializer:
 
         await ManagerInitializer._reload_dynamic_tools(ctx, thread_manager, jit_config)
 
-        if ctx.agent_config and (ctx.agent_config.get("custom_mcps") or ctx.agent_config.get("configured_mcps")):
+        if ctx.agent_config and (
+            ctx.agent_config.get("custom_mcps")
+            or ctx.agent_config.get("configured_mcps")
+            or ctx.agent_config.get("_mcps_need_loading")
+        ):
             try:
                 from core.agents.runner.mcp_manager import MCPManager
                 mcp_manager = MCPManager(thread_manager, ctx.account_id)
