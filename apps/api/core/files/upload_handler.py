@@ -1,0 +1,200 @@
+import asyncio
+import json
+import re
+from typing import Optional, List, Tuple, Dict, Any
+
+from fastapi import UploadFile
+
+from core.services import redis
+# MIGRATED: from core.services.supabase import DBConnection
+# Using Convex client for database operations
+from core.services.convex_client import get_convex_client
+from core.utils.logger import logger
+from core.utils.sandbox_utils import generate_unique_filename, get_uploads_directory
+from core.utils.files_utils import normalize_filename
+from core.sandbox.resolver import resolve_sandbox
+
+# Convex client for database operations
+convex = get_convex_client()
+
+
+async def fast_parse_files(files: List[UploadFile], prompt: str = "") -> Tuple[str, List[Tuple[str, bytes, str, Optional[str]]]]:
+    from core.utils.fast_parse import parse, FileType, format_file_size
+    
+    if not files:
+        return prompt, []
+    
+    message_content = prompt
+    files_for_upload: List[Tuple[str, bytes, str, Optional[str]]] = []
+    file_refs = []
+    
+    existing_refs = set()
+    if prompt:
+        existing_matches = re.findall(r'\[(?:Uploaded File|Attached|Image):\s*([^\]]+)\]', prompt)
+        for match in existing_matches:
+            normalized = match.replace('/workspace/', '') if match.startswith('/workspace/') else match
+            existing_refs.add(normalized.lower())
+    
+    for file in files:
+        if not file.filename:
+            continue
+
+        try:
+            # Normalize filename for Unicode compatibility (macOS screenshots, etc.)
+            original_filename = normalize_filename(file.filename.replace('/', '_').replace('\\', '_'))
+            content_bytes = await file.read()
+            mime_type = file.content_type or "application/octet-stream"
+            
+            result = parse(content_bytes, original_filename, mime_type)
+            
+            parsed_content = None
+            if result.success and result.file_type != FileType.IMAGE:
+                parsed_content = result.content
+                if len(parsed_content) > 100000:
+                    parsed_content = parsed_content[:100000]
+            
+            files_for_upload.append((original_filename, content_bytes, mime_type, parsed_content))
+            
+            file_path = f"uploads/{original_filename}"
+            if file_path.lower() not in existing_refs:
+                file_refs.append(f"[Attached: {original_filename} ({format_file_size(result.file_size)}) -> {file_path}]")
+            
+            logger.debug(f"Fast-parsed {original_filename}: {result.char_count} chars, type={result.file_type.name}")
+                
+        except Exception as e:
+            logger.error(f"Error fast-parsing file {file.filename}: {str(e)}", exc_info=True)
+            file_path = f"uploads/{file.filename}"
+            if file_path.lower() not in existing_refs:
+                file_refs.append(f"[Attached: {file.filename} -> {file_path}]")
+        finally:
+            await file.seek(0)
+    
+    if file_refs:
+        message_content = prompt + "\n\n" + "\n".join(file_refs) if prompt else "\n".join(file_refs)
+    
+    return message_content, files_for_upload
+
+
+async def upload_files_to_sandbox(
+    project_id: str,
+    thread_id: str,
+    files_data: List[Tuple[str, bytes, str, Optional[str]]],
+    account_id: Optional[str] = None,
+):
+    if not files_data:
+        return
+
+    logger.info(f"[UPLOAD] Uploading files for project {project_id} ({len(files_data)} files)")
+
+    try:
+        if not account_id:
+            logger.warning(f"[UPLOAD] account_id required for project {project_id} - cannot resolve sandbox without it")
+            return
+
+        # NOTE: resolve_sandbox still requires db_client parameter for now.
+        # The sandbox resolver needs migration to use Convex for project lookups.
+        # This is tracked separately - sandbox operations are independent of file storage.
+        sandbox_info = await resolve_sandbox(
+            project_id=project_id,
+            account_id=account_id,
+            db_client=None,  # TODO: Migrate resolve_sandbox to use Convex
+            require_started=True
+        )
+
+        if not sandbox_info:
+            logger.info(f"[UPLOAD] No sandbox for project {project_id} - files cached in Redis only")
+            return
+
+        logger.info(f"[UPLOAD] Sandbox {sandbox_info.sandbox_id} ready, uploading {len(files_data)} files...")
+        uploads_dir = get_uploads_directory()
+        uploaded_count = 0
+
+        for filename, content_bytes, mime_type, _ in files_data:
+            try:
+                unique_filename = await generate_unique_filename(sandbox_info.sandbox, uploads_dir, filename)
+                target_path = f"{uploads_dir}/{unique_filename}"
+
+                if hasattr(sandbox_info.sandbox, 'fs') and hasattr(sandbox_info.sandbox.fs, 'upload_file'):
+                    await sandbox_info.sandbox.fs.upload_file(content_bytes, target_path)
+                    uploaded_count += 1
+                    logger.debug(f"[UPLOAD] Complete: {filename} -> {target_path}")
+            except Exception as e:
+                logger.warning(f"[UPLOAD] Failed for {filename}: {str(e)}")
+
+        logger.info(f"[UPLOAD] Complete: {uploaded_count}/{len(files_data)} files to sandbox {sandbox_info.sandbox_id}")
+
+    except Exception as e:
+        logger.warning(f"[UPLOAD] Error for project {project_id}: {str(e)}")
+
+
+async def get_cached_file_context(thread_id: str) -> Optional[List[Dict[str, Any]]]:
+    try:
+        cache_key = f"file_context:{thread_id}"
+        cached = await redis.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception as e:
+        logger.warning(f"Failed to retrieve cached file context for {thread_id}: {e}")
+    return None
+
+
+def format_file_context_for_agent(files: List[Dict[str, Any]]) -> str:
+    if not files:
+        return ""
+    
+    parts = ["\n\n--- ATTACHED FILE CONTENTS ---"]
+    for f in files:
+        filename = f.get("filename", "unknown")
+        content = f.get("content", "")
+        size = f.get("size", 0)
+        
+        if content:
+            parts.append(f"\n### {filename} ({size:,} bytes)\n```\n{content}\n```")
+    
+    parts.append("\n--- END OF ATTACHED FILES ---\n")
+    return "\n".join(parts)
+
+
+async def handle_file_uploads_fast(
+    files: List[UploadFile],
+    project_id: str,
+    prompt: str = "",
+    thread_id: Optional[str] = None,
+    account_id: Optional[str] = None,
+) -> str:
+    message_content, files_data = await fast_parse_files(files, prompt)
+    
+    if files_data:
+        tid = thread_id or project_id
+        
+        parsed_contents = []
+        for filename, content_bytes, mime_type, parsed_content in files_data:
+            if parsed_content:
+                parsed_contents.append({
+                    "filename": filename,
+                    "content": parsed_content,
+                    "mime_type": mime_type,
+                    "size": len(content_bytes)
+                })
+        
+        if parsed_contents:
+            try:
+                cache_key = f"file_context:{tid}"
+                await redis.set(cache_key, json.dumps(parsed_contents), ex=3600)
+                logger.info(f"[UPLOAD] Cached {len(parsed_contents)} parsed files for thread {tid}")
+            except Exception as cache_error:
+                logger.warning(f"Failed to cache parsed files: {cache_error}")
+        
+        if project_id:
+            await upload_files_to_sandbox(project_id, tid, files_data, account_id)
+    
+    return message_content
+
+
+async def ensure_sandbox_for_thread(client, project_id: str, files: Optional[List[Any]] = None):
+    # NOTE: Sandbox resolution requires project lookup.
+    # The resolve_sandbox function needs migration to use Convex for project lookups.
+    # This is tracked separately - sandbox operations are independent of file storage.
+    # When resolve_sandbox is migrated, this function can use convex.get_thread() etc.
+    logger.warning(f"ensure_sandbox_for_thread needs Convex project endpoint for {project_id}")
+    return None, None

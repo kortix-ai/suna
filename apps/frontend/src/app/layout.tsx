@@ -12,6 +12,7 @@ import { roobertMono } from './fonts/roobert-mono';
 import { Suspense, lazy } from 'react';
 import { I18nProvider } from '@/components/i18n-provider';
 import { featureFlags } from '@/lib/feature-flags';
+import { ConvexClientProvider } from '@/lib/convex/provider';
 
 // Lazy load non-critical analytics and global components
 const Analytics = lazy(() => import('@vercel/analytics/react').then(mod => ({ default: mod.Analytics })));
@@ -252,11 +253,13 @@ export default function RootLayout({
             <I18nProvider>
               <PresenceProvider>
               <ReactQueryProvider>
-                {children}
-                <Toaster />
-                <Suspense fallback={null}>
-                  <PlanSelectionModal />
-                </Suspense>
+                <ConvexClientProvider>
+                  {children}
+                  <Toaster />
+                  <Suspense fallback={null}>
+                    <PlanSelectionModal />
+                  </Suspense>
+                </ConvexClientProvider>
               </ReactQueryProvider>
               </PresenceProvider>
             </I18nProvider>

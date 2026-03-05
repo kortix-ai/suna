@@ -148,6 +148,7 @@
     "color-bits": "^1.1.0",
     "colorthief": "^2.6.0",
     "comment-json": "^4.2.5",
+    "convex": "^1.32.0",
     "date-fns": "^3.6.0",
     "diff": "^7.0.0",
     "docx-preview": "^0.3.7",

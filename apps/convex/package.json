@@ -1,0 +1,21 @@
+{
+  "name": "ultimate-backend",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "convex dev",
+    "deploy": "convex deploy",
+    "logs": "docker-compose -f ../docker-compose.yml logs -f"
+  },
+  "dependencies": {
+    "@convex-dev/better-auth": "^0.10.9",
+    "better-auth": "^1.4.9",
+    "convex": "^1.32.0",
+    "convex-ents": "^0.16.0",
+    "neo4j-driver": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.5.0"
+  }
+}

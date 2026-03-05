@@ -1,19 +1,31 @@
 {
   "name": "agentpress",
   "private": true,
+  "packageManager": "pnpm@10.14.0",
   "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "clean": "turbo run clean",
     "dev:frontend": "pnpm --filter Kortix dev",
     "dev:mobile": "pnpm --filter kortix dev",
     "build:frontend": "pnpm --filter Kortix build"
   },
-  "pnpm": {
-    "overrides": {
-      "@types/react": "^19.2.7",
-      "@types/react-dom": "^19.1.7"
-    }
+  "devDependencies": {
+    "turbo": "^2.4.0"
   },
   "dependencies": {
     "@babel/types": "^7.28.6",
+    "convex": "^1.32.0",
     "next": "^16.1.4"
-  }
+  },
+  "overrides": {
+    "@types/react": "^19.2.7",
+    "@types/react-dom": "^19.1.7"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
 }
