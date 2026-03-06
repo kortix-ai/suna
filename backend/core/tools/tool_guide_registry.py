@@ -109,6 +109,7 @@ class ToolGuideRegistry:
             'people_search_tool': 'search',
             'company_search_tool': 'search',
             'paper_search_tool': 'search',
+            'warpgrep_tool': 'search',
             'browser_tool': 'browser',
             'sb_vision_tool': 'media',
             'sb_image_edit_tool': 'media',

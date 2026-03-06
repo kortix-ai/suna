@@ -43,6 +43,7 @@ export function getToolTitle(toolName: string): string {
     'delete-file': 'Delete File',
     'web-search': 'Web Search',
     'image-search': 'Image Search',
+    'codebase-search': 'Codebase Search',
     'crawl-webpage': 'Web Crawl',
     'scrape-webpage': 'Web Scrape',
     'browser-navigate-to': 'Browser Navigate',

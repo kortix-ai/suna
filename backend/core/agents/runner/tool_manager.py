@@ -120,7 +120,18 @@ class ToolManager:
         if config.SERPER_API_KEY and self._is_tool_enabled('image_search_tool'):
             enabled_methods = self._get_enabled_methods_for_tool('image_search_tool')
             self.thread_manager.add_tool(SandboxImageSearchTool, function_names=enabled_methods, thread_manager=self.thread_manager, project_id=self.project_id)
-        
+
+        # WarpGrep codebase search (BYOK - key resolved lazily at call time)
+        if self._is_tool_enabled('warpgrep_tool'):
+            from core.tools.warpgrep_tool import WarpGrepTool
+            enabled_methods = self._get_enabled_methods_for_tool('warpgrep_tool')
+            self.thread_manager.add_tool(
+                WarpGrepTool,
+                function_names=enabled_methods,
+                project_id=self.project_id,
+                thread_manager=self.thread_manager
+            )
+
         # Browser tool
         if self._is_tool_enabled('browser_tool'):
             from core.tools.browser_tool import BrowserTool

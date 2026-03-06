@@ -26,6 +26,7 @@ SANDBOX_TOOLS = [
 SEARCH_TOOLS = [
     ('web_search_tool', 'core.tools.web_search_tool', 'SandboxWebSearchTool'),
     ('image_search_tool', 'core.tools.image_search_tool', 'SandboxImageSearchTool'),
+    ('warpgrep_tool', 'core.tools.warpgrep_tool', 'WarpGrepTool'),
     ('people_search_tool', 'core.tools.people_search_tool', 'PeopleSearchTool'),
     ('company_search_tool', 'core.tools.company_search_tool', 'CompanySearchTool'),
     ('paper_search_tool', 'core.tools.paper_search_tool', 'PaperSearchTool'),
