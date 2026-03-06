@@ -31,7 +31,7 @@ export function CodebaseSearchToolView({
   const name = toolCall.function_name.replace(/_/g, '-').toLowerCase();
   const toolTitle = getToolTitle(name);
 
-  let parsedOutput: Record<string, unknown> | null = null;
+  let parsedOutput: Record<string, any> | null = null;
   try {
     parsedOutput = typeof toolResult?.output === 'string'
       ? JSON.parse(toolResult.output)
@@ -41,7 +41,7 @@ export function CodebaseSearchToolView({
   }
   const results: CodeResult[] = (parsedOutput?.results as CodeResult[]) || [];
 
-  const isKeyError = !isSuccess && toolResult?.output?.includes?.('API key');
+  const isKeyError = !isSuccess && typeof toolResult?.output === 'string' && toolResult.output.includes('API key');
 
   return (
     <Card className="gap-0 flex border-0 shadow-none p-0 py-0 rounded-none flex-col h-full overflow-hidden bg-card">

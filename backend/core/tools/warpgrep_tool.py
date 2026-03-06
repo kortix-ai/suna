@@ -48,7 +48,7 @@ codebase_search(query="React component for user profile")
 class WarpGrepTool(SandboxToolsBase):
     """AI-powered codebase search using the WarpGrep API."""
 
-    _MAX_TURNS = 4
+    _MAX_TURNS = 4  # max agentic search loop iterations
 
     def __init__(self, project_id: str, thread_manager: ThreadManager):
         super().__init__(project_id, thread_manager)
@@ -271,7 +271,7 @@ class WarpGrepTool(SandboxToolsBase):
                     return "Invalid line range format"
                 sed_ranges = [f"{s},{e}p" for s, e in parsed_ranges]
                 sed_expr = ";".join(sed_ranges)
-                cmd = f"sed -n {shlex.quote(sed_expr)} {shlex.quote(full_path)} | cat -n"
+                cmd = f"sed -n {shlex.quote(sed_expr)} {shlex.quote(full_path)}"
             else:
                 cmd = f"cat -n {shlex.quote(full_path)} | head -200"
             result = await self.sandbox.process.exec(cmd, timeout=30)
@@ -315,5 +315,5 @@ class WarpGrepTool(SandboxToolsBase):
             return None
 
         specs = [s.strip() for s in file_spans_str.split("\n") if s.strip()]
-        span_results = await asyncio.gather(*[read_span(s) for s in specs])
-        return [r for r in span_results if r is not None]
+        span_results = await asyncio.gather(*[read_span(s) for s in specs], return_exceptions=True)
+        return [r for r in span_results if r is not None and not isinstance(r, BaseException)]
