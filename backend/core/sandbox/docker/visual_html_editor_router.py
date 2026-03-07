@@ -22,6 +22,33 @@ router = APIRouter(prefix="/api/html", tags=["visual-editor"])
 # Use /workspace as the default workspace directory
 workspace_dir = "/workspace"
 
+
+def _validate_path(file_path: str) -> str:
+    """
+    Validate that the file path is within the workspace directory to prevent path traversal attacks.
+
+    Args:
+        file_path: User-provided file path
+
+    Returns:
+        Absolute, validated path
+
+    Raises:
+        HTTPException: If path is outside workspace directory
+    """
+    # Resolve the absolute paths
+    workspace_abs = os.path.abspath(workspace_dir)
+    full_path = os.path.abspath(os.path.join(workspace_dir, file_path))
+
+    # Check if the resolved path is within the workspace directory
+    if not full_path.startswith(workspace_abs + os.sep) and full_path != workspace_abs:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: path is outside workspace directory"
+        )
+
+    return full_path
+
 # All text elements that should be editable
 TEXT_ELEMENTS = [
     'h1', 'h2', 'h3', 'h4', 'h5', 'h6',  # Headings
@@ -63,7 +90,7 @@ class GetEditableElementsResponse(BaseModel):
 async def get_editable_elements(file_path: str):
     """Get all editable text elements from an HTML file"""
     try:
-        full_path = os.path.join(workspace_dir, file_path)
+        full_path = _validate_path(file_path)
         if not os.path.exists(full_path):
             raise HTTPException(status_code=404, detail="File not found")
         
@@ -158,7 +185,7 @@ async def get_editable_elements(file_path: str):
 async def edit_text(request: EditTextRequest):
     """Edit text content of an element in an HTML file"""
     try:
-        full_path = os.path.join(workspace_dir, request.file_path)
+        full_path = _validate_path(request.file_path)
         if not os.path.exists(full_path):
             raise HTTPException(status_code=404, detail="File not found")
         
@@ -202,7 +229,7 @@ async def edit_text(request: EditTextRequest):
 async def delete_element(request: DeleteElementRequest):
     """Delete an element from an HTML file"""
     try:
-        full_path = os.path.join(workspace_dir, request.file_path)
+        full_path = _validate_path(request.file_path)
         if not os.path.exists(full_path):
             raise HTTPException(status_code=404, detail="File not found")
         
@@ -255,7 +282,7 @@ async def delete_element(request: DeleteElementRequest):
 async def save_content(request: SaveContentRequest):
     """Save the entire HTML content to file"""
     try:
-        full_path = os.path.join(workspace_dir, request.file_path)
+        full_path = _validate_path(request.file_path)
         if not os.path.exists(full_path):
             raise HTTPException(status_code=404, detail="File not found")
         
