@@ -99,12 +99,13 @@ class SandboxCanvasTool(SandboxToolsBase):
         """Ensure the canvases directory exists"""
         await self._ensure_sandbox()
         full_path = f"{self.workspace_path}/{self.canvases_dir}"
-        logger.debug(f"[Canvas] Creating directory: {full_path} in sandbox {self._sandbox_id}")
+        logger.debug(f"[Canvas] Creating directory: {full_path} in sandbox {self.sandbox_id}")
         try:
             result = await self.sandbox.process.exec(f"mkdir -p '{full_path}'")
             # Verify directory was created
             verify = await self.sandbox.process.exec(f"test -d '{full_path}' && echo 'EXISTS'")
-            if hasattr(verify, 'stdout') and 'EXISTS' in str(verify.stdout):
+            verify_stdout = getattr(verify, 'stdout', '')
+            if 'EXISTS' in str(verify_stdout) or 'EXISTS' in str(verify):
                 logger.debug(f"[Canvas] Directory verified: {full_path}")
             else:
                 logger.warning(f"[Canvas] Directory may not exist: {full_path}")
@@ -189,6 +190,7 @@ class SandboxCanvasTool(SandboxToolsBase):
 
     async def _save_canvas_data(self, canvas_path: str, canvas_data: Dict[str, Any]):
         """Save canvas data to .kanvax file"""
+        full_path = ""
         try:
             await self._ensure_sandbox()
             await self._ensure_canvases_dir()  # Ensure directory exists!
@@ -205,14 +207,16 @@ class SandboxCanvasTool(SandboxToolsBase):
             # Verify file was saved
             try:
                 verify = await self.sandbox.process.exec(f"test -f '{full_path}' && echo 'SAVED'")
-                if hasattr(verify, 'stdout') and 'SAVED' in str(verify.stdout):
+                verify_stdout = getattr(verify, 'stdout', '')
+                if 'SAVED' in str(verify_stdout) or 'SAVED' in str(verify):
                     logger.debug(f"[Canvas] File verified: {full_path}")
                 else:
                     logger.warning(f"[Canvas] File may not have been saved: {full_path}")
             except:
                 pass
         except Exception as e:
-            logger.error(f"[Canvas] Failed to save canvas {full_path}: {e}")
+            target = full_path or canvas_path
+            logger.error(f"[Canvas] Failed to save canvas {target}: {e}")
             raise Exception(f"Failed to save canvas: {str(e)}")
 
     @openapi_schema({
@@ -251,7 +255,7 @@ class SandboxCanvasTool(SandboxToolsBase):
         """Create a new infinite canvas"""
         try:
             await self._ensure_sandbox()
-            logger.info(f"[Canvas] Creating canvas '{name}' in sandbox {self._sandbox_id} for project {self.project_id}")
+            logger.info(f"[Canvas] Creating canvas '{name}' in sandbox {self.sandbox_id} for project {self.project_id}")
             await self._ensure_canvases_dir()
             await self._ensure_images_dir()
 
@@ -1240,4 +1244,3 @@ class SandboxCanvasTool(SandboxToolsBase):
             
         except Exception as e:
             return self.fail_response(f"Failed to process canvas element: {str(e)}")
-
