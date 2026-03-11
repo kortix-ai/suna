@@ -48,6 +48,7 @@ except ImportError:
     logger.warning("Google Analytics SDK not installed. Install with: pip install google-analytics-data")
 
 BERLIN_TZ = ZoneInfo("Europe/Berlin")
+UTC_TZ = ZoneInfo("UTC")
 
 router = APIRouter(prefix="/admin/analytics", tags=["admin-analytics"])
 
@@ -190,7 +191,8 @@ class UserFunnelStats(BaseModel):
 def parse_date_range(
     date: Optional[str],
     date_from: Optional[str],
-    date_to: Optional[str]
+    date_to: Optional[str],
+    tz: ZoneInfo = BERLIN_TZ,
 ) -> tuple[datetime, datetime]:
     """
     Parse date range parameters with backwards compatibility.
@@ -201,10 +203,10 @@ def parse_date_range(
         date_to: End date in YYYY-MM-DD format
 
     Returns:
-        Tuple of (start_date, end_date) as datetime objects with Berlin timezone
+        Tuple of (start_date, end_date) as timezone-aware datetime objects
 
     If only 'date' is provided, uses it for both start and end (single day).
-    If no dates provided, defaults to today.
+    If no dates provided, defaults to today in the provided timezone.
     """
     # Backwards compatibility: if 'date' is provided without date_from/date_to
     if date and not date_from:
@@ -214,16 +216,16 @@ def parse_date_range(
     # Parse start date or default to today
     if date_from:
         try:
-            start_date = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+            start_date = datetime.strptime(date_from, "%Y-%m-%d").replace(tzinfo=tz)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date_from format. Use YYYY-MM-DD")
     else:
-        start_date = datetime.now(BERLIN_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        start_date = datetime.now(tz).replace(hour=0, minute=0, second=0, microsecond=0)
 
     # Parse end date or use start date (single day)
     if date_to:
         try:
-            end_date = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=BERLIN_TZ)
+            end_date = datetime.strptime(date_to, "%Y-%m-%d").replace(tzinfo=tz)
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid date_to format. Use YYYY-MM-DD")
     else:
@@ -1236,7 +1238,7 @@ async def get_daily_top_users(
 
         pagination_params = PaginationParams(page=page, page_size=page_size)
 
-        start_date, end_date = parse_date_range(None, date_from, date_to)
+        start_date, end_date = parse_date_range(None, date_from, date_to, tz=UTC_TZ)
         start_of_range = start_date.replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         end_of_range = end_date.replace(hour=23, minute=59, second=59, microsecond=999999).isoformat()
 
